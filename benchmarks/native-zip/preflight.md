@@ -45,3 +45,9 @@ arguments, `--runs 7`, and `--operation list` for metadata-only timing.
   [Raw results](../v2/libdeflate-crc.json).
 
 These warm-cache local measurements do not establish Windows performance.
+
+A follow-up streaming-output-buffer sweep tested 64 KiB, 256 KiB (current),
+1 MiB, and 4 MiB on Silesia. Median extraction times were 118.34, 118.19,
+117.08, and 119.20 ms respectively, with overlapping ranges. Peak RSS rose
+from 4.8 MiB at 256 KiB to 16.7 MiB at 4 MiB. Retain 256 KiB; no reliable
+extraction benefit justifies the larger buffers. [Raw sweep](stream-buffer-silesia.json).

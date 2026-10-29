@@ -42,7 +42,7 @@ def pipeline(commands, cwd, output=None):
         elapsed = time.perf_counter() - start
         if any(codes):
             errors.seek(0)
-            raise RuntimeError(errors.read().decode(errors="replace"))
+            raise RuntimeError(f"pipeline failed {codes}: {commands}\n" + errors.read().decode(errors="replace"))
     return elapsed
 
 
@@ -51,18 +51,27 @@ def main():
     parser.add_argument("corpus_root", type=Path)
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--corpus", action="append", help="corpus subdirectory; repeatable")
+    parser.add_argument("--include-plain-tar", action="store_true")
+    parser.add_argument("--tuned-tar", action="store_true", help="also test 1 MiB tar record buffers")
     args = parser.parse_args()
     if args.runs < 1 or args.threads < 1:
         parser.error("runs and threads must be positive")
     zipper = str(Path("target/release/zipper").resolve(strict=True))
     engines = ["zipper", "tar+zstd", "tar+pzstd"]
+    if args.include_plain_tar:
+        engines.append("tar")
+    if args.tuned_tar:
+        engines += [engine + "-1MiB" for engine in engines if engine != "zipper"]
     rng = random.Random(20261029)
     result = {"platform": platform.platform(), "threads": args.threads,
               "runs": args.runs, "level": 1, "warmup_rounds": 1,
               "archive_sync": "F_FULLFSYNC" if platform.system() == "Darwin" else "fsync",
+              "compressed_tar_extraction": "--ignore-zeros consumes padding through decoder EOF",
+              "tar_version": subprocess.check_output(["tar", "--version"], text=True).strip(),
               "corpora": {}}
     with tempfile.TemporaryDirectory(prefix="zipper-zstd-compare-") as work:
-        for name in ["logs", "binaries", "random", "small-files"]:
+        for name in args.corpus or ["logs", "binaries", "random", "small-files"]:
             source = (args.corpus_root / name).resolve(strict=True)
             expected = manifest(source)
             total = sum(x[0] for x in expected.values() if x is not None)
@@ -73,17 +82,31 @@ def main():
                 rng.shuffle(shuffled)
                 order.append(shuffled)
                 for engine in shuffled:
+                    base_engine = engine.removesuffix("-1MiB")
+                    tar = ["tar", "-b", "2048"] if engine.endswith("-1MiB") else ["tar"]
                     archive = Path(work) / "archive"
                     out = Path(work) / "out"
                     if engine == "zipper":
                         create = [[zipper, "--threads", str(args.threads), "create", str(archive), str(source), "--level", "1"]]
                         extract = [[zipper, "--threads", str(args.threads), "extract", str(archive), "-o", str(out)]]
                         ct = pipeline(create, source.parent)
+                    elif base_engine == "tar":
+                        create = [tar + ["-cf", "-", source.name]]
+                        extract = [tar + ["-xf", str(archive), "-C", str(out)]]
+                        with archive.open("wb") as stream:
+                            start = time.perf_counter()
+                            pipeline(create, source.parent, stream)
+                            sync_archive(stream)
+                            ct = time.perf_counter() - start
+                        out.mkdir()
                     else:
-                        tool = engine.split("+")[1]
+                        tool = base_engine.split("+")[1]
                         threads = ["-T" + str(args.threads)] if tool == "zstd" else ["-p", str(args.threads)]
-                        create = [["tar", "-cf", "-", source.name], [tool, "-q", "-1", *threads, "-c"]]
-                        extract = [[tool, "-q", "-d", *threads, "-c", str(archive)], ["tar", "-xf", "-", "-C", str(out)]]
+                        create = [tar + ["-cf", "-", source.name], [tool, "-q", "-1", *threads, "-c"]]
+                        # Consume the complete decompressed stream, including
+                        # padded records, so the decoder finishes checksumming
+                        # instead of receiving SIGPIPE after tar's zero blocks.
+                        extract = [[tool, "-q", "-d", *threads, "-c", str(archive)], tar + ["--ignore-zeros", "-xf", "-", "-C", str(out)]]
                         with archive.open("wb") as stream:
                             start = time.perf_counter()
                             ct = pipeline(create, source.parent, stream)

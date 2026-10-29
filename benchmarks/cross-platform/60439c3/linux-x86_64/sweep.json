@@ -1,0 +1,486 @@
+{
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "binary_sha256": "071f1276a6bd227ea613652c8d9fc2aa63b08968bd039ee85fce4b2702b5bb75",
+  "threads": 2,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "corpus": "silesia",
+  "input_bytes": 211938580,
+  "verification": "direct byte comparison, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    1.47900390625,
+    0.54736328125,
+    0.2021484375
+  ],
+  "order_including_warmup": [
+    [
+      "level6-block1024",
+      "level1-block4096",
+      "level1-block1024",
+      "level6-block4096"
+    ],
+    [
+      "level1-block1024",
+      "level6-block1024",
+      "level1-block4096",
+      "level6-block4096"
+    ],
+    [
+      "level1-block1024",
+      "level6-block1024",
+      "level1-block4096",
+      "level6-block4096"
+    ],
+    [
+      "level6-block4096",
+      "level1-block4096",
+      "level6-block1024",
+      "level1-block1024"
+    ],
+    [
+      "level6-block1024",
+      "level6-block4096",
+      "level1-block1024",
+      "level1-block4096"
+    ],
+    [
+      "level6-block1024",
+      "level1-block1024",
+      "level1-block4096",
+      "level6-block4096"
+    ],
+    [
+      "level1-block1024",
+      "level1-block4096",
+      "level6-block4096",
+      "level6-block1024"
+    ],
+    [
+      "level1-block1024",
+      "level1-block4096",
+      "level6-block1024",
+      "level6-block4096"
+    ]
+  ],
+  "configurations": {
+    "level1-block1024": {
+      "archive_bytes": 73602933,
+      "samples": [
+        {
+          "compression": {
+            "seconds": 0.45080565499998215,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.07150535499999933,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 73602933,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.4548641580000208,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.07409480999999118,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 73602933,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.45486694199999533,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.07797333099998127,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 73602933,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.45795351900000014,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.07732593399998677,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 73602933,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.4494413339999994,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.08150575599998433,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 73602933,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.5546716300000014,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.07143087499997591,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 73602933,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.4307550670000069,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.08211952199999928,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 73602933,
+          "verified_bytes": 211938580
+        }
+      ],
+      "compression": {
+        "median_seconds": 0.4548641580000208,
+        "min_seconds": 0.4307550670000069,
+        "max_seconds": 0.5546716300000014,
+        "mib_s": 444.3532796479473,
+        "peak_rss_bytes": 30334976
+      },
+      "extraction": {
+        "median_seconds": 0.07732593399998677,
+        "min_seconds": 0.07143087499997591,
+        "max_seconds": 0.08211952199999928,
+        "mib_s": 2613.8757069736253,
+        "peak_rss_bytes": 30334976
+      }
+    },
+    "level1-block4096": {
+      "archive_bytes": 73338765,
+      "samples": [
+        {
+          "compression": {
+            "seconds": 0.46870529800000327,
+            "peak_rss_bytes": 42344448
+          },
+          "extraction": {
+            "seconds": 0.08333839299999113,
+            "peak_rss_bytes": 41525248
+          },
+          "archive_bytes": 73338765,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.46002204900000265,
+            "peak_rss_bytes": 42377216
+          },
+          "extraction": {
+            "seconds": 0.08725393000000281,
+            "peak_rss_bytes": 41525248
+          },
+          "archive_bytes": 73338765,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.5148607579999975,
+            "peak_rss_bytes": 42303488
+          },
+          "extraction": {
+            "seconds": 0.08986776599999757,
+            "peak_rss_bytes": 45670400
+          },
+          "archive_bytes": 73338765,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.46015097400001537,
+            "peak_rss_bytes": 42377216
+          },
+          "extraction": {
+            "seconds": 0.09313088799999036,
+            "peak_rss_bytes": 41476096
+          },
+          "archive_bytes": 73338765,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.455177539999994,
+            "peak_rss_bytes": 42213376
+          },
+          "extraction": {
+            "seconds": 0.09130849799998941,
+            "peak_rss_bytes": 41447424
+          },
+          "archive_bytes": 73338765,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.5260591459999944,
+            "peak_rss_bytes": 42209280
+          },
+          "extraction": {
+            "seconds": 0.08208222499999351,
+            "peak_rss_bytes": 41644032
+          },
+          "archive_bytes": 73338765,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.44247292200000743,
+            "peak_rss_bytes": 42172416
+          },
+          "extraction": {
+            "seconds": 0.08620218499999055,
+            "peak_rss_bytes": 41484288
+          },
+          "archive_bytes": 73338765,
+          "verified_bytes": 211938580
+        }
+      ],
+      "compression": {
+        "median_seconds": 0.46015097400001537,
+        "min_seconds": 0.44247292200000743,
+        "max_seconds": 0.5260591459999944,
+        "mib_s": 439.2479682148941,
+        "peak_rss_bytes": 42377216
+      },
+      "extraction": {
+        "median_seconds": 0.08725393000000281,
+        "min_seconds": 0.08208222499999351,
+        "max_seconds": 0.09313088799999036,
+        "mib_s": 2316.4616241538324,
+        "peak_rss_bytes": 45670400
+      }
+    },
+    "level6-block1024": {
+      "archive_bytes": 63138699,
+      "samples": [
+        {
+          "compression": {
+            "seconds": 0.983538196999973,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.07795221999998603,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 63138699,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.0238339120000148,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.08553102100000842,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 63138699,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.0214405899999974,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.10431425800001648,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 63138699,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.006679969000004,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.07596940800002017,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 63138699,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.0129614840000158,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.0771177099999818,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 63138699,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.9464043859999833,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.08911578100000384,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 63138699,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.3802216809999948,
+            "peak_rss_bytes": 30334976
+          },
+          "extraction": {
+            "seconds": 0.07883783100001551,
+            "peak_rss_bytes": 30334976
+          },
+          "archive_bytes": 63138699,
+          "verified_bytes": 211938580
+        }
+      ],
+      "compression": {
+        "median_seconds": 1.0129614840000158,
+        "min_seconds": 0.9464043859999833,
+        "max_seconds": 1.3802216809999948,
+        "mib_s": 199.53412207093174,
+        "peak_rss_bytes": 30334976
+      },
+      "extraction": {
+        "median_seconds": 0.07883783100001551,
+        "min_seconds": 0.07596940800002017,
+        "max_seconds": 0.10431425800001648,
+        "mib_s": 2563.7486196388577,
+        "peak_rss_bytes": 30334976
+      }
+    },
+    "level6-block4096": {
+      "archive_bytes": 61779861,
+      "samples": [
+        {
+          "compression": {
+            "seconds": 0.9856287409999993,
+            "peak_rss_bytes": 47325184
+          },
+          "extraction": {
+            "seconds": 0.09445897799997738,
+            "peak_rss_bytes": 45838336
+          },
+          "archive_bytes": 61779861,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.0286708479999902,
+            "peak_rss_bytes": 47599616
+          },
+          "extraction": {
+            "seconds": 0.09611656900000298,
+            "peak_rss_bytes": 45748224
+          },
+          "archive_bytes": 61779861,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.1008393710000064,
+            "peak_rss_bytes": 47374336
+          },
+          "extraction": {
+            "seconds": 0.09781042700001308,
+            "peak_rss_bytes": 45785088
+          },
+          "archive_bytes": 61779861,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.0401184829999863,
+            "peak_rss_bytes": 47489024
+          },
+          "extraction": {
+            "seconds": 0.09042420399998718,
+            "peak_rss_bytes": 45654016
+          },
+          "archive_bytes": 61779861,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.0516294549999827,
+            "peak_rss_bytes": 47333376
+          },
+          "extraction": {
+            "seconds": 0.084226966000017,
+            "peak_rss_bytes": 45752320
+          },
+          "archive_bytes": 61779861,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 0.9619477210000014,
+            "peak_rss_bytes": 47603712
+          },
+          "extraction": {
+            "seconds": 0.09225838000000408,
+            "peak_rss_bytes": 45846528
+          },
+          "archive_bytes": 61779861,
+          "verified_bytes": 211938580
+        },
+        {
+          "compression": {
+            "seconds": 1.086841609000004,
+            "peak_rss_bytes": 47476736
+          },
+          "extraction": {
+            "seconds": 0.08556304199998976,
+            "peak_rss_bytes": 45752320
+          },
+          "archive_bytes": 61779861,
+          "verified_bytes": 211938580
+        }
+      ],
+      "compression": {
+        "median_seconds": 1.0401184829999863,
+        "min_seconds": 0.9619477210000014,
+        "max_seconds": 1.1008393710000064,
+        "mib_s": 194.3243810249779,
+        "peak_rss_bytes": 47603712
+      },
+      "extraction": {
+        "median_seconds": 0.09225838000000408,
+        "min_seconds": 0.084226966000017,
+        "max_seconds": 0.09781042700001308,
+        "mib_s": 2190.8078204018148,
+        "peak_rss_bytes": 45846528
+      }
+    }
+  },
+  "load_average_end": [
+    1.46826171875,
+    0.638671875,
+    0.24462890625
+  ]
+}

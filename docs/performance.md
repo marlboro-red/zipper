@@ -8,12 +8,17 @@ line connects non-dominated measured configurations; horizontal bars show the
 observed minimum and maximum of seven runs. It is an empirical frontier on this
 machine and corpus, not a claim of global optimality.
 
-Twenty native configurations cover levels -3, 1, 3, and 6 with block sizes from
+Native configurations cover levels -3 through 19 with block sizes from
 64 KiB to 16 MiB. ZIP, 7z, and TAR points measure **Zipper extracting those actual
 formats** through its installed 7-Zip backend. An additional ZIP native point
 measures the opt-in parallel Rust ZIP/zlib-rs reader on identical ZIP bytes.
-The report compares both paths with direct 7-Zip calls. Native ZIP currently
-preserves bytes and directories only; the backend remains the default.
+The report compares both paths with direct 7-Zip calls. Green T1–T4 points
+add tuned bsdtar baselines: TAR, TAR+zstd, TAR+pzstd, and identical ZIP.
+[Matched tar comparisons](tar-comparison.md) show the smaller lead against
+tuned tar buffers rather than relying only on default settings. Native ZIP currently
+preserves bytes and directories only; the backend remains the default. ZIP
+buffered uses libdeflate within an explicit per-worker memory cap; ZIP stream
+uses zlib-rs with small streaming buffers.
 
 [Full tables, methodology, reproduction commands, and raw samples](../benchmarks/silesia/README.md)
 include compression speed and peak creation memory, which are absent from this
@@ -30,7 +35,9 @@ workers; classic decoding uses the backend's default allocation. Archives differ
 in metadata support. Verification compares all restored bytes, file sizes, and
 directory membership. Timings include startup and filesystem writes but not
 explicit extraction sync. Cache/thermal/storage isolation and cross-machine
-benchmarking remain outstanding.
+benchmarking on controlled hardware remain outstanding. Separate
+[Linux x86 and virtual Apple M1 results](../benchmarks/cross-platform/README.md)
+confirm the native ZIP gain on other architectures, with hosted-runner caveats.
 
 Earlier development-fixture results and kept/rejected experiments are recorded
 in the [v2 report](../benchmarks/v2/README.md). For comparisons against tar+zstd,

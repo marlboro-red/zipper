@@ -2,7 +2,7 @@
 
 ![Measured Pareto frontier](pareto.svg)
 
-[PNG](pareto.png) · [PDF](pareto.pdf) · [Native samples](sweep.json) · [Classic-format samples](classic-formats.json)
+[PNG](pareto.png) · [PDF](pareto.pdf) · [Native samples](sweep.json) · [Higher native levels](dense-sweep.json) · [Classic-format samples](classic-formats.json)
 
 A point is on the observed Pareto frontier if no other measured configuration extracts in less or equal median time while producing a smaller or equal archive, with at least one strict improvement. Better points are toward the upper left. Ratio means original bytes divided by complete archive bytes. Lines only connect observed points; they do not imply intermediate configurations exist. Error bars show observed minima and maxima, not confidence intervals. Overlapping ranges do not establish a reliable speed ranking.
 
@@ -13,9 +13,11 @@ A point is on the observed Pareto frontier if no other measured configuration ex
 | 1 | L-3 / 1024 KiB | 2.229× | 29.12 | 28.27–31.02 |
 | 2 | L-3 / 256 KiB | 2.314× | 32.91 | 31.65–36.08 |
 | 3 | L1 / 1024 KiB | 2.879× | 36.08 | 35.15–38.52 |
-| 4 | L6 / 1024 KiB | 3.357× | 38.68 | 38.19–39.55 |
-| 5 | L6 / 4096 KiB | 3.431× | 41.87 | 39.56–44.41 |
-| 6 | L6 / 16384 KiB | 3.455× | 48.85 | 45.72–51.35 |
+| 4 | L15 / 1024 KiB | 3.474× | 36.44 | 35.29–36.96 |
+| 5 | L15 / 4096 KiB | 3.627× | 40.17 | 39.33–42.55 |
+| 6 | L19 / 1024 KiB | 3.705× | 40.63 | 38.83–42.44 |
+| 7 | L19 / 4096 KiB | 3.863× | 44.13 | 42.99–45.06 |
+| 8 | L19 / 16384 KiB | 3.970× | 52.87 | 51.31–54.11 |
 
 ## All native configurations
 
@@ -41,17 +43,42 @@ A point is on the observed Pareto frontier if no other measured configuration ex
 | L6 / 1024 KiB | 3.357× | 63,138,699 | 568 | 38.68 | 38.19–39.55 | 36.5 |
 | L6 / 4096 KiB | 3.431× | 61,779,861 | 528 | 41.87 | 39.56–44.41 | 110.7 |
 | L6 / 16384 KiB | 3.455× | 61,336,542 | 527 | 48.85 | 45.72–51.35 | 236.2 |
+| L9 / 1024 KiB | 3.415× | 62,064,993 | 344 | 38.65 | 36.68–40.59 | 67.6 |
+| L9 / 4096 KiB | 3.525× | 60,117,935 | 317 | 44.70 | 41.55–45.41 | 140.8 |
+| L9 / 16384 KiB | 3.573× | 59,311,908 | 300 | 50.44 | 48.92–52.18 | 265.3 |
+| L15 / 1024 KiB | 3.474× | 61,015,011 | 77 | 36.44 | 35.29–36.96 | 92.6 |
+| L15 / 4096 KiB | 3.627× | 58,429,378 | 43 | 40.17 | 39.33–42.55 | 356.8 |
+| L15 / 16384 KiB | 3.703× | 57,241,254 | 34 | 47.90 | 47.50–48.96 | 487.2 |
+| L19 / 1024 KiB | 3.705× | 57,196,380 | 25 | 40.63 | 38.83–42.44 | 95.6 |
+| L19 / 4096 KiB | 3.863× | 54,863,200 | 19 | 44.13 | 42.99–45.06 | 295.7 |
+| L19 / 16384 KiB | 3.970× | 53,386,059 | 16 | 52.87 | 51.31–54.11 | 551.8 |
 
 ## Zipper handling classic formats
 
-Archives are created by 7-Zip 26.05: ZIP/Deflate level 1, 7z/LZMA2 level 1, and uncompressed TAR. Default extraction delegates to that backend. The additional ZIP native point uses the opt-in parallel Rust ZIP/zlib-rs reader with four workers on the same ZIP bytes. The direct-backend column measures the archive without Zipper's dispatch/staging. Native ZIP preserves bytes/directories only, so it is not yet a metadata-equivalent replacement. The plot uses Zipper extraction time, not direct-backend time. [Native ZIP trial and matched backend samples](native-zip.json).
+Archives are created by 7-Zip 26.05: ZIP/Deflate and 7z/LZMA2 (levels labeled in the table), and uncompressed TAR. Default extraction delegates to that backend. ZIP stream uses the opt-in parallel Rust ZIP/zlib-rs reader; ZIP buffered adds libdeflate with up to 64 MiB of entry buffers per worker. Both request four workers and read the same archive bytes as their matched direct backend. Native ZIP preserves bytes/directories only, so it is not yet a metadata-equivalent replacement. The plot uses Zipper extraction time, not direct-backend time. [Current level-1 samples](fast-zip-current.json) and [current level-9 samples](dense-classic-current.json) use work-stealing revision `afb77d0` and include in-process RSS. Earlier static-scheduling trials remain in `fast-zip.json` and `dense-classic.json`. Current extraction-only trials prepare one archive per format before timing repeated reads; their null creation times are intentional.
 
-| Format | Ratio | Archive bytes | Zipper median ms | Zipper range ms | 7-Zip direct median ms |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| ZIP | 3.017× | 70,252,453 | 565.62 | 564.36–568.82 | 563.52 |
-| 7Z | 3.584× | 59,126,554 | 204.76 | 202.18–210.40 | 205.30 |
-| TAR | 1.000× | 211,948,544 | 34.06 | 29.77–68.38 | 33.34 |
-| ZIP native (opt-in) | 3.017× | 70,252,453 | 168.05 | 166.88–175.14 | 563.32 |
+| Format / reader | Ratio | Archive bytes | Zipper median ms | Zipper range ms | Direct 7-Zip median ms | Native reader RSS MiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ZIP L1 | 3.017× | 70,252,453 | 565.62 | 564.36–568.82 | 563.52 | — |
+| 7Z L1 | 3.584× | 59,126,554 | 204.76 | 202.18–210.40 | 205.30 | — |
+| TAR | 1.000× | 211,948,544 | 34.06 | 29.77–68.38 | 33.34 | — |
+| ZIP L9 | 3.274× | 64,727,209 | 538.60 | 537.36–551.33 | 536.80 | — |
+| ZIP L9 stream | 3.274× | 64,727,209 | 115.64 | 100.75–116.50 | 536.80 | 5.0 |
+| ZIP L9 buffered | 3.274× | 64,727,209 | 92.61 | 91.79–99.37 | 536.80 | 175.1 |
+| 7Z L9 | 4.353× | 48,688,221 | 1051.27 | 1048.95–1058.55 | 1048.61 | — |
+| ZIP L1 stream | 3.017× | 70,252,453 | 115.48 | 114.52–132.14 | 560.77 | 4.8 |
+| ZIP L1 buffered | 3.017× | 70,252,453 | 91.75 | 91.00–93.50 | 560.77 | 174.0 |
+
+## Tuned bsdtar baselines
+
+These green points use 1 MiB tar record buffers. T2 uses four pzstd workers; T3 uses ordinary zstd decoding. Compressed pipelines consume all padding (`--ignore-zeros`) so the decoder finishes successfully. T4 extracts the same ZIP used in its matched Zipper comparison. Tar round trips use SHA-256 manifests; ZIP comparisons use direct byte checks. Timing sessions differ from the native level sweep. [Tar samples](tar-tuned.json), [identical-ZIP samples](zip-vs-tar.json), and [matched comparison details](../../docs/tar-comparison.md).
+
+| Point | Reader | Ratio | Archive bytes | Median ms | Range ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| T1 | tar-1MiB | 0.996× | 212,860,928 | 43.84 | 36.55–46.87 |
+| T2 | tar+pzstd-1MiB | 2.886× | 73,435,731 | 56.24 | 55.55–58.01 |
+| T3 | tar+zstd-1MiB | 2.891× | 73,317,325 | 131.42 | 129.22–134.09 |
+| T4 | bsdtar ZIP, 1 MiB | 3.017× | 70,252,453 | 182.45 | 179.78–184.16 |
 
 ## Method and limits
 
@@ -67,8 +94,12 @@ The sweep exposes a genuine tradeoff: larger blocks can improve higher-level rat
 python3 scripts/fetch_silesia.py /tmp/zipper-corpora/silesia
 cargo build --release
 python3 scripts/sweep.py /tmp/zipper-corpora/silesia --runs 7 --threads 4 > benchmarks/silesia/sweep.json
+python3 scripts/sweep.py /tmp/zipper-corpora/silesia --levels 9 15 19 --blocks-kib 1024 4096 16384 --runs 7 --threads 4 > benchmarks/silesia/dense-sweep.json
 python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --runs 7 --threads 4 > benchmarks/silesia/classic-formats.json
-python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --formats zip --native-zip --runs 7 --threads 4 > benchmarks/silesia/native-zip.json
+python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --formats zip --native-fast --reuse-archives --runs 7 --threads 4 > benchmarks/silesia/fast-zip-current.json
+python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --formats zip 7z --level 9 --native-fast --reuse-archives --runs 7 --threads 4 > benchmarks/silesia/dense-classic-current.json
+python3 scripts/compare_zstd.py /tmp/zipper-corpora --corpus silesia --include-plain-tar --tuned-tar --runs 7 > benchmarks/silesia/tar-tuned.json
+python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --formats zip --native-fast --tar-reader tar --reuse-archives --runs 7 --threads 4 > benchmarks/silesia/zip-vs-tar.json
 # With matplotlib installed in your plotting environment:
 python3 scripts/plot_pareto.py benchmarks/silesia
 ```

@@ -34,22 +34,35 @@ python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia \
   --runs 7 --threads 4
 ```
 
-## Own format versus TAR pipelines
+## Own format versus tuned TAR pipelines
 
-A separate seven-run comparison on the same corpus uses Zipper level 1 and
-zstd/pzstd level 1. Creation uses matched macOS `F_FULLFSYNC`; extraction checks
-SHA-256 file manifests. These tar results use default record buffering.
+The stronger comparison uses 1 MiB tar record buffers (`-b 2048`), alongside
+default-buffer controls, in seven interleaved rounds. Zipper and zstd/pzstd use
+level 1. Creation uses matched macOS `F_FULLFSYNC`; extraction checks SHA-256
+file manifests. Compressed extraction uses `--ignore-zeros` so tar consumes all
+padding and the decoder completes without SIGPIPE. Source: e382a55.
 
-| Archive / extractor | Archive bytes | Median extraction | Extraction throughput |
-|---|---:|---:|---:|
-| `.zipper` / Zipper | 73,602,933 | 34.63 ms | 5,837 MiB/s |
-| `.tar.zst` / zstd + bsdtar | 73,317,298 | 131.61 ms | 1,536 MiB/s |
-| `.tar.zst` / pzstd + bsdtar | 73,435,701 | 104.18 ms | 1,940 MiB/s |
-| Uncompressed `.tar` / bsdtar | 211,978,240 | 94.23 ms | 2,145 MiB/s |
+| Archive / extractor | Archive bytes | Median extraction | Observed range | Throughput |
+|---|---:|---:|---:|---:|
+| `.zipper` / Zipper | 73,602,933 | 35.37 ms | 34.33–36.29 ms | 5,715 MiB/s |
+| Uncompressed `.tar` / bsdtar, 1 MiB | 212,860,928 | 43.84 ms | 36.55–46.87 ms | 4,610 MiB/s |
+| `.tar.zst` / pzstd + bsdtar, 1 MiB | 73,435,731 | 56.24 ms | 55.55–58.01 ms | 3,594 MiB/s |
+| `.tar.zst` / zstd + bsdtar, 1 MiB | 73,317,325 | 131.42 ms | 129.22–134.09 ms | 1,538 MiB/s |
 
-Zipper extracts 2.72× as fast as plain bsdtar and 3.01× as fast as the
-parallel-pzstd pipeline in this run. Its archive is about 0.23% larger than
-pzstd's. Metadata capabilities differ; these numbers do not establish metadata
-fidelity equivalence or the best possible tuned tar performance.
+**Against these tuned baselines, Zipper extracts 1.24× as fast as plain bsdtar
+and 1.59× as fast as tar+pzstd.** Its archive is about 0.23% larger than pzstd's.
+Metadata capabilities differ, and this is not a comparison against several
+coordinated tar extraction processes. Plain tar has substantial run-to-run spread.
 
-[Raw samples](../benchmarks/silesia/tar-current.json).
+The same run measured default-buffer plain tar at 95.11 ms and default-buffer
+tar+pzstd at 106.52 ms. Earlier 2.7×/3× claims compared those default settings;
+they must not be presented as gains over the stronger tuned baselines.
+
+[Raw tuned samples](../benchmarks/silesia/tar-tuned.json).
+[Earlier default-buffer samples](../benchmarks/silesia/tar-current.json).
+Reproduce from the repository root:
+
+```sh
+python3 scripts/compare_zstd.py /tmp/zipper-corpora --corpus silesia \
+  --include-plain-tar --tuned-tar --runs 7
+```

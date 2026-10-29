@@ -1,0 +1,148 @@
+Analysis of sampling zipper-native-stream (pid 21928) every 1 millisecond
+Process:         zipper-native-stream [21928]
+Path:            /private/tmp/zipper-native-stream
+Load Address:    0x1049f4000
+Identifier:      zipper-native-stream
+Version:         ???
+Code Type:       ARM64
+Parent Process:  Python [21927]
+Target Type:     live task
+
+Date/Time:       2026-10-29 14:52:16.371 +1100
+Launch Time:     2026-10-29 14:52:16.343 +1100
+OS Version:      macOS 26.7.1 (25G241)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+----
+
+Call graph:
+    354 Thread_565161: Main Thread
+    + 348 _dyld_start  (in dyld) + 0  [0x104e749c0]
+    + 4 start  (in dyld) + 6904  [0x18d5cc48c]
+    + ! 3 dyld4::start(dyld4::KernelArgs*, void*, void*, unsigned long long)::$_1::operator()() const  (in dyld) + 320  [0x18d5ccb30]
+    + ! : 2 dyld4::prepare(dyld4::APIs&, mach_o::UnsafeHeader const*)  (in dyld) + 3996  [0x18d5cdae8]
+    + ! : | 2 dyld4::RuntimeState::notifyDebuggerLoad(std::span<dyld4::Loader const*, 18446744073709551615ul> const&)  (in dyld) + 528  [0x18d5dcc8c]
+    + ! : |   2 dyld4::ExternallyViewableState::addImages(lsl::Allocator&, lsl::Allocator&, std::span<dyld4::ExternallyViewableState::ImageInfo, 18446744073709551615ul> const&)  (in dyld) + 1084  [0x18d5e7c80]
+    + ! : |     2 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 296  [0x18d5e7524]
+    + ! : |       2 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x18d62dc90]
+    + ! : |         2 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 244  [0x18d62d904]
+    + ! : |           2 mach_msg_overwrite  (in dyld) + 244  [0x18d64718c]
+    + ! : |             2 mach_msg2_internal  (in dyld) + 76  [0x18d646fe4]
+    + ! : |               2 mach_msg2_trap  (in dyld) + 8  [0x18d5ad72c]
+    + ! : 1 dyld4::prepare(dyld4::APIs&, mach_o::UnsafeHeader const*)  (in dyld) + 4184  [0x18d5cdba4]
+    + ! :   1 dyld4::APIs::runAllInitializersForMain()  (in dyld) + 100  [0x18d5c0870]
+    + ! :     1 dyld4::PrebuiltLoader::runInitializers(dyld4::RuntimeState&) const  (in dyld) + 44  [0x18d61fd44]
+    + ! :       1 dyld4::Loader::findAndRunAllInitializers(dyld4::RuntimeState&) const  (in dyld) + 528  [0x18d5f5394]
+    + ! :         1 dyld3::MachOAnalyzer::forEachInitializer(Diagnostics&, dyld3::MachOAnalyzer::VMAddrConverter const&, void (unsigned int) block_pointer, void const*) const  (in dyld) + 516  [0x18d605580]
+    + ! :           1 mach_o::UnsafeHeader::forEachSection(void (mach_o::UnsafeHeader::SectionInfo const&, bool&) block_pointer) const  (in dyld) + 124  [0x18d64424c]
+    + ! :             1 mach_o::UnsafeHeader::forEachLoadCommand(void (load_command const*, bool&) block_pointer) const  (in dyld) + 208  [0x18d6429a4]
+    + ! :               1 invocation function for block in mach_o::UnsafeHeader::forEachSection(void (mach_o::UnsafeHeader::SectionInfo const&, bool&) block_pointer) const  (in dyld) + 312  [0x18d645fac]
+    + ! :                 1 invocation function for block in dyld3::MachOAnalyzer::forEachInitializer(Diagnostics&, dyld3::MachOAnalyzer::VMAddrConverter const&, void (unsigned int) block_pointer, void const*) const  (in dyld) + 320  [0x18d605a8c]
+    + ! :                   1 invocation function for block in dyld4::Loader::findAndRunAllInitializers(dyld4::RuntimeState&) const::$_0::operator()() const  (in dyld) + 180  [0x18d5faa28]
+    + ! :                     1 libSystem_initializer  (in libSystem.B.dylib) + 188  [0x19d7f6318]
+    + ! :                       1 _sanitizers_init  (in libsystem_sanitizers.dylib) + 52  [0x2930f2820]
+    + ! :                         1 config::env::Parser::consumeEnv(char const**)  (in libsystem_sanitizers.dylib) + 28  [0x2930f2934]
+    + ! 1 dyld4::start(dyld4::KernelArgs*, void*, void*, unsigned long long)::$_1::operator()() const  (in dyld) + 80  [0x18d5cca40]
+    + !   1 dyld4::ProcessConfig::ProcessConfig(dyld4::KernelArgs const*, dyld4::SyscallDelegate&, lsl::Allocator&)  (in dyld) + 128  [0x18d5cf1b4]
+    + !     1 dyld4::ProcessConfig::DyldCache::DyldCache(dyld4::ProcessConfig::Process&, dyld4::ProcessConfig::Security const&, dyld4::ProcessConfig::Logging const&, dyld4::SyscallDelegate&, lsl::Allocator&, dyld4::ProcessConfig const&)  (in dyld) + 1044  [0x18d5d21b8]
+    + !       1 FileIdTuple::getPath(char*) const  (in dyld) + 32  [0x18d5ff20c]
+    + !         1 fsgetpath  (in dyld) + 8  [0x18d5b25d8]
+    + 1 start  (in dyld) + 4700  [0x104e8fbf0]
+    + ! 1 dyld4::ExternallyViewableState::createMinimalInfo(lsl::Allocator&, unsigned long long, char const*, unsigned long long, char const*, DyldSharedCache const*)  (in dyld) + 1712  [0x104eaaac0]
+    + !   1 PropertyList::encode(ByteStream&)  (in dyld) + 600  [0x104edfdb8]
+    + !     1 (anonymous namespace)::quickSort<PropertyList::Integer**>(PropertyList::Integer**, PropertyList::Integer**)  (in dyld) + 120  [0x104ee0e44]
+    + 1 start  (in dyld) + 6008  [0x104e9010c]
+    +   1 dyld4::ExternallyViewableState::createMinimalInfo(lsl::Allocator&, unsigned long long, char const*, unsigned long long, char const*, DyldSharedCache const*)  (in dyld) + 2116  [0x104eaac54]
+    +     1 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 296  [0x104eab524]
+    +       1 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x104ef1c90]
+    +         1 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 244  [0x104ef1904]
+    +           1 mach_msg_overwrite  (in dyld) + 244  [0x104f0b18c]
+    +             1 mach_msg2_internal  (in dyld) + 76  [0x104f0afe4]
+    +               1 mach_msg2_trap  (in dyld) + 8  [0x104e7172c]
+    233 Thread_565161   DispatchQueue_1: com.apple.main-thread  (serial)
+    + 233 start  (in dyld) + 6992  [0x18d5cc4e4]
+    +   233 main  (in zipper-native-stream) + 52  [0x104abcff0]
+    +     233 _RNvNtCsaLOjE9VYtxK_3std2rt19lang_start_internal  (in zipper-native-stream) + 952  [0x104a5be7c]
+    +       233 std::rt::lang_start::_$u7b$$u7b$closure$u7d$$u7d$::hd8ed02db7c9912c4  (in zipper-native-stream) + 24  [0x104aaf1d4]
+    +         233 std::sys::backtrace::__rust_begin_short_backtrace::hbcbfa7aa95107fbe  (in zipper-native-stream) + 12  [0x104aaf24c]
+    +           233 zipper::main::ha7b1df9b54df8d62  (in zipper-native-stream) + 10084  [0x104abb0bc]
+    +             233 zipper::native_zip::read_archive::h252d51d3e5439d4c  (in zipper-native-stream) + 5868  [0x104a9a7c0]
+    +               233 std::sync::mpmc::array::Channel$LT$T$GT$::recv::_$u7b$$u7b$closure$u7d$$u7d$::h01e9c092748fc736  (in zipper-native-stream) + 196  [0x104a877d4]
+    +                 233 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132  [0x18d7ddb20]
+    +                   233 _dispatch_sema4_wait  (in libdispatch.dylib) + 28  [0x18d7dd490]
+    +                     233 semaphore_wait_trap  (in libsystem_kernel.dylib) + 8  [0x18d953bb0]
+    233 Thread_565196
+    + 233 thread_start  (in libsystem_pthread.dylib) + 8  [0x18d992c1c]
+    +   233 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x18d997c58]
+    +     233 _RNvNvMs0_NtNtNtCsaLOjE9VYtxK_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in zipper-native-stream) + 400  [0x104a638d4]
+    +       233 core::ops::function::FnOnce::call_once$u7b$$u7b$vtable.shim$u7d$$u7d$::h0dab342df11e862e  (in zipper-native-stream) + 148  [0x104a33178]
+    +         233 std::sys::backtrace::__rust_begin_short_backtrace::h6c039086cef6b3e5  (in zipper-native-stream) + 12  [0x104a32c2c]
+    +           233 rayon_core::registry::ThreadBuilder::run::h66d5a12985bb7feb  (in zipper-native-stream) + 300  [0x104a30bd0]
+    +             233 rayon_core::registry::WorkerThread::wait_until_cold::h3a943bb89b242581  (in zipper-native-stream) + 204  [0x104b53a88]
+    +               233 rayon_core::sleep::Sleep::sleep::h13fa9632dfa8fb9e  (in zipper-native-stream) + 508  [0x104b53890]
+    +                 233 _pthread_cond_wait  (in libsystem_pthread.dylib) + 980  [0x18d998128]
+    +                   233 __psynch_cvwait  (in libsystem_kernel.dylib) + 8  [0x18d95750c]
+    233 Thread_565197
+    + 232 thread_start  (in libsystem_pthread.dylib) + 8  [0x18d992c1c]
+    + ! 232 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x18d997c58]
+    + !   232 _RNvNvMs0_NtNtNtCsaLOjE9VYtxK_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in zipper-native-stream) + 400  [0x104a638d4]
+    + !     232 core::ops::function::FnOnce::call_once$u7b$$u7b$vtable.shim$u7d$$u7d$::hc23c9bcd6cd42af1  (in zipper-native-stream) + 84  [0x104a8e008]
+    + !       225 std::sys::backtrace::__rust_begin_short_backtrace::hd7c4b9cae1e19b57  (in zipper-native-stream) + 6972  [0x104a7cb54]
+    + !       : 225 _$LT$flate2..mem..Decompress$u20$as$u20$flate2..zio..Ops$GT$::run::h8cc669650a721754  (in zipper-native-stream) + 100  [0x104a2ddb4]
+    + !       :   208 zlib_rs::inflate::inflate::h65bfe1062f81a98e  (in zipper-native-stream) + 4404  [0x104abfd80]
+    + !       :   | 179 zlib_rs::inflate::inflate_fast_help::h1fd2497219afbf1d  (in zipper-native-stream) + 1024,492,...  [0x104abe224,0x104abe010,...]
+    + !       :   | 21 zlib_rs::inflate::inflate_fast_help::h1fd2497219afbf1d  (in zipper-native-stream) + 1176  [0x104abe2bc]
+    + !       :   | + 19 zlib_rs::inflate::writer::Writer::copy_match_runtime_dispatch::hdc6e173f7c5c3a06  (in zipper-native-stream) + 32,48,...  [0x104abe8f0,0x104abe900,...]
+    + !       :   | + 2 _platform_memset  (in libsystem_platform.dylib) + 12,196  [0x18d9a109c,0x18d9a1154]
+    + !       :   | 7 zlib_rs::inflate::inflate_fast_help::h1fd2497219afbf1d  (in zipper-native-stream) + 1296  [0x104abe334]
+    + !       :   | + 7 zlib_rs::inflate::writer::Writer::extend_from_window_runtime_dispatch::h87840bef49b16eee  (in zipper-native-stream) + 24,156,...  [0x104abeb34,0x104abebb8,...]
+    + !       :   | 1 zlib_rs::inflate::writer::Writer::extend_from_window_runtime_dispatch::h87840bef49b16eee  (in zipper-native-stream) + 196  [0x104abebe0]
+    + !       :   6 zlib_rs::inflate::inflate::h65bfe1062f81a98e  (in zipper-native-stream) + 5128  [0x104ac0054]
+    + !       :   | 6 zlib_rs::inflate::inftrees::inflate_table::h71ecaf26d9c2b0ed  (in zipper-native-stream) + 796,72,...  [0x104ac1ad0,0x104ac17fc,...]
+    + !       :   6 zlib_rs::inflate::inflate::h65bfe1062f81a98e  (in zipper-native-stream) + 3348,3200,...  [0x104abf960,0x104abf8cc,...]
+    + !       :   3 zlib_rs::inflate::inflate::h65bfe1062f81a98e  (in zipper-native-stream) + 9604  [0x104ac11d0]
+    + !       :   | 3 _platform_memmove  (in libsystem_platform.dylib) + 88,180  [0x18d9a13b8,0x18d9a1414]
+    + !       :   1 zlib_rs::inflate::inflate::h65bfe1062f81a98e  (in zipper-native-stream) + 5232  [0x104ac00bc]
+    + !       :   | 1 zlib_rs::inflate::inftrees::inflate_table::h71ecaf26d9c2b0ed  (in zipper-native-stream) + 1144  [0x104ac1c2c]
+    + !       :   1 zlib_rs::inflate::inflate::h65bfe1062f81a98e  (in zipper-native-stream) + 6148  [0x104ac0450]
+    + !       :     1 zlib_rs::inflate::inftrees::inflate_table::h71ecaf26d9c2b0ed  (in zipper-native-stream) + 744  [0x104ac1a9c]
+    + !       5 std::sys::backtrace::__rust_begin_short_backtrace::hd7c4b9cae1e19b57  (in zipper-native-stream) + 8000  [0x104a7cf58]
+    + !       : 5 crc32fast::Hasher::update::hc69db2c46310339a  (in zipper-native-stream) + 288,300,...  [0x104a2c6b4,0x104a2c6c0,...]
+    + !       1 std::sys::backtrace::__rust_begin_short_backtrace::hd7c4b9cae1e19b57  (in zipper-native-stream) + 3504  [0x104a7bdc8]
+    + !       : 1 std::io::Read::read_exact::h2ba7b13d309a9a00  (in zipper-native-stream) + 84  [0x104a775ec]
+    + !       :   1 _$LT$zipper..zip_reader..Reader$u20$as$u20$std..io..Read$GT$::read::h9156ef0eefecba24  (in zipper-native-stream) + 168  [0x104a97af0]
+    + !       :     1 _$LT$zipper..zip_reader..Cursor$u20$as$u20$std..io..Read$GT$::read::h52186bbf5393125e  (in zipper-native-stream) + 288  [0x104a97930]
+    + !       :       1 read  (in libsystem_kernel.dylib) + 8  [0x18d95491c]
+    + !       1 std::sys::backtrace::__rust_begin_short_backtrace::hd7c4b9cae1e19b57  (in zipper-native-stream) + 6552  [0x104a7c9b0]
+    + !         1 zlib_rs::inflate::init::h0c69cfb41270de07  (in zipper-native-stream) + 124  [0x104abe6bc]
+    + !           1 _platform_memset  (in libsystem_platform.dylib) + 140  [0x18d9a111c]
+    + 1 ???  (in <unknown binary>)  [0x198ed49]
+    +   1 ???  (in <unknown binary>)  [0x16b81ec40]
+    +     1 _$LT$zipper..zip_reader..Reader$u20$as$u20$std..io..Read$GT$::read::h9156ef0eefecba24  (in zipper-native-stream) + 320  [0x104a97b88]
+    +       1 _platform_memmove  (in libsystem_platform.dylib) + 180  [0x18d9a1414]
+    211 Thread_565198
+      211 thread_start  (in libsystem_pthread.dylib) + 8  [0x18d992c1c]
+        211 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x18d997c58]
+          211 _RNvNvMs0_NtNtNtCsaLOjE9VYtxK_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in zipper-native-stream) + 400  [0x104a638d4]
+            211 core::ops::function::FnOnce::call_once$u7b$$u7b$vtable.shim$u7d$$u7d$::h4a6322c0e2c95763  (in zipper-native-stream) + 112  [0x104a8d954]
+              211 std::sys::backtrace::__rust_begin_short_backtrace::h419f9b6bcfe304d9  (in zipper-native-stream) + 2200  [0x104a79f4c]
+                211 std::sync::mpmc::array::Channel$LT$T$GT$::send::_$u7b$$u7b$closure$u7d$$u7d$::h844fdb24cf65dae0  (in zipper-native-stream) + 200  [0x104a87a5c]
+                  211 _dispatch_semaphore_wait_slow  (in libdispatch.dylib) + 132  [0x18d7ddb20]
+                    211 _dispatch_sema4_wait  (in libdispatch.dylib) + 28  [0x18d7dd490]
+                      211 semaphore_wait_trap  (in libsystem_kernel.dylib) + 8  [0x18d953bb0]
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        semaphore_wait_trap  (in libsystem_kernel.dylib)        444
+        _dyld_start  (in dyld)        348
+        __psynch_cvwait  (in libsystem_kernel.dylib)        233
+        zlib_rs::inflate::inflate_fast_help::h1fd2497219afbf1d  (in zipper-native-stream)        179
+        zlib_rs::inflate::writer::Writer::copy_match_runtime_dispatch::hdc6e173f7c5c3a06  (in zipper-native-stream)        19
+        zlib_rs::inflate::inftrees::inflate_table::h71ecaf26d9c2b0ed  (in zipper-native-stream)        8
+        zlib_rs::inflate::writer::Writer::extend_from_window_runtime_dispatch::h87840bef49b16eee  (in zipper-native-stream)        8
+        zlib_rs::inflate::inflate::h65bfe1062f81a98e  (in zipper-native-stream)        6
+        crc32fast::Hasher::update::hc69db2c46310339a  (in zipper-native-stream)        5
+
+Binary images description not available
+
