@@ -266,7 +266,7 @@ pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry
 
 /// Whole-buffer Deflate fast path for entries whose compressed and decoded sizes
 /// fit the shared 128 MiB budget; other entries use bounded streaming.
-/// Integrity-only reads also cache archives up to 8 MiB in shared memory.
+/// Integrity-only reads and Linux extraction also cache archives up to 8 MiB.
 pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
     read_archive_with_options(
         path,
@@ -305,9 +305,13 @@ pub fn read_archive_with_options(
     let budget = BufferBudget(AtomicUsize::new(
         options.buffer_bytes.unwrap_or(128 * 1024 * 1024),
     ));
-    // Cache only integrity-only fast reads: extraction measurements remain
-    // dominated by filesystem work and do not justify the extra allocation.
-    let archive = open(path, fast && destination.is_none())?;
+    // Linux extraction benefits from avoiding shared input seeks/reads for tiny
+    // archives. Other platforms retain caching only for integrity verification.
+    // This retained-input cache is separate from the live entry-buffer budget.
+    let archive = open(
+        path,
+        fast && (destination.is_none() || cfg!(target_os = "linux")),
+    )?;
     let items = scan(&archive)?;
     let staging = if let Some(dst) = destination {
         ensure!(

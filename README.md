@@ -110,11 +110,13 @@ cache and allocator-retained memory are additional: this is not a peak RSS cap.
 Both native ZIP modes verify decoded lengths and CRCs before publication. Use
 `native` for low memory consumption. See the [shared-budget measurements](benchmarks/native-zip/shared-budget/README.md).
 
-For integrity-only `native-fast test`, archives up to 8 MiB are cached once and
-shared by independent read cursors. Larger archives use the file reader. This
+For `native-fast test` and Linux `native-fast` extraction, archives up to 8 MiB
+are cached once and shared by independent read cursors. Larger archives use the
+file reader. This
 limit covers retained archive bytes, not total peak RAM: loading/conversion,
-metadata, and decoder buffers add memory. This cache is not used for extraction,
-where tests did not establish a reliable improvement. [Threefold-speed target
+metadata, and decoder buffers add memory. This cache remains disabled for extraction on other platforms. On the measured
+Linux runner, it improved grouped/flat tiny-file extraction by 5.9×/2.0× at four
+workers; see [matched Linux comparisons](benchmarks/native-zip/linux-cache/README.md). [Threefold-speed target
 investigation and verification results](benchmarks/native-zip/threefold/README.md).
 
 Next performance work: real-corpus level sweeps, similarity ordering, dictionaries,
