@@ -40,3 +40,30 @@ reader tests and the full test suite pass.
 The original File Activity trace is baseline evidence. A follow-up Instruments
 capture of the smaller-buffer prototype hit its time limit and is not used as
 proof of changed I/O volume. The extraction timings above are uninstrumented.
+
+## Windows and above-cache validation
+
+[Run 40897687606](https://github.com/marlboro-red/zipper/actions/runs/40897687606)
+built source `3f2c406` with the retained 8 KiB buffer, then a reference differing
+only by restoring both capacities to 256 KiB. Seven interleaved measured rounds,
+four workers, byte/tree checks throughout. Linux fixtures contain 30,000 files
+and their ZIP sizes are explicitly checked to exceed the 8 MiB cache limit.
+Windows uses 1,000 files to keep repeated output creation practical.
+
+| Platform / shape / reader | 256 KiB ms [range] | 8 KiB ms [range] | Peak RSS before / after MiB |
+| --- | ---: | ---: | ---: |
+| Linux 30k flat / native | 1776.95 [1751.51–1861.12] | 907.99 [903.10–915.57] | 15.20 / 14.95 |
+| Linux 30k flat / fast | 1798.30 [1740.83–1829.60] | 897.70 [890.43–909.79] | 15.23 / 14.95 |
+| Linux 30k grouped / native | 1730.79 [1704.37–1760.16] | 404.17 [395.41–411.83] | 16.68 / 16.39 |
+| Linux 30k grouped / fast | 1726.72 [1708.41–1760.34] | 371.70 [366.05–381.29] | 16.58 / 16.26 |
+| Windows 1k flat / native | 477.08 [460.69–726.46] | 481.95 [472.74–565.33] | 6.48 / 5.35 |
+| Windows 1k flat / fast | 556.19 [473.55–672.53] | 519.79 [478.30–821.03] | 6.48 / 5.24 |
+| Windows 1k grouped / native | 307.65 [296.55–485.16] | 291.94 [276.39–389.67] | 6.65 / 5.46 |
+| Windows 1k grouped / fast | 386.30 [287.63–598.51] | 291.11 [280.93–461.56] | 6.66 / 5.40 |
+
+The Linux ZIPs are 8,753,795 bytes (flat) and 9,627,995 bytes (grouped), so neither
+uses the whole-archive cache. Native-fast extraction improves **2.00× flat and
+4.65× grouped** above the cache limit. The streaming reader improves 1.96×/4.28×.
+Windows ranges overlap: retain the memory reduction but claim no established
+Windows timing gain. Full commands, hashes, environment and samples are in
+`validation/`. This validates the read-ahead change, not window-preserving seeks.
