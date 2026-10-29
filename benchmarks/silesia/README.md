@@ -44,13 +44,14 @@ A point is on the observed Pareto frontier if no other measured configuration ex
 
 ## Zipper handling classic formats
 
-Archives are created by 7-Zip 26.05: ZIP/Deflate level 1, 7z/LZMA2 level 1, and uncompressed TAR. Zipper currently delegates their extraction to that same backend. The direct-backend column measures the same archive without Zipper's dispatch and staging. It is not an independent Rust ZIP or LZMA2 decoder. The plot uses Zipper extraction time, not the direct-backend time.
+Archives are created by 7-Zip 26.05: ZIP/Deflate level 1, 7z/LZMA2 level 1, and uncompressed TAR. Default extraction delegates to that backend. The additional ZIP native point uses the opt-in parallel Rust ZIP/zlib-rs reader with four workers on the same ZIP bytes. The direct-backend column measures the archive without Zipper's dispatch/staging. Native ZIP preserves bytes/directories only, so it is not yet a metadata-equivalent replacement. The plot uses Zipper extraction time, not direct-backend time. [Native ZIP trial and matched backend samples](native-zip.json).
 
 | Format | Ratio | Archive bytes | Zipper median ms | Zipper range ms | 7-Zip direct median ms |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | ZIP | 3.017× | 70,252,453 | 565.62 | 564.36–568.82 | 563.52 |
 | 7Z | 3.584× | 59,126,554 | 204.76 | 202.18–210.40 | 205.30 |
 | TAR | 1.000× | 211,948,544 | 34.06 | 29.77–68.38 | 33.34 |
+| ZIP native (opt-in) | 3.017× | 70,252,453 | 168.05 | 166.88–175.14 | 563.32 |
 
 ## Method and limits
 
@@ -67,6 +68,7 @@ python3 scripts/fetch_silesia.py /tmp/zipper-corpora/silesia
 cargo build --release
 python3 scripts/sweep.py /tmp/zipper-corpora/silesia --runs 7 --threads 4 > benchmarks/silesia/sweep.json
 python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --runs 7 --threads 4 > benchmarks/silesia/classic-formats.json
+python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --formats zip --native-zip --runs 7 --threads 4 > benchmarks/silesia/native-zip.json
 # With matplotlib installed in your plotting environment:
 python3 scripts/plot_pareto.py benchmarks/silesia
 ```

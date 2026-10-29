@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--runs", type=int, default=7)
     parser.add_argument("--threads", type=int, default=4, help="creation workers; backend extraction uses its defaults")
     parser.add_argument("--formats", nargs="+", choices=["zip", "7z", "tar"], default=["zip", "7z", "tar"])
+    parser.add_argument("--native-zip", action="store_true", help="add Zipper's opt-in native ZIP reader")
     args = parser.parse_args()
     if args.runs < 1 or not 1 <= args.threads <= 64:
         parser.error("positive runs and threads in 1..64 required")
@@ -46,6 +47,7 @@ def main():
               "archive_sync": "F_FULLFSYNC" if platform.system() == "Darwin" else "fsync",
               "verification": "direct byte comparison, sizes and tree membership after every extraction",
               "errors": 0, "load_average_start": os.getloadavg()}
+    result["native_zip_threads"] = args.threads if args.native_zip else None
     rng = random.Random(20261029)
     order = []
     with tempfile.TemporaryDirectory(prefix="zipper-formats-") as work:
@@ -66,12 +68,17 @@ def main():
                     sync_archive(stream)
                 creation_seconds = time.perf_counter() - start
                 decoders = ["zipper", "7zip-direct"]
+                if kind == "zip" and args.native_zip:
+                    decoders.append("zipper-native")
                 rng.shuffle(decoders)
                 order.append({"round": iteration, "format": kind, "decoders": decoders})
                 row = {"archive_bytes": archive.stat().st_size, "creation_seconds": creation_seconds}
                 for decoder in decoders:
                     command = ([binary, "extract", str(archive), "-o", str(out)] if decoder == "zipper" else
                                [backend, "x", "-y", f"-o{out}", "--", str(archive)])
+                    if decoder == "zipper-native":
+                        command = [binary, "--threads", str(args.threads), "--zip-engine", "native",
+                                   "extract", str(archive), "-o", str(out)]
                     measurement = timed(command, source.parent)
                     verified = verify(source, out / source.name, expected)
                     if verified != total:
@@ -88,7 +95,8 @@ def main():
         if len({row["archive_bytes"] for row in rows}) != 1:
             raise RuntimeError("archive size changed across runs")
         summary = {"archive_bytes": rows[0]["archive_bytes"], "samples": rows}
-        for decoder in ["zipper", "7zip-direct"]:
+        decoders = ["zipper", "7zip-direct"] + (["zipper-native"] if kind == "zip" and args.native_zip else [])
+        for decoder in decoders:
             seconds = [row[decoder]["seconds"] for row in rows]
             summary[decoder] = {"median_seconds": statistics.median(seconds),
                 "min_seconds": min(seconds), "max_seconds": max(seconds),

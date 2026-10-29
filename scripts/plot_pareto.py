@@ -37,20 +37,32 @@ def main():
         points.append({"label": kind.upper(), "ratio": classic["input_bytes"] / row["archive_bytes"],
             "seconds": row["zipper"]["median_seconds"], "measurement": row["zipper"],
             "row": row, "native": False})
+    native_zip_path = root / "native-zip.json"
+    if native_zip_path.exists():
+        native_zip = json.loads(native_zip_path.read_text())
+        if native_zip["input_bytes"] != native["input_bytes"]:
+            raise ValueError("native ZIP corpus differs")
+        row = native_zip["formats"]["zip"]
+        points.append({"label": "ZIP native (opt-in)",
+            "ratio": native["input_bytes"] / row["archive_bytes"],
+            "seconds": row["zipper-native"]["median_seconds"],
+            "measurement": row["zipper-native"], "row": row, "native": False,
+            "native_zip": True})
     native_points = [p for p in points if p["native"]]
     all_front = frontier(points)
     native_front = frontier(native_points)
     colors = {-3: "#7c3aed", 1: "#0284c7", 3: "#059669", 6: "#d97706"}
     plt.rcParams.update({"font.size": 10, "axes.spines.top": False, "axes.spines.right": False,
-                         "svg.fonttype": "none"})
+                         "svg.fonttype": "none", "svg.hashsalt": "zipper-pareto"})
     fig, axes = plt.subplots(1, 2, figsize=(14, 6), gridspec_kw={"width_ratios": [1.1, 1]})
     for ax, subset, front, title in [(axes[0], points, all_front, "All measured formats"),
                                       (axes[1], native_points, native_front, "Native settings — detail")]:
         seen = set()
         for p in subset:
             measurement = p["measurement"]
-            label = f"Native level {p['level']}" if p["native"] else f"{p['label']} via 7-Zip"
-            color = colors[p["level"]] if p["native"] else "#334155"
+            label = (f"Native level {p['level']}" if p["native"] else
+                     p["label"] if p.get("native_zip") else f"{p['label']} via 7-Zip")
+            color = colors[p["level"]] if p["native"] else "#e11d48" if p.get("native_zip") else "#334155"
             ax.errorbar(p["seconds"] * 1000, p["ratio"],
                 xerr=[[1000 * (p["seconds"] - measurement["min_seconds"])],
                       [1000 * (measurement["max_seconds"] - p["seconds"])]],
@@ -82,6 +94,8 @@ def main():
     fig.tight_layout(rect=[0, 0.09, 1, 0.94])
     for extension in ["svg", "png", "pdf"]:
         fig.savefig(root / f"pareto.{extension}", dpi=180)
+    svg = root / "pareto.svg"
+    svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
     lines = ["# Decompression time versus compression ratio", "",
         "![Measured Pareto frontier](pareto.svg)", "",
         "[PNG](pareto.png) · [PDF](pareto.pdf) · [Native samples](sweep.json) · [Classic-format samples](classic-formats.json)", "",
@@ -98,7 +112,7 @@ def main():
         r, m = p["row"], p["measurement"]
         lines.append(f"| {p['label']} | {p['ratio']:.3f}× | {r['archive_bytes']:,} | {r['compression']['mib_s']:.0f} | {p['seconds']*1000:.2f} | {m['min_seconds']*1000:.2f}–{m['max_seconds']*1000:.2f} | {r['compression']['peak_rss_bytes']/2**20:.1f} |")
     lines += ["", "## Zipper handling classic formats", "",
-        "Archives are created by 7-Zip 26.05: ZIP/Deflate level 1, 7z/LZMA2 level 1, and uncompressed TAR. Zipper currently delegates their extraction to that same backend. The direct-backend column measures the same archive without Zipper's dispatch and staging. It is not an independent Rust ZIP or LZMA2 decoder. The plot uses Zipper extraction time, not the direct-backend time.", "",
+        "Archives are created by 7-Zip 26.05: ZIP/Deflate level 1, 7z/LZMA2 level 1, and uncompressed TAR. Default extraction delegates to that backend. The additional ZIP native point uses the opt-in parallel Rust ZIP/zlib-rs reader with four workers on the same ZIP bytes. The direct-backend column measures the archive without Zipper's dispatch/staging. Native ZIP preserves bytes/directories only, so it is not yet a metadata-equivalent replacement. The plot uses Zipper extraction time, not direct-backend time. [Native ZIP trial and matched backend samples](native-zip.json).", "",
         "| Format | Ratio | Archive bytes | Zipper median ms | Zipper range ms | 7-Zip direct median ms |",
         "| --- | ---: | ---: | ---: | ---: | ---: |"]
     for p in points:
@@ -113,6 +127,7 @@ def main():
         "python3 scripts/fetch_silesia.py /tmp/zipper-corpora/silesia", "cargo build --release",
         "python3 scripts/sweep.py /tmp/zipper-corpora/silesia --runs 7 --threads 4 > benchmarks/silesia/sweep.json",
         "python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --runs 7 --threads 4 > benchmarks/silesia/classic-formats.json",
+        "python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --formats zip --native-zip --runs 7 --threads 4 > benchmarks/silesia/native-zip.json",
         "# With matplotlib installed in your plotting environment:",
         "python3 scripts/plot_pareto.py benchmarks/silesia", "```", "",
         "Copy the adjacent generated `silesia.manifest.json` to `benchmarks/silesia/corpus.json` when refreshing the data. The fetch destination must be new. Classic format runs require 7zz on PATH."]

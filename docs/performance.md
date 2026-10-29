@@ -10,8 +10,10 @@ machine and corpus, not a claim of global optimality.
 
 Twenty native configurations cover levels -3, 1, 3, and 6 with block sizes from
 64 KiB to 16 MiB. ZIP, 7z, and TAR points measure **Zipper extracting those actual
-formats** through its installed 7-Zip backend. They do not represent native Rust
-ZIP/LZMA2 decoders. The report also compares these paths with direct 7-Zip calls.
+formats** through its installed 7-Zip backend. An additional ZIP native point
+measures the opt-in parallel Rust ZIP/zlib-rs reader on identical ZIP bytes.
+The report compares both paths with direct 7-Zip calls. Native ZIP currently
+preserves bytes and directories only; the backend remains the default.
 
 [Full tables, methodology, reproduction commands, and raw samples](../benchmarks/silesia/README.md)
 include compression speed and peak creation memory, which are absent from this
