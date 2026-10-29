@@ -4,6 +4,9 @@ Research date: 29 October 2026. Scope: lossless general-purpose archiving, with
 fast creation and extraction, useful compression ratios, and bounded resources.
 This is a research agenda, not a claim that the proposed improvements exist.
 
+The [30 October extraction architecture review](#extraction-first-review-30-october-2026)
+updates the priorities below using the subsequent implementation and measurements.
+
 ## Assessment
 
 Zipper should aim to lead a measurable part of the speed/size frontier on modern
@@ -360,3 +363,161 @@ The [local baseline](../benchmarks/README.md) remains evidence for the tested
 machine and inputs. The additional same-codec comparison is documented in
 [the Zstandard comparison](../benchmarks/zstd-comparison.md). No ZXC, OpenZL,
 DwarFS, GPU, or new Rust-codec benchmark has been run as part of this research.
+
+## Extraction-first review: 30 October 2026
+
+The next objective is **complete, verified extraction**, including creating the
+output tree. Decoder throughput is a component metric. The recent 10–16× gain
+in ZIP integrity verification is not an extraction gain. The requested 3× faster
+small-file extraction remains unachieved.
+
+### What the measurements actually establish
+
+On the local M5, four workers and seven measured rounds, extracting 4,000 grouped
+files took 122.37 ms; writing their already-decoded bytes from RAM took 117.72 ms.
+For 10,000 flat files, those medians were 318.49 and 328.71 ms. These overlapping
+pipelines cannot be subtracted to assign decoder time. They do show that merely
+removing decoding from our current output implementation does not approach 3×.
+The RAM writer is a reference implementation, **not a physical lower bound**.
+[Raw evidence and rejected experiments](../benchmarks/native-zip/threefold/README.md).
+
+The corresponding 3× targets are 40.79 ms and 106.16 ms: approximately 98,000
+and 94,000 output files per second. Each target must be compared with its baseline
+again in the same session. We need a substantial change in how output work is
+executed, or evidence that this target cannot be reached on a specified platform
+under the same semantics. Another buffer-size tweak is not a sufficient strategy.
+
+Four workers outperform ten on these local small-file fixtures. Separating a
+serial creator from writers made things worse; positional reads, directory
+batching and empty-file cloning did not demonstrate useful extraction gains.
+Those failures argue against assuming that more queues or asynchronous code are
+inherently faster. No current result establishes Windows extraction performance.
+
+### Proposed execution model
+
+Keep the v2 independent-block format and compatibility readers. Rebuild execution
+around a validated extraction plan, introducing each seam only when an experiment
+needs it. The plan describes directory dependencies, file extents, decode units,
+expected sizes/checksums and metadata. A ZIP decode unit is normally one entry;
+a v2 unit is one independently compressed block. Format adapters keep their
+validation rules rather than forcing all formats into an unsafe common parser.
+
+The executor should account for four distinct resources:
+
+- CPU workers for decoding and checksums, under one total CPU budget.
+- Compressed and decoded buffers under one byte budget, including queued work.
+- Outstanding output operations and open descriptors under separate limits.
+- Metadata/index storage and format limits, reported separately from buffer use.
+
+Today a per-worker fast-ZIP allocation cap and separate v2 decode/write pools do
+not constitute a process-wide resource contract. Reserve buffer capacity before
+scheduling work; release it only after all consumers finish. Streaming fallback
+must work when a whole-buffer decode does not fit. Describe an allocation budget
+honestly: it is not an exact RSS limit once libraries, stacks and allocators count.
+[libdeflate's whole-buffer API](https://github.com/ebiggers/libdeflate) makes this
+tradeoff explicit.
+
+Decode into owned reusable buffers, then pass bounded references to output
+extents. Avoid additional copies where lifetimes allow, but measure bytes copied
+before adding complex lifetime machinery. Let scheduling balance input locality,
+directory contention and completion of large files. A filesystem I/O limit must
+be independent of CPU count; test a simple calibrated policy before an adaptive
+controller. The present macOS four-worker heuristic is evidence for two fixtures,
+not a portable scheduling law.
+
+Private staging, exclusive creation, path validation, exact length and checksum
+checks, and publication only after every task succeeds remain invariant. Failure
+must drain/cancel work safely and clean up. Rename publication is not a claim of
+crash durability. Add metadata fidelity and output-size limits to the product
+contract; the fast ZIP reader currently preserves bytes and directories only,
+and the backend remains the default. A benchmark-only fast option is not yet the
+user-visible extraction engine we intend to ship.
+
+### Separate the research tracks
+
+| Workload | Hypothesis to test | Decisive measurement |
+| --- | --- | --- |
+| Many tiny files | Namespace operations, filesystem contention or filter overhead dominate; an OS-specific output implementation can reduce them | RAM-to-tree and full extraction, files/s, syscall/CPU traces, bounded RSS, same metadata |
+| A few large ZIP entries | Entry-level scheduling leaves cores idle inside a large Deflate stream | Single-entry and mixed-size ZIPs, decode-only and extraction, memory and correctness |
+| Native mixed trees | Block layout and scheduling can balance compression locality with output readiness | Size/time/RSS frontier plus selected-file read amplification |
+| Duplicate-rich trees | Shared content can reduce stored bytes and repeated decoding | Unique bytes decoded, output time and archive size including dedup construction cost |
+
+For Linux, prototype batched open/write/close operations with io_uring only after
+a trace identifies syscall or descriptor overhead. Its direct descriptors avoid
+some shared file-table overhead; they do not remove filesystem namespace work.
+Maintain bounded queue depth and a synchronous fallback. This is a hypothesis,
+not a predicted speedup. [Upstream openat/direct-descriptor documentation](https://github.com/axboe/liburing/blob/master/man/io_uring_prep_openat.3).
+
+For Windows, collect ETW traces on ordinary NTFS before choosing a new backend.
+Record storage, filesystem, antivirus/filter configuration and cache state. Test
+Dev Drive separately: it uses ReFS and different filesystem/security settings,
+so its results must not be pooled with NTFS or attributed solely to Zipper.
+Do not change antivirus settings to manufacture a win.
+[Microsoft Dev Drive documentation](https://learn.microsoft.com/en-us/windows/dev-drive/).
+For macOS, investigate APFS metadata and thread contention in system traces;
+keep the current simple parallel writer as the baseline to beat.
+
+For large ZIP entries, investigate parallel Deflate decoding as a distinct
+algorithmic project. Rapidgzip demonstrates speculative parallel decoding of
+arbitrary gzip data, resolving unknown history through a cache/prefetch design.
+It is relevant prior art, not an already-integrated ZIP decoder. Raw Deflate
+entry boundaries, cancellation, bounded memory, CRC validation and malicious
+inputs would all need proof and tests. Keep libdeflate/streaming fallback when
+parallel startup costs exceed the benefit.
+[Rapidgzip paper](https://arxiv.org/abs/2308.08955).
+
+For the native format, optimize creation for measured decode cost as well as
+ratio: choose block boundaries and grouping that expose parallelism without
+excessive read amplification. Independently indexed blocks already provide the
+foundation. A new format version is justified only by a measured benefit that
+v2 cannot express. In particular, v2's cumulative file offsets cannot represent
+shared content extents. Any archive deduplication design must be versioned;
+the current duplicates command only reports byte-verified equality. Neither
+small-file fixture contains redundant payload bytes, so deduplication cannot
+explain away the current bottleneck. Reflinks need platform and metadata-safe
+fallbacks; hardlinks would change independent-file semantics.
+
+Mounting an archive is a separate product opportunity when the actual need is
+fast access to a few files. DwarFS supplies relevant mountable, deduplicating
+filesystem prior art. Measure time to first useful read and subsequent workload
+latency there, never report mount time as full extraction time.
+[DwarFS](https://github.com/mhx/dwarfs).
+
+### Ordered implementation gates
+
+1. **Establish portable evidence first.** Extend the rerunnable harness to Windows
+   and collect real source/application trees alongside synthetic size sweeps.
+   Include flat/deep layouts, empty files, 100k files, large single-entry ZIPs,
+   duplicate-rich data and incompressible inputs. Million-entry ZIP experiments
+   require explicitly revisiting the current 100k-entry safety limit; do not
+   silently bypass it. Preserve corpus manifests and input hashes.
+2. **Instrument the critical path.** Record planning time, decoder CPU, queue wait,
+   bytes copied/read/written, active output operations and peak memory. Collect
+   filesystem traces outside timed runs. Stage times overlap: their sum is not
+   wall time. Compare no-output decode, RAM materialization and full extraction.
+3. **Prove an output improvement before integrating it.** Implement the smallest
+   platform-specific diagnostic justified by the trace. Require exact tree/byte
+   checks, failure cleanup and repeatable end-to-end improvement before putting
+   it behind the production sink interface. Rejected prototypes stay rejected
+   unless a new workload or concrete mechanism changes the hypothesis.
+4. **Introduce shared resource accounting incrementally.** Use fixed memory tiers
+   and explicit CPU/I/O limits; compare against current RSS and speed. Independent
+   review is required for concurrency changes. No broad executor rewrite without
+   a workload showing why each new mechanism is needed.
+5. **Pursue parallel Deflate and native layout separately.** Each needs its own
+   controlled baseline and fallback. Do not mix codec, scheduler and file-output
+   changes in one experiment or attribute their combined result to one feature.
+
+Compare identical legacy archives against current 7-Zip and libarchive, and
+native archives against tuned tar, tar+pzstd and competitive codecs. Match bytes,
+metadata policy and durability; report warm and controlled cold-cache runs
+separately. If cold state cannot be established, label it unknown. Include whole
+process-tree memory for subprocess pipelines. Publish raw samples, medians,
+ranges, archive size, files/s and MiB/s; use enough runs before claiming tail
+percentiles. Re-run baselines interleaved on the same host.
+
+A credible first milestone is a reproducible extraction frontier on named real
+workloads on Windows and macOS, with Linux replication, bounded resources and
+complete supported metadata. The 3× goal remains an experiment target, not an
+estimate. State-of-the-art requires beating strong contemporary baselines under
+these contracts and making the evidence independently reproducible.
