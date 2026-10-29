@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Benchmark Zipper extracting classic formats against its actual 7-Zip backend."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,9 +23,13 @@ def main():
     parser.add_argument("--binary", type=Path, default=Path("target/release/zipper"))
     parser.add_argument("--sevenzip", default="7zz")
     parser.add_argument("--runs", type=int, default=7)
+    parser.add_argument("--level", type=int, default=1, choices=range(1, 10))
     parser.add_argument("--threads", type=int, default=4, help="creation workers; backend extraction uses its defaults")
     parser.add_argument("--formats", nargs="+", choices=["zip", "7z", "tar"], default=["zip", "7z", "tar"])
     parser.add_argument("--native-zip", action="store_true", help="add Zipper's opt-in native ZIP reader")
+    parser.add_argument("--native-fast", action="store_true", help="also measure the buffered native ZIP reader")
+    parser.add_argument("--reuse-archives", action="store_true", help="create once per format; benchmark extraction only")
+    parser.add_argument("--tar-reader", help="bsdtar executable capable of extracting ZIP; also test 1 MiB input buffering")
     args = parser.parse_args()
     if args.runs < 1 or not 1 <= args.threads <= 64:
         parser.error("positive runs and threads in 1..64 required")
@@ -32,6 +37,9 @@ def main():
     if backend is None:
         parser.error("7-Zip backend not found")
     binary = str(args.binary.resolve(strict=True))
+    tar_reader = shutil.which(args.tar_reader) if args.tar_reader else None
+    if args.tar_reader and tar_reader is None:
+        parser.error("tar reader not found")
     source = args.corpus.resolve(strict=True)
     expected = inventory(source)
     total = sum(size for size in expected.values() if size is not None)
@@ -40,16 +48,23 @@ def main():
     os.environ["ZIPPER_7Z"] = backend
     samples = {kind: [] for kind in dict.fromkeys(args.formats)}
     result = {"platform": platform.platform(), "cpu_count": os.cpu_count(),
+              "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
               "corpus": source.name, "input_bytes": total, "runs": args.runs, "warmup_rounds": 1,
               "creation_threads": args.threads, "extraction_threads": "7-Zip defaults for both paths",
               "backend": backend, "backend_version": subprocess.check_output([backend, "i"], text=True).splitlines()[:4],
-              "creation": "7-Zip level 1 (tar stores); NOT native Zipper encoding",
+              "creation": f"7-Zip level {args.level} (tar stores); NOT native Zipper encoding",
+              "level": args.level,
+              "archive_creation": "once per format before extraction samples" if args.reuse_archives else "once per format per round",
               "archive_sync": "F_FULLFSYNC" if platform.system() == "Darwin" else "fsync",
               "verification": "direct byte comparison, sizes and tree membership after every extraction",
               "errors": 0, "load_average_start": os.getloadavg()}
-    result["native_zip_threads"] = args.threads if args.native_zip else None
+    result["native_zip_threads"] = args.threads if args.native_zip or args.native_fast else None
+    if tar_reader:
+        result["tar_reader"] = tar_reader
+        result["tar_version"] = subprocess.check_output([tar_reader, "--version"], text=True).strip()
     rng = random.Random(20261029)
     order = []
+    preparations = {}
     with tempfile.TemporaryDirectory(prefix="zipper-formats-") as work:
         for iteration in range(args.runs + 1):
             formats = list(samples)
@@ -59,17 +74,26 @@ def main():
                 out = Path(work) / "out"
                 options = [f"-t{kind}", f"-mmt{args.threads}"]
                 if kind != "tar":
-                    options += ["-mx=1"]
+                    options += [f"-mx={args.level}"]
                 if kind == "7z":
                     options += ["-m0=lzma2"]
-                start = time.perf_counter()
-                timed([backend, "a", *options, str(archive), source.name], source.parent)
-                with archive.open("r+b") as stream:
-                    sync_archive(stream)
-                creation_seconds = time.perf_counter() - start
+                creation_seconds = None
+                if not archive.exists():
+                    start = time.perf_counter()
+                    timed([backend, "a", *options, str(archive), source.name], source.parent)
+                    with archive.open("r+b") as stream:
+                        sync_archive(stream)
+                    creation_seconds = time.perf_counter() - start
+                    if args.reuse_archives:
+                        preparations[kind] = {"creation_seconds": creation_seconds,
+                            "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
                 decoders = ["zipper", "7zip-direct"]
-                if kind == "zip" and args.native_zip:
+                if kind == "zip" and (args.native_zip or args.native_fast):
                     decoders.append("zipper-native")
+                if kind == "zip" and args.native_fast:
+                    decoders.append("zipper-native-fast")
+                if tar_reader:
+                    decoders += ["bsdtar", "bsdtar-1MiB"]
                 rng.shuffle(decoders)
                 order.append({"round": iteration, "format": kind, "decoders": decoders})
                 row = {"archive_bytes": archive.stat().st_size, "creation_seconds": creation_seconds}
@@ -79,28 +103,44 @@ def main():
                     if decoder == "zipper-native":
                         command = [binary, "--threads", str(args.threads), "--zip-engine", "native",
                                    "extract", str(archive), "-o", str(out)]
+                    if decoder == "zipper-native-fast":
+                        command = [binary, "--threads", str(args.threads), "--zip-engine", "native-fast",
+                                   "extract", str(archive), "-o", str(out)]
+                    if decoder.startswith("bsdtar"):
+                        out.mkdir()
+                        command = [tar_reader, *(["-b", "2048"] if decoder.endswith("-1MiB") else []),
+                                   "-xf", str(archive), "-C", str(out)]
                     measurement = timed(command, source.parent)
                     verified = verify(source, out / source.name, expected)
                     if verified != total:
                         raise RuntimeError("verified byte count mismatch")
                     # Process-tree memory accounting differs; do not compare wrapper RSS.
                     row[decoder] = {"seconds": measurement["seconds"], "verified_bytes": verified}
+                    if decoder.startswith("zipper-native"):
+                        row[decoder]["peak_rss_bytes"] = measurement["peak_rss_bytes"]
                     shutil.rmtree(out)
                 if iteration:
                     samples[kind].append(row)
-                archive.unlink()
+                if not args.reuse_archives:
+                    archive.unlink()
+    result["preparations"] = preparations
     result["order_including_warmup"] = order
     result["formats"] = {}
     for kind, rows in samples.items():
         if len({row["archive_bytes"] for row in rows}) != 1:
             raise RuntimeError("archive size changed across runs")
         summary = {"archive_bytes": rows[0]["archive_bytes"], "samples": rows}
-        decoders = ["zipper", "7zip-direct"] + (["zipper-native"] if kind == "zip" and args.native_zip else [])
+        decoders = ["zipper", "7zip-direct"]
+        if kind == "zip" and (args.native_zip or args.native_fast): decoders.append("zipper-native")
+        if kind == "zip" and args.native_fast: decoders.append("zipper-native-fast")
+        if tar_reader: decoders += ["bsdtar", "bsdtar-1MiB"]
         for decoder in decoders:
             seconds = [row[decoder]["seconds"] for row in rows]
             summary[decoder] = {"median_seconds": statistics.median(seconds),
                 "min_seconds": min(seconds), "max_seconds": max(seconds),
                 "mib_s": total / 2**20 / statistics.median(seconds)}
+            if decoder.startswith("zipper-native"):
+                summary[decoder]["peak_rss_bytes"] = max(row[decoder]["peak_rss_bytes"] for row in rows)
         result["formats"][kind] = summary
     result["load_average_end"] = os.getloadavg()
     print(json.dumps(result, indent=2))

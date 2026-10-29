@@ -1,0 +1,233 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "threads": 4,
+  "runs": 7,
+  "level": 1,
+  "warmup_rounds": 1,
+  "archive_sync": "F_FULLFSYNC",
+  "corpora": {
+    "silesia": {
+      "input_bytes": 211938580,
+      "order_including_warmup": [
+        [
+          "tar+pzstd",
+          "tar+zstd",
+          "zipper",
+          "tar"
+        ],
+        [
+          "tar+pzstd",
+          "zipper",
+          "tar+zstd",
+          "tar"
+        ],
+        [
+          "zipper",
+          "tar+zstd",
+          "tar+pzstd",
+          "tar"
+        ],
+        [
+          "tar",
+          "tar+pzstd",
+          "tar+zstd",
+          "zipper"
+        ],
+        [
+          "tar+pzstd",
+          "zipper",
+          "tar",
+          "tar+zstd"
+        ],
+        [
+          "zipper",
+          "tar+pzstd",
+          "tar",
+          "tar+zstd"
+        ],
+        [
+          "tar+zstd",
+          "tar+pzstd",
+          "tar",
+          "zipper"
+        ],
+        [
+          "zipper",
+          "tar+zstd",
+          "tar",
+          "tar+pzstd"
+        ]
+      ],
+      "engines": {
+        "zipper": {
+          "compression_mib_s": 2343.2028227728556,
+          "extraction_mib_s": 5837.116691621663,
+          "archive_bytes": 73602933,
+          "samples": [
+            {
+              "compression_seconds": 0.08693800000000018,
+              "extraction_seconds": 0.03406120800000001,
+              "archive_bytes": 73602933
+            },
+            {
+              "compression_seconds": 0.08479445800000018,
+              "extraction_seconds": 0.03502295799999988,
+              "archive_bytes": 73602933
+            },
+            {
+              "compression_seconds": 0.08558724999999967,
+              "extraction_seconds": 0.034561958999999476,
+              "archive_bytes": 73602933
+            },
+            {
+              "compression_seconds": 0.09282650000000015,
+              "extraction_seconds": 0.03522749999999952,
+              "archive_bytes": 73602933
+            },
+            {
+              "compression_seconds": 0.08610070800000003,
+              "extraction_seconds": 0.034514166000000124,
+              "archive_bytes": 73602933
+            },
+            {
+              "compression_seconds": 0.08631166699999948,
+              "extraction_seconds": 0.03462675000000015,
+              "archive_bytes": 73602933
+            },
+            {
+              "compression_seconds": 0.08625816699999955,
+              "extraction_seconds": 0.03537658399999977,
+              "archive_bytes": 73602933
+            }
+          ]
+        },
+        "tar+zstd": {
+          "compression_mib_s": 2080.308852635247,
+          "extraction_mib_s": 1535.7806578790567,
+          "archive_bytes": 73317298,
+          "samples": [
+            {
+              "compression_seconds": 0.09494525000000009,
+              "extraction_seconds": 0.1307279170000002,
+              "archive_bytes": 73317298
+            },
+            {
+              "compression_seconds": 0.09724095799999999,
+              "extraction_seconds": 0.13251070799999987,
+              "archive_bytes": 73317298
+            },
+            {
+              "compression_seconds": 0.09748379200000024,
+              "extraction_seconds": 0.13060500000000008,
+              "archive_bytes": 73317298
+            },
+            {
+              "compression_seconds": 0.09626408400000042,
+              "extraction_seconds": 0.13248620799999955,
+              "archive_bytes": 73317298
+            },
+            {
+              "compression_seconds": 0.0971685830000002,
+              "extraction_seconds": 0.1316075829999992,
+              "archive_bytes": 73317298
+            },
+            {
+              "compression_seconds": 0.09715883300000083,
+              "extraction_seconds": 0.13015933299999993,
+              "archive_bytes": 73317298
+            },
+            {
+              "compression_seconds": 0.09708883300000082,
+              "extraction_seconds": 0.13216725000000018,
+              "archive_bytes": 73317298
+            }
+          ]
+        },
+        "tar+pzstd": {
+          "compression_mib_s": 2085.6844705410017,
+          "extraction_mib_s": 1940.1143016363453,
+          "archive_bytes": 73435701,
+          "samples": [
+            {
+              "compression_seconds": 0.09810383299999992,
+              "extraction_seconds": 0.104179625,
+              "archive_bytes": 73435701
+            },
+            {
+              "compression_seconds": 0.09538608299999973,
+              "extraction_seconds": 0.10640366699999992,
+              "archive_bytes": 73435701
+            },
+            {
+              "compression_seconds": 0.09516312499999957,
+              "extraction_seconds": 0.10373237499999988,
+              "archive_bytes": 73435701
+            },
+            {
+              "compression_seconds": 0.09690841699999986,
+              "extraction_seconds": 0.1046076669999998,
+              "archive_bytes": 73435701
+            },
+            {
+              "compression_seconds": 0.0956600829999994,
+              "extraction_seconds": 0.10353341699999952,
+              "archive_bytes": 73435701
+            },
+            {
+              "compression_seconds": 0.09807891700000049,
+              "extraction_seconds": 0.10717441599999944,
+              "archive_bytes": 73435701
+            },
+            {
+              "compression_seconds": 0.0972836250000011,
+              "extraction_seconds": 0.1029122909999991,
+              "archive_bytes": 73435701
+            }
+          ]
+        },
+        "tar": {
+          "compression_mib_s": 1488.907559387287,
+          "extraction_mib_s": 2145.0756597454697,
+          "archive_bytes": 211978240,
+          "samples": [
+            {
+              "compression_seconds": 0.12947937500000029,
+              "extraction_seconds": 0.09381450000000013,
+              "archive_bytes": 211978240
+            },
+            {
+              "compression_seconds": 0.13575079200000006,
+              "extraction_seconds": 0.09795258300000009,
+              "archive_bytes": 211978240
+            },
+            {
+              "compression_seconds": 0.14447350000000014,
+              "extraction_seconds": 0.0954570419999996,
+              "archive_bytes": 211978240
+            },
+            {
+              "compression_seconds": 0.13811870800000037,
+              "extraction_seconds": 0.09455120800000039,
+              "archive_bytes": 211978240
+            },
+            {
+              "compression_seconds": 0.12944266700000018,
+              "extraction_seconds": 0.09397012500000024,
+              "archive_bytes": 211978240
+            },
+            {
+              "compression_seconds": 0.1287594589999994,
+              "extraction_seconds": 0.09367049999999999,
+              "archive_bytes": 211978240
+            },
+            {
+              "compression_seconds": 0.14103637500000055,
+              "extraction_seconds": 0.09422529200000085,
+              "archive_bytes": 211978240
+            }
+          ]
+        }
+      }
+    }
+  }
+}

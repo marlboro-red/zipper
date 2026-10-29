@@ -1,0 +1,396 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "binary_sha256": "a2bbeffe2c954730db7f8dee8b766e1b4099e3d67050dce8d821ffe80cec3465",
+  "corpus": "silesia",
+  "input_bytes": 211938580,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "creation_threads": 4,
+  "extraction_threads": "7-Zip defaults for both paths",
+  "backend": "/opt/homebrew/bin/7zz",
+  "backend_version": [
+    "",
+    "7-Zip (z) 26.05 (arm64) : Copyright (c) 1999-2026 Igor Pavlov : 2026-10-21",
+    " 64-bit arm_v:8.5-A locale=C.UTF-8 Threads:10 OPEN_MAX:4096, ASM",
+    ""
+  ],
+  "creation": "7-Zip level 1 (tar stores); NOT native Zipper encoding",
+  "level": 1,
+  "archive_creation": "once per format before extraction samples",
+  "archive_sync": "F_FULLFSYNC",
+  "verification": "direct byte comparison, sizes and tree membership after every extraction",
+  "errors": 0,
+  "load_average_start": [
+    1.0849609375,
+    1.48779296875,
+    1.8115234375
+  ],
+  "native_zip_threads": 4,
+  "tar_reader": "/usr/bin/tar",
+  "tar_version": "bsdtar 3.5.3 - libarchive 3.7.4 zlib/1.2.12 liblzma/5.4.3 bz2lib/1.0.8",
+  "preparations": {
+    "zip": {
+      "creation_seconds": 0.7286980839999999,
+      "archive_sha256": "76863397138246e051d6ac4ba4b40d5ca4c0507a3dc0ca2f77b4702309d14652"
+    }
+  },
+  "order_including_warmup": [
+    {
+      "round": 0,
+      "format": "zip",
+      "decoders": [
+        "zipper",
+        "bsdtar-1MiB",
+        "zipper-native",
+        "7zip-direct",
+        "zipper-native-fast",
+        "bsdtar"
+      ]
+    },
+    {
+      "round": 1,
+      "format": "zip",
+      "decoders": [
+        "zipper",
+        "bsdtar-1MiB",
+        "bsdtar",
+        "7zip-direct",
+        "zipper-native",
+        "zipper-native-fast"
+      ]
+    },
+    {
+      "round": 2,
+      "format": "zip",
+      "decoders": [
+        "bsdtar",
+        "zipper-native",
+        "7zip-direct",
+        "zipper",
+        "zipper-native-fast",
+        "bsdtar-1MiB"
+      ]
+    },
+    {
+      "round": 3,
+      "format": "zip",
+      "decoders": [
+        "bsdtar",
+        "zipper",
+        "zipper-native",
+        "bsdtar-1MiB",
+        "zipper-native-fast",
+        "7zip-direct"
+      ]
+    },
+    {
+      "round": 4,
+      "format": "zip",
+      "decoders": [
+        "7zip-direct",
+        "bsdtar",
+        "zipper-native-fast",
+        "zipper",
+        "bsdtar-1MiB",
+        "zipper-native"
+      ]
+    },
+    {
+      "round": 5,
+      "format": "zip",
+      "decoders": [
+        "zipper",
+        "bsdtar",
+        "zipper-native-fast",
+        "7zip-direct",
+        "bsdtar-1MiB",
+        "zipper-native"
+      ]
+    },
+    {
+      "round": 6,
+      "format": "zip",
+      "decoders": [
+        "bsdtar",
+        "zipper-native",
+        "zipper-native-fast",
+        "zipper",
+        "bsdtar-1MiB",
+        "7zip-direct"
+      ]
+    },
+    {
+      "round": 7,
+      "format": "zip",
+      "decoders": [
+        "bsdtar",
+        "zipper-native-fast",
+        "bsdtar-1MiB",
+        "7zip-direct",
+        "zipper",
+        "zipper-native"
+      ]
+    }
+  ],
+  "formats": {
+    "zip": {
+      "archive_bytes": 70252453,
+      "samples": [
+        {
+          "archive_bytes": 70252453,
+          "creation_seconds": null,
+          "zipper": {
+            "seconds": 0.5520018749999998,
+            "verified_bytes": 211938580
+          },
+          "bsdtar-1MiB": {
+            "seconds": 0.17977674999999982,
+            "verified_bytes": 211938580
+          },
+          "bsdtar": {
+            "seconds": 0.22396512500000032,
+            "verified_bytes": 211938580
+          },
+          "7zip-direct": {
+            "seconds": 0.5514382499999995,
+            "verified_bytes": 211938580
+          },
+          "zipper-native": {
+            "seconds": 0.11515916600000065,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 4833280
+          },
+          "zipper-native-fast": {
+            "seconds": 0.09025470899999988,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 160940032
+          }
+        },
+        {
+          "archive_bytes": 70252453,
+          "creation_seconds": null,
+          "bsdtar": {
+            "seconds": 0.2259696670000002,
+            "verified_bytes": 211938580
+          },
+          "zipper-native": {
+            "seconds": 0.11425699999999939,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 4816896
+          },
+          "7zip-direct": {
+            "seconds": 0.5568345409999997,
+            "verified_bytes": 211938580
+          },
+          "zipper": {
+            "seconds": 0.5554177080000002,
+            "verified_bytes": 211938580
+          },
+          "zipper-native-fast": {
+            "seconds": 0.09154337499999965,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 182173696
+          },
+          "bsdtar-1MiB": {
+            "seconds": 0.1821951669999997,
+            "verified_bytes": 211938580
+          }
+        },
+        {
+          "archive_bytes": 70252453,
+          "creation_seconds": null,
+          "bsdtar": {
+            "seconds": 0.2253940830000003,
+            "verified_bytes": 211938580
+          },
+          "zipper": {
+            "seconds": 0.5593773329999996,
+            "verified_bytes": 211938580
+          },
+          "zipper-native": {
+            "seconds": 0.11481537499999916,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 4849664
+          },
+          "bsdtar-1MiB": {
+            "seconds": 0.18234433399999972,
+            "verified_bytes": 211938580
+          },
+          "zipper-native-fast": {
+            "seconds": 0.09114554100000127,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 182173696
+          },
+          "7zip-direct": {
+            "seconds": 0.5574740420000008,
+            "verified_bytes": 211938580
+          }
+        },
+        {
+          "archive_bytes": 70252453,
+          "creation_seconds": null,
+          "7zip-direct": {
+            "seconds": 0.5551442919999996,
+            "verified_bytes": 211938580
+          },
+          "bsdtar": {
+            "seconds": 0.2267210420000012,
+            "verified_bytes": 211938580
+          },
+          "zipper-native-fast": {
+            "seconds": 0.09145570899999989,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 182173696
+          },
+          "zipper": {
+            "seconds": 0.5578620409999999,
+            "verified_bytes": 211938580
+          },
+          "bsdtar-1MiB": {
+            "seconds": 0.18245233300000052,
+            "verified_bytes": 211938580
+          },
+          "zipper-native": {
+            "seconds": 0.11464512499999913,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 5128192
+          }
+        },
+        {
+          "archive_bytes": 70252453,
+          "creation_seconds": null,
+          "zipper": {
+            "seconds": 0.5595137920000006,
+            "verified_bytes": 211938580
+          },
+          "bsdtar": {
+            "seconds": 0.227692750000001,
+            "verified_bytes": 211938580
+          },
+          "zipper-native-fast": {
+            "seconds": 0.09156970800000153,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 182173696
+          },
+          "7zip-direct": {
+            "seconds": 0.5585000000000004,
+            "verified_bytes": 211938580
+          },
+          "bsdtar-1MiB": {
+            "seconds": 0.18314558400000003,
+            "verified_bytes": 211938580
+          },
+          "zipper-native": {
+            "seconds": 0.11439291699999998,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 5111808
+          }
+        },
+        {
+          "archive_bytes": 70252453,
+          "creation_seconds": null,
+          "bsdtar": {
+            "seconds": 0.22838520800000062,
+            "verified_bytes": 211938580
+          },
+          "zipper-native": {
+            "seconds": 0.11521104100000024,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 4833280
+          },
+          "zipper-native-fast": {
+            "seconds": 0.09086875000000028,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 182697984
+          },
+          "zipper": {
+            "seconds": 0.5624783749999995,
+            "verified_bytes": 211938580
+          },
+          "bsdtar-1MiB": {
+            "seconds": 0.18302808400000004,
+            "verified_bytes": 211938580
+          },
+          "7zip-direct": {
+            "seconds": 0.5636842499999997,
+            "verified_bytes": 211938580
+          }
+        },
+        {
+          "archive_bytes": 70252453,
+          "creation_seconds": null,
+          "bsdtar": {
+            "seconds": 0.22778974999999946,
+            "verified_bytes": 211938580
+          },
+          "zipper-native-fast": {
+            "seconds": 0.09165608300000017,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 182157312
+          },
+          "bsdtar-1MiB": {
+            "seconds": 0.18415895799999937,
+            "verified_bytes": 211938580
+          },
+          "7zip-direct": {
+            "seconds": 0.558513125000001,
+            "verified_bytes": 211938580
+          },
+          "zipper": {
+            "seconds": 0.5609732919999999,
+            "verified_bytes": 211938580
+          },
+          "zipper-native": {
+            "seconds": 0.11535383400000043,
+            "verified_bytes": 211938580,
+            "peak_rss_bytes": 4833280
+          }
+        }
+      ],
+      "zipper": {
+        "median_seconds": 0.5593773329999996,
+        "min_seconds": 0.5520018749999998,
+        "max_seconds": 0.5624783749999995,
+        "mib_s": 361.33101661023414
+      },
+      "7zip-direct": {
+        "median_seconds": 0.5574740420000008,
+        "min_seconds": 0.5514382499999995,
+        "max_seconds": 0.5636842499999997,
+        "mib_s": 362.5646490668547
+      },
+      "zipper-native": {
+        "median_seconds": 0.11481537499999916,
+        "min_seconds": 0.11425699999999939,
+        "max_seconds": 0.11535383400000043,
+        "mib_s": 1760.3947241526912,
+        "peak_rss_bytes": 5128192
+      },
+      "zipper-native-fast": {
+        "median_seconds": 0.09145570899999989,
+        "min_seconds": 0.09025470899999988,
+        "max_seconds": 0.09165608300000017,
+        "mib_s": 2210.0356840666072,
+        "peak_rss_bytes": 182697984
+      },
+      "bsdtar": {
+        "median_seconds": 0.2267210420000012,
+        "min_seconds": 0.22396512500000032,
+        "max_seconds": 0.22838520800000062,
+        "mib_s": 891.4936991230406
+      },
+      "bsdtar-1MiB": {
+        "median_seconds": 0.18245233300000052,
+        "min_seconds": 0.17977674999999982,
+        "max_seconds": 0.18415895799999937,
+        "mib_s": 1107.7982784775395
+      }
+    }
+  },
+  "load_average_end": [
+    1.6943359375,
+    1.595703125,
+    1.84375
+  ]
+}
