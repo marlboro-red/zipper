@@ -38,6 +38,21 @@ fn packed_files_cross_blocks_and_select_subtrees() -> anyhow::Result<()> {
     assert!(out.join("input/sub/empty").is_dir());
     assert!(!out.join("input/first").exists());
     assert!(!out.join("input/tail").exists());
+    let out = temp.path().join("disjoint");
+    zipper::extract_selected(
+        &archive,
+        &out,
+        &[
+            "input/tail".into(),
+            "input/sub/zero".into(),
+            "input/first".into(),
+            "input/tail".into(),
+        ],
+    )?;
+    assert_eq!(fs::read(out.join("input/first"))?, b"prefix");
+    assert_eq!(fs::read(out.join("input/tail"))?, b"suffix");
+    assert_eq!(fs::read(out.join("input/sub/zero"))?, b"");
+    assert!(!out.join("input/sub/large").exists());
     let missing = temp.path().join("missing");
     assert!(zipper::extract_selected(&archive, &missing, &["input/nope".into()]).is_err());
     assert!(!missing.exists());

@@ -16,6 +16,12 @@ fn native_cli_and_missing_backend() -> anyhow::Result<()> {
     assert!(run(&["list", "a.zipper"])?.status.success());
     assert!(run(&["extract", "a.zipper", "-o", "out"])?.status.success());
     assert_eq!(fs::read(t.path().join("out/data"))?, b"zipper");
+    assert!(
+        run(&["extract", "a.zipper", "-o", "selected", "--path", "data"])?
+            .status
+            .success()
+    );
+    assert_eq!(fs::read(t.path().join("selected/data"))?, b"zipper");
     fs::write(t.path().join("legacy.zip"), b"PK fake")?;
     let result = run(&["test", "legacy.zip"])?;
     assert!(!result.status.success());

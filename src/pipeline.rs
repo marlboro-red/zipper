@@ -78,6 +78,38 @@ pub(super) fn run<I: Send, O: Send, C>(
 mod tests {
     use super::*;
     #[test]
+    fn initialization_failure_and_panics_cancel_workers() {
+        for stage in 0..4 {
+            let result = std::panic::catch_unwind(|| {
+                run(
+                    3,
+                    |emit| {
+                        for n in 0..30 {
+                            if stage == 0 && n == 8 {
+                                panic!("reader panic");
+                            }
+                            emit(n)?;
+                        }
+                        Ok(())
+                    },
+                    || {
+                        ensure!(stage != 1, "initialization failed");
+                        Ok(())
+                    },
+                    |_, n| {
+                        assert!(!(stage == 2 && n == 8), "worker panic");
+                        Ok(n)
+                    },
+                    |n| {
+                        assert!(!(stage == 3 && n == 8), "consumer panic");
+                        Ok(())
+                    },
+                )
+            });
+            assert!(!matches!(result, Ok(Ok(()))));
+        }
+    }
+    #[test]
     fn ordered_and_cancels_on_each_stage_failure() {
         for fail in 0..4 {
             let mut seen = Vec::new();
