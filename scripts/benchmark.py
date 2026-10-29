@@ -31,6 +31,20 @@ def manifest(root):
 
 
 def timed(command, cwd):
+    if platform.system() == "Linux":
+        # A forked Python child can carry the harness's high RSS into wait4.
+        # GNU time measures its own post-exec child, excluding that inherited peak.
+        with tempfile.TemporaryFile() as log, tempfile.NamedTemporaryFile() as report:
+            start = time.perf_counter()
+            child = subprocess.run(["/usr/bin/time", "-f", "%M", "-o", report.name, "--"] + command,
+                                   cwd=cwd, stdout=log, stderr=log)
+            elapsed = time.perf_counter() - start
+            if child.returncode:
+                log.seek(0)
+                raise RuntimeError(log.read().decode(errors="replace"))
+            report.seek(0)
+            rss = int(report.read().strip()) * 1024
+        return {"seconds": elapsed, "peak_rss_bytes": rss}
     start = time.perf_counter()
     with tempfile.TemporaryFile() as log:
         child = subprocess.Popen(command, cwd=cwd, stdout=log, stderr=log)

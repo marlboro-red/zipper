@@ -33,9 +33,12 @@ measures completed extraction, not crash-durable restoration. Cache state is
 uncontrolled and warmed by archive creation and earlier runs.
 
 Memory is the individual process high-water mark, not a process-tree sum:
-`wait4.ru_maxrss` on Unix and `GetProcessMemoryInfo.PeakWorkingSetSize` on Windows.
+`wait4.ru_maxrss` on macOS, GNU time child peak RSS on Linux, and `GetProcessMemoryInfo.PeakWorkingSetSize` on Windows.
 The Windows query uses the retained child handle after waiting, avoiding sampled
 RSS missing short peaks. Memory-query failures abort rather than report zero.
+The Linux GNU time wrapper avoids an inherited Python-parent high-water mark
+observed with direct wait4 in the first hosted run; wall timing includes the
+wrapper overhead. Earlier Linux reports must not be used for memory comparisons.
 These OS metrics are not interchangeable measures of committed/private memory.
 [Microsoft API](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getprocessmemoryinfo),
 [counter definition](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-process_memory_counters).

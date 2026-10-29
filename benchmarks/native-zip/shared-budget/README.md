@@ -22,7 +22,7 @@ run order, memory and direct byte verification. Same input ZIP bytes per pair.
 
 | Workload | Before ms [range] | After ms [range] | Peak RSS before / after MiB |
 | --- | ---: | ---: | ---: |
-| One 60 MiB entry | 62.48 [62.20–62.94] | 47.03 [46.83–49.94] | 3.11 / 96.28 |
+| One 61 MiB entry | 62.48 [62.20–62.94] | 47.03 [46.83–49.94] | 3.11 / 96.28 |
 | Silesia, 12 files | 92.54 [91.21–104.88] | 88.67 [79.07–98.26] | 174.00 / 189.23 |
 | 10,000 tiny flat files | 337.33 [310.06–349.43] | 347.56 [338.89–367.51] | 9.75 / 9.75 |
 
@@ -37,7 +37,7 @@ The separate baseline matrix found roughly 61 ms for both old native modes at
 1/2/4/8 threads, 41 ms for tuned bsdtar on ZIP and 11 ms for plain TAR. Those
 measurements precede the change and come from a different session; the new result
 is not evidence that we now beat bsdtar on this workload. The synthetic entry
-repeats a block containing 32 KiB deterministic random bytes plus 28 KiB repeated
+repeats a block containing 32 KiB deterministic random bytes plus 29 KiB repeated
 text 1,024 times; its construction is in the portable extraction workflow.
 
 Validation: full Rust tests, formatting, Clippy, direct release byte round trips,

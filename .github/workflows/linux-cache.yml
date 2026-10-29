@@ -1,0 +1,77 @@
+name: Linux ZIP cache experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Validate Linux memory measurement
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, 'scripts')
+          from benchmark import timed
+          parent = bytearray(128 * 1024 * 1024)
+          small = timed([sys.executable, '-c', 'pass'], '.')
+          large = timed([sys.executable, '-c', 'x=bytearray(64*1024*1024)'], '.')
+          assert small['peak_rss_bytes'] < 64*1024*1024, small
+          assert large['peak_rss_bytes'] > small['peak_rss_bytes'] + 32*1024*1024, (small, large)
+          print(small, large)
+          PY
+      - name: Build unchanged baseline
+        run: |
+          cargo +1.96.0 build --locked --release
+          cp target/release/zipper /tmp/zipper-before
+      - name: Apply only the cache eligibility experiment
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/native_zip.rs')
+          text = p.read_text()
+          old = 'open(path, fast && destination.is_none())?'
+          assert text.count(old) == 1, 'baseline changed; reconsider experiment'
+          p.write_text(text.replace(old, 'open(path, fast && (destination.is_none() || cfg!(target_os = "linux")))?'))
+          PY
+          mkdir results
+          git diff > results/candidate.patch
+          git rev-parse HEAD > results/baseline-source.txt
+          uname -a > results/environment.txt
+          lscpu >> results/environment.txt
+          df -T . >> results/environment.txt
+          cargo +1.96.0 test --locked --release
+          cargo +1.96.0 build --locked --release
+      - name: Generate and measure flat and grouped trees
+        run: |
+          for layout in flat grouped; do
+            python3 scripts/make_tiny_corpus.py "corpora/$layout" --files 10000 --layout "$layout"
+            python3 - "$layout" <<'PY'
+          import sys,zipfile
+          from pathlib import Path
+          p=Path('corpora')/sys.argv[1]
+          with zipfile.ZipFile(str(p)+'.zip','w',zipfile.ZIP_DEFLATED) as out:
+              for f in sorted(p.rglob('*')):
+                  out.write(f,f.relative_to(p.parent))
+          PY
+            python3 scripts/compare_zip_readers.py "corpora/$layout.zip" "corpora/$layout" \
+              --reader before-1 native-fast /tmp/zipper-before \
+              --reader after-1 native-fast target/release/zipper \
+              --reader before-4 native-fast /tmp/zipper-before \
+              --reader after-4 native-fast target/release/zipper \
+              --reader-threads before-1 1 --reader-threads after-1 1 \
+              --reader-threads before-4 4 --reader-threads after-4 4 \
+              --runs 7 > "results/$layout.json"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: linux-cache-${{ github.sha }}
+          path: results/
+          if-no-files-found: error
