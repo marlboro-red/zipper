@@ -1,0 +1,79 @@
+name: ZIP read-ahead Windows and large-input validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            files: 1000
+          - os: ubuntu-24.04
+            files: 30000
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      FILE_COUNT: ${{ matrix.files }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Build production 8 KiB reader
+        run: |
+          cargo +1.96.0 build --locked --release
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          cp "target/release/zipper$suffix" "candidate$suffix"
+      - name: Build reference with only 256 KiB read-ahead restored
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/zip_reader.rs')
+          text=p.read_text()
+          assert text.count('8 * 1024') == 2
+          p.write_text(text.replace('8 * 1024','256 * 1024'))
+          PY
+          cargo +1.96.0 build --locked --release
+          mkdir results
+          git diff > results/reference.patch
+          git rev-parse HEAD > results/candidate-source.txt
+          python -c 'import os,platform; print(platform.platform()); print(platform.processor()); print(os.cpu_count())' > results/environment.txt
+      - name: Generate, interleave and verify
+        run: |
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          for layout in flat grouped; do
+            python scripts/make_tiny_corpus.py "corpora/$layout" --files "$FILE_COUNT" --layout "$layout"
+            python - "$layout" <<'PY'
+          import os,sys,zipfile
+          from pathlib import Path
+          p=Path('corpora')/sys.argv[1]
+          archive=p.with_suffix('.zip')
+          with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as out:
+              for f in sorted(p.rglob('*')):
+                  out.write(f,f.relative_to(p.parent))
+          if os.environ['RUNNER_OS'] == 'Linux':
+              assert archive.stat().st_size > 8*1024*1024, 'fixture must exceed cache limit'
+          print('Archive bytes:', archive.stat().st_size, flush=True)
+          PY
+            python scripts/compare_zip_readers.py "corpora/$layout.zip" "corpora/$layout" \
+              --reader reference-native native "target/release/zipper$suffix" \
+              --reader current-native native "candidate$suffix" \
+              --reader reference-fast native-fast "target/release/zipper$suffix" \
+              --reader current-fast native-fast "candidate$suffix" \
+              --threads 4 --runs 7 > "results/$layout.json"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: read-ahead-${{ matrix.os }}-${{ github.sha }}
+          path: results/
+          if-no-files-found: error

@@ -10,9 +10,10 @@ import random
 import shutil
 import statistics
 import subprocess
+import sys
 import tempfile
 import time
-from benchmark import timed
+from process_metrics import timed
 from compare_revisions import inventory, verify
 
 
@@ -53,7 +54,7 @@ def main():
         "source": source.name, "input_bytes": total,
         "archive_bytes": archive.stat().st_size, "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "readers": readers, "verification": "direct bytes, file sizes and tree membership", "errors": 0,
-        "load_average_start": os.getloadavg()}
+        "load_average_start": (os.getloadavg() if hasattr(os, "getloadavg") else None)}
     samples = {label: [] for label in readers}
     order = []
     rng = random.Random(20261029)
@@ -69,10 +70,15 @@ def main():
                 if reader["threads"] is not None:
                     prefix += ["--threads", str(reader["threads"])]
                 extract = prefix + ["extract", str(archive), "-o", str(output)]
+                print(f"Round {iteration}: {label} ({args.operation})", file=sys.stderr, flush=True)
                 sample = timed(extract if args.operation == "extract" else
                                prefix + [args.operation, str(archive)], source.parent)
                 if args.operation != "extract":
                     subprocess.run(extract, check=True, cwd=source.parent, stdout=subprocess.DEVNULL)
+                wanted = {source.name: None}
+                wanted.update({str(Path(source.name) / key): value for key, value in expected.items()})
+                if inventory(output) != wanted:
+                    raise RuntimeError("full output tree mismatch")
                 sample["verified_bytes"] = verify(source, output / source.name, expected)
                 if sample["verified_bytes"] != total:
                     raise RuntimeError("verified byte count mismatch")
@@ -89,7 +95,7 @@ def main():
             "min_seconds": min(seconds), "max_seconds": max(seconds),
             "mib_s": total / 2**20 / statistics.median(seconds),
             "peak_rss_bytes": max(row["peak_rss_bytes"] for row in rows)}
-    result["load_average_end"] = os.getloadavg()
+    result["load_average_end"] = (os.getloadavg() if hasattr(os, "getloadavg") else None)
     print(json.dumps(result, indent=2))
 
 
