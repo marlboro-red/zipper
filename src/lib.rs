@@ -1,7 +1,9 @@
 pub mod compat;
+pub mod native_zip;
 mod pipeline;
 mod v1;
 mod v2;
+mod zip_reader;
 use anyhow::{Result, bail, ensure};
 use std::{
     fs::File,
@@ -21,6 +23,31 @@ fn safe_path(s: &str) -> Result<()> {
         s.split('/').all(|c| !c.is_empty() && c != "." && c != ".."),
         "unsafe archive path: {s:?}"
     );
+    #[cfg(windows)]
+    for component in s.split('/') {
+        ensure!(!component.ends_with(['.', ' ']), "ambiguous Windows path");
+        let base = component
+            .split('.')
+            .next()
+            .unwrap()
+            .trim_end_matches(' ')
+            .to_uppercase();
+        let device = matches!(
+            base.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+        ) || ["COM", "LPT"].iter().any(|prefix| {
+            base.strip_prefix(prefix).is_some_and(|suffix| {
+                matches!(
+                    suffix,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
+        });
+        ensure!(
+            !device,
+            "Windows device path is not a regular archive entry"
+        );
+    }
     Ok(())
 }
 fn parent(path: &Path) -> &Path {

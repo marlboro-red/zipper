@@ -1,0 +1,317 @@
+//! Opt-in ZIP extraction for regular files: stored/Deflate, bounded streaming,
+//! independent per-worker readers, and publication only after full verification.
+use crate::{Entry, parent, pipeline, safe_path};
+use anyhow::{Context, Result, ensure};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::{self, File},
+    io::{BufWriter, Read, Seek, SeekFrom, Write},
+    path::Path,
+};
+use zip::{CompressionMethod, ZipArchive};
+
+struct Item {
+    entry: Entry,
+    crc: u32,
+    compressed: u64,
+    method: CompressionMethod,
+}
+
+const MAX_METADATA: u64 = 64 * 1024 * 1024;
+const MAX_ENTRIES: u64 = 100_000;
+
+// Bound directory allocation before the general ZIP parser sees untrusted
+// counts/lengths. The opt-in path accepts conventional single-disk ZIP/ZIP64
+// records with no prepended executable, trailing data, or ZIP64 extension sector.
+fn preflight(file: &mut File) -> Result<u64> {
+    let length = file.metadata()?.len();
+    ensure!(length >= 22, "truncated ZIP");
+    let tail_size = length.min(22 + 65535) as usize;
+    file.seek(SeekFrom::End(-(tail_size as i64)))?;
+    let mut tail = vec![0; tail_size];
+    file.read_exact(&mut tail)?;
+    let end = (0..=tail.len() - 22)
+        .rev()
+        .find(|&i| {
+            tail[i..i + 4] == *b"PK\x05\x06"
+                && i + 22 + u16::from_le_bytes(tail[i + 20..i + 22].try_into().unwrap()) as usize
+                    == tail.len()
+        })
+        .context("ZIP end record not found")?;
+    let eocd = length - tail_size as u64 + end as u64;
+    // zip-rs tolerates trailing data and may select a record embedded in the
+    // comment. Restrict this opt-in reader to one unambiguous final record.
+    ensure!(
+        !tail[end + 4..]
+            .windows(4)
+            .any(|bytes| bytes == b"PK\x05\x06"),
+        "ambiguous ZIP end records require the compatibility backend"
+    );
+    let read16 = |at| u16::from_le_bytes(tail[end + at..end + at + 2].try_into().unwrap());
+    let read32 = |at| u32::from_le_bytes(tail[end + at..end + at + 4].try_into().unwrap());
+    ensure!(
+        read16(4) == 0 && read16(6) == 0 && read16(8) == read16(10),
+        "multi-disk ZIP requires backend"
+    );
+    let mut count = read16(10) as u64;
+    let mut bytes = read32(12) as u64;
+    let mut start = read32(16) as u64;
+    let mut directory_end = eocd;
+    if count == u16::MAX as u64 || bytes == u32::MAX as u64 || start == u32::MAX as u64 {
+        ensure!(eocd >= 20, "missing ZIP64 locator");
+        file.seek(SeekFrom::Start(eocd - 20))?;
+        let locator = crate::number::<20>(file)?;
+        ensure!(
+            &locator[..4] == b"PK\x06\x07"
+                && locator[4..8] == [0; 4]
+                && u32::from_le_bytes(locator[16..20].try_into()?) == 1,
+            "invalid ZIP64 locator"
+        );
+        directory_end = u64::from_le_bytes(locator[8..16].try_into()?);
+        ensure!(
+            directory_end.checked_add(56) == Some(eocd - 20),
+            "unsupported ZIP64 extension or offset"
+        );
+        file.seek(SeekFrom::Start(directory_end))?;
+        let record = crate::number::<56>(file)?;
+        ensure!(
+            &record[..4] == b"PK\x06\x06"
+                && u64::from_le_bytes(record[4..12].try_into()?) == 44
+                && record[16..24] == [0; 8],
+            "unsupported ZIP64 record"
+        );
+        count = u64::from_le_bytes(record[32..40].try_into()?);
+        ensure!(
+            u64::from_le_bytes(record[24..32].try_into()?) == count,
+            "multi-disk ZIP64 requires backend"
+        );
+        bytes = u64::from_le_bytes(record[40..48].try_into()?);
+        start = u64::from_le_bytes(record[48..56].try_into()?);
+    }
+    ensure!(
+        count <= MAX_ENTRIES && bytes <= MAX_METADATA,
+        "ZIP metadata limit exceeded"
+    );
+    ensure!(
+        start.checked_add(bytes) == Some(directory_end),
+        "unsupported ZIP central-directory extent"
+    );
+    // Validate the complete raw record chain, including comments and extras.
+    file.seek(SeekFrom::Start(start))?;
+    let mut position = start;
+    for _ in 0..count {
+        ensure!(
+            directory_end - position >= 46,
+            "truncated ZIP central entry"
+        );
+        let header = crate::number::<46>(file)?;
+        ensure!(&header[..4] == b"PK\x01\x02", "invalid ZIP central entry");
+        let variable: u64 = [28, 30, 32]
+            .iter()
+            .map(|&at| u16::from_le_bytes(header[at..at + 2].try_into().unwrap()) as u64)
+            .sum();
+        position += 46 + variable;
+        ensure!(
+            position <= directory_end,
+            "ZIP central entry exceeds directory"
+        );
+        file.seek(SeekFrom::Start(position))?;
+    }
+    ensure!(position == directory_end, "ZIP directory count mismatch");
+    file.seek(SeekFrom::Start(0))?;
+    Ok(count)
+}
+
+fn open(path: &Path) -> Result<ZipArchive<crate::zip_reader::Reader>> {
+    let mut file = File::open(path)?;
+    let count = preflight(&mut file)?;
+    let archive = ZipArchive::new(crate::zip_reader::Reader::new(file)?)?;
+    ensure!(
+        archive.len() as u64 == count && archive.offset() == 0,
+        "ZIP parser disagrees with validated directory"
+    );
+    Ok(archive)
+}
+
+fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
+    ensure!(archive.len() <= 1_000_000, "ZIP entry limit exceeded");
+    ensure!(
+        !archive.metadata().has_duplicate_names(),
+        "duplicate ZIP path"
+    );
+    let mut items = Vec::with_capacity(archive.len());
+    let mut names = HashMap::new();
+    let mut metadata_bytes = 0usize;
+    for index in 0..archive.len() {
+        let file = archive.by_index_data(index)?;
+        ensure!(
+            !file.encrypted(),
+            "encrypted ZIP requires the compatibility backend"
+        );
+        ensure!(
+            !file.is_symlink(),
+            "ZIP symlinks require the compatibility backend"
+        );
+        let directory = file.is_dir();
+        if let Some(mode) = file.unix_mode() {
+            let kind = mode & 0o170000;
+            ensure!(
+                kind == 0 || kind == if directory { 0o040000 } else { 0o100000 },
+                "unsupported ZIP file type"
+            );
+        }
+        ensure!(
+            matches!(
+                file.compression(),
+                CompressionMethod::Stored | CompressionMethod::Deflated
+            ),
+            "ZIP compression method requires the compatibility backend"
+        );
+        let name = file.name()?.into_owned();
+        let name = if directory {
+            name.strip_suffix('/').unwrap_or(&name).to_owned()
+        } else {
+            name
+        };
+        safe_path(&name)?;
+        ensure!(
+            names.insert(name.clone(), directory).is_none(),
+            "duplicate ZIP path"
+        );
+        metadata_bytes += name.len() + 64;
+        ensure!(
+            metadata_bytes <= 64 * 1024 * 1024,
+            "ZIP metadata limit exceeded"
+        );
+        ensure!(!directory || file.size() == 0, "ZIP directory has payload");
+        items.push(Item {
+            entry: Entry {
+                name,
+                size: file.size(),
+                directory,
+            },
+            crc: file.crc32(),
+            compressed: file.compressed_size(),
+            method: file.compression(),
+        });
+    }
+    for item in &items {
+        let mut prefix = item.entry.name.as_str();
+        while let Some((p, _)) = prefix.rsplit_once('/') {
+            ensure!(names.get(p) != Some(&false), "ZIP file used as directory");
+            prefix = p;
+        }
+    }
+    Ok(items)
+}
+
+/// List validated central-directory entries; payload CRCs are not checked.
+pub fn list(path: &Path) -> Result<Vec<Entry>> {
+    Ok(scan(&open(path)?)?
+        .into_iter()
+        .map(|item| item.entry)
+        .collect())
+}
+
+/// Verify and optionally extract a stored/Deflate ZIP. This opt-in engine keeps
+/// file bytes and directories, not permissions, timestamps, or extended metadata.
+/// The archive and destination parent must not be modified concurrently.
+pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
+    let archive = open(path)?;
+    let items = scan(&archive)?;
+    let staging = if let Some(dst) = destination {
+        ensure!(
+            fs::symlink_metadata(dst).is_err(),
+            "extraction destination must not exist"
+        );
+        Some(tempfile::tempdir_in(parent(dst))?)
+    } else {
+        None
+    };
+    if let Some(temp) = &staging {
+        let mut directories = HashSet::new();
+        for item in &items {
+            let path = temp.path().join(&item.entry.name);
+            directories.insert(if item.entry.directory {
+                path
+            } else {
+                parent(&path).to_owned()
+            });
+        }
+        for directory in directories {
+            fs::create_dir_all(directory)?;
+        }
+    }
+    let count = rayon::current_num_threads().min(64).min(items.len().max(1));
+    let mut verified = 0;
+    pipeline::run(
+        count,
+        |emit| {
+            for index in 0..items.len() {
+                emit(index)?;
+            }
+            Ok(())
+        },
+        || Ok((archive.clone(), vec![0u8; 256 * 1024])),
+        |(archive, buffer), index: usize| {
+            let item = &items[index];
+            let mut source = archive.by_index(index)?;
+            ensure!(
+                source.size() == item.entry.size
+                    && source.crc32() == item.crc
+                    && source.compressed_size() == item.compressed
+                    && source.compression() == item.method,
+                "ZIP changed during extraction"
+            );
+            let mut output = if let Some(temp) = &staging {
+                if !item.entry.directory {
+                    Some(BufWriter::new(
+                        File::options()
+                            .write(true)
+                            .create_new(true)
+                            .open(temp.path().join(&item.entry.name))?,
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let mut written = 0u64;
+            loop {
+                let len = source.read(buffer)?;
+                if len == 0 {
+                    break;
+                }
+                written = written
+                    .checked_add(len as u64)
+                    .context("ZIP size overflow")?;
+                ensure!(
+                    written <= item.entry.size,
+                    "ZIP decoded size exceeds metadata"
+                );
+                if let Some(output) = &mut output {
+                    output.write_all(&buffer[..len])?;
+                }
+            }
+            ensure!(written == item.entry.size, "ZIP decoded size mismatch");
+            if let Some(output) = &mut output {
+                output.flush()?;
+            }
+            Ok(())
+        },
+        |_| {
+            verified += 1;
+            Ok(())
+        },
+    )?;
+    ensure!(verified == items.len(), "incomplete ZIP extraction");
+    if let (Some(temp), Some(dst)) = (staging, destination) {
+        ensure!(
+            fs::symlink_metadata(dst).is_err(),
+            "destination appeared during extraction"
+        );
+        fs::rename(temp.path(), dst)?;
+    }
+    Ok(items.into_iter().map(|item| item.entry).collect())
+}

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -8,8 +8,16 @@ struct Cli {
     /// Worker threads (defaults to available CPUs).
     #[arg(long, global = true)]
     threads: Option<usize>,
+    /// ZIP reader: native is experimental and preserves bytes/directories only.
+    #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Backend)]
+    zip_engine: ZipEngine,
     #[command(subcommand)]
     command: Command,
+}
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ZipEngine {
+    Backend,
+    Native,
 }
 #[derive(Subcommand)]
 enum Command {
@@ -71,15 +79,23 @@ fn main() -> Result<()> {
             }
             if zipper::compat::is_native(&archive)? {
                 zipper::read_archive(&archive, Some(&output))?;
+            } else if cli.zip_engine == ZipEngine::Native {
+                zipper::native_zip::read_archive(&archive, Some(&output))?;
             } else {
                 zipper::compat::run("x", &archive, Some(&output))?;
             }
         }
         Command::List { archive } => {
-            if !zipper::compat::is_native(&archive)? {
+            let native = zipper::compat::is_native(&archive)?;
+            if !native && cli.zip_engine == ZipEngine::Backend {
                 return zipper::compat::run("l", &archive, None);
             }
-            for e in zipper::list_archive(&archive)? {
+            let entries = if native {
+                zipper::list_archive(&archive)?
+            } else {
+                zipper::native_zip::list(&archive)?
+            };
+            for e in entries {
                 println!(
                     "{}\t{}\t{:?}",
                     if e.directory { "dir" } else { "file" },
@@ -89,10 +105,15 @@ fn main() -> Result<()> {
             }
         }
         Command::Test { archive } => {
-            if !zipper::compat::is_native(&archive)? {
+            let native = zipper::compat::is_native(&archive)?;
+            if !native && cli.zip_engine == ZipEngine::Backend {
                 return zipper::compat::run("t", &archive, None);
             }
-            let entries = zipper::read_archive(&archive, None)?;
+            let entries = if native {
+                zipper::read_archive(&archive, None)?
+            } else {
+                zipper::native_zip::read_archive(&archive, None)?
+            };
             println!("Verified {} entries", entries.len());
         }
     }

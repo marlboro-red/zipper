@@ -60,6 +60,21 @@ This is an external compatibility bridge, not yet an in-process Rust decoder.
 Native `--threads` does not configure the compatibility backend. Legacy listing
 uses the backend's listing operation and does not validate payloads.
 
+Experimental in-process ZIP reading is available with `--zip-engine native`:
+
+```sh
+zipper --zip-engine native --threads 4 extract files.zip -o restored
+zipper --zip-engine native test files.zip
+```
+
+This parallel Rust path supports stored/Deflate ZIP and conventional ZIP64,
+validates decoded lengths and CRCs, and preserves file bytes and directories.
+It does not preserve permissions/timestamps or support encryption, symlinks,
+other codecs, multi-disk archives, or ambiguous end records. It accepts at most
+100,000 entries and 64 MiB of raw central-directory metadata. Parsed metadata is
+shared; streaming buffers scale with workers, not expanded file size. Extraction
+has no total expanded-size quota. The compatibility backend remains the default.
+
 Next performance work: real-corpus level sweeps, similarity ordering, dictionaries,
 and measured block-size/worker scaling. See the research agenda above.
 
