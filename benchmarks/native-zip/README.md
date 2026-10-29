@@ -1,5 +1,7 @@
 # Native ZIP extraction across workloads — 2026-10-29
 
+[Latest small-file ZIP versus bsdtar results and automatic-concurrency tuning](small-files-tar.md). The tables below retain the earlier revision baseline.
+
 Engine `c996d32`, Apple M5, 32 GiB, macOS 26.7.1. Each ZIP is created by 7-Zip 26.05 at level 1, then extracted through the default Zipper backend, direct 7-Zip, and opt-in native ZIP. Decoder order is interleaved, seven measured rounds plus warmup. Every extraction is directly compared byte for byte against the original tree. Native requests four workers; backend paths both use 7-Zip defaults.
 
 | Workload | Native MiB/s | Direct 7-Zip MiB/s | Native median ms | Native range ms | Direct range ms | Archive bytes |

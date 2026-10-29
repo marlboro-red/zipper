@@ -218,16 +218,42 @@ pub fn list(path: &Path) -> Result<Vec<Entry>> {
 /// file bytes and directories, not permissions, timestamps, or extended metadata.
 /// The archive and destination parent must not be modified concurrently.
 pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
-    read(path, destination, false)
+    read_archive_with_options(path, destination, ReadOptions::default())
 }
 
 /// Whole-buffer Deflate fast path for entries whose compressed and decoded sizes
 /// sum to at most 64 MiB; larger entries use the bounded streaming path.
 pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
-    read(path, destination, true)
+    read_archive_with_options(
+        path,
+        destination,
+        ReadOptions {
+            fast: true,
+            threads: None,
+        },
+    )
 }
 
-fn read(path: &Path, destination: Option<&Path>, fast: bool) -> Result<Vec<Entry>> {
+/// Native ZIP decoding and concurrency options.
+#[derive(Clone, Copy, Default)]
+pub struct ReadOptions {
+    /// Use the bounded whole-buffer libdeflate path for eligible entries.
+    pub fast: bool,
+    /// Override automatic concurrency with a maximum of 1–64 workers.
+    /// The caller's Rayon pool remains an additional upper bound.
+    pub threads: Option<usize>,
+}
+
+pub fn read_archive_with_options(
+    path: &Path,
+    destination: Option<&Path>,
+    options: ReadOptions,
+) -> Result<Vec<Entry>> {
+    ensure!(
+        options.threads.is_none_or(|n| (1..=64).contains(&n)),
+        "ZIP threads must be 1..64"
+    );
+    let fast = options.fast;
     let archive = open(path)?;
     let items = scan(&archive)?;
     let staging = if let Some(dst) = destination {
@@ -347,12 +373,26 @@ fn read(path: &Path, destination: Option<&Path>, fast: bool) -> Result<Vec<Entry
             },
         )
     };
-    if rayon::current_num_threads() <= 64 {
+    // On macOS, tiny-file creation saturates before all CPU workers are useful:
+    // extra concurrent creates increase filesystem contention. Keep this policy
+    // limited to measured tiny-file workloads; larger entries retain parallel
+    // codec scaling. The caller's pool remains an upper bound.
+    let automatic_limit = if cfg!(target_os = "macos")
+        && staging.is_some()
+        && items.iter().filter(|item| !item.entry.directory).count() >= 1024
+        && items.iter().all(|item| item.entry.size <= 16 * 1024)
+    {
+        4
+    } else {
+        64
+    };
+    let worker_limit = options.threads.unwrap_or(automatic_limit);
+    if rayon::current_num_threads() <= worker_limit {
         run()?;
     } else {
-        // Library callers may supply a larger Rayon pool than the CLI allows.
+        // Also bound library callers whose Rayon pool exceeds the CLI maximum.
         rayon::ThreadPoolBuilder::new()
-            .num_threads(64)
+            .num_threads(worker_limit)
             .build()?
             .install(run)?;
     }

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(version, about = "Zipper — a parallel archive engine")]
 struct Cli {
-    /// Worker threads (defaults to available CPUs).
+    /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer).
     #[arg(long, global = true)]
     threads: Option<usize>,
     /// ZIP reader: native is experimental and preserves bytes/directories only.
@@ -81,10 +81,15 @@ fn main() -> Result<()> {
             }
             if zipper::compat::is_native(&archive)? {
                 zipper::read_archive(&archive, Some(&output))?;
-            } else if cli.zip_engine == ZipEngine::NativeFast {
-                zipper::native_zip::read_archive_fast(&archive, Some(&output))?;
-            } else if cli.zip_engine == ZipEngine::Native {
-                zipper::native_zip::read_archive(&archive, Some(&output))?;
+            } else if cli.zip_engine != ZipEngine::Backend {
+                zipper::native_zip::read_archive_with_options(
+                    &archive,
+                    Some(&output),
+                    zipper::native_zip::ReadOptions {
+                        fast: cli.zip_engine == ZipEngine::NativeFast,
+                        threads: cli.threads,
+                    },
+                )?;
             } else {
                 zipper::compat::run("x", &archive, Some(&output))?;
             }
@@ -115,10 +120,15 @@ fn main() -> Result<()> {
             }
             let entries = if native {
                 zipper::read_archive(&archive, None)?
-            } else if cli.zip_engine == ZipEngine::NativeFast {
-                zipper::native_zip::read_archive_fast(&archive, None)?
             } else {
-                zipper::native_zip::read_archive(&archive, None)?
+                zipper::native_zip::read_archive_with_options(
+                    &archive,
+                    None,
+                    zipper::native_zip::ReadOptions {
+                        fast: cli.zip_engine == ZipEngine::NativeFast,
+                        threads: cli.threads,
+                    },
+                )?
             };
             println!("Verified {} entries", entries.len());
         }

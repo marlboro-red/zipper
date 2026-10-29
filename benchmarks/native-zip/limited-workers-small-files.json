@@ -1,0 +1,162 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "threads": 10,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "operation": "extract",
+  "source": "small-files",
+  "input_bytes": 16366890,
+  "archive_bytes": 1088044,
+  "archive_sha256": "a817498399fa6daba6ef6cf19e76d40d53863ef4887d8ee4717bf7bbf6d0d31d",
+  "readers": {
+    "before": {
+      "mode": "native",
+      "binary": "/private/tmp/zipper-before-small-zip",
+      "sha256": "a001ff05ce565173835f2efa9774b11ba8cd8139e931f419c450cb00e90a3ce0",
+      "threads": 10
+    },
+    "after": {
+      "mode": "native",
+      "binary": "/Users/aleph/Desktop/Projects/marlboro-red/zipper/target/release/zipper",
+      "sha256": "1140c4a1871942e906211d22aea7c176effd309a420d8cb6a450966f89aee33f",
+      "threads": 10
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    3.20458984375,
+    2.3681640625,
+    2.55810546875
+  ],
+  "order_including_warmup": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ]
+  ],
+  "results": {
+    "before": {
+      "samples": [
+        {
+          "seconds": 0.17716720799999974,
+          "peak_rss_bytes": 17137664,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.1783479589999999,
+          "peak_rss_bytes": 18006016,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.3750220830000002,
+          "peak_rss_bytes": 15745024,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.18245258399999997,
+          "peak_rss_bytes": 15499264,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.17979199999999906,
+          "peak_rss_bytes": 18366464,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.17795383300000012,
+          "peak_rss_bytes": 15712256,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.18754470800000078,
+          "peak_rss_bytes": 17547264,
+          "verified_bytes": 16366890
+        }
+      ],
+      "median_seconds": 0.17979199999999906,
+      "min_seconds": 0.17716720799999974,
+      "max_seconds": 0.3750220830000002,
+      "mib_s": 86.8152233272135,
+      "peak_rss_bytes": 18366464
+    },
+    "after": {
+      "samples": [
+        {
+          "seconds": 0.15179849999999995,
+          "peak_rss_bytes": 9142272,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.15806541699999999,
+          "peak_rss_bytes": 8388608,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.1653470420000005,
+          "peak_rss_bytes": 9584640,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.1647502919999999,
+          "peak_rss_bytes": 8454144,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.15841970900000035,
+          "peak_rss_bytes": 8880128,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.14459000000000088,
+          "peak_rss_bytes": 7766016,
+          "verified_bytes": 16366890
+        },
+        {
+          "seconds": 0.1920255829999995,
+          "peak_rss_bytes": 8880128,
+          "verified_bytes": 16366890
+        }
+      ],
+      "median_seconds": 0.15841970900000035,
+      "min_seconds": 0.14459000000000088,
+      "max_seconds": 0.1920255829999995,
+      "mib_s": 98.52740376165099,
+      "peak_rss_bytes": 9584640
+    }
+  },
+  "load_average_end": [
+    3.83447265625,
+    2.5458984375,
+    2.61767578125
+  ]
+}

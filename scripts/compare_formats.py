@@ -28,8 +28,10 @@ def main():
     parser.add_argument("--formats", nargs="+", choices=["zip", "7z", "tar"], default=["zip", "7z", "tar"])
     parser.add_argument("--native-zip", action="store_true", help="add Zipper's opt-in native ZIP reader")
     parser.add_argument("--native-fast", action="store_true", help="also measure the buffered native ZIP reader")
+    parser.add_argument("--native-auto", action="store_true", help="omit --threads for native extraction")
     parser.add_argument("--reuse-archives", action="store_true", help="create once per format; benchmark extraction only")
     parser.add_argument("--tar-reader", help="bsdtar executable capable of extracting ZIP; also test 1 MiB input buffering")
+    parser.add_argument("--tar-minimal", action="store_true", help="also test bsdtar without restoring timestamps or optional metadata")
     args = parser.parse_args()
     if args.runs < 1 or not 1 <= args.threads <= 64:
         parser.error("positive runs and threads in 1..64 required")
@@ -40,6 +42,11 @@ def main():
     tar_reader = shutil.which(args.tar_reader) if args.tar_reader else None
     if args.tar_reader and tar_reader is None:
         parser.error("tar reader not found")
+    if args.tar_minimal and tar_reader is None:
+        parser.error("--tar-minimal requires --tar-reader")
+    minimal_flags = ["-m", "--no-same-owner", "--no-same-permissions", "--no-acls", "--no-fflags", "--no-xattrs"]
+    if platform.system() == "Darwin":
+        minimal_flags.append("--no-mac-metadata")
     source = args.corpus.resolve(strict=True)
     expected = inventory(source)
     total = sum(size for size in expected.values() if size is not None)
@@ -58,10 +65,12 @@ def main():
               "archive_sync": "F_FULLFSYNC" if platform.system() == "Darwin" else "fsync",
               "verification": "direct byte comparison, sizes and tree membership after every extraction",
               "errors": 0, "load_average_start": os.getloadavg()}
-    result["native_zip_threads"] = args.threads if args.native_zip or args.native_fast else None
+    result["native_zip_threads"] = args.threads if (args.native_zip or args.native_fast) and not args.native_auto else None
+    result["native_zip_concurrency"] = "automatic" if args.native_auto else "explicit"
     if tar_reader:
         result["tar_reader"] = tar_reader
         result["tar_version"] = subprocess.check_output([tar_reader, "--version"], text=True).strip()
+        result["tar_minimal_flags"] = minimal_flags if args.tar_minimal else None
     rng = random.Random(20261029)
     order = []
     preparations = {}
@@ -94,6 +103,8 @@ def main():
                     decoders.append("zipper-native-fast")
                 if tar_reader:
                     decoders += ["bsdtar", "bsdtar-1MiB"]
+                    if args.tar_minimal:
+                        decoders.append("bsdtar-minimal")
                 rng.shuffle(decoders)
                 order.append({"round": iteration, "format": kind, "decoders": decoders})
                 row = {"archive_bytes": archive.stat().st_size, "creation_seconds": creation_seconds}
@@ -101,14 +112,15 @@ def main():
                     command = ([binary, "extract", str(archive), "-o", str(out)] if decoder == "zipper" else
                                [backend, "x", "-y", f"-o{out}", "--", str(archive)])
                     if decoder == "zipper-native":
-                        command = [binary, "--threads", str(args.threads), "--zip-engine", "native",
+                        command = [binary, *([] if args.native_auto else ["--threads", str(args.threads)]), "--zip-engine", "native",
                                    "extract", str(archive), "-o", str(out)]
                     if decoder == "zipper-native-fast":
-                        command = [binary, "--threads", str(args.threads), "--zip-engine", "native-fast",
+                        command = [binary, *([] if args.native_auto else ["--threads", str(args.threads)]), "--zip-engine", "native-fast",
                                    "extract", str(archive), "-o", str(out)]
                     if decoder.startswith("bsdtar"):
                         out.mkdir()
-                        command = [tar_reader, *(["-b", "2048"] if decoder.endswith("-1MiB") else []),
+                        command = [tar_reader, *(["-b", "2048"] if decoder in ["bsdtar-1MiB", "bsdtar-minimal"] else []),
+                                   *(minimal_flags if decoder == "bsdtar-minimal" else []),
                                    "-xf", str(archive), "-C", str(out)]
                     measurement = timed(command, source.parent)
                     verified = verify(source, out / source.name, expected)
@@ -134,6 +146,7 @@ def main():
         if kind == "zip" and (args.native_zip or args.native_fast): decoders.append("zipper-native")
         if kind == "zip" and args.native_fast: decoders.append("zipper-native-fast")
         if tar_reader: decoders += ["bsdtar", "bsdtar-1MiB"]
+        if args.tar_minimal: decoders.append("bsdtar-minimal")
         for decoder in decoders:
             seconds = [row[decoder]["seconds"] for row in rows]
             summary[decoder] = {"median_seconds": statistics.median(seconds),

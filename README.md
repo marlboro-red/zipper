@@ -72,6 +72,14 @@ zipper --zip-engine native --threads 4 extract files.zip -o restored
 zipper --zip-engine native test files.zip
 ```
 
+For many tiny files, prefer the streaming `native` reader: buffered Deflate often
+adds no benefit when file creation dominates. Automatic native ZIP extraction on
+macOS uses at most four workers for archives with at least 1,024 regular files,
+all at most 16 KiB. This avoids the measured filesystem contention from using
+every CPU. Explicit `--threads N` overrides that tuning; verification-only reads
+and larger files retain their existing concurrency. Windows and Linux do not
+apply this macOS-specific policy. [Small-file ZIP versus bsdtar measurements](benchmarks/native-zip/small-files-tar.md).
+
 This parallel Rust path supports stored/Deflate ZIP and conventional ZIP64,
 validates decoded lengths and CRCs, and preserves file bytes and directories.
 It does not preserve permissions/timestamps or support encryption, symlinks,

@@ -106,6 +106,81 @@ fn central_comments_cross_preflight_buffer_boundaries() -> anyhow::Result<()> {
 }
 
 #[test]
+fn many_tiny_entries_recover_and_failure_never_publishes() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("many.zip");
+    for threads in [0, 65] {
+        let error = zipper::native_zip::read_archive_with_options(
+            &path,
+            None,
+            zipper::native_zip::ReadOptions {
+                fast: false,
+                threads: Some(threads),
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("ZIP threads must be 1..64"));
+    }
+    let payloads: Vec<Vec<u8>> = (0..1030).map(|i| vec![(i % 251) as u8; i % 513]).collect();
+    let mut writer = ZipWriter::new(fs::File::create(&path)?);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    for (i, data) in payloads.iter().enumerate() {
+        writer.start_file(format!("group-{}/file-{i}", i % 7), options)?;
+        writer.write_all(data)?;
+    }
+    writer.finish()?;
+    for threads in [1, 10] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()?;
+        for fast in [false, true] {
+            let output = temp.path().join(format!("out-{threads}-{fast}"));
+            let entries = pool.install(|| {
+                if fast {
+                    zipper::native_zip::read_archive_fast(&path, Some(&output))
+                } else {
+                    zipper::native_zip::read_archive(&path, Some(&output))
+                }
+            })?;
+            assert_eq!(entries.len(), payloads.len());
+            for (i, data) in payloads.iter().enumerate() {
+                assert_eq!(
+                    fs::read(output.join(format!("group-{}/file-{i}", i % 7)))?,
+                    *data
+                );
+            }
+        }
+    }
+    let mut damaged = fs::read(&path)?;
+    let central = damaged
+        .windows(4)
+        .enumerate()
+        .filter_map(|(i, bytes)| (bytes == b"PK\x01\x02").then_some(i))
+        .nth(700)
+        .unwrap();
+    damaged[central + 16] ^= 1;
+    fs::write(&path, damaged)?;
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(10).build()?;
+    for fast in [false, true] {
+        let output = temp.path().join(format!("failed-{fast}"));
+        assert!(
+            pool.install(|| {
+                if fast {
+                    zipper::native_zip::read_archive_fast(&path, Some(&output))
+                } else {
+                    zipper::native_zip::read_archive(&path, Some(&output))
+                }
+            })
+            .is_err()
+        );
+        assert!(!output.exists());
+    }
+    // No hidden staging directories survive a failed parallel extraction.
+    assert_eq!(fs::read_dir(temp.path())?.count(), 5);
+    Ok(())
+}
+
+#[test]
 fn unsafe_paths_and_file_ancestors_never_publish() -> anyhow::Result<()> {
     let temp = tempfile::tempdir()?;
     let input = temp.path().join("unsafe.zip");
