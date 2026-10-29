@@ -1,7 +1,13 @@
-name: Linux ZIP cache experiment
+name: Linux ZIP input experiment
 
 on:
   workflow_dispatch:
+    inputs:
+      experiment:
+        description: Isolated input-path change
+        type: choice
+        options: [input-buffer, cache]
+        default: input-buffer
 
 permissions:
   contents: read
@@ -10,6 +16,8 @@ jobs:
   experiment:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      INPUT_EXPERIMENT: ${{ inputs.experiment }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: rustup toolchain install 1.96.0 --profile minimal
@@ -30,15 +38,22 @@ jobs:
         run: |
           cargo +1.96.0 build --locked --release
           cp target/release/zipper /tmp/zipper-before
-      - name: Apply only the cache eligibility experiment
+      - name: Apply only the selected input experiment
         run: |
           python3 - <<'PY'
+          import os
           from pathlib import Path
-          p = Path('src/native_zip.rs')
+          if os.environ['INPUT_EXPERIMENT'] == 'cache':
+              p = Path('src/native_zip.rs')
+              old = 'open(path, fast && destination.is_none())?'
+              new = 'open(path, fast && (destination.is_none() || cfg!(target_os = "linux")))?'
+              count = 1
+          else:
+              p = Path('src/zip_reader.rs')
+              old, new, count = '256 * 1024', '8 * 1024', 2
           text = p.read_text()
-          old = 'open(path, fast && destination.is_none())?'
-          assert text.count(old) == 1, 'baseline changed; reconsider experiment'
-          p.write_text(text.replace(old, 'open(path, fast && (destination.is_none() || cfg!(target_os = "linux")))?'))
+          assert text.count(old) == count, 'baseline changed; reconsider experiment'
+          p.write_text(text.replace(old, new))
           PY
           mkdir results
           git diff > results/candidate.patch
@@ -50,6 +65,8 @@ jobs:
           cargo +1.96.0 build --locked --release
       - name: Generate and measure flat and grouped trees
         run: |
+          mode=native
+          if [ "$INPUT_EXPERIMENT" = cache ]; then mode=native-fast; fi
           for layout in flat grouped; do
             python3 scripts/make_tiny_corpus.py "corpora/$layout" --files 10000 --layout "$layout"
             python3 - "$layout" <<'PY'
@@ -61,10 +78,10 @@ jobs:
                   out.write(f,f.relative_to(p.parent))
           PY
             python3 scripts/compare_zip_readers.py "corpora/$layout.zip" "corpora/$layout" \
-              --reader before-1 native-fast /tmp/zipper-before \
-              --reader after-1 native-fast target/release/zipper \
-              --reader before-4 native-fast /tmp/zipper-before \
-              --reader after-4 native-fast target/release/zipper \
+              --reader before-1 "$mode" /tmp/zipper-before \
+              --reader after-1 "$mode" target/release/zipper \
+              --reader before-4 "$mode" /tmp/zipper-before \
+              --reader after-4 "$mode" target/release/zipper \
               --reader-threads before-1 1 --reader-threads after-1 1 \
               --reader-threads before-4 4 --reader-threads after-4 4 \
               --runs 7 > "results/$layout.json"
@@ -72,6 +89,6 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: linux-cache-${{ github.sha }}
+          name: linux-input-${{ inputs.experiment }}-${{ github.sha }}
           path: results/
           if-no-files-found: error
