@@ -1,0 +1,47 @@
+name: Cross-platform Silesia benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - run: cargo +1.96.0 build --locked --release
+      - name: Install 7-Zip on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y 7zip
+      - name: Install 7-Zip on macOS
+        if: runner.os == 'macOS'
+        run: command -v 7zz || brew install sevenzip
+      - run: python3 scripts/fetch_silesia.py corpora/silesia
+      - name: Collect environment
+        run: |
+          mkdir results
+          cp corpora/silesia.manifest.json results/corpus.json
+          uname -a > results/environment.txt
+          rustc +1.96.0 --version >> results/environment.txt
+          7zz i >> results/environment.txt
+          if [ "$(uname)" = "Linux" ]; then lscpu >> results/environment.txt; else sysctl hw.model hw.memsize hw.ncpu machdep.cpu.brand_string >> results/environment.txt; fi
+      - name: Native tradeoff sweep, two codec workers
+        run: python3 scripts/sweep.py corpora/silesia --levels 1 6 --blocks-kib 1024 4096 --runs 7 --threads 2 > results/sweep.json
+      - name: Actual ZIP and 7z extraction
+        run: python3 scripts/compare_formats.py corpora/silesia --formats zip 7z --native-zip --runs 7 --threads 2 > results/formats.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: silesia-${{ matrix.os }}-${{ github.sha }}
+          path: results/
+          if-no-files-found: error
