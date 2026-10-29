@@ -1,0 +1,28 @@
+name: Windows release candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    env:
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt --component clippy
+      - run: cargo +1.96.0 fmt --check
+      - run: cargo +1.96.0 clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+      - run: cargo +1.96.0 test --locked --release --target x86_64-pc-windows-msvc
+      - run: cargo +1.96.0 build --locked --release --target x86_64-pc-windows-msvc
+      - name: Verify distributable binary and package
+        run: python scripts/package_windows.py target/x86_64-pc-windows-msvc/release/zipper.exe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-release-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
