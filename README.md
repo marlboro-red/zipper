@@ -56,7 +56,8 @@ Development checks: `cargo fmt --check`, `cargo test`, and
 Existing formats: `extract`, `list`, and `test` automatically delegate non-native
 archives to `7zz` or `7z` on PATH, or the executable specified by `ZIPPER_7Z`.
 Supported formats and extraction protections depend on that installed backend.
-This is an external compatibility bridge, not yet an in-process Rust decoder.
+This default path is an external compatibility bridge; an optional in-process
+ZIP reader is described below.
 Native `--threads` does not configure the compatibility backend. Legacy listing
 uses the backend's listing operation and does not validate payloads.
 

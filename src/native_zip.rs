@@ -1,7 +1,8 @@
 //! Opt-in ZIP extraction for regular files: stored/Deflate, bounded streaming,
 //! independent per-worker readers, and publication only after full verification.
-use crate::{Entry, parent, pipeline, safe_path};
+use crate::{Entry, parent, safe_path};
 use anyhow::{Context, Result, ensure};
+use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
@@ -252,108 +253,109 @@ fn read(path: &Path, destination: Option<&Path>, fast: bool) -> Result<Vec<Entry
             fs::create_dir_all(directory)?;
         }
     }
-    let count = rayon::current_num_threads().min(64).min(items.len().max(1));
-    let mut verified = 0;
-    pipeline::run(
-        count,
-        |emit| {
-            for index in 0..items.len() {
-                emit(index)?;
-            }
-            Ok(())
-        },
-        || {
-            Ok((
-                archive.clone(),
-                vec![0u8; 256 * 1024],
-                fast.then(libdeflater::Decompressor::new),
-            ))
-        },
-        |(archive, buffer, codec), index: usize| {
-            let item = &items[index];
-            let buffered = fast
-                && item.method == CompressionMethod::Deflated
-                && item
-                    .entry
-                    .size
-                    .checked_add(item.compressed)
-                    .is_some_and(|sum| sum <= 64 * 1024 * 1024);
-            let mut source = if buffered {
-                archive.by_index_raw(index)?
-            } else {
-                archive.by_index(index)?
-            };
-            ensure!(
-                source.size() == item.entry.size
-                    && source.crc32() == item.crc
-                    && source.compressed_size() == item.compressed
-                    && source.compression() == item.method,
-                "ZIP changed during extraction"
-            );
-            let mut output = if let Some(temp) = &staging {
-                if !item.entry.directory {
-                    Some(BufWriter::new(
-                        File::options()
-                            .write(true)
-                            .create_new(true)
-                            .open(temp.path().join(&item.entry.name))?,
-                    ))
+    // ZIP entries are independent outputs. Use descending-size order and work
+    // stealing instead of fixed file lanes; Rayon does not promise start order.
+    let mut work: Vec<_> = (0..items.len()).collect();
+    work.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
+    let run = || {
+        work.par_iter().try_for_each_init(
+            || {
+                (
+                    archive.clone(),
+                    vec![0u8; 256 * 1024],
+                    fast.then(libdeflater::Decompressor::new),
+                )
+            },
+            |(archive, buffer, codec), &index| {
+                let item = &items[index];
+                let buffered = fast
+                    && item.method == CompressionMethod::Deflated
+                    && item
+                        .entry
+                        .size
+                        .checked_add(item.compressed)
+                        .is_some_and(|sum| sum <= 64 * 1024 * 1024);
+                let mut source = if buffered {
+                    archive.by_index_raw(index)?
+                } else {
+                    archive.by_index(index)?
+                };
+                ensure!(
+                    source.size() == item.entry.size
+                        && source.crc32() == item.crc
+                        && source.compressed_size() == item.compressed
+                        && source.compression() == item.method,
+                    "ZIP changed during extraction"
+                );
+                let mut output = if let Some(temp) = &staging {
+                    if !item.entry.directory {
+                        Some(BufWriter::new(
+                            File::options()
+                                .write(true)
+                                .create_new(true)
+                                .open(temp.path().join(&item.entry.name))?,
+                        ))
+                    } else {
+                        None
+                    }
                 } else {
                     None
+                };
+                if buffered {
+                    // Allocate per entry: retaining two independently grown scratch
+                    // buffers could exceed the combined-size cap across jobs.
+                    let mut compressed = vec![0; item.compressed as usize];
+                    let mut decoded = vec![0; item.entry.size as usize];
+                    source.read_exact(&mut compressed)?;
+                    let length = codec
+                        .as_mut()
+                        .unwrap()
+                        .deflate_decompress(&compressed, &mut decoded)?;
+                    ensure!(
+                        length as u64 == item.entry.size,
+                        "ZIP decoded size mismatch"
+                    );
+                    ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
+                    if let Some(output) = &mut output {
+                        output.write_all(&decoded)?;
+                        output.flush()?;
+                    }
+                    return Ok(());
                 }
-            } else {
-                None
-            };
-            if buffered {
-                // Allocate per entry: retaining two independently grown scratch
-                // buffers could exceed the combined-size cap across jobs.
-                let mut compressed = vec![0; item.compressed as usize];
-                let mut decoded = vec![0; item.entry.size as usize];
-                source.read_exact(&mut compressed)?;
-                let length = codec
-                    .as_mut()
-                    .unwrap()
-                    .deflate_decompress(&compressed, &mut decoded)?;
-                ensure!(
-                    length as u64 == item.entry.size,
-                    "ZIP decoded size mismatch"
-                );
-                ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
+                let mut written = 0u64;
+                loop {
+                    let len = source.read(buffer)?;
+                    if len == 0 {
+                        break;
+                    }
+                    written = written
+                        .checked_add(len as u64)
+                        .context("ZIP size overflow")?;
+                    ensure!(
+                        written <= item.entry.size,
+                        "ZIP decoded size exceeds metadata"
+                    );
+                    if let Some(output) = &mut output {
+                        output.write_all(&buffer[..len])?;
+                    }
+                }
+                ensure!(written == item.entry.size, "ZIP decoded size mismatch");
                 if let Some(output) = &mut output {
-                    output.write_all(&decoded)?;
                     output.flush()?;
                 }
-                return Ok(());
-            }
-            let mut written = 0u64;
-            loop {
-                let len = source.read(buffer)?;
-                if len == 0 {
-                    break;
-                }
-                written = written
-                    .checked_add(len as u64)
-                    .context("ZIP size overflow")?;
-                ensure!(
-                    written <= item.entry.size,
-                    "ZIP decoded size exceeds metadata"
-                );
-                if let Some(output) = &mut output {
-                    output.write_all(&buffer[..len])?;
-                }
-            }
-            ensure!(written == item.entry.size, "ZIP decoded size mismatch");
-            if let Some(output) = &mut output {
-                output.flush()?;
-            }
-            Ok(())
-        },
-        |_| {
-            verified += 1;
-            Ok(())
-        },
-    )?;
-    ensure!(verified == items.len(), "incomplete ZIP extraction");
+                Ok(())
+            },
+        )
+    };
+    if rayon::current_num_threads() <= 64 {
+        run()?;
+    } else {
+        // Library callers may supply a larger Rayon pool than the CLI allows.
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(64)
+            .build()?
+            .install(run)?;
+    }
     if let (Some(temp), Some(dst)) = (staging, destination) {
         ensure!(
             fs::symlink_metadata(dst).is_err(),

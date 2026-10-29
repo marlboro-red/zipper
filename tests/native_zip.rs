@@ -284,6 +284,47 @@ fn fast_zip_rejects_wrong_sizes_and_malformed_deflate() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn parallel_zip_failure_cleans_up_all_workers_outputs() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("parallel.zip");
+    let payload = vec![b'x'; 1024 * 1024];
+    archive(
+        &path,
+        &[
+            ("a", &payload),
+            ("b", &payload),
+            ("c", &payload),
+            ("d", &payload),
+            ("e", &payload),
+            ("f", &payload),
+        ],
+        CompressionMethod::Deflated,
+    )?;
+    let mut damaged = fs::read(&path)?;
+    let at = damaged
+        .windows(4)
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == b"PK\x01\x02")
+        .nth(2)
+        .unwrap()
+        .0;
+    damaged[at + 16] ^= 1;
+    fs::write(&path, damaged)?;
+    for fast in [false, true] {
+        let out = temp.path().join("out");
+        let result = if fast {
+            zipper::native_zip::read_archive_fast(&path, Some(&out))
+        } else {
+            zipper::native_zip::read_archive(&path, Some(&out))
+        };
+        assert!(result.is_err());
+        assert!(!out.exists());
+        assert_eq!(fs::read_dir(temp.path())?.count(), 1);
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 #[test]
 fn windows_devices_and_aliases_are_rejected() -> anyhow::Result<()> {
