@@ -26,8 +26,11 @@ enum Command {
         archive: PathBuf,
         #[arg(short, long)]
         output: PathBuf,
+        /// Extract an exact archive path or directory subtree (v2 only; repeatable).
+        #[arg(long = "path")]
+        paths: Vec<String>,
     },
-    /// List entries, validating their content.
+    /// List entries (v2 validates the index; use test to verify payloads).
     List { archive: PathBuf },
     /// Verify archive integrity without extracting.
     Test { archive: PathBuf },
@@ -35,7 +38,7 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     if let Some(n) = cli.threads {
-        anyhow::ensure!(n > 0, "threads must be positive");
+        anyhow::ensure!((1..=64).contains(&n), "threads must be between 1 and 64");
         rayon::ThreadPoolBuilder::new()
             .num_threads(n)
             .build_global()?;
@@ -46,7 +49,15 @@ fn main() -> Result<()> {
             inputs,
             level,
         } => zipper::create(&archive, &inputs, level)?,
-        Command::Extract { archive, output } => {
+        Command::Extract {
+            archive,
+            output,
+            paths,
+        } => {
+            if !paths.is_empty() {
+                zipper::extract_selected(&archive, &output, &paths)?;
+                return Ok(());
+            }
             if zipper::compat::is_native(&archive)? {
                 zipper::read_archive(&archive, Some(&output))?;
             } else {
@@ -57,7 +68,7 @@ fn main() -> Result<()> {
             if !zipper::compat::is_native(&archive)? {
                 return zipper::compat::run("l", &archive, None);
             }
-            for e in zipper::read_archive(&archive, None)? {
+            for e in zipper::list_archive(&archive)? {
                 println!(
                     "{}\t{}\t{:?}",
                     if e.directory { "dir" } else { "file" },
