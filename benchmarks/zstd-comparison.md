@@ -1,5 +1,7 @@
 # Same-codec application comparison — 2026-10-29
 
+> Superseded for compression comparisons: this run used ordinary `fsync` for tar outputs while Rust used `F_FULLFSYNC` on macOS. See the [corrected matched-sync results](v2/zstd-fullsync.md). Extraction measurements are unaffected by this specific mismatch.
+
 Zipper engine revision `7efc10b` (engine unchanged from `6acd322`); Apple M5, 32 GiB RAM, macOS 26.7.1. Zstandard and PZstandard from local Zstandard 1.5.7 installation. Five measured runs after one warmup round, seeded randomized engine ordering within each corpus/round, four requested codec workers, level 1. Every restored file and directory manifest was verified. Raw results: [zstd-comparison.json](zstd-comparison.json).
 
 | Corpus | Engine | Compression MiB/s | Extraction MiB/s | Archive MiB |

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compare complete Zipper and tar+Zstandard round trips (Unix tools required)."""
 import argparse
+import fcntl
 import json
 import os
 import platform
@@ -12,6 +13,15 @@ import subprocess
 import tempfile
 import time
 from benchmark import manifest
+
+
+def sync_archive(stream):
+    """Match Rust File::sync_all: F_FULLFSYNC on macOS, fsync elsewhere."""
+    stream.flush()
+    if platform.system() == "Darwin":
+        fcntl.fcntl(stream.fileno(), fcntl.F_FULLFSYNC)
+    else:
+        os.fsync(stream.fileno())
 
 
 def pipeline(commands, cwd, output=None):
@@ -48,7 +58,9 @@ def main():
     engines = ["zipper", "tar+zstd", "tar+pzstd"]
     rng = random.Random(20261029)
     result = {"platform": platform.platform(), "threads": args.threads,
-              "runs": args.runs, "level": 1, "warmup_rounds": 1, "corpora": {}}
+              "runs": args.runs, "level": 1, "warmup_rounds": 1,
+              "archive_sync": "F_FULLFSYNC" if platform.system() == "Darwin" else "fsync",
+              "corpora": {}}
     with tempfile.TemporaryDirectory(prefix="zipper-zstd-compare-") as work:
         for name in ["logs", "binaries", "random", "small-files"]:
             source = (args.corpus_root / name).resolve(strict=True)
@@ -75,8 +87,7 @@ def main():
                         with archive.open("wb") as stream:
                             start = time.perf_counter()
                             ct = pipeline(create, source.parent, stream)
-                            stream.flush()
-                            os.fsync(stream.fileno())
+                            sync_archive(stream)
                             ct = time.perf_counter() - start
                         out.mkdir()
                     dt = pipeline(extract, source.parent)

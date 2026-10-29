@@ -4,8 +4,9 @@ V2 improves large-file extraction and small-file compression density on this
 local corpus. Compression speed remains mixed; these results do not establish
 state-of-the-art leadership.
 
-The [updated application comparison](zstd-comparison.md) measures this build
-against tar+zstd and tar+pzstd, including the remaining incompressible-data gap.
+The [corrected application comparison](zstd-fullsync.md) matches archive-file
+sync operations across engines. The earlier tar comparisons used a weaker sync
+operation on macOS, overstating the incompressible-data creation gap.
 
 Apple M5, 10 cores, 32 GiB RAM, macOS 26.7.1. Release builds, Zstandard level 1,
 four requested codec workers, one warmup and seven measured rounds per corpus.

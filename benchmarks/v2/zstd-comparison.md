@@ -1,5 +1,7 @@
 # V2 application comparison — 2026-10-29
 
+> Superseded for compression comparisons: this run used ordinary `fsync` for tar outputs while Rust used `F_FULLFSYNC` on macOS. See the [corrected matched-sync results](zstd-fullsync.md). Extraction measurements are unaffected by this specific mismatch.
+
 Current v2 with directory deduplication, Apple M5, 32 GiB RAM, macOS 26.7.1. Five measured rounds plus one warmup, seeded interleaved ordering, four requested codec workers, Zstandard level 1. Every round trip passed SHA-256 file-content and tree-manifest verification. [Raw samples](zstd-comparison.json).
 
 | Corpus | Engine | Compression MiB/s | Extraction MiB/s | Archive bytes |
