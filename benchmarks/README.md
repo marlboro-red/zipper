@@ -1,5 +1,9 @@
 # Local performance baseline — 2026-10-29
 
+Follow-up: [same-codec comparison against tar+zstd and tar+pzstd](zstd-comparison.md).
+That comparison is a closer baseline than the LZMA2 preset below and does not
+support a universal Zipper creation-speed lead.
+
 Measured engine revision: `6acd322d2b11d52530b3606415e1f36981c68c74`.
 
 Apple M5, 10 logical CPUs, 32 GiB RAM, macOS 26.7.1 arm64. Release build; four requested threads for each engine; three runs per corpus. Zipper uses Zstandard level 1; 7-Zip 26.05 uses LZMA2 with `-mx=1`. Values below are throughput derived from median wall time. All extracted file bytes and directory trees passed verification.
