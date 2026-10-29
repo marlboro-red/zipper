@@ -1,5 +1,6 @@
 use crate::{Entry, MAGIC, number, parent, pipeline, safe_path};
 use anyhow::{Context, Result, ensure};
+use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
@@ -540,12 +541,44 @@ pub(super) fn read_archive(
             if let Some(temp) = &staging {
                 let end = packet.offset + packet.data.len() as u64;
                 let first = files.partition_point(|i| i.offset + i.entry.size <= packet.offset);
+                let last = files.partition_point(|i| i.offset < end);
+                let whole = |item: &Item| {
+                    item.offset >= packet.offset && item.offset + item.entry.size <= end
+                };
+                // Small files share a decoded block but have independent output
+                // files. Amortize parallel dispatch over at least eight files.
+                // Crossing files stay on the ordered writer below.
+                let parallel = files[first..last]
+                    .iter()
+                    .filter(|item| whole(item))
+                    .take(8)
+                    .count()
+                    == 8
+                    && rayon::current_num_threads() > 1;
+                if parallel {
+                    files[first..last]
+                        .par_iter()
+                        .filter(|item| whole(item))
+                        .try_for_each(|item| -> Result<()> {
+                            let start = (item.offset - packet.offset) as usize;
+                            let stop = start + item.entry.size as usize;
+                            File::options()
+                                .write(true)
+                                .create_new(true)
+                                .open(temp.path().join(&item.entry.name))?
+                                .write_all(&packet.data[start..stop])?;
+                            Ok(())
+                        })?;
+                }
                 for (n, item) in files
                     .iter()
                     .enumerate()
                     .skip(first)
                     .take_while(|(_, i)| i.offset < end)
                 {
+                    if parallel && whole(item) {
+                        continue;
+                    }
                     if current.as_ref().is_none_or(|(id, _)| *id != n) {
                         if let Some((_, mut w)) = current.take() {
                             w.flush()?;

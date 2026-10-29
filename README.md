@@ -36,7 +36,11 @@ V1 archives remain readable; v1 listing still validates all content.
 
 Reading, codec work, and writing overlap through bounded per-worker queues.
 Workers reuse codec contexts and recycle payload buffers. `--threads` controls
-codec workers (1–64), with separate reader/writer work. Metadata grows with entry
+codec workers (1–64), with separate reader/writer work. Blocks containing many
+complete small files also use the Rayon pool for
+parallel file writes, so `--threads 4` can activate four codec workers and four
+file-writing workers plus reader/control work; it is not a total thread budget.
+Metadata grows with entry
 count, capped at one million entries and a 64 MiB decoded index. Payload memory
 scales with worker count and block size; codec contexts add level-dependent memory.
 The Rust engine currently uses the C Zstandard codec through

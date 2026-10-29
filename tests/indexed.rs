@@ -1,6 +1,65 @@
 use std::{fs, path::Path};
 
 const BLOCK: usize = 1024 * 1024;
+
+#[test]
+fn packed_small_files_around_crossing_file_recover_in_full_and_selected_reads() -> anyhow::Result<()>
+{
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("input");
+    fs::create_dir(&input)?;
+    let mut expected = Vec::new();
+    for prefix in ["a", "c"] {
+        for i in 0..16 {
+            let name = format!("{prefix}-{i:02}");
+            let bytes = vec![i as u8; 123];
+            fs::write(input.join(&name), &bytes)?;
+            expected.push((name, bytes));
+        }
+    }
+    for size in [2 * 65536 + 97, 2 * 65536 - 16 * 123] {
+        let big = noise(size);
+        fs::write(input.join("b-big"), &big)?;
+        expected.push(("b-big".into(), big));
+        let archive = temp.path().join(format!("packed-{size}.zipper"));
+        zipper::create_with_options(
+            &archive,
+            std::slice::from_ref(&input),
+            zipper::CreateOptions {
+                level: 1,
+                block_size: 65536,
+            },
+        )?;
+        for threads in [1, 4] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()?;
+            let all = temp.path().join(format!("all-{size}-{threads}"));
+            pool.install(|| zipper::read_archive(&archive, Some(&all)))?;
+            for (name, bytes) in &expected {
+                assert_eq!(&fs::read(all.join("input").join(name))?, bytes);
+            }
+            let selected = temp.path().join(format!("selected-{size}-{threads}"));
+            let names: Vec<_> = expected
+                .iter()
+                .filter(|(name, _)| !name.starts_with('a'))
+                .map(|(name, _)| format!("input/{name}"))
+                .collect();
+            pool.install(|| zipper::extract_selected(&archive, &selected, &names))?;
+            for (name, bytes) in &expected {
+                let path = selected.join("input").join(name);
+                if name.starts_with('a') {
+                    assert!(!path.exists());
+                } else {
+                    assert_eq!(&fs::read(path)?, bytes);
+                }
+            }
+        }
+        expected.pop();
+    }
+    Ok(())
+}
+
 fn noise(len: usize) -> Vec<u8> {
     let mut state = 0x12345678u32;
     (0..len)
