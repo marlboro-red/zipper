@@ -1,5 +1,7 @@
 # Zipper
 
+[Local performance baseline and reproduction steps](benchmarks/README.md).
+
 A Rust archive engine pursuing fast compression and decompression at competitive
 compression ratios. This is an experimental foundation, not a performance leader
 yet. Native archives use the versioned `.zipper` format.

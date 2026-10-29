@@ -1,0 +1,92 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "threads": 4,
+  "zipper_level": 1,
+  "input_bytes": 233270422,
+  "corpus": "/private/var/folders/hn/pcsp4lh92klg4qvq6xjm1h7m0000gn/T/zipper-baseline-v203sxmi/binaries",
+  "results": [
+    {
+      "engine": "zipper",
+      "samples": [
+        {
+          "compression": {
+            "seconds": 0.106969875,
+            "peak_rss_bytes": 24510464
+          },
+          "extraction": {
+            "seconds": 0.05883954200000002,
+            "peak_rss_bytes": 20545536
+          },
+          "archive_bytes": 77271177
+        },
+        {
+          "compression": {
+            "seconds": 0.105805708,
+            "peak_rss_bytes": 24412160
+          },
+          "extraction": {
+            "seconds": 0.060136292000000036,
+            "peak_rss_bytes": 21692416
+          },
+          "archive_bytes": 77271177
+        },
+        {
+          "compression": {
+            "seconds": 0.10631691700000001,
+            "peak_rss_bytes": 24510464
+          },
+          "extraction": {
+            "seconds": 0.05988170800000003,
+            "peak_rss_bytes": 20529152
+          },
+          "archive_bytes": 77271177
+        }
+      ],
+      "compression_mib_s": 2092.461073138976,
+      "extraction_mib_s": 3715.0578643923673,
+      "archive_to_input_ratio": 0.3312514991720639
+    },
+    {
+      "engine": "7zip-lzma2",
+      "samples": [
+        {
+          "compression": {
+            "seconds": 1.251643375,
+            "peak_rss_bytes": 22020096
+          },
+          "extraction": {
+            "seconds": 0.3912644169999999,
+            "peak_rss_bytes": 11501568
+          },
+          "archive_bytes": 58226516
+        },
+        {
+          "compression": {
+            "seconds": 0.9753000000000003,
+            "peak_rss_bytes": 21807104
+          },
+          "extraction": {
+            "seconds": 0.411933125,
+            "peak_rss_bytes": 11501568
+          },
+          "archive_bytes": 58226516
+        },
+        {
+          "compression": {
+            "seconds": 0.9973040840000005,
+            "peak_rss_bytes": 21921792
+          },
+          "extraction": {
+            "seconds": 0.39668179200000075,
+            "peak_rss_bytes": 11517952
+          },
+          "archive_bytes": 58226516
+        }
+      ],
+      "compression_mib_s": 223.0653757541891,
+      "extraction_mib_s": 560.812254873163,
+      "archive_to_input_ratio": 0.24960951114496632
+    }
+  ]
+}
