@@ -47,6 +47,14 @@ enum Command {
     List { archive: PathBuf },
     /// Verify archive integrity without extracting.
     Test { archive: PathBuf },
+    /// Find byte-identical files in input paths (read-only; skips symlinks).
+    Duplicates {
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Print totals without listing individual paths.
+        #[arg(long)]
+        summary: bool,
+    },
 }
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -57,6 +65,27 @@ fn main() -> Result<()> {
             .build_global()?;
     }
     match cli.command {
+        Command::Duplicates { inputs, summary } => {
+            let report = zipper::duplicates::find(&inputs)?;
+            for (index, group) in report.groups.iter().enumerate().filter(|_| !summary) {
+                println!(
+                    "Group {}: {} files, {} bytes each",
+                    index + 1,
+                    group.paths.len(),
+                    group.size
+                );
+                for path in &group.paths {
+                    println!("  {:?}", path);
+                }
+            }
+            println!(
+                "Scanned {} files; {} duplicate groups; {} duplicate payload bytes; {} non-regular entries skipped",
+                report.scanned_files,
+                report.groups.len(),
+                report.duplicate_bytes,
+                report.skipped_entries
+            );
+        }
         Command::Create {
             archive,
             inputs,

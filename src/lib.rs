@@ -1,4 +1,5 @@
 pub mod compat;
+pub mod duplicates;
 pub mod native_zip;
 mod pipeline;
 mod v1;

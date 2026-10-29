@@ -25,6 +25,20 @@ target/release/zipper --threads 4 create dense.zipper ./data --level 6 --block-s
 The archive must be outside the input tree. Creation never overwrites an archive;
 extraction requires a new destination directory with an existing parent.
 
+Find identical file contents before archiving:
+
+```sh
+zipper duplicates ./data ./other-data
+zipper --threads 4 duplicates --summary ./data
+```
+
+Matches are confirmed byte for byte. Overlapping input paths are counted once;
+symlinks and special files are skipped. The report is read-only. Duplicate payload
+bytes describe logical content, not reclaimable disk space (hard links and
+filesystem compression matter). Keep inputs unchanged during the scan.
+[Duplicate-checking details](docs/duplicates.md). Archive-level deduplication is
+not implemented yet.
+
 New archives use v2: files share independent blocks (1 MiB by default), encoded with Zstandard
 or raw storage, whichever is smaller. A compressed, checksummed index maps paths
 to payload extents. `list` reads only this index; `test` verifies every payload.
