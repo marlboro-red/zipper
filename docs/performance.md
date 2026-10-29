@@ -18,7 +18,9 @@ add tuned bsdtar baselines: TAR, TAR+zstd, TAR+pzstd, and identical ZIP.
 tuned tar buffers rather than relying only on default settings. Native ZIP currently
 preserves bytes and directories only; the backend remains the default. ZIP
 buffered uses libdeflate within an explicit per-worker memory cap; ZIP stream
-uses zlib-rs with small streaming buffers.
+uses zlib-rs with small streaming buffers. Those plotted ZIP measurements
+predate the [shared entry-buffer budget](../benchmarks/native-zip/shared-budget/README.md)
+now used by native-fast.
 
 [Full tables, methodology, reproduction commands, and raw samples](../benchmarks/silesia/README.md)
 include compression speed and peak creation memory, which are absent from this

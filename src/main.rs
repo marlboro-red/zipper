@@ -11,6 +11,10 @@ struct Cli {
     /// ZIP reader: native is experimental and preserves bytes/directories only.
     #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Backend)]
     zip_engine: ZipEngine,
+    /// Shared native-fast ZIP entry-buffer budget in MiB (default 128; 0 streams).
+    /// Metadata, worker state and verification archive cache are additional.
+    #[arg(long, global = true, value_parser = clap::value_parser!(u32).range(0..=4096))]
+    zip_buffer_mib: Option<u32>,
     #[command(subcommand)]
     command: Command,
 }
@@ -18,7 +22,7 @@ struct Cli {
 enum ZipEngine {
     Backend,
     Native,
-    /// Native ZIP with up to 64 MiB of entry buffers per worker.
+    /// Native ZIP with a shared 128 MiB entry-buffer budget by default.
     NativeFast,
 }
 #[derive(Subcommand)]
@@ -64,6 +68,17 @@ fn main() -> Result<()> {
             .num_threads(n)
             .build_global()?;
     }
+    anyhow::ensure!(
+        cli.zip_buffer_mib.is_none() || cli.zip_engine == ZipEngine::NativeFast,
+        "--zip-buffer-mib requires --zip-engine native-fast"
+    );
+    let buffer_bytes = cli
+        .zip_buffer_mib
+        .map(|mib| {
+            usize::try_from(u64::from(mib) * 1024 * 1024)
+                .map_err(|_| anyhow::anyhow!("ZIP buffer budget exceeds platform address space"))
+        })
+        .transpose()?;
     match cli.command {
         Command::Duplicates { inputs, summary } => {
             let report = zipper::duplicates::find(&inputs)?;
@@ -117,6 +132,7 @@ fn main() -> Result<()> {
                     zipper::native_zip::ReadOptions {
                         fast: cli.zip_engine == ZipEngine::NativeFast,
                         threads: cli.threads,
+                        buffer_bytes,
                     },
                 )?;
             } else {
@@ -156,6 +172,7 @@ fn main() -> Result<()> {
                     zipper::native_zip::ReadOptions {
                         fast: cli.zip_engine == ZipEngine::NativeFast,
                         threads: cli.threads,
+                        buffer_bytes,
                     },
                 )?
             };

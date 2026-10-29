@@ -102,11 +102,13 @@ other codecs, multi-disk archives, or ambiguous end records. It accepts at most
 shared; streaming buffers scale with workers, not expanded file size. Extraction
 has no total expanded-size quota. The compatibility backend remains the default.
 
-`--zip-engine native-fast` adds a libdeflate buffer decoder for Deflate entries
-whose compressed and expanded sizes sum to at most 64 MiB. Larger entries stream
-through zlib-rs. This can be faster, but permits up to 64 MiB of entry buffers
-**per worker**, plus codec/metadata memory. Both native ZIP modes verify decoded
-lengths and CRCs before publication. Use `native` for low memory consumption.
+`--zip-engine native-fast` adds a libdeflate buffer decoder with a shared
+128 MiB budget for live compressed and expanded entry buffers across workers.
+Entries that cannot reserve space immediately stream through zlib-rs. Override
+with `--zip-buffer-mib N` (0 forces streaming). Metadata, worker state, archive
+cache and allocator-retained memory are additional: this is not a peak RSS cap.
+Both native ZIP modes verify decoded lengths and CRCs before publication. Use
+`native` for low memory consumption. See the [shared-budget measurements](benchmarks/native-zip/shared-budget/README.md).
 
 For integrity-only `native-fast test`, archives up to 8 MiB are cached once and
 shared by independent read cursors. Larger archives use the file reader. This

@@ -8,6 +8,7 @@ use std::{
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::Path,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 use zip::{CompressionMethod, ZipArchive};
 
@@ -20,6 +21,43 @@ struct Item {
 
 const MAX_METADATA: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: u64 = 100_000;
+
+// This accounts only for the two whole-entry buffers, not process RSS.
+struct BufferBudget(AtomicUsize);
+
+impl BufferBudget {
+    fn reserve(&self, bytes: usize) -> Option<BufferReservation<'_>> {
+        self.0
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |available| {
+                available.checked_sub(bytes)
+            })
+            .ok()
+            .map(|_| BufferReservation {
+                budget: self,
+                bytes,
+            })
+    }
+}
+
+struct BufferReservation<'a> {
+    budget: &'a BufferBudget,
+    bytes: usize,
+}
+
+impl Drop for BufferReservation<'_> {
+    fn drop(&mut self) {
+        self.budget.0.fetch_add(self.bytes, Ordering::Relaxed);
+    }
+}
+
+fn entry_buffer(size: usize) -> Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    buffer
+        .try_reserve_exact(size)
+        .context("cannot allocate ZIP entry buffer")?;
+    buffer.resize(size, 0);
+    Ok(buffer)
+}
 
 // Bound directory allocation before the general ZIP parser sees untrusted
 // counts/lengths. The opt-in path accepts conventional single-disk ZIP/ZIP64
@@ -227,7 +265,7 @@ pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry
 }
 
 /// Whole-buffer Deflate fast path for entries whose compressed and decoded sizes
-/// sum to at most 64 MiB; larger entries use the bounded streaming path.
+/// fit the shared 128 MiB budget; other entries use bounded streaming.
 /// Integrity-only reads also cache archives up to 8 MiB in shared memory.
 pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
     read_archive_with_options(
@@ -236,6 +274,7 @@ pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<
         ReadOptions {
             fast: true,
             threads: None,
+            buffer_bytes: None,
         },
     )
 }
@@ -248,6 +287,9 @@ pub struct ReadOptions {
     /// Override automatic concurrency with a maximum of 1–64 workers.
     /// The caller's Rayon pool remains an additional upper bound.
     pub threads: Option<usize>,
+    /// Shared compressed + decoded entry-buffer budget; default 128 MiB.
+    /// Zero forces streaming. Metadata, worker state and archive cache are extra.
+    pub buffer_bytes: Option<usize>,
 }
 
 pub fn read_archive_with_options(
@@ -260,6 +302,9 @@ pub fn read_archive_with_options(
         "ZIP threads must be 1..64"
     );
     let fast = options.fast;
+    let budget = BufferBudget(AtomicUsize::new(
+        options.buffer_bytes.unwrap_or(128 * 1024 * 1024),
+    ));
     // Cache only integrity-only fast reads: extraction measurements remain
     // dominated by filesystem work and do not justify the extra allocation.
     let archive = open(path, fast && destination.is_none())?;
@@ -302,13 +347,19 @@ pub fn read_archive_with_options(
             },
             |(archive, buffer, codec), &index| {
                 let item = &items[index];
-                let buffered = fast
-                    && item.method == CompressionMethod::Deflated
-                    && item
-                        .entry
+                // Never wait for memory while holding worker resources. If a
+                // reservation cannot fit now, this entry uses streaming instead.
+                // Declare the lease before buffers so it outlives them on errors.
+                let reservation = if fast && item.method == CompressionMethod::Deflated {
+                    item.entry
                         .size
                         .checked_add(item.compressed)
-                        .is_some_and(|sum| sum <= 64 * 1024 * 1024);
+                        .and_then(|bytes| usize::try_from(bytes).ok())
+                        .and_then(|bytes| budget.reserve(bytes))
+                } else {
+                    None
+                };
+                let buffered = reservation.is_some();
                 let mut source = if buffered {
                     archive.by_index_raw(index)?
                 } else {
@@ -336,10 +387,10 @@ pub fn read_archive_with_options(
                     None
                 };
                 if buffered {
-                    // Allocate per entry: retaining two independently grown scratch
-                    // buffers could exceed the combined-size cap across jobs.
-                    let mut compressed = vec![0; item.compressed as usize];
-                    let mut decoded = vec![0; item.entry.size as usize];
+                    // Allocate exact entry lengths while holding the shared lease.
+                    // Reusing independently grown buffers would violate accounting.
+                    let mut compressed = entry_buffer(item.compressed as usize)?;
+                    let mut decoded = entry_buffer(item.entry.size as usize)?;
                     source.read_exact(&mut compressed)?;
                     let length = codec
                         .as_mut()
@@ -412,4 +463,45 @@ pub fn read_archive_with_options(
         fs::rename(temp.path(), dst)?;
     }
     Ok(items.into_iter().map(|item| item.entry).collect())
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    use std::sync::Barrier;
+
+    #[test]
+    fn concurrent_reservations_never_exceed_budget_and_release_on_unwind() {
+        let budget = BufferBudget(AtomicUsize::new(8));
+        let held = Barrier::new(16);
+        let release = Barrier::new(16);
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                let budget = &budget;
+                let held = &held;
+                let release = &release;
+                scope.spawn(move || {
+                    let reservation = budget.reserve(1);
+                    held.wait();
+                    // Exactly eight leases must be live; none can release early.
+                    assert_eq!(budget.0.load(Ordering::Relaxed), 0);
+                    assert!(budget.reserve(1).is_none());
+                    release.wait();
+                    drop(reservation);
+                });
+            }
+        });
+        assert_eq!(budget.0.load(Ordering::Relaxed), 8);
+        assert!(
+            std::panic::catch_unwind(|| {
+                let _reservation = budget.reserve(8).unwrap();
+                panic!("simulated failed decode");
+            })
+            .is_err()
+        );
+        assert_eq!(budget.0.load(Ordering::Relaxed), 8);
+        assert!(entry_buffer(usize::MAX).is_err());
+        assert!(budget.reserve(usize::MAX).is_none());
+        assert!(budget.reserve(8).is_some());
+    }
 }
