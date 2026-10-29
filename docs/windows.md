@@ -41,3 +41,9 @@ implemented. Treat this as experimental software and retain original data.
 ```powershell
 Get-FileHash .\zipper-0.1.0-alpha.1-windows-x86_64.zip -Algorithm SHA256
 ```
+
+Current development builds have [preliminary Windows extraction and memory
+measurements](../benchmarks/extraction-matrix/README.md), including a detected
+whole-buffer decoding regression that prompted a conservative shared-buffer
+default. Those source builds differ from the downloadable alpha described above.
+The alpha asset has not been rebuilt as part of these experiments.

@@ -366,6 +366,16 @@ DwarFS, GPU, or new Rust-codec benchmark has been run as part of this research.
 
 ## Extraction-first review: 30 October 2026
 
+Implementation follow-through: [portable measurements](../benchmarks/extraction-matrix/README.md)
+now cover Linux/macOS plus a smaller Windows diagnostic. Retained changes are
+[shared fast-ZIP entry-buffer accounting](../benchmarks/native-zip/shared-budget/README.md),
+[Linux extraction caching](../benchmarks/native-zip/linux-cache/README.md), and
+[reduced input read-ahead](../benchmarks/native-zip/input-buffer/README.md).
+The grouped Linux fixtures exceed the threefold target in matched experiments;
+the original local macOS small-file target remains unmet. These are bounded
+input-path improvements, not the full executor/output redesign proposed below.
+Descriptions of the old per-worker budget below refer to the review baseline.
+
 The next objective is **complete, verified extraction**, including creating the
 output tree. Decoder throughput is a component metric. The recent 10–16× gain
 in ZIP integrity verification is not an extraction gain. The requested 3× faster
