@@ -217,6 +217,16 @@ pub fn list(path: &Path) -> Result<Vec<Entry>> {
 /// file bytes and directories, not permissions, timestamps, or extended metadata.
 /// The archive and destination parent must not be modified concurrently.
 pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
+    read(path, destination, false)
+}
+
+/// Whole-buffer Deflate fast path for entries whose compressed and decoded sizes
+/// sum to at most 64 MiB; larger entries use the bounded streaming path.
+pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
+    read(path, destination, true)
+}
+
+fn read(path: &Path, destination: Option<&Path>, fast: bool) -> Result<Vec<Entry>> {
     let archive = open(path)?;
     let items = scan(&archive)?;
     let staging = if let Some(dst) = destination {
@@ -252,10 +262,27 @@ pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry
             }
             Ok(())
         },
-        || Ok((archive.clone(), vec![0u8; 256 * 1024])),
-        |(archive, buffer), index: usize| {
+        || {
+            Ok((
+                archive.clone(),
+                vec![0u8; 256 * 1024],
+                fast.then(libdeflater::Decompressor::new),
+            ))
+        },
+        |(archive, buffer, codec), index: usize| {
             let item = &items[index];
-            let mut source = archive.by_index(index)?;
+            let buffered = fast
+                && item.method == CompressionMethod::Deflated
+                && item
+                    .entry
+                    .size
+                    .checked_add(item.compressed)
+                    .is_some_and(|sum| sum <= 64 * 1024 * 1024);
+            let mut source = if buffered {
+                archive.by_index_raw(index)?
+            } else {
+                archive.by_index(index)?
+            };
             ensure!(
                 source.size() == item.entry.size
                     && source.crc32() == item.crc
@@ -277,6 +304,27 @@ pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry
             } else {
                 None
             };
+            if buffered {
+                // Allocate per entry: retaining two independently grown scratch
+                // buffers could exceed the combined-size cap across jobs.
+                let mut compressed = vec![0; item.compressed as usize];
+                let mut decoded = vec![0; item.entry.size as usize];
+                source.read_exact(&mut compressed)?;
+                let length = codec
+                    .as_mut()
+                    .unwrap()
+                    .deflate_decompress(&compressed, &mut decoded)?;
+                ensure!(
+                    length as u64 == item.entry.size,
+                    "ZIP decoded size mismatch"
+                );
+                ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
+                if let Some(output) = &mut output {
+                    output.write_all(&decoded)?;
+                    output.flush()?;
+                }
+                return Ok(());
+            }
             let mut written = 0u64;
             loop {
                 let len = source.read(buffer)?;

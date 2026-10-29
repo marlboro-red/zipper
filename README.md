@@ -75,6 +75,12 @@ other codecs, multi-disk archives, or ambiguous end records. It accepts at most
 shared; streaming buffers scale with workers, not expanded file size. Extraction
 has no total expanded-size quota. The compatibility backend remains the default.
 
+`--zip-engine native-fast` adds a libdeflate buffer decoder for Deflate entries
+whose compressed and expanded sizes sum to at most 64 MiB. Larger entries stream
+through zlib-rs. This can be faster, but permits up to 64 MiB of entry buffers
+**per worker**, plus codec/metadata memory. Both native ZIP modes verify decoded
+lengths and CRCs before publication. Use `native` for low memory consumption.
+
 Next performance work: real-corpus level sweeps, similarity ordering, dictionaries,
 and measured block-size/worker scaling. See the research agenda above.
 

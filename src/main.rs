@@ -18,6 +18,8 @@ struct Cli {
 enum ZipEngine {
     Backend,
     Native,
+    /// Native ZIP with up to 64 MiB of entry buffers per worker.
+    NativeFast,
 }
 #[derive(Subcommand)]
 enum Command {
@@ -79,6 +81,8 @@ fn main() -> Result<()> {
             }
             if zipper::compat::is_native(&archive)? {
                 zipper::read_archive(&archive, Some(&output))?;
+            } else if cli.zip_engine == ZipEngine::NativeFast {
+                zipper::native_zip::read_archive_fast(&archive, Some(&output))?;
             } else if cli.zip_engine == ZipEngine::Native {
                 zipper::native_zip::read_archive(&archive, Some(&output))?;
             } else {
@@ -111,6 +115,8 @@ fn main() -> Result<()> {
             }
             let entries = if native {
                 zipper::read_archive(&archive, None)?
+            } else if cli.zip_engine == ZipEngine::NativeFast {
+                zipper::native_zip::read_archive_fast(&archive, None)?
             } else {
                 zipper::native_zip::read_archive(&archive, None)?
             };

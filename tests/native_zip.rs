@@ -41,6 +41,7 @@ fn stored_deflated_zip64_and_cli_recover_exact_bytes() -> anyhow::Result<()> {
             ],
             method,
         )?;
+        zipper::native_zip::read_archive_fast(&input, None)?;
         let entries = zipper::native_zip::read_archive(&input, None)?;
         assert_eq!(entries.len(), 4);
         let out = temp.path().join(label);
@@ -200,6 +201,86 @@ fn embedded_end_record_cannot_hide_real_entries() -> anyhow::Result<()> {
     let out = temp.path().join("out");
     assert!(zipper::native_zip::read_archive(&path, Some(&out)).is_err());
     assert!(!out.exists());
+    Ok(())
+}
+
+#[test]
+fn fast_zip_checks_crc_and_streams_entries_above_buffer_limit() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let input = temp.path().join("fast.zip");
+    for size in [2 * 1024 * 1024 + 7, 64 * 1024 * 1024 + 1] {
+        let mut bytes = vec![b'A'; size];
+        bytes[size - 1] = b'Z';
+        archive(
+            &input,
+            &[("data", &bytes), ("zero", b"")],
+            CompressionMethod::Deflated,
+        )?;
+        let out = temp.path().join(format!("out-{size}"));
+        let result = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .args(["--threads", "2", "--zip-engine", "native-fast", "extract"])
+            .arg(&input)
+            .arg("-o")
+            .arg(&out)
+            .env("ZIPPER_7Z", "nonexistent-backend")
+            .output()?;
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(fs::read(out.join("data"))?, bytes);
+        assert_eq!(fs::read(out.join("zero"))?, b"");
+        // Corrupt the central-directory CRC, leaving a valid Deflate stream.
+        let mut damaged = fs::read(&input)?;
+        let at = damaged.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
+        damaged[at + 16] ^= 1;
+        fs::write(&input, damaged)?;
+        let failed = temp.path().join(format!("failed-{size}"));
+        assert!(zipper::native_zip::read_archive_fast(&input, Some(&failed)).is_err());
+        assert!(!failed.exists());
+    }
+    Ok(())
+}
+
+#[test]
+fn fast_zip_rejects_wrong_sizes_and_malformed_deflate() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("bad-deflate.zip");
+    archive(
+        &path,
+        &[("data", b"a repeated repeated repeated payload")],
+        CompressionMethod::Deflated,
+    )?;
+    zipper::native_zip::read_archive_fast(&path, None)?;
+    let original = fs::read(&path)?;
+    let central = original
+        .windows(4)
+        .position(|b| b == b"PK\x01\x02")
+        .unwrap();
+    for size in [0u32, 1, 100] {
+        let mut damaged = original.clone();
+        damaged[central + 24..central + 28].copy_from_slice(&size.to_le_bytes());
+        fs::write(&path, damaged)?;
+        let out = temp.path().join(format!("size-{size}"));
+        assert!(zipper::native_zip::read_archive_fast(&path, Some(&out)).is_err());
+        assert!(!out.exists());
+    }
+    fs::write(&path, &original)?;
+    let mut reader = zip::ZipArchive::new(fs::File::open(&path)?)?;
+    let start = reader.by_index_raw(0)?.data_start().unwrap() as usize;
+    drop(reader);
+    let mut damaged = original.clone();
+    damaged[start] = 0xff; // Reserved Deflate block type.
+    fs::write(&path, damaged)?;
+    assert!(zipper::native_zip::read_archive_fast(&path, None).is_err());
+    let out = temp.path().join("malformed");
+    assert!(zipper::native_zip::read_archive_fast(&path, Some(&out)).is_err());
+    assert!(!out.exists());
+    let mut short = original;
+    short[central + 20..central + 24].copy_from_slice(&1u32.to_le_bytes());
+    fs::write(&path, short)?;
+    assert!(zipper::native_zip::read_archive_fast(&path, None).is_err());
     Ok(())
 }
 
