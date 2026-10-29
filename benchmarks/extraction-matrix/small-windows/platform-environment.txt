@@ -1,0 +1,25 @@
+
+DriveLetter   : 
+FileSystem    : FAT32
+Size          : 99614720
+SizeRemaining : 67581952
+
+DriveLetter   : C
+FileSystem    : NTFS
+Size          : 274284392448
+SizeRemaining : 86603538432
+
+DriveLetter   : 
+FileSystem    : NTFS
+Size          : 471855104
+SizeRemaining : 454893568
+
+DriveLetter   : D
+FileSystem    : NTFS
+Size          : 161059172352
+SizeRemaining : 157711290368
+
+
+AntivirusEnabled          : True
+RealTimeProtectionEnabled : False
+

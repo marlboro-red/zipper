@@ -56,3 +56,15 @@ zipper --zip-engine native-fast --zip-buffer-mib 32 extract ARCHIVE.zip -o NEW_D
 This is the first limited resource-accounting change from the extraction review.
 It does not replace the output executor or implement parallel decoding within a
 single Deflate entry.
+
+## Cross-platform default correction
+
+The subsequent three-round portable matrix at source `cc8aced` found that the
+same 61 MiB entry was slower in whole-buffer mode on hosted x86-64 Linux
+(native-fast4 143.42 ms versus native4 124.21 ms) and much slower on Windows
+(native-fast4 715.22 ms versus native4 122.86 ms). These are engine comparisons,
+not matched before/after builds, but they rule out recommending the widened
+eligibility there. The final default is **128 MiB for ARM64 macOS builds and
+64 MiB elsewhere**. Explicit budgets remain available. An x86-64 macOS binary
+under Rosetta receives 64 MiB. The conservative default sends this entry back to
+streaming on Linux/Windows. See the [portable reports](../../extraction-matrix/README.md).

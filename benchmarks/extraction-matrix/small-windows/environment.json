@@ -1,0 +1,8 @@
+{
+  "platform": "Windows-2022Server-10.0.20348-SP0",
+  "cpu": "AMD64 Family 25 Model 1 Stepping 1, AuthenticAMD",
+  "cpu_count": 4,
+  "runner": "20261026.347.1",
+  "cache": "uncontrolled",
+  "filesystem_and_filters": "see platform-environment.txt"
+}

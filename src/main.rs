@@ -11,7 +11,7 @@ struct Cli {
     /// ZIP reader: native is experimental and preserves bytes/directories only.
     #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Backend)]
     zip_engine: ZipEngine,
-    /// Shared native-fast ZIP entry-buffer budget in MiB (default 128; 0 streams).
+    /// Shared native-fast ZIP entry-buffer MiB (128 on ARM64 macOS, 64 elsewhere; 0 streams).
     /// Metadata, worker state and verification archive cache are additional.
     #[arg(long, global = true, value_parser = clap::value_parser!(u32).range(0..=4096))]
     zip_buffer_mib: Option<u32>,
@@ -22,7 +22,7 @@ struct Cli {
 enum ZipEngine {
     Backend,
     Native,
-    /// Native ZIP with a shared 128 MiB entry-buffer budget by default.
+    /// Native ZIP with a shared entry-buffer budget and streaming fallback.
     NativeFast,
 }
 #[derive(Subcommand)]

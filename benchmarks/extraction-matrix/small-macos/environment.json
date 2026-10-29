@@ -1,0 +1,8 @@
+{
+  "platform": "macOS-15.8.2-arm64-arm-64bit-Mach-O",
+  "cpu": "arm",
+  "cpu_count": 3,
+  "runner": "20261028.0489.1",
+  "cache": "uncontrolled",
+  "filesystem_and_filters": "see platform-environment.txt"
+}

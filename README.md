@@ -103,7 +103,8 @@ shared; streaming buffers scale with workers, not expanded file size. Extraction
 has no total expanded-size quota. The compatibility backend remains the default.
 
 `--zip-engine native-fast` adds a libdeflate buffer decoder with a shared
-128 MiB budget for live compressed and expanded entry buffers across workers.
+budget for live compressed and expanded entry buffers across workers: 128 MiB
+on ARM64 macOS and 64 MiB elsewhere.
 Entries that cannot reserve space immediately stream through zlib-rs. Override
 with `--zip-buffer-mib N` (0 forces streaming). Metadata, worker state, archive
 cache and allocator-retained memory are additional: this is not a peak RSS cap.

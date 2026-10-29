@@ -1,0 +1,8 @@
+{
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "cpu": "x86_64",
+  "cpu_count": 4,
+  "runner": "20261026.354.1",
+  "cache": "uncontrolled",
+  "filesystem_and_filters": "see platform-environment.txt"
+}

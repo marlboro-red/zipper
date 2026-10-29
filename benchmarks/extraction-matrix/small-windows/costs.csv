@@ -1,0 +1,10 @@
+round,operation,seconds,verified_bytes
+1,verify,0.055156300,0
+1,materialize,0.459408600,953600
+1,extract,0.467635500,953600
+2,materialize,0.468594400,953600
+2,extract,0.639218000,953600
+2,verify,0.047445600,0
+3,extract,0.471281800,953600
+3,verify,0.051006500,0
+3,materialize,0.473972700,953600
