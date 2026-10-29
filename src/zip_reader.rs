@@ -46,7 +46,7 @@ impl Reader {
     pub(crate) fn new(file: File) -> io::Result<Self> {
         let length = file.metadata()?.len();
         Ok(Self::File(BufReader::with_capacity(
-            256 * 1024,
+            8 * 1024,
             Cursor {
                 file: Arc::new(Mutex::new(file)),
                 position: 0,
@@ -78,7 +78,7 @@ impl Clone for Reader {
             Self::File(reader) => {
                 let mut cursor = reader.get_ref().clone();
                 cursor.position -= reader.buffer().len() as u64;
-                Self::File(BufReader::with_capacity(256 * 1024, cursor))
+                Self::File(BufReader::with_capacity(8 * 1024, cursor))
             }
         }
     }
