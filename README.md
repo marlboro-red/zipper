@@ -5,6 +5,7 @@
 [Comparison against tar+zstd and tar+pzstd](benchmarks/zstd-comparison.md).
 [V2 results and experiment decisions](benchmarks/v2/README.md).
 [Matched-sync v2 comparison against tar+Zstandard](benchmarks/v2/zstd-fullsync.md).
+[Decompression/ratio Pareto curve, including classic formats](docs/performance.md).
 
 A Rust archive engine pursuing fast compression and decompression at competitive
 compression ratios. This is an experimental foundation, not a performance leader
