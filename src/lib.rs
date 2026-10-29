@@ -1,3 +1,4 @@
+pub mod compat;
 use anyhow::{Context, Result, ensure};
 use rayon::prelude::*;
 use std::{

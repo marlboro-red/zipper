@@ -33,5 +33,12 @@ publication does not defend against concurrent filesystem changes by other users
 Development checks: `cargo fmt --check`, `cargo test`, and
 `cargo clippy --all-targets -- -D warnings`.
 
+Existing formats: `extract`, `list`, and `test` automatically delegate non-native
+archives to `7zz` or `7z` on PATH, or the executable specified by `ZIPPER_7Z`.
+Supported formats and extraction protections depend on that installed backend.
+This is an external compatibility bridge, not yet an in-process Rust decoder.
+Native `--threads` does not configure the compatibility backend. Legacy listing
+uses the backend's listing operation and does not validate payloads.
+
 Next performance work: a reproducible corpus, fair ratio/throughput comparisons,
 codec context reuse, I/O overlap, batching small files, and an indexed format.

@@ -47,9 +47,16 @@ fn main() -> Result<()> {
             level,
         } => zipper::create(&archive, &inputs, level)?,
         Command::Extract { archive, output } => {
-            zipper::read_archive(&archive, Some(&output))?;
+            if zipper::compat::is_native(&archive)? {
+                zipper::read_archive(&archive, Some(&output))?;
+            } else {
+                zipper::compat::run("x", &archive, Some(&output))?;
+            }
         }
         Command::List { archive } => {
+            if !zipper::compat::is_native(&archive)? {
+                return zipper::compat::run("l", &archive, None);
+            }
             for e in zipper::read_archive(&archive, None)? {
                 println!(
                     "{}\t{}\t{:?}",
@@ -60,6 +67,9 @@ fn main() -> Result<()> {
             }
         }
         Command::Test { archive } => {
+            if !zipper::compat::is_native(&archive)? {
+                return zipper::compat::run("t", &archive, None);
+            }
             let entries = zipper::read_archive(&archive, None)?;
             println!("Verified {} entries", entries.len());
         }
