@@ -145,4 +145,3 @@ Sort by top of stack, same collapsed (when >= 5):
         crc32fast::Hasher::update::hc69db2c46310339a  (in zipper-native-stream)        5
 
 Binary images description not available
-

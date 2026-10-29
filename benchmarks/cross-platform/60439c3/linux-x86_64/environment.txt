@@ -15,8 +15,8 @@ Formats:
  0  ......................  APM      apm           E R
  0  ......................  Ar       ar a deb udeb lib ! < a r c h > 0A
  0  ......................  Arj      arj           ` EA
- 0  K.....O.....X.........  Base64   b64           
- 0  ......O...............  COFF     obj           
+ 0  K.....O.....X.........  Base64   b64
+ 0  ......O...............  COFF     obj
  0  ...F..................  Cab      cab           M S C F 00 00 00 00
  0  ......................  Chm      chm chi chq chw I T S F 03 00 00 00 ` 00 00 00
  0  ......................  Compound msi msp doc xls ppt D0 CF 11 E0 A1 B1 1A E1
@@ -30,11 +30,11 @@ Formats:
  0  ......................  GPT      gpt mbr       offset=512 E F I 20 P A R T 00 00 01 00
  0  ....M.................  HFS      hfs hfsx      offset=1024 B D  ||  H + 00 04  ||  H X 00 05
  0  ...F..................  Hxs      hxs hxi hxr hxq hxw lit I T O L I T L S 01 00 00 00 ( 00 00 00
- 0  ......O...............  IHex     ihex          
+ 0  ......O...............  IHex     ihex
  0  ......................  Iso      iso img       offset=32769 C D 0 0 1
  0  ......................  LP       lpimg img     offset=4096 g D l a 4 00 00 00
  0  ......................  Lzh      lzh lha       offset=2 - l h
- 0  .......P..............  MBR      mbr           
+ 0  .......P..............  MBR      mbr
  0  ....M....E............  MachO    macho         CE FA ED FE  ||  CF FA ED FE  ||  FE ED FA CE  ||  FE ED FA CF
  0  ......................  MsLZ     mslz          S Z D D 88 F0 ' 3 A
  0  ....M.................  Mub      mub           CA FE BA BE 00 00 00  ||  B9 FA F1 0E
@@ -49,7 +49,7 @@ Formats:
  0  K.....................  SWF      swf           F W S
  0  ....M.................  SWFc     swf (~.swf)   C W S  ||  Z W S
  0  ......................  Sparse   simg img      : FF & ED 01 00
- 0  ......................  Split    001           
+ 0  ......................  Split    001
  0  ....M.................  SquashFS squashfs      h s q s  ||  s q s h  ||  s h s q  ||  q s h s
  0  .........E............  TE       te            V Z
  0  ...FM.................  UEFIc    scap          BD 86 f ; v 0D 0 @ B7 0E B5 Q 9E / C5 A0  ||  8B A6 < J # w FB H 80 = W 8C C1 FE C4 M  ||  B9 82 91 S B5 AB 91 C B6 9A E3 A9 C F7 / CC
@@ -63,13 +63,13 @@ Formats:
  0  ......................  Z        z taz (.tar)  1F 9D
  0 CK.....................  bzip2    bz2 bzip2 tbz2 (.tar) tbz (.tar) B Z h
  0 CK.................m+.. .u..1  gzip     gz gzip tgz (.tar) tpz (.tar) apk (.tar) 1F 8B 08
- 0  K.....O...............  lzma     lzma          
- 0  K.....................  lzma86   lzma86        
+ 0  K.....O...............  lzma     lzma
+ 0  K.....................  lzma86   lzma86
  0 C......O...LH......m+.. wu.n1  tar      tar ova       offset=257 u s t a r
  0 C.SN.......LH..c.a.m+.. w...0  wim      wim swm esd ppkg M S W I M 00 00 00
  0 CK.....................  xz       xz txz (.tar) FD 7 z X Z 00
  0 C...FMG........c.a.m+.. wud.0  zip      zip z01 zipx jar xpi odt ods docx xlsx epub ipa apk appx P K 03 04  ||  P K 05 06  ||  P K 06 06  ||  P K 07 08 P K  ||  P K 0 0 P K
-   CK.....O.....XC........  Hash     sha256 sha512 sha224 sha384 sha1 sha md5 crc32 crc64 asc cksum 
+   CK.....O.....XC........  Hash     sha256 sha512 sha224 sha384 sha1 sha md5 crc32 crc64 asc cksum
 
 Codecs:
  0  EDF  6F00181 AES256CBC
