@@ -27,6 +27,8 @@ jobs:
       - name: Install 7-Zip on macOS
         if: runner.os == 'macOS'
         run: command -v 7zz || brew install sevenzip
+      - name: Locate installed 7-Zip
+        run: echo "ZIPPER_BACKEND=$(command -v 7zz || command -v 7z)" >> "$GITHUB_ENV"
       - run: python3 scripts/fetch_silesia.py corpora/silesia
       - name: Collect environment
         run: |
@@ -34,12 +36,12 @@ jobs:
           cp corpora/silesia.manifest.json results/corpus.json
           uname -a > results/environment.txt
           rustc +1.96.0 --version >> results/environment.txt
-          7zz i >> results/environment.txt
+          "$ZIPPER_BACKEND" i >> results/environment.txt
           if [ "$(uname)" = "Linux" ]; then lscpu >> results/environment.txt; else sysctl hw.model hw.memsize hw.ncpu machdep.cpu.brand_string >> results/environment.txt; fi
       - name: Native tradeoff sweep, two codec workers
         run: python3 scripts/sweep.py corpora/silesia --levels 1 6 --blocks-kib 1024 4096 --runs 7 --threads 2 > results/sweep.json
       - name: Actual ZIP and 7z extraction
-        run: python3 scripts/compare_formats.py corpora/silesia --formats zip 7z --native-zip --runs 7 --threads 2 > results/formats.json
+        run: python3 scripts/compare_formats.py corpora/silesia --formats zip 7z --native-zip --sevenzip "$ZIPPER_BACKEND" --runs 7 --threads 2 > results/formats.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: silesia-${{ matrix.os }}-${{ github.sha }}
