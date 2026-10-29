@@ -1,0 +1,8 @@
+grouped-small-files
+Scanned 4000 files; 0 duplicate groups; 0 duplicate payload bytes; 0 non-regular entries skipped
+
+flat-tiny-files
+Scanned 10000 files; 1 duplicate groups; 0 duplicate payload bytes; 0 non-regular entries skipped
+
+silesia
+Scanned 12 files; 0 duplicate groups; 0 duplicate payload bytes; 0 non-regular entries skipped

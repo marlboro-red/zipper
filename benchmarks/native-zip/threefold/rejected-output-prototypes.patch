@@ -1,0 +1,150 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 2408cfc..9874bfc 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -576,0 +577 @@ dependencies = [
++ "rustix",
+diff --git a/Cargo.toml b/Cargo.toml
+index 0cc0c1e..4cbf624 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -16,0 +17,3 @@ zstd = "0.14.3"
++[target.'cfg(target_os = "macos")'.dev-dependencies]
++rustix = { version = "1.1.6", features = ["fs"] }
++
+diff --git a/examples/small_zip_costs.rs b/examples/small_zip_costs.rs
+index 0b173e7..c9cdc2d 100644
+--- a/examples/small_zip_costs.rs
++++ b/examples/small_zip_costs.rs
+@@ -2 +2 @@
+-//! Usage: small_zip_costs ARCHIVE SOURCE [ROUNDS] [THREADS]
++//! Usage: small_zip_costs ARCHIVE SOURCE [ROUNDS] [THREADS] [COMMA-SEPARATED MODES]
+@@ -5 +5,7 @@ use rayon::prelude::*;
+-use std::{fs, io::Write, path::PathBuf, time::Instant};
++use std::{
++    fs,
++    io::Write,
++    path::PathBuf,
++    sync::{Arc, Mutex, mpsc},
++    time::Instant,
++};
+@@ -36,0 +43,22 @@ fn main() -> Result<()> {
++    let operations: Vec<_> = args
++        .get(5)
++        .map(|s| s.split(',').collect())
++        .unwrap_or_else(|| {
++            vec![
++                "extract",
++                "verify",
++                "materialize",
++                "pipeline",
++                "pipeline-one-writer",
++            ]
++        });
++    ensure!(
++        !operations.is_empty()
++            && operations.iter().all(|op| {
++                matches!(
++                    *op,
++                    "extract" | "verify" | "materialize" | "pipeline" | "pipeline-one-writer"
++                ) || (*op == "clone-empty" && cfg!(target_os = "macos"))
++            }),
++        "invalid materialization mode"
++    );
+@@ -39,2 +67,2 @@ fn main() -> Result<()> {
+-        for slot in 0..3 {
+-            let operation = ["extract", "verify", "materialize"][(round + slot) % 3];
++        for slot in 0..operations.len() {
++            let operation = operations[(round + slot) % operations.len()];
+@@ -55,9 +83,80 @@ fn main() -> Result<()> {
+-                    files
+-                        .par_iter()
+-                        .try_for_each(|(path, bytes)| -> Result<()> {
+-                            fs::File::options()
+-                                .write(true)
+-                                .create_new(true)
+-                                .open(stage.path().join(path))?
+-                                .write_all(bytes)?;
+-                            Ok(())
++                    if operation == "materialize" || operation == "clone-empty" {
++                        #[cfg(target_os = "macos")]
++                        let template = if operation == "clone-empty" {
++                            Some(
++                                fs::File::options()
++                                    .read(true)
++                                    .write(true)
++                                    .create_new(true)
++                                    .open(root.path().join(format!("empty-source-{round}")))?,
++                            )
++                        } else {
++                            None
++                        };
++                        files
++                            .par_iter()
++                            .try_for_each(|(path, bytes)| -> Result<()> {
++                                #[cfg(target_os = "macos")]
++                                if bytes.is_empty()
++                                    && let Some(template) = &template
++                                {
++                                    rustix::fs::fclonefileat(
++                                        template,
++                                        rustix::fs::CWD,
++                                        stage.path().join(path),
++                                        rustix::fs::CloneFlags::NOOWNERCOPY,
++                                    )?;
++                                    return Ok(());
++                                }
++                                fs::File::options()
++                                    .write(true)
++                                    .create_new(true)
++                                    .open(stage.path().join(path))?
++                                    .write_all(bytes)?;
++                                Ok(())
++                            })?;
++                    } else {
++                        let writers = if operation == "pipeline-one-writer" {
++                            1
++                        } else {
++                            threads.saturating_sub(1).max(1)
++                        };
++                        std::thread::scope(|scope| -> Result<()> {
++                            let (sender, receiver) = mpsc::sync_channel::<(usize, fs::File)>(64);
++                            let receiver = Arc::new(Mutex::new(receiver));
++                            let mut workers = Vec::new();
++                            for _ in 0..writers {
++                                let receiver = receiver.clone();
++                                let files = &files;
++                                workers.push(scope.spawn(move || -> Result<()> {
++                                    loop {
++                                        let job = receiver
++                                            .lock()
++                                            .map_err(|_| anyhow::anyhow!("poisoned queue"))?
++                                            .recv();
++                                        let Ok((index, mut file)) = job else {
++                                            break;
++                                        };
++                                        file.write_all(&files[index].1)?;
++                                    }
++                                    Ok(())
++                                }));
++                            }
++                            drop(receiver);
++                            let producer = (|| -> Result<()> {
++                                for (index, (path, _)) in files.iter().enumerate() {
++                                    let file = fs::File::options()
++                                        .write(true)
++                                        .create_new(true)
++                                        .open(stage.path().join(path))?;
++                                    sender.send((index, file))?;
++                                }
++                                Ok(())
++                            })();
++                            drop(sender);
++                            for worker in workers {
++                                worker
++                                    .join()
++                                    .map_err(|_| anyhow::anyhow!("writer panicked"))??;
++                            }
++                            producer
+@@ -64,0 +164 @@ fn main() -> Result<()> {
++                    }

@@ -39,3 +39,36 @@ python3 scripts/compare_zip_readers.py ARCHIVE.zip SOURCE_DIRECTORY \
 ```
 
 To reach threefold faster extraction on these fixtures, the next successful change must significantly reduce file-materialization cost. This evidence does not establish that the goal is impossible, nor justify weakening extraction or integrity semantics.
+
+## Follow-up output experiments
+
+These tests isolate file materialization from archive decoding. A bounded queue
+of 64 open files separates a serial creator from one or three writers; the
+three-writer variant has four active workers including the creator. The existing
+reference uses four parallel create/write/close workers. All bytes and tree
+membership are checked after each run.
+
+| Fixture | Parallel reference ms | Creator + 3 writers ms | Creator + 1 writer ms |
+| --- | ---: | ---: | ---: |
+| 4,000 grouped | 119.98 | 142.27 | 142.16 |
+| 10,000 flat | 322.15 | 379.80 | 378.52 |
+
+Reject: separating output stages is slower on both fixtures. The raw CSVs
+include all seven runs, warmup excluded.
+
+A second diagnostic cloned a private empty-file template for the 2,000 empty
+files in the flat fixture, using macOS `fclonefileat`; other files retained the
+reference write path. Its median was 342.08 ms versus 322.38 ms for ordinary
+creation, with overlapping ranges. Reject: no reliable speed gain. Source/data
+checks pass, but full metadata-equivalence and unsupported-volume fallback work
+were not pursued because the performance gate failed.
+
+No production I/O changes or extra dependencies were retained. For reproduction,
+[the diagnostic patch](rejected-output-prototypes.patch) applies with
+`git apply --unidiff-zero` to an isolated checkout of `573037e`. Build the example
+and run the usual archive/source arguments; the optional final argument
+`materialize,clone-empty` selects the macOS clone trial. The patch includes the
+macOS-only development dependency needed for that diagnostic.
+
+[Duplicate-content checks](../../../docs/duplicates.md) found no redundant
+payload bytes in either fixture. The threefold extraction target remains unmet.
