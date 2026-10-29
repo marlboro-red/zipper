@@ -1,0 +1,68 @@
+name: ZIP buffered-window experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            files: 10000
+          - os: windows-2022
+            files: 1000
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      FILE_COUNT: ${{ matrix.files }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Build baseline
+        run: |
+          cargo +1.96.0 build --locked --release
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          cp "target/release/zipper$suffix" "reference$suffix"
+      - name: Apply and test isolated window-preservation patch
+        run: |
+          git apply benchmarks/native-zip/preserved-window/candidate.patch
+          cargo +1.96.0 test --locked --release
+          cargo +1.96.0 build --locked --release
+          mkdir results
+          git diff > results/candidate.patch
+          git rev-parse HEAD > results/baseline-source.txt
+          python -c 'import os,platform; print(platform.platform()); print(platform.processor()); print(os.cpu_count())' > results/environment.txt
+      - name: Interleave extraction and compare every byte
+        run: |
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          for layout in flat grouped; do
+            python scripts/make_tiny_corpus.py "corpora/$layout" --files "$FILE_COUNT" --layout "$layout"
+            python - "$layout" <<'PY'
+          import sys,zipfile
+          from pathlib import Path
+          p=Path('corpora')/sys.argv[1]
+          with zipfile.ZipFile(p.with_suffix('.zip'),'w',zipfile.ZIP_DEFLATED) as out:
+              for f in sorted(p.rglob('*')):
+                  out.write(f,f.relative_to(p.parent))
+          PY
+            python scripts/compare_zip_readers.py "corpora/$layout.zip" "corpora/$layout" \
+              --reader before native "reference$suffix" \
+              --reader after native "target/release/zipper$suffix" \
+              --threads 4 --runs 7 > "results/$layout.json"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: zip-window-${{ matrix.os }}-${{ github.sha }}
+          path: results/
+          if-no-files-found: error

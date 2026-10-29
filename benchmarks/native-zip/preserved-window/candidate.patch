@@ -1,0 +1,30 @@
+diff --git a/src/zip_reader.rs b/src/zip_reader.rs
+index 0332e2d..a4f8d7d 100644
+--- a/src/zip_reader.rs
++++ b/src/zip_reader.rs
+@@ -94,7 +94,24 @@ impl Read for Reader {
+ impl Seek for Reader {
+     fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+         match self {
+-            Self::File(reader) => reader.seek(position),
++            Self::File(reader) => {
++                // ZIP header/data seeks often stay inside the current read-ahead
++                // window. Preserve those bytes instead of refilling the window.
++                let current = reader.get_ref().position - reader.buffer().len() as u64;
++                let target = match position {
++                    SeekFrom::Start(target) => i128::from(target),
++                    SeekFrom::Current(delta) => i128::from(current) + i128::from(delta),
++                    SeekFrom::End(delta) => i128::from(reader.get_ref().length) + i128::from(delta),
++                };
++                let target = u64::try_from(target)
++                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid ZIP seek"))?;
++                if let Ok(delta) = i64::try_from(i128::from(target) - i128::from(current)) {
++                    reader.seek_relative(delta)?;
++                    Ok(target)
++                } else {
++                    reader.seek(SeekFrom::Start(target))
++                }
++            }
+             Self::Memory(reader) => reader.seek(position),
+         }
+     }
