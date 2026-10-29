@@ -1,0 +1,179 @@
+{
+  "meaning": "Instrumented syscall counts and summed thread durations, including cleanup; not benchmark wall time",
+  "scopes": {
+    "archive": {
+      "lseek": {
+        "calls": 180200,
+        "summed_seconds": 0.07053183699991698,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "open": {
+        "calls": 10,
+        "summed_seconds": 0.00023770600000000002,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "read": {
+        "calls": 180270,
+        "summed_seconds": 1.3814225240001434,
+        "logical_read_bytes": 47221309650,
+        "logical_write_bytes": 0
+      },
+      "sys_close": {
+        "calls": 10,
+        "summed_seconds": 2.0458e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "sys_fstat64": {
+        "calls": 20,
+        "summed_seconds": 1.2668e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      }
+    },
+    "output-files": {
+      "open": {
+        "calls": 100000,
+        "summed_seconds": 8.003082135999945,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "sys_close": {
+        "calls": 100000,
+        "summed_seconds": 1.0814886270000275,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "unlinkat": {
+        "calls": 100000,
+        "summed_seconds": 3.2105088310000354,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "write": {
+        "calls": 80000,
+        "summed_seconds": 1.4357825810000182,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 95360000
+      }
+    },
+    "other": {
+      "access": {
+        "calls": 2,
+        "summed_seconds": 0.004166333,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "fgetattrlist": {
+        "calls": 1,
+        "summed_seconds": 8.542e-06,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "fsgetpath": {
+        "calls": 6,
+        "summed_seconds": 0.000130751,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "fstatat64": {
+        "calls": 1,
+        "summed_seconds": 1.5875e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "fstatfs64": {
+        "calls": 21,
+        "summed_seconds": 1.9668e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "getattrlist": {
+        "calls": 1,
+        "summed_seconds": 8.833e-06,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "ioctl": {
+        "calls": 3,
+        "summed_seconds": 2.1375e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "lstat64": {
+        "calls": 31,
+        "summed_seconds": 0.000146042,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "mkdir": {
+        "calls": 21,
+        "summed_seconds": 0.001079626,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "open": {
+        "calls": 6,
+        "summed_seconds": 2.6731820830000004,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "rename": {
+        "calls": 10,
+        "summed_seconds": 0.000794373,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "shm_open": {
+        "calls": 1,
+        "summed_seconds": 8.333e-06,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "stat64": {
+        "calls": 7,
+        "summed_seconds": 6.3458e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "sys_close": {
+        "calls": 5,
+        "summed_seconds": 1.0791000000000002e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "sys_dup": {
+        "calls": 3,
+        "summed_seconds": 5.167e-06,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "sys_fcntl": {
+        "calls": 9,
+        "summed_seconds": 1.8083e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "sys_fcntl_nocancel": {
+        "calls": 21,
+        "summed_seconds": 1.1039999999999998e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "sys_fstat64": {
+        "calls": 22,
+        "summed_seconds": 1.2124e-05,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      },
+      "unlinkat": {
+        "calls": 21,
+        "summed_seconds": 0.013477040000000001,
+        "logical_read_bytes": 0,
+        "logical_write_bytes": 0
+      }
+    }
+  }
+}
