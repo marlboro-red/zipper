@@ -73,6 +73,42 @@ impl Seek for Reader {
 mod tests {
     use super::*;
     #[test]
+    fn seeks_match_unbuffered_cursor_at_boundaries() -> io::Result<()> {
+        let mut file = tempfile::tempfile()?;
+        let bytes: Vec<_> = (0..700_000).map(|i| (i % 251) as u8).collect();
+        std::io::Write::write_all(&mut file, &bytes)?;
+        let mut reader = Reader::new(file)?;
+        let mut expected = io::Cursor::new(&bytes);
+        for seek in [
+            SeekFrom::Start(13),
+            SeekFrom::Current(-100),
+            SeekFrom::Start(262_140),
+            SeekFrom::Current(-257),
+            SeekFrom::End(-13),
+            SeekFrom::End(10),
+            SeekFrom::Current(-1000),
+            SeekFrom::Start(0),
+        ] {
+            assert_eq!(reader.seek(seek)?, expected.seek(seek)?);
+            let mut actual_bytes = Vec::new();
+            let mut expected_bytes = Vec::new();
+            reader.by_ref().take(257).read_to_end(&mut actual_bytes)?;
+            expected
+                .by_ref()
+                .take(257)
+                .read_to_end(&mut expected_bytes)?;
+            assert_eq!(actual_bytes, expected_bytes);
+        }
+        assert!(reader.seek(SeekFrom::Current(i64::MIN)).is_err());
+        assert_eq!(reader.seek(SeekFrom::Start(u64::MAX))?, u64::MAX);
+        assert_eq!(reader.seek(SeekFrom::Start(257))?, 257);
+        let mut clone = reader.clone();
+        let mut actual = [0; 31];
+        clone.read_exact(&mut actual)?;
+        assert_eq!(actual, bytes[257..288]);
+        Ok(())
+    }
+    #[test]
     fn buffered_clones_have_independent_concurrent_positions() -> io::Result<()> {
         let mut file = tempfile::tempfile()?;
         let bytes: Vec<_> = (0..1024 * 1024).map(|i| (i % 251) as u8).collect();

@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
-    io::{BufWriter, Read, Seek, SeekFrom, Write},
+    io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::Path,
 };
 use zip::{CompressionMethod, ZipArchive};
@@ -24,8 +24,8 @@ const MAX_ENTRIES: u64 = 100_000;
 // Bound directory allocation before the general ZIP parser sees untrusted
 // counts/lengths. The opt-in path accepts conventional single-disk ZIP/ZIP64
 // records with no prepended executable, trailing data, or ZIP64 extension sector.
-fn preflight(file: &mut File) -> Result<u64> {
-    let length = file.metadata()?.len();
+fn preflight(file: &mut BufReader<File>) -> Result<u64> {
+    let length = file.get_ref().metadata()?.len();
     ensure!(length >= 22, "truncated ZIP");
     let tail_size = length.min(22 + 65535) as usize;
     file.seek(SeekFrom::End(-(tail_size as i64)))?;
@@ -116,7 +116,7 @@ fn preflight(file: &mut File) -> Result<u64> {
             position <= directory_end,
             "ZIP central entry exceeds directory"
         );
-        file.seek(SeekFrom::Start(position))?;
+        file.seek_relative(variable as i64)?;
     }
     ensure!(position == directory_end, "ZIP directory count mismatch");
     file.seek(SeekFrom::Start(0))?;
@@ -124,9 +124,9 @@ fn preflight(file: &mut File) -> Result<u64> {
 }
 
 fn open(path: &Path) -> Result<ZipArchive<crate::zip_reader::Reader>> {
-    let mut file = File::open(path)?;
+    let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
     let count = preflight(&mut file)?;
-    let archive = ZipArchive::new(crate::zip_reader::Reader::new(file)?)?;
+    let archive = ZipArchive::new(crate::zip_reader::Reader::new(file.into_inner())?)?;
     ensure!(
         archive.len() as u64 == count && archive.offset() == 0,
         "ZIP parser disagrees with validated directory"

@@ -68,6 +68,44 @@ fn stored_deflated_zip64_and_cli_recover_exact_bytes() -> anyhow::Result<()> {
 }
 
 #[test]
+fn central_comments_cross_preflight_buffer_boundaries() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("comments.zip");
+    archive(
+        &path,
+        &[("first", b"first bytes"), ("second", b"second bytes")],
+        CompressionMethod::Stored,
+    )?;
+    let original = fs::read(&path)?;
+    let records: Vec<_> = original
+        .windows(4)
+        .enumerate()
+        .filter_map(|(at, bytes)| (bytes == b"PK\x01\x02").then_some(at))
+        .collect();
+    assert_eq!(records.len(), 2);
+    for length in [65_400usize, 65_500, 65_535] {
+        let mut bytes = original.clone();
+        bytes[records[0] + 32..records[0] + 34].copy_from_slice(&(length as u16).to_le_bytes());
+        bytes.splice(records[1]..records[1], std::iter::repeat_n(b'x', length));
+        let end = bytes.len() - 22;
+        let directory_size = u32::from_le_bytes(bytes[end + 12..end + 16].try_into()?);
+        bytes[end + 12..end + 16].copy_from_slice(&(directory_size + length as u32).to_le_bytes());
+        fs::write(&path, &bytes)?;
+        let entries = zipper::native_zip::list(&path)?;
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[1].name, "second");
+        let out = temp.path().join(format!("out-{length}"));
+        zipper::native_zip::read_archive(&path, Some(&out))?;
+        assert_eq!(fs::read(out.join("first"))?, b"first bytes");
+        assert_eq!(fs::read(out.join("second"))?, b"second bytes");
+        bytes[records[1] + length] ^= 1;
+        fs::write(&path, bytes)?;
+        assert!(zipper::native_zip::list(&path).is_err());
+    }
+    Ok(())
+}
+
+#[test]
 fn unsafe_paths_and_file_ancestors_never_publish() -> anyhow::Result<()> {
     let temp = tempfile::tempdir()?;
     let input = temp.path().join("unsafe.zip");
