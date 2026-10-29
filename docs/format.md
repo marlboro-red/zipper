@@ -6,7 +6,8 @@ New writers emit v2; readers accept v1 and v2. Neither format is frozen yet.
 
 All integers are unsigned little-endian. The 16-byte header contains magic
 `5a 49 50 50 45 52 00 02`, block size u32, and flags u32 (must be zero).
-Block size is a power of two from 64 KiB through 16 MiB; current writers use 1 MiB.
+Block size is a power of two from 64 KiB through 16 MiB; writers default to 1 MiB
+and accept `--block-size-kib` to select another supported size.
 
 Regular file payloads are concatenated in manifest order, including across file
 boundaries, then split into blocks. Every non-final block has the declared block

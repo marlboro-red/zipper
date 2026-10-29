@@ -38,8 +38,39 @@ pub struct Entry {
 
 pub const MAGIC: &[u8; 8] = b"ZIPPER\0\x02";
 
+/// Native creation settings. Larger blocks can improve compression at the cost
+/// of memory and selective-extraction work. Defaults preserve the v2 layout.
+#[derive(Clone, Copy, Debug)]
+pub struct CreateOptions {
+    pub level: i32,
+    /// Power of two from 64 KiB through 16 MiB.
+    pub block_size: usize,
+}
+impl Default for CreateOptions {
+    fn default() -> Self {
+        Self {
+            level: 1,
+            block_size: 1024 * 1024,
+        }
+    }
+}
+
 pub fn create(output: &Path, inputs: &[PathBuf], level: i32) -> Result<()> {
-    v2::create(output, inputs, level)
+    create_with_options(
+        output,
+        inputs,
+        CreateOptions {
+            level,
+            ..CreateOptions::default()
+        },
+    )
+}
+pub fn create_with_options(
+    output: &Path,
+    inputs: &[PathBuf],
+    options: CreateOptions,
+) -> Result<()> {
+    v2::create(output, inputs, options)
 }
 fn version(path: &Path) -> Result<u8> {
     let magic = number::<8>(&mut File::open(path)?)?;

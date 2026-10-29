@@ -20,6 +20,9 @@ enum Command {
         inputs: Vec<PathBuf>,
         #[arg(short, long, default_value_t = 1, allow_hyphen_values = true)]
         level: i32,
+        /// Block size in KiB (power of two, 64–16384); larger uses more memory.
+        #[arg(long, default_value_t = 1024, value_parser = clap::value_parser!(u32).range(64..=16384))]
+        block_size_kib: u32,
     },
     /// Extract into a new directory.
     Extract {
@@ -48,7 +51,15 @@ fn main() -> Result<()> {
             archive,
             inputs,
             level,
-        } => zipper::create(&archive, &inputs, level)?,
+            block_size_kib,
+        } => zipper::create_with_options(
+            &archive,
+            &inputs,
+            zipper::CreateOptions {
+                level,
+                block_size: block_size_kib as usize * 1024,
+            },
+        )?,
         Command::Extract {
             archive,
             output,

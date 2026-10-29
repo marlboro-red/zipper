@@ -65,7 +65,7 @@ fn validate_names(items: &[Item]) -> Result<()> {
     Ok(())
 }
 
-fn scan(output: &Path, inputs: &[PathBuf]) -> Result<(Vec<Item>, Vec<PathBuf>, u64)> {
+fn scan(output: &Path, inputs: &[PathBuf], chunk: usize) -> Result<(Vec<Item>, Vec<PathBuf>, u64)> {
     ensure!(!inputs.is_empty(), "at least one input is required");
     ensure!(
         fs::symlink_metadata(output).is_err(),
@@ -126,7 +126,7 @@ fn scan(output: &Path, inputs: &[PathBuf]) -> Result<(Vec<Item>, Vec<PathBuf>, u
             total = checked_add(total, size)?;
         }
     }
-    let block_count = total.div_ceil(CHUNK as u64);
+    let block_count = total.div_ceil(chunk as u64);
     ensure!(
         block_count <= ((MAX_INDEX - metadata_bytes) / 13) as u64,
         "archive index limit exceeded"
@@ -135,20 +135,32 @@ fn scan(output: &Path, inputs: &[PathBuf]) -> Result<(Vec<Item>, Vec<PathBuf>, u
     Ok((items, paths, total))
 }
 
-pub(super) fn create(output: &Path, inputs: &[PathBuf], level: i32) -> Result<()> {
+pub(super) fn create(
+    output: &Path,
+    inputs: &[PathBuf],
+    options: crate::CreateOptions,
+) -> Result<()> {
+    let crate::CreateOptions {
+        level,
+        block_size: chunk,
+    } = options;
     ensure!(
         (-7..=22).contains(&level),
         "level must be between -7 and 22"
     );
-    let (items, paths, total) = scan(output, inputs)?;
-    let count = workers(total.div_ceil(CHUNK as u64) as usize);
+    ensure!(
+        (64 * 1024..=16 * CHUNK).contains(&chunk) && chunk.is_power_of_two(),
+        "invalid block size"
+    );
+    let (items, paths, total) = scan(output, inputs, chunk)?;
+    let count = workers(total.div_ceil(chunk as u64) as usize);
     let (recycle, recycled) = sync_channel::<Vec<u8>>(count * 2);
     let mut temp = tempfile::NamedTempFile::new_in(parent(output))?;
     let mut blocks = Vec::new();
     {
         let mut writer = BufWriter::new(temp.as_file_mut());
         writer.write_all(MAGIC)?;
-        writer.write_all(&(CHUNK as u32).to_le_bytes())?;
+        writer.write_all(&(chunk as u32).to_le_bytes())?;
         writer.write_all(&0u32.to_le_bytes())?;
         let mut physical = HEADER;
         let source_items = &items;
@@ -157,7 +169,7 @@ pub(super) fn create(output: &Path, inputs: &[PathBuf], level: i32) -> Result<()
             move |emit| {
                 let buffer = || {
                     let mut bytes = recycled.try_recv().unwrap_or_default();
-                    bytes.resize(CHUNK, 0);
+                    bytes.resize(chunk, 0);
                     bytes
                 };
                 let mut data = buffer();
@@ -174,11 +186,11 @@ pub(super) fn create(output: &Path, inputs: &[PathBuf], level: i32) -> Result<()
                     );
                     let mut remaining = item.entry.size;
                     while remaining > 0 {
-                        let take = remaining.min((CHUNK - used) as u64) as usize;
+                        let take = remaining.min((chunk - used) as u64) as usize;
                         file.read_exact(&mut data[used..used + take])?;
                         used += take;
                         remaining -= take as u64;
-                        if used == CHUNK {
+                        if used == chunk {
                             emit(data)?;
                             data = buffer();
                             used = 0;
@@ -199,7 +211,7 @@ pub(super) fn create(output: &Path, inputs: &[PathBuf], level: i32) -> Result<()
             || {
                 Ok((
                     zstd::bulk::Compressor::new(level)?,
-                    Vec::with_capacity(zstd::zstd_safe::compress_bound(CHUNK)),
+                    Vec::with_capacity(zstd::zstd_safe::compress_bound(chunk)),
                 ))
             },
             |(codec, scratch), mut data: Vec<u8>| {

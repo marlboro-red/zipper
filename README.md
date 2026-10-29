@@ -18,14 +18,17 @@ target/release/zipper extract backup.zipper --output selected --path data/subdir
 target/release/zipper list backup.zipper
 target/release/zipper test backup.zipper
 target/release/zipper --threads 4 create backup.zipper ./data --level 1
+target/release/zipper --threads 4 create dense.zipper ./data --level 6 --block-size-kib 4096
 ```
 
 The archive must be outside the input tree. Creation never overwrites an archive;
 extraction requires a new destination directory with an existing parent.
 
-New archives use v2: files share independent 1 MiB blocks, encoded with Zstandard
+New archives use v2: files share independent blocks (1 MiB by default), encoded with Zstandard
 or raw storage, whichever is smaller. A compressed, checksummed index maps paths
 to payload extents. `list` reads only this index; `test` verifies every payload.
+`--block-size-kib` accepts powers of two from 64 to 16384. Larger blocks can
+improve compression but use more memory and decode more data for small selections.
 `extract --path` accepts exact paths or directory subtrees and decodes only blocks
 intersecting the selection. It validates those blocks, not unrelated payloads.
 V1 archives remain readable; v1 listing still validates all content.
