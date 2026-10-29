@@ -123,10 +123,15 @@ fn preflight(file: &mut BufReader<File>) -> Result<u64> {
     Ok(count)
 }
 
-fn open(path: &Path) -> Result<ZipArchive<crate::zip_reader::Reader>> {
+fn open(path: &Path, cache: bool) -> Result<ZipArchive<crate::zip_reader::Reader>> {
     let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
     let count = preflight(&mut file)?;
-    let archive = ZipArchive::new(crate::zip_reader::Reader::new(file.into_inner())?)?;
+    let reader = if cache {
+        crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
+    } else {
+        crate::zip_reader::Reader::new(file.into_inner())?
+    };
+    let archive = ZipArchive::new(reader)?;
     ensure!(
         archive.len() as u64 == count && archive.offset() == 0,
         "ZIP parser disagrees with validated directory"
@@ -208,7 +213,7 @@ fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    Ok(scan(&open(path)?)?
+    Ok(scan(&open(path, false)?)?
         .into_iter()
         .map(|item| item.entry)
         .collect())
@@ -223,6 +228,7 @@ pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry
 
 /// Whole-buffer Deflate fast path for entries whose compressed and decoded sizes
 /// sum to at most 64 MiB; larger entries use the bounded streaming path.
+/// Integrity-only reads also cache archives up to 8 MiB in shared memory.
 pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
     read_archive_with_options(
         path,
@@ -254,7 +260,9 @@ pub fn read_archive_with_options(
         "ZIP threads must be 1..64"
     );
     let fast = options.fast;
-    let archive = open(path)?;
+    // Cache only integrity-only fast reads: extraction measurements remain
+    // dominated by filesystem work and do not justify the extra allocation.
+    let archive = open(path, fast && destination.is_none())?;
     let items = scan(&archive)?;
     let staging = if let Some(dst) = destination {
         ensure!(

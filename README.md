@@ -94,6 +94,13 @@ through zlib-rs. This can be faster, but permits up to 64 MiB of entry buffers
 **per worker**, plus codec/metadata memory. Both native ZIP modes verify decoded
 lengths and CRCs before publication. Use `native` for low memory consumption.
 
+For integrity-only `native-fast test`, archives up to 8 MiB are cached once and
+shared by independent read cursors. Larger archives use the file reader. This
+limit covers retained archive bytes, not total peak RAM: loading/conversion,
+metadata, and decoder buffers add memory. This cache is not used for extraction,
+where tests did not establish a reliable improvement. [Threefold-speed target
+investigation and verification results](benchmarks/native-zip/threefold/README.md).
+
 Next performance work: real-corpus level sweeps, similarity ordering, dictionaries,
 and measured block-size/worker scaling. See the research agenda above.
 

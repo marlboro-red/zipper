@@ -1,5 +1,6 @@
-//! Cloneable buffered cursors over one file. Clones share the file and ZIP
-//! metadata, but never a seek position. The lock covers only physical I/O.
+//! Cloneable file or immutable-memory cursors. File cursors share a handle
+//! with a lock covering physical I/O; memory cursors share bytes. Positions
+//! are private to each clone.
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom},
@@ -7,7 +8,7 @@ use std::{
 };
 
 #[derive(Clone)]
-struct Cursor {
+pub(crate) struct Cursor {
     file: Arc<Mutex<File>>,
     position: u64,
     length: u64,
@@ -37,11 +38,14 @@ impl Seek for Cursor {
     }
 }
 
-pub(crate) struct Reader(BufReader<Cursor>);
+pub(crate) enum Reader {
+    File(BufReader<Cursor>),
+    Memory(io::Cursor<Arc<[u8]>>),
+}
 impl Reader {
     pub(crate) fn new(file: File) -> io::Result<Self> {
         let length = file.metadata()?.len();
-        Ok(Self(BufReader::with_capacity(
+        Ok(Self::File(BufReader::with_capacity(
             256 * 1024,
             Cursor {
                 file: Arc::new(Mutex::new(file)),
@@ -50,28 +54,87 @@ impl Reader {
             },
         )))
     }
+
+    pub(crate) fn cached(mut file: File, limit: u64) -> io::Result<Self> {
+        let read_limit = limit.checked_add(1).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid archive cache limit")
+        })?;
+        if file.metadata()?.len() > limit {
+            return Self::new(file);
+        }
+        file.seek(SeekFrom::Start(0))?;
+        let mut bytes = Vec::new();
+        file.take(read_limit).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > limit {
+            return Err(io::Error::other("ZIP grew beyond archive cache limit"));
+        }
+        Ok(Self::Memory(io::Cursor::new(bytes.into())))
+    }
 }
 impl Clone for Reader {
     fn clone(&self) -> Self {
-        let mut cursor = self.0.get_ref().clone();
-        cursor.position -= self.0.buffer().len() as u64;
-        Self(BufReader::with_capacity(256 * 1024, cursor))
+        match self {
+            Self::Memory(cursor) => Self::Memory(cursor.clone()),
+            Self::File(reader) => {
+                let mut cursor = reader.get_ref().clone();
+                cursor.position -= reader.buffer().len() as u64;
+                Self::File(BufReader::with_capacity(256 * 1024, cursor))
+            }
+        }
     }
 }
 impl Read for Reader {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.0.read(bytes)
+        match self {
+            Self::File(reader) => reader.read(bytes),
+            Self::Memory(reader) => reader.read(bytes),
+        }
     }
 }
 impl Seek for Reader {
     fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        self.0.seek(position)
+        match self {
+            Self::File(reader) => reader.seek(position),
+            Self::Memory(reader) => reader.seek(position),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cached_boundaries_and_concurrent_clones() -> io::Result<()> {
+        for length in [0, 127, 128, 129] {
+            let mut file = tempfile::tempfile()?;
+            let bytes: Vec<_> = (0..length).map(|i| (i % 251) as u8).collect();
+            std::io::Write::write_all(&mut file, &bytes)?;
+            let reader = Reader::cached(file, 128)?;
+            assert_eq!(matches!(&reader, Reader::Memory(_)), length <= 128);
+            std::thread::scope(|scope| {
+                let mut handles = Vec::new();
+                for worker in 0..8 {
+                    let mut clone = reader.clone();
+                    let bytes = &bytes;
+                    handles.push(scope.spawn(move || -> io::Result<()> {
+                        for step in 0..50 {
+                            let position = (worker * 17 + step * 7) % (bytes.len() + 1);
+                            clone.seek(SeekFrom::Start(position as u64))?;
+                            let mut actual = Vec::new();
+                            clone.by_ref().take(13).read_to_end(&mut actual)?;
+                            assert_eq!(actual, bytes[position..(position + 13).min(bytes.len())]);
+                        }
+                        Ok(())
+                    }));
+                }
+                for handle in handles {
+                    handle.join().unwrap()?;
+                }
+                Ok::<_, io::Error>(())
+            })?;
+        }
+        Ok(())
+    }
     #[test]
     fn seeks_match_unbuffered_cursor_at_boundaries() -> io::Result<()> {
         let mut file = tempfile::tempfile()?;
