@@ -42,3 +42,14 @@ uses the backend's listing operation and does not validate payloads.
 
 Next performance work: a reproducible corpus, fair ratio/throughput comparisons,
 codec context reuse, I/O overlap, batching small files, and an indexed format.
+
+Run `python3 scripts/benchmark.py /path/to/corpus --runs 3 --threads 4` after a
+release build. On macOS/Linux this records per-process wall time and peak RSS,
+archive size, and throughput, and verifies every extracted file with SHA-256.
+Add `--sevenzip /path/to/7zz` for an LZMA2 level-1 baseline. Levels across codecs
+are not equivalent: compare archive sizes as well as throughput, and sweep levels
+before claiming a win. Runs include process startup and filesystem I/O, do not
+flush OS caches, and exclude verification from extraction timing. The initial
+manifest warms input caches. Keep the corpus unchanged during a run. Use separate
+text, source, binary, media, and small-file corpora; tiny smoke tests establish
+correctness, not competitive performance.
