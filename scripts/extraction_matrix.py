@@ -11,6 +11,7 @@ import random
 import shutil
 import statistics
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -46,7 +47,12 @@ def timed(command, cwd):
     with tempfile.TemporaryFile() as log:
         start = time.perf_counter()
         with subprocess.Popen(command, cwd=cwd, stdout=log, stderr=log) as child:
-            status = child.wait()
+            try:
+                status = child.wait(timeout=300)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+                raise
             elapsed = time.perf_counter() - start
             counters = Counters()
             counters.cb = ctypes.sizeof(counters)
@@ -96,6 +102,7 @@ def main():
         work = Path(work).resolve()
         archive = work / 'input.zip'
         plain = work / 'input.tar'
+        print("Creating ZIP and TAR fixtures", file=sys.stderr, flush=True)
         with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as out:
             # Fixed metadata and ordering make identical fixture bytes portable.
             for path in [source] + sorted(source.rglob('*')):
@@ -153,7 +160,9 @@ def main():
                 # External root creation is excluded for both external readers.
                 if name.startswith('bsdtar') or name == '7zip':
                     output.mkdir()
+                print(f'Round {round_index}: {name}', file=sys.stderr, flush=True)
                 row = timed(commands[name], source.parent)
+                print(f'  extracted in {row["seconds"]:.3f}s; verifying', file=sys.stderr, flush=True)
                 wanted = {source.name: None}
                 wanted.update({str(Path(source.name) / key): value for key, value in expected.items()})
                 if inventory(output) != wanted:
@@ -164,6 +173,7 @@ def main():
                 if round_index:
                     samples[name].append(row)
                 shutil.rmtree(output)
+                print('  verified and cleaned', file=sys.stderr, flush=True)
         for name, rows in samples.items():
             seconds = [row['seconds'] for row in rows]
             median = statistics.median(seconds)
