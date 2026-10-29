@@ -3,6 +3,8 @@
 [Local performance baseline and reproduction steps](benchmarks/README.md).
 [Research review and frontier experiments](docs/research-2026-10.md).
 [Comparison against tar+zstd and tar+pzstd](benchmarks/zstd-comparison.md).
+[V2 results and experiment decisions](benchmarks/v2/README.md).
+[Updated v2 comparison against tar+Zstandard](benchmarks/v2/zstd-comparison.md).
 
 A Rust archive engine pursuing fast compression and decompression at competitive
 compression ratios. This is an experimental foundation, not a performance leader

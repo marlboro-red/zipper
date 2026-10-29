@@ -1,0 +1,51 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "threads": 4,
+  "zipper_level": 1,
+  "input_bytes": 268435456,
+  "corpus": "/private/var/folders/hn/pcsp4lh92klg4qvq6xjm1h7m0000gn/T/zipper-baseline-v203sxmi/random",
+  "results": [
+    {
+      "engine": "zipper",
+      "samples": [
+        {
+          "compression": {
+            "seconds": 0.18005704099999997,
+            "peak_rss_bytes": 22691840
+          },
+          "extraction": {
+            "seconds": 0.06369350000000001,
+            "peak_rss_bytes": 17563648
+          },
+          "archive_bytes": 268436635
+        },
+        {
+          "compression": {
+            "seconds": 0.16980512499999995,
+            "peak_rss_bytes": 22724608
+          },
+          "extraction": {
+            "seconds": 0.031507583000000006,
+            "peak_rss_bytes": 17580032
+          },
+          "archive_bytes": 268436635
+        },
+        {
+          "compression": {
+            "seconds": 0.18939516699999992,
+            "peak_rss_bytes": 22708224
+          },
+          "extraction": {
+            "seconds": 0.04586849999999998,
+            "peak_rss_bytes": 17563648
+          },
+          "archive_bytes": 268436635
+        }
+      ],
+      "compression_mib_s": 1421.7716706785159,
+      "extraction_mib_s": 5581.172264190024,
+      "archive_to_input_ratio": 1.0000043921172619
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 use crate::{Entry, MAGIC, number, parent, pipeline, safe_path};
 use anyhow::{Context, Result, ensure};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, File},
     io::{BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -448,15 +448,24 @@ pub(super) fn read_archive(
         None
     };
     if let Some(temp) = &staging {
+        let mut directories = HashSet::new();
         for item in &items {
             let path = temp.path().join(&item.entry.name);
             if item.entry.directory {
-                fs::create_dir_all(path)?;
+                directories.insert(path);
             } else {
-                fs::create_dir_all(parent(&path))?;
-                if item.entry.size == 0 {
-                    File::options().write(true).create_new(true).open(path)?;
-                }
+                directories.insert(parent(&path).to_owned());
+            }
+        }
+        for path in directories {
+            fs::create_dir_all(path)?;
+        }
+        for item in &items {
+            if !item.entry.directory && item.entry.size == 0 {
+                File::options()
+                    .write(true)
+                    .create_new(true)
+                    .open(temp.path().join(&item.entry.name))?;
             }
         }
     }
