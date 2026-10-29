@@ -36,6 +36,7 @@ def main():
     parser.add_argument('--work-dir', type=Path, help='parent for temporary archives and restored trees')
     parser.add_argument('--threads', type=int, nargs='+', default=[1, 2, 4])
     parser.add_argument('--runs', type=int, default=7)
+    parser.add_argument('--native-format', action='store_true', help='also create/extract native level-1, 1 MiB-block archive')
     parser.add_argument('--sevenzip')
     parser.add_argument('--tar', help='libarchive bsdtar executable, not GNU tar')
     args = parser.parse_args()
@@ -90,11 +91,22 @@ def main():
                         out.addfile(info, data)
                 else:
                     out.addfile(info)
-        for path in [archive, plain]:
+        archives = [archive, plain]
+        native = work / 'input.zipper'
+        if args.native_format:
+            create = [str(zipper), '--threads', '4', 'create', str(native), str(source),
+                      '--level', '1', '--block-size-kib', '1024']
+            subprocess.run(create, check=True, stdout=subprocess.DEVNULL)
+            result['native_creation_command'] = create
+            archives.append(native)
+        for path in archives:
             result['archives'][path.name] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
         output = work / 'out'
         commands = {}
         for threads in sorted(set(args.threads)):
+            if args.native_format:
+                commands[f'zipper-{threads}'] = [str(zipper), '--threads', str(threads),
+                    'extract', str(native), '-o', str(output)]
             for mode in ['native', 'native-fast']:
                 commands[f'{mode}-{threads}'] = [str(zipper), '--zip-engine', mode,
                     '--threads', str(threads), 'extract', str(archive), '-o', str(output)]
