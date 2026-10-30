@@ -1,0 +1,72 @@
+name: Actual Windows alpha versus current source
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - run: cargo +1.96.0 build --locked --release --target x86_64-pc-windows-msvc
+      - name: Download and authenticate the actual published executable
+        run: |
+          gh release download v0.1.0-alpha.1 --repo "$GITHUB_REPOSITORY" --pattern zipper-0.1.0-alpha.1-windows-x86_64.zip --dir release
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,zipfile
+          p=Path('release/zipper-0.1.0-alpha.1-windows-x86_64.zip')
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == '7ae62938561a71bf951019cb5395ab3694c116d56c9fc2fa8eb3d8d0ff8e046b'
+          with zipfile.ZipFile(p) as z:
+              Path('release/zipper.exe').write_bytes(z.read('zipper.exe'))
+          PY
+          mkdir results
+          git rev-parse HEAD > results/current-source.txt
+          python -c 'import os,platform; print(platform.platform()); print(platform.processor()); print(os.cpu_count())' > results/environment.txt
+      - name: Generate common inputs
+        run: |
+          python scripts/make_large_zip_corpus.py corpora/large
+          for layout in flat grouped; do
+            python scripts/make_tiny_corpus.py "corpora/$layout" --files 1000 --layout "$layout"
+            python - "$layout" <<'PY'
+          import sys,zipfile
+          from pathlib import Path
+          p=Path('corpora')/sys.argv[1]
+          with zipfile.ZipFile(p.with_suffix('.zip'),'w',zipfile.ZIP_DEFLATED) as out:
+              for f in sorted(p.rglob('*')):
+                  out.write(f,f.relative_to(p.parent))
+          PY
+          done
+          release/zipper.exe --threads 4 create corpora/grouped.zipper corpora/grouped
+      - name: Compare actual ZIP readers using their normal budgets
+        run: |
+          current=target/x86_64-pc-windows-msvc/release/zipper.exe
+          for corpus in flat grouped large/mixed large/compressible large/random; do
+            name=${corpus//\//-}
+            python scripts/compare_zip_readers.py "corpora/$corpus.zip" "corpora/$corpus" \
+              --reader release-native native release/zipper.exe \
+              --reader current-native native "$current" \
+              --reader release-fast native-fast release/zipper.exe \
+              --reader current-fast native-fast "$current" \
+              --runs 7 --threads 4 > "results/$name.json"
+          done
+      - name: Compare native format on the identical archive
+        run: |
+          python scripts/compare_zip_readers.py corpora/grouped.zipper corpora/grouped \
+            --archive-format native --reader release native release/zipper.exe \
+            --reader current native target/x86_64-pc-windows-msvc/release/zipper.exe \
+            --runs 7 --threads 4 > results/native-format.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: windows-release-comparison-${{ github.sha }}
+          path: results/
+          if-no-files-found: error

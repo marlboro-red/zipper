@@ -22,6 +22,8 @@ def main():
     parser.add_argument("archive", type=Path)
     parser.add_argument("source", type=Path, help="source directory stored as a top-level archive directory")
     parser.add_argument("--reader", action="append", nargs=3, metavar=("LABEL", "MODE", "BINARY"), required=True)
+    parser.add_argument("--archive-format", choices=["zip", "native"], default="zip",
+                        help="native compares .zipper extraction without ZIP engine flags")
     parser.add_argument("--runs", type=int, default=7)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--reader-threads", action="append", nargs=2, metavar=("LABEL", "THREADS"), default=[],
@@ -40,6 +42,8 @@ def main():
         path = Path(binary).resolve(strict=True)
         readers[label] = {"mode": mode, "binary": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                           "threads": args.threads}
+    if args.archive_format == "native" and any(reader["mode"] != "native" for reader in readers.values()):
+        parser.error("native-format comparisons require native reader labels")
     overridden = set()
     for label, value in args.reader_threads:
         if label not in readers or label in overridden or (value != "auto" and
@@ -59,7 +63,7 @@ def main():
     expected = inventory(source)
     total = sum(size for size in expected.values() if size is not None)
     result = {"platform": platform.platform(), "cpu_count": os.cpu_count(), "threads": args.threads,
-        "runs": args.runs, "warmup_rounds": 1, "operation": args.operation, "cooldown_seconds": args.cooldown,
+        "runs": args.runs, "warmup_rounds": 1, "archive_format": args.archive_format, "operation": args.operation, "cooldown_seconds": args.cooldown,
         "source": source.name, "input_bytes": total,
         "archive_bytes": archive.stat().st_size, "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "readers": readers, "verification": "direct bytes, file sizes and tree membership", "errors": 0,
@@ -75,7 +79,9 @@ def main():
             for label in labels:
                 reader = readers[label]
                 output = Path(work) / "out"
-                prefix = [reader["binary"], "--zip-engine", reader["mode"]]
+                prefix = [reader["binary"]]
+                if args.archive_format == "zip":
+                    prefix += ["--zip-engine", reader["mode"]]
                 if reader["threads"] is not None:
                     prefix += ["--threads", str(reader["threads"])]
                 if "buffer_mib" in reader:
