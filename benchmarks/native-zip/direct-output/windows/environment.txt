@@ -1,0 +1,3 @@
+Windows-2022Server-10.0.20348-SP0
+Intel64 Family 6 Model 207 Stepping 2, GenuineIntel
+4
