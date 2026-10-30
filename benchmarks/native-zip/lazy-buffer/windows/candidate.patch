@@ -1,0 +1,27 @@
+diff --git a/src/native_zip.rs b/src/native_zip.rs
+index fe22542..b516026 100644
+--- a/src/native_zip.rs
++++ b/src/native_zip.rs
+@@ -350,7 +350,7 @@ pub fn read_archive_with_options(
+             || {
+                 (
+                     archive.clone(),
+-                    vec![0u8; 256 * 1024],
++                    Vec::new(),
+                     fast.then(libdeflater::Decompressor::new),
+                 )
+             },
+@@ -425,6 +425,13 @@ pub fn read_archive_with_options(
+                     }
+                     return Ok(());
+                 }
++                // Whole-entry decoding needs no streaming scratch buffer. For
++                // streaming, keep one byte even for empty entries so EOF/CRC
++                // checks still run; a zero-length read could bypass them.
++                let required = item.entry.size.clamp(1, 256 * 1024) as usize;
++                if buffer.len() < required {
++                    buffer.resize(required, 0);
++                }
+                 let mut written = 0u64;
+                 loop {
+                     let len = source.read(buffer)?;
