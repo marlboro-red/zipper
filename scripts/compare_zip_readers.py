@@ -26,6 +26,8 @@ def main():
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--reader-threads", action="append", nargs=2, metavar=("LABEL", "THREADS"), default=[],
                         help="override the worker count for one reader (or auto to omit --threads)")
+    parser.add_argument("--reader-buffer-mib", action="append", nargs=2, metavar=("LABEL", "MIB"), default=[],
+                        help="override shared entry-buffer budget for a native-fast reader")
     parser.add_argument("--operation", choices=["extract", "list", "test"], default="extract")
     parser.add_argument("--cooldown", type=float, default=0, help="untimed seconds after cleanup, 0..10")
     args = parser.parse_args()
@@ -45,6 +47,13 @@ def main():
             parser.error("reader thread overrides require a unique known label and count 1..64 or auto")
         readers[label]["threads"] = None if value == "auto" else int(value)
         overridden.add(label)
+    budget_overrides = set()
+    for label, value in args.reader_buffer_mib:
+        if (label not in readers or label in budget_overrides or readers[label]["mode"] != "native-fast"
+                or not value.isdigit() or not 0 <= int(value) <= 4096):
+            parser.error("buffer overrides require a unique native-fast reader and MiB 0..4096")
+        readers[label]["buffer_mib"] = int(value)
+        budget_overrides.add(label)
     source = args.source.resolve(strict=True)
     archive = args.archive.resolve(strict=True)
     expected = inventory(source)
@@ -69,6 +78,8 @@ def main():
                 prefix = [reader["binary"], "--zip-engine", reader["mode"]]
                 if reader["threads"] is not None:
                     prefix += ["--threads", str(reader["threads"])]
+                if "buffer_mib" in reader:
+                    prefix += ["--zip-buffer-mib", str(reader["buffer_mib"])]
                 extract = prefix + ["extract", str(archive), "-o", str(output)]
                 print(f"Round {iteration}: {label} ({args.operation})", file=sys.stderr, flush=True)
                 sample = timed(extract if args.operation == "extract" else

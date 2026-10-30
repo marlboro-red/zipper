@@ -1,0 +1,63 @@
+name: Large ZIP decoder and output experiment
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Build reference
+        run: |
+          cargo +1.96.0 build --locked --release
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          cp "target/release/zipper$suffix" "reference$suffix"
+      - name: Change only whole-buffer output write size
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/native_zip.rs'); text=p.read_text()
+          old='output.write_all(&decoded)?;'
+          assert text.count(old)==1
+          p.write_text(text.replace(old, 'for chunk in decoded.chunks(256 * 1024) { output.write_all(chunk)?; }'))
+          PY
+          cargo +1.96.0 test --locked --release
+          cargo +1.96.0 build --locked --release
+          mkdir results
+          git diff > results/candidate.patch
+          git rev-parse HEAD > results/reference-source.txt
+          python -c 'import platform,os; print(platform.platform()); print(platform.processor()); print(os.cpu_count())' > results/environment.txt
+      - run: python scripts/make_large_zip_corpus.py corpora
+      - name: Interleave verified extraction and integrity-only comparisons
+        run: |
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          for corpus in mixed compressible random; do
+            python scripts/compare_zip_readers.py "corpora/$corpus.zip" "corpora/$corpus" \
+              --reader streaming native "reference$suffix" \
+              --reader whole native-fast "reference$suffix" \
+              --reader chunked native-fast "target/release/zipper$suffix" \
+              --reader-buffer-mib whole 128 --reader-buffer-mib chunked 128 \
+              --runs 7 --threads 4 > "results/$corpus-extract.json"
+            python scripts/compare_zip_readers.py "corpora/$corpus.zip" "corpora/$corpus" \
+              --reader streaming native "reference$suffix" \
+              --reader whole native-fast "reference$suffix" --reader-buffer-mib whole 128 \
+              --operation test --runs 7 --threads 4 > "results/$corpus-test.json"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: zip-output-${{ matrix.os }}-${{ github.sha }}
+          path: results/
+          if-no-files-found: error
