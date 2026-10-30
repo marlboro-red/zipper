@@ -1,0 +1,103 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "load_average_start": [
+    3.20166015625,
+    2.9306640625,
+    2.72216796875
+  ],
+  "threads": 4,
+  "binaries": {
+    "before": "/private/tmp/zipper-before-crc",
+    "after": "/Users/aleph/Desktop/Projects/marlboro-red/zipper/target/release/zipper"
+  },
+  "runs": 1,
+  "warmup_rounds": 1,
+  "verification": "direct byte comparison, tree membership and file sizes",
+  "errors": 0,
+  "corpora": {
+    "single": {
+      "input_bytes": 63963136,
+      "files": 1,
+      "order_including_warmup": [
+        [
+          "before",
+          "after"
+        ],
+        [
+          "after",
+          "before"
+        ]
+      ],
+      "engines": {
+        "before": {
+          "archive_bytes": 2022536,
+          "samples": [
+            {
+              "compression": {
+                "seconds": 0.023639624999999997,
+                "peak_rss_bytes": 13221888
+              },
+              "extraction": {
+                "seconds": 0.010494916999999993,
+                "peak_rss_bytes": 22675456
+              },
+              "archive_bytes": 2022536,
+              "verified_bytes": 63963136
+            }
+          ],
+          "compression": {
+            "median_seconds": 0.023639624999999997,
+            "min_seconds": 0.023639624999999997,
+            "max_seconds": 0.023639624999999997,
+            "mib_s": 2580.413183373256,
+            "peak_rss_bytes": 13221888
+          },
+          "extraction": {
+            "median_seconds": 0.010494916999999993,
+            "min_seconds": 0.010494916999999993,
+            "max_seconds": 0.010494916999999993,
+            "mib_s": 5812.337534446441,
+            "peak_rss_bytes": 22675456
+          }
+        },
+        "after": {
+          "archive_bytes": 2022536,
+          "samples": [
+            {
+              "compression": {
+                "seconds": 0.021330084,
+                "peak_rss_bytes": 15368192
+              },
+              "extraction": {
+                "seconds": 0.011537624999999996,
+                "peak_rss_bytes": 22642688
+              },
+              "archive_bytes": 2022536,
+              "verified_bytes": 63963136
+            }
+          ],
+          "compression": {
+            "median_seconds": 0.021330084,
+            "min_seconds": 0.021330084,
+            "max_seconds": 0.021330084,
+            "mib_s": 2859.8105848997125,
+            "peak_rss_bytes": 15368192
+          },
+          "extraction": {
+            "median_seconds": 0.011537624999999996,
+            "min_seconds": 0.011537624999999996,
+            "max_seconds": 0.011537624999999996,
+            "mib_s": 5287.049977790059,
+            "peak_rss_bytes": 22642688
+          }
+        }
+      }
+    }
+  },
+  "load_average_end": [
+    3.20166015625,
+    2.9306640625,
+    2.72216796875
+  ]
+}

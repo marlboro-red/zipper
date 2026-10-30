@@ -105,6 +105,10 @@ has no total expanded-size quota. The compatibility backend remains the default.
 `--zip-engine native-fast` adds a libdeflate buffer decoder with a shared
 budget for live compressed and expanded entry buffers across workers: 128 MiB
 on ARM64 macOS and 64 MiB elsewhere.
+For extraction, entries at least 16 MiB with compressed size at most 1/128 of
+expanded size also stream: measured highly compressible workloads are faster
+and use much less memory that way. Integrity-only selection is unchanged.
+See [decoder-selection measurements](benchmarks/native-zip/decoder-selection/README.md).
 Entries that cannot reserve space immediately stream through zlib-rs. Override
 with `--zip-buffer-mib N` (0 forces streaming). Metadata, worker state, archive
 cache and allocator-retained memory are additional: this is not a peak RSS cap.

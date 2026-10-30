@@ -1,0 +1,164 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "threads": 4,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "archive_format": "zip",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "period-32768",
+  "input_bytes": 16777216,
+  "archive_bytes": 16782476,
+  "archive_sha256": "037edd5e18891a717f38a57e9e7e1506d1cf832f128a2651cab84a46099f7aba",
+  "readers": {
+    "before": {
+      "mode": "native-fast",
+      "binary": "/private/tmp/zipper-before-crc",
+      "sha256": "53d1beb6506eb05ef26b393bce10d0f93675950ab75f2227c8f5c4cc33872c92",
+      "threads": 4
+    },
+    "after": {
+      "mode": "native-fast",
+      "binary": "/Users/aleph/Desktop/Projects/marlboro-red/zipper/target/release/zipper",
+      "sha256": "5fc98fd04b9958200f29c6125fac0f6125cff07f2dc22d071bf58d4a8617056d",
+      "threads": 4
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    2.78076171875,
+    2.91259765625,
+    2.68115234375
+  ],
+  "order_including_warmup": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ]
+  ],
+  "results": {
+    "before": {
+      "samples": [
+        {
+          "seconds": 0.008147457999999996,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008338958000000007,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.00842620899999999,
+          "peak_rss_bytes": 36290560,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008301084000000014,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008462250000000004,
+          "peak_rss_bytes": 36257792,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008577791000000001,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008457207999999994,
+          "peak_rss_bytes": 36257792,
+          "verified_bytes": 16777216
+        }
+      ],
+      "median_seconds": 0.00842620899999999,
+      "min_seconds": 0.008147457999999996,
+      "max_seconds": 0.008577791000000001,
+      "mib_s": 1898.8373063141466,
+      "peak_rss_bytes": 36290560
+    },
+    "after": {
+      "samples": [
+        {
+          "seconds": 0.008521209000000002,
+          "peak_rss_bytes": 36290560,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008610958999999987,
+          "peak_rss_bytes": 36306944,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008293792000000008,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008907708999999986,
+          "peak_rss_bytes": 36290560,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008558707999999998,
+          "peak_rss_bytes": 36290560,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008272083000000013,
+          "peak_rss_bytes": 36290560,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008592208000000018,
+          "peak_rss_bytes": 36306944,
+          "verified_bytes": 16777216
+        }
+      ],
+      "median_seconds": 0.008558707999999998,
+      "min_seconds": 0.008272083000000013,
+      "max_seconds": 0.008907708999999986,
+      "mib_s": 1869.441041802104,
+      "peak_rss_bytes": 36306944
+    }
+  },
+  "load_average_end": [
+    2.78076171875,
+    2.91259765625,
+    2.68115234375
+  ]
+}

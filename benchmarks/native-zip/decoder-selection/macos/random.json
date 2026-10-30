@@ -1,0 +1,164 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "threads": 4,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "archive_format": "zip",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "random",
+  "input_bytes": 16777216,
+  "archive_bytes": 16782464,
+  "archive_sha256": "86d874ecded59d6c8b1b75ea1f6e9f7f4ec51c37d948f1e5392e6f6814f2fcfc",
+  "readers": {
+    "before": {
+      "mode": "native-fast",
+      "binary": "/private/tmp/zipper-before-crc",
+      "sha256": "53d1beb6506eb05ef26b393bce10d0f93675950ab75f2227c8f5c4cc33872c92",
+      "threads": 4
+    },
+    "after": {
+      "mode": "native-fast",
+      "binary": "/Users/aleph/Desktop/Projects/marlboro-red/zipper/target/release/zipper",
+      "sha256": "5fc98fd04b9958200f29c6125fac0f6125cff07f2dc22d071bf58d4a8617056d",
+      "threads": 4
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    2.78076171875,
+    2.91259765625,
+    2.68115234375
+  ],
+  "order_including_warmup": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ]
+  ],
+  "results": {
+    "before": {
+      "samples": [
+        {
+          "seconds": 0.008879291999999997,
+          "peak_rss_bytes": 36290560,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008461708999999998,
+          "peak_rss_bytes": 36290560,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008565208000000005,
+          "peak_rss_bytes": 36257792,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008809666999999993,
+          "peak_rss_bytes": 36257792,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.009065457999999998,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.009667707999999997,
+          "peak_rss_bytes": 36257792,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008931834,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        }
+      ],
+      "median_seconds": 0.008879291999999997,
+      "min_seconds": 0.008461708999999998,
+      "max_seconds": 0.009667707999999997,
+      "mib_s": 1801.9454704271473,
+      "peak_rss_bytes": 36290560
+    },
+    "after": {
+      "samples": [
+        {
+          "seconds": 0.008948666000000008,
+          "peak_rss_bytes": 36290560,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008764000000000008,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008530667000000006,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008991291999999984,
+          "peak_rss_bytes": 36323328,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.009044166999999992,
+          "peak_rss_bytes": 36323328,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008986750000000016,
+          "peak_rss_bytes": 36306944,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.008673750000000008,
+          "peak_rss_bytes": 36274176,
+          "verified_bytes": 16777216
+        }
+      ],
+      "median_seconds": 0.008948666000000008,
+      "min_seconds": 0.008530667000000006,
+      "max_seconds": 0.009044166999999992,
+      "mib_s": 1787.9759955282705,
+      "peak_rss_bytes": 36323328
+    }
+  },
+  "load_average_end": [
+    2.78076171875,
+    2.91259765625,
+    2.68115234375
+  ]
+}

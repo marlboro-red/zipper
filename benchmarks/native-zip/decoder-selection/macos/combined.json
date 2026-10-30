@@ -1,0 +1,164 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "threads": 4,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "archive_format": "zip",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "zipper-decoder-combined",
+  "input_bytes": 33728672,
+  "archive_bytes": 17001723,
+  "archive_sha256": "7966c5642190a3b2f61004b889655b61a0bc790c82c4d40b0f9060deac13b83f",
+  "readers": {
+    "before": {
+      "mode": "native-fast",
+      "binary": "/private/tmp/zipper-before-crc",
+      "sha256": "53d1beb6506eb05ef26b393bce10d0f93675950ab75f2227c8f5c4cc33872c92",
+      "threads": 4
+    },
+    "after": {
+      "mode": "native-fast",
+      "binary": "/Users/aleph/Desktop/Projects/marlboro-red/zipper/target/release/zipper",
+      "sha256": "5fc98fd04b9958200f29c6125fac0f6125cff07f2dc22d071bf58d4a8617056d",
+      "threads": 4
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    2.224609375,
+    2.638671875,
+    2.60107421875
+  ],
+  "order_including_warmup": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ]
+  ],
+  "results": {
+    "before": {
+      "samples": [
+        {
+          "seconds": 0.041185833000000005,
+          "peak_rss_bytes": 37224448,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.03755033299999999,
+          "peak_rss_bytes": 37208064,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.03620170799999989,
+          "peak_rss_bytes": 37191680,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.03724016600000013,
+          "peak_rss_bytes": 37208064,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.038982917000000006,
+          "peak_rss_bytes": 37224448,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.041322416999999945,
+          "peak_rss_bytes": 37191680,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.039662874999999875,
+          "peak_rss_bytes": 37273600,
+          "verified_bytes": 33728672
+        }
+      ],
+      "median_seconds": 0.038982917000000006,
+      "min_seconds": 0.03620170799999989,
+      "max_seconds": 0.041322416999999945,
+      "mib_s": 825.1349741962773,
+      "peak_rss_bytes": 37273600
+    },
+    "after": {
+      "samples": [
+        {
+          "seconds": 0.04015820799999997,
+          "peak_rss_bytes": 37404672,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.037281624999999985,
+          "peak_rss_bytes": 37584896,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.038560458000000075,
+          "peak_rss_bytes": 37404672,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.04054362499999997,
+          "peak_rss_bytes": 37371904,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.03790483300000003,
+          "peak_rss_bytes": 37421056,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.03763120799999964,
+          "peak_rss_bytes": 37404672,
+          "verified_bytes": 33728672
+        },
+        {
+          "seconds": 0.03803462499999988,
+          "peak_rss_bytes": 37421056,
+          "verified_bytes": 33728672
+        }
+      ],
+      "median_seconds": 0.03803462499999988,
+      "min_seconds": 0.037281624999999985,
+      "max_seconds": 0.04054362499999997,
+      "mib_s": 845.7075155306705,
+      "peak_rss_bytes": 37584896
+    }
+  },
+  "load_average_end": [
+    2.92724609375,
+    2.77734375,
+    2.64990234375
+  ]
+}

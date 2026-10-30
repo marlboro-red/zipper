@@ -264,8 +264,9 @@ pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry
     read_archive_with_options(path, destination, ReadOptions::default())
 }
 
-/// Whole-buffer Deflate fast path for entries whose compressed and decoded sizes
-/// fit the shared entry-buffer budget; other entries use bounded streaming.
+/// Whole-buffer Deflate fast path for eligible entries whose compressed and
+/// decoded sizes fit the shared budget. Large, highly compressible extraction
+/// entries and entries that cannot reserve memory use bounded streaming.
 /// Integrity-only reads and Linux extraction also cache archives up to 8 MiB.
 pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
     read_archive_with_options(
@@ -359,15 +360,22 @@ pub fn read_archive_with_options(
                 // Never wait for memory while holding worker resources. If a
                 // reservation cannot fit now, this entry uses streaming instead.
                 // Declare the lease before buffers so it outlives them on errors.
-                let reservation = if fast && item.method == CompressionMethod::Deflated {
-                    item.entry
-                        .size
-                        .checked_add(item.compressed)
-                        .and_then(|bytes| usize::try_from(bytes).ok())
-                        .and_then(|bytes| budget.reserve(bytes))
-                } else {
-                    None
-                };
+                // Large, very compressible outputs are faster through streaming
+                // on measured workloads and avoid whole-entry allocation/copying.
+                // Verification-only reads keep their existing decoder policy.
+                let prefer_streaming = destination.is_some()
+                    && item.entry.size >= 16 * 1024 * 1024
+                    && item.compressed <= item.entry.size / 128;
+                let reservation =
+                    if fast && !prefer_streaming && item.method == CompressionMethod::Deflated {
+                        item.entry
+                            .size
+                            .checked_add(item.compressed)
+                            .and_then(|bytes| usize::try_from(bytes).ok())
+                            .and_then(|bytes| budget.reserve(bytes))
+                    } else {
+                        None
+                    };
                 let buffered = reservation.is_some();
                 let mut source = if buffered {
                     archive.by_index_raw(index)?

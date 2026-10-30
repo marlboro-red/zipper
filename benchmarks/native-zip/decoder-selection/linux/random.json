@@ -1,0 +1,164 @@
+{
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "threads": 4,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "archive_format": "zip",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "random",
+  "input_bytes": 16777216,
+  "archive_bytes": 16782464,
+  "archive_sha256": "86d874ecded59d6c8b1b75ea1f6e9f7f4ec51c37d948f1e5392e6f6814f2fcfc",
+  "readers": {
+    "before": {
+      "mode": "native-fast",
+      "binary": "/home/runner/work/zipper/zipper/reference",
+      "sha256": "0a1ea4c4508cae652fe440b1622c7c501d5627650e9efdc528c1fe218cd5bc51",
+      "threads": 4
+    },
+    "after": {
+      "mode": "native-fast",
+      "binary": "/home/runner/work/zipper/zipper/target/release/zipper",
+      "sha256": "da36d66c1876751b6d3e10c2f83eff7ce24b69d6fe33816dccae04474aa7f7a6",
+      "threads": 4
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    3.87646484375,
+    1.3447265625,
+    0.484375
+  ],
+  "order_including_warmup": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ]
+  ],
+  "results": {
+    "before": {
+      "samples": [
+        {
+          "seconds": 0.028760634999997592,
+          "peak_rss_bytes": 37081088,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.028616557999995962,
+          "peak_rss_bytes": 37072896,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.027705983000004153,
+          "peak_rss_bytes": 37212160,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.02798205899999573,
+          "peak_rss_bytes": 37015552,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.028297399999999584,
+          "peak_rss_bytes": 37212160,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.024236835000010615,
+          "peak_rss_bytes": 37212160,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.028318600000005745,
+          "peak_rss_bytes": 37081088,
+          "verified_bytes": 16777216
+        }
+      ],
+      "median_seconds": 0.028297399999999584,
+      "min_seconds": 0.024236835000010615,
+      "max_seconds": 0.028760634999997592,
+      "mib_s": 565.4229717217919,
+      "peak_rss_bytes": 37212160
+    },
+    "after": {
+      "samples": [
+        {
+          "seconds": 0.025763323999996146,
+          "peak_rss_bytes": 37036032,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.02840252199999327,
+          "peak_rss_bytes": 37122048,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.028450763999998685,
+          "peak_rss_bytes": 37064704,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.028416974999998956,
+          "peak_rss_bytes": 37052416,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.02814327899999114,
+          "peak_rss_bytes": 36929536,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.027984301000003597,
+          "peak_rss_bytes": 36990976,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.027502073000007954,
+          "peak_rss_bytes": 37187584,
+          "verified_bytes": 16777216
+        }
+      ],
+      "median_seconds": 0.02814327899999114,
+      "min_seconds": 0.025763323999996146,
+      "max_seconds": 0.028450763999998685,
+      "mib_s": 568.519396762724,
+      "peak_rss_bytes": 37187584
+    }
+  },
+  "load_average_end": [
+    3.87646484375,
+    1.3447265625,
+    0.484375
+  ]
+}

@@ -516,3 +516,39 @@ fn shared_buffer_budget_streams_and_checks_crc_under_contention() -> anyhow::Res
     assert_eq!(fs::read(output.join("a"))?, payload);
     Ok(())
 }
+
+#[test]
+fn streaming_empty_entries_still_validate_crc_and_cleanup() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("empty.zip");
+    for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
+        archive(&path, &[("empty", b"")], method)?;
+        let original = fs::read(&path)?;
+        let central = original
+            .windows(4)
+            .position(|b| b == b"PK\x01\x02")
+            .unwrap();
+        for fast in [false, true] {
+            let options = zipper::native_zip::ReadOptions {
+                fast,
+                threads: Some(1),
+                buffer_bytes: Some(0),
+            };
+            fs::write(&path, &original)?;
+            let out = temp.path().join("out");
+            zipper::native_zip::read_archive_with_options(&path, Some(&out), options)?;
+            assert_eq!(fs::read(out.join("empty"))?, b"");
+            fs::remove_dir_all(&out)?;
+            let mut damaged = original.clone();
+            damaged[central + 16] ^= 1;
+            fs::write(&path, damaged)?;
+            assert!(zipper::native_zip::read_archive_with_options(&path, None, options).is_err());
+            assert!(
+                zipper::native_zip::read_archive_with_options(&path, Some(&out), options).is_err()
+            );
+            assert!(!out.exists());
+            assert_eq!(fs::read_dir(temp.path())?.count(), 1);
+        }
+    }
+    Ok(())
+}

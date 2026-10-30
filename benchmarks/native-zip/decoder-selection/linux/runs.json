@@ -1,0 +1,164 @@
+{
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "threads": 4,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "archive_format": "zip",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "runs",
+  "input_bytes": 16777216,
+  "archive_bytes": 29392,
+  "archive_sha256": "e3be2e77491fe1f8add64a1645c1913a69a65a0bd92a9c84566d3ab0566929fd",
+  "readers": {
+    "before": {
+      "mode": "native-fast",
+      "binary": "/home/runner/work/zipper/zipper/reference",
+      "sha256": "0a1ea4c4508cae652fe440b1622c7c501d5627650e9efdc528c1fe218cd5bc51",
+      "threads": 4
+    },
+    "after": {
+      "mode": "native-fast",
+      "binary": "/home/runner/work/zipper/zipper/target/release/zipper",
+      "sha256": "da36d66c1876751b6d3e10c2f83eff7ce24b69d6fe33816dccae04474aa7f7a6",
+      "threads": 4
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    4.0400390625,
+    1.33349609375,
+    0.47607421875
+  ],
+  "order_including_warmup": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ]
+  ],
+  "results": {
+    "before": {
+      "samples": [
+        {
+          "seconds": 0.016354104999990682,
+          "peak_rss_bytes": 20492288,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.013935677000006308,
+          "peak_rss_bytes": 20238336,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.014283853999998541,
+          "peak_rss_bytes": 20434944,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.01702836299999433,
+          "peak_rss_bytes": 20434944,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.015324230999993915,
+          "peak_rss_bytes": 20303872,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.014668217999997069,
+          "peak_rss_bytes": 20434944,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.015805901999996763,
+          "peak_rss_bytes": 20238336,
+          "verified_bytes": 16777216
+        }
+      ],
+      "median_seconds": 0.015324230999993915,
+      "min_seconds": 0.013935677000006308,
+      "max_seconds": 0.01702836299999433,
+      "mib_s": 1044.0980692607905,
+      "peak_rss_bytes": 20492288
+    },
+    "after": {
+      "samples": [
+        {
+          "seconds": 0.0072083259999971006,
+          "peak_rss_bytes": 3837952,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.006890819999995301,
+          "peak_rss_bytes": 3694592,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.0071410360000072615,
+          "peak_rss_bytes": 3899392,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.007088398999997025,
+          "peak_rss_bytes": 3837952,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.006913507999996682,
+          "peak_rss_bytes": 3833856,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.0071481470000094305,
+          "peak_rss_bytes": 3817472,
+          "verified_bytes": 16777216
+        },
+        {
+          "seconds": 0.007110664000009592,
+          "peak_rss_bytes": 3899392,
+          "verified_bytes": 16777216
+        }
+      ],
+      "median_seconds": 0.007110664000009592,
+      "min_seconds": 0.006890819999995301,
+      "max_seconds": 0.0072083259999971006,
+      "mib_s": 2250.1414776423717,
+      "peak_rss_bytes": 3899392
+    }
+  },
+  "load_average_end": [
+    3.87646484375,
+    1.3447265625,
+    0.484375
+  ]
+}
