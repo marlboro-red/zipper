@@ -1,0 +1,62 @@
+name: ZIP decoder selection experiment
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            files: 1000
+          - os: ubuntu-24.04
+            files: 10000
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FILE_COUNT: ${{ matrix.files }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Match published Windows build settings
+        if: runner.os == 'Windows'
+        run: echo 'RUSTFLAGS=-C target-feature=+crt-static' >> "$GITHUB_ENV"
+      - name: Build reference
+        run: |
+          cargo +1.96.0 build --locked --release
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          cp "target/release/zipper$suffix" "reference$suffix"
+      - name: Apply candidate and verify
+        run: |
+          git apply benchmarks/native-zip/decoder-selection/candidate.patch
+          cargo +1.96.0 test --locked --release
+          cargo +1.96.0 build --locked --release
+          mkdir results
+          git rev-parse HEAD > results/reference-source.txt
+          git diff > results/candidate.patch
+          python -c 'import os,platform; print(platform.platform()); print(platform.processor()); print(os.cpu_count())' > results/environment.txt
+      - name: Generate workloads
+        run: python scripts/make_zip_decoder_corpus.py corpora
+      - name: Compare identical ZIPs
+        run: |
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          for corpus in zero text runs period-256 period-8192 period-32768 random; do
+            python scripts/compare_zip_readers.py "corpora/$corpus.zip" "corpora/$corpus" \
+              --reader before native-fast "reference$suffix" --reader after native-fast "target/release/zipper$suffix" \
+              --runs 7 --threads 4 > "results/$corpus.json"
+          done
+          cp corpora/manifest.json results/manifest.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: zip-decoder-selection-${{ matrix.os }}-${{ github.sha }}
+          path: results/
+          if-no-files-found: error
