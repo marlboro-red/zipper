@@ -1,0 +1,13 @@
+diff --git a/src/native_zip.rs b/src/native_zip.rs
+index fe22542..fb6ffde 100644
+--- a/src/native_zip.rs
++++ b/src/native_zip.rs
+@@ -409,7 +409,7 @@ pub fn read_archive_with_options(
+                         length as u64 == item.entry.size,
+                         "ZIP decoded size mismatch"
+                     );
+-                    ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
++                    ensure!(libdeflater::crc32(&decoded) == item.crc, "ZIP CRC mismatch");
+                     if let Some(output) = &mut output {
+                         // Large single writes were costly on measured Windows
+                         // workloads. Bound write size without allocating copies;
