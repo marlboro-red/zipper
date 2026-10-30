@@ -1,0 +1,13 @@
+diff --git a/src/native_zip.rs b/src/native_zip.rs
+index c9d0289..e1e5472 100644
+--- a/src/native_zip.rs
++++ b/src/native_zip.rs
+@@ -411,7 +411,7 @@ pub fn read_archive_with_options(
+                     );
+                     ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
+                     if let Some(output) = &mut output {
+-                        output.write_all(&decoded)?;
++                        for chunk in decoded.chunks(256 * 1024) { output.write_all(chunk)?; }
+                         output.flush()?;
+                     }
+                     return Ok(());

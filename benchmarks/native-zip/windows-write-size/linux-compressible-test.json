@@ -1,0 +1,164 @@
+{
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "threads": 4,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "operation": "test",
+  "cooldown_seconds": 0,
+  "source": "compressible",
+  "input_bytes": 33554432,
+  "archive_bytes": 81673,
+  "archive_sha256": "e85b7e96d3c5b48c280f490d7bc649c191240f1515d93f46e506005c1c97b908",
+  "readers": {
+    "streaming": {
+      "mode": "native",
+      "binary": "/home/runner/work/zipper/zipper/reference",
+      "sha256": "91d3995df46d2f055bc1351ed9345eccc29c91e89d022dad1f6e8557490992a6",
+      "threads": 4
+    },
+    "whole": {
+      "mode": "native-fast",
+      "binary": "/home/runner/work/zipper/zipper/reference",
+      "sha256": "91d3995df46d2f055bc1351ed9345eccc29c91e89d022dad1f6e8557490992a6",
+      "threads": 4,
+      "buffer_mib": 128
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    3.04931640625,
+    0.91748046875,
+    0.31982421875
+  ],
+  "order_including_warmup": [
+    [
+      "streaming",
+      "whole"
+    ],
+    [
+      "whole",
+      "streaming"
+    ],
+    [
+      "streaming",
+      "whole"
+    ],
+    [
+      "streaming",
+      "whole"
+    ],
+    [
+      "streaming",
+      "whole"
+    ],
+    [
+      "whole",
+      "streaming"
+    ],
+    [
+      "streaming",
+      "whole"
+    ],
+    [
+      "streaming",
+      "whole"
+    ]
+  ],
+  "results": {
+    "streaming": {
+      "samples": [
+        {
+          "seconds": 0.009904788000000053,
+          "peak_rss_bytes": 3919872,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.009511582000001795,
+          "peak_rss_bytes": 3854336,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.00993807800000468,
+          "peak_rss_bytes": 3686400,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.009921642999998426,
+          "peak_rss_bytes": 3780608,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.009891406999997798,
+          "peak_rss_bytes": 3723264,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.009478109999989215,
+          "peak_rss_bytes": 3723264,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.009917616999999268,
+          "peak_rss_bytes": 3657728,
+          "verified_bytes": 33554432
+        }
+      ],
+      "median_seconds": 0.009904788000000053,
+      "min_seconds": 0.009478109999989215,
+      "max_seconds": 0.00993807800000468,
+      "mib_s": 3230.760718957319,
+      "peak_rss_bytes": 3919872
+    },
+    "whole": {
+      "samples": [
+        {
+          "seconds": 0.020991574999996487,
+          "peak_rss_bytes": 37273600,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.020251806000004535,
+          "peak_rss_bytes": 37146624,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.020690109000000234,
+          "peak_rss_bytes": 37048320,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.020915037999998276,
+          "peak_rss_bytes": 37126144,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.02065221200000167,
+          "peak_rss_bytes": 37060608,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.020851564000011535,
+          "peak_rss_bytes": 37199872,
+          "verified_bytes": 33554432
+        },
+        {
+          "seconds": 0.020788927000012336,
+          "peak_rss_bytes": 37081088,
+          "verified_bytes": 33554432
+        }
+      ],
+      "median_seconds": 0.020788927000012336,
+      "min_seconds": 0.020251806000004535,
+      "max_seconds": 0.020991574999996487,
+      "mib_s": 1539.2809835726978,
+      "peak_rss_bytes": 37273600
+    }
+  },
+  "load_average_end": [
+    3.04931640625,
+    0.91748046875,
+    0.31982421875
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "threads": 4,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "single",
+  "input_bytes": 63963136,
+  "archive_bytes": 33821385,
+  "archive_sha256": "6c96e4cd4f6e17c555720aa387e23c68d59367c6ab976206a8089abcd6552883",
+  "readers": {
+    "whole": {
+      "mode": "native-fast",
+      "binary": "/private/tmp/zipper-before-chunked-output",
+      "sha256": "9eb74ecb7a28e367587c61a088c7d97179c1409facbd5c4b5e8bedd9fab7c9e8",
+      "threads": 4,
+      "buffer_mib": 128
+    },
+    "chunked": {
+      "mode": "native-fast",
+      "binary": "/Users/aleph/Desktop/Projects/marlboro-red/zipper/target/release/zipper",
+      "sha256": "2c0eebbb0c12d5ffec0ae51346d14bc280a332e209ee7645b5742ada9834e561",
+      "threads": 4,
+      "buffer_mib": 128
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    2.14111328125,
+    1.7705078125,
+    1.55810546875
+  ],
+  "order_including_warmup": [
+    [
+      "whole",
+      "chunked"
+    ],
+    [
+      "chunked",
+      "whole"
+    ],
+    [
+      "whole",
+      "chunked"
+    ],
+    [
+      "whole",
+      "chunked"
+    ],
+    [
+      "whole",
+      "chunked"
+    ],
+    [
+      "chunked",
+      "whole"
+    ],
+    [
+      "whole",
+      "chunked"
+    ],
+    [
+      "whole",
+      "chunked"
+    ]
+  ],
+  "results": {
+    "whole": {
+      "samples": [
+        {
+          "seconds": 0.05721525000000005,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.055061666000000065,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.05463616700000018,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.053695292000000006,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.05005466599999986,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.05103633399999996,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.057911125000000174,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        }
+      ],
+      "median_seconds": 0.05463616700000018,
+      "min_seconds": 0.05005466599999986,
+      "max_seconds": 0.057911125000000174,
+      "mib_s": 1116.4765639580792,
+      "peak_rss_bytes": 100564992
+    },
+    "chunked": {
+      "samples": [
+        {
+          "seconds": 0.07077816700000006,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.06859375000000001,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.06749462499999992,
+          "peak_rss_bytes": 100548608,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.07515716600000011,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.06309341699999993,
+          "peak_rss_bytes": 100515840,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.05494516599999999,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        },
+        {
+          "seconds": 0.06063520800000011,
+          "peak_rss_bytes": 100564992,
+          "verified_bytes": 63963136
+        }
+      ],
+      "median_seconds": 0.06749462499999992,
+      "min_seconds": 0.05494516599999999,
+      "max_seconds": 0.07515716600000011,
+      "mib_s": 903.7756710256568,
+      "peak_rss_bytes": 100564992
+    }
+  },
+  "load_average_end": [
+    2.14111328125,
+    1.7705078125,
+    1.55810546875
+  ]
+}

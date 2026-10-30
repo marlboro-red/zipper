@@ -411,7 +411,16 @@ pub fn read_archive_with_options(
                     );
                     ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
                     if let Some(output) = &mut output {
-                        output.write_all(&decoded)?;
+                        // Large single writes were costly on measured Windows
+                        // workloads. Bound write size without allocating copies;
+                        // other platforms retain their measured whole-buffer path.
+                        if cfg!(windows) {
+                            for chunk in decoded.chunks(256 * 1024) {
+                                output.write_all(chunk)?;
+                            }
+                        } else {
+                            output.write_all(&decoded)?;
+                        }
                         output.flush()?;
                     }
                     return Ok(());

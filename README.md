@@ -108,7 +108,9 @@ on ARM64 macOS and 64 MiB elsewhere.
 Entries that cannot reserve space immediately stream through zlib-rs. Override
 with `--zip-buffer-mib N` (0 forces streaming). Metadata, worker state, archive
 cache and allocator-retained memory are additional: this is not a peak RSS cap.
-Both native ZIP modes verify decoded lengths and CRCs before publication. Use
+On Windows, buffered output is written in 256 KiB slices;
+[large-entry measurements](benchmarks/native-zip/windows-write-size/README.md)
+show why. Both native ZIP modes verify decoded lengths and CRCs before publication. Use
 `native` for low memory consumption. See the [shared-budget measurements](benchmarks/native-zip/shared-budget/README.md).
 
 For `native-fast test` and Linux `native-fast` extraction, archives up to 8 MiB
