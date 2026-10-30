@@ -68,3 +68,8 @@ eligibility there. The final default is **128 MiB for ARM64 macOS builds and
 64 MiB elsewhere**. Explicit budgets remain available. An x86-64 macOS binary
 under Rosetta receives 64 MiB. The conservative default sends this entry back to
 streaming on Linux/Windows. See the [portable reports](../../extraction-matrix/README.md).
+
+A later [Windows write-size experiment](../windows-write-size/README.md) identified
+large output writes as the main cause of the measured Windows penalty. Bounded
+writes now greatly improve that path, without increasing the default budget.
+The earlier engine timings above describe the pre-fix implementation.
