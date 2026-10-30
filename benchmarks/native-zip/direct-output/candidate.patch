@@ -1,0 +1,28 @@
+diff --git a/src/native_zip.rs b/src/native_zip.rs
+index fe22542..6b6b9f0 100644
+--- a/src/native_zip.rs
++++ b/src/native_zip.rs
+@@ -6,7 +6,7 @@ use rayon::prelude::*;
+ use std::{
+     collections::{HashMap, HashSet},
+     fs::{self, File},
+-    io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
++    io::{BufReader, Read, Seek, SeekFrom, Write},
+     path::Path,
+     sync::atomic::{AtomicUsize, Ordering},
+ };
+@@ -383,12 +383,12 @@ pub fn read_archive_with_options(
+                 );
+                 let mut output = if let Some(temp) = &staging {
+                     if !item.entry.directory {
+-                        Some(BufWriter::new(
++                        Some(
+                             File::options()
+                                 .write(true)
+                                 .create_new(true)
+                                 .open(temp.path().join(&item.entry.name))?,
+-                        ))
++                        )
+                     } else {
+                         None
+                     }
