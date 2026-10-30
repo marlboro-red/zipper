@@ -1,0 +1,80 @@
+# Adaptive ZIP file read-ahead experiment
+
+Hypothesis: the fixed 8 KiB buffer reduced tiny-file amplification, but large
+streaming entries now issue many small physical reads. The ZIP crate wraps its
+compressed input in a standard BufReader, whose requests can be 8 KiB. Increasing
+read-ahead only after sustained sequential reads may recover large-entry speed
+without reintroducing the original small-file read amplification.
+
+The isolated candidate starts at 8 KiB, promotes to 256 KiB after 64 KiB of
+sequential reads when the next request is at least 8 KiB, and resets to 8 KiB on
+actual seek movement. A clone starts small at the logical position. Cached
+immutable archives are unchanged. Buffer resizing preserves the unread logical
+position; added tests compare bytes across growth, seeks, clones and invalid
+seeks. The all-platform prototype is rejected on Linux; the retained candidate applies adaptation only on Windows.
+
+`.github/workflows/zip-adaptive-input.yml` builds before/after binaries and on
+Windows also compares the checksum-pinned actual alpha executable. All readers
+use normal memory budgets and four workers. Seven interleaved measured rounds,
+warmup excluded, with direct byte/tree verification after every extraction.
+
+## Results
+
+[Run 40989907784](https://github.com/marlboro-red/zipper/actions/runs/40989907784)
+used source `a3ca8d9` plus `candidate.patch`. The historical workflow must run
+at that baseline, before the implementation is merged. Windows uses static CRT
+and Rust 1.96.0, matching the published alpha build settings. These are local
+filesystem, warm-cache process timings, not durable disk completion or cold-cache
+results. Default compatibility-backend extraction is outside this experiment.
+
+Windows random-entry streaming extraction is the clear improvement: 37.02 to
+34.66 ms (6.4% less time), with disjoint observed ranges. Peak working set rises
+from 3.88 to 4.10 MiB. Its median returns within the actual release's range.
+Mixed and native-fast fallback medians improve, but overlapping ranges make
+those inconclusive. Flat tiny-file native extraction has a worse median with
+overlapping ranges; this is not evidence of a universal win.
+
+Linux random streaming extraction regresses 39.89 to 46.57 ms and mixed extraction
+123.41 to 127.49 ms with disjoint ranges. Keep fixed 8 KiB buffers there. Mac
+mixed, flat and real-dependency tree ranges overlap; keep its existing reader too.
+Avoiding extra buffer copies appears more valuable on Linux; this is a hypothesis,
+not a measured syscall or CPU profile diagnosis.
+
+All samples, archive hashes/sizes, binary hashes, order and byte verification are
+retained alongside this report. Each table cell is median [min, max] milliseconds;
+memory is maximum observed process peak MiB. Same archive for every engine.
+
+### Windows
+
+| Workload (ZIP bytes) | Reader | Before ms | After ms | Before / after MiB |
+|---|---|---|---|---|
+| flat (292,411) | native | 491.52 [469.76, 691.79] | 592.37 [461.32, 687.43] | 5.06 / 5.14 |
+| flat (292,411) | fast | 519.35 [458.45, 613.12] | 505.08 [457.88, 843.56] | 5.05 / 5.01 |
+| grouped (321,551) | native | 221.69 [208.74, 487.45] | 231.80 [216.82, 275.20] | 5.31 / 5.39 |
+| grouped (321,551) | fast | 228.82 [206.20, 410.21] | 219.73 [199.73, 246.51] | 5.18 / 5.34 |
+| large-compressible (81,673) | native | 25.85 [25.10, 26.29] | 25.84 [25.55, 26.52] | 3.86 / 3.86 |
+| large-compressible (81,673) | fast | 36.67 [35.30, 37.72] | 36.49 [36.05, 39.08] | 35.71 / 35.73 |
+| large-mixed (33,821,383) | native | 100.82 [96.23, 114.12] | 94.51 [93.55, 105.57] | 3.87 / 4.11 |
+| large-mixed (33,821,383) | fast | 102.82 [96.63, 109.40] | 95.93 [94.17, 107.64] | 3.86 / 4.15 |
+| large-random (33,564,802) | native | 37.02 [36.24, 38.40] | 34.66 [33.08, 35.37] | 3.88 / 4.10 |
+| large-random (33,564,802) | fast | 37.89 [36.48, 42.17] | 34.50 [32.92, 41.31] | 3.86 / 4.00 |
+
+### Linux
+
+| Workload (ZIP bytes) | Reader | Before ms | After ms | Before / after MiB |
+|---|---|---|---|---|
+| flat (2,915,393) | native | 297.21 [295.26, 298.36] | 297.34 [294.76, 306.50] | 7.40 / 7.25 |
+| flat (2,915,393) | fast | 296.23 [295.11, 297.48] | 296.80 [294.92, 304.36] | 10.73 / 10.64 |
+| grouped (3,206,793) | native | 110.88 [109.65, 114.68] | 111.19 [110.53, 113.96] | 7.89 / 7.90 |
+| grouped (3,206,793) | fast | 102.09 [101.36, 102.69] | 102.05 [101.43, 105.44] | 11.37 / 11.27 |
+| large-compressible (81,673) | native | 29.46 [29.20, 29.66] | 29.55 [29.13, 29.91] | 3.68 / 3.59 |
+| large-compressible (81,673) | fast | 42.39 [41.53, 44.48] | 42.55 [42.47, 43.53] | 35.49 / 35.45 |
+| large-mixed (33,821,383) | native | 123.41 [122.45, 123.88] | 127.49 [126.41, 131.05] | 3.55 / 3.70 |
+| large-mixed (33,821,383) | fast | 123.52 [122.57, 123.82] | 127.28 [126.53, 128.48] | 3.55 / 3.66 |
+| large-random (33,564,802) | native | 39.89 [39.29, 40.43] | 46.57 [46.18, 47.45] | 3.42 / 3.64 |
+| large-random (33,564,802) | fast | 39.37 [39.14, 40.59] | 46.44 [46.16, 47.42] | 3.36 / 3.65 |
+
+Independent read-only review found no correctness blockers. Reader tests cover
+promotion, seek-back, clone position, EOF and rejected seeks; an external
+concurrent harness checked over 150,000 read/seek operations. Native Windows
+release tests additionally exercise the platform branch.

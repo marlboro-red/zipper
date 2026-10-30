@@ -1,0 +1,3 @@
+Windows-2022Server-10.0.20348-SP0
+AMD64 Family 26 Model 2 Stepping 1, AuthenticAMD
+4

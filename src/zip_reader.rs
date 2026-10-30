@@ -38,21 +38,59 @@ impl Seek for Cursor {
     }
 }
 
+#[cfg(windows)]
+const SMALL_BUFFER: usize = 8 * 1024;
+#[cfg(windows)]
+const LARGE_BUFFER: usize = 256 * 1024;
+#[cfg(windows)]
+const SEQUENTIAL_THRESHOLD: usize = 64 * 1024;
+
+#[cfg(windows)]
+pub(crate) struct FileReader {
+    reader: BufReader<Cursor>,
+    sequential_bytes: usize,
+}
+#[cfg(windows)]
+impl FileReader {
+    fn new(cursor: Cursor) -> Self {
+        Self {
+            reader: BufReader::with_capacity(SMALL_BUFFER, cursor),
+            sequential_bytes: 0,
+        }
+    }
+    fn position(&self) -> u64 {
+        self.reader.get_ref().position - self.reader.buffer().len() as u64
+    }
+    fn resize(&mut self, capacity: usize) {
+        let mut cursor = self.reader.get_ref().clone();
+        cursor.position = self.position();
+        self.reader = BufReader::with_capacity(capacity, cursor);
+    }
+}
+
 pub(crate) enum Reader {
+    #[cfg(not(windows))]
     File(BufReader<Cursor>),
+    #[cfg(windows)]
+    AdaptiveFile(FileReader),
     Memory(io::Cursor<Arc<[u8]>>),
 }
 impl Reader {
     pub(crate) fn new(file: File) -> io::Result<Self> {
         let length = file.metadata()?.len();
-        Ok(Self::File(BufReader::with_capacity(
-            8 * 1024,
-            Cursor {
-                file: Arc::new(Mutex::new(file)),
-                position: 0,
-                length,
-            },
-        )))
+        let cursor = Cursor {
+            file: Arc::new(Mutex::new(file)),
+            position: 0,
+            length,
+        };
+        #[cfg(windows)]
+        {
+            Ok(Self::AdaptiveFile(FileReader::new(cursor)))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(Self::File(BufReader::with_capacity(8 * 1024, cursor)))
+        }
     }
 
     pub(crate) fn cached(mut file: File, limit: u64) -> io::Result<Self> {
@@ -74,7 +112,14 @@ impl Reader {
 impl Clone for Reader {
     fn clone(&self) -> Self {
         match self {
+            #[cfg(windows)]
+            Self::AdaptiveFile(reader) => {
+                let mut cursor = reader.reader.get_ref().clone();
+                cursor.position = reader.position();
+                Self::AdaptiveFile(FileReader::new(cursor))
+            }
             Self::Memory(cursor) => Self::Memory(cursor.clone()),
+            #[cfg(not(windows))]
             Self::File(reader) => {
                 let mut cursor = reader.get_ref().clone();
                 cursor.position -= reader.buffer().len() as u64;
@@ -86,7 +131,23 @@ impl Clone for Reader {
 impl Read for Reader {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         match self {
+            #[cfg(not(windows))]
             Self::File(reader) => reader.read(bytes),
+            #[cfg(windows)]
+            Self::AdaptiveFile(file) => {
+                // Tiny entries keep small read-ahead. Sustained decoder reads
+                // amortize physical I/O through a larger window.
+                if file.sequential_bytes >= SEQUENTIAL_THRESHOLD
+                    && bytes.len() >= SMALL_BUFFER
+                    && file.reader.capacity() == SMALL_BUFFER
+                {
+                    file.resize(LARGE_BUFFER);
+                }
+                let read = file.reader.read(bytes)?;
+                file.sequential_bytes = file.sequential_bytes.saturating_add(read);
+                Ok(read)
+            }
+
             Self::Memory(reader) => reader.read(bytes),
         }
     }
@@ -94,6 +155,7 @@ impl Read for Reader {
 impl Seek for Reader {
     fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
         match self {
+            #[cfg(not(windows))]
             Self::File(reader) => {
                 // ZIP header/data seeks often stay inside the current read-ahead
                 // window. Preserve those bytes instead of refilling the window.
@@ -112,6 +174,33 @@ impl Seek for Reader {
                     reader.seek(SeekFrom::Start(target))
                 }
             }
+            #[cfg(windows)]
+            Self::AdaptiveFile(file) => {
+                let current = file.position();
+                let reader = &mut file.reader;
+                // ZIP header/data seeks often stay inside the current read-ahead
+                // window. Preserve those bytes instead of refilling the window.
+                let target = match position {
+                    SeekFrom::Start(target) => i128::from(target),
+                    SeekFrom::Current(delta) => i128::from(current) + i128::from(delta),
+                    SeekFrom::End(delta) => i128::from(reader.get_ref().length) + i128::from(delta),
+                };
+                let target = u64::try_from(target)
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid ZIP seek"))?;
+                if target != current {
+                    file.sequential_bytes = 0;
+                    if file.reader.capacity() != SMALL_BUFFER {
+                        file.resize(SMALL_BUFFER);
+                    }
+                }
+                let reader = &mut file.reader;
+                if let Ok(delta) = i64::try_from(i128::from(target) - i128::from(current)) {
+                    reader.seek_relative(delta)?;
+                    Ok(target)
+                } else {
+                    reader.seek(SeekFrom::Start(target))
+                }
+            }
             Self::Memory(reader) => reader.seek(position),
         }
     }
@@ -120,6 +209,41 @@ impl Seek for Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sequential_reads_then_seek_and_clone_preserve_every_byte() -> io::Result<()> {
+        let mut file = tempfile::tempfile()?;
+        let bytes: Vec<_> = (0..1024 * 1024).map(|i| (i % 251) as u8).collect();
+        std::io::Write::write_all(&mut file, &bytes)?;
+        let mut reader = Reader::new(file)?;
+        let mut position = 0;
+        for _ in 0..10 {
+            let mut actual = [0; 8192];
+            reader.read_exact(&mut actual)?;
+            assert_eq!(actual, bytes[position..position + actual.len()]);
+            position += actual.len();
+        }
+        assert_eq!(reader.stream_position()?, position as u64);
+        let mut clone = reader.clone();
+        let mut actual = vec![0; 70_001];
+        clone.read_exact(&mut actual)?;
+        assert_eq!(actual, bytes[position..position + actual.len()]);
+        assert_eq!(reader.stream_position()?, position as u64);
+        reader.seek(SeekFrom::Current(-17))?;
+        reader.read_exact(&mut actual)?;
+        assert_eq!(actual, bytes[position - 17..position - 17 + actual.len()]);
+        reader.seek(SeekFrom::Start(19))?;
+        let mut small = [0; 61];
+        reader.read_exact(&mut small)?;
+        assert_eq!(small, bytes[19..80]);
+        assert!(reader.seek(SeekFrom::Current(i64::MIN)).is_err());
+        assert_eq!(reader.stream_position()?, 80);
+        reader.seek(SeekFrom::End(-100))?;
+        let mut tail = Vec::new();
+        reader.read_to_end(&mut tail)?;
+        assert_eq!(tail, bytes[bytes.len() - 100..]);
+        Ok(())
+    }
+
     #[test]
     fn cached_boundaries_and_concurrent_clones() -> io::Result<()> {
         for length in [0, 127, 128, 129] {

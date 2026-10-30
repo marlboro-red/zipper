@@ -108,6 +108,10 @@ on ARM64 macOS and 64 MiB elsewhere.
 Entries that cannot reserve space immediately stream through zlib-rs. Override
 with `--zip-buffer-mib N` (0 forces streaming). Metadata, worker state, archive
 cache and allocator-retained memory are additional: this is not a peak RSS cap.
+On Windows, file input starts with 8 KiB read-ahead and grows to 256 KiB
+after sustained sequential reads; moving seeks reset it. This adds up to
+248 KiB per active file reader outside the entry-buffer budget. Other platforms
+retain 8 KiB input buffers. See the [platform-specific measurements](benchmarks/native-zip/adaptive-input/README.md).
 On Windows, buffered output is written in 256 KiB slices;
 [large-entry measurements](benchmarks/native-zip/windows-write-size/README.md)
 show why. Both native ZIP modes verify decoded lengths and CRCs before publication. Use
