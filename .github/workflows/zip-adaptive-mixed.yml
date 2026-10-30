@@ -1,0 +1,67 @@
+name: ZIP adaptive mixed validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            files: 1000
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FILE_COUNT: ${{ matrix.files }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Match published Windows build settings
+        if: runner.os == 'Windows'
+        run: echo 'RUSTFLAGS=-C target-feature=+crt-static' >> "$GITHUB_ENV"
+      - name: Build reference
+        run: |
+          cargo +1.96.0 build --locked --release
+          suffix=''
+          if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
+          cp "target/release/zipper$suffix" "reference$suffix"
+      - name: Apply candidate and verify
+        run: |
+          git apply benchmarks/native-zip/adaptive-input/windows-candidate.patch
+          cargo +1.96.0 test --locked --release
+          cargo +1.96.0 build --locked --release
+          mkdir results
+          git rev-parse HEAD > results/reference-source.txt
+          git diff > results/candidate.patch
+          python -c 'import os,platform; print(platform.platform()); print(platform.processor()); print(os.cpu_count())' > results/environment.txt
+      - name: Generate mixed-size ZIP
+        run: |
+          python scripts/make_large_zip_corpus.py corpora/large
+          python scripts/make_tiny_corpus.py corpora/combined --files 2000 --layout grouped
+          python - <<'PYCODE'
+          import shutil,zipfile
+          from pathlib import Path
+          p=Path('corpora/combined')
+          for kind in ['random','compressible']:
+              shutil.copyfile(Path('corpora/large')/kind/'large.bin',p/(kind+'.bin'))
+          with zipfile.ZipFile(p.with_suffix('.zip'),'w',zipfile.ZIP_DEFLATED) as out:
+              for f in sorted(p.rglob('*')): out.write(f,f.relative_to(p.parent))
+          PYCODE
+      - name: Interleave identical ZIP extraction
+        run: |
+          python scripts/compare_zip_readers.py corpora/combined.zip corpora/combined \
+            --reader before-native native reference.exe --reader after-native native target/release/zipper.exe \
+            --reader before-fast native-fast reference.exe --reader after-fast native-fast target/release/zipper.exe \
+            --runs 7 --threads 4 > results/combined.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: zip-adaptive-mixed-${{ matrix.os }}-${{ github.sha }}
+          path: results/
+          if-no-files-found: error
