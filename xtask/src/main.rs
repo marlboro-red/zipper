@@ -7,15 +7,18 @@ use std::{
     process::{Command, ExitCode},
     time::Instant,
 };
+mod docs;
+
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full | cargo xtask install-hooks";
+const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | install-hooks";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["gate", "fast"] => gate(false),
         ["gate", "full"] => gate(true),
+        ["lint-docs"] => docs::lint(&root()),
         ["install-hooks"] => install_hooks(),
         _ => Err(anyhow::anyhow!(USAGE)),
     };
@@ -54,6 +57,7 @@ type Step = fn() -> Result<()>;
 fn gate(full: bool) -> Result<()> {
     let mut steps: Vec<(&str, Step)> = vec![
         ("fmt", || cargo(&["fmt", "--all", "--check"])),
+        ("docs", || docs::lint(&root())),
         ("clippy", || {
             cargo(&[
                 "clippy",
