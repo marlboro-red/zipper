@@ -24,6 +24,12 @@ struct Raw {
     descriptor: bool,
     local_compressed: Option<u32>,
     local_extra: Vec<u8>,
+    /// Bytes written before the local header, outside any record.
+    padding: Vec<u8>,
+    /// Exact bytes written after the data when `descriptor` is set.
+    descriptor_bytes: Option<Vec<u8>>,
+    local_flags: u16,
+    central_extra: Vec<u8>,
 }
 
 fn stored(name: &str, data: &[u8]) -> Raw {
@@ -41,6 +47,10 @@ fn stored(name: &str, data: &[u8]) -> Raw {
         descriptor: false,
         local_compressed: None,
         local_extra: Vec::new(),
+        padding: Vec::new(),
+        descriptor_bytes: None,
+        local_flags: 0,
+        central_extra: Vec::new(),
     }
 }
 
@@ -58,15 +68,44 @@ fn deflated(name: &str, data: &[u8]) -> Raw {
 
 /// Writes a ZIP with every header field under the test's control.
 fn write_zip(path: &Path, entries: &[Raw]) {
+    write_zip_with_tail(path, entries, &[]);
+}
+
+/// A data descriptor with or without its signature, in 32-bit or ZIP64 form.
+fn descriptor(entry: &Raw, signature: bool, wide: bool) -> Vec<u8> {
+    let mut bytes = if signature {
+        b"PK\x07\x08".to_vec()
+    } else {
+        Vec::new()
+    };
+    bytes.extend_from_slice(&entry.crc.to_le_bytes());
+    for value in [entry.payload.len() as u64, entry.size as u64] {
+        if wide {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        } else {
+            bytes.extend_from_slice(&(value as u32).to_le_bytes());
+        }
+    }
+    bytes
+}
+
+/// Like `write_zip`, with `tail` written between the last record and the
+/// central directory.
+fn write_zip_with_tail(path: &Path, entries: &[Raw], tail: &[u8]) {
+    fs::write(path, zip_bytes(entries, tail)).unwrap();
+}
+
+fn zip_bytes(entries: &[Raw], tail: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut offsets = Vec::new();
     for entry in entries {
+        out.extend_from_slice(&entry.padding);
         offsets.push(out.len() as u32);
         if entry.local_offset.is_some() {
             continue;
         }
         let name = entry.local_name.as_ref().unwrap_or(&entry.name);
-        let flags = if entry.descriptor { 8u16 } else { 0 };
+        let flags = if entry.descriptor { 8u16 } else { 0 } | entry.local_flags;
         let deferred = |value: u32| if entry.descriptor { 0 } else { value };
         out.extend_from_slice(b"PK\x03\x04");
         out.extend_from_slice(&20u16.to_le_bytes());
@@ -89,12 +128,14 @@ fn write_zip(path: &Path, entries: &[Raw]) {
         out.extend_from_slice(&entry.local_extra);
         out.extend_from_slice(&entry.payload);
         if entry.descriptor {
-            out.extend_from_slice(b"PK\x07\x08");
-            out.extend_from_slice(&entry.crc.to_le_bytes());
-            out.extend_from_slice(&(entry.payload.len() as u32).to_le_bytes());
-            out.extend_from_slice(&entry.size.to_le_bytes());
+            let bytes = entry
+                .descriptor_bytes
+                .clone()
+                .unwrap_or_else(|| descriptor(entry, true, false));
+            out.extend_from_slice(&bytes);
         }
     }
+    out.extend_from_slice(tail);
     let directory = out.len() as u32;
     for (entry, offset) in entries.iter().zip(&offsets) {
         out.extend_from_slice(b"PK\x01\x02");
@@ -107,10 +148,12 @@ fn write_zip(path: &Path, entries: &[Raw]) {
         out.extend_from_slice(&(entry.payload.len() as u32).to_le_bytes());
         out.extend_from_slice(&entry.size.to_le_bytes());
         out.extend_from_slice(&(entry.name.len() as u16).to_le_bytes());
-        out.extend_from_slice(&[0; 8]);
+        out.extend_from_slice(&(entry.central_extra.len() as u16).to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
         out.extend_from_slice(&entry.external.to_le_bytes());
         out.extend_from_slice(&entry.local_offset.unwrap_or(*offset).to_le_bytes());
         out.extend_from_slice(&entry.name);
+        out.extend_from_slice(&entry.central_extra);
     }
     let size = out.len() as u32 - directory;
     out.extend_from_slice(b"PK\x05\x06");
@@ -120,7 +163,7 @@ fn write_zip(path: &Path, entries: &[Raw]) {
     out.extend_from_slice(&size.to_le_bytes());
     out.extend_from_slice(&directory.to_le_bytes());
     out.extend_from_slice(&0u16.to_le_bytes());
-    fs::write(path, out).unwrap();
+    out
 }
 
 /// Lists every path under `root` except the archive itself.
@@ -415,4 +458,144 @@ fn cp437_names_are_matched_by_their_stored_bytes() {
             ..cp437
         }],
     );
+}
+
+#[test]
+fn records_must_tile_the_archive_without_gaps() {
+    // A complete local record that no central entry points to.
+    let hidden_record = zip_bytes(&[stored("evil.txt", b"hidden")], &[])[..30 + 8 + 6].to_vec();
+    assert_rejected(
+        "record hidden before the first entry",
+        &[Raw {
+            padding: hidden_record.clone(),
+            ..stored("a.txt", b"a")
+        }],
+    );
+    assert_rejected(
+        "record hidden between entries",
+        &[
+            stored("a.txt", b"a"),
+            Raw {
+                padding: hidden_record.clone(),
+                ..stored("b.txt", b"b")
+            },
+        ],
+    );
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip_with_tail(&archive, &[stored("a.txt", b"a")], &hidden_record);
+        assert!(
+            read(&archive, Some(&root.path().join("out"))).is_err(),
+            "record hidden before the central directory was accepted"
+        );
+        assert!(!root.path().join("out").exists());
+    }
+}
+
+#[test]
+fn data_descriptors_must_match_the_central_directory() {
+    let entry = Raw {
+        descriptor: true,
+        ..deflated("deferred.bin", &megabyte_of_zeros())
+    };
+    let mut wrong_crc = entry.clone();
+    wrong_crc.crc ^= 1;
+    assert_rejected(
+        "descriptor CRC disagrees",
+        &[Raw {
+            descriptor_bytes: Some(descriptor(&wrong_crc, true, false)),
+            ..entry.clone()
+        }],
+    );
+    let mut wrong_size = entry.clone();
+    wrong_size.size += 1;
+    assert_rejected(
+        "descriptor size disagrees",
+        &[Raw {
+            descriptor_bytes: Some(descriptor(&wrong_size, true, false)),
+            ..entry.clone()
+        }],
+    );
+    assert_rejected(
+        "descriptor with trailing bytes",
+        &[Raw {
+            descriptor_bytes: Some([descriptor(&entry, true, false), vec![0; 4]].concat()),
+            ..entry.clone()
+        }],
+    );
+    assert_rejected(
+        "flagged entry without a descriptor",
+        &[Raw {
+            descriptor_bytes: Some(Vec::new()),
+            ..entry
+        }],
+    );
+}
+
+#[test]
+fn local_fields_that_other_readers_trust_must_agree() {
+    assert_rejected(
+        "local encryption flag",
+        &[Raw {
+            local_flags: 1,
+            ..stored("a.txt", b"a")
+        }],
+    );
+    let data = megabyte_of_zeros();
+    let entry = deflated("zip64.bin", &data);
+    let packed = entry.payload.len() as u64;
+    let size = entry.size as u64;
+    assert_rejected(
+        "two local ZIP64 fields",
+        &[Raw {
+            local_size: Some(u32::MAX),
+            local_compressed: Some(u32::MAX),
+            local_extra: [zip64_extra(size, packed), zip64_extra(7, 7)].concat(),
+            ..entry.clone()
+        }],
+    );
+    assert_rejected(
+        "two central ZIP64 fields",
+        &[Raw {
+            central_extra: [zip64_extra(size, packed), zip64_extra(7, 7)].concat(),
+            ..entry.clone()
+        }],
+    );
+    assert_rejected(
+        "local ZIP64 field lies while 32-bit sizes are real",
+        &[Raw {
+            local_extra: zip64_extra(7, packed),
+            ..entry
+        }],
+    );
+}
+
+#[test]
+fn every_descriptor_form_extracts() {
+    let text = b"descriptor forms ".repeat(64);
+    let base = deflated("x", &text);
+    let entries: Vec<Raw> = [(true, false), (false, false), (true, true), (false, true)]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (signature, wide))| Raw {
+            name: format!("form-{index}.txt").into_bytes(),
+            descriptor: true,
+            descriptor_bytes: Some(descriptor(&base, signature, wide)),
+            ..base.clone()
+        })
+        .collect();
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, &entries);
+        let destination = root.path().join("out");
+        read(&archive, Some(&destination)).unwrap();
+        for index in 0..4 {
+            assert_eq!(
+                fs::read(destination.join(format!("form-{index}.txt"))).unwrap(),
+                text
+            );
+        }
+    }
 }

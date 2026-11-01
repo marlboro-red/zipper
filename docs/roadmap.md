@@ -40,10 +40,10 @@ Scope:
 - Fuzz targets for the central-directory and local-header parsers.
 - Local headers that agree with the central directory, and records that do not overlap. Done in the [local-header check](../benchmarks/native-zip/local-header-check/README.md).
 - Open findings from its review, where a streaming reader could see a hidden record that Zipper does not:
-  - bytes between records or before the first record
   - bytes after a Deflate stream ends inside its declared size
   - a fake data descriptor inside stored data
-  - descriptor contents, the local encryption flag and local ZIP64 sizes that are not compared
+  - a Unicode path extra field (`0x7075`) that names an entry differently from its stored name
+- Records that tile the archive, with checked data descriptors, the local encryption flag and local ZIP64 sizes. Done in the [record layout check](../benchmarks/native-zip/record-layout/README.md).
 - A limit on total extracted bytes, with a documented default.
 
 Exit checks:

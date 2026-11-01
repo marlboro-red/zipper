@@ -20,6 +20,7 @@ The reader does not support these features:
 - Codecs other than stored and Deflate.
 - Multi-disk archives.
 - Ambiguous end records.
+- Data before the first record, such as a self-extracting executable from `zip -A`. The compatibility backend still reads these.
 
 It does not preserve permissions or timestamps.
 
@@ -37,12 +38,15 @@ Both native ZIP modes run these checks before publishing any output:
 
 - Decoded lengths and CRCs match the central directory.
 - Each local header's name, method, CRC and sizes match its central-directory entry. With a data descriptor, a local CRC or size may be zero or `0xFFFFFFFF` instead.
-- Local records do not overlap or share bytes, and each entry's data ends before the next record starts.
+- Local records tile the archive. The first starts at offset 0, and each ends exactly where the next record or the central directory starts.
+- With a data descriptor, the bytes after the data are exactly one descriptor of 12, 16, 20 or 24 bytes, and its CRC and sizes match the central directory.
+- The local encryption flag is clear, and any local ZIP64 sizes match the central directory.
+- No local or central record has two ZIP64 extra fields. Readers disagree on which one wins.
 - Names are unique and safe, and no file is also used as a directory.
 
-`list` runs only the central-directory checks. It does not read local headers, so it does not detect overlap hidden in a local extra field.
+`list` runs only the central-directory checks and the first-record check. It does not read local headers, so it does not detect bytes hidden between records.
 
-These checks do not yet cover bytes between records, bytes after a Deflate stream ends, data-descriptor contents, or the local encryption flag. The [roadmap](../roadmap.md#m1-correctness-contract-for-zip) tracks them.
+These checks do not yet cover bytes after a Deflate stream ends inside its declared size, or a fake data descriptor inside stored data. The [roadmap](../roadmap.md#m1-correctness-contract-for-zip) tracks them.
 
 ## Engines
 

@@ -18,6 +18,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-01 | [Record layout check](native-zip/record-layout/README.md) | Kept. Closes five more hostile-archive gaps with no measured cost. Rejects self-extracting archives. |
 | 2026-11-01 | [Local-header agreement check](native-zip/local-header-check/README.md) | Kept. Closes three hostile-archive gaps with no measured time cost and about 0.4 MiB at 10,000 entries. |
 | 2026-10-30 | [Decoder selection for large compressible entries](native-zip/decoder-selection/README.md) | Kept. Streaming these entries is faster on most patterns and uses under 4 MiB instead of about 19 MiB. |
 | 2026-10-30 | [Lazy streaming scratch](native-zip/lazy-buffer/README.md) | Rejected for speed. It saves about 0.7–1 MiB of peak memory on tiny files. |
