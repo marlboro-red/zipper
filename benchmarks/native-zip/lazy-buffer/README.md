@@ -1,43 +1,26 @@
-# Lazy ZIP streaming scratch experiment
+# Lazy ZIP streaming scratch
 
-Hypothesis: every Rayon task eagerly zeroes 256 KiB of streaming scratch even
-when all its entries use whole-entry decoding or contain only tiny payloads.
-Allocate scratch only on streaming fallback, growing on demand up to 256 KiB.
-Keep at least one byte for empty entries so decoder EOF and CRC checks still run.
-The scratch remains reusable within a task; no compressed/decoded budget change.
+Allocating streaming scratch lazily established no extraction speed benefit, so it is not retained. It did lower tiny-file peak memory by about 0.7–1 MiB on Linux and Windows.
 
-The patch is isolated from the direct-output experiment. Measure native and
-native-fast end-to-end extraction and peak memory on identical immutable ZIPs,
-four workers, seven interleaved release runs after warmup, direct original versus
-extracted bytes/tree verification after every run. Small and large workloads
-check both saved allocation and potential extra growth/copying cost.
+## Question
 
-## Decision: no speed benefit established; not retained
+Every Rayon task eagerly zeroes 256 KiB of streaming scratch. It does so even when all its entries use whole-entry decoding or contain only tiny payloads. Does allocating scratch only on streaming fallback, growing on demand up to 256 KiB, make extraction faster?
 
-[Run 40998111124](https://github.com/marlboro-red/zipper/actions/runs/40998111124)
-uses source `9e2ecad` plus the recorded patch. Reproduce the historical workflow
-at that baseline. All timing ranges overlap on Linux, Windows and Mac. Local
-Mac flat medians are 359.62→356.51 ms native and 350.39→364.29 ms native-fast;
-Silesia native-fast is 94.06→95.40 ms. Do not claim an extraction improvement.
+The candidate keeps at least one byte for empty entries so decoder EOF and CRC checks still run. The scratch remains reusable within a task. The compressed and decoded budgets do not change.
 
-There is a measured memory benefit for tiny files: approximately 0.7–1 MiB lower
-peak process memory on Linux and Windows. This is a viable future memory-focused
-tradeoff, but not retained in the present speed work. Growing scratch can also
-introduce allocations/copies that the eager fixed buffer avoids on mixed work.
-Large streaming RSS does not consistently improve. The patch remains available
-for independent evaluation; no production scratch-allocation change is shipped.
+## Setup
 
-Independent review found no correctness issue and tested 38 valid/malformed
-Stored/Deflate cases, including zero-length outputs, bad CRCs, wrong decoded
-sizes and cleanup. Scratch is per Rayon job state, not necessarily exactly once
-per worker. A nonzero read buffer is required to reach EOF-triggered CRC checks.
-The corresponding empty-entry CRC regression test is retained with the later
-decoder-selection change.
+The patch is isolated from the direct-output experiment. The experiment measures native and native-fast end-to-end extraction and peak memory on identical immutable ZIPs. It uses four workers and seven interleaved release runs after warmup. It verifies original versus extracted bytes and the tree directly after every run. Small and large workloads check both the saved allocation and any extra growth or copying cost.
 
-Warm-cache process timings, four workers, seven interleaved rounds after warmup.
-Windows tiny workloads have 1,000 files; Linux has 10,000. Direct byte/tree
-verification after every extraction. Cells are median [min, max] ms; memory is
-maximum observed process peak MiB. Raw samples and hashes remain alongside.
+[Run 40998111124](https://github.com/marlboro-red/zipper/actions/runs/40998111124) uses source `9e2ecad` plus the recorded patch. Timings are warm-cache process timings. Windows tiny workloads have 1,000 files, and Linux has 10,000.
+
+Cells are median [min, max] ms. Memory is the maximum observed process peak in MiB. Raw samples and hashes remain alongside this record.
+
+## Results
+
+All timing ranges overlap on Linux, Windows and Mac. Local Mac flat medians go from 359.62 to 356.51 ms native and from 350.39 to 364.29 ms native-fast. Silesia native-fast goes from 94.06 to 95.40 ms.
+
+Tiny files show a measured memory benefit of approximately 0.7–1 MiB lower peak process memory on Linux and Windows. Large streaming RSS does not consistently improve.
 
 ### linux
 
@@ -68,3 +51,17 @@ maximum observed process peak MiB. Raw samples and hashes remain alongside.
 | large-mixed (33,821,383) | fast | 117.59 [117.12, 130.31] | 118.50 [117.57, 130.43] | 4.12 / 3.97 |
 | large-random (33,564,802) | native | 40.28 [39.88, 41.88] | 40.29 [39.51, 40.73] | 4.10 / 4.11 |
 | large-random (33,564,802) | fast | 40.12 [39.87, 40.28] | 40.31 [39.74, 46.75] | 4.11 / 3.96 |
+
+## Decision
+
+Not retained. No speed benefit is established, so do not claim an extraction improvement. No production scratch-allocation change ships. The tiny-file memory saving makes the patch a viable future memory-focused tradeoff, but it is outside the present speed work. The patch remains available for independent evaluation.
+
+Independent review found no correctness issue. It tested 38 valid and malformed Stored and Deflate cases, including zero-length outputs, bad CRCs, wrong decoded sizes and cleanup. The corresponding empty-entry CRC regression test is retained with the subsequent decoder-selection change.
+
+## Limits
+
+Growing scratch can introduce allocations and copies that the eager fixed buffer avoids on mixed work. Scratch is per Rayon job state, not necessarily exactly once per worker. A nonzero read buffer is required to reach EOF-triggered CRC checks.
+
+## Reproduce
+
+Run the historical workflow at baseline `9e2ecad` with `candidate.patch`.

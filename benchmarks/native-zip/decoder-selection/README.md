@@ -1,56 +1,32 @@
-# ZIP decoder selection experiment
+# ZIP decoder selection for large compressible entries
 
-Hypothesis: whole-entry allocation, decoding, checksum and output can be slower
-than bounded streaming for large, very compressible entries. Avoid choosing the
-whole-entry path purely because it fits memory. On the local M5, five repeat
-patterns at 16 MiB favor streaming, while two incompressible patterns favor
-whole-entry decoding. The selection candidate streams extraction entries of at
-least 16 MiB with compressed size at most 1/128 of expanded size. This is a
-conservative measured region, not a claimed universal optimal threshold.
+Streaming large, very compressible ZIP entries instead of decoding them whole is retained. It cut time on most eligible synthetic patterns and dropped peak memory for those entries from about 19 MiB to under 4 MiB.
 
-Only extraction policy changes. Integrity-only reads, metadata/CRC validation,
-shared budget and incompressible entry selection stay unchanged. The patch is
-isolated from scratch allocation and output-wrapper experiments.
+## Question
 
-The shape generator varies zeros, text, long runs and random repeat distances,
-plus incompressible input. Seven interleaved release runs after warmup, four
-workers and default budgets, identical input ZIP for each before/after pair;
-direct original/extracted bytes and full tree checks after every run. Timings
-include process startup and output; caches are warm and durability is not
-requested. Cross-platform results must justify any retained platform policy.
+Whole-entry allocation, decoding, checksum and output can be slower than bounded streaming for large, very compressible entries. Should extraction stop choosing the whole-entry path purely because an entry fits in memory?
 
-## Decision: retain the selection rule
+On the local M5, five repeat patterns at 16 MiB favor streaming, while two incompressible patterns favor whole-entry decoding. The selection candidate streams extraction entries of at least 16 MiB with compressed size at most 1/128 of expanded size. This is a conservative measured region, not a claimed universal optimal threshold.
 
-[Portable run 40998175627](https://github.com/marlboro-red/zipper/actions/runs/40998175627)
-builds `11d4d66` plus `candidate.patch`. Reproduce the historical workflow at that
-baseline. Windows uses static CRT, Rust 1.96.0 and windows-2022; Linux uses
-ubuntu-24.04. Mac uses Apple M5/macOS 26.7.1 and the same runtime baseline
-`0169f9b`; intervening commits contain benchmarks only. Do not compare absolute
-times across these machines or multiply these gains by older experiments.
+## Setup
 
-Linux improves all five eligible repeat patterns with disjoint ranges, from
-15–20 ms to 7–14 ms. Windows improves zero, runs and the two short-period patterns
-with disjoint ranges; text overlaps. Mac improves runs, text and the 8 KiB repeat
-pattern with disjoint ranges; zero and 256-byte repeat results overlap.
-Peak process memory for these entries drops from about 19.5 to 3.7 MiB on Linux,
-19.7 to 3.9 MiB on Windows and 18.7 to 2.8 MiB on Mac.
+Only extraction policy changes. Integrity-only reads, metadata and CRC validation, the shared budget and incompressible entry selection stay unchanged. The patch is isolated from the scratch allocation and output-wrapper experiments.
 
-Incompressible entries do not change decoder paths; their observed ranges
-overlap. The Windows after/random sample includes a 206.79 ms outlier, retained
-in the table and raw data. No incompressible or mixed-tree speed gain is claimed.
-The Mac mixed-tree test also overlaps (38.98→38.03 ms), with peak memory
-35.55→35.84 MiB; its random file still needs whole-entry buffers.
+The shape generator varies zeros, text, long runs and random repeat distances, plus incompressible input. Each comparison runs seven interleaved release runs after warmup with four workers and default budgets. Each before and after pair uses an identical input ZIP. Original and extracted bytes and the full tree are checked directly after every run. Timings include process startup and output. Caches are warm, and durability is not requested.
 
-This is a synthetic workload result and a conservative selection policy, not
-proof of the optimal ratio/size threshold or world-leading general ZIP speed.
-The existing shared budget still decides which other entries can use whole-entry
-decoding; scheduling can affect that choice on mixed trees. `--zip-buffer-mib`
-remains a maximum budget, not a requirement to buffer every qualifying entry.
-Default compatibility-backend ZIP behavior is unchanged.
+[Portable run 40998175627](https://github.com/marlboro-red/zipper/actions/runs/40998175627) builds `11d4d66` plus `candidate.patch`. Windows uses static CRT, Rust 1.96.0 and windows-2022. Linux uses ubuntu-24.04. Mac uses Apple M5, macOS 26.7.1 and the same runtime baseline `0169f9b`. The intervening commits contain benchmarks only.
 
-Each table cell is median [minimum, maximum] milliseconds. Memory is the maximum
-observed process peak in MiB. All original samples, hashes, archive byte sizes,
-run ordering and direct-byte recovery counts are retained.
+The Mac mixed-tree ZIP combines the generated 16 MiB `text` and `random` entries with 1,000 small files. The files are named `group-{i//20}/{i}.txt`, and each contains `record {i}\n` repeated 16 times. Python ZIP_DEFLATED creates the archive and preserves the top-level source directory. The source bytes total 33,728,672. This auxiliary test is not part of the portable shape workflow.
+
+## Results
+
+Each table cell is median [minimum, maximum] milliseconds. Memory is the maximum observed process peak in MiB. All original samples, hashes, archive byte sizes, run ordering and direct-byte recovery counts are retained.
+
+Linux improves all five eligible repeat patterns with disjoint ranges, from 15–20 ms to 7–14 ms. Windows improves zero, runs and the two short-period patterns with disjoint ranges, and text overlaps. Mac improves runs, text and the 8 KiB repeat pattern with disjoint ranges. Mac zero and 256-byte repeat results overlap.
+
+Peak process memory for these entries drops from about 19.5 to 3.7 MiB on Linux. It drops from 19.7 to 3.9 MiB on Windows and from 18.7 to 2.8 MiB on Mac.
+
+Incompressible entries do not change decoder paths, and their observed ranges overlap. The Windows after/random sample includes a 206.79 ms outlier, retained in the table and raw data. The Mac mixed-tree test also overlaps, from 38.98 to 38.03 ms, with peak memory going from 35.55 to 35.84 MiB. Its random file still needs whole-entry buffers.
 
 ### macos
 
@@ -89,15 +65,25 @@ run ordering and direct-byte recovery counts are retained.
 | text (40,855) | 20.64 [19.22, 20.87] | 19.15 [18.99, 19.84] | 19.69 / 3.90 |
 | zero (16,434) | 17.11 [16.21, 74.61] | 12.32 [11.99, 14.57] | 19.63 / 3.89 |
 
-## Validation and reproduction
+## Decision
 
-The local full Rust suite, fmt and Clippy pass. Native Windows and Linux release
-suites pass in the workflow. All timed extractions recover original bytes and
-tree membership. Independent review additionally checked valid and malformed
-entries at 16 MiB−1, 16 MiB and 16 MiB+1, including bad CRCs and sizes, with no
-published output or staging residue after failures. Integrity-only selection is
-unchanged. A separate original/extracted `.zipper` CLI comparison is retained in
-`native-roundtrip.json`; v1/v2 compatibility and selected-file tests also pass.
+Retain the selection rule. No incompressible or mixed-tree speed gain is claimed. Default compatibility-backend ZIP behavior is unchanged.
+
+The existing shared budget still decides which other entries can use whole-entry decoding. Scheduling can affect that choice on mixed trees. `--zip-buffer-mib` remains a maximum budget, not a requirement to buffer every qualifying entry.
+
+The local full Rust suite, fmt and Clippy pass. Native Windows and Linux release suites pass in the workflow. All timed extractions recover original bytes and tree membership.
+
+Independent review also checked valid and malformed entries at 16 MiB−1, 16 MiB and 16 MiB+1, including bad CRCs and sizes. Failures left no published output and no staging residue. Integrity-only selection is unchanged. A separate original-versus-extracted `.zipper` CLI comparison is retained in `native-roundtrip.json`. The v1 and v2 compatibility and selected-file tests also pass.
+
+## Limits
+
+This is a synthetic workload result and a conservative selection policy. It does not prove the optimal ratio or size threshold, or world-leading general ZIP speed.
+
+Do not compare absolute times across these machines. Do not multiply these gains by older experiments. Cross-platform results must justify any retained platform policy.
+
+## Reproduce
+
+Run the historical workflow at baseline `11d4d66`. To compare one shape locally:
 
 ```sh
 python3 scripts/make_zip_decoder_corpus.py /tmp/decoder-shapes
@@ -105,9 +91,3 @@ python3 scripts/compare_zip_readers.py /tmp/decoder-shapes/text.zip /tmp/decoder
   --reader before native-fast /path/to/before \
   --reader after native-fast /path/to/after --runs 7 --threads 4
 ```
-
-The Mac mixed-tree ZIP combines the generated 16 MiB `text` and `random` entries
-with 1,000 files named `group-{i//20}/{i}.txt`, each containing `record {i}\n`
-repeated 16 times. It is made with Python ZIP_DEFLATED, preserving the top-level
-source directory; source bytes total 33,728,672. This auxiliary test is not part
-of the portable shape workflow.

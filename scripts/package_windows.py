@@ -63,7 +63,7 @@ dist.mkdir(exist_ok=True)
 with tempfile.TemporaryDirectory() as tmp:
     package = Path(tmp)
     shutil.copy2(binary, package / "zipper.exe")
-    shutil.copy2("docs/windows.md", package / "README.md")
+    shutil.copy2("docs/reference/windows.md", package / "README.md")
     shutil.copy2("Cargo.lock", package / "Cargo.lock")
     (package / "BUILD.json").write_text(json.dumps({
         "version": version,

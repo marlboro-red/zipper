@@ -1,8 +1,25 @@
-# Matched-sync application comparison — 2026-10-29
+# Matched-sync application comparison on 2026-10-29
 
-The earlier tar comparisons understated creation cost on macOS. Rust 1.96 `File::sync_all` calls `fcntl(F_FULLFSYNC)`, whereas Python `os.fsync` calls ordinary fsync. The harness now uses the same file-sync operation for all engines. Zipper itself has not been made less durable. [Pinned Rust source](https://github.com/rust-lang/rust/blob/1.96.0/library/std/src/sys/fs/unix.rs#L1303-L1313).
+With the same file-sync operation for every engine, Zipper creates random data at 1479 MiB/s versus 1560–1565 MiB/s for the tar pipelines. The old roughly 3.5-fold gap was not an equivalent-sync comparison.
 
-Apple M5, 32 GiB RAM, macOS 26.7.1; engine `4d9dddd`, seven measured interleaved rounds plus one warmup, four requested codec workers, level 1. Every extraction passed SHA-256 content and tree verification. [Raw samples](zstd-fullsync.json).
+## Question
+
+How do Zipper, tar+zstd, and tar+pzstd compare when every engine uses the same archive-file sync operation?
+
+The earlier tar comparisons understated creation cost on macOS. Rust 1.96 `File::sync_all` calls `fcntl(F_FULLFSYNC)`, whereas Python `os.fsync` calls ordinary fsync. See the [pinned Rust source](https://github.com/rust-lang/rust/blob/1.96.0/library/std/src/sys/fs/unix.rs#L1303-L1313).
+
+## Setup
+
+The comparison script now uses the same file-sync operation for all engines. Zipper itself has not been made less durable.
+
+- Apple M5, 32 GiB RAM, macOS 26.7.1.
+- Engine `4d9dddd`, seven measured interleaved rounds plus one warmup.
+- Four requested codec workers, level 1.
+- Every extraction passed SHA-256 content and tree verification.
+
+The fixtures and engine revisions are described in the [corpus and revision report](README.md). The [raw samples](zstd-fullsync.json) hold every measurement.
+
+## Results
 
 | Corpus | Engine | Compression MiB/s | Extraction MiB/s | Archive bytes |
 | --- | --- | ---: | ---: | ---: |
@@ -34,8 +51,23 @@ Apple M5, 32 GiB RAM, macOS 26.7.1; engine `4d9dddd`, seven measured interleaved
 | small-files | tar+zstd | 1107.7–1134.7 | 1003.6–1021.3 |
 | small-files | tar+pzstd | 1105.4–1148.4 | 1003.6–1041.0 |
 
-Random-data creation now measures 1479 MiB/s for Zipper versus 1560–1565 MiB/s for the tar pipelines. The old roughly 3.5-fold gap was not an equivalent-sync comparison. Remaining differences need longer runs and profiling before optimization. This correction changes measurement validity, not engine performance.
+## Decision
 
-The unchanged caveats still matter: tar preserves more metadata; pipelines use different total thread counts and frame/window settings; caches are warm; storage and thermals are not isolated; extraction is not explicitly synced; publication and directory persistence are not equal crash-durability guarantees. No process-tree RSS is recorded. This is an application comparison on development fixtures, not evidence of a faster underlying codec or universal leadership.
+This correction changes measurement validity, not engine performance. The remaining random-data creation differences need longer runs and profiling before any optimization.
 
-Reproduce: `python3 scripts/compare_zstd.py /tmp/zipper-corpus --runs 7 --threads 4`. See the [corpus and revision report](README.md).
+## Limits
+
+The earlier caveats still apply:
+
+- Tar preserves more metadata.
+- The pipelines use different total thread counts and frame and window settings.
+- Caches are warm, and storage and thermals are not isolated.
+- Extraction is not explicitly synced.
+- Publication and directory persistence are not equal crash-durability guarantees.
+- No process-tree RSS is recorded.
+
+This is an application comparison on development fixtures. It is not evidence of a faster underlying codec or of universal leadership.
+
+## Reproduce
+
+Run `python3 scripts/compare_zstd.py /tmp/zipper-corpus --runs 7 --threads 4` against the corpus from the [v2 report](README.md#reproduce).

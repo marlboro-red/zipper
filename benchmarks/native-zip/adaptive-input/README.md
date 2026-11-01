@@ -1,26 +1,26 @@
-# Adaptive ZIP file read-ahead experiment
+# Adaptive ZIP file read-ahead
 
-Hypothesis: the fixed 8 KiB buffer reduced tiny-file amplification, but large
-streaming entries now issue many small physical reads. The ZIP crate wraps its
-compressed input in a standard BufReader, whose requests can be 8 KiB. Increasing
-read-ahead only after sustained sequential reads may recover large-entry speed
-without reintroducing the original small-file read amplification.
+Adaptive read-ahead is retained on Windows only, for its disjoint large random streaming improvement. The final mixed-size validation shows no established gain or regression.
 
-The isolated candidate starts at 8 KiB, promotes to 256 KiB after 64 KiB of
-sequential reads when the next request is at least 8 KiB, and resets to 8 KiB on
-actual seek movement. A clone starts small at the logical position. Cached
-immutable archives are unchanged. Buffer resizing preserves the unread logical
-position; added tests compare bytes across growth, seeks, clones and invalid
-seeks. This is a prototype until repeatable extraction improvements justify it.
+## Question
 
-`.github/workflows/zip-adaptive-input.yml` builds before/after binaries and on
-Windows also compares the checksum-pinned actual alpha executable. All readers
-use normal memory budgets and four workers. Seven interleaved measured rounds,
-warmup excluded, with direct byte/tree verification after every extraction.
+The fixed 8 KiB buffer reduced tiny-file amplification, but large streaming entries now issue many small physical reads. The ZIP crate wraps its compressed input in a standard BufReader, whose requests can be 8 KiB. Can read-ahead that grows only after sustained sequential reads recover large-entry speed without bringing back the original small-file read amplification?
+
+## Setup
+
+The isolated candidate starts at 8 KiB. It promotes to 256 KiB after 64 KiB of sequential reads when the next request is at least 8 KiB. It resets to 8 KiB on actual seek movement. A clone starts small at the logical position. Cached immutable archives are unchanged.
+
+Buffer resizing preserves the unread logical position. Added tests compare bytes across growth, seeks, clones and invalid seeks. The candidate was a prototype until repeatable extraction improvements justified it.
+
+`.github/workflows/zip-adaptive-input.yml` builds before and after binaries. On Windows it also compares the checksum-pinned actual alpha executable. All readers use normal memory budgets and four workers. Each comparison runs seven interleaved measured rounds, warmup excluded, with direct byte and tree verification after every extraction.
+
+## Results
+
+The before and after samples for each platform are in the raw reports under `linux/` and `windows/` and in the `macos-*.json` files. This record has no summary table for them.
 
 ### Actual Windows alpha reference
 
-Same runs and archives as above; release timings are not from another machine.
+These rows come from the same Windows runs and archives as the before and after comparison. The alpha timings are not from another machine.
 
 | Workload | Engine | Alpha median [range] ms | Candidate median [range] ms |
 |---|---|---|---|
@@ -35,23 +35,27 @@ Same runs and archives as above; release timings are not from another machine.
 | large-random | native | 35.21 [33.16, 44.23] | 34.66 [33.08, 35.37] |
 | large-random | fast | 34.27 [32.89, 35.82] | 34.50 [32.92, 41.31] |
 
-## Final Windows-only mixed-size validation
+### Final Windows-only mixed-size validation
 
-[Run 40991500822](https://github.com/marlboro-red/zipper/actions/runs/40991500822)
-builds `4d30e88` plus `windows-candidate.patch`, the final Windows-only change.
-The historical `zip-adaptive-mixed.yml` workflow must run at that source revision.
-The ZIP contains 2,000 grouped tiny files, one 32 MiB random file and one 32 MiB
-compressible file: 69,016,064 input bytes, 34,290,590 ZIP bytes. Four workers,
-seven interleaved rounds after warmup, default entry budgets and direct byte/tree
-verification on every extraction. Native Windows release tests pass.
+[Run 40991500822](https://github.com/marlboro-red/zipper/actions/runs/40991500822) builds `4d30e88` plus `windows-candidate.patch`, the final Windows-only change.
+
+The ZIP contains 2,000 grouped tiny files, one 32 MiB random file and one 32 MiB compressible file. That is 69,016,064 input bytes and 34,290,590 ZIP bytes. The run uses four workers, seven interleaved rounds after warmup, and default entry budgets. It verifies bytes and the tree directly on every extraction. Native Windows release tests pass.
 
 | Engine | Before median [range] ms | After median [range] ms | Before / after peak MiB |
 |---|---|---|---|
 | native | 472.92 [464.98, 1624.30] | 479.12 [452.49, 768.28] | 5.59 / 5.84 |
 | native-fast | 509.28 [461.47, 913.72] | 474.92 [464.97, 1603.39] | 37.54 / 37.53 |
 
-The ranges overlap substantially: no established mixed-tree gain or regression.
-Retain only on Windows for the disjoint large random streaming improvement;
-this is a bounded local result, not a claim of universal or state-of-the-art speed.
-The additional input buffer is at most 248 KiB per active file reader outside
-the compressed/decoded entry budget. The old published alpha asset is unchanged.
+The ranges overlap substantially. There is no established mixed-tree gain or regression.
+
+## Decision
+
+Retain only on Windows, for the disjoint large random streaming improvement. The additional input buffer is at most 248 KiB per active file reader, outside the compressed and decoded entry budget. The old published alpha asset is unchanged.
+
+## Limits
+
+This is a bounded local result, not a claim of universal or state-of-the-art speed. The mixed-size validation shows neither a gain nor a regression.
+
+## Reproduce
+
+Run the historical `zip-adaptive-mixed.yml` workflow at source revision `4d30e88` with `windows-candidate.patch`. `.github/workflows/zip-adaptive-input.yml` builds the original before and after comparison.

@@ -1,50 +1,38 @@
 # Native level and block-size sweep on dependency sources
 
-Hypothesis: on a real source tree of many small related files, larger blocks and
-higher levels reduce archive size substantially without a measurable extraction
-penalty, because file creation rather than decoding dominates extraction.
-Metric: archive bytes plus median extraction time with observed ranges.
+On dependency sources, larger blocks and higher levels cut archive bytes by up to 48% against the default, and extraction ranges overlap for every block of at least 1 MiB. The default does not change, because Silesia showed a measurable slowdown and larger blocks cost memory.
 
-Workload: the [locked dependency corpus](README.md) (70 crates, 3,981 files,
-67,479,735 bytes), regenerated and checked file-for-file against the committed
-manifest. Apple M5, 10 cores, 32 GiB RAM, macOS 26.7.1, release build of
-`b111c00`, `--threads 4`. `scripts/sweep.py` ran 35 configurations in a shuffled
-order each round: one warmup round and seven measured rounds. Every extraction was
-checked by direct byte comparison, file sizes and tree membership; there were no
-errors. Load average rose from 2.2 to 4.6 during the run. Warm cache only.
-[Raw samples](level-sweep.json).
+## Question
 
-## Findings
+On a real source tree of many small related files, do larger blocks and higher levels reduce archive size substantially without a measurable extraction penalty?
 
-- **Size:** the current default (L1 / 1 MiB) gives 5.51×. L3 / 4 MiB gives 7.35×
-  (25% fewer bytes) and L19 / 16 MiB gives 10.56× (48% fewer bytes). Block size
-  matters more than on Silesia: small source files gain from shared history
-  across files within a block.
-- **Extraction:** every configuration of at least 1 MiB has a median between
-  182 and 217 ms, and their ranges overlap. This run does not establish a
-  speed ranking among them. 64 KiB blocks are slower (232–245 ms medians).
-- **Memory:** extraction peak RSS grows with block size: about 26 MiB at 1 MiB,
-  63–70 MiB at 4 MiB and 75–84 MiB at 16 MiB. Creation at L15+ with 4 MiB+
-  blocks exceeds 270 MiB.
-- **Creation:** L3 / 4 MiB keeps 542 MiB/s against 591 MiB/s for the default;
-  L19 drops to about 20 MiB/s.
+The hypothesis was that file creation, rather than decoding, dominates extraction. The metric is archive bytes plus median extraction time with observed ranges.
 
-Observed extraction/ratio frontier (no other point is both faster and smaller):
-L1 / 4 MiB (5.64×, 181.91 ms), L3 / 16 MiB (7.58×, 183.75 ms) and L19 / 16 MiB
-(10.56×, 190.20 ms). Because the ranges overlap, treat it as a size ranking with
-inconclusive speed differences, not as proof that those points are fastest.
+## Setup
 
-Decision: no default change. On Silesia, L3 / 4 MiB extracted measurably slower
-than L1 / 1 MiB (43.07 ms vs 36.08 ms, non-overlapping ranges), and larger blocks
-increase memory and selected-file read amplification. A default change needs a
-matched experiment across both workloads, plus memory and `extract --path` cost.
-For source trees where size matters, `--level 3 --block-size-kib 4096` is the
-measured cost-effective setting on this machine.
+The workload is the [locked dependency corpus](README.md), with 70 crates, 3,981 files, and 67,479,735 bytes. The corpus was regenerated and checked file for file against the committed manifest.
 
-Limitations: one machine, one source tree, warm cache, concurrent background
-load. Not a cross-platform or cold-cache result.
+- Apple M5, 10 cores, 32 GiB RAM, macOS 26.7.1.
+- Release build of `b111c00`, run with `--threads 4`.
+- `scripts/sweep.py` ran 35 configurations in a shuffled order each round, with one warmup round and seven measured rounds.
+- Every extraction was checked by direct byte comparison, file sizes, and tree membership. There were no errors.
+- Load average rose from 2.2 to 4.6 during the run. The cache was warm only.
 
-## All configurations
+The [raw samples](level-sweep.json) hold every measurement.
+
+## Results
+
+**Size.** The current default (L1 / 1 MiB) gives 5.51×. L3 / 4 MiB gives 7.35×, which is 25% fewer bytes. L19 / 16 MiB gives 10.56×, which is 48% fewer bytes. Block size matters more than on Silesia, because small source files gain from shared history across files within a block.
+
+**Extraction.** Every configuration of at least 1 MiB has a median between 182 and 217 ms, and their ranges overlap. This run does not establish a speed ranking among them. 64 KiB blocks are slower, with 232–245 ms medians.
+
+**Memory.** Extraction peak RSS grows with block size. It is about 26 MiB at 1 MiB, 63–70 MiB at 4 MiB, and 75–84 MiB at 16 MiB. Creation at L15+ with 4 MiB+ blocks exceeds 270 MiB.
+
+**Creation.** L3 / 4 MiB keeps 542 MiB/s against 591 MiB/s for the default. L19 drops to about 20 MiB/s.
+
+**Frontier.** On the observed frontier for extraction time and ratio, no other point is both faster and smaller. The frontier points are L1 / 4 MiB (5.64×, 181.91 ms), L3 / 16 MiB (7.58×, 183.75 ms), and L19 / 16 MiB (10.56×, 190.20 ms). Because the ranges overlap, treat the frontier as a size ranking with inconclusive speed differences. It does not prove that those points are fastest.
+
+### All configurations
 
 | Level / block | Ratio | Archive bytes | Creation MiB/s | Extraction ms | Range ms | Creation RSS MiB | Extraction RSS MiB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -83,6 +71,18 @@ load. Not a cross-platform or cold-cache result.
 | L19 / 1024 KiB | 7.827× | 8,621,861 | 24 | 217.39 | 194.70–235.46 | 93.9 | 25.3 |
 | L19 / 4096 KiB | 9.705× | 6,952,740 | 24 | 190.82 | 179.67–200.06 | 272.5 | 62.8 |
 | L19 / 16384 KiB | 10.555× | 6,392,933 | 18 | 190.20 | 181.52–196.30 | 416.1 | 75.3 |
+
+## Decision
+
+Do not change the default. On Silesia, L3 / 4 MiB extracted measurably slower than L1 / 1 MiB (43.07 ms vs 36.08 ms, with non-overlapping ranges). Larger blocks also increase memory and selected-file read amplification. A default change needs a matched experiment across both workloads, plus memory and `extract --path` cost.
+
+For source trees where size matters, `--level 3 --block-size-kib 4096` is the measured cost-effective setting on this machine.
+
+## Limits
+
+The sweep used one machine, one source tree, a warm cache, and concurrent background load. It is not a cross-platform or cold-cache result.
+
+## Reproduce
 
 ```sh
 python3 scripts/make_dependency_corpus.py /tmp/rust-dependencies

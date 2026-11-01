@@ -1,12 +1,36 @@
-# Decompression time versus compression ratio
+# Silesia extraction time versus compression ratio
+
+On Silesia, larger native blocks can improve the ratio at higher levels, but they use much more memory and often extract more slowly. The default stays at level 1 with 1024 KiB blocks.
+
+## Question
+
+Which native level and block size, and which reader for classic formats, give the best trade between extraction time and archive size on the Silesia corpus?
+
+## Setup
+
+Silesia contains 211,938,580 bytes in 12 files. The data comes from a [pinned public mirror](https://github.com/MiloszKrajewski/SilesiaCorpus/tree/3f3fa2cdbbb3795c903b74e774acb309e1360337). The [provenance and SHA-256 hashes](corpus.json) make the inputs auditable.
+
+Each native setting ran seven measured rounds after a warmup, in shuffled order. Native extraction uses four codec workers plus I/O threads. Classic formats ran in a separate interleaved session. Every extraction was compared directly byte for byte, including tree membership and file sizes. Verification was outside the timed interval.
+
+Times include process startup, index and metadata work, and filesystem writes. They exclude explicit extraction sync. They are application extraction times, not in-memory codec speeds.
+
+7-Zip 26.05 creates the classic archives. These are ZIP with Deflate and 7z with LZMA2 at the levels named in the table, plus uncompressed TAR. Default extraction delegates to that backend. For both the Zipper path and the direct path, classic extraction uses 7-Zip's default thread allocation.
+
+"ZIP stream" uses the opt-in parallel Rust ZIP reader with zlib-rs. "ZIP buffered" adds libdeflate with up to 64 MiB of entry buffers per worker. Both request four workers and read the same archive bytes as their matched direct backend. The [current level-1 samples](fast-zip-current.json) and [current level-9 samples](dense-classic-current.json) use work-stealing revision `afb77d0` and include in-process RSS. Earlier static-scheduling trials remain in `fast-zip.json` and `dense-classic.json`. Current extraction-only trials prepare one archive per format before timing repeated reads, so their null creation times are intentional.
+
+The tuned bsdtar baselines use 1 MiB tar record buffers. T2 uses four pzstd workers. T3 uses ordinary zstd decoding. Compressed pipelines consume all padding (`--ignore-zeros`) so the decoder finishes successfully. T4 extracts the same ZIP used in its matched Zipper comparison. Tar round trips use SHA-256 manifests, and ZIP comparisons use direct byte checks. The bsdtar timing sessions differ from the native level sweep. See the [tar samples](tar-tuned.json), the [identical-ZIP samples](zip-vs-tar.json), and the [matched comparison details](../native-zip/bsdtar-comparison.md).
+
+## Results
 
 ![Measured Pareto frontier](pareto.svg)
 
 [PNG](pareto.png) · [PDF](pareto.pdf) · [Native samples](sweep.json) · [Higher native levels](dense-sweep.json) · [Classic-format samples](classic-formats.json)
 
-A point is on the observed Pareto frontier if no other measured configuration extracts in less or equal median time while producing a smaller or equal archive, with at least one strict improvement. Better points are toward the upper left. Ratio means original bytes divided by complete archive bytes. Lines only connect observed points; they do not imply intermediate configurations exist. Error bars show observed minima and maxima, not confidence intervals. Overlapping ranges do not establish a reliable speed ranking.
+Ratio means original bytes divided by complete archive bytes. Better points are toward the upper left. A point is on the observed Pareto frontier if no other measured configuration extracts in less or equal median time while producing a smaller or equal archive, with at least one strict improvement. Lines only connect observed points. They do not imply that intermediate configurations exist. Error bars show observed minima and maxima, not confidence intervals. The plot uses Zipper extraction time, not direct-backend time. The green points are the tuned bsdtar baselines.
 
-## Native frontier (numbers on the detail plot)
+### Native frontier
+
+The point numbers match the labels on the detail plot.
 
 | Point | Setting | Ratio | Extraction median (ms) | Range (ms) |
 | --- | --- | ---: | ---: | ---: |
@@ -19,7 +43,7 @@ A point is on the observed Pareto frontier if no other measured configuration ex
 | 7 | L19 / 4096 KiB | 3.863× | 44.13 | 42.99–45.06 |
 | 8 | L19 / 16384 KiB | 3.970× | 52.87 | 51.31–54.11 |
 
-## All native configurations
+### All native configurations
 
 | Level / block | Ratio | Archive bytes | Compression MiB/s | Extraction ms | Range ms | Peak creation RSS MiB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -53,9 +77,7 @@ A point is on the observed Pareto frontier if no other measured configuration ex
 | L19 / 4096 KiB | 3.863× | 54,863,200 | 19 | 44.13 | 42.99–45.06 | 295.7 |
 | L19 / 16384 KiB | 3.970× | 53,386,059 | 16 | 52.87 | 51.31–54.11 | 551.8 |
 
-## Zipper handling classic formats
-
-Archives are created by 7-Zip 26.05: ZIP/Deflate and 7z/LZMA2 (levels labeled in the table), and uncompressed TAR. Default extraction delegates to that backend. ZIP stream uses the opt-in parallel Rust ZIP/zlib-rs reader; ZIP buffered adds libdeflate with up to 64 MiB of entry buffers per worker. Both request four workers and read the same archive bytes as their matched direct backend. Native ZIP preserves bytes/directories only, so it is not yet a metadata-equivalent replacement. The plot uses Zipper extraction time, not direct-backend time. [Current level-1 samples](fast-zip-current.json) and [current level-9 samples](dense-classic-current.json) use work-stealing revision `afb77d0` and include in-process RSS. Earlier static-scheduling trials remain in `fast-zip.json` and `dense-classic.json`. Current extraction-only trials prepare one archive per format before timing repeated reads; their null creation times are intentional.
+### Zipper handling classic formats
 
 | Format / reader | Ratio | Archive bytes | Zipper median ms | Zipper range ms | Direct 7-Zip median ms | Native reader RSS MiB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -69,9 +91,7 @@ Archives are created by 7-Zip 26.05: ZIP/Deflate and 7z/LZMA2 (levels labeled in
 | ZIP L1 stream | 3.017× | 70,252,453 | 115.48 | 114.52–132.14 | 560.77 | 4.8 |
 | ZIP L1 buffered | 3.017× | 70,252,453 | 91.75 | 91.00–93.50 | 560.77 | 174.0 |
 
-## Tuned bsdtar baselines
-
-These green points use 1 MiB tar record buffers. T2 uses four pzstd workers; T3 uses ordinary zstd decoding. Compressed pipelines consume all padding (`--ignore-zeros`) so the decoder finishes successfully. T4 extracts the same ZIP used in its matched Zipper comparison. Tar round trips use SHA-256 manifests; ZIP comparisons use direct byte checks. Timing sessions differ from the native level sweep. [Tar samples](tar-tuned.json), [identical-ZIP samples](zip-vs-tar.json), and [matched comparison details](../../docs/tar-comparison.md).
+### Tuned bsdtar baselines
 
 | Point | Reader | Ratio | Archive bytes | Median ms | Range ms |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -80,13 +100,19 @@ These green points use 1 MiB tar record buffers. T2 uses four pzstd workers; T3 
 | T3 | tar+zstd-1MiB | 2.891× | 73,317,325 | 131.42 | 129.22–134.09 |
 | T4 | bsdtar ZIP, 1 MiB | 3.017× | 70,252,453 | 182.45 | 179.78–184.16 |
 
-## Method and limits
+## Decision
 
-Silesia contains 211,938,580 bytes in 12 files. Data came from a [pinned public mirror](https://github.com/MiloszKrajewski/SilesiaCorpus/tree/3f3fa2cdbbb3795c903b74e774acb309e1360337); [provenance and SHA-256 hashes](corpus.json) make the inputs auditable. Each native setting ran seven measured rounds after a warmup, with shuffled order. Classic formats ran in a separate interleaved session; native/classic cross-session timing differences are less controlled than comparisons within each session. Every extraction was compared directly byte for byte, including tree membership and file sizes. Verification was outside the timed interval.
+Keep the default at level 1 with 1024 KiB blocks. Larger blocks can improve the ratio at higher levels, but they use much more memory and often extract more slowly. Repeat the sweep on Linux on x86 and on larger corpora before changing defaults.
 
-Times include process startup, index/metadata work and filesystem writes, and exclude explicit extraction sync. They are application extraction times, not in-memory codec speeds. Cache flushing and thermal/storage isolation were not performed. Native uses four codec workers plus I/O threads; classic extraction uses 7-Zip's default thread allocation for both paths. Tar/ZIP/7z metadata semantics differ from native Zipper. No cross-machine leadership or equal-feature comparison is claimed. Repeat on Linux/x86 and larger corpora before changing defaults.
+This two-dimensional frontier does not optimize compression speed, memory, selective extraction cost, or metadata support. Each of those is a separate axis.
 
-The sweep exposes a genuine tradeoff: larger blocks can improve higher-level ratio, but consume much more memory and often extract more slowly. The default remains level 1 / 1024 KiB. Compression speed, memory, selective extraction cost, and metadata support are separate axes not optimized by this two-dimensional frontier.
+## Limits
+
+- Overlapping ranges do not establish a reliable speed ranking.
+- Native and classic formats ran in separate sessions. Timing differences across those sessions are less controlled than comparisons within one session.
+- The runs did not flush caches or isolate thermals or storage.
+- Native ZIP preserves only bytes and directories, so it is not yet a metadata-equivalent replacement. Tar, ZIP, and 7z metadata semantics also differ from native Zipper.
+- This page claims no cross-machine leadership and no equal-feature comparison.
 
 ## Reproduce
 
@@ -104,4 +130,4 @@ python3 scripts/compare_formats.py /tmp/zipper-corpora/silesia --formats zip --n
 python3 scripts/plot_pareto.py benchmarks/silesia
 ```
 
-Copy the adjacent generated `silesia.manifest.json` to `benchmarks/silesia/corpus.json` when refreshing the data. The fetch destination must be new. Classic format runs require 7zz on PATH.
+The fetch destination must be a new directory. Classic format runs require `7zz` on `PATH`. When you refresh the data, copy the adjacent generated `silesia.manifest.json` to `benchmarks/silesia/corpus.json`. The last command regenerates this page and the plots.

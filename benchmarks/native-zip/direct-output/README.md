@@ -1,33 +1,24 @@
-# Direct ZIP output experiment
+# Direct ZIP output without BufWriter
 
-Hypothesis: ZIP decoding already uses whole-entry or 256 KiB streaming output
-buffers. Removing the additional 8 KiB BufWriter per file may avoid allocations
-and copies without increasing the usual write-call count. A decoder returning
-many short chunks could invalidate that assumption, so test both tiny-file and
-large incompressible/compressible workloads, native and native-fast.
+Removing the 8 KiB BufWriter around each extracted file established no general extraction benefit. Production keeps BufWriter.
 
-`candidate.patch` changes only the output wrapper. All CRC, decoded-size,
-create-new, staging and error propagation remain required. The manual workflow
-builds baseline and candidate from the same checkout, tests the candidate and
-runs seven interleaved release rounds after warmup, with exact byte/tree checks.
-Four workers, unchanged default budgets, identical ZIPs. It also captures Linux
-syscall summaries separately from timed runs. The change is experimental until
-end-to-end ranges establish a benefit without workload regressions.
+## Question
 
-## Decision: reject
+ZIP decoding already uses whole-entry or 256 KiB streaming output buffers. Can removing the additional 8 KiB BufWriter per file avoid allocations and copies without increasing the usual write-call count?
 
-[Run 40997540680](https://github.com/marlboro-red/zipper/actions/runs/40997540680)
-uses baseline `1174f08` plus the recorded patch. The historical workflow must
-run at that baseline. Windows has 1,000 tiny files per shape; Linux has 10,000.
-Mac timing ranges also overlap (flat 354.98→368.34 ms, Silesia 95.47→92.85 ms).
-No general extraction benefit is established. One Linux mixed native-fast pair
-has a small disjoint 81.17→80.18 ms difference, while the native pair through
-the same streaming output path overlaps. This is insufficient justification for
-changing the output policy across workloads. Production keeps BufWriter.
+A decoder returning many short chunks could invalidate that assumption. The experiment therefore tests both tiny-file workloads and large incompressible and compressible workloads, in native and native-fast.
 
-All samples, bytes, archive/binary hashes and peak memory are retained. These
-are warm-cache process timings, not durable output completion. The syscall
-summaries are separate untimed runs and include process startup and all threads.
+## Setup
+
+`candidate.patch` changes only the output wrapper. All CRC, decoded-size, create-new, staging and error propagation checks remain required.
+
+The manual workflow builds the baseline and the candidate from the same checkout and tests the candidate. It runs seven interleaved release rounds after warmup, with exact byte and tree checks. The runs use four workers, unchanged default budgets and identical ZIPs. The workflow also captures Linux syscall summaries separately from the timed runs.
+
+[Run 40997540680](https://github.com/marlboro-red/zipper/actions/runs/40997540680) uses baseline `1174f08` plus the recorded patch. Windows has 1,000 tiny files per shape. Linux has 10,000.
+
+All samples, bytes, archive and binary hashes, and peak memory are retained.
+
+## Results
 
 ### Linux
 
@@ -59,9 +50,26 @@ summaries are separate untimed runs and include process startup and all threads.
 | large-random (33,564,802) | native | 42.62 [41.78, 43.53] | 43.03 [42.10, 59.54] | 4.10 / 4.09 |
 | large-random (33,564,802) | fast | 42.66 [41.94, 45.49] | 42.59 [41.34, 44.33] | 4.11 / 4.09 |
 
+### Mac
 
-Linux grouped native-fast syscall counts are unchanged: 10,006 openat,
-8,000 write and 10,006 close calls in both variants (10,000 files, 2,000 empty).
-Removing the wrapper does not remove filesystem operations. Summed strace times
-are instrumented and overlap across threads; they are not extraction wall time.
-This reinforces namespace/output operations as the small-file research target.
+Mac timing ranges also overlap. Flat goes from 354.98 to 368.34 ms, and Silesia from 95.47 to 92.85 ms.
+
+### Linux syscall counts
+
+Linux grouped native-fast syscall counts are unchanged. Both variants make 10,006 openat, 8,000 write and 10,006 close calls (10,000 files, 2,000 empty). Removing the wrapper does not remove filesystem operations.
+
+## Decision
+
+Reject. No general extraction benefit is established, so production keeps BufWriter.
+
+One Linux mixed native-fast pair has a small disjoint difference, from 81.17 to 80.18 ms. The native pair through the same streaming output path overlaps. That one pair is insufficient justification for changing the output policy across workloads.
+
+The unchanged syscall counts point to namespace and output operations as the small-file research target.
+
+## Limits
+
+These are warm-cache process timings, not durable output completion. The syscall summaries come from separate untimed runs and include process startup and all threads. Summed strace times are instrumented and overlap across threads. They are not extraction wall time.
+
+## Reproduce
+
+The historical workflow must run at baseline `1174f08` with `candidate.patch`.

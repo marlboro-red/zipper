@@ -1,17 +1,24 @@
-# Reduce ZIP input read-ahead amplification
+# Smaller ZIP input read-ahead
 
-The [File Activity trace](../file-activity/README.md) found roughly 4.72 GB of
-logical archive reads per extraction of a 3.4 MB tiny-file ZIP. The input reader
-used 256 KiB read-ahead buffers that entry/header seeks repeatedly discarded.
-Hypothesis: smaller input read-ahead reduces redundant copying and memory without
-penalizing large streaming reads, which can bypass the buffer.
+Cutting ZIP file-reader read-ahead from 256 KiB to 8 KiB made Linux streaming extraction 2.06× faster for flat files and 4.63× faster for grouped files, with lower memory. The change is kept, and Mac and Windows timings show no established gain.
 
-Experiment: change only both file-reader buffer capacities from 256 KiB to 8 KiB.
-Decoder/output buffers, checksums, scheduling and archive bytes are unchanged.
-The Linux comparison uses `native`, so the retained native-fast archive cache
-does not mask this change. Seven interleaved measured rounds after warmup, direct
-byte/tree checks after each timed extraction. These are warm/uncontrolled-cache
-results; the Linux runner has four CPUs and the local Mac is the M5.
+## Question
+
+The [File Activity trace](../file-activity/README.md) found roughly 4.72 GB of logical archive reads per extraction of a 3.4 MB tiny-file ZIP. The input reader used 256 KiB read-ahead buffers that entry and header seeks repeatedly discarded. Does smaller input read-ahead reduce redundant copying and memory without penalizing large streaming reads, which can bypass the buffer?
+
+## Setup
+
+The experiment changes only both file-reader buffer capacities, from 256 KiB to 8 KiB. Decoder and output buffers, checksums, scheduling and archive bytes are unchanged.
+
+The Linux comparison uses `native`, so the retained native-fast archive cache does not mask this change. Each comparison runs seven interleaved measured rounds after warmup, with direct byte and tree checks after each timed extraction. These are warm and uncontrolled-cache results. The Linux runner has four CPUs, and the local Mac is the M5.
+
+[Linux experiment 40893245837](https://github.com/marlboro-red/zipper/actions/runs/40893245837) uses baseline `f5b86b4` plus an isolated two-line candidate patch. The Mac baseline is `cc8aced` production code, identical in the affected path. Reports retain binary and archive hashes, commands, samples, memory and run order.
+
+The validation [run 40897687606](https://github.com/marlboro-red/zipper/actions/runs/40897687606) built source `3f2c406` with the retained 8 KiB buffer. Its reference differs only by restoring both capacities to 256 KiB. It uses seven interleaved measured rounds and four workers, with byte and tree checks throughout. Linux fixtures contain 30,000 files, and the run checks that their ZIP sizes exceed the 8 MiB cache limit. Windows uses 1,000 files to keep repeated output creation practical.
+
+## Results
+
+### Small archives below the cache limit
 
 | Workload / workers | Before ms [range] | After ms [range] | Peak RSS before / after MiB |
 | --- | ---: | ---: | ---: |
@@ -22,33 +29,9 @@ results; the Linux runner has four CPUs and the local Mac is the M5.
 | M5 10k flat / 4 | 334.15 [326.25–357.38] | 334.58 [323.61–359.49] | 9.67 / 8.77 |
 | M5 Silesia / 4 | 119.53 [118.46–167.74] | 123.45 [105.71–134.69] | 5.09 / 3.58 |
 
-Keep: Linux streaming extraction is 2.06× faster for flat files and 4.63× faster
-for grouped files at four workers, with lower memory. Local Mac extraction ranges
-overlap; claim no Mac timing gain. Windows correctness is covered by CI, but
-this experiment does not yet establish a Windows performance gain. Nor does the
-small-archive test prove large-archive gains above the cache limit. Archive cache
-and reduced read-ahead are alternatives on a given read path: **do not multiply
-their measured speedups**.
+At four workers, Linux streaming extraction is 2.06× faster for flat files and 4.63× faster for grouped files, with lower memory. Local Mac extraction ranges overlap.
 
-[Linux experiment 40893245837](https://github.com/marlboro-red/zipper/actions/runs/40893245837)
-uses baseline `f5b86b4` plus an isolated two-line candidate patch. The Mac baseline
-is `cc8aced` production code, identical in the affected path. Reports retain
-binary/archive hashes, commands, samples, memory and run order. Independent review
-confirmed both constructors, clone position accounting and boundary behavior;
-reader tests and the full test suite pass.
-
-The original File Activity trace is baseline evidence. A follow-up Instruments
-capture of the smaller-buffer prototype hit its time limit and is not used as
-proof of changed I/O volume. The extraction timings above are uninstrumented.
-
-## Windows and above-cache validation
-
-[Run 40897687606](https://github.com/marlboro-red/zipper/actions/runs/40897687606)
-built source `3f2c406` with the retained 8 KiB buffer, then a reference differing
-only by restoring both capacities to 256 KiB. Seven interleaved measured rounds,
-four workers, byte/tree checks throughout. Linux fixtures contain 30,000 files
-and their ZIP sizes are explicitly checked to exceed the 8 MiB cache limit.
-Windows uses 1,000 files to keep repeated output creation practical.
+### Windows and archives above the cache limit
 
 | Platform / shape / reader | 256 KiB ms [range] | 8 KiB ms [range] | Peak RSS before / after MiB |
 | --- | ---: | ---: | ---: |
@@ -61,9 +44,22 @@ Windows uses 1,000 files to keep repeated output creation practical.
 | Windows 1k grouped / native | 307.65 [296.55–485.16] | 291.94 [276.39–389.67] | 6.65 / 5.46 |
 | Windows 1k grouped / fast | 386.30 [287.63–598.51] | 291.11 [280.93–461.56] | 6.66 / 5.40 |
 
-The Linux ZIPs are 8,753,795 bytes (flat) and 9,627,995 bytes (grouped), so neither
-uses the whole-archive cache. Native-fast extraction improves **2.00× flat and
-4.65× grouped** above the cache limit. The streaming reader improves 1.96×/4.28×.
-Windows ranges overlap: retain the memory reduction but claim no established
-Windows timing gain. Full commands, hashes, environment and samples are in
-`validation/`. This validates the read-ahead change, not window-preserving seeks.
+The Linux ZIPs are 8,753,795 bytes (flat) and 9,627,995 bytes (grouped), so neither uses the whole-archive cache. Above the cache limit, native-fast extraction improves **2.00× flat and 4.65× grouped**. The streaming reader improves 1.96× flat and 4.28× grouped. Windows ranges overlap.
+
+## Decision
+
+Keep the 8 KiB read-ahead. Claim no Mac timing gain. On Windows, retain the memory reduction but claim no established timing gain.
+
+Archive cache and reduced read-ahead are alternatives on a given read path. **Do not multiply their measured speedups**.
+
+Independent review confirmed both constructors, clone position accounting and boundary behavior. Reader tests and the full test suite pass.
+
+## Limits
+
+The original File Activity trace is baseline evidence. A second Instruments capture of the smaller-buffer prototype hit its time limit. It is not used as proof of changed I/O volume. The extraction timings above are uninstrumented.
+
+Windows correctness is covered by CI, but no Windows performance gain is established. The small-archive test alone does not prove gains above the cache limit. The validation run measures that case separately. It tests the read-ahead change, not window-preserving seeks.
+
+## Reproduce
+
+Full commands, hashes, environment and samples for the validation run are in `validation/`. No other reproduction command was recorded.

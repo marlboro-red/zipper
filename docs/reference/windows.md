@@ -1,0 +1,76 @@
+# Zipper for Windows (early release)
+
+Zipper for Windows is a portable command-line program for 64-bit Intel and AMD
+Windows. It is not a graphical installer.
+
+## Install
+
+1. Download the `windows-x86_64.zip` asset from the GitHub prerelease.
+2. Extract it into a folder.
+3. Open PowerShell in that folder.
+
+## Verify the download
+
+`SHA256SUMS.txt` contains the package checksum. To verify the downloaded ZIP, run:
+
+```powershell
+Get-FileHash .\zipper-0.1.0-alpha.1-windows-x86_64.zip -Algorithm SHA256
+```
+
+## Run it
+
+```powershell
+.\zipper.exe --version
+.\zipper.exe create backup.zipper .\data
+.\zipper.exe test backup.zipper
+.\zipper.exe extract backup.zipper --output .\restored
+.\zipper.exe --zip-engine native-fast --threads 4 extract files.zip --output .\unzipped
+```
+
+Put the archive outside the input folder. Extraction needs a new destination
+folder whose parent already exists.
+
+The native archive reader and the native ZIP readers work without Rust or 7-Zip.
+The build statically links the MSVC runtime.
+
+## Use 7-Zip for other formats
+
+Other formats, and the default ZIP compatibility reader, need 7-Zip. If 7-Zip is
+not on PATH, set `ZIPPER_7Z` to its location:
+
+```powershell
+$env:ZIPPER_7Z = 'C:\Program Files\7-Zip\7z.exe'
+.\zipper.exe extract archive.7z --output .\restored7z
+```
+
+## What this release supports
+
+- Native archives preserve regular-file bytes and directories with UTF-8 paths.
+  They do not preserve permissions, timestamps, links, or extended attributes.
+- Encryption is not supported.
+- Native ZIP supports stored and Deflate ZIP, and conventional ZIP64.
+- Native-fast can use up to 64 MiB of entry buffers per worker. For lower memory
+  use, choose `--zip-engine native`.
+- Expanded-size quotas are not implemented.
+
+This release has no GUI, no Explorer integration, no automatic update mechanism,
+and no Windows ARM64 build.
+
+## Testing status
+
+This unsigned alpha is tested on Windows Server 2022 in GitHub Actions. It has not
+been benchmarked on Windows or validated across consumer Windows versions. Windows
+can show an unknown-publisher warning. Treat Zipper as experimental software, and
+keep your original data.
+
+## Development builds
+
+The measurements below come from source builds, not from the downloadable alpha.
+The alpha asset has not been rebuilt as part of these experiments.
+
+- [Preliminary Windows extraction and memory measurements](https://github.com/marlboro-red/zipper/blob/main/benchmarks/extraction-matrix/README.md)
+  found a whole-buffer extraction regression. The regression prompted a
+  conservative shared-buffer default.
+- A [write-size experiment](https://github.com/marlboro-red/zipper/blob/main/benchmarks/native-zip/windows-write-size/README.md)
+  then removed most of that penalty. It limits buffered output writes to 256 KiB.
+  The default memory budget is unchanged.

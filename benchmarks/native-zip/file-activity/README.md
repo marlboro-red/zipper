@@ -1,10 +1,20 @@
-# File activity trace: tiny ZIP extraction
+# File activity trace of tiny ZIP extraction
 
-Apple M5, macOS 26.7.1, Instruments 27.1. Source `82d060d`, native-fast,
-four workers, ten extractions of the 10,000-file flat fixture. The process exits
-successfully and deletes its outputs only after all ten extractions. This is an
-instrumented diagnostic, not a timed performance comparison. The trace contains
-startup and cleanup; these are not extraction time.
+Each extraction of a 3,383,629-byte tiny-file ZIP generated about 4.72 GB of logical archive reads. The trace marks input read amplification as an investigation target, while output creation remains the largest summed syscall cost on this Mac.
+
+## Question
+
+Which file syscalls does native-fast extraction of many tiny files issue, and how much summed time do they take?
+
+## Setup
+
+Apple M5, macOS 26.7.1, Instruments 27.1. Source `82d060d`, native-fast, four workers, ten extractions of the 10,000-file flat fixture.
+
+The process exits successfully. It deletes its outputs only after all ten extractions. This is an instrumented diagnostic, not a timed performance comparison. The trace contains startup and cleanup, which are not extraction time.
+
+The parser resolves Instruments XML references. It groups archive calls, generated output-file calls and other activity separately. The summary omits filesystem paths and call stacks.
+
+## Results
 
 | Scope / syscall | Calls | Summed thread duration, seconds | Logical bytes |
 | --- | ---: | ---: | ---: |
@@ -15,20 +25,23 @@ startup and cleanup; these are not extraction time.
 | Output close | 100,000 | 1.081 | — |
 | Cleanup unlink | 100,000 | 3.211 | — |
 
-Durations sum across threads and must not be added to infer elapsed extraction
-time. Cleanup unlink is outside the extraction workload. The 20,000 empty output
-files explain why write count is lower than open count. The exact output byte
-count matches ten copies of the fixture.
+Durations sum across threads. Do not add them to infer elapsed extraction time. Cleanup unlink is outside the extraction workload.
 
-The 3,383,629-byte ZIP generates approximately 4.72 GB of logical reads per
-extraction, about 1,396 times its archive size. These are filesystem reads,
-**not physical disk traffic**. The file reader has 256 KiB read-ahead buffers;
-entry/header seeks discard buffered data. The counts identify input read
-amplification as an architectural investigation target. They do not prove that
-smaller buffers alone improve complete extraction on every OS. The retained
-Linux cache removes these reads for eligible inputs; above 8 MiB, the file-reader
-path still needs measurement. On this Mac output creation remains the largest
-summed extraction syscall cost.
+The 20,000 empty output files explain why the write count is lower than the open count. The exact output byte count matches ten copies of the fixture.
+
+The 3,383,629-byte ZIP generates approximately 4.72 GB of logical reads per extraction, about 1,396 times its archive size. These are filesystem reads, **not physical disk traffic**. The file reader has 256 KiB read-ahead buffers, and entry and header seeks discard buffered data.
+
+## Decision
+
+The counts identify input read amplification as an architectural investigation target. On this Mac, output creation remains the largest summed extraction syscall cost.
+
+The retained Linux cache removes these reads for eligible inputs. Above 8 MiB, the file-reader path still needs measurement.
+
+## Limits
+
+The counts do not prove that smaller buffers alone improve complete extraction on every OS. The original trace remains local at `/tmp/zipper-file-activity.trace`. Raw tracing artifacts are too large for the repository.
+
+## Reproduce
 
 ```sh
 cargo build --release --example profile_zip
@@ -41,8 +54,3 @@ xctrace export --input /tmp/zipper-file-activity.trace \
 python3 scripts/summarize_file_trace.py /tmp/zipper-file-syscalls.xml \
   --archive-name tiny-flat.zip > summary.json
 ```
-
-The summary omits filesystem paths and call stacks. The original trace remains
-local at `/tmp/zipper-file-activity.trace`; raw tracing artifacts are too large
-for the repository. The parser resolves Instruments XML references and groups
-archive calls, generated output-file calls and other activity separately.
