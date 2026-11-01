@@ -37,3 +37,5 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | Code that compiles only on the host OS, failing Windows CI | the `windows clippy` step in `cargo xtask gate fast` |
 | Comments that excuse code instead of reshaping it | `cargo xtask lint-comments` in the gate, and the `zipper-comments` agent |
 | A hand-written CI watcher reading an empty run ID | `cargo xtask ci-wait`, which finds the run by full SHA and refuses an unpushed HEAD |
+| Published numbers that their revision cannot reproduce | the `results` gate step rejects scoreboard JSON measured on a dirty tree |
+| A hand-edited results page | the `results` gate step renders `docs/results.md` from the JSON and compares |

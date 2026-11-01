@@ -229,6 +229,10 @@ def render():
 
 
 def check(_args):
+    for path in sorted(SCOREBOARD.glob('*.json')):
+        result = json.loads(path.read_text(encoding='utf-8'))
+        if not result['tree_clean'] or not (result.get('counters') or {}).get('tree_clean', True):
+            sys.exit(f'{path.name} was measured on a dirty tree, so its revision cannot reproduce it')
     if RESULTS.read_text(encoding='utf-8') != render():
         sys.exit('docs/results.md differs from benchmarks/scoreboard; run `python3 scripts/scoreboard.py render`')
 

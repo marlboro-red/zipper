@@ -47,6 +47,7 @@ Answer each question from the JSON, not from memory.
 ## Signs you skipped this
 
 - A ratio without a thread count, or a speedup without CPU time.
+- A ratio retyped into a commit message or record instead of computed from the JSON. One commit called a 2.03× to 2.29× range "1.6x to 2.3x".
 - "Faster" over overlapping ranges.
 - A best fixture or best reader quoted without the others.
 - A comparison against a path the default no longer uses.
