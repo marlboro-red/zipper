@@ -18,6 +18,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-02 | [Small-file creation cost on macOS](native-zip/create-cost/README.md) | Native extraction runs 5% to 6.2% above the system-call floor. 3× over default bsdtar is below that floor on macOS. |
 | 2026-11-01 | [Timestamp restore](native-zip/timestamps/README.md) | Kept. Times match `unzip` and bsdtar. One call per file costs about 3% to 11%. Measured on a busy machine. |
 | 2026-11-01 | [Permission restore](native-zip/permissions/README.md) | Kept. Modes match `unzip` and bsdtar. Skipping directories already at the default mode removed a 10% cost on 996 directories. |
 | 2026-11-01 | [Unicode path field check](native-zip/unicode-path/README.md) | Kept. Entries cannot be renamed by a Unicode path field. No listing cost. Windows-era archives that use the field go to the backend. |

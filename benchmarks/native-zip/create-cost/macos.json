@@ -1,0 +1,317 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "cpu_count": 10,
+  "root": "/Users/aleph/Desktop/Projects/marlboro-red/zipper/target/bench-work/probe",
+  "files": 10000,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "samples": {
+    "create-close-1": [
+      {
+        "wall_us_per_file": 30.876387500000035,
+        "cpu_us_per_file": 30.86469999999988
+      },
+      {
+        "wall_us_per_file": 30.176183300000044,
+        "cpu_us_per_file": 30.161700000000025
+      },
+      {
+        "wall_us_per_file": 30.51296669999992,
+        "cpu_us_per_file": 30.49989999999951
+      },
+      {
+        "wall_us_per_file": 31.37537909999999,
+        "cpu_us_per_file": 31.35989999999964
+      },
+      {
+        "wall_us_per_file": 30.72071249999979,
+        "cpu_us_per_file": 30.70789999999945
+      },
+      {
+        "wall_us_per_file": 32.78750829999986,
+        "cpu_us_per_file": 32.771100000000075
+      },
+      {
+        "wall_us_per_file": 31.328483299999732,
+        "cpu_us_per_file": 31.314899999999568
+      }
+    ],
+    "create-write-close-1": [
+      {
+        "wall_us_per_file": 42.70294999999997,
+        "cpu_us_per_file": 40.41739999999994
+      },
+      {
+        "wall_us_per_file": 42.3127749999999,
+        "cpu_us_per_file": 41.04329999999976
+      },
+      {
+        "wall_us_per_file": 43.66119590000004,
+        "cpu_us_per_file": 41.10019999999963
+      },
+      {
+        "wall_us_per_file": 41.56334159999986,
+        "cpu_us_per_file": 40.422800000000336
+      },
+      {
+        "wall_us_per_file": 41.58080420000019,
+        "cpu_us_per_file": 40.13080000000002
+      },
+      {
+        "wall_us_per_file": 41.26804169999971,
+        "cpu_us_per_file": 40.10679999999951
+      },
+      {
+        "wall_us_per_file": 42.39683340000013,
+        "cpu_us_per_file": 41.59490000000048
+      }
+    ],
+    "create-write-times-close-1": [
+      {
+        "wall_us_per_file": 50.40694169999993,
+        "cpu_us_per_file": 47.650600000000054
+      },
+      {
+        "wall_us_per_file": 48.07295829999987,
+        "cpu_us_per_file": 46.7371
+      },
+      {
+        "wall_us_per_file": 49.401866600000055,
+        "cpu_us_per_file": 48.575500000000105
+      },
+      {
+        "wall_us_per_file": 49.79106669999993,
+        "cpu_us_per_file": 48.223500000000286
+      },
+      {
+        "wall_us_per_file": 49.34248339999989,
+        "cpu_us_per_file": 47.345299999999924
+      },
+      {
+        "wall_us_per_file": 50.52650000000014,
+        "cpu_us_per_file": 48.40250000000026
+      },
+      {
+        "wall_us_per_file": 53.82940410000003,
+        "cpu_us_per_file": 50.97299999999976
+      }
+    ],
+    "create-close-4-shared-dir": [
+      {
+        "wall_us_per_file": 18.078133400000063,
+        "cpu_us_per_file": 71.18310000000001
+      },
+      {
+        "wall_us_per_file": 18.32222080000001,
+        "cpu_us_per_file": 72.02400000000004
+      },
+      {
+        "wall_us_per_file": 20.14489579999985,
+        "cpu_us_per_file": 78.21619999999996
+      },
+      {
+        "wall_us_per_file": 18.198029199999866,
+        "cpu_us_per_file": 71.65710000000018
+      },
+      {
+        "wall_us_per_file": 18.207070899999778,
+        "cpu_us_per_file": 71.7337999999998
+      },
+      {
+        "wall_us_per_file": 18.409374999999883,
+        "cpu_us_per_file": 72.19149999999956
+      },
+      {
+        "wall_us_per_file": 18.18724999999972,
+        "cpu_us_per_file": 71.77670000000091
+      }
+    ],
+    "create-close-4-own-dirs": [
+      {
+        "wall_us_per_file": 17.639704100000042,
+        "cpu_us_per_file": 69.26430000000003
+      },
+      {
+        "wall_us_per_file": 17.80713340000002,
+        "cpu_us_per_file": 69.73699999999994
+      },
+      {
+        "wall_us_per_file": 17.664941700000014,
+        "cpu_us_per_file": 69.33539999999994
+      },
+      {
+        "wall_us_per_file": 17.964829099999946,
+        "cpu_us_per_file": 70.40059999999997
+      },
+      {
+        "wall_us_per_file": 18.319999999999936,
+        "cpu_us_per_file": 71.69019999999975
+      },
+      {
+        "wall_us_per_file": 18.62229159999984,
+        "cpu_us_per_file": 73.14020000000028
+      },
+      {
+        "wall_us_per_file": 18.07269999999974,
+        "cpu_us_per_file": 70.8601999999999
+      }
+    ],
+    "create-write-times-close-2": [
+      {
+        "wall_us_per_file": 34.14892920000003,
+        "cpu_us_per_file": 65.68380000000005
+      },
+      {
+        "wall_us_per_file": 35.30757090000005,
+        "cpu_us_per_file": 65.1804000000002
+      },
+      {
+        "wall_us_per_file": 33.54099579999996,
+        "cpu_us_per_file": 65.2507
+      },
+      {
+        "wall_us_per_file": 34.272145799999976,
+        "cpu_us_per_file": 65.48549999999977
+      },
+      {
+        "wall_us_per_file": 34.81022500000002,
+        "cpu_us_per_file": 66.53930000000017
+      },
+      {
+        "wall_us_per_file": 33.738825000000006,
+        "cpu_us_per_file": 65.25600000000011
+      },
+      {
+        "wall_us_per_file": 34.70037920000024,
+        "cpu_us_per_file": 66.46590000000003
+      }
+    ],
+    "create-write-times-close-4": [
+      {
+        "wall_us_per_file": 28.357654199999875,
+        "cpu_us_per_file": 102.89359999999999
+      },
+      {
+        "wall_us_per_file": 28.69129160000004,
+        "cpu_us_per_file": 103.50760000000001
+      },
+      {
+        "wall_us_per_file": 28.410633399999696,
+        "cpu_us_per_file": 106.11680000000021
+      },
+      {
+        "wall_us_per_file": 28.371004099999908,
+        "cpu_us_per_file": 102.2159000000002
+      },
+      {
+        "wall_us_per_file": 30.309087499999876,
+        "cpu_us_per_file": 103.62930000000006
+      },
+      {
+        "wall_us_per_file": 30.156483400000056,
+        "cpu_us_per_file": 107.27550000000006
+      },
+      {
+        "wall_us_per_file": 30.188679100000112,
+        "cpu_us_per_file": 105.68350000000065
+      }
+    ],
+    "create-write-times-close-8": [
+      {
+        "wall_us_per_file": 41.85522079999995,
+        "cpu_us_per_file": 247.74310000000008
+      },
+      {
+        "wall_us_per_file": 41.147574999999925,
+        "cpu_us_per_file": 242.92230000000004
+      },
+      {
+        "wall_us_per_file": 46.086616599999886,
+        "cpu_us_per_file": 250.35849999999976
+      },
+      {
+        "wall_us_per_file": 41.65218749999973,
+        "cpu_us_per_file": 250.69550000000052
+      },
+      {
+        "wall_us_per_file": 41.45617500000007,
+        "cpu_us_per_file": 244.05339999999995
+      },
+      {
+        "wall_us_per_file": 41.47741670000009,
+        "cpu_us_per_file": 240.1803000000001
+      },
+      {
+        "wall_us_per_file": 41.00683329999981,
+        "cpu_us_per_file": 248.44399999999922
+      }
+    ]
+  },
+  "medians": {
+    "create-close-1": {
+      "wall_us_per_file": 30.876387500000035,
+      "cpu_us_per_file": 30.86469999999988,
+      "wall_range": [
+        30.176183300000044,
+        32.78750829999986
+      ]
+    },
+    "create-write-close-1": {
+      "wall_us_per_file": 42.3127749999999,
+      "cpu_us_per_file": 40.422800000000336,
+      "wall_range": [
+        41.26804169999971,
+        43.66119590000004
+      ]
+    },
+    "create-write-times-close-1": {
+      "wall_us_per_file": 49.79106669999993,
+      "cpu_us_per_file": 48.223500000000286,
+      "wall_range": [
+        48.07295829999987,
+        53.82940410000003
+      ]
+    },
+    "create-close-4-shared-dir": {
+      "wall_us_per_file": 18.207070899999778,
+      "cpu_us_per_file": 71.77670000000091,
+      "wall_range": [
+        18.078133400000063,
+        20.14489579999985
+      ]
+    },
+    "create-close-4-own-dirs": {
+      "wall_us_per_file": 17.964829099999946,
+      "cpu_us_per_file": 70.40059999999997,
+      "wall_range": [
+        17.639704100000042,
+        18.62229159999984
+      ]
+    },
+    "create-write-times-close-2": {
+      "wall_us_per_file": 34.272145799999976,
+      "cpu_us_per_file": 65.48549999999977,
+      "wall_range": [
+        33.54099579999996,
+        35.30757090000005
+      ]
+    },
+    "create-write-times-close-4": {
+      "wall_us_per_file": 28.69129160000004,
+      "cpu_us_per_file": 103.62930000000006,
+      "wall_range": [
+        28.357654199999875,
+        30.309087499999876
+      ]
+    },
+    "create-write-times-close-8": {
+      "wall_us_per_file": 41.47741670000009,
+      "cpu_us_per_file": 247.74310000000008,
+      "wall_range": [
+        41.00683329999981,
+        46.086616599999886
+      ]
+    }
+  }
+}
