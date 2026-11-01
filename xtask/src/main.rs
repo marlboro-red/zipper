@@ -79,6 +79,7 @@ fn gate(full: bool) -> Result<()> {
         steps.push(("release test", || {
             cargo(&["test", "--workspace", "--locked", "--release"])
         }));
+        steps.push(("benchmark smoke", benchmark_smoke));
     }
     let mut rows = Vec::new();
     for (name, step) in &steps {
@@ -203,6 +204,58 @@ fn round_trip() -> Result<()> {
             !dir.join(&out).exists(),
             "truncated {archive} left output behind"
         );
+    }
+    Ok(())
+}
+
+fn benchmark_smoke() -> Result<()> {
+    let work = tempfile::tempdir()?;
+    let tree = work.path().join("tree");
+    write_fixture(&tree)?;
+    // bsdtar on macOS rewrites UTF-8 names to NFD, which the byte-exact tree check rejects.
+    fs::remove_file(tree.join("\u{fc}nicode-\u{65e5}.txt"))?;
+    let report = work.path().join("matrix.json");
+    let binary = root()
+        .join("target/release")
+        .join(format!("zipper{}", env::consts::EXE_SUFFIX));
+    let mut args = vec![
+        root().join("scripts/extraction_matrix.py").into_os_string(),
+        tree.into_os_string(),
+        "--zipper".into(),
+        binary.into_os_string(),
+        "--output".into(),
+        report.clone().into_os_string(),
+        "--work-dir".into(),
+        work.path().into(),
+        "--threads".into(),
+        "1".into(),
+        "2".into(),
+        "--runs".into(),
+        "1".into(),
+    ];
+    if Command::new("bsdtar").arg("--version").output().is_ok() {
+        args.extend(["--tar".into(), "bsdtar".into()]);
+    }
+    let python = ["python3", "python"]
+        .into_iter()
+        .find(|name| Command::new(name).arg("--version").output().is_ok())
+        .context("python3 or python is required")?;
+    let status = Command::new(python)
+        .current_dir(root())
+        .args(&args)
+        .status()?;
+    ensure!(
+        status.success(),
+        "extraction_matrix.py exited with {status}"
+    );
+    let report = fs::read_to_string(report)?;
+    for needle in [
+        "\"native-1\"",
+        "\"native-fast-1\"",
+        "\"median_cpu_seconds\"",
+        "\"parity\"",
+    ] {
+        ensure!(report.contains(needle), "benchmark report lacks {needle}");
     }
     Ok(())
 }

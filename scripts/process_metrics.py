@@ -1,4 +1,4 @@
-"""Portable subprocess wall time and single-process peak resident memory."""
+"""Portable subprocess wall time, CPU time and single-process peak resident memory."""
 import ctypes
 import os
 import subprocess
@@ -22,6 +22,9 @@ def timed(command, cwd):
     get_memory = ctypes.WinDLL('psapi', use_last_error=True).GetProcessMemoryInfo
     get_memory.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
     get_memory.restype = wintypes.BOOL
+    get_times = ctypes.WinDLL('kernel32', use_last_error=True).GetProcessTimes
+    get_times.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    get_times.restype = wintypes.BOOL
     with tempfile.TemporaryFile() as log:
         start = time.perf_counter()
         with subprocess.Popen(command, cwd=cwd, stdout=log, stderr=log) as child:
@@ -36,8 +39,12 @@ def timed(command, cwd):
             counters.cb = ctypes.sizeof(counters)
             if not get_memory(int(child._handle), ctypes.byref(counters), counters.cb):
                 raise ctypes.WinError(ctypes.get_last_error())
+            times = [wintypes.FILETIME() for _ in range(4)]
+            if not get_times(int(child._handle), *map(ctypes.byref, times)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            kernel, user = ((t.dwHighDateTime << 32 | t.dwLowDateTime) / 1e7 for t in times[2:])
             if status:
                 log.seek(0)
                 raise RuntimeError(log.read().decode(errors='replace'))
-    return {'seconds': elapsed, 'peak_rss_bytes': counters.peak}
+    return {'seconds': elapsed, 'peak_rss_bytes': counters.peak, 'cpu_seconds': kernel + user}
 

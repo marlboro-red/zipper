@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unix benchmark: verified round trips, wall time, child peak RSS, JSON output."""
+"""Unix benchmark: verified round trips, wall and CPU time, child peak RSS, JSON output."""
 import argparse
 import hashlib
 import json
@@ -11,6 +11,27 @@ import statistics
 import subprocess
 import tempfile
 import time
+
+
+def minimal_extract_flags(tar):
+    """Flags that stop tar restoring metadata Zipper does not restore.
+
+    Zipper restores file bytes and directories only. Comparisons pass these
+    flags so external readers skip the same metadata work."""
+    version = subprocess.run([tar, "--version"], capture_output=True, text=True).stdout
+    flags = ["-m", "--no-same-owner", "--no-same-permissions", "--no-acls", "--no-xattrs"]
+    if "bsdtar" in version:
+        flags.append("--no-fflags")
+        if platform.system() == "Darwin":
+            flags.append("--no-mac-metadata")
+    return flags
+
+
+def cpu_cores(rows):
+    """Median CPU seconds and CPU seconds per wall second of timed samples."""
+    cpu = statistics.median(row["cpu_seconds"] for row in rows)
+    return {"median_cpu_seconds": cpu,
+            "cpu_per_wall": cpu / statistics.median(row["seconds"] for row in rows)}
 
 
 def manifest(root):
@@ -36,15 +57,16 @@ def timed(command, cwd):
         # GNU time measures its own post-exec child, excluding that inherited peak.
         with tempfile.TemporaryFile() as log, tempfile.NamedTemporaryFile() as report:
             start = time.perf_counter()
-            child = subprocess.run(["/usr/bin/time", "-f", "%M", "-o", report.name, "--"] + command,
+            child = subprocess.run(["/usr/bin/time", "-f", "%M %U %S", "-o", report.name, "--"] + command,
                                    cwd=cwd, stdout=log, stderr=log)
             elapsed = time.perf_counter() - start
             if child.returncode:
                 log.seek(0)
                 raise RuntimeError(log.read().decode(errors="replace"))
             report.seek(0)
-            rss = int(report.read().strip()) * 1024
-        return {"seconds": elapsed, "peak_rss_bytes": rss}
+            rss, user, system = report.read().split()[-3:]
+        return {"seconds": elapsed, "peak_rss_bytes": int(rss) * 1024,
+                "cpu_seconds": float(user) + float(system)}
     start = time.perf_counter()
     with tempfile.TemporaryFile() as log:
         child = subprocess.Popen(command, cwd=cwd, stdout=log, stderr=log)
@@ -55,7 +77,7 @@ def timed(command, cwd):
             log.seek(0)
             raise RuntimeError(log.read().decode(errors="replace"))
     rss = usage.ru_maxrss * (1 if platform.system() == "Darwin" else 1024)
-    return {"seconds": elapsed, "peak_rss_bytes": rss}
+    return {"seconds": elapsed, "peak_rss_bytes": rss, "cpu_seconds": usage.ru_utime + usage.ru_stime}
 
 
 def main():

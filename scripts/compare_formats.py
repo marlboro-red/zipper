@@ -12,7 +12,7 @@ import statistics
 import subprocess
 import tempfile
 import time
-from benchmark import timed
+from benchmark import cpu_cores, minimal_extract_flags, timed
 from compare_revisions import inventory, verify
 from compare_zstd import sync_archive
 
@@ -31,7 +31,7 @@ def main():
     parser.add_argument("--native-auto", action="store_true", help="omit --threads for native extraction")
     parser.add_argument("--reuse-archives", action="store_true", help="create once per format; benchmark extraction only")
     parser.add_argument("--tar-reader", help="bsdtar executable capable of extracting ZIP; also test 1 MiB input buffering")
-    parser.add_argument("--tar-minimal", action="store_true", help="also test bsdtar without restoring timestamps or optional metadata")
+    parser.add_argument("--tar-minimal", action="store_true", help="accepted for old commands; bsdtar-minimal now always runs with --tar-reader")
     args = parser.parse_args()
     if args.runs < 1 or not 1 <= args.threads <= 64:
         parser.error("positive runs and threads in 1..64 required")
@@ -44,20 +44,33 @@ def main():
         parser.error("tar reader not found")
     if args.tar_minimal and tar_reader is None:
         parser.error("--tar-minimal requires --tar-reader")
-    minimal_flags = ["-m", "--no-same-owner", "--no-same-permissions", "--no-acls", "--no-fflags", "--no-xattrs"]
-    if platform.system() == "Darwin":
-        minimal_flags.append("--no-mac-metadata")
+    minimal_flags = minimal_extract_flags(tar_reader) if tar_reader else []
+    single = [] if args.native_auto or args.threads == 1 else ["-1t"]
     source = args.corpus.resolve(strict=True)
     expected = inventory(source)
     total = sum(size for size in expected.values() if size is not None)
     if not total:
         parser.error("corpus must contain nonempty files")
     os.environ["ZIPPER_7Z"] = backend
+    def reader_decoders(kind):
+        names = []
+        if kind == "zip" and (args.native_zip or args.native_fast):
+            names += ["zipper-native", *("zipper-native" + suffix for suffix in single)]
+        if kind == "zip" and args.native_fast:
+            names += ["zipper-native-fast", *("zipper-native-fast" + suffix for suffix in single)]
+        if tar_reader:
+            names += ["bsdtar", "bsdtar-1MiB", "bsdtar-minimal"]
+        return names
+
     samples = {kind: [] for kind in dict.fromkeys(args.formats)}
     result = {"platform": platform.platform(), "cpu_count": os.cpu_count(),
               "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
               "corpus": source.name, "input_bytes": total, "runs": args.runs, "warmup_rounds": 1,
               "creation_threads": args.threads, "extraction_threads": "7-Zip defaults for both paths",
+              "parity": {"zipper_restores": "file bytes and directories",
+                         "bsdtar-minimal": "reduced-metadata flags, single process",
+                         "7zip": "restores timestamps and attributes; no flag disables them",
+                         "native_single_thread": "-1t rows run Zipper with --threads 1"},
               "backend": backend, "backend_version": subprocess.check_output([backend, "i"], text=True).splitlines()[:4],
               "creation": f"7-Zip level {args.level} (tar stores); NOT native Zipper encoding",
               "level": args.level,
@@ -70,7 +83,7 @@ def main():
     if tar_reader:
         result["tar_reader"] = tar_reader
         result["tar_version"] = subprocess.check_output([tar_reader, "--version"], text=True).strip()
-        result["tar_minimal_flags"] = minimal_flags if args.tar_minimal else None
+        result["tar_minimal_flags"] = minimal_flags or None
     rng = random.Random(20261029)
     order = []
     preparations = {}
@@ -97,26 +110,17 @@ def main():
                         preparations[kind] = {"creation_seconds": creation_seconds,
                             "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
                 decoders = ["zipper", "7zip-direct"]
-                if kind == "zip" and (args.native_zip or args.native_fast):
-                    decoders.append("zipper-native")
-                if kind == "zip" and args.native_fast:
-                    decoders.append("zipper-native-fast")
-                if tar_reader:
-                    decoders += ["bsdtar", "bsdtar-1MiB"]
-                    if args.tar_minimal:
-                        decoders.append("bsdtar-minimal")
+                decoders += reader_decoders(kind)
                 rng.shuffle(decoders)
                 order.append({"round": iteration, "format": kind, "decoders": decoders})
                 row = {"archive_bytes": archive.stat().st_size, "creation_seconds": creation_seconds}
                 for decoder in decoders:
                     command = ([binary, "extract", str(archive), "-o", str(out)] if decoder == "zipper" else
                                [backend, "x", "-y", f"-o{out}", "--", str(archive)])
-                    if decoder == "zipper-native":
-                        command = [binary, *([] if args.native_auto else ["--threads", str(args.threads)]), "--zip-engine", "native",
-                                   "extract", str(archive), "-o", str(out)]
-                    if decoder == "zipper-native-fast":
-                        command = [binary, *([] if args.native_auto else ["--threads", str(args.threads)]), "--zip-engine", "native-fast",
-                                   "extract", str(archive), "-o", str(out)]
+                    if decoder.startswith("zipper-native"):
+                        engine = decoder.removeprefix("zipper-").removesuffix("-1t")
+                        threads = [] if args.native_auto else ["--threads", "1" if decoder.endswith("-1t") else str(args.threads)]
+                        command = [binary, *threads, "--zip-engine", engine, "extract", str(archive), "-o", str(out)]
                     if decoder.startswith("bsdtar"):
                         out.mkdir()
                         command = [tar_reader, *(["-b", "2048"] if decoder in ["bsdtar-1MiB", "bsdtar-minimal"] else []),
@@ -127,7 +131,8 @@ def main():
                     if verified != total:
                         raise RuntimeError("verified byte count mismatch")
                     # Process-tree memory accounting differs; do not compare wrapper RSS.
-                    row[decoder] = {"seconds": measurement["seconds"], "verified_bytes": verified}
+                    row[decoder] = {"seconds": measurement["seconds"], "cpu_seconds": measurement["cpu_seconds"],
+                                    "verified_bytes": verified}
                     if decoder.startswith("zipper-native"):
                         row[decoder]["peak_rss_bytes"] = measurement["peak_rss_bytes"]
                     shutil.rmtree(out)
@@ -142,16 +147,12 @@ def main():
         if len({row["archive_bytes"] for row in rows}) != 1:
             raise RuntimeError("archive size changed across runs")
         summary = {"archive_bytes": rows[0]["archive_bytes"], "samples": rows}
-        decoders = ["zipper", "7zip-direct"]
-        if kind == "zip" and (args.native_zip or args.native_fast): decoders.append("zipper-native")
-        if kind == "zip" and args.native_fast: decoders.append("zipper-native-fast")
-        if tar_reader: decoders += ["bsdtar", "bsdtar-1MiB"]
-        if args.tar_minimal: decoders.append("bsdtar-minimal")
-        for decoder in decoders:
+        for decoder in ["zipper", "7zip-direct", *reader_decoders(kind)]:
             seconds = [row[decoder]["seconds"] for row in rows]
             summary[decoder] = {"median_seconds": statistics.median(seconds),
                 "min_seconds": min(seconds), "max_seconds": max(seconds),
-                "mib_s": total / 2**20 / statistics.median(seconds)}
+                "mib_s": total / 2**20 / statistics.median(seconds),
+                **cpu_cores([row[decoder] for row in rows])}
             if decoder.startswith("zipper-native"):
                 summary[decoder]["peak_rss_bytes"] = max(row[decoder]["peak_rss_bytes"] for row in rows)
         result["formats"][kind] = summary

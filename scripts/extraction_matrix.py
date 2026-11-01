@@ -17,6 +17,7 @@ import zipfile
 
 from process_metrics import timed
 from compare_revisions import inventory, verify
+from benchmark import cpu_cores, minimal_extract_flags
 
 
 def digest(path):
@@ -42,6 +43,8 @@ def main():
     args = parser.parse_args()
     if args.runs < 1 or any(not 1 <= n <= 64 for n in args.threads):
         parser.error('positive runs and threads 1..64 required')
+    if (args.sevenzip or args.tar) and 1 not in args.threads:
+        parser.error('include --threads 1 when comparing with single-threaded external readers')
     source = args.source.resolve(strict=True)
     if not source.is_dir() or source.is_symlink():
         parser.error('source must be a regular directory')
@@ -122,9 +125,14 @@ def main():
                 else:
                     for kind, path in [('zip', archive), ('tar', plain)]:
                         commands[f'bsdtar-{kind}'] = [resolved, '-xf', str(path), '-C', str(output),
-                            '-b', '2048', '-m', '--no-same-owner', '--no-same-permissions',
-                            '--no-acls', '--no-fflags', '--no-xattrs', '--no-mac-metadata']
+                            '-b', '2048', *minimal_extract_flags(resolved)]
         result['commands'] = commands
+        result['parity'] = {
+            'zipper_restores': 'file bytes and directories',
+            'bsdtar': 'reduced-metadata flags in its command, single process',
+            '7zip': 'restores timestamps and attributes; no flag disables them',
+            'output_root': 'created before timing for external readers; Zipper stages and publishes inside timing',
+            'threads': 'Zipper rows run at every --threads value, including 1 for a single-threaded comparison'}
         samples = {name: [] for name in commands}
         result['order_including_warmup'] = []
         for round_index in range(args.runs + 1):
@@ -156,11 +164,13 @@ def main():
             result['results'][name] = {'samples': rows, 'median_seconds': median,
                 'min_seconds': min(seconds), 'max_seconds': max(seconds),
                 'files_s': files / median, 'mib_s': total / 2**20 / median,
-                'peak_rss_bytes': max(row['peak_rss_bytes'] for row in rows)}
+                'peak_rss_bytes': max(row['peak_rss_bytes'] for row in rows), **cpu_cores(rows)}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
     for name, row in result['results'].items():
-        print(f"{name}: {row['median_seconds'] * 1000:.2f} ms, {row['peak_rss_bytes'] / 2**20:.2f} MiB")
+        print(f"{name}: {row['median_seconds'] * 1000:.2f} ms wall, "
+              f"{row['median_cpu_seconds'] * 1000:.2f} ms CPU ({row['cpu_per_wall']:.2f} cores), "
+              f"{row['peak_rss_bytes'] / 2**20:.2f} MiB")
 
 
 if __name__ == '__main__':
