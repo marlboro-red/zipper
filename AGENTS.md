@@ -36,3 +36,14 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 - Make every Markdown page reachable by links from `README.md`.
 - Record each experiment in `benchmarks/` with the fixed headings, and add a row to the [experiment log](benchmarks/README.md).
 - Write docs by the pstack `technical-writing` and `unslop` rules. `cargo xtask lint-docs` runs in the gate and checks dashes, colons, word lists, sentence length, links, record headings and reachability.
+
+## Skills
+
+Use these skills from `.claude/skills/` for the judgment that checks cannot make:
+
+| Skill | Use it when |
+| --- | --- |
+| [`zipper-bench`](.claude/skills/zipper-bench/SKILL.md) | You measure, compare or publish a performance number. |
+| [`zipper-review`](.claude/skills/zipper-review/SKILL.md) | You change archive parsing, extraction safety or concurrency. |
+| [`zipper-docs`](.claude/skills/zipper-docs/SKILL.md) | You add, move or rewrite a Markdown page or record. |
+| [`zipper-reflect`](.claude/skills/zipper-reflect/SKILL.md) | A milestone closes or the same mistake happens twice. |

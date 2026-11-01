@@ -72,7 +72,7 @@ const RECORD_HEADINGS: &[&str] = &[
 
 pub fn files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut files = vec![root.join("README.md"), root.join("AGENTS.md")];
-    for dir in ["docs", "benchmarks"] {
+    for dir in ["docs", "benchmarks", ".claude/skills"] {
         for entry in walkdir::WalkDir::new(root.join(dir)).sort_by_file_name() {
             let entry = entry?;
             if entry.file_type().is_file() && entry.path().extension().is_some_and(|e| e == "md") {
@@ -91,6 +91,9 @@ pub fn lint(root: &Path) -> Result<()> {
         let text = fs::read_to_string(file)?;
         let name = file.strip_prefix(root)?.display().to_string();
         for (line, message) in lint_text(&text, file.parent().unwrap_or(root)) {
+            problems.push(format!("{name}:{line}: {message}"));
+        }
+        for (line, message) in named_paths(&text, root) {
             problems.push(format!("{name}:{line}: {message}"));
         }
         if file.starts_with(root.join("benchmarks")) && *file != log {
@@ -120,6 +123,52 @@ pub fn lint(root: &Path) -> Result<()> {
         problems.len()
     );
     Ok(())
+}
+
+const XTASK_COMMANDS: &[&str] = &["gate", "lint-docs", "install-hooks"];
+
+const REPO_DIRS: &[&str] = &[
+    "scripts/",
+    "src/",
+    "docs/",
+    "benchmarks/",
+    "xtask/",
+    "tests/",
+    ".claude/",
+    ".githooks/",
+];
+
+fn named_paths(text: &str, root: &Path) -> Vec<(usize, String)> {
+    let mut problems = Vec::new();
+    let mut fenced = false;
+    for (index, line) in text.lines().enumerate() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+        }
+        if fenced {
+            continue;
+        }
+        for span in line.split('`').skip(1).step_by(2) {
+            if let Some(rest) = span.strip_prefix("cargo xtask ") {
+                let command = rest.split_whitespace().next().unwrap_or_default();
+                if !XTASK_COMMANDS.contains(&command) {
+                    problems.push((
+                        index + 1,
+                        format!("unknown command `cargo xtask {command}`"),
+                    ));
+                }
+            }
+            for word in span.split_whitespace() {
+                let path = word.trim_end_matches([',', '.', ':', ')']);
+                let checkable = REPO_DIRS.iter().any(|dir| path.starts_with(dir))
+                    && !path.contains(['<', '*', '{', '$']);
+                if checkable && !root.join(path).exists() {
+                    problems.push((index + 1, format!("names missing path `{path}`")));
+                }
+            }
+        }
+    }
+    problems
 }
 
 fn record_headings(text: &str) -> Vec<&str> {
@@ -169,7 +218,15 @@ fn lint_text(text: &str, dir: &Path) -> Vec<(usize, String)> {
     let mut problems = Vec::new();
     let mut fenced = false;
     let mut paragraph: Vec<(usize, String)> = Vec::new();
-    for (index, raw) in text.lines().enumerate() {
+    let frontmatter = if text.starts_with("---\n") {
+        text.lines()
+            .skip(1)
+            .position(|l| l == "---")
+            .map_or(0, |end| end + 2)
+    } else {
+        0
+    };
+    for (index, raw) in text.lines().enumerate().skip(frontmatter) {
         let line = index + 1;
         if raw.trim_start().starts_with("```") {
             fenced = !fenced;
@@ -378,6 +435,27 @@ mod tests {
     }
 
     #[test]
+    fn named_paths_and_commands_must_exist() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir(dir.path().join("scripts"))?;
+        fs::write(dir.path().join("scripts/real.py"), "")?;
+        let text = "Run `python3 scripts/real.py`, `scripts/gone.py`, `cargo xtask gate fast`, \
+            `cargo xtask bench` and `benchmarks/<area>/README.md`.\n```sh\nscripts/fenced.py\n```\n";
+        let found: Vec<String> = named_paths(text, dir.path())
+            .into_iter()
+            .map(|(_, m)| m)
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "names missing path `scripts/gone.py`",
+                "unknown command `cargo xtask bench`"
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
     fn record_headings_ignore_code_blocks() {
         let text = "# T\n\n## Question\n```md\n## Not a heading\n```\n## Setup  \n";
         assert_eq!(record_headings(text), ["## Question", "## Setup"]);
@@ -397,6 +475,15 @@ mod tests {
         assert!(reached.contains(&fs::canonicalize(dir.path().join("docs/a.md"))?));
         assert!(!reached.contains(&fs::canonicalize(dir.path().join("docs/orphan.md"))?));
         Ok(())
+    }
+
+    #[test]
+    fn skips_yaml_frontmatter() {
+        assert_eq!(
+            messages("---\nname: x\ndescription: a: b\n---\n# T\n"),
+            Vec::<String>::new()
+        );
+        assert_eq!(messages("# T\n\nLabel: text here.\n").len(), 1);
     }
 
     #[test]
