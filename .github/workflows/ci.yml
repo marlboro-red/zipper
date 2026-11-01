@@ -19,7 +19,5 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
         run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt --component clippy
-      - run: cargo +1.96.0 fmt --check
-      - run: cargo +1.96.0 clippy --locked --all-targets -- -D warnings
-      - name: Byte recovery, malformed input, cancellation, and CLI tests
-        run: cargo +1.96.0 test --locked --release
+      - name: Gate (format, lint, tests, release round trip)
+        run: cargo +1.96.0 xtask gate full

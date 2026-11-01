@@ -1,0 +1,19 @@
+#!/bin/sh
+# The gate checks the working tree, so refuse a push unless it pushes exactly
+# that tree: every pushed ref must be HEAD and the tree must be clean.
+head=$(git rev-parse HEAD) || exit 1
+gate=no
+while read -r local_ref local_sha remote_ref remote_sha; do
+    case $local_sha in *[!0]*) ;; *) continue ;; esac
+    if [ "$(git rev-parse --verify --quiet "$local_sha^{commit}")" != "$head" ]; then
+        echo "pre-push: $local_ref is not HEAD; check it out so the gate checks what you push" >&2
+        exit 1
+    fi
+    gate=yes
+done
+[ "$gate" = yes ] || exit 0
+if [ -n "$(git status --porcelain)" ]; then
+    echo "pre-push: the working tree has uncommitted changes; commit or stash them first" >&2
+    exit 1
+fi
+cd "$(git rev-parse --show-toplevel)" && exec cargo xtask gate fast

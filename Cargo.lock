@@ -550,6 +550,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
+ "walkdir",
+ "zip",
+]
+
+[[package]]
 name = "zip"
 version = "9.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

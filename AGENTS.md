@@ -23,7 +23,10 @@ Use [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack):
 - Seek independent review for format parsing and concurrency changes. Reviewers
   must prove concrete failures where possible and avoid editing the owner's files.
 
-Checks: `cargo fmt --check`, `cargo test`,
-`cargo clippy --all-targets -- -D warnings`, and a release CLI round trip.
+Done means `cargo xtask gate fast` passes; CI runs `cargo xtask gate full`.
+Run `cargo xtask install-hooks` once so pre-push runs the fast gate. The gate
+formats, lints, tests, builds a release binary, and checks a byte-exact round
+trip of `.zipper` and ZIP extraction, selected-path extraction, and truncated
+input cleanup.
 Use `scripts/compare_revisions.py` for direct byte-verified revision comparisons.
 Benchmarks are Unix-oriented. Format contracts live in `docs/format.md`.

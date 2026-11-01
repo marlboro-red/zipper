@@ -68,8 +68,8 @@ unchanged during creation. Block-scoped solid packing has no cross-block history
 Extraction has no total expanded-size quota yet. Use private destination parents;
 publication does not defend against concurrent filesystem changes by other users.
 
-Development checks: `cargo fmt --check`, `cargo test`, and
-`cargo clippy --all-targets -- -D warnings`.
+Development checks: run `cargo xtask gate fast` before pushing, or run
+`cargo xtask install-hooks` once so pre-push runs it. CI runs `cargo xtask gate full`.
 
 Existing formats: `extract`, `list`, and `test` automatically delegate non-native
 archives to `7zz` or `7z` on PATH, or the executable specified by `ZIPPER_7Z`.
