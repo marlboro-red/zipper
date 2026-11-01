@@ -17,6 +17,39 @@ struct Item {
     crc: u32,
     compressed: u64,
     method: CompressionMethod,
+    /// Stored name bytes, kept only when they differ from the decoded name.
+    raw_name: Option<Box<[u8]>>,
+    header_start: u64,
+    /// Start of the next local record, or of the central directory.
+    record_limit: u64,
+}
+
+const LOCAL_HEADER: u64 = 30;
+
+impl Item {
+    fn stored_name_len(&self) -> usize {
+        self.raw_name.as_ref().map_or(
+            self.entry.name.len() + usize::from(self.entry.directory),
+            |raw| raw.len(),
+        )
+    }
+
+    /// Whether `bytes` equals the name exactly as the central directory stores it.
+    fn stored_name_is(&self, bytes: &[u8]) -> bool {
+        match &self.raw_name {
+            Some(raw) => **raw == *bytes,
+            None => {
+                let (name, slash) = bytes.split_at(self.entry.name.len().min(bytes.len()));
+                name == self.entry.name.as_bytes()
+                    && slash
+                        == if self.entry.directory {
+                            b"/" as &[u8]
+                        } else {
+                            b""
+                        }
+            }
+        }
+    }
 }
 
 const MAX_METADATA: u64 = 64 * 1024 * 1024;
@@ -222,7 +255,11 @@ fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
             names.insert(name.clone(), directory).is_none(),
             "duplicate ZIP path"
         );
-        metadata_bytes += name.len() + 64;
+        let decoded_len = name.len() + usize::from(directory);
+        let raw = file.name_raw();
+        let raw_name = (raw.len() != decoded_len || !raw.starts_with(name.as_bytes()))
+            .then(|| Box::<[u8]>::from(raw));
+        metadata_bytes += name.len() + raw_name.as_ref().map_or(0, |raw| raw.len()) + 64;
         ensure!(
             metadata_bytes <= 64 * 1024 * 1024,
             "ZIP metadata limit exceeded"
@@ -237,6 +274,9 @@ fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
             crc: file.crc32(),
             compressed: file.compressed_size(),
             method: file.compression(),
+            raw_name,
+            header_start: file.header_start(),
+            record_limit: 0,
         });
     }
     for item in &items {
@@ -246,7 +286,102 @@ fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
             prefix = p;
         }
     }
+    // Each local record must end before the next one starts. Overlapping or
+    // shared records let one archive mean different things to different readers.
+    let mut order: Vec<usize> = (0..items.len()).collect();
+    order.sort_unstable_by_key(|&index| items[index].header_start);
+    let ends = order.iter().skip(1).map(|&index| items[index].header_start);
+    let limits: Vec<u64> = ends
+        .chain(std::iter::once(archive.central_directory_start()))
+        .collect();
+    for (&index, limit) in order.iter().zip(limits) {
+        let item = &mut items[index];
+        let minimum = item
+            .header_start
+            .checked_add(LOCAL_HEADER + item.stored_name_len() as u64)
+            .and_then(|end| end.checked_add(item.compressed));
+        ensure!(
+            minimum.is_some_and(|end| end <= limit),
+            "overlapping ZIP entries"
+        );
+        item.record_limit = limit;
+    }
     Ok(items)
+}
+
+/// Require the local header to agree with the central directory and the data
+/// to end within its own record. Returns the payload offset.
+fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Result<u64> {
+    reader.seek(SeekFrom::Start(item.header_start))?;
+    let header = crate::number::<30>(reader)?;
+    let read16 = |at: usize| u16::from_le_bytes([header[at], header[at + 1]]);
+    let read32 = |at: usize| u32::from_le_bytes(header[at..at + 4].try_into().unwrap());
+    ensure!(&header[..4] == b"PK\x03\x04", "invalid ZIP local header");
+    let mut name = vec![0; read16(26) as usize];
+    reader.read_exact(&mut name)?;
+    let mut extra = vec![0; read16(28) as usize];
+    reader.read_exact(&mut extra)?;
+    let method = match item.method {
+        CompressionMethod::Stored => 0,
+        _ => 8,
+    };
+    ensure!(
+        item.stored_name_is(&name) && read16(8) == method,
+        "ZIP local header disagrees with central directory"
+    );
+    let (crc, mut compressed, mut size) = (read32(14), read32(18) as u64, read32(22) as u64);
+    if compressed == u32::MAX as u64 || size == u32::MAX as u64 {
+        let mut fields = &extra[..];
+        while fields.len() >= 4 {
+            let id = u16::from_le_bytes([fields[0], fields[1]]);
+            let length = u16::from_le_bytes([fields[2], fields[3]]) as usize;
+            let body = fields
+                .get(4..4 + length)
+                .context("truncated ZIP extra field")?;
+            if id == 1 {
+                // APPNOTE 4.5.3: the local field holds both sizes, original
+                // first. Accept the shorter form some writers use, in order.
+                let values: Vec<u64> = body
+                    .chunks_exact(8)
+                    .map(|bytes| u64::from_le_bytes(bytes.try_into().unwrap()))
+                    .collect();
+                let (local_size, local_compressed) = match values[..] {
+                    [original, packed, ..] => (Some(original), Some(packed)),
+                    [only] if size == u32::MAX as u64 => (Some(only), None),
+                    [only] => (None, Some(only)),
+                    [] => (None, None),
+                };
+                if size == u32::MAX as u64 {
+                    size = local_size.context("truncated ZIP64 local sizes")?;
+                }
+                if compressed == u32::MAX as u64 {
+                    compressed = local_compressed.context("truncated ZIP64 local sizes")?;
+                }
+            }
+            fields = &fields[4 + length..];
+        }
+    }
+    // With a data descriptor, producers may zero or mark unknown any local
+    // field. Info-ZIP writing to a pipe zeroes the CRC and compressed size but
+    // keeps the size.
+    let deferred = read16(6) & 8 != 0;
+    let agrees = |local: u64, central: u64| {
+        local == central || (deferred && (local == 0 || local == u32::MAX as u64))
+    };
+    ensure!(
+        agrees(crc as u64, item.crc as u64)
+            && agrees(compressed, item.compressed)
+            && agrees(size, item.entry.size),
+        "ZIP local header disagrees with central directory"
+    );
+    let data_start = item.header_start + LOCAL_HEADER + name.len() as u64 + extra.len() as u64;
+    ensure!(
+        data_start
+            .checked_add(item.compressed)
+            .is_some_and(|end| end <= item.record_limit),
+        "overlapping ZIP entries"
+    );
+    Ok(data_start)
 }
 
 /// List validated central-directory entries; payload CRCs are not checked.
@@ -351,12 +486,14 @@ pub fn read_archive_with_options(
             || {
                 (
                     archive.clone(),
+                    archive.clone().into_inner(),
                     vec![0u8; 256 * 1024],
                     fast.then(libdeflater::Decompressor::new),
                 )
             },
-            |(archive, buffer, codec), &index| {
+            |(archive, raw, buffer, codec), &index| {
                 let item = &items[index];
+                let data_start = check_local_header(raw, item)?;
                 // Never wait for memory while holding worker resources. If a
                 // reservation cannot fit now, this entry uses streaming instead.
                 // Declare the lease before buffers so it outlives them on errors.
@@ -386,7 +523,8 @@ pub fn read_archive_with_options(
                     source.size() == item.entry.size
                         && source.crc32() == item.crc
                         && source.compressed_size() == item.compressed
-                        && source.compression() == item.method,
+                        && source.compression() == item.method
+                        && source.data_start() == Some(data_start),
                     "ZIP changed during extraction"
                 );
                 let mut output = if let Some(temp) = &staging {

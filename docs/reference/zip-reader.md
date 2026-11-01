@@ -33,7 +33,16 @@ It does not preserve permissions or timestamps.
 
 ## Integrity checks
 
-Both native ZIP modes verify decoded lengths and CRCs before publication.
+Both native ZIP modes run these checks before publishing any output:
+
+- Decoded lengths and CRCs match the central directory.
+- Each local header's name, method, CRC and sizes match its central-directory entry. With a data descriptor, a local CRC or size may be zero or `0xFFFFFFFF` instead.
+- Local records do not overlap or share bytes, and each entry's data ends before the next record starts.
+- Names are unique and safe, and no file is also used as a directory.
+
+`list` runs only the central-directory checks. It does not read local headers, so it does not detect overlap hidden in a local extra field.
+
+These checks do not yet cover bytes between records, bytes after a Deflate stream ends, data-descriptor contents, or the local encryption flag. The [roadmap](../roadmap.md#m1-correctness-contract-for-zip) tracks them.
 
 ## Engines
 

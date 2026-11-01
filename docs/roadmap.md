@@ -38,6 +38,12 @@ Scope:
 - A corpus of real producer output. It covers Java `jar`, Windows Explorer, macOS Archive Utility, Info-ZIP `zip`, Python `zipfile` and 7-Zip. It includes ZIP64 by size and by entry count, data descriptors and archive comments.
 - A hostile collection with a test for each case. It covers path traversal, absolute paths, drive letters, duplicate names, names that collide by case, overlapping entries, a zero declared size hiding real data, local and central headers that disagree, truncation and inconsistent ZIP64 fields.
 - Fuzz targets for the central-directory and local-header parsers.
+- Local headers that agree with the central directory, and records that do not overlap. Done in the [local-header check](../benchmarks/native-zip/local-header-check/README.md).
+- Open findings from its review, where a streaming reader could see a hidden record that Zipper does not:
+  - bytes between records or before the first record
+  - bytes after a Deflate stream ends inside its declared size
+  - a fake data descriptor inside stored data
+  - descriptor contents, the local encryption flag and local ZIP64 sizes that are not compared
 - A limit on total extracted bytes, with a documented default.
 
 Exit checks:
