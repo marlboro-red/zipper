@@ -15,6 +15,7 @@ Every page has one job and one place. `cargo xtask lint-docs` checks the mechani
 | Steps to do a task | `docs/usage.md` |
 | Why the design is the way it is | `docs/design.md` |
 | Open questions and planned experiments | `docs/research.md` |
+| Milestones and their exit checks | `docs/roadmap.md` |
 | Current headline numbers | `docs/results.md`, copied from records |
 | Formats, limits and options | `docs/reference/` |
 | One experiment and its raw data | `benchmarks/<area>/<experiment>/README.md` |

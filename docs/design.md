@@ -225,6 +225,8 @@ latency there. Never report mount time as full extraction time.
 
 ## Implementation proceeds through five ordered gates
 
+[The roadmap](roadmap.md) turns these gates into milestones with exit checks.
+
 1. **Establish portable evidence first.** Extend the rerunnable extraction benchmark
    to Windows. Collect real source and application trees alongside synthetic size
    sweeps. Include flat and deep layouts, empty files, 100k files, large

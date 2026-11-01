@@ -150,4 +150,4 @@ These records compare Zipper with other tools:
 - [Matched-sync v2 comparison against tar+zstd and tar+pzstd](../benchmarks/v2/zstd-fullsync.md).
 - [Results](results.md), including the decompression and ratio Pareto curve with classic formats.
 
-The [research agenda](research.md) lists the next performance work, which covers similarity ordering, dictionaries, and measured worker scaling.
+The [roadmap](roadmap.md) lists the next ZIP extraction work. The [research agenda](research.md) covers native-format ideas such as similarity ordering and dictionaries.

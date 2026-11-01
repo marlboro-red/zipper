@@ -23,6 +23,7 @@ Extraction requires a new destination directory with an existing parent.
 
 ## Documentation
 
+- [Roadmap](docs/roadmap.md) lists the milestones to making the native ZIP reader the default, with their exit checks.
 - [Usage](docs/usage.md) covers creating, extracting, selecting paths, ZIP engines, and tuning.
 - [Design](docs/design.md) explains the extraction architecture and why it is built that way.
 - [Research agenda](docs/research.md) lists open questions and frontier experiments.
