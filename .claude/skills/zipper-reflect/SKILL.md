@@ -36,3 +36,4 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | A reviewer brief rebuilt by hand, missing a rule | the `zipper-adversary` agent in `.claude/agents/` |
 | Code that compiles only on the host OS, failing Windows CI | the `windows clippy` step in `cargo xtask gate fast` |
 | Comments that excuse code instead of reshaping it | `cargo xtask lint-comments` in the gate, and the `zipper-comments` agent |
+| A hand-written CI watcher reading an empty run ID | `cargo xtask ci-wait`, which finds the run by full SHA and refuses an unpushed HEAD |

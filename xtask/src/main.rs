@@ -5,14 +5,15 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
-    time::Instant,
+    time::{Duration, Instant},
 };
 mod comments;
 mod docs;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks";
+const USAGE: &str =
+    "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -31,6 +32,7 @@ fn main() -> ExitCode {
         ["lint-docs"] => docs::lint(&root()),
         ["lint-comments"] => comments::lint(&root()),
         ["install-hooks"] => install_hooks(),
+        ["ci-wait"] => ci_wait(),
         _ => Err(anyhow::anyhow!(USAGE)),
     };
     match result {
@@ -60,6 +62,76 @@ fn cargo(args: &[&str]) -> Result<()> {
         "cargo {} exited with {status}",
         args.join(" ")
     );
+    Ok(())
+}
+
+const CI_APPEAR_ATTEMPTS: u32 = 24;
+const CI_APPEAR_INTERVAL: Duration = Duration::from_secs(5);
+
+fn output(program: &str, args: &[&str]) -> Result<String> {
+    let output = Command::new(program)
+        .current_dir(root())
+        .args(args)
+        .output()?;
+    ensure!(
+        output.status.success(),
+        "{program} {} exited with {}: {}",
+        args.join(" "),
+        output.status,
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+}
+
+fn ci_wait() -> Result<()> {
+    let head = output("git", &["rev-parse", "HEAD"])?;
+    let pushed = output("git", &["branch", "-r", "--contains", &head])?;
+    ensure!(
+        !pushed.is_empty(),
+        "HEAD {head} is not on any remote branch; push it first"
+    );
+    let mut run = String::new();
+    for _ in 0..CI_APPEAR_ATTEMPTS {
+        run = output(
+            "gh",
+            &[
+                "run",
+                "list",
+                "--commit",
+                &head,
+                "--json",
+                "databaseId",
+                "--jq",
+                ".[0].databaseId // empty",
+            ],
+        )?;
+        if !run.is_empty() {
+            break;
+        }
+        std::thread::sleep(CI_APPEAR_INTERVAL);
+    }
+    ensure!(!run.is_empty(), "no CI run appeared for {head}");
+    let watched = Command::new("gh")
+        .current_dir(root())
+        .args(["run", "watch", &run, "--exit-status", "--interval", "15"])
+        .stdout(std::process::Stdio::null())
+        .status()?;
+    println!(
+        "{}",
+        output(
+            "gh",
+            &[
+                "run",
+                "view",
+                &run,
+                "--json",
+                "conclusion,jobs",
+                "--jq",
+                r#""run \(.conclusion)", (.jobs[] | "\(.name) \(.conclusion)")"#
+            ]
+        )?
+    );
+    ensure!(watched.success(), "CI run {run} for {head} failed");
     Ok(())
 }
 

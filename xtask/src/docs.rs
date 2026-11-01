@@ -125,7 +125,13 @@ pub fn lint(root: &Path) -> Result<()> {
     Ok(())
 }
 
-const XTASK_COMMANDS: &[&str] = &["gate", "lint-docs", "lint-comments", "install-hooks"];
+const XTASK_COMMANDS: &[&str] = &[
+    "gate",
+    "lint-docs",
+    "lint-comments",
+    "install-hooks",
+    "ci-wait",
+];
 
 const REPO_DIRS: &[&str] = &[
     "scripts/",

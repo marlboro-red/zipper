@@ -42,6 +42,8 @@ It restores modification times the way Info-ZIP `unzip` and bsdtar do:
 
 On Windows it restores no permissions, no directory times, and no times for entries that have only a DOS time.
 
+It never restores owners, access times, extended attributes, ACLs, file flags or macOS metadata.
+
 ## Limits
 
 | Limit | Value |
