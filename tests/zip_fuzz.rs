@@ -6,6 +6,8 @@
 //! The gate runs a short pass. Set `ZIPPER_FUZZ_CASES` for a longer run and
 //! `ZIPPER_FUZZ_SEED` to replay a reported failure. This is random mutation,
 //! not coverage-guided fuzzing.
+mod common;
+
 use std::{
     fs,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
@@ -94,6 +96,7 @@ fn check_case(bytes: &[u8], read: Reader) -> bool {
     let destination = parent.join("out");
     let extracted = read(&archive, Some(&destination));
     let verified = read(&archive, None);
+    common::unlock(root.path());
     let left: Vec<_> = fs::read_dir(&parent)
         .unwrap()
         .map(|entry| entry.unwrap().file_name())

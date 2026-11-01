@@ -46,7 +46,7 @@ $env:ZIPPER_7Z = 'C:\Program Files\7-Zip\7z.exe'
 ## What this release supports
 
 - Native archives preserve regular-file bytes and directories with UTF-8 paths.
-  They do not preserve permissions, timestamps, links, or extended attributes.
+  They do not restore permissions, timestamps, links, or extended attributes on Windows.
 - Encryption is not supported.
 - Native ZIP supports stored and Deflate ZIP, and conventional ZIP64.
 - Native-fast can use up to 64 MiB of entry buffers per worker. For lower memory

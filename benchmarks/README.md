@@ -18,6 +18,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-01 | [Permission restore](native-zip/permissions/README.md) | Kept. Modes match `unzip` and bsdtar. Skipping directories already at the default mode removed a 10% cost on 996 directories. |
 | 2026-11-01 | [Unicode path field check](native-zip/unicode-path/README.md) | Kept. Entries cannot be renamed by a Unicode path field. No listing cost. Windows-era archives that use the field go to the backend. |
 | 2026-11-01 | [Exact Deflate decoding](native-zip/exact-decoding/README.md) | Kept. Closes two hostile-archive gaps. Large streamed entries extract 1.2× to 2.2× faster because input is read 64 KiB at a time. |
 | 2026-11-01 | [Record layout check](native-zip/record-layout/README.md) | Kept. Closes five more hostile-archive gaps with no measured cost. Rejects self-extracting archives. |

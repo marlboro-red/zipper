@@ -828,3 +828,54 @@ fn output_that_cannot_fit_is_refused_before_writing() {
         megabyte_of_zeros()
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn restored_modes_never_include_special_bits() {
+    use std::os::unix::fs::PermissionsExt;
+    let unix = |name: &str, mode: u32, data: &[u8]| Raw {
+        version_made_by: 3 << 8 | 20,
+        external: mode << 16,
+        ..stored(name, data)
+    };
+    let entries = [
+        unix("setuid", 0o104755, b"x"),
+        unix("sticky/", 0o041777, b""),
+        unix("sticky/inside", 0o100644, b"y"),
+    ];
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, &entries);
+        let destination = root.path().join("out");
+        read(&archive, Some(&destination)).unwrap();
+        let mode = |path: &str| {
+            fs::metadata(destination.join(path))
+                .unwrap()
+                .permissions()
+                .mode()
+        };
+        assert_eq!(mode("setuid") & 0o7000, 0, "setuid bit restored");
+        assert_eq!(mode("sticky") & 0o7000, 0, "sticky bit restored");
+        assert_eq!(
+            mode("setuid") & 0o111,
+            0o111 & mode("sticky"),
+            "execute bits lost"
+        );
+    }
+}
+
+#[test]
+fn an_entry_may_use_any_safe_root_name() {
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, &[stored(".zipper-mode-probe", b"mine")]);
+        let destination = root.path().join("out");
+        read(&archive, Some(&destination)).unwrap();
+        assert_eq!(
+            fs::read(destination.join(".zipper-mode-probe")).unwrap(),
+            b"mine"
+        );
+    }
+}

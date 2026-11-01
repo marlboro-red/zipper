@@ -57,6 +57,73 @@ fn parent(path: &Path) -> &Path {
         .unwrap_or(Path::new("."))
 }
 
+/// Publishes a finished staging directory at `destination`. On Unix,
+/// `directories` receive their archive modes, deepest first and limited by the
+/// staging directory's own mode, which is what any new directory gets (0o777
+/// less the umask). This matches bsdtar; Info-ZIP unzip ignores the umask.
+pub(crate) fn publish(
+    staging: &Path,
+    destination: &Path,
+    directories: &[(&str, u32)],
+) -> Result<()> {
+    ensure!(
+        std::fs::symlink_metadata(destination).is_err(),
+        "destination appeared during extraction"
+    );
+    let published = (|| {
+        #[cfg(unix)]
+        unix_modes::apply(staging, directories)?;
+        #[cfg(not(unix))]
+        let _ = directories;
+        std::fs::rename(staging, destination)?;
+        anyhow::Ok(())
+    })();
+    if published.is_err() {
+        // Let the staging cleanup delete inside restored read-only directories.
+        #[cfg(unix)]
+        unix_modes::make_writable(staging);
+    }
+    published
+}
+
+#[cfg(unix)]
+mod unix_modes {
+    use anyhow::Result;
+    use std::{
+        fs::{self, Permissions},
+        os::unix::fs::PermissionsExt,
+        path::Path,
+    };
+
+    pub(super) fn apply(staging: &Path, directories: &[(&str, u32)]) -> Result<()> {
+        let default = fs::metadata(staging)?.permissions().mode() & 0o777;
+        let mut ordered = directories.to_vec();
+        ordered.sort_by_key(|(name, _)| std::cmp::Reverse(name.matches('/').count()));
+        // New directories already have the default mode, so most need no call.
+        for (name, mode) in ordered
+            .into_iter()
+            .filter(|(_, mode)| mode & default != default)
+        {
+            fs::set_permissions(staging.join(name), Permissions::from_mode(mode & default))?;
+        }
+        Ok(())
+    }
+
+    /// Gives the owner full access to `directory` and then to every directory
+    /// below it. A locked directory must be opened before its children appear.
+    pub(super) fn make_writable(directory: &Path) {
+        if let Ok(metadata) = fs::symlink_metadata(directory) {
+            let mode = metadata.permissions().mode() | 0o700;
+            let _ = fs::set_permissions(directory, Permissions::from_mode(mode));
+        }
+        for entry in fs::read_dir(directory).into_iter().flatten().flatten() {
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                make_writable(&entry.path());
+            }
+        }
+    }
+}
+
 /// Allocation unit assumed when estimating the space an extraction needs.
 const ALLOCATION_UNIT: u64 = 4096;
 
@@ -216,5 +283,30 @@ pub fn extract(
         2 => v2::read_archive_limited(archive, Some(destination), paths, limit),
         1 => bail!("selective extraction requires a v2 archive"),
         n => bail!("unsupported Zipper version: {n}"),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod publish_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn locked_staging_is_unlocked_for_cleanup() {
+        let staging = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(staging.path().join("p/q/r")).unwrap();
+        std::fs::write(staging.path().join("p/q/r/file"), b"x").unwrap();
+        let lock = |path: &str| {
+            std::fs::set_permissions(
+                staging.path().join(path),
+                std::fs::Permissions::from_mode(0o000),
+            )
+            .unwrap()
+        };
+        lock("p/q/r");
+        lock("p/q");
+        lock("p");
+        unix_modes::make_writable(staging.path());
+        std::fs::remove_dir_all(staging.path().join("p")).unwrap();
     }
 }

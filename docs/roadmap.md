@@ -57,7 +57,7 @@ The native reader restores what users expect from a ZIP extractor.
 
 Scope:
 
-- Unix permission bits for entries made on Unix, masked to `0o777`.
+- Unix permission bits for entries made on Unix, masked to `0o777`. Done in [permission restore](../benchmarks/native-zip/permissions/README.md).
 - Modification times from the DOS fields and the extended timestamp field. Directory times are set after their children.
 - A symlink policy, decided and documented before implementation.
 - Filename decoding for the UTF-8 flag and for CP437. Accept a Unicode path field whose UTF-8 name equals the CP437-decoded stored name, which M1 rejects.

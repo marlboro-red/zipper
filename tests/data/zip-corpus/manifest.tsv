@@ -1,323 +1,408 @@
-7zip-copy	src	dir
-7zip-copy	src/binary	dir
-7zip-copy	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-7zip-copy	src/binary/random-4k.bin	4096	42f9f89a
-7zip-copy	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-7zip-copy	src/binary/zeros-64k.bin	65536	d7978eeb
-7zip-copy	src/empty-dir	dir
-7zip-copy	src/names	dir
-7zip-copy	src/names/café.txt	6	8944ecd2
-7zip-copy	src/names/space and (parens).txt	7	6cd4d4f9
-7zip-copy	src/names/日本語.txt	10	e21f1b36
-7zip-copy	src/nested	dir
-7zip-copy	src/nested/deep	dir
-7zip-copy	src/nested/deep/deeper	dir
-7zip-copy	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-7zip-copy	src/nested/inner.zip	228	7980579e
-7zip-copy	src/text	dir
-7zip-copy	src/text/empty.txt	0	00000000
-7zip-copy	src/text/readme.txt	1000	55261fc2
-7zip-deflate	src	dir
-7zip-deflate	src/binary	dir
-7zip-deflate	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-7zip-deflate	src/binary/random-4k.bin	4096	42f9f89a
-7zip-deflate	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-7zip-deflate	src/binary/zeros-64k.bin	65536	d7978eeb
-7zip-deflate	src/empty-dir	dir
-7zip-deflate	src/names	dir
-7zip-deflate	src/names/café.txt	6	8944ecd2
-7zip-deflate	src/names/space and (parens).txt	7	6cd4d4f9
-7zip-deflate	src/names/日本語.txt	10	e21f1b36
-7zip-deflate	src/nested	dir
-7zip-deflate	src/nested/deep	dir
-7zip-deflate	src/nested/deep/deeper	dir
-7zip-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-7zip-deflate	src/nested/inner.zip	228	7980579e
-7zip-deflate	src/text	dir
-7zip-deflate	src/text/empty.txt	0	00000000
-7zip-deflate	src/text/readme.txt	1000	55261fc2
-7zip-timestamps	src	dir
-7zip-timestamps	src/binary	dir
-7zip-timestamps	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-7zip-timestamps	src/binary/random-4k.bin	4096	42f9f89a
-7zip-timestamps	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-7zip-timestamps	src/binary/zeros-64k.bin	65536	d7978eeb
-7zip-timestamps	src/empty-dir	dir
-7zip-timestamps	src/names	dir
-7zip-timestamps	src/names/café.txt	6	8944ecd2
-7zip-timestamps	src/names/space and (parens).txt	7	6cd4d4f9
-7zip-timestamps	src/names/日本語.txt	10	e21f1b36
-7zip-timestamps	src/nested	dir
-7zip-timestamps	src/nested/deep	dir
-7zip-timestamps	src/nested/deep/deeper	dir
-7zip-timestamps	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-7zip-timestamps	src/nested/inner.zip	228	7980579e
-7zip-timestamps	src/text	dir
-7zip-timestamps	src/text/empty.txt	0	00000000
-7zip-timestamps	src/text/readme.txt	1000	55261fc2
-bsdtar-deflate	src	dir
-bsdtar-deflate	src/binary	dir
-bsdtar-deflate	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-bsdtar-deflate	src/binary/random-4k.bin	4096	42f9f89a
-bsdtar-deflate	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-bsdtar-deflate	src/binary/zeros-64k.bin	65536	d7978eeb
-bsdtar-deflate	src/empty-dir	dir
-bsdtar-deflate	src/names	dir
-bsdtar-deflate	src/names/café.txt	6	8944ecd2
-bsdtar-deflate	src/names/space and (parens).txt	7	6cd4d4f9
-bsdtar-deflate	src/names/日本語.txt	10	e21f1b36
-bsdtar-deflate	src/nested	dir
-bsdtar-deflate	src/nested/deep	dir
-bsdtar-deflate	src/nested/deep/deeper	dir
-bsdtar-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-bsdtar-deflate	src/nested/inner.zip	228	7980579e
-bsdtar-deflate	src/text	dir
-bsdtar-deflate	src/text/empty.txt	0	00000000
-bsdtar-deflate	src/text/readme.txt	1000	55261fc2
-bsdtar-stored	src	dir
-bsdtar-stored	src/binary	dir
-bsdtar-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-bsdtar-stored	src/binary/random-4k.bin	4096	42f9f89a
-bsdtar-stored	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-bsdtar-stored	src/binary/zeros-64k.bin	65536	d7978eeb
-bsdtar-stored	src/empty-dir	dir
-bsdtar-stored	src/names	dir
-bsdtar-stored	src/names/café.txt	6	8944ecd2
-bsdtar-stored	src/names/space and (parens).txt	7	6cd4d4f9
-bsdtar-stored	src/names/日本語.txt	10	e21f1b36
-bsdtar-stored	src/nested	dir
-bsdtar-stored	src/nested/deep	dir
-bsdtar-stored	src/nested/deep/deeper	dir
-bsdtar-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-bsdtar-stored	src/nested/inner.zip	228	7980579e
-bsdtar-stored	src/text	dir
-bsdtar-stored	src/text/empty.txt	0	00000000
-bsdtar-stored	src/text/readme.txt	1000	55261fc2
-ditto	src	dir
-ditto	src/binary	dir
-ditto	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-ditto	src/binary/random-4k.bin	4096	42f9f89a
-ditto	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-ditto	src/binary/zeros-64k.bin	65536	d7978eeb
-ditto	src/empty-dir	dir
-ditto	src/names	dir
-ditto	src/names/café.txt	6	8944ecd2
-ditto	src/names/space and (parens).txt	7	6cd4d4f9
-ditto	src/names/日本語.txt	10	e21f1b36
-ditto	src/nested	dir
-ditto	src/nested/deep	dir
-ditto	src/nested/deep/deeper	dir
-ditto	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-ditto	src/nested/inner.zip	228	7980579e
-ditto	src/text	dir
-ditto	src/text/empty.txt	0	00000000
-ditto	src/text/readme.txt	1000	55261fc2
-infozip-default	src	dir
-infozip-default	src/binary	dir
-infozip-default	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-infozip-default	src/binary/random-4k.bin	4096	42f9f89a
-infozip-default	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-infozip-default	src/binary/zeros-64k.bin	65536	d7978eeb
-infozip-default	src/empty-dir	dir
-infozip-default	src/names	dir
-infozip-default	src/names/café.txt	6	8944ecd2
-infozip-default	src/names/space and (parens).txt	7	6cd4d4f9
-infozip-default	src/names/日本語.txt	10	e21f1b36
-infozip-default	src/nested	dir
-infozip-default	src/nested/deep	dir
-infozip-default	src/nested/deep/deeper	dir
-infozip-default	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-infozip-default	src/nested/inner.zip	228	7980579e
-infozip-default	src/text	dir
-infozip-default	src/text/empty.txt	0	00000000
-infozip-default	src/text/readme.txt	1000	55261fc2
-infozip-descriptors	src	dir
-infozip-descriptors	src/binary	dir
-infozip-descriptors	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-infozip-descriptors	src/binary/random-4k.bin	4096	42f9f89a
-infozip-descriptors	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-infozip-descriptors	src/binary/zeros-64k.bin	65536	d7978eeb
-infozip-descriptors	src/empty-dir	dir
-infozip-descriptors	src/names	dir
-infozip-descriptors	src/names/café.txt	6	8944ecd2
-infozip-descriptors	src/names/space and (parens).txt	7	6cd4d4f9
-infozip-descriptors	src/names/日本語.txt	10	e21f1b36
-infozip-descriptors	src/nested	dir
-infozip-descriptors	src/nested/deep	dir
-infozip-descriptors	src/nested/deep/deeper	dir
-infozip-descriptors	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-infozip-descriptors	src/nested/inner.zip	228	7980579e
-infozip-descriptors	src/text	dir
-infozip-descriptors	src/text/empty.txt	0	00000000
-infozip-descriptors	src/text/readme.txt	1000	55261fc2
-infozip-piped	src	dir
-infozip-piped	src/binary	dir
-infozip-piped	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-infozip-piped	src/binary/random-4k.bin	4096	42f9f89a
-infozip-piped	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-infozip-piped	src/binary/zeros-64k.bin	65536	d7978eeb
-infozip-piped	src/empty-dir	dir
-infozip-piped	src/names	dir
-infozip-piped	src/names/café.txt	6	8944ecd2
-infozip-piped	src/names/space and (parens).txt	7	6cd4d4f9
-infozip-piped	src/names/日本語.txt	10	e21f1b36
-infozip-piped	src/nested	dir
-infozip-piped	src/nested/deep	dir
-infozip-piped	src/nested/deep/deeper	dir
-infozip-piped	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-infozip-piped	src/nested/inner.zip	228	7980579e
-infozip-piped	src/text	dir
-infozip-piped	src/text/empty.txt	0	00000000
-infozip-piped	src/text/readme.txt	1000	55261fc2
-infozip-stored	src	dir
-infozip-stored	src/binary	dir
-infozip-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-infozip-stored	src/binary/random-4k.bin	4096	42f9f89a
-infozip-stored	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-infozip-stored	src/binary/zeros-64k.bin	65536	d7978eeb
-infozip-stored	src/empty-dir	dir
-infozip-stored	src/names	dir
-infozip-stored	src/names/café.txt	6	8944ecd2
-infozip-stored	src/names/space and (parens).txt	7	6cd4d4f9
-infozip-stored	src/names/日本語.txt	10	e21f1b36
-infozip-stored	src/nested	dir
-infozip-stored	src/nested/deep	dir
-infozip-stored	src/nested/deep/deeper	dir
-infozip-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-infozip-stored	src/nested/inner.zip	228	7980579e
-infozip-stored	src/text	dir
-infozip-stored	src/text/empty.txt	0	00000000
-infozip-stored	src/text/readme.txt	1000	55261fc2
-infozip-zip64	src	dir
-infozip-zip64	src/binary	dir
-infozip-zip64	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-infozip-zip64	src/binary/random-4k.bin	4096	42f9f89a
-infozip-zip64	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-infozip-zip64	src/binary/zeros-64k.bin	65536	d7978eeb
-infozip-zip64	src/empty-dir	dir
-infozip-zip64	src/names	dir
-infozip-zip64	src/names/café.txt	6	8944ecd2
-infozip-zip64	src/names/space and (parens).txt	7	6cd4d4f9
-infozip-zip64	src/names/日本語.txt	10	e21f1b36
-infozip-zip64	src/nested	dir
-infozip-zip64	src/nested/deep	dir
-infozip-zip64	src/nested/deep/deeper	dir
-infozip-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-infozip-zip64	src/nested/inner.zip	228	7980579e
-infozip-zip64	src/text	dir
-infozip-zip64	src/text/empty.txt	0	00000000
-infozip-zip64	src/text/readme.txt	1000	55261fc2
-python-deflate	src	dir
-python-deflate	src/binary	dir
-python-deflate	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-python-deflate	src/binary/random-4k.bin	4096	42f9f89a
-python-deflate	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-python-deflate	src/binary/zeros-64k.bin	65536	d7978eeb
-python-deflate	src/empty-dir	dir
-python-deflate	src/names	dir
-python-deflate	src/names/café.txt	6	8944ecd2
-python-deflate	src/names/space and (parens).txt	7	6cd4d4f9
-python-deflate	src/names/日本語.txt	10	e21f1b36
-python-deflate	src/nested	dir
-python-deflate	src/nested/deep	dir
-python-deflate	src/nested/deep/deeper	dir
-python-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-python-deflate	src/nested/inner.zip	228	7980579e
-python-deflate	src/text	dir
-python-deflate	src/text/empty.txt	0	00000000
-python-deflate	src/text/readme.txt	1000	55261fc2
-python-stored	src	dir
-python-stored	src/binary	dir
-python-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-python-stored	src/binary/random-4k.bin	4096	42f9f89a
-python-stored	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-python-stored	src/binary/zeros-64k.bin	65536	d7978eeb
-python-stored	src/empty-dir	dir
-python-stored	src/names	dir
-python-stored	src/names/café.txt	6	8944ecd2
-python-stored	src/names/space and (parens).txt	7	6cd4d4f9
-python-stored	src/names/日本語.txt	10	e21f1b36
-python-stored	src/nested	dir
-python-stored	src/nested/deep	dir
-python-stored	src/nested/deep/deeper	dir
-python-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-python-stored	src/nested/inner.zip	228	7980579e
-python-stored	src/text	dir
-python-stored	src/text/empty.txt	0	00000000
-python-stored	src/text/readme.txt	1000	55261fc2
-python-stream-deflate	src	dir
-python-stream-deflate	src/binary	dir
-python-stream-deflate	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-python-stream-deflate	src/binary/random-4k.bin	4096	42f9f89a
-python-stream-deflate	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-python-stream-deflate	src/binary/zeros-64k.bin	65536	d7978eeb
-python-stream-deflate	src/empty-dir	dir
-python-stream-deflate	src/names	dir
-python-stream-deflate	src/names/café.txt	6	8944ecd2
-python-stream-deflate	src/names/space and (parens).txt	7	6cd4d4f9
-python-stream-deflate	src/names/日本語.txt	10	e21f1b36
-python-stream-deflate	src/nested	dir
-python-stream-deflate	src/nested/deep	dir
-python-stream-deflate	src/nested/deep/deeper	dir
-python-stream-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-python-stream-deflate	src/nested/inner.zip	228	7980579e
-python-stream-deflate	src/text	dir
-python-stream-deflate	src/text/empty.txt	0	00000000
-python-stream-deflate	src/text/readme.txt	1000	55261fc2
-python-stream-stored	src	dir
-python-stream-stored	src/binary	dir
-python-stream-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-python-stream-stored	src/binary/random-4k.bin	4096	42f9f89a
-python-stream-stored	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-python-stream-stored	src/binary/zeros-64k.bin	65536	d7978eeb
-python-stream-stored	src/empty-dir	dir
-python-stream-stored	src/names	dir
-python-stream-stored	src/names/café.txt	6	8944ecd2
-python-stream-stored	src/names/space and (parens).txt	7	6cd4d4f9
-python-stream-stored	src/names/日本語.txt	10	e21f1b36
-python-stream-stored	src/nested	dir
-python-stream-stored	src/nested/deep	dir
-python-stream-stored	src/nested/deep/deeper	dir
-python-stream-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-python-stream-stored	src/nested/inner.zip	228	7980579e
-python-stream-stored	src/text	dir
-python-stream-stored	src/text/empty.txt	0	00000000
-python-stream-stored	src/text/readme.txt	1000	55261fc2
-python-stream-zip64	src	dir
-python-stream-zip64	src/binary	dir
-python-stream-zip64	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-python-stream-zip64	src/binary/random-4k.bin	4096	42f9f89a
-python-stream-zip64	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-python-stream-zip64	src/binary/zeros-64k.bin	65536	d7978eeb
-python-stream-zip64	src/empty-dir	dir
-python-stream-zip64	src/names	dir
-python-stream-zip64	src/names/café.txt	6	8944ecd2
-python-stream-zip64	src/names/space and (parens).txt	7	6cd4d4f9
-python-stream-zip64	src/names/日本語.txt	10	e21f1b36
-python-stream-zip64	src/nested	dir
-python-stream-zip64	src/nested/deep	dir
-python-stream-zip64	src/nested/deep/deeper	dir
-python-stream-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-python-stream-zip64	src/nested/inner.zip	228	7980579e
-python-stream-zip64	src/text	dir
-python-stream-zip64	src/text/empty.txt	0	00000000
-python-stream-zip64	src/text/readme.txt	1000	55261fc2
-python-zip64	src	dir
-python-zip64	src/binary	dir
-python-zip64	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19
-python-zip64	src/binary/random-4k.bin	4096	42f9f89a
-python-zip64	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3
-python-zip64	src/binary/zeros-64k.bin	65536	d7978eeb
-python-zip64	src/empty-dir	dir
-python-zip64	src/names	dir
-python-zip64	src/names/café.txt	6	8944ecd2
-python-zip64	src/names/space and (parens).txt	7	6cd4d4f9
-python-zip64	src/names/日本語.txt	10	e21f1b36
-python-zip64	src/nested	dir
-python-zip64	src/nested/deep	dir
-python-zip64	src/nested/deep/deeper	dir
-python-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48
-python-zip64	src/nested/inner.zip	228	7980579e
-python-zip64	src/text	dir
-python-zip64	src/text/empty.txt	0	00000000
-python-zip64	src/text/readme.txt	1000	55261fc2
+7zip-copy	src	dir	-	755
+7zip-copy	src/binary	dir	-	755
+7zip-copy	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+7zip-copy	src/binary/random-4k.bin	4096	42f9f89a	644
+7zip-copy	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+7zip-copy	src/binary/zeros-64k.bin	65536	d7978eeb	644
+7zip-copy	src/empty-dir	dir	-	755
+7zip-copy	src/modes	dir	-	755
+7zip-copy	src/modes/locked	dir	-	555
+7zip-copy	src/modes/locked/child.txt	29	340f69ca	644
+7zip-copy	src/modes/readonly.txt	10	fca84d94	444
+7zip-copy	src/modes/run.sh	19	b2e6a2bc	755
+7zip-copy	src/names	dir	-	755
+7zip-copy	src/names/café.txt	6	8944ecd2	644
+7zip-copy	src/names/space and (parens).txt	7	6cd4d4f9	644
+7zip-copy	src/names/日本語.txt	10	e21f1b36	644
+7zip-copy	src/nested	dir	-	755
+7zip-copy	src/nested/deep	dir	-	755
+7zip-copy	src/nested/deep/deeper	dir	-	755
+7zip-copy	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+7zip-copy	src/nested/inner.zip	228	fa505617	644
+7zip-copy	src/text	dir	-	755
+7zip-copy	src/text/empty.txt	0	00000000	644
+7zip-copy	src/text/readme.txt	1000	55261fc2	644
+7zip-deflate	src	dir	-	755
+7zip-deflate	src/binary	dir	-	755
+7zip-deflate	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+7zip-deflate	src/binary/random-4k.bin	4096	42f9f89a	644
+7zip-deflate	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+7zip-deflate	src/binary/zeros-64k.bin	65536	d7978eeb	644
+7zip-deflate	src/empty-dir	dir	-	755
+7zip-deflate	src/modes	dir	-	755
+7zip-deflate	src/modes/locked	dir	-	555
+7zip-deflate	src/modes/locked/child.txt	29	340f69ca	644
+7zip-deflate	src/modes/readonly.txt	10	fca84d94	444
+7zip-deflate	src/modes/run.sh	19	b2e6a2bc	755
+7zip-deflate	src/names	dir	-	755
+7zip-deflate	src/names/café.txt	6	8944ecd2	644
+7zip-deflate	src/names/space and (parens).txt	7	6cd4d4f9	644
+7zip-deflate	src/names/日本語.txt	10	e21f1b36	644
+7zip-deflate	src/nested	dir	-	755
+7zip-deflate	src/nested/deep	dir	-	755
+7zip-deflate	src/nested/deep/deeper	dir	-	755
+7zip-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+7zip-deflate	src/nested/inner.zip	228	fa505617	644
+7zip-deflate	src/text	dir	-	755
+7zip-deflate	src/text/empty.txt	0	00000000	644
+7zip-deflate	src/text/readme.txt	1000	55261fc2	644
+7zip-timestamps	src	dir	-	755
+7zip-timestamps	src/binary	dir	-	755
+7zip-timestamps	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+7zip-timestamps	src/binary/random-4k.bin	4096	42f9f89a	644
+7zip-timestamps	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+7zip-timestamps	src/binary/zeros-64k.bin	65536	d7978eeb	644
+7zip-timestamps	src/empty-dir	dir	-	755
+7zip-timestamps	src/modes	dir	-	755
+7zip-timestamps	src/modes/locked	dir	-	555
+7zip-timestamps	src/modes/locked/child.txt	29	340f69ca	644
+7zip-timestamps	src/modes/readonly.txt	10	fca84d94	444
+7zip-timestamps	src/modes/run.sh	19	b2e6a2bc	755
+7zip-timestamps	src/names	dir	-	755
+7zip-timestamps	src/names/café.txt	6	8944ecd2	644
+7zip-timestamps	src/names/space and (parens).txt	7	6cd4d4f9	644
+7zip-timestamps	src/names/日本語.txt	10	e21f1b36	644
+7zip-timestamps	src/nested	dir	-	755
+7zip-timestamps	src/nested/deep	dir	-	755
+7zip-timestamps	src/nested/deep/deeper	dir	-	755
+7zip-timestamps	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+7zip-timestamps	src/nested/inner.zip	228	fa505617	644
+7zip-timestamps	src/text	dir	-	755
+7zip-timestamps	src/text/empty.txt	0	00000000	644
+7zip-timestamps	src/text/readme.txt	1000	55261fc2	644
+bsdtar-deflate	src	dir	-	755
+bsdtar-deflate	src/binary	dir	-	755
+bsdtar-deflate	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+bsdtar-deflate	src/binary/random-4k.bin	4096	42f9f89a	644
+bsdtar-deflate	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+bsdtar-deflate	src/binary/zeros-64k.bin	65536	d7978eeb	644
+bsdtar-deflate	src/empty-dir	dir	-	755
+bsdtar-deflate	src/modes	dir	-	755
+bsdtar-deflate	src/modes/locked	dir	-	555
+bsdtar-deflate	src/modes/locked/child.txt	29	340f69ca	644
+bsdtar-deflate	src/modes/readonly.txt	10	fca84d94	444
+bsdtar-deflate	src/modes/run.sh	19	b2e6a2bc	755
+bsdtar-deflate	src/names	dir	-	755
+bsdtar-deflate	src/names/café.txt	6	8944ecd2	644
+bsdtar-deflate	src/names/space and (parens).txt	7	6cd4d4f9	644
+bsdtar-deflate	src/names/日本語.txt	10	e21f1b36	644
+bsdtar-deflate	src/nested	dir	-	755
+bsdtar-deflate	src/nested/deep	dir	-	755
+bsdtar-deflate	src/nested/deep/deeper	dir	-	755
+bsdtar-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+bsdtar-deflate	src/nested/inner.zip	228	fa505617	644
+bsdtar-deflate	src/text	dir	-	755
+bsdtar-deflate	src/text/empty.txt	0	00000000	644
+bsdtar-deflate	src/text/readme.txt	1000	55261fc2	644
+bsdtar-stored	src	dir	-	755
+bsdtar-stored	src/binary	dir	-	755
+bsdtar-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+bsdtar-stored	src/binary/random-4k.bin	4096	42f9f89a	644
+bsdtar-stored	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+bsdtar-stored	src/binary/zeros-64k.bin	65536	d7978eeb	644
+bsdtar-stored	src/empty-dir	dir	-	755
+bsdtar-stored	src/modes	dir	-	755
+bsdtar-stored	src/modes/locked	dir	-	555
+bsdtar-stored	src/modes/locked/child.txt	29	340f69ca	644
+bsdtar-stored	src/modes/readonly.txt	10	fca84d94	444
+bsdtar-stored	src/modes/run.sh	19	b2e6a2bc	755
+bsdtar-stored	src/names	dir	-	755
+bsdtar-stored	src/names/café.txt	6	8944ecd2	644
+bsdtar-stored	src/names/space and (parens).txt	7	6cd4d4f9	644
+bsdtar-stored	src/names/日本語.txt	10	e21f1b36	644
+bsdtar-stored	src/nested	dir	-	755
+bsdtar-stored	src/nested/deep	dir	-	755
+bsdtar-stored	src/nested/deep/deeper	dir	-	755
+bsdtar-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+bsdtar-stored	src/nested/inner.zip	228	fa505617	644
+bsdtar-stored	src/text	dir	-	755
+bsdtar-stored	src/text/empty.txt	0	00000000	644
+bsdtar-stored	src/text/readme.txt	1000	55261fc2	644
+ditto	src	dir	-	755
+ditto	src/binary	dir	-	755
+ditto	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+ditto	src/binary/random-4k.bin	4096	42f9f89a	644
+ditto	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+ditto	src/binary/zeros-64k.bin	65536	d7978eeb	644
+ditto	src/empty-dir	dir	-	755
+ditto	src/modes	dir	-	755
+ditto	src/modes/locked	dir	-	555
+ditto	src/modes/locked/child.txt	29	340f69ca	644
+ditto	src/modes/readonly.txt	10	fca84d94	444
+ditto	src/modes/run.sh	19	b2e6a2bc	755
+ditto	src/names	dir	-	755
+ditto	src/names/café.txt	6	8944ecd2	644
+ditto	src/names/space and (parens).txt	7	6cd4d4f9	644
+ditto	src/names/日本語.txt	10	e21f1b36	644
+ditto	src/nested	dir	-	755
+ditto	src/nested/deep	dir	-	755
+ditto	src/nested/deep/deeper	dir	-	755
+ditto	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+ditto	src/nested/inner.zip	228	fa505617	644
+ditto	src/text	dir	-	755
+ditto	src/text/empty.txt	0	00000000	644
+ditto	src/text/readme.txt	1000	55261fc2	644
+infozip-default	src	dir	-	755
+infozip-default	src/binary	dir	-	755
+infozip-default	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+infozip-default	src/binary/random-4k.bin	4096	42f9f89a	644
+infozip-default	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+infozip-default	src/binary/zeros-64k.bin	65536	d7978eeb	644
+infozip-default	src/empty-dir	dir	-	755
+infozip-default	src/modes	dir	-	755
+infozip-default	src/modes/locked	dir	-	555
+infozip-default	src/modes/locked/child.txt	29	340f69ca	644
+infozip-default	src/modes/readonly.txt	10	fca84d94	444
+infozip-default	src/modes/run.sh	19	b2e6a2bc	755
+infozip-default	src/names	dir	-	755
+infozip-default	src/names/café.txt	6	8944ecd2	644
+infozip-default	src/names/space and (parens).txt	7	6cd4d4f9	644
+infozip-default	src/names/日本語.txt	10	e21f1b36	644
+infozip-default	src/nested	dir	-	755
+infozip-default	src/nested/deep	dir	-	755
+infozip-default	src/nested/deep/deeper	dir	-	755
+infozip-default	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+infozip-default	src/nested/inner.zip	228	fa505617	644
+infozip-default	src/text	dir	-	755
+infozip-default	src/text/empty.txt	0	00000000	644
+infozip-default	src/text/readme.txt	1000	55261fc2	644
+infozip-descriptors	src	dir	-	755
+infozip-descriptors	src/binary	dir	-	755
+infozip-descriptors	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+infozip-descriptors	src/binary/random-4k.bin	4096	42f9f89a	644
+infozip-descriptors	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+infozip-descriptors	src/binary/zeros-64k.bin	65536	d7978eeb	644
+infozip-descriptors	src/empty-dir	dir	-	755
+infozip-descriptors	src/modes	dir	-	755
+infozip-descriptors	src/modes/locked	dir	-	555
+infozip-descriptors	src/modes/locked/child.txt	29	340f69ca	644
+infozip-descriptors	src/modes/readonly.txt	10	fca84d94	444
+infozip-descriptors	src/modes/run.sh	19	b2e6a2bc	755
+infozip-descriptors	src/names	dir	-	755
+infozip-descriptors	src/names/café.txt	6	8944ecd2	644
+infozip-descriptors	src/names/space and (parens).txt	7	6cd4d4f9	644
+infozip-descriptors	src/names/日本語.txt	10	e21f1b36	644
+infozip-descriptors	src/nested	dir	-	755
+infozip-descriptors	src/nested/deep	dir	-	755
+infozip-descriptors	src/nested/deep/deeper	dir	-	755
+infozip-descriptors	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+infozip-descriptors	src/nested/inner.zip	228	fa505617	644
+infozip-descriptors	src/text	dir	-	755
+infozip-descriptors	src/text/empty.txt	0	00000000	644
+infozip-descriptors	src/text/readme.txt	1000	55261fc2	644
+infozip-piped	src	dir	-	755
+infozip-piped	src/binary	dir	-	755
+infozip-piped	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+infozip-piped	src/binary/random-4k.bin	4096	42f9f89a	644
+infozip-piped	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+infozip-piped	src/binary/zeros-64k.bin	65536	d7978eeb	644
+infozip-piped	src/empty-dir	dir	-	755
+infozip-piped	src/modes	dir	-	755
+infozip-piped	src/modes/locked	dir	-	555
+infozip-piped	src/modes/locked/child.txt	29	340f69ca	644
+infozip-piped	src/modes/readonly.txt	10	fca84d94	444
+infozip-piped	src/modes/run.sh	19	b2e6a2bc	755
+infozip-piped	src/names	dir	-	755
+infozip-piped	src/names/café.txt	6	8944ecd2	644
+infozip-piped	src/names/space and (parens).txt	7	6cd4d4f9	644
+infozip-piped	src/names/日本語.txt	10	e21f1b36	644
+infozip-piped	src/nested	dir	-	755
+infozip-piped	src/nested/deep	dir	-	755
+infozip-piped	src/nested/deep/deeper	dir	-	755
+infozip-piped	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+infozip-piped	src/nested/inner.zip	228	fa505617	644
+infozip-piped	src/text	dir	-	755
+infozip-piped	src/text/empty.txt	0	00000000	644
+infozip-piped	src/text/readme.txt	1000	55261fc2	644
+infozip-stored	src	dir	-	755
+infozip-stored	src/binary	dir	-	755
+infozip-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+infozip-stored	src/binary/random-4k.bin	4096	42f9f89a	644
+infozip-stored	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+infozip-stored	src/binary/zeros-64k.bin	65536	d7978eeb	644
+infozip-stored	src/empty-dir	dir	-	755
+infozip-stored	src/modes	dir	-	755
+infozip-stored	src/modes/locked	dir	-	555
+infozip-stored	src/modes/locked/child.txt	29	340f69ca	644
+infozip-stored	src/modes/readonly.txt	10	fca84d94	444
+infozip-stored	src/modes/run.sh	19	b2e6a2bc	755
+infozip-stored	src/names	dir	-	755
+infozip-stored	src/names/café.txt	6	8944ecd2	644
+infozip-stored	src/names/space and (parens).txt	7	6cd4d4f9	644
+infozip-stored	src/names/日本語.txt	10	e21f1b36	644
+infozip-stored	src/nested	dir	-	755
+infozip-stored	src/nested/deep	dir	-	755
+infozip-stored	src/nested/deep/deeper	dir	-	755
+infozip-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+infozip-stored	src/nested/inner.zip	228	fa505617	644
+infozip-stored	src/text	dir	-	755
+infozip-stored	src/text/empty.txt	0	00000000	644
+infozip-stored	src/text/readme.txt	1000	55261fc2	644
+infozip-zip64	src	dir	-	755
+infozip-zip64	src/binary	dir	-	755
+infozip-zip64	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+infozip-zip64	src/binary/random-4k.bin	4096	42f9f89a	644
+infozip-zip64	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+infozip-zip64	src/binary/zeros-64k.bin	65536	d7978eeb	644
+infozip-zip64	src/empty-dir	dir	-	755
+infozip-zip64	src/modes	dir	-	755
+infozip-zip64	src/modes/locked	dir	-	555
+infozip-zip64	src/modes/locked/child.txt	29	340f69ca	644
+infozip-zip64	src/modes/readonly.txt	10	fca84d94	444
+infozip-zip64	src/modes/run.sh	19	b2e6a2bc	755
+infozip-zip64	src/names	dir	-	755
+infozip-zip64	src/names/café.txt	6	8944ecd2	644
+infozip-zip64	src/names/space and (parens).txt	7	6cd4d4f9	644
+infozip-zip64	src/names/日本語.txt	10	e21f1b36	644
+infozip-zip64	src/nested	dir	-	755
+infozip-zip64	src/nested/deep	dir	-	755
+infozip-zip64	src/nested/deep/deeper	dir	-	755
+infozip-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+infozip-zip64	src/nested/inner.zip	228	fa505617	644
+infozip-zip64	src/text	dir	-	755
+infozip-zip64	src/text/empty.txt	0	00000000	644
+infozip-zip64	src/text/readme.txt	1000	55261fc2	644
+python-deflate	src	dir	-	755
+python-deflate	src/binary	dir	-	755
+python-deflate	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+python-deflate	src/binary/random-4k.bin	4096	42f9f89a	644
+python-deflate	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+python-deflate	src/binary/zeros-64k.bin	65536	d7978eeb	644
+python-deflate	src/empty-dir	dir	-	755
+python-deflate	src/modes	dir	-	755
+python-deflate	src/modes/locked	dir	-	555
+python-deflate	src/modes/locked/child.txt	29	340f69ca	644
+python-deflate	src/modes/readonly.txt	10	fca84d94	444
+python-deflate	src/modes/run.sh	19	b2e6a2bc	755
+python-deflate	src/names	dir	-	755
+python-deflate	src/names/café.txt	6	8944ecd2	644
+python-deflate	src/names/space and (parens).txt	7	6cd4d4f9	644
+python-deflate	src/names/日本語.txt	10	e21f1b36	644
+python-deflate	src/nested	dir	-	755
+python-deflate	src/nested/deep	dir	-	755
+python-deflate	src/nested/deep/deeper	dir	-	755
+python-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+python-deflate	src/nested/inner.zip	228	fa505617	644
+python-deflate	src/text	dir	-	755
+python-deflate	src/text/empty.txt	0	00000000	644
+python-deflate	src/text/readme.txt	1000	55261fc2	644
+python-stored	src	dir	-	755
+python-stored	src/binary	dir	-	755
+python-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+python-stored	src/binary/random-4k.bin	4096	42f9f89a	644
+python-stored	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+python-stored	src/binary/zeros-64k.bin	65536	d7978eeb	644
+python-stored	src/empty-dir	dir	-	755
+python-stored	src/modes	dir	-	755
+python-stored	src/modes/locked	dir	-	555
+python-stored	src/modes/locked/child.txt	29	340f69ca	644
+python-stored	src/modes/readonly.txt	10	fca84d94	444
+python-stored	src/modes/run.sh	19	b2e6a2bc	755
+python-stored	src/names	dir	-	755
+python-stored	src/names/café.txt	6	8944ecd2	644
+python-stored	src/names/space and (parens).txt	7	6cd4d4f9	644
+python-stored	src/names/日本語.txt	10	e21f1b36	644
+python-stored	src/nested	dir	-	755
+python-stored	src/nested/deep	dir	-	755
+python-stored	src/nested/deep/deeper	dir	-	755
+python-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+python-stored	src/nested/inner.zip	228	fa505617	644
+python-stored	src/text	dir	-	755
+python-stored	src/text/empty.txt	0	00000000	644
+python-stored	src/text/readme.txt	1000	55261fc2	644
+python-stream-deflate	src	dir	-	755
+python-stream-deflate	src/binary	dir	-	755
+python-stream-deflate	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+python-stream-deflate	src/binary/random-4k.bin	4096	42f9f89a	644
+python-stream-deflate	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+python-stream-deflate	src/binary/zeros-64k.bin	65536	d7978eeb	644
+python-stream-deflate	src/empty-dir	dir	-	755
+python-stream-deflate	src/modes	dir	-	755
+python-stream-deflate	src/modes/locked	dir	-	555
+python-stream-deflate	src/modes/locked/child.txt	29	340f69ca	644
+python-stream-deflate	src/modes/readonly.txt	10	fca84d94	444
+python-stream-deflate	src/modes/run.sh	19	b2e6a2bc	755
+python-stream-deflate	src/names	dir	-	755
+python-stream-deflate	src/names/café.txt	6	8944ecd2	644
+python-stream-deflate	src/names/space and (parens).txt	7	6cd4d4f9	644
+python-stream-deflate	src/names/日本語.txt	10	e21f1b36	644
+python-stream-deflate	src/nested	dir	-	755
+python-stream-deflate	src/nested/deep	dir	-	755
+python-stream-deflate	src/nested/deep/deeper	dir	-	755
+python-stream-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+python-stream-deflate	src/nested/inner.zip	228	fa505617	644
+python-stream-deflate	src/text	dir	-	755
+python-stream-deflate	src/text/empty.txt	0	00000000	644
+python-stream-deflate	src/text/readme.txt	1000	55261fc2	644
+python-stream-stored	src	dir	-	755
+python-stream-stored	src/binary	dir	-	755
+python-stream-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+python-stream-stored	src/binary/random-4k.bin	4096	42f9f89a	644
+python-stream-stored	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+python-stream-stored	src/binary/zeros-64k.bin	65536	d7978eeb	644
+python-stream-stored	src/empty-dir	dir	-	755
+python-stream-stored	src/modes	dir	-	755
+python-stream-stored	src/modes/locked	dir	-	555
+python-stream-stored	src/modes/locked/child.txt	29	340f69ca	644
+python-stream-stored	src/modes/readonly.txt	10	fca84d94	444
+python-stream-stored	src/modes/run.sh	19	b2e6a2bc	755
+python-stream-stored	src/names	dir	-	755
+python-stream-stored	src/names/café.txt	6	8944ecd2	644
+python-stream-stored	src/names/space and (parens).txt	7	6cd4d4f9	644
+python-stream-stored	src/names/日本語.txt	10	e21f1b36	644
+python-stream-stored	src/nested	dir	-	755
+python-stream-stored	src/nested/deep	dir	-	755
+python-stream-stored	src/nested/deep/deeper	dir	-	755
+python-stream-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+python-stream-stored	src/nested/inner.zip	228	fa505617	644
+python-stream-stored	src/text	dir	-	755
+python-stream-stored	src/text/empty.txt	0	00000000	644
+python-stream-stored	src/text/readme.txt	1000	55261fc2	644
+python-stream-zip64	src	dir	-	755
+python-stream-zip64	src/binary	dir	-	755
+python-stream-zip64	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+python-stream-zip64	src/binary/random-4k.bin	4096	42f9f89a	644
+python-stream-zip64	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+python-stream-zip64	src/binary/zeros-64k.bin	65536	d7978eeb	644
+python-stream-zip64	src/empty-dir	dir	-	755
+python-stream-zip64	src/modes	dir	-	755
+python-stream-zip64	src/modes/locked	dir	-	555
+python-stream-zip64	src/modes/locked/child.txt	29	340f69ca	644
+python-stream-zip64	src/modes/readonly.txt	10	fca84d94	444
+python-stream-zip64	src/modes/run.sh	19	b2e6a2bc	755
+python-stream-zip64	src/names	dir	-	755
+python-stream-zip64	src/names/café.txt	6	8944ecd2	644
+python-stream-zip64	src/names/space and (parens).txt	7	6cd4d4f9	644
+python-stream-zip64	src/names/日本語.txt	10	e21f1b36	644
+python-stream-zip64	src/nested	dir	-	755
+python-stream-zip64	src/nested/deep	dir	-	755
+python-stream-zip64	src/nested/deep/deeper	dir	-	755
+python-stream-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+python-stream-zip64	src/nested/inner.zip	228	fa505617	644
+python-stream-zip64	src/text	dir	-	755
+python-stream-zip64	src/text/empty.txt	0	00000000	644
+python-stream-zip64	src/text/readme.txt	1000	55261fc2	644
+python-zip64	src	dir	-	755
+python-zip64	src/binary	dir	-	755
+python-zip64	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644
+python-zip64	src/binary/random-4k.bin	4096	42f9f89a	644
+python-zip64	src/binary/zeros-64k-plus-1.bin	65537	e50d43f3	644
+python-zip64	src/binary/zeros-64k.bin	65536	d7978eeb	644
+python-zip64	src/empty-dir	dir	-	755
+python-zip64	src/modes	dir	-	755
+python-zip64	src/modes/locked	dir	-	555
+python-zip64	src/modes/locked/child.txt	29	340f69ca	644
+python-zip64	src/modes/readonly.txt	10	fca84d94	444
+python-zip64	src/modes/run.sh	19	b2e6a2bc	755
+python-zip64	src/names	dir	-	755
+python-zip64	src/names/café.txt	6	8944ecd2	644
+python-zip64	src/names/space and (parens).txt	7	6cd4d4f9	644
+python-zip64	src/names/日本語.txt	10	e21f1b36	644
+python-zip64	src/nested	dir	-	755
+python-zip64	src/nested/deep	dir	-	755
+python-zip64	src/nested/deep/deeper	dir	-	755
+python-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644
+python-zip64	src/nested/inner.zip	228	fa505617	644
+python-zip64	src/text	dir	-	755
+python-zip64	src/text/empty.txt	0	00000000	644
+python-zip64	src/text/readme.txt	1000	55261fc2	644

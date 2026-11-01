@@ -45,11 +45,17 @@ def write_source(root):
     with zipfile.ZipFile(Unseekable(inner), "w", zipfile.ZIP_STORED) as archive:
         archive.writestr("inner.txt", b"inner entry\n" * 8)
     files["nested/inner.zip"] = inner.getvalue()
+    files["modes/run.sh"] = b"#!/bin/sh\necho run\n"
+    files["modes/readonly.txt"] = b"read only\n"
+    files["modes/locked/child.txt"] = b"inside a read-only directory\n"
     for name, data in files.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     (root / "empty-dir").mkdir()
+    (root / "modes/run.sh").chmod(0o755)
+    (root / "modes/readonly.txt").chmod(0o444)
+    (root / "modes/locked").chmod(0o555)
 
 
 class Unseekable(io.RawIOBase):
@@ -68,11 +74,12 @@ def python_zip(target, source, method, seekable, zip64):
         stream = raw if seekable else Unseekable(raw)
         with zipfile.ZipFile(stream, "w", method) as archive:
             for path in sorted(source.rglob("*")):
-                name = path.relative_to(source.parent).as_posix()
+                info = zipfile.ZipInfo.from_file(path, path.relative_to(source.parent).as_posix())
                 if path.is_dir():
-                    archive.writestr(name + "/", b"")
+                    archive.writestr(info, b"")
                     continue
-                with archive.open(name, "w", force_zip64=zip64) as entry:
+                info.compress_type = method
+                with archive.open(info, "w", force_zip64=zip64) as entry:
                     entry.write(path.read_bytes())
 
 
@@ -131,6 +138,24 @@ def tree(root):
     return result
 
 
+def modes(root):
+    """Map of NFC path to its permission bits."""
+    return {unicodedata.normalize("NFC", path.relative_to(root).as_posix()): path.lstat().st_mode & 0o777
+            for path in sorted(root.rglob("*"))}
+
+
+def unlock(root):
+    """Restores owner access so read-only directories can be deleted."""
+    for path in [root, *root.rglob("*")]:
+        if path.is_dir() and not path.is_symlink():
+            path.chmod(path.stat().st_mode | 0o700)
+
+
+# Info-ZIP unzip and bsdtar restore permission bits, including directory
+# modes. Python restores none, and 7-Zip skips directory modes.
+MODE_READERS = ["unzip", "bsdtar"]
+
+
 def readers(have):
     found = [("python", lambda archive, out: zipfile.ZipFile(archive).extractall(out))]
     if have("unzip"):
@@ -155,43 +180,66 @@ def main():
         old.unlink()
     summary = {"writers": {}, "readers": [name for name, _ in readers(have)],
                "missing_tools": [t for t in ["zip", "unzip", "7zz", "bsdtar", "ditto", "jar"] if not have(t)]}
-    manifests = {}
+    manifests, all_modes = {}, {}
     with tempfile.TemporaryDirectory(prefix="zipper-corpus-") as work:
         work = Path(work)
         write_source(work / "src")
-        for name, write in writers(have):
-            archive = args.output / f"{name}.zip"
-            write(archive.resolve(), work)
-            trees = {}
-            for reader, extract in readers(have):
-                out = work / f"out-{name}-{reader}"
-                try:
-                    extract(archive.resolve(), out)
-                    trees[reader] = tree(out)
-                except Exception as error:
-                    trees[reader] = f"failed: {type(error).__name__}"
-                finally:
-                    shutil.rmtree(out, ignore_errors=True)
-            opened = {r: t for r, t in trees.items() if isinstance(t, dict)}
-            votes = {}
-            for reader, result in opened.items():
-                votes.setdefault(json.dumps(result, sort_keys=True), []).append(reader)
-            winner, agreeing = max(votes.items(), key=lambda vote: len(vote[1]), default=(None, []))
-            summary["writers"][name] = {
-                "readers": {r: ("ok" if isinstance(t, dict) else t) for r, t in trees.items()},
-                "agreeing": sorted(agreeing),
-                "dissenting": sorted(r for r in opened if r not in agreeing),
-            }
-            if len(agreeing) < 3:
-                archive.unlink()
-                print(f"{name}: fewer than three readers agree; excluded", file=sys.stderr)
-                continue
-            manifests[name] = json.loads(winner)
-    # One line per expected path: archive, path, then "dir" or size and CRC-32.
+        try:
+            build(args, have, work, summary, manifests, all_modes)
+        finally:
+            unlock(work)
+    write_manifest(args, summary, manifests, all_modes)
+
+
+def build(args, have, work, summary, manifests, all_modes):
+    """Writes each archive and records what the reference readers agree on."""
+    for name, write in writers(have):
+        archive = args.output / f"{name}.zip"
+        write(archive.resolve(), work)
+        trees, reader_modes = {}, {}
+        for reader, extract in readers(have):
+            out = work / f"out-{name}-{reader}"
+            try:
+                extract(archive.resolve(), out)
+                trees[reader] = tree(out)
+                reader_modes[reader] = modes(out)
+            except Exception as error:
+                trees[reader] = f"failed: {type(error).__name__}"
+            finally:
+                if out.exists():
+                    unlock(out)
+                shutil.rmtree(out, ignore_errors=True)
+        opened = {r: t for r, t in trees.items() if isinstance(t, dict)}
+        votes = {}
+        for reader, result in opened.items():
+            votes.setdefault(json.dumps(result, sort_keys=True), []).append(reader)
+        winner, agreeing = max(votes.items(), key=lambda vote: len(vote[1]), default=(None, []))
+        summary["writers"][name] = {
+            "readers": {r: ("ok" if isinstance(t, dict) else t) for r, t in trees.items()},
+            "agreeing": sorted(agreeing),
+            "dissenting": sorted(r for r in opened if r not in agreeing),
+        }
+        if len(agreeing) < 3:
+            archive.unlink()
+            print(f"{name}: fewer than three readers agree; excluded", file=sys.stderr)
+            continue
+        manifests[name] = json.loads(winner)
+        mode_votes = [reader_modes.get(reader) for reader in MODE_READERS]
+        agreed_modes = mode_votes[0] if None not in mode_votes and all(
+            vote == mode_votes[0] for vote in mode_votes) else {}
+        summary["writers"][name]["modes_agreed_by"] = MODE_READERS if agreed_modes else []
+        all_modes[name] = agreed_modes
+
+
+def write_manifest(args, summary, manifests, all_modes):
+    # One line per expected path: archive, path, size or "dir", CRC-32 or "-",
+    # and the octal mode where the mode readers agree, or "-".
     lines = []
     for archive, expected in sorted(manifests.items()):
         for path, value in sorted(expected.items()):
-            fields = ["dir"] if value is None else [str(value[0]), f"{value[1]:08x}"]
+            fields = ["dir", "-"] if value is None else [str(value[0]), f"{value[1]:08x}"]
+            mode = all_modes[archive].get(path)
+            fields.append("-" if mode is None else f"{mode:o}")
             lines.append("\t".join([archive, path, *fields]))
     (args.output / "manifest.tsv").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (args.output / "corpus.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n")

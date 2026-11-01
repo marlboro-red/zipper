@@ -15,6 +15,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -30,6 +34,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -45,6 +53,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -60,6 +72,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -75,6 +91,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -90,6 +110,10 @@
    ],
    "dissenting": [
     "python"
+   ],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
    ],
    "readers": {
     "7zip": "ok",
@@ -107,6 +131,10 @@
    "dissenting": [
     "python"
    ],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -122,6 +150,10 @@
    ],
    "dissenting": [
     "python"
+   ],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
    ],
    "readers": {
     "7zip": "ok",
@@ -139,6 +171,10 @@
    "dissenting": [
     "python"
    ],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -154,6 +190,10 @@
    ],
    "dissenting": [
     "python"
+   ],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
    ],
    "readers": {
     "7zip": "ok",
@@ -171,6 +211,10 @@
    "dissenting": [
     "python"
    ],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -186,6 +230,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -201,6 +249,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -216,6 +268,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -231,6 +287,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -246,6 +306,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",
@@ -261,6 +325,10 @@
     "unzip"
    ],
    "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
    "readers": {
     "7zip": "ok",
     "bsdtar": "ok",

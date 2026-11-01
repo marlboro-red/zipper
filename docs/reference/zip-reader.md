@@ -22,7 +22,13 @@ The reader does not support these features:
 - Ambiguous end records.
 - Data before the first record, such as a self-extracting executable from `zip -A`. The compatibility backend still reads these.
 
-It does not preserve permissions or timestamps.
+It restores Unix permission bits the way bsdtar does:
+
+- Each file and directory gets its archive mode, masked to `0o777`, so setuid, setgid and sticky bits are never set. Archives made on DOS or Windows give files `0o664`, directories `0o775`, and read-only entries no write bits.
+- The user's umask limits every mode, as it does for a new file. Info-ZIP `unzip` ignores the umask, so it can restore wider modes such as `666` or `777`.
+- Directory modes are applied after all files are written, deepest first, so a read-only directory can still receive its children. A directory entry listed after its own contents still gets its mode, which bsdtar and `unzip` skip.
+
+It does not restore timestamps. On Windows it restores no permissions.
 
 ## Limits
 
@@ -62,7 +68,7 @@ Both native ZIP modes run these checks before publishing any output:
 
 `scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 6 archives.
 
-`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
+`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on all 17 archives. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
 
 ## Mutation testing
 

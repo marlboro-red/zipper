@@ -617,11 +617,7 @@ pub(super) fn read_archive_limited(
         w.flush()?;
     }
     if let (Some(temp), Some(dst)) = (staging, destination) {
-        ensure!(
-            fs::symlink_metadata(dst).is_err(),
-            "destination appeared during extraction"
-        );
-        fs::rename(temp.path(), dst)?;
+        crate::publish(temp.path(), dst, &[])?;
     }
     Ok(items.into_iter().map(|i| i.entry).collect())
 }

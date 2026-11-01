@@ -22,6 +22,8 @@ struct Item {
     header_start: u64,
     /// Start of the next local record, or of the central directory.
     record_limit: u64,
+    /// Permission bits to restore, without setuid, setgid or sticky bits.
+    mode: Option<u32>,
 }
 
 const LOCAL_HEADER: u64 = 30;
@@ -282,6 +284,7 @@ fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
             raw_name,
             header_start: file.header_start(),
             record_limit: 0,
+            mode: file.unix_mode().map(|mode| mode & 0o777),
         });
     }
     for item in &items {
@@ -783,11 +786,16 @@ pub fn read_archive_with_options(
                 let mut source = Read::take(&mut *raw, item.compressed);
                 let mut output = if let Some(temp) = &staging {
                     if !item.entry.directory {
+                        let mut options = File::options();
+                        options.write(true).create_new(true);
+                        // The OS applies the umask, as bsdtar does.
+                        #[cfg(unix)]
+                        std::os::unix::fs::OpenOptionsExt::mode(
+                            &mut options,
+                            item.mode.unwrap_or(0o666),
+                        );
                         Some(BufWriter::new(
-                            File::options()
-                                .write(true)
-                                .create_new(true)
-                                .open(temp.path().join(&item.entry.name))?,
+                            options.open(temp.path().join(&item.entry.name))?,
                         ))
                     } else {
                         None
@@ -859,11 +867,12 @@ pub fn read_archive_with_options(
             .install(run)?;
     }
     if let (Some(temp), Some(dst)) = (staging, destination) {
-        ensure!(
-            fs::symlink_metadata(dst).is_err(),
-            "destination appeared during extraction"
-        );
-        fs::rename(temp.path(), dst)?;
+        let directories: Vec<(&str, u32)> = items
+            .iter()
+            .filter(|item| item.entry.directory)
+            .filter_map(|item| Some((item.entry.name.as_str(), item.mode?)))
+            .collect();
+        crate::publish(temp.path(), dst, &directories)?;
     }
     Ok(items.into_iter().map(|item| item.entry).collect())
 }
