@@ -110,6 +110,7 @@ fn max_extracted_bytes_caps_native_archives_before_writing() -> anyhow::Result<(
 }
 
 /// Days from 1970-01-01 to a proleptic Gregorian date.
+#[cfg(unix)]
 fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
@@ -155,6 +156,7 @@ fn dos_times_are_read_in_the_local_time_zone() -> anyhow::Result<()> {
 }
 
 /// One stored entry, `a.txt`, with the given DOS time (low 16 bits) and date.
+#[cfg(unix)]
 fn dos_only_zip(dos: u32) -> Vec<u8> {
     let (name, data) = (b"a.txt", b"x");
     let crc = crc32fast::hash(data).to_le_bytes();
