@@ -32,4 +32,5 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | Facts lost when rewriting docs | `scripts/factcheck_docs.py` |
 | A stricter ZIP check rejecting real archives | `tests/zip_corpus.rs` on archives from 5 writers, including a nested streaming ZIP |
 | A hostile ZIP layout accepted | `tests/hostile_zip.rs`, one test per layout, and `tests/zip_fuzz.rs` |
-| A planted break that never applied | the `zipper-review` skill, step 6 |
+| A planted break that never applied | the `zipper-review` skill, step 5 |
+| A reviewer brief rebuilt by hand, missing a rule | the `zipper-adversary` agent in `.claude/agents/` |

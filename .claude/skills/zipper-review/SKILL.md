@@ -9,12 +9,11 @@ The author always finds a reason the code is safe. A reviewer who has not seen t
 
 ## Run a review
 
-1. Spawn a reviewer agent that has not seen your reasoning. Give it the diff (`git diff`), the contract in `docs/reference/format.md` or `docs/reference/zip-reader.md`, and this checklist. Do not give it your conclusion.
-2. Tell it not to edit repository files. It writes crafted inputs and scripts under a scratch directory.
-3. Require each finding to be CONFIRMED with a crafted archive or a failing run, or marked PLAUSIBLE with the missing proof named.
-4. Fix every CONFIRMED finding in the same change, with a test that fails before the fix.
-5. Write the test before the fix, and run it to see it fail.
-6. When you plant a break to prove a check, confirm the edit landed (`git diff --stat`) and that the check printed a result. A planted edit that did not apply, or a loop that printed nothing, proves nothing.
+1. Spawn the `zipper-adversary` agent defined in `.claude/agents/zipper-adversary.md`. It has no edit tools and fixes the scratch directory, both engines and the report shape. Its brief names the scope, the diff command and a review name. Do not give it your conclusion.
+2. Each finding comes back CONFIRMED with a crafted archive or a failing run, or PLAUSIBLE with the missing proof named.
+3. Fix every CONFIRMED finding in the same change, with a test that fails before the fix.
+4. Write the test before the fix, and run it to see it fail.
+5. When you plant a break to prove a check, confirm the edit landed (`git diff --stat`) and that the check printed a result. A planted edit that did not apply, or a loop that printed nothing, proves nothing.
 
 ## Checklist for a hostile archive
 
