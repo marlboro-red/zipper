@@ -131,6 +131,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "lint-comments",
     "install-hooks",
     "ci-wait",
+    "bench",
 ];
 
 const REPO_DIRS: &[&str] = &[
@@ -446,7 +447,7 @@ mod tests {
         fs::create_dir(dir.path().join("scripts"))?;
         fs::write(dir.path().join("scripts/real.py"), "")?;
         let text = "Run `python3 scripts/real.py`, `scripts/gone.py`, `cargo xtask gate fast`, \
-            `cargo xtask bench` and `benchmarks/<area>/README.md`.\n```sh\nscripts/fenced.py\n```\n";
+            `cargo xtask fly` and `benchmarks/<area>/README.md`.\n```sh\nscripts/fenced.py\n```\n";
         let found: Vec<String> = named_paths(text, dir.path())
             .into_iter()
             .map(|(_, m)| m)
@@ -455,7 +456,7 @@ mod tests {
             found,
             [
                 "names missing path `scripts/gone.py`",
-                "unknown command `cargo xtask bench`"
+                "unknown command `cargo xtask fly`"
             ]
         );
         Ok(())

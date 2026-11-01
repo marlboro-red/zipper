@@ -12,8 +12,7 @@ mod docs;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str =
-    "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait";
+const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -33,6 +32,7 @@ fn main() -> ExitCode {
         ["lint-comments"] => comments::lint(&root()),
         ["install-hooks"] => install_hooks(),
         ["ci-wait"] => ci_wait(),
+        ["bench", ref rest @ ..] => bench(rest),
         _ => Err(anyhow::anyhow!(USAGE)),
     };
     match result {
@@ -372,11 +372,7 @@ fn benchmark_smoke() -> Result<()> {
     if Command::new("bsdtar").arg("--version").output().is_ok() {
         args.extend(["--tar".into(), "bsdtar".into()]);
     }
-    let python = ["python3", "python"]
-        .into_iter()
-        .find(|name| Command::new(name).arg("--version").output().is_ok())
-        .context("python3 or python is required")?;
-    let status = Command::new(python)
+    let status = Command::new(python()?)
         .current_dir(root())
         .args(&args)
         .status()?;
@@ -394,6 +390,32 @@ fn benchmark_smoke() -> Result<()> {
         ensure!(report.contains(needle), "benchmark report lacks {needle}");
     }
     Ok(())
+}
+
+fn python() -> Result<&'static str> {
+    ["python3", "python"]
+        .into_iter()
+        .find(|name| Command::new(name).arg("--version").output().is_ok())
+        .context("python3 or python is required")
+}
+
+fn scoreboard(args: &[&str]) -> Result<()> {
+    let status = Command::new(python()?)
+        .current_dir(root())
+        .arg("scripts/scoreboard.py")
+        .args(args)
+        .status()?;
+    ensure!(
+        status.success(),
+        "scoreboard.py {} exited with {status}",
+        args.join(" ")
+    );
+    Ok(())
+}
+
+fn bench(args: &[&str]) -> Result<()> {
+    cargo(&["build", "--release", "--locked", "--package", "zipper"])?;
+    scoreboard(&[&["run"], args].concat())
 }
 
 fn write_fixture(tree: &Path) -> Result<()> {

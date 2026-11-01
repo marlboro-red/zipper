@@ -9,6 +9,7 @@ import zipfile
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('output', type=Path)
+parser.add_argument('--mib', type=int, default=32, help='size of the compressible and random entries')
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=False)
 rng = random.Random(20261030)
@@ -18,7 +19,7 @@ for name in ['mixed', 'compressible', 'random']:
     root.mkdir()
     path = root / 'large.bin'
     with path.open('wb') as out:
-        for _ in range(1024 if name == 'mixed' else 32):
+        for _ in range(1024 if name == 'mixed' else args.mib):
             if name == 'mixed':
                 block = mixed
             elif name == 'compressible':

@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Run the fixed extraction scoreboard and render docs/results.md from its JSON."""
+import argparse
+import datetime
+import hashlib
+import json
+from pathlib import Path
+import platform
+import shutil
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+SCOREBOARD = ROOT / 'benchmarks' / 'scoreboard'
+RESULTS = ROOT / 'docs' / 'results.md'
+CORPORA = ROOT / 'target' / 'bench-corpora'
+WORK = ROOT / 'target' / 'bench-work'
+THREADS = ['1', '4']
+
+GENERATORS = {
+    'flat-tiny': ['make_tiny_corpus.py', '--files', '10000', '--layout', 'flat'],
+    'mixed': ['make_benchmark_corpus.py', '--mib', '16', '--skip-binaries'],
+    'dependencies': ['make_dependency_corpus.py'],
+    'silesia': ['fetch_silesia.py'],
+    'large': ['make_large_zip_corpus.py', '--mib', '256'],
+}
+
+WORKLOADS = {
+    'flat-tiny': ('flat-tiny', '.', '10,000 flat tiny files'),
+    'grouped': ('mixed', 'small-files', '4,000 grouped files'),
+    'dependencies': ('dependencies', '.', 'Rust dependency sources'),
+    'silesia': ('silesia', '.', 'Silesia'),
+    'large-compressible': ('large', 'compressible', 'One large compressible entry'),
+    'large-random': ('large', 'random', 'One large random entry'),
+    'mixed': ('mixed', '.', 'Mixed tree'),
+}
+
+ROW_ORDER = ['native-1', 'native-4', 'native-fast-1', 'native-fast-4', 'bsdtar-zip', '7zip', 'bsdtar-tar']
+PARITY_ROW = 'bsdtar-zip'
+
+
+def git(*args):
+    return subprocess.check_output(['git', *args], cwd=ROOT, text=True).strip()
+
+
+def prepared(corpus):
+    """Generate a corpus once into target/bench-corpora, marking it complete."""
+    home = CORPORA / corpus
+    if (home / '.complete').exists():
+        return home / corpus
+    if home.exists():
+        shutil.rmtree(home)
+    home.mkdir(parents=True)
+    script, *options = GENERATORS[corpus]
+    subprocess.run([sys.executable, str(ROOT / 'scripts' / script), str(home / corpus), *options],
+                   cwd=ROOT, check=True)
+    (home / '.complete').write_text('')
+    return home / corpus
+
+
+def digest_manifest(result):
+    text = json.dumps(result.pop('manifest'), sort_keys=True).encode()
+    result['manifest_sha256'] = hashlib.sha256(text).hexdigest()
+
+
+def run(args):
+    dirty = [line for line in git('status', '--porcelain').splitlines()
+             if not line[3:].startswith(('benchmarks/scoreboard/', 'docs/results.md'))]
+    if dirty and not args.allow_dirty:
+        sys.exit('commit first; the scoreboard names the measured revision:\n' + '\n'.join(dirty))
+    zipper = ROOT / 'target' / 'release' / ('zipper.exe' if platform.system() == 'Windows' else 'zipper')
+    names = args.only or list(WORKLOADS)
+    WORK.mkdir(parents=True, exist_ok=True)
+    SCOREBOARD.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        corpus, subpath, _ = WORKLOADS[name]
+        source = (prepared(corpus) / subpath).resolve()
+        raw = WORK / f'{name}.json'
+        command = [sys.executable, str(ROOT / 'scripts' / 'extraction_matrix.py'), str(source),
+                   '--zipper', str(zipper), '--output', str(raw), '--work-dir', str(WORK),
+                   '--threads', *THREADS, '--runs', str(args.runs)]
+        for flag, tool in [('--tar', 'bsdtar'), ('--sevenzip', '7zz')]:
+            if shutil.which(tool):
+                command += [flag, tool]
+        print(f'scoreboard: {name}', file=sys.stderr, flush=True)
+        subprocess.run(command, cwd=ROOT, check=True)
+        result = json.loads(raw.read_text(encoding='utf-8'))
+        digest_manifest(result)
+        result['workload'] = name
+        result['revision'] = git('rev-parse', 'HEAD')
+        result['tree_clean'] = not dirty
+        result['recorded'] = datetime.date.today().isoformat()
+        (SCOREBOARD / f'{name}.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+    RESULTS.write_text(render(), encoding='utf-8')
+
+
+def count(number, noun):
+    return f"{number:,} {noun}{'' if number == 1 else 's'}"
+
+
+def ms(seconds):
+    return f'{seconds * 1000:,.2f}'
+
+
+def table(result):
+    rows = result['results']
+    order = [name for name in ROW_ORDER if name in rows] + sorted(set(rows) - set(ROW_ORDER))
+    parity = rows.get(PARITY_ROW)
+    lines = ['| Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time |',
+             '| --- | ---: | ---: | ---: | ---: | ---: |']
+    for name in order:
+        row = rows[name]
+        ratio = f"{parity['median_seconds'] / row['median_seconds']:.2f}×" if parity else 'no bsdtar row'
+        lines.append(f"| `{name}` | {ms(row['median_seconds'])} [{ms(row['min_seconds'])}–{ms(row['max_seconds'])}] "
+                     f"| {ms(row['median_cpu_seconds'])} | {row['cpu_per_wall']:.2f} "
+                     f"| {row['peak_rss_bytes'] / 2**20:.1f} | {ratio} |")
+    return lines
+
+
+def render():
+    lines = ['# Results', '',
+             'This page is generated by `cargo xtask bench` from the JSON in `benchmarks/scoreboard/`.',
+             'Do not edit it by hand. The gate fails when it differs from that JSON.', '',
+             'Every number is a local measurement on the named machine. None is a cross-machine or',
+             'state-of-the-art claim. The [experiment log](../benchmarks/README.md) holds earlier records,',
+             'such as the Silesia frontier, the dependency sweeps and the Windows runs.', '',
+             '## How the scoreboard runs', '',
+             '- Each workload is a fixed directory. `scripts/extraction_matrix.py` packs it into one Deflate',
+             '  ZIP and one TAR with fixed metadata, then extracts them in interleaved, shuffled rounds.',
+             '- Every extraction is compared byte for byte with the source, outside the timed region.',
+             '- `native` and `native-fast` rows are Zipper ZIP engines at 1 and 4 threads.',
+             '  `bsdtar-zip` restores default metadata, which matches what the native engines restore.',
+             '  `bsdtar-tar` uses reduced-metadata flags. `7zip` restores times and attributes.',
+             '- Peak memory is the peak resident size of one process. Caches are warm.', '']
+    found = {path.stem: json.loads(path.read_text(encoding='utf-8'))
+             for path in sorted(SCOREBOARD.glob('*.json'))}
+    missing = [name for name in WORKLOADS if name not in found]
+    if missing:
+        lines += [f"These workloads are not yet measured. They are {', '.join(f'`{name}`' for name in missing)}.", '']
+    for name, (_, _, title) in WORKLOADS.items():
+        if name not in found:
+            continue
+        result = found[name]
+        zip_bytes = result['archives']['input.zip']['bytes']
+        lines += [f'## {title}', '',
+                  f"- {count(result['files'], 'input file')} and {result['input_bytes']:,} input bytes.",
+                  f"- A ZIP of {zip_bytes:,} bytes.",
+                  f"- Revision `{result['revision'][:7]}`, recorded {result['recorded']}.",
+                  f"- {count(result['runs'], 'measured round')} after one warmup.",
+                  f"- `{result['platform']}` on `{result['machine']}` with {result['cpu_count']} logical CPUs.", '',
+                  *table(result), '']
+    return '\n'.join(lines).rstrip('\n') + '\n'
+
+
+def check(_args):
+    if RESULTS.read_text(encoding='utf-8') != render():
+        sys.exit('docs/results.md differs from benchmarks/scoreboard; run `python3 scripts/scoreboard.py render`')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    measure = commands.add_parser('run', help='measure workloads and rewrite the JSON and docs/results.md')
+    measure.add_argument('--runs', type=int, default=7)
+    measure.add_argument('--only', nargs='+', choices=list(WORKLOADS))
+    measure.add_argument('--allow-dirty', action='store_true', help='for trials; the JSON records tree_clean false')
+    commands.add_parser('render', help='rewrite docs/results.md from the JSON')
+    commands.add_parser('check', help='fail when docs/results.md differs from the JSON')
+    args = parser.parse_args()
+    if args.command == 'run':
+        run(args)
+    elif args.command == 'render':
+        RESULTS.write_text(render(), encoding='utf-8')
+    else:
+        check(args)
+
+
+if __name__ == '__main__':
+    main()
