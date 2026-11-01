@@ -103,7 +103,8 @@ def counted(name, result):
 
 
 def dirty_paths():
-    return [line for line in git('status', '--porcelain').splitlines()
+    status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True)
+    return [line for line in status.splitlines()
             if not line[3:].startswith(('benchmarks/scoreboard/', 'docs/results.md'))]
 
 
