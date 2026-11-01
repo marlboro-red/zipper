@@ -37,7 +37,7 @@ Extraction requires a new destination directory with an existing parent.
 ## Limitations
 
 Zipper archives regular files and directories with UTF-8 paths only.
-The `.zipper` format does not store permissions, timestamps, links, extended attributes, or encryption. The native ZIP engines restore Unix permissions but not timestamps, links or extended attributes.
+The `.zipper` format does not store permissions, timestamps, links, extended attributes, or encryption. The native ZIP engines restore Unix permissions and modification times, but not links or extended attributes.
 V2 CRC32 checks payloads and decoded index metadata for accidental corruption, but archives are not authenticated.
 V1 metadata remains unchecked.
 Inputs must remain unchanged during creation.

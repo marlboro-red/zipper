@@ -28,7 +28,17 @@ It restores Unix permission bits the way bsdtar does:
 - The user's umask limits every mode, as it does for a new file. Info-ZIP `unzip` ignores the umask, so it can restore wider modes such as `666` or `777`.
 - Directory modes are applied after all files are written, deepest first, so a read-only directory can still receive its children. A directory entry listed after its own contents still gets its mode, which bsdtar and `unzip` skip.
 
-It does not restore timestamps. On Windows it restores no permissions.
+It restores modification times the way Info-ZIP `unzip` and bsdtar do:
+
+- The extended timestamp field (`0x5455`) gives an exact UTC time. Info-ZIP and bsdtar write it.
+- Otherwise the older Info-ZIP Unix field (`0x5855`), which `ditto` writes, gives an exact time.
+- Otherwise the DOS date and time are read in the local time zone, with 2-second resolution.
+- The NTFS field (`0x000a`) is ignored, as both reference readers ignore it, so 7-Zip archives get their DOS time.
+- A 32-bit exact time with its top bit set is read as signed or unsigned, whichever lies nearer the DOS time, so a 1969 file is not dated 2106.
+- Invalid DOS fields, such as month 13, are normalized as bsdtar does. Setting a time is best effort.
+- Directory times are set after all files are written.
+
+On Windows it restores no permissions, no directory times, and no times for entries that have only a DOS time.
 
 ## Limits
 
@@ -64,6 +74,8 @@ Both native ZIP modes run these checks before publishing any output:
 - bsdtar, with Deflate and stored entries.
 - macOS `ditto`.
 - Python `zipfile`, seekable and streaming, with Deflate, stored and ZIP64.
+
+The manifest also records each path's exact modification time where `unzip` and bsdtar both restore the source's own time under `TZ=UTC` and `TZ=Pacific/Auckland`. That covers the 11 Info-ZIP, bsdtar and `ditto` archives. The other archives carry only DOS times, which depend on the time zone. `tests/cli.rs` checks those under `TZ=UTC` and `TZ=Asia/Tokyo`.
  The source tree has empty files and directories, non-ASCII names, and files at the decoder's 64 KiB and 192 KiB slice boundaries.
 
 `scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 6 archives.

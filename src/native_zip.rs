@@ -24,6 +24,8 @@ struct Item {
     record_limit: u64,
     /// Permission bits to restore, without setuid, setgid or sticky bits.
     mode: Option<u32>,
+    /// Modification time in seconds since the Unix epoch.
+    modified: Option<i64>,
 }
 
 const LOCAL_HEADER: u64 = 30;
@@ -97,7 +99,7 @@ fn entry_buffer(size: usize) -> Result<Vec<u8>> {
 // Bound directory allocation before the general ZIP parser sees untrusted
 // counts/lengths. The opt-in path accepts conventional single-disk ZIP/ZIP64
 // records with no prepended executable, trailing data, or ZIP64 extension sector.
-fn preflight(file: &mut BufReader<File>) -> Result<u64> {
+fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>)> {
     let length = file.get_ref().metadata()?.len();
     ensure!(length >= 22, "truncated ZIP");
     let tail_size = length.min(22 + 65535) as usize;
@@ -174,6 +176,7 @@ fn preflight(file: &mut BufReader<File>) -> Result<u64> {
     file.seek(SeekFrom::Start(start))?;
     let mut position = start;
     let (mut name_field, mut extra_field) = (Vec::new(), Vec::new());
+    let mut times = Vec::with_capacity(count as usize);
     for _ in 0..count {
         ensure!(
             directory_end - position >= 46,
@@ -194,16 +197,144 @@ fn preflight(file: &mut BufReader<File>) -> Result<u64> {
         file.read_exact(&mut extra_field)?;
         zip64_values(&extra_field)?;
         check_unicode_path(&extra_field, &name_field)?;
+        times.push(EntryTime {
+            exact: exact_time(&extra_field),
+            dos: u32::from_le_bytes(header[12..16].try_into().unwrap()),
+        });
         file.seek_relative(comment as i64)?;
     }
     ensure!(position == directory_end, "ZIP directory count mismatch");
     file.seek(SeekFrom::Start(0))?;
-    Ok(count)
+    Ok((count, times))
 }
 
-fn open(path: &Path, cache: bool) -> Result<ZipArchive<crate::zip_reader::Reader>> {
+/// Time fields from a central record: an exact Unix time from an extra field,
+/// and the DOS time (low 16 bits) and date (high 16 bits).
+struct EntryTime {
+    exact: Option<u32>,
+    dos: u32,
+}
+
+/// Exact modification time from a central extra field. The extended
+/// timestamp (0x5455) wins over the older Info-ZIP Unix field (0x5855), as in
+/// Info-ZIP unzip. Like unzip and bsdtar, this ignores the NTFS field.
+fn exact_time(mut extra: &[u8]) -> Option<u32> {
+    let (mut extended, mut unix) = (None, None);
+    while extra.len() >= 4 {
+        let id = u16::from_le_bytes([extra[0], extra[1]]);
+        let length = u16::from_le_bytes([extra[2], extra[3]]) as usize;
+        let body = extra.get(4..4 + length)?;
+        let seconds = |at: usize| {
+            body.get(at..at + 4)
+                .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+        };
+        match id {
+            0x5455 if body.first().is_some_and(|flags| flags & 1 != 0) => extended = seconds(1),
+            0x5855 => unix = seconds(4),
+            _ => {}
+        }
+        extra = &extra[4 + length..];
+    }
+    extended.or(unix)
+}
+
+/// Fields of a DOS date and time, unvalidated: year, month, day, hour,
+/// minute and second.
+fn dos_fields(dos: u32) -> [i64; 6] {
+    let (time, date) = (dos & 0xffff, dos >> 16);
+    [
+        1980 + (date >> 9) as i64,
+        ((date >> 5) & 15) as i64,
+        (date & 31) as i64,
+        (time >> 11) as i64,
+        ((time >> 5) & 63) as i64,
+        ((time & 31) * 2) as i64,
+    ]
+}
+
+/// Converts entry times to Unix seconds, caching the local offset of each DOS
+/// date and hour, because `mktime` is slow and DOS times cluster.
+#[derive(Default)]
+struct Clock {
+    offsets: HashMap<u32, Option<i64>>,
+}
+
+impl Clock {
+    fn modified(&mut self, time: &EntryTime) -> Option<i64> {
+        let dos_utc = {
+            let [year, month, day, hour, minute, second] = dos_fields(time.dos);
+            days_from_civil(year, month.clamp(1, 12), day.max(1)) * 86_400
+                + hour * 3_600
+                + minute * 60
+                + second
+        };
+        if let Some(raw) = time.exact {
+            // Writers store this field as 32 bits with no agreed sign. Take
+            // whichever reading lies nearer the DOS time, so a 1969 file is
+            // not dated 2106 and a 2040 file is not dated 1904.
+            let (unsigned, signed) = (raw as i64, raw as i32 as i64);
+            return Some(if (unsigned - dos_utc).abs() <= (signed - dos_utc).abs() {
+                unsigned
+            } else {
+                signed
+            });
+        }
+        let [year, month, day, hour, minute, second] = dos_fields(time.dos);
+        let base = *self
+            .offsets
+            .entry(time.dos & 0xffff_f800)
+            .or_insert_with(|| local_time([year, month, day, hour, 0, 0]));
+        Some(base? + minute * 60 + second)
+    }
+}
+
+/// Days from 1970-01-01 to a proleptic Gregorian date.
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
+    era * 146_097 + year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year - 719_468
+}
+
+/// Interprets local wall-clock fields with `mktime`, which normalizes values
+/// out of range the way bsdtar does. Other platforms keep the extraction time.
+#[cfg(unix)]
+fn local_time([year, month, day, hour, minute, second]: [i64; 6]) -> Option<i64> {
+    // SAFETY: tm is plain data, and zeroed is a valid value for every field.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    tm.tm_year = (year - 1900) as i32;
+    tm.tm_mon = (month - 1) as i32;
+    tm.tm_mday = day as i32;
+    tm.tm_hour = hour as i32;
+    tm.tm_min = minute as i32;
+    tm.tm_sec = second as i32;
+    tm.tm_isdst = -1;
+    // SAFETY: mktime reads and normalizes the tm value it is given.
+    let seconds = unsafe { libc::mktime(&mut tm) };
+    (seconds != -1).then_some(seconds as i64)
+}
+
+#[cfg(not(unix))]
+fn local_time(_: [i64; 6]) -> Option<i64> {
+    None
+}
+
+fn system_time(seconds: i64) -> std::time::SystemTime {
+    let offset = std::time::Duration::from_secs(seconds.unsigned_abs());
+    if seconds >= 0 {
+        std::time::UNIX_EPOCH + offset
+    } else {
+        std::time::UNIX_EPOCH - offset
+    }
+}
+
+/// An opened archive and each entry's exact modification time.
+type Opened = (ZipArchive<crate::zip_reader::Reader>, Vec<EntryTime>);
+
+fn open(path: &Path, cache: bool) -> Result<Opened> {
     let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
-    let count = preflight(&mut file)?;
+    let (count, times) = preflight(&mut file)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
     } else {
@@ -214,10 +345,14 @@ fn open(path: &Path, cache: bool) -> Result<ZipArchive<crate::zip_reader::Reader
         archive.len() as u64 == count && archive.offset() == 0,
         "ZIP parser disagrees with validated directory"
     );
-    Ok(archive)
+    Ok((archive, times))
 }
 
-fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
+/// `times` is `None` when the caller does not need modification times.
+fn scan(
+    archive: &ZipArchive<crate::zip_reader::Reader>,
+    times: Option<&[EntryTime]>,
+) -> Result<Vec<Item>> {
     ensure!(archive.len() <= 1_000_000, "ZIP entry limit exceeded");
     ensure!(
         !archive.metadata().has_duplicate_names(),
@@ -226,6 +361,7 @@ fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
     let mut items = Vec::with_capacity(archive.len());
     let mut names = HashMap::new();
     let mut metadata_bytes = 0usize;
+    let mut clock = Clock::default();
     for index in 0..archive.len() {
         let file = archive.by_index_data(index)?;
         ensure!(
@@ -285,6 +421,7 @@ fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
             header_start: file.header_start(),
             record_limit: 0,
             mode: file.unix_mode().map(|mode| mode & 0o777),
+            modified: times.and_then(|times| clock.modified(&times[index])),
         });
     }
     for item in &items {
@@ -573,6 +710,17 @@ impl DescriptorScan {
     }
 }
 
+/// Flushes an extracted file and then sets its modification time, which a
+/// later write would otherwise replace.
+fn finish(output: &mut BufWriter<File>, item: &Item) -> Result<()> {
+    output.flush()?;
+    // Best effort, as unzip and bsdtar only warn when a time cannot be set.
+    if let Some(seconds) = item.modified {
+        let _ = output.get_ref().set_modified(system_time(seconds));
+    }
+    Ok(())
+}
+
 /// Streams one entry's payload to `sink`, checking its CRC and exact length.
 /// Deflate input must end exactly at the compressed size. A stored entry
 /// followed by a data descriptor must not hide a matching descriptor inside
@@ -648,7 +796,8 @@ fn stream_entry(
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    Ok(scan(&open(path, false)?)?
+    let (archive, _) = open(path, false)?;
+    Ok(scan(&archive, None)?
         .into_iter()
         .map(|item| item.entry)
         .collect())
@@ -713,11 +862,12 @@ pub fn read_archive_with_options(
     // Linux extraction benefits from avoiding shared input seeks/reads for tiny
     // archives. Other platforms retain caching only for integrity verification.
     // This retained-input cache is separate from the live entry-buffer budget.
-    let archive = open(
+    let (archive, times) = open(
         path,
         fast && (destination.is_none() || cfg!(target_os = "linux")),
     )?;
-    let items = scan(&archive)?;
+    let items = scan(&archive, Some(&times))?;
+    drop(times);
     let staging = if let Some(dst) = destination {
         ensure!(
             fs::symlink_metadata(dst).is_err(),
@@ -826,7 +976,7 @@ pub fn read_archive_with_options(
                         } else {
                             output.write_all(&decoded)?;
                         }
-                        output.flush()?;
+                        finish(output, item)?;
                     }
                     return Ok(());
                 }
@@ -837,7 +987,7 @@ pub fn read_archive_with_options(
                     Ok(())
                 })?;
                 if let Some(output) = &mut output {
-                    output.flush()?;
+                    finish(output, item)?;
                 }
                 Ok(())
             },
@@ -867,10 +1017,14 @@ pub fn read_archive_with_options(
             .install(run)?;
     }
     if let (Some(temp), Some(dst)) = (staging, destination) {
-        let directories: Vec<(&str, u32)> = items
+        let directories: Vec<crate::Directory> = items
             .iter()
             .filter(|item| item.entry.directory)
-            .filter_map(|item| Some((item.entry.name.as_str(), item.mode?)))
+            .map(|item| crate::Directory {
+                name: &item.entry.name,
+                mode: item.mode,
+                modified: item.modified.map(system_time),
+            })
             .collect();
         crate::publish(temp.path(), dst, &directories)?;
     }

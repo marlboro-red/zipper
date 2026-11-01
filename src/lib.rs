@@ -57,15 +57,19 @@ fn parent(path: &Path) -> &Path {
         .unwrap_or(Path::new("."))
 }
 
+/// Metadata to restore on an extracted directory.
+pub(crate) struct Directory<'a> {
+    pub name: &'a str,
+    pub mode: Option<u32>,
+    pub modified: Option<std::time::SystemTime>,
+}
+
 /// Publishes a finished staging directory at `destination`. On Unix,
-/// `directories` receive their archive modes, deepest first and limited by the
-/// staging directory's own mode, which is what any new directory gets (0o777
-/// less the umask). This matches bsdtar; Info-ZIP unzip ignores the umask.
-pub(crate) fn publish(
-    staging: &Path,
-    destination: &Path,
-    directories: &[(&str, u32)],
-) -> Result<()> {
+/// `directories` first receive their modification times, then their archive
+/// modes, deepest first and limited by the staging directory's own mode, which
+/// is what any new directory gets (0o777 less the umask). This matches bsdtar;
+/// Info-ZIP unzip ignores the umask.
+pub(crate) fn publish(staging: &Path, destination: &Path, directories: &[Directory]) -> Result<()> {
     ensure!(
         std::fs::symlink_metadata(destination).is_err(),
         "destination appeared during extraction"
@@ -88,27 +92,42 @@ pub(crate) fn publish(
 
 #[cfg(unix)]
 mod unix_modes {
+    use super::Directory;
     use anyhow::Result;
+    use rayon::prelude::*;
     use std::{
-        fs::{self, Permissions},
+        fs::{self, File, Permissions},
         os::unix::fs::PermissionsExt,
         path::Path,
     };
 
-    pub(super) fn apply(staging: &Path, directories: &[(&str, u32)]) -> Result<()> {
+    pub(super) fn apply(staging: &Path, directories: &[Directory]) -> Result<()> {
         let default = fs::metadata(staging)?.permissions().mode() & 0o777;
-        let mut ordered = directories.to_vec();
-        ordered.sort_by_key(|(name, _)| std::cmp::Reverse(name.matches('/').count()));
+        let mut ordered: Vec<&Directory> = directories.iter().collect();
+        ordered.sort_by_key(|directory| std::cmp::Reverse(directory.name.matches('/').count()));
+        // Times first: a directory restored to mode 000 cannot be opened.
+        // Setting one directory's time leaves its parent's alone, so they
+        // can be set in parallel.
+        ordered.par_iter().try_for_each(|directory| -> Result<()> {
+            // Best effort, as for files.
+            if let Some(time) = directory.modified
+                && let Ok(handle) = File::open(staging.join(directory.name))
+            {
+                let _ = handle.set_modified(time);
+            }
+            Ok(())
+        })?;
         // New directories already have the default mode, so most need no call.
-        for (name, mode) in ordered
-            .into_iter()
-            .filter(|(_, mode)| mode & default != default)
-        {
-            fs::set_permissions(staging.join(name), Permissions::from_mode(mode & default))?;
+        for directory in ordered {
+            if let Some(mode) = directory.mode.filter(|mode| mode & default != default) {
+                fs::set_permissions(
+                    staging.join(directory.name),
+                    Permissions::from_mode(mode & default),
+                )?;
+            }
         }
         Ok(())
     }
-
     /// Gives the owner full access to `directory` and then to every directory
     /// below it. A locked directory must be opened before its children appear.
     pub(super) fn make_writable(directory: &Path) {

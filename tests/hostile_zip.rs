@@ -30,6 +30,8 @@ struct Raw {
     descriptor_bytes: Option<Vec<u8>>,
     local_flags: u16,
     central_extra: Vec<u8>,
+    /// DOS time (low 16 bits) and date (high 16 bits).
+    dos: u32,
 }
 
 fn stored(name: &str, data: &[u8]) -> Raw {
@@ -51,6 +53,7 @@ fn stored(name: &str, data: &[u8]) -> Raw {
         descriptor_bytes: None,
         local_flags: 0,
         central_extra: Vec::new(),
+        dos: 0,
     }
 }
 
@@ -111,7 +114,7 @@ fn zip_bytes(entries: &[Raw], tail: &[u8]) -> Vec<u8> {
         out.extend_from_slice(&20u16.to_le_bytes());
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&entry.method.to_le_bytes());
-        out.extend_from_slice(&[0; 4]);
+        out.extend_from_slice(&entry.dos.to_le_bytes());
         out.extend_from_slice(&deferred(entry.crc).to_le_bytes());
         let local_compressed = entry
             .local_compressed
@@ -143,7 +146,7 @@ fn zip_bytes(entries: &[Raw], tail: &[u8]) -> Vec<u8> {
         out.extend_from_slice(&20u16.to_le_bytes());
         out.extend_from_slice(&(if entry.descriptor { 8u16 } else { 0 }).to_le_bytes());
         out.extend_from_slice(&entry.method.to_le_bytes());
-        out.extend_from_slice(&[0; 4]);
+        out.extend_from_slice(&entry.dos.to_le_bytes());
         out.extend_from_slice(&entry.crc.to_le_bytes());
         out.extend_from_slice(&(entry.payload.len() as u32).to_le_bytes());
         out.extend_from_slice(&entry.size.to_le_bytes());
@@ -878,4 +881,67 @@ fn an_entry_may_use_any_safe_root_name() {
             b"mine"
         );
     }
+}
+
+/// A DOS date and time packed as the ZIP header stores them.
+fn dos(year: u32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> u32 {
+    ((year - 1980) << 25 | month << 21 | day << 16) | (hour << 11 | minute << 5 | (second / 2))
+}
+
+fn extended_time(seconds: u32) -> Vec<u8> {
+    [vec![0x55, 0x54, 5, 0, 1], seconds.to_le_bytes().to_vec()].concat()
+}
+
+fn unix_time(seconds: u32) -> Vec<u8> {
+    [
+        vec![0x55, 0x58, 8, 0],
+        seconds.to_le_bytes().to_vec(),
+        seconds.to_le_bytes().to_vec(),
+    ]
+    .concat()
+}
+
+fn extracted_time(entry: Raw) -> i64 {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, &[entry]);
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    let modified = fs::metadata(destination.join("a.txt"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    match modified.duration_since(std::time::UNIX_EPOCH) {
+        Ok(after) => after.as_secs() as i64,
+        Err(before) => -(before.duration().as_secs() as i64),
+    }
+}
+
+#[test]
+fn exact_times_follow_the_dos_era_and_field_priority() {
+    let at = |central_extra: Vec<u8>, dos: u32| Raw {
+        central_extra,
+        dos,
+        ..stored("a.txt", b"x")
+    };
+    // A 1969 time stored as 32 bits reads as 2106 when taken as unsigned.
+    let before_1970 = -54_000_i32 as u32;
+    assert_eq!(
+        extracted_time(at(extended_time(before_1970), dos(1980, 1, 1, 0, 0, 0))),
+        -54_000
+    );
+    // A real 2040 time has its top bit set too.
+    assert_eq!(
+        extracted_time(at(extended_time(2_208_988_800), dos(2040, 1, 1, 0, 0, 0))),
+        2_208_988_800
+    );
+    let both = [extended_time(1_000_000_000), unix_time(1_100_000_000)];
+    let dos_2001 = dos(2001, 9, 9, 0, 0, 0);
+    assert_eq!(extracted_time(at(both.concat(), dos_2001)), 1_000_000_000);
+    let reversed = [both[1].clone(), both[0].clone()].concat();
+    assert_eq!(extracted_time(at(reversed, dos_2001)), 1_000_000_000);
+    assert_eq!(
+        extracted_time(at(unix_time(1_100_000_000), dos_2001)),
+        1_100_000_000
+    );
 }

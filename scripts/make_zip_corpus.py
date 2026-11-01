@@ -55,6 +55,11 @@ def write_source(root):
     (root / "empty-dir").mkdir()
     (root / "modes/run.sh").chmod(0o755)
     (root / "modes/readonly.txt").chmod(0o444)
+    # Fixed times, odd and even seconds, set on files before their directories.
+    paths = sorted(root.rglob("*"), key=lambda path: (path.is_dir(), -len(path.parts), str(path)))
+    for index, path in enumerate([*paths, root]):
+        seconds = 1_577_934_245 + index * 7_919
+        os.utime(path, (seconds, seconds))
     (root / "modes/locked").chmod(0o555)
 
 
@@ -83,9 +88,10 @@ def python_zip(target, source, method, seekable, zip64):
                     entry.write(path.read_bytes())
 
 
-def run(command, cwd, stdout=None):
+def run(command, cwd, stdout=None, zone=None):
+    env = None if zone is None else {**os.environ, "TZ": zone}
     subprocess.run(command, cwd=cwd, check=True, stdout=stdout or subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL)
+                   stderr=subprocess.DEVNULL, env=env)
 
 
 def writers(have):
@@ -151,19 +157,30 @@ def unlock(root):
             path.chmod(path.stat().st_mode | 0o700)
 
 
+def times(root):
+    """Map of NFC path to its modification time in whole seconds."""
+    return {unicodedata.normalize("NFC", path.relative_to(root).as_posix()): int(path.lstat().st_mtime)
+            for path in sorted(root.rglob("*"))}
+
+
 # Info-ZIP unzip and bsdtar restore permission bits, including directory
-# modes. Python restores none, and 7-Zip skips directory modes.
+# modes, and modification times. Python restores neither, and 7-Zip skips
+# directory modes.
 MODE_READERS = ["unzip", "bsdtar"]
+# A time that both readers restore identically in both zones is exact. Times
+# from DOS fields depend on the zone and are left to tests/cli.rs.
+ZONES = ["UTC", "Pacific/Auckland"]
 
 
-def readers(have):
+def readers(have, zone=None):
     found = [("python", lambda archive, out: zipfile.ZipFile(archive).extractall(out))]
     if have("unzip"):
-        found.append(("unzip", lambda archive, out: run(["unzip", "-q", str(archive), "-d", str(out)], out.parent)))
+        found.append(("unzip", lambda archive, out: run(
+            ["unzip", "-q", str(archive), "-d", str(out)], out.parent, zone=zone)))
     if have("bsdtar"):
         def bsdtar(archive, out):
             out.mkdir()
-            run(["bsdtar", "-xf", str(archive), "-C", str(out)], out.parent)
+            run(["bsdtar", "-xf", str(archive), "-C", str(out)], out.parent, zone=zone)
         found.append(("bsdtar", bsdtar))
     if have("7zz"):
         found.append(("7zip", lambda archive, out: run(["7zz", "x", "-y", "-bd", f"-o{out}", str(archive)], out.parent)))
@@ -180,19 +197,20 @@ def main():
         old.unlink()
     summary = {"writers": {}, "readers": [name for name, _ in readers(have)],
                "missing_tools": [t for t in ["zip", "unzip", "7zz", "bsdtar", "ditto", "jar"] if not have(t)]}
-    manifests, all_modes = {}, {}
+    manifests, all_modes, all_times = {}, {}, {}
     with tempfile.TemporaryDirectory(prefix="zipper-corpus-") as work:
         work = Path(work)
         write_source(work / "src")
         try:
-            build(args, have, work, summary, manifests, all_modes)
+            build(args, have, work, summary, manifests, all_modes, all_times)
         finally:
             unlock(work)
-    write_manifest(args, summary, manifests, all_modes)
+    write_manifest(args, summary, manifests, all_modes, all_times)
 
 
-def build(args, have, work, summary, manifests, all_modes):
+def build(args, have, work, summary, manifests, all_modes, all_times):
     """Writes each archive and records what the reference readers agree on."""
+    source_times = times(work)
     for name, write in writers(have):
         archive = args.output / f"{name}.zip"
         write(archive.resolve(), work)
@@ -224,6 +242,23 @@ def build(args, have, work, summary, manifests, all_modes):
             print(f"{name}: fewer than three readers agree; excluded", file=sys.stderr)
             continue
         manifests[name] = json.loads(winner)
+        zone_times = []
+        for zone in ZONES:
+            for reader, extract in readers(have, zone):
+                if reader not in MODE_READERS:
+                    continue
+                out = work / f"time-{name}-{reader}"
+                try:
+                    extract(archive.resolve(), out)
+                    zone_times.append(times(out))
+                finally:
+                    if out.exists():
+                        unlock(out)
+                    shutil.rmtree(out, ignore_errors=True)
+        # Keep a time only when every run restored the source's own time, so
+        # an extraction-time value can never be recorded by coincidence.
+        all_times[name] = {path: value for path, value in source_times.items()
+                           if all(run.get(path) == value for run in zone_times)}
         mode_votes = [reader_modes.get(reader) for reader in MODE_READERS]
         agreed_modes = mode_votes[0] if None not in mode_votes and all(
             vote == mode_votes[0] for vote in mode_votes) else {}
@@ -231,15 +266,18 @@ def build(args, have, work, summary, manifests, all_modes):
         all_modes[name] = agreed_modes
 
 
-def write_manifest(args, summary, manifests, all_modes):
+def write_manifest(args, summary, manifests, all_modes, all_times):
     # One line per expected path: archive, path, size or "dir", CRC-32 or "-",
-    # and the octal mode where the mode readers agree, or "-".
+    # the octal mode where the mode readers agree, and the exact modification
+    # time in seconds, each "-" when unknown.
     lines = []
     for archive, expected in sorted(manifests.items()):
         for path, value in sorted(expected.items()):
             fields = ["dir", "-"] if value is None else [str(value[0]), f"{value[1]:08x}"]
             mode = all_modes[archive].get(path)
             fields.append("-" if mode is None else f"{mode:o}")
+            time = all_times[archive].get(path)
+            fields.append("-" if time is None else str(time))
             lines.append("\t".join([archive, path, *fields]))
     (args.output / "manifest.tsv").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (args.output / "corpus.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n")
