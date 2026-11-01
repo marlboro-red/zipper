@@ -34,7 +34,7 @@ The native reader extracts the same bytes as a reference extractor and survives 
 
 Scope:
 
-- A reference comparison that extracts each corpus archive with Zipper, bsdtar and 7-Zip and compares the trees.
+- A reference comparison that extracts each corpus archive with Zipper, bsdtar and 7-Zip and compares the trees. Done in the [reference corpus](reference/zip-reader.md#reference-corpus), which still lacks Java `jar` output.
 - A corpus of real producer output. It covers Java `jar`, Windows Explorer, macOS Archive Utility, Info-ZIP `zip`, Python `zipfile` and 7-Zip. It includes ZIP64 by size and by entry count, data descriptors and archive comments.
 - A hostile collection with a test for each case. It covers path traversal, absolute paths, drive letters, duplicate names, names that collide by case, overlapping entries, a zero declared size hiding real data, local and central headers that disagree, truncation and inconsistent ZIP64 fields.
 - Fuzz targets for the central-directory and local-header parsers.

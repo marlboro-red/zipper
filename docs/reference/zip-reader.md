@@ -49,6 +49,21 @@ Both native ZIP modes run these checks before publishing any output:
 
 `list` runs only the central-directory checks, including the central Unicode path and ZIP64 field checks, and the first-record check. It does not read local headers, so it does not detect bytes hidden between records or a Unicode path field present only in a local header. `test` and `extract` detect both.
 
+## Reference corpus
+
+`tests/data/zip-corpus` holds 17 archives from these real ZIP writers:
+
+- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes.
+- 7-Zip, with Deflate, Copy and timestamps.
+- bsdtar, with Deflate and stored entries.
+- macOS `ditto`.
+- Python `zipfile`, seekable and streaming, with Deflate, stored and ZIP64.
+ The source tree has empty files and directories, non-ASCII names, and files at the decoder's 64 KiB and 192 KiB slice boundaries.
+
+`scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 6 archives.
+
+`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
+
 ## Engines
 
 ### `native`

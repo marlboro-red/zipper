@@ -1,0 +1,272 @@
+{
+ "missing_tools": [],
+ "readers": [
+  "python",
+  "unzip",
+  "bsdtar",
+  "7zip"
+ ],
+ "writers": {
+  "7zip-copy": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "7zip-deflate": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "7zip-timestamps": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "bsdtar-deflate": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "bsdtar-stored": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "ditto": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "unzip"
+   ],
+   "dissenting": [
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "infozip-default": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "unzip"
+   ],
+   "dissenting": [
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "infozip-descriptors": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "unzip"
+   ],
+   "dissenting": [
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "infozip-piped": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "unzip"
+   ],
+   "dissenting": [
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "infozip-stored": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "unzip"
+   ],
+   "dissenting": [
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "infozip-zip64": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "unzip"
+   ],
+   "dissenting": [
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "python-deflate": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "python-stored": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "python-stream-deflate": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "python-stream-stored": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "python-stream-zip64": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "python-zip64": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  }
+ }
+}
