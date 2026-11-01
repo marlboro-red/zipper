@@ -57,7 +57,9 @@ fn parent(path: &Path) -> &Path {
         .unwrap_or(Path::new("."))
 }
 
-/// Metadata to restore on an extracted directory.
+/// Metadata to restore on an extracted directory. Only Unix restores
+/// directory metadata, so other platforms never read these fields.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) struct Directory<'a> {
     pub name: &'a str,
     pub mode: Option<u32>,
