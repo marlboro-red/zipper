@@ -5,7 +5,7 @@ mod pipeline;
 mod v1;
 mod v2;
 mod zip_reader;
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use std::{
     fs::File,
     io::Read,
@@ -55,6 +55,72 @@ fn parent(path: &Path) -> &Path {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."))
+}
+
+/// Allocation unit assumed when estimating the space an extraction needs.
+const ALLOCATION_UNIT: u64 = 4096;
+
+/// Refuse an extraction whose output cannot fit before writing anything.
+/// With no explicit limit, the estimate, which rounds each nonempty file up to
+/// a 4 KiB allocation unit, must fit in the destination filesystem's free space.
+pub(crate) fn check_output_size<'a>(
+    destination: &Path,
+    entries: impl IntoIterator<Item = &'a Entry>,
+    limit: Option<u64>,
+) -> Result<()> {
+    let (mut declared, mut estimate) = (0u64, 0u64);
+    for entry in entries {
+        declared = declared
+            .checked_add(entry.size)
+            .context("archive output size overflows")?;
+        let rounded = entry
+            .size
+            .div_ceil(ALLOCATION_UNIT)
+            .saturating_mul(ALLOCATION_UNIT);
+        estimate = estimate.saturating_add(rounded);
+    }
+    match limit {
+        Some(limit) => ensure!(
+            declared <= limit,
+            "archive expands to {declared} bytes, over --max-extracted-bytes {limit}"
+        ),
+        None => {
+            let parent = parent(destination);
+            let free = available_bytes(parent)
+                .with_context(|| format!("cannot measure free space at {}", parent.display()))?;
+            ensure!(
+                estimate <= free,
+                "archive needs about {estimate} bytes but {free} are free; \
+                 pass --max-extracted-bytes to override"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn available_bytes(path: &Path) -> Result<u64> {
+    let stats = rustix::fs::statvfs(path)?;
+    Ok(stats.f_bavail.saturating_mul(stats.f_frsize))
+}
+
+#[cfg(windows)]
+fn available_bytes(path: &Path) -> Result<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut free = 0u64;
+    // SAFETY: `wide` is a NUL-terminated UTF-16 path that outlives the call,
+    // `free` is a valid u64, and the two other outputs are optional nulls.
+    let ok = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    ensure!(ok != 0, "{}", std::io::Error::last_os_error());
+    Ok(free)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,9 +193,28 @@ pub fn extract_selected(
     destination: &Path,
     paths: &[String],
 ) -> Result<Vec<Entry>> {
-    ensure!(
-        version(archive)? == 2,
-        "selective extraction requires a v2 archive"
-    );
-    v2::read_archive(archive, Some(destination), paths)
+    extract(archive, destination, paths, None)
+}
+
+/// Extract all entries, or the selected paths of a v2 archive. `limit` caps the
+/// declared output bytes; without it a v2 archive must fit in free space.
+/// v1 archives have no size index and are not checked.
+pub fn extract(
+    archive: &Path,
+    destination: &Path,
+    paths: &[String],
+    limit: Option<u64>,
+) -> Result<Vec<Entry>> {
+    match version(archive)? {
+        1 if paths.is_empty() => {
+            ensure!(
+                limit.is_none(),
+                "--max-extracted-bytes requires a v2 archive; v1 has no size index"
+            );
+            v1::read_archive(archive, Some(destination))
+        }
+        2 => v2::read_archive_limited(archive, Some(destination), paths, limit),
+        1 => bail!("selective extraction requires a v2 archive"),
+        n => bail!("unsupported Zipper version: {n}"),
+    }
 }

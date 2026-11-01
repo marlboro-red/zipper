@@ -30,7 +30,7 @@ It does not preserve permissions or timestamps.
 | --- | --- |
 | Entries | at most 100,000 |
 | Raw central-directory metadata | at most 64 MiB |
-| Total expanded size | no quota |
+| Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
 ## Integrity checks
 

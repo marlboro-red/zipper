@@ -42,7 +42,7 @@ Scope:
 - Unicode path extra fields (`0x7075`) that rename an entry are rejected, so every reader uses the same name. Done in the [Unicode path field check](../benchmarks/native-zip/unicode-path/README.md).
 - Records that tile the archive, with checked data descriptors, the local encryption flag and local ZIP64 sizes. Done in the [record layout check](../benchmarks/native-zip/record-layout/README.md).
 - Deflate streams that end exactly at their compressed size, and stored entries that cannot hide a descriptor. Done in [exact decoding](../benchmarks/native-zip/exact-decoding/README.md).
-- A limit on total extracted bytes, with a documented default.
+- A limit on total extracted bytes, with a documented default. Done. Output must fit in free space unless `--max-extracted-bytes` sets a cap.
 
 Exit checks:
 

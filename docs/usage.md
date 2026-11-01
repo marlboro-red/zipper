@@ -48,6 +48,16 @@ target/release/zipper test backup.zipper
 V1 archives remain readable, and v1 listing still validates all content.
 Use a private destination parent, because publication does not defend against concurrent filesystem changes by other users.
 
+### Limit the extracted size
+
+Before writing anything, `extract` adds up the declared size of every entry. By default the total must fit in the destination filesystem's free space. The estimate rounds each nonempty file up to a 4 KiB allocation unit. To set your own cap instead, pass `--max-extracted-bytes`:
+
+```sh
+target/release/zipper extract backup.zipper --output restored --max-extracted-bytes 10000000000
+```
+
+The limit applies to `.zipper` v2 archives and to ZIP archives read with `--zip-engine native` or `native-fast`. Legacy v1 archives have no size index, so they refuse the option. The default ZIP engine, the 7-Zip backend, applies its own rules and refuses the option too. On a compressed filesystem the free-space estimate can be too strict, so pass a cap to override it.
+
 ## Extract selected paths
 
 To extract part of an archive, pass `--path` with an exact path or a directory subtree:

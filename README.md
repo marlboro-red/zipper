@@ -42,7 +42,7 @@ V2 CRC32 checks payloads and decoded index metadata for accidental corruption, b
 V1 metadata remains unchecked.
 Inputs must remain unchanged during creation.
 Block-scoped solid packing has no cross-block history.
-Extraction has no total expanded-size quota yet.
+Extraction refuses archives that cannot fit in free space, or that exceed `--max-extracted-bytes`. Legacy v1 archives and the 7-Zip backend are not checked.
 Use private destination parents, because publication does not defend against concurrent filesystem changes by other users.
 The [native format reference](docs/reference/format.md) and the [ZIP reader reference](docs/reference/zip-reader.md) give the details.
 

@@ -586,8 +586,10 @@ dependencies = [
  "libdeflate-sys",
  "libdeflater",
  "rayon",
+ "rustix",
  "tempfile",
  "walkdir",
+ "windows-sys",
  "zip",
  "zstd",
 ]

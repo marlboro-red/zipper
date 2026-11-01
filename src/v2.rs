@@ -418,6 +418,15 @@ pub(super) fn read_archive(
     destination: Option<&Path>,
     selected: &[String],
 ) -> Result<Vec<Entry>> {
+    read_archive_limited(path, destination, selected, None)
+}
+
+pub(super) fn read_archive_limited(
+    path: &Path,
+    destination: Option<&Path>,
+    selected: &[String],
+    limit: Option<u64>,
+) -> Result<Vec<Entry>> {
     let mut file = File::open(path)?;
     let index = read_index(&mut file)?;
     for name in selected {
@@ -456,6 +465,7 @@ pub(super) fn read_archive(
             fs::symlink_metadata(dst).is_err(),
             "extraction destination must not exist"
         );
+        crate::check_output_size(dst, items.iter().map(|item| &item.entry), limit)?;
         Some(tempfile::tempdir_in(parent(dst))?)
     } else {
         None

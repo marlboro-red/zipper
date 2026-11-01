@@ -47,3 +47,64 @@ fn compatibility_backend_failure_does_not_publish() -> anyhow::Result<()> {
     assert!(!t.path().join("out").exists());
     Ok(())
 }
+
+#[test]
+fn max_extracted_bytes_caps_native_archives_before_writing() -> anyhow::Result<()> {
+    let t = tempfile::tempdir()?;
+    fs::create_dir(t.path().join("data"))?;
+    fs::write(t.path().join("data/file"), vec![7u8; 4096])?;
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .current_dir(t.path())
+            .args(args)
+            .env("ZIPPER_7Z", t.path().join("missing-backend"))
+            .output()
+    };
+    assert!(run(&["create", "a.zipper", "data"])?.status.success());
+    let refused = run(&[
+        "extract",
+        "a.zipper",
+        "-o",
+        "small",
+        "--max-extracted-bytes",
+        "4095",
+    ])?;
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--max-extracted-bytes"));
+    assert!(!t.path().join("small").exists());
+    let selected = run(&[
+        "extract",
+        "a.zipper",
+        "-o",
+        "part",
+        "--path",
+        "data",
+        "--max-extracted-bytes",
+        "4095",
+    ])?;
+    assert!(!selected.status.success());
+    assert!(
+        run(&[
+            "extract",
+            "a.zipper",
+            "-o",
+            "fits",
+            "--max-extracted-bytes",
+            "4096"
+        ])?
+        .status
+        .success()
+    );
+    assert_eq!(fs::read(t.path().join("fits/data/file"))?, vec![7u8; 4096]);
+    fs::write(t.path().join("legacy.zip"), b"PK fake")?;
+    let backend = run(&[
+        "extract",
+        "legacy.zip",
+        "-o",
+        "zip",
+        "--max-extracted-bytes",
+        "1",
+    ])?;
+    assert!(String::from_utf8_lossy(&backend.stderr).contains("requires a native archive"));
+    Ok(())
+}

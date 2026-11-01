@@ -668,8 +668,7 @@ pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<
         destination,
         ReadOptions {
             fast: true,
-            threads: None,
-            buffer_bytes: None,
+            ..ReadOptions::default()
         },
     )
 }
@@ -686,6 +685,9 @@ pub struct ReadOptions {
     /// ARM64 macOS, 64 MiB elsewhere.
     /// Zero forces streaming. Metadata, worker state and archive cache are extra.
     pub buffer_bytes: Option<usize>,
+    /// Cap on declared output bytes. Without it, extraction must fit in the
+    /// destination filesystem's free space.
+    pub max_output_bytes: Option<u64>,
 }
 
 pub fn read_archive_with_options(
@@ -718,6 +720,11 @@ pub fn read_archive_with_options(
             fs::symlink_metadata(dst).is_err(),
             "extraction destination must not exist"
         );
+        crate::check_output_size(
+            dst,
+            items.iter().map(|item| &item.entry),
+            options.max_output_bytes,
+        )?;
         Some(tempfile::tempdir_in(parent(dst))?)
     } else {
         None

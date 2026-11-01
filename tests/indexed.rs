@@ -201,6 +201,10 @@ fn legacy_v1_and_empty_v2_remain_readable() -> anyhow::Result<()> {
     assert!(
         zipper::extract_selected(&legacy, &t.path().join("selected"), &["file".into()]).is_err()
     );
+    let capped = t.path().join("capped");
+    let error = zipper::extract(&legacy, &capped, &[], Some(1)).unwrap_err();
+    assert!(error.to_string().contains("v2"), "{error}");
+    assert!(!capped.exists());
     let input = t.path().join("empty");
     fs::create_dir(&input)?;
     let archive = t.path().join("empty.zipper");

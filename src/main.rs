@@ -46,6 +46,10 @@ enum Command {
         /// Extract an exact archive path or directory subtree (v2 only; repeatable).
         #[arg(long = "path")]
         paths: Vec<String>,
+        /// Refuse archives whose declared output exceeds this many bytes. By
+        /// default, ZIP (native engines) and v2 output must fit in free space.
+        #[arg(long)]
+        max_extracted_bytes: Option<u64>,
     },
     /// List entries (v2 validates the index; use test to verify payloads).
     List { archive: PathBuf },
@@ -118,13 +122,10 @@ fn main() -> Result<()> {
             archive,
             output,
             paths,
+            max_extracted_bytes,
         } => {
-            if !paths.is_empty() {
-                zipper::extract_selected(&archive, &output, &paths)?;
-                return Ok(());
-            }
-            if zipper::compat::is_native(&archive)? {
-                zipper::read_archive(&archive, Some(&output))?;
+            if !paths.is_empty() || zipper::compat::is_native(&archive)? {
+                zipper::extract(&archive, &output, &paths, max_extracted_bytes)?;
             } else if cli.zip_engine != ZipEngine::Backend {
                 zipper::native_zip::read_archive_with_options(
                     &archive,
@@ -133,9 +134,14 @@ fn main() -> Result<()> {
                         fast: cli.zip_engine == ZipEngine::NativeFast,
                         threads: cli.threads,
                         buffer_bytes,
+                        max_output_bytes: max_extracted_bytes,
                     },
                 )?;
             } else {
+                anyhow::ensure!(
+                    max_extracted_bytes.is_none(),
+                    "--max-extracted-bytes requires a native archive or --zip-engine native"
+                );
                 zipper::compat::run("x", &archive, Some(&output))?;
             }
         }
@@ -173,6 +179,7 @@ fn main() -> Result<()> {
                         fast: cli.zip_engine == ZipEngine::NativeFast,
                         threads: cli.threads,
                         buffer_bytes,
+                        max_output_bytes: None,
                     },
                 )?
             };

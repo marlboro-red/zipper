@@ -771,3 +771,60 @@ fn unicode_path_fields_cannot_rename_entries() {
         assert_eq!(fs::read(destination.join("a.txt")).unwrap(), b"x");
     }
 }
+
+#[test]
+fn output_that_cannot_fit_is_refused_before_writing() {
+    // About 16 TiB declared by 4,096 one-byte entries: more than any test
+    // machine has free, and refused before a byte is decoded.
+    let entries: Vec<Raw> = (0..4096)
+        .map(|index| Raw {
+            size: u32::MAX - 1,
+            ..stored(&format!("f{index}"), b"x")
+        })
+        .collect();
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, &entries);
+        let destination = root.path().join("out");
+        let error = read(&archive, Some(&destination)).unwrap_err().to_string();
+        assert!(error.contains("free"), "{error}");
+        assert_eq!(leftovers(root.path()), Vec::<String>::new());
+    }
+    // A ZIP64 size of 2^64 - 1 must not wrap the rounded estimate to zero.
+    let mut endless = deflated("endless.bin", &megabyte_of_zeros());
+    endless.size = u32::MAX;
+    endless.central_extra = [vec![1, 0, 8, 0], u64::MAX.to_le_bytes().to_vec()].concat();
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, std::slice::from_ref(&endless));
+        let error = read(&archive, Some(&root.path().join("out")))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("free"), "{error}");
+    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, &[deflated("big.bin", &megabyte_of_zeros())]);
+    let destination = root.path().join("out");
+    let options = zipper::native_zip::ReadOptions {
+        max_output_bytes: Some(1 << 19),
+        ..Default::default()
+    };
+    let error =
+        zipper::native_zip::read_archive_with_options(&archive, Some(&destination), options)
+            .unwrap_err()
+            .to_string();
+    assert!(error.contains("--max-extracted-bytes"), "{error}");
+    assert!(!destination.exists());
+    let options = zipper::native_zip::ReadOptions {
+        max_output_bytes: Some(1 << 20),
+        ..Default::default()
+    };
+    zipper::native_zip::read_archive_with_options(&archive, Some(&destination), options).unwrap();
+    assert_eq!(
+        fs::read(destination.join("big.bin")).unwrap(),
+        megabyte_of_zeros()
+    );
+}

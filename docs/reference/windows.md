@@ -51,7 +51,7 @@ $env:ZIPPER_7Z = 'C:\Program Files\7-Zip\7z.exe'
 - Native ZIP supports stored and Deflate ZIP, and conventional ZIP64.
 - Native-fast can use up to 64 MiB of entry buffers per worker. For lower memory
   use, choose `--zip-engine native`.
-- Expanded-size quotas are not implemented.
+- Expanded-size limits apply to native archives and the native ZIP engines, not to the 7-Zip backend.
 
 This release has no GUI, no Explorer integration, no automatic update mechanism,
 and no Windows ARM64 build.
