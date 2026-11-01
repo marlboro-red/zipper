@@ -7,19 +7,20 @@ use std::{
     process::{Command, ExitCode},
     time::Instant,
 };
+mod comments;
 mod docs;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | install-hooks";
+const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
-    if env::var_os(STUB_TOOL).is_some() {
-        return match stub_tool(&args) {
+    if env::var_os(STUB_C_TOOLCHAIN_ENV).is_some() {
+        return match stub_c_toolchain(&args) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("xtask stub tool: {error:#}");
+                eprintln!("xtask stub C toolchain: {error:#}");
                 ExitCode::FAILURE
             }
         };
@@ -28,6 +29,7 @@ fn main() -> ExitCode {
         ["gate", "fast"] => gate(false),
         ["gate", "full"] => gate(true),
         ["lint-docs"] => docs::lint(&root()),
+        ["lint-comments"] => comments::lint(&root()),
         ["install-hooks"] => install_hooks(),
         _ => Err(anyhow::anyhow!(USAGE)),
     };
@@ -115,12 +117,9 @@ fn gate(full: bool) -> Result<()> {
     Ok(())
 }
 
-/// Set when xtask runs as the C compiler or archiver for `windows_clippy`.
-const STUB_TOOL: &str = "XTASK_STUB_TOOL";
+const STUB_C_TOOLCHAIN_ENV: &str = "XTASK_STUB_C_TOOLCHAIN";
 const WINDOWS_TARGET: &str = "x86_64-pc-windows-gnu";
 
-/// Lints the Windows build from another host. Clippy only type-checks Rust,
-/// so the C dependencies build as empty objects and nothing links.
 fn windows_clippy() -> Result<()> {
     if cfg!(windows) {
         return Ok(());
@@ -137,7 +136,7 @@ fn windows_clippy() -> Result<()> {
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let status = Command::new(cargo)
         .current_dir(root())
-        .env(STUB_TOOL, "1")
+        .env(STUB_C_TOOLCHAIN_ENV, "1")
         .env(format!("CC_{suffix}"), &tool)
         .env(format!("AR_{suffix}"), &tool)
         .args([
@@ -158,8 +157,7 @@ fn windows_clippy() -> Result<()> {
     Ok(())
 }
 
-/// Writes an empty object for `-o <file>` and an empty archive for `*.a`.
-fn stub_tool(args: &[String]) -> Result<()> {
+fn stub_c_toolchain(args: &[String]) -> Result<()> {
     if let Some(at) = args.iter().position(|arg| arg == "-o") {
         let output = args.get(at + 1).context("-o without a file")?;
         fs::write(output, b"")?;
@@ -277,7 +275,7 @@ fn benchmark_smoke() -> Result<()> {
     let work = tempfile::tempdir()?;
     let tree = work.path().join("tree");
     write_fixture(&tree)?;
-    // bsdtar on macOS rewrites UTF-8 names to NFD, which the byte-exact tree check rejects.
+    // EXTERNAL(bsdtar): macOS bsdtar rewrites UTF-8 names to NFD.
     fs::remove_file(tree.join("\u{fc}nicode-\u{65e5}.txt"))?;
     let report = work.path().join("matrix.json");
     let binary = root()

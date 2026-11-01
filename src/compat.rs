@@ -2,12 +2,13 @@
 use anyhow::{Context, Result, bail, ensure};
 use std::{fs::File, io::Read, path::Path, process::Command};
 
+const ANY_NATIVE_VERSION_PREFIX: &[u8; 6] = b"ZIPPER";
+
 pub fn is_native(path: &Path) -> Result<bool> {
     let mut f = File::open(path)?;
     let mut prefix = [0; 6];
     let n = f.read(&mut prefix)?;
-    // Route every native version to the native parser, including damaged headers.
-    Ok(n == prefix.len() && &prefix == b"ZIPPER")
+    Ok(n == prefix.len() && &prefix == ANY_NATIVE_VERSION_PREFIX)
 }
 
 fn backend() -> Result<std::ffi::OsString> {

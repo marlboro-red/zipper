@@ -57,8 +57,6 @@ fn parent(path: &Path) -> &Path {
         .unwrap_or(Path::new("."))
 }
 
-/// Metadata to restore on an extracted directory. Only Unix restores
-/// directory metadata, so other platforms never read these fields.
 #[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) struct Directory<'a> {
     pub name: &'a str,
@@ -66,11 +64,6 @@ pub(crate) struct Directory<'a> {
     pub modified: Option<std::time::SystemTime>,
 }
 
-/// Publishes a finished staging directory at `destination`. On Unix,
-/// `directories` first receive their modification times, then their archive
-/// modes, deepest first and limited by the staging directory's own mode, which
-/// is what any new directory gets (0o777 less the umask). This matches bsdtar;
-/// Info-ZIP unzip ignores the umask.
 pub(crate) fn publish(staging: &Path, destination: &Path, directories: &[Directory]) -> Result<()> {
     ensure!(
         std::fs::symlink_metadata(destination).is_err(),
@@ -85,9 +78,8 @@ pub(crate) fn publish(staging: &Path, destination: &Path, directories: &[Directo
         anyhow::Ok(())
     })();
     if published.is_err() {
-        // Let the staging cleanup delete inside restored read-only directories.
         #[cfg(unix)]
-        unix_modes::make_writable(staging);
+        unix_modes::unlock_tree_for_cleanup(staging);
     }
     published
 }
@@ -107,20 +99,31 @@ mod unix_modes {
         let default = fs::metadata(staging)?.permissions().mode() & 0o777;
         let mut ordered: Vec<&Directory> = directories.iter().collect();
         ordered.sort_by_key(|directory| std::cmp::Reverse(directory.name.matches('/').count()));
-        // Times first: a directory restored to mode 000 cannot be opened.
-        // Setting one directory's time leaves its parent's alone, so they
-        // can be set in parallel.
-        ordered.par_iter().try_for_each(|directory| -> Result<()> {
-            // Best effort, as for files.
-            if let Some(time) = directory.modified
-                && let Ok(handle) = File::open(staging.join(directory.name))
-            {
-                let _ = handle.set_modified(time);
-            }
-            Ok(())
-        })?;
-        // New directories already have the default mode, so most need no call.
-        for directory in ordered {
+        restore_times(staging, &ordered)?;
+        restore_modes_deepest_first(staging, &ordered, default)
+    }
+
+    fn restore_times(staging: &Path, directories: &[&Directory]) -> Result<()> {
+        directories
+            .par_iter()
+            .try_for_each(|directory| -> Result<()> {
+                if let Some(time) = directory.modified
+                    && let Ok(handle) = File::open(staging.join(directory.name))
+                {
+                    let _ = handle.set_modified(time);
+                }
+                Ok(())
+            })
+    }
+
+    fn restore_modes_deepest_first(
+        staging: &Path,
+        directories: &[&Directory],
+        default: u32,
+    ) -> Result<()> {
+        // RECORD(benchmarks/native-zip/permissions/README.md): new directories have the default mode.
+        // EXTERNAL(bsdtar): the umask limits restored modes. Info-ZIP unzip ignores it.
+        for directory in directories {
             if let Some(mode) = directory.mode.filter(|mode| mode & default != default) {
                 fs::set_permissions(
                     staging.join(directory.name),
@@ -130,27 +133,21 @@ mod unix_modes {
         }
         Ok(())
     }
-    /// Gives the owner full access to `directory` and then to every directory
-    /// below it. A locked directory must be opened before its children appear.
-    pub(super) fn make_writable(directory: &Path) {
+    pub(super) fn unlock_tree_for_cleanup(directory: &Path) {
         if let Ok(metadata) = fs::symlink_metadata(directory) {
             let mode = metadata.permissions().mode() | 0o700;
             let _ = fs::set_permissions(directory, Permissions::from_mode(mode));
         }
         for entry in fs::read_dir(directory).into_iter().flatten().flatten() {
             if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-                make_writable(&entry.path());
+                unlock_tree_for_cleanup(&entry.path());
             }
         }
     }
 }
 
-/// Allocation unit assumed when estimating the space an extraction needs.
 const ALLOCATION_UNIT: u64 = 4096;
 
-/// Refuse an extraction whose output cannot fit before writing anything.
-/// With no explicit limit, the estimate, which rounds each nonempty file up to
-/// a 4 KiB allocation unit, must fit in the destination filesystem's free space.
 pub(crate) fn check_output_size<'a>(
     destination: &Path,
     entries: impl IntoIterator<Item = &'a Entry>,
@@ -327,7 +324,7 @@ mod publish_tests {
         lock("p/q/r");
         lock("p/q");
         lock("p");
-        unix_modes::make_writable(staging.path());
+        unix_modes::unlock_tree_for_cleanup(staging.path());
         std::fs::remove_dir_all(staging.path().join("p")).unwrap();
     }
 }

@@ -10,7 +10,6 @@ use std::{
 const MAGIC: &[u8; 8] = b"ZIPPER\0\x01";
 const CHUNK: usize = 1024 * 1024;
 const BATCH: usize = 8;
-/// Validate content, optionally extracting into a new directory via private staging.
 pub(super) fn read_archive(archive: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
     let staging = if let Some(dst) = destination {
         ensure!(

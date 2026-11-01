@@ -10,6 +10,7 @@ use std::{
 };
 
 const CHUNK: usize = 1024 * 1024;
+const MIN_WHOLE_FILES_FOR_PARALLEL_WRITE: usize = 8;
 const HEADER: u64 = 16;
 const FOOTER: u64 = 40;
 const END: &[u8; 8] = b"ZIPIDX02";
@@ -555,15 +556,12 @@ pub(super) fn read_archive_limited(
                 let whole = |item: &Item| {
                     item.offset >= packet.offset && item.offset + item.entry.size <= end
                 };
-                // Small files share a decoded block but have independent output
-                // files. Amortize parallel dispatch over at least eight files.
-                // Crossing files stay on the ordered writer below.
                 let parallel = files[first..last]
                     .iter()
                     .filter(|item| whole(item))
-                    .take(8)
+                    .take(MIN_WHOLE_FILES_FOR_PARALLEL_WRITE)
                     .count()
-                    == 8
+                    == MIN_WHOLE_FILES_FOR_PARALLEL_WRITE
                     && rayon::current_num_threads() > 1;
                 if parallel {
                     files[first..last]

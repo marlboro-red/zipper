@@ -95,9 +95,35 @@ fn equal(a: &Input, b: &Input) -> Result<bool> {
     Ok(same)
 }
 
-// A hash collision only adds comparisons: it can never declare unequal bytes
-// duplicates. Retain multiple representatives within each fingerprint bucket.
-fn partition(candidates: Vec<Input>) -> Result<Vec<DuplicateGroup>> {
+fn sharing_a_bucket(inputs: Vec<(Input, u32)>) -> Vec<(Input, u32)> {
+    let mut buckets: BTreeMap<(u64, u32), Vec<(Input, u32)>> = BTreeMap::new();
+    for input in inputs {
+        buckets
+            .entry((input.0.size, input.1))
+            .or_default()
+            .push(input);
+    }
+    buckets
+        .into_values()
+        .filter(|bucket| bucket.len() > 1)
+        .flatten()
+        .collect()
+}
+
+fn refingerprint(
+    inputs: Vec<(Input, u32)>,
+    hash: impl Fn(&Input, u32) -> Result<u32> + Sync,
+) -> Result<Vec<(Input, u32)>> {
+    inputs
+        .into_par_iter()
+        .map(|(input, previous)| {
+            let next = hash(&input, previous)?;
+            Ok((input, next))
+        })
+        .collect()
+}
+
+fn group_by_identical_bytes(candidates: Vec<Input>) -> Result<Vec<DuplicateGroup>> {
     let mut groups: Vec<Vec<Input>> = Vec::new();
     for candidate in candidates {
         let mut matching = None;
@@ -153,44 +179,17 @@ pub fn find(inputs: &[PathBuf]) -> Result<DuplicateReport> {
         }
     }
     let scanned_files = files.len();
-    let mut sizes: BTreeMap<u64, Vec<Input>> = BTreeMap::new();
-    for input in files.into_values() {
-        sizes.entry(input.size).or_default().push(input);
-    }
-    // Unique sizes need no payload I/O. Prefix fingerprints cheaply exclude
-    // same-size files before full hashing, and tiny files are hashed only once.
-    let candidates: Vec<_> = sizes
-        .into_values()
-        .filter(|group| group.len() > 1)
-        .flatten()
-        .collect();
-    let prefixes: Vec<_> = candidates
-        .into_par_iter()
-        .map(|input| {
-            let hash = fingerprint(&input, true)?;
-            Ok((input, hash))
-        })
-        .collect::<Result<_>>()?;
-    let mut buckets: BTreeMap<(u64, u32), Vec<Input>> = BTreeMap::new();
-    for (input, hash) in prefixes {
-        buckets.entry((input.size, hash)).or_default().push(input);
-    }
-    let candidates: Vec<_> = buckets
-        .into_iter()
-        .filter(|(_, group)| group.len() > 1)
-        .flat_map(|((_, prefix), group)| group.into_iter().map(move |input| (input, prefix)))
-        .collect();
-    let hashes: Vec<_> = candidates
-        .into_par_iter()
-        .map(|(input, prefix)| {
-            let hash = if input.size <= BUFFER as u64 {
-                prefix
-            } else {
-                fingerprint(&input, false)?
-            };
-            Ok((input, hash))
-        })
-        .collect::<Result<_>>()?;
+    let unhashed = files.into_values().map(|input| (input, 0)).collect();
+    let prefixed = refingerprint(sharing_a_bucket(unhashed), |input, _| {
+        fingerprint(input, true)
+    })?;
+    let hashes = refingerprint(sharing_a_bucket(prefixed), |input, prefix| {
+        if input.size <= BUFFER as u64 {
+            Ok(prefix)
+        } else {
+            fingerprint(input, false)
+        }
+    })?;
     let mut buckets: BTreeMap<(u64, u32), Vec<Input>> = BTreeMap::new();
     for (input, hash) in hashes {
         buckets.entry((input.size, hash)).or_default().push(input);
@@ -198,7 +197,7 @@ pub fn find(inputs: &[PathBuf]) -> Result<DuplicateReport> {
     let mut groups: Vec<_> = buckets
         .into_values()
         .filter(|group| group.len() > 1)
-        .map(partition)
+        .map(group_by_identical_bytes)
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .flatten()
@@ -239,7 +238,7 @@ mod tests {
                 size: 3,
             });
         }
-        let groups = partition(candidates)?;
+        let groups = group_by_identical_bytes(candidates)?;
         assert_eq!(groups.len(), 2);
         assert_eq!(
             groups[0]

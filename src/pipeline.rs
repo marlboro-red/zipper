@@ -1,6 +1,3 @@
-//! Ordered, bounded lanes. Each worker owns one input slot and one output slot;
-//! a slow worker cannot cause an unbounded reorder buffer. Closing receivers
-//! cancels blocked sends, including when the producer or consumer fails.
 use anyhow::{Result, anyhow, ensure};
 use std::{sync::mpsc::sync_channel, thread};
 
@@ -58,7 +55,6 @@ pub(super) fn run<I: Send, O: Send, C>(
             }
             Ok(())
         })();
-        // Release blocked workers before joining any thread.
         drop(outputs);
         let produced = producer
             .join()

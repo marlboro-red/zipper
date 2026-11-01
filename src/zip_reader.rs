@@ -1,6 +1,3 @@
-//! Cloneable file or immutable-memory cursors. File cursors share a handle
-//! with a lock covering physical I/O; memory cursors share bytes. Positions
-//! are private to each clone.
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom},
@@ -135,8 +132,7 @@ impl Read for Reader {
             Self::File(reader) => reader.read(bytes),
             #[cfg(windows)]
             Self::AdaptiveFile(file) => {
-                // Tiny entries keep small read-ahead. Sustained decoder reads
-                // amortize physical I/O through a larger window.
+                // RECORD(benchmarks/native-zip/adaptive-input/README.md): tiny entries keep small read-ahead.
                 if file.sequential_bytes >= SEQUENTIAL_THRESHOLD
                     && bytes.len() >= SMALL_BUFFER
                     && file.reader.capacity() == SMALL_BUFFER
@@ -157,8 +153,7 @@ impl Seek for Reader {
         match self {
             #[cfg(not(windows))]
             Self::File(reader) => {
-                // ZIP header/data seeks often stay inside the current read-ahead
-                // window. Preserve those bytes instead of refilling the window.
+                // RECORD(benchmarks/native-zip/preserved-window/README.md): seeks stay in the window.
                 let current = reader.get_ref().position - reader.buffer().len() as u64;
                 let target = match position {
                     SeekFrom::Start(target) => i128::from(target),
@@ -178,8 +173,6 @@ impl Seek for Reader {
             Self::AdaptiveFile(file) => {
                 let current = file.position();
                 let reader = &mut file.reader;
-                // ZIP header/data seeks often stay inside the current read-ahead
-                // window. Preserve those bytes instead of refilling the window.
                 let target = match position {
                     SeekFrom::Start(target) => i128::from(target),
                     SeekFrom::Current(delta) => i128::from(current) + i128::from(delta),
