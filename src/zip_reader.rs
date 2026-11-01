@@ -1,8 +1,19 @@
+use crate::counters::{self, Counter};
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom},
     sync::{Arc, Mutex},
 };
+
+struct CountedRead<R>(R);
+impl<R: Read> Read for CountedRead<R> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        let read = self.0.read(bytes)?;
+        counters::add(Counter::ArchiveReads, 1);
+        counters::add(Counter::ArchiveBytesRead, read as u64);
+        Ok(read)
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct Cursor {
@@ -18,6 +29,8 @@ impl Read for Cursor {
             .map_err(|_| io::Error::other("ZIP reader lock poisoned"))?;
         file.seek(SeekFrom::Start(self.position))?;
         let read = file.read(bytes)?;
+        counters::add(Counter::ArchiveReads, 1);
+        counters::add(Counter::ArchiveBytesRead, read as u64);
         self.position += read as u64;
         Ok(read)
     }
@@ -99,7 +112,7 @@ impl Reader {
         }
         file.seek(SeekFrom::Start(0))?;
         let mut bytes = Vec::new();
-        file.take(read_limit).read_to_end(&mut bytes)?;
+        CountedRead(file.take(read_limit)).read_to_end(&mut bytes)?;
         if bytes.len() as u64 > limit {
             return Err(io::Error::other("ZIP grew beyond archive cache limit"));
         }

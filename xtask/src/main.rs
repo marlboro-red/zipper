@@ -165,6 +165,30 @@ fn gate(full: bool) -> Result<()> {
         steps.push(("release test", || {
             cargo(&["test", "--workspace", "--locked", "--release"])
         }));
+        steps.push(("counters", || {
+            cargo(&[
+                "clippy",
+                "--package",
+                "zipper",
+                "--all-targets",
+                "--features",
+                "counters",
+                "--locked",
+                "--",
+                "-D",
+                "warnings",
+            ])?;
+            cargo(&[
+                "test",
+                "--package",
+                "zipper",
+                "--features",
+                "counters",
+                "--locked",
+                "--test",
+                "counters",
+            ])
+        }));
         steps.push(("benchmark smoke", benchmark_smoke));
     }
     let mut rows = Vec::new();
@@ -416,6 +440,19 @@ fn scoreboard(args: &[&str]) -> Result<()> {
 
 fn bench(args: &[&str]) -> Result<()> {
     cargo(&["build", "--release", "--locked", "--package", "zipper"])?;
+    cargo(&[
+        "build",
+        "--release",
+        "--locked",
+        "--package",
+        "zipper",
+        "--features",
+        "counters",
+        "--example",
+        "count_zip",
+        "--target-dir",
+        "target/counters",
+    ])?;
     scoreboard(&[&["run"], args].concat())
 }
 

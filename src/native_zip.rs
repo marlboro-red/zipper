@@ -1,6 +1,10 @@
 //! Opt-in ZIP extraction of stored and Deflate entries, published only after
 //! full verification. See `docs/reference/zip-reader.md` for what it restores.
-use crate::{Entry, parent, safe_path};
+use crate::{
+    Entry,
+    counters::{self, Counter},
+    parent, safe_path,
+};
 use anyhow::{Context, Result, ensure};
 use rayon::prelude::*;
 use std::{
@@ -57,6 +61,7 @@ fn create_directories_in_archive_order(root: &Path, items: &[Item]) -> Result<()
         };
         if seen.insert(directory.clone()) {
             fs::create_dir_all(directory)?;
+            counters::add(Counter::DirectoryCreateCalls, 1);
         }
     }
     Ok(())
@@ -84,6 +89,7 @@ fn create_links_after_files(
                             .context(format!("cannot create ZIP symlink {name:?}"))
                     }
                 })?;
+            counters::add(Counter::SymlinksCreated, 1);
         }
     }
     Ok(())
@@ -840,11 +846,27 @@ impl HiddenDescriptorScan {
     }
 }
 
-fn finish(output: &mut BufWriter<File>, item: &Item) -> Result<()> {
+struct OutputFile(File);
+
+impl Write for OutputFile {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let written = self.0.write(bytes)?;
+        counters::add(Counter::OutputWrites, 1);
+        counters::add(Counter::OutputBytesWritten, written as u64);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+fn finish(output: &mut BufWriter<OutputFile>, item: &Item) -> Result<()> {
     output.flush()?;
     // EXTERNAL(Info-ZIP unzip, bsdtar): both only warn when a time cannot be set.
     if let Some(seconds) = item.modified {
-        let _ = output.get_ref().set_modified(system_time(seconds));
+        let _ = output.get_ref().0.set_modified(system_time(seconds));
+        counters::add(Counter::MetadataCalls, 1);
     }
     Ok(())
 }
@@ -895,11 +917,13 @@ fn stream_entry(
                 start = 0;
             }
             let (consumed, produced) = (inflater.total_in(), inflater.total_out());
-            let status = inflater.decompress(
-                &input_buffer[start..end],
-                output_buffer,
-                flate2::FlushDecompress::None,
-            )?;
+            let status = counters::time(Counter::DecodeNanos, || {
+                inflater.decompress(
+                    &input_buffer[start..end],
+                    output_buffer,
+                    flate2::FlushDecompress::None,
+                )
+            })?;
             let consumed = (inflater.total_in() - consumed) as usize;
             let produced = (inflater.total_out() - produced) as usize;
             start += consumed;
@@ -1085,7 +1109,8 @@ pub fn read_archive_with_options(
                                 error.into()
                             }
                         })?;
-                        Some(BufWriter::new(file))
+                        counters::add(Counter::FilesCreated, 1);
+                        Some(BufWriter::new(OutputFile(file)))
                     } else {
                         None
                     }
@@ -1096,7 +1121,9 @@ pub fn read_archive_with_options(
                     let mut compressed = entry_buffer(item.compressed as usize)?;
                     let mut decoded = entry_buffer(item.entry.size as usize)?;
                     source.read_exact(&mut compressed)?;
-                    let length = codec.as_mut().unwrap().inflate(&compressed, &mut decoded)?;
+                    let length = counters::time(Counter::DecodeNanos, || {
+                        codec.as_mut().unwrap().inflate(&compressed, &mut decoded)
+                    })?;
                     ensure!(
                         length as u64 == item.entry.size,
                         "ZIP decoded size mismatch"

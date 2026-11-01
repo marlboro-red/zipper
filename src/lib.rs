@@ -1,4 +1,5 @@
 pub mod compat;
+pub mod counters;
 pub mod duplicates;
 pub mod native_zip;
 mod pipeline;
@@ -111,6 +112,7 @@ mod unix_modes {
                     && let Ok(handle) = File::open(staging.join(directory.name))
                 {
                     let _ = handle.set_modified(time);
+                    crate::counters::add(crate::counters::Counter::MetadataCalls, 1);
                 }
                 Ok(())
             })
@@ -129,6 +131,7 @@ mod unix_modes {
                     staging.join(directory.name),
                     Permissions::from_mode(mode & default),
                 )?;
+                crate::counters::add(crate::counters::Counter::MetadataCalls, 1);
             }
         }
         Ok(())

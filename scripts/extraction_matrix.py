@@ -29,6 +29,21 @@ def digest(path):
 
 
 
+def write_zip(source, archive):
+    """Fixed metadata and ordering make identical fixture bytes portable."""
+    with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as out:
+        for path in [source] + sorted(source.rglob('*')):
+            name = path.relative_to(source.parent).as_posix()
+            info = zipfile.ZipInfo(name + '/' if path.is_dir() else name, (2020, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.external_attr = ((0o40755 if path.is_dir() else 0o100644) << 16)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            with out.open(info, 'w') as entry:
+                if path.is_file():
+                    with path.open('rb') as data:
+                        shutil.copyfileobj(data, entry)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
@@ -40,6 +55,7 @@ def main():
     parser.add_argument('--native-format', action='store_true', help='also create/extract native level-1, 1 MiB-block archive')
     parser.add_argument('--sevenzip')
     parser.add_argument('--tar', help='libarchive bsdtar executable, not GNU tar')
+    parser.add_argument('--save-zip', type=Path, help='copy the ZIP fixture here for runs outside timing')
     args = parser.parse_args()
     if args.runs < 1 or any(not 1 <= n <= 64 for n in args.threads):
         parser.error('positive runs and threads 1..64 required')
@@ -71,18 +87,7 @@ def main():
         archive = work / 'input.zip'
         plain = work / 'input.tar'
         print("Creating ZIP and TAR fixtures", file=sys.stderr, flush=True)
-        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as out:
-            # Fixed metadata and ordering make identical fixture bytes portable.
-            for path in [source] + sorted(source.rglob('*')):
-                name = path.relative_to(source.parent).as_posix()
-                info = zipfile.ZipInfo(name + '/' if path.is_dir() else name, (2020, 1, 1, 0, 0, 0))
-                info.create_system = 3
-                info.external_attr = ((0o40755 if path.is_dir() else 0o100644) << 16)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                with out.open(info, 'w') as entry:
-                    if path.is_file():
-                        with path.open('rb') as data:
-                            shutil.copyfileobj(data, entry)
+        write_zip(source, archive)
         with tarfile.open(plain, 'w', format=tarfile.USTAR_FORMAT) as out:
             for path in [source] + sorted(source.rglob('*')):
                 info = out.gettarinfo(str(path), path.relative_to(source.parent).as_posix())
@@ -95,6 +100,8 @@ def main():
                 else:
                     out.addfile(info)
         archives = [archive, plain]
+        if args.save_zip:
+            shutil.copyfile(archive, args.save_zip)
         native = work / 'input.zipper'
         if args.native_format:
             create = [str(zipper), '--threads', '4', 'create', str(native), str(source),
