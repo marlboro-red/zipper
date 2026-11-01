@@ -13,6 +13,7 @@
 7zip-copy	src/nested/deep	dir
 7zip-copy	src/nested/deep/deeper	dir
 7zip-copy	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+7zip-copy	src/nested/inner.zip	228	7980579e
 7zip-copy	src/text	dir
 7zip-copy	src/text/empty.txt	0	00000000
 7zip-copy	src/text/readme.txt	1000	55261fc2
@@ -31,6 +32,7 @@
 7zip-deflate	src/nested/deep	dir
 7zip-deflate	src/nested/deep/deeper	dir
 7zip-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+7zip-deflate	src/nested/inner.zip	228	7980579e
 7zip-deflate	src/text	dir
 7zip-deflate	src/text/empty.txt	0	00000000
 7zip-deflate	src/text/readme.txt	1000	55261fc2
@@ -49,6 +51,7 @@
 7zip-timestamps	src/nested/deep	dir
 7zip-timestamps	src/nested/deep/deeper	dir
 7zip-timestamps	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+7zip-timestamps	src/nested/inner.zip	228	7980579e
 7zip-timestamps	src/text	dir
 7zip-timestamps	src/text/empty.txt	0	00000000
 7zip-timestamps	src/text/readme.txt	1000	55261fc2
@@ -67,6 +70,7 @@ bsdtar-deflate	src/nested	dir
 bsdtar-deflate	src/nested/deep	dir
 bsdtar-deflate	src/nested/deep/deeper	dir
 bsdtar-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+bsdtar-deflate	src/nested/inner.zip	228	7980579e
 bsdtar-deflate	src/text	dir
 bsdtar-deflate	src/text/empty.txt	0	00000000
 bsdtar-deflate	src/text/readme.txt	1000	55261fc2
@@ -85,6 +89,7 @@ bsdtar-stored	src/nested	dir
 bsdtar-stored	src/nested/deep	dir
 bsdtar-stored	src/nested/deep/deeper	dir
 bsdtar-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+bsdtar-stored	src/nested/inner.zip	228	7980579e
 bsdtar-stored	src/text	dir
 bsdtar-stored	src/text/empty.txt	0	00000000
 bsdtar-stored	src/text/readme.txt	1000	55261fc2
@@ -103,6 +108,7 @@ ditto	src/nested	dir
 ditto	src/nested/deep	dir
 ditto	src/nested/deep/deeper	dir
 ditto	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+ditto	src/nested/inner.zip	228	7980579e
 ditto	src/text	dir
 ditto	src/text/empty.txt	0	00000000
 ditto	src/text/readme.txt	1000	55261fc2
@@ -121,6 +127,7 @@ infozip-default	src/nested	dir
 infozip-default	src/nested/deep	dir
 infozip-default	src/nested/deep/deeper	dir
 infozip-default	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+infozip-default	src/nested/inner.zip	228	7980579e
 infozip-default	src/text	dir
 infozip-default	src/text/empty.txt	0	00000000
 infozip-default	src/text/readme.txt	1000	55261fc2
@@ -139,6 +146,7 @@ infozip-descriptors	src/nested	dir
 infozip-descriptors	src/nested/deep	dir
 infozip-descriptors	src/nested/deep/deeper	dir
 infozip-descriptors	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+infozip-descriptors	src/nested/inner.zip	228	7980579e
 infozip-descriptors	src/text	dir
 infozip-descriptors	src/text/empty.txt	0	00000000
 infozip-descriptors	src/text/readme.txt	1000	55261fc2
@@ -157,6 +165,7 @@ infozip-piped	src/nested	dir
 infozip-piped	src/nested/deep	dir
 infozip-piped	src/nested/deep/deeper	dir
 infozip-piped	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+infozip-piped	src/nested/inner.zip	228	7980579e
 infozip-piped	src/text	dir
 infozip-piped	src/text/empty.txt	0	00000000
 infozip-piped	src/text/readme.txt	1000	55261fc2
@@ -175,6 +184,7 @@ infozip-stored	src/nested	dir
 infozip-stored	src/nested/deep	dir
 infozip-stored	src/nested/deep/deeper	dir
 infozip-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+infozip-stored	src/nested/inner.zip	228	7980579e
 infozip-stored	src/text	dir
 infozip-stored	src/text/empty.txt	0	00000000
 infozip-stored	src/text/readme.txt	1000	55261fc2
@@ -193,6 +203,7 @@ infozip-zip64	src/nested	dir
 infozip-zip64	src/nested/deep	dir
 infozip-zip64	src/nested/deep/deeper	dir
 infozip-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+infozip-zip64	src/nested/inner.zip	228	7980579e
 infozip-zip64	src/text	dir
 infozip-zip64	src/text/empty.txt	0	00000000
 infozip-zip64	src/text/readme.txt	1000	55261fc2
@@ -211,6 +222,7 @@ python-deflate	src/nested	dir
 python-deflate	src/nested/deep	dir
 python-deflate	src/nested/deep/deeper	dir
 python-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+python-deflate	src/nested/inner.zip	228	7980579e
 python-deflate	src/text	dir
 python-deflate	src/text/empty.txt	0	00000000
 python-deflate	src/text/readme.txt	1000	55261fc2
@@ -229,6 +241,7 @@ python-stored	src/nested	dir
 python-stored	src/nested/deep	dir
 python-stored	src/nested/deep/deeper	dir
 python-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+python-stored	src/nested/inner.zip	228	7980579e
 python-stored	src/text	dir
 python-stored	src/text/empty.txt	0	00000000
 python-stored	src/text/readme.txt	1000	55261fc2
@@ -247,6 +260,7 @@ python-stream-deflate	src/nested	dir
 python-stream-deflate	src/nested/deep	dir
 python-stream-deflate	src/nested/deep/deeper	dir
 python-stream-deflate	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+python-stream-deflate	src/nested/inner.zip	228	7980579e
 python-stream-deflate	src/text	dir
 python-stream-deflate	src/text/empty.txt	0	00000000
 python-stream-deflate	src/text/readme.txt	1000	55261fc2
@@ -265,6 +279,7 @@ python-stream-stored	src/nested	dir
 python-stream-stored	src/nested/deep	dir
 python-stream-stored	src/nested/deep/deeper	dir
 python-stream-stored	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+python-stream-stored	src/nested/inner.zip	228	7980579e
 python-stream-stored	src/text	dir
 python-stream-stored	src/text/empty.txt	0	00000000
 python-stream-stored	src/text/readme.txt	1000	55261fc2
@@ -283,6 +298,7 @@ python-stream-zip64	src/nested	dir
 python-stream-zip64	src/nested/deep	dir
 python-stream-zip64	src/nested/deep/deeper	dir
 python-stream-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+python-stream-zip64	src/nested/inner.zip	228	7980579e
 python-stream-zip64	src/text	dir
 python-stream-zip64	src/text/empty.txt	0	00000000
 python-stream-zip64	src/text/readme.txt	1000	55261fc2
@@ -301,6 +317,7 @@ python-zip64	src/nested	dir
 python-zip64	src/nested/deep	dir
 python-zip64	src/nested/deep/deeper	dir
 python-zip64	src/nested/deep/deeper/leaf.txt	5	0c7fee48
+python-zip64	src/nested/inner.zip	228	7980579e
 python-zip64	src/text	dir
 python-zip64	src/text/empty.txt	0	00000000
 python-zip64	src/text/readme.txt	1000	55261fc2

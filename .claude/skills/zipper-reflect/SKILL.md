@@ -30,3 +30,6 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | Four Zipper workers against single-process tools | `scripts/extraction_matrix.py` refuses external readers without `--threads 1` |
 | Wall time reported without CPU time | the benchmark smoke step in `cargo xtask gate full` |
 | Facts lost when rewriting docs | `scripts/factcheck_docs.py` |
+| A stricter ZIP check rejecting real archives | `tests/zip_corpus.rs` on archives from 5 writers, including a nested streaming ZIP |
+| A hostile ZIP layout accepted | `tests/hostile_zip.rs`, one test per layout, and `tests/zip_fuzz.rs` |
+| A planted break that never applied | the `zipper-review` skill, step 6 |

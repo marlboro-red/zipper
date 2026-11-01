@@ -13,6 +13,8 @@ The author always finds a reason the code is safe. A reviewer who has not seen t
 2. Tell it not to edit repository files. It writes crafted inputs and scripts under a scratch directory.
 3. Require each finding to be CONFIRMED with a crafted archive or a failing run, or marked PLAUSIBLE with the missing proof named.
 4. Fix every CONFIRMED finding in the same change, with a test that fails before the fix.
+5. Write the test before the fix, and run it to see it fail.
+6. When you plant a break to prove a check, confirm the edit landed (`git diff --stat`) and that the check printed a result. A planted edit that did not apply, or a loop that printed nothing, proves nothing.
 
 ## Checklist for a hostile archive
 
@@ -22,6 +24,10 @@ The author always finds a reason the code is safe. A reviewer who has not seen t
 - **Structure.** Overlapping entries, local headers that disagree with the central directory, ambiguous end records, truncation at every boundary, and ZIP64 fields that are present but inconsistent.
 - **Output.** Nothing is published on failure. Output goes to a private staging directory. An existing destination is refused. No path follows a symlink out of the destination.
 - **Concurrency.** Workers share no mutable output path. A failure in one worker cancels the others and cleans up. Memory budgets stay bounded under contention.
+
+## Protect real archives
+
+A stricter check can reject archives that real tools write. Before committing a parser change, run `tests/zip_corpus.rs` and extract real archives from every writer you have. When a review finds a real archive that a check rejects, add its shape to the corpus source in `scripts/make_zip_corpus.py` and regenerate.
 
 ## Evaluate another implementation
 

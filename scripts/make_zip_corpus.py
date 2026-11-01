@@ -39,6 +39,12 @@ def write_source(root):
         "names/日本語.txt": "日本語\n".encode(),
         "names/space and (parens).txt": b"spaces\n",
     }
+    # A nested archive from a streaming writer contains data descriptors for
+    # its own entries. Stored outer entries must still extract.
+    inner = io.BytesIO()
+    with zipfile.ZipFile(Unseekable(inner), "w", zipfile.ZIP_STORED) as archive:
+        archive.writestr("inner.txt", b"inner entry\n" * 8)
+    files["nested/inner.zip"] = inner.getvalue()
     for name, data in files.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)

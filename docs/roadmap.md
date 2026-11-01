@@ -9,8 +9,8 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | Milestone | Status | Depends on |
 | --- | --- | --- |
 | [M0. Verified workflow](#m0-verified-workflow) | Done | None |
-| [M1. Correctness contract for ZIP](#m1-correctness-contract-for-zip) | Next | M0 |
-| [M2. Metadata fidelity](#m2-metadata-fidelity) | Planned | M1 |
+| [M1. Correctness contract for ZIP](#m1-correctness-contract-for-zip) | Done | M0 |
+| [M2. Metadata fidelity](#m2-metadata-fidelity) | Next | M1 |
 | [M3. Fixed scoreboard](#m3-fixed-scoreboard) | Planned | M0 |
 | [M4. Small-file output path](#m4-small-file-output-path) | Planned | M3 |
 | [M5. Large single entries](#m5-large-single-entries) | Planned | M3 |
