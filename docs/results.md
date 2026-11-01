@@ -7,9 +7,9 @@ the method, raw samples, and reproduction commands.
 
 | Workload | Machine | Revision | Recorded |
 | --- | --- | --- | --- |
-| [Silesia](#silesia) | Apple M5, 32 GiB RAM | classic formats at `afb77d0` | 2026-10-29 |
-| [Dependency sources](#dependency-sources) | Apple M5, 32 GiB RAM | `ed07524`; sweep at `b111c00` | 2026-10-30, 2026-11-01 |
-| [Small files versus bsdtar](#small-files-versus-bsdtar) | Apple M5, 32 GiB RAM | baseline `99a04e4` | 2026-10-29 |
+| [Silesia](#silesia) | Apple M5, 32 GiB RAM | native ZIP rows at `afb77d0`; others not recorded | 2026-10-29 |
+| [Dependency sources](#dependency-sources) | Apple M5, 32 GiB RAM | `ed07524`; sweep at `b111c00`; matched threads at `40cfbed` | 2026-10-30, 2026-11-01 |
+| [Small files versus bsdtar](#small-files-versus-bsdtar) | Apple M5, 32 GiB RAM | not recorded; binary hash in the JSON | 2026-10-29 |
 | [Windows](#windows) | Windows Server 2022 GitHub Actions runner | alpha `55bc598` versus `88bb098` | 2026-10-30 |
 
 The "Recorded" column gives the date of the commit that added the record.
@@ -17,8 +17,8 @@ The "Recorded" column gives the date of the commit that added the record.
 ## Silesia
 
 The corpus is Silesia, 12 files and 211,938,580 bytes. The machine is an Apple
-M5 with 32 GiB RAM. The record names revision `afb77d0` for the current classic-format samples.
-It does not name a revision for the native sweep. Record:
+M5 with 32 GiB RAM. The record names revision `afb77d0` for the current native
+ZIP samples only. Record:
 [Silesia benchmark](../benchmarks/silesia/README.md).
 
 ![Decompression time versus compression ratio](../benchmarks/silesia/pareto.svg)
@@ -42,6 +42,10 @@ of global optimality. [PNG](../benchmarks/silesia/pareto.png) and
 | 6 | L19 / 1024 KiB | 3.705× | 40.63 | 38.83–42.44 |
 | 7 | L19 / 4096 KiB | 3.863× | 44.13 | 42.99–45.06 |
 | 8 | L19 / 16384 KiB | 3.970× | 52.87 | 51.31–54.11 |
+
+Points 1 to 3 come from one session and binary, and points 4 to 8 from a second.
+Points 3 and 4 differ by 0.36 ms across sessions, so their order is not
+meaningful.
 
 Native configurations cover levels -3 through 19 with block sizes from 64 KiB to
 16 MiB. Native decoding requests four codec workers.
@@ -90,6 +94,11 @@ TAR+pzstd, and identical ZIP.
 | T3 | tar+zstd-1MiB | 2.891× | 131.42 |
 | T4 | bsdtar ZIP, 1 MiB | 3.017× | 182.45 |
 
+Against T4, native-fast is 1.99× faster at 174.2 MiB peak RSS, and the streaming
+reader is 1.59× faster at 4.9 MiB. Both ran four workers against one bsdtar
+process, which also restored timestamps and permissions. Only wall time was
+recorded.
+
 [Matched tar comparisons](../benchmarks/native-zip/bsdtar-comparison.md) show the smaller lead against tuned
 tar buffers, so the comparison does not rely only on default settings. For
 comparisons against tar+zstd, use the
@@ -132,9 +141,31 @@ Native is level 1 with 1 MiB blocks. Record:
 | bsdtar / TAR | 71,127,040 | 300.24 [295.44–322.99] | 4.44 |
 
 On this tree, the native archive is 14.5% smaller than the tested ZIP. It
-extracts 1.73× faster than tuned plain TAR. Native-fast extracts the identical
-ZIP 2.22× faster than bsdtar. Native `.zipper` uses more memory and is slower
-than native-fast ZIP here.
+extracts 1.73× faster than tuned plain TAR. This table ran four Zipper workers
+against single-process readers and recorded wall time only. Native `.zipper`
+uses more memory than native-fast ZIP, and their ranges overlap.
+
+### Matched thread counts
+
+A second session at `40cfbed` ran Zipper at 1 and 4 threads and recorded CPU
+time. Use these rows for any speed claim against bsdtar or 7-Zip.
+
+| Reader / format | Threads | Wall ms [range] | CPU ms |
+| --- | ---: | ---: | ---: |
+| Zipper native-fast / ZIP | 4 | 154.04 [148.08–194.91] | 467.01 |
+| Zipper native-fast / ZIP | 1 | 260.21 [254.75–307.71] | 258.30 |
+| Zipper native / ZIP | 1 | 289.38 [283.45–326.28] | 286.52 |
+| bsdtar / ZIP | 1 | 346.32 [345.28–385.47] | 344.50 |
+| 7-Zip / ZIP | 1 | 450.20 [437.30–479.04] | 440.08 |
+
+- At one thread, native-fast is 1.33× faster than bsdtar and uses 25% less CPU.
+  Native is 1.20× faster. Both ranges are separate from bsdtar's.
+- With four workers, native-fast is 2.25× faster in wall time and uses 36% more
+  CPU than bsdtar.
+- 7-Zip restores timestamps and attributes that Zipper does not.
+- The same 12,243,518-byte archive measured 173.64 ms in the first session and
+  193.19 ms in the level sweep, about 11% apart. Compare rows only within one
+  session.
 
 ### Level and block-size sweep
 
@@ -151,13 +182,14 @@ build of `b111c00`, `--threads 4`, and a warm cache. Record:
 | L19 / 16384 KiB | 10.555× | 6,392,933 | 18 | 190.20 | 181.52–196.30 |
 
 - L3 / 4 MiB gives 25% fewer bytes than the default. L19 / 16 MiB gives 48% fewer.
-- Every configuration of at least 1 MiB has a median between 182 and 217 ms, and
-  their ranges overlap. The run does not establish a speed ranking among them.
+- Every configuration of at least 1 MiB has a median between 182 and 217 ms.
+  Their ranges overlap except where L9 / 1 MiB is slower than three 16 MiB
+  configurations. The run establishes no other speed ranking.
 - Extraction peak RSS is about 26 MiB at 1 MiB blocks, 63–70 MiB at 4 MiB, and
   75–84 MiB at 16 MiB.
 - The default stays unchanged. For source trees where size matters,
-  `--level 3 --block-size-kib 4096` is the measured cost-effective setting on
-  this machine.
+  `--level 3 --block-size-kib 4096` is a middle setting. L3 / 16 MiB is smaller
+  with an overlapping range. L3 / 4 MiB wins only on memory and creation speed.
 
 ## Small files versus bsdtar
 
@@ -181,6 +213,11 @@ grouped and flat fixtures. It is 2.31× and 2.18× faster than normal bsdtar.
 Native-fast ranges overlap streaming, so the record establishes no fast-mode
 advantage.
 
+These ratios use four Zipper workers against one bsdtar process and wall time
+only. A separate one-worker sweep with an older binary measured 237.95 ms
+grouped and 575.03 ms flat. That is roughly 1.13× and 1.14× faster than
+reduced-metadata bsdtar, across sessions.
+
 ## Windows
 
 The Windows numbers come from
@@ -194,9 +231,14 @@ requested workers. Record:
 | --- | ---: | ---: | --- |
 | 1,000 flat files | 369.01 [333.55–1564.48] | 412.16 [338.34–1166.20] | Inconclusive; broad overlapping ranges |
 | 1,000 grouped files | 295.92 [262.86–1013.48] | 398.63 [270.73–1238.99] | Inconclusive; broad overlapping ranges |
-| 32 MiB compressible | 223.41 [198.52–238.16] | 30.06 [29.47–30.41] | 7.43× faster |
+| 32 MiB compressible | 223.41 [198.52–238.16] | 30.06 [29.47–30.41] | 7.43× faster than the alpha's native-fast |
 | 61 MiB mixed | 94.65 [94.12–95.49] | 100.94 [99.95–431.72] | 6.6% slower; separated ranges |
 | 32 MiB random | 34.43 [33.70–34.69] | 39.76 [39.41–40.18] | 15.5% slower; separated ranges |
+
+The 7.43× removes a native-fast regression. The streaming `native` reader was
+faster than both, at 27.41 ms in the alpha and 27.55 ms in current source.
+Streaming `native` on the random entry slowed from 34.51 to 39.59 ms, with
+separate ranges.
 
 The mixed and random regressions are real in this run. The record makes no
 universal Windows improvement claim. Native-format extraction showed no

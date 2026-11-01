@@ -49,7 +49,8 @@ Performance results are not used as CI pass or fail thresholds because they are 
 - Hosted runners are shared virtual infrastructure, not controlled performance laboratories. Compare paths within one runner and session.
 - Do not treat absolute differences across hosts as processor rankings or latency guarantees.
 - Backend versions differ across operating systems.
-- Native ZIP preserves bytes and directories, while 7-Zip preserves more metadata. The comparison does not show complete feature parity.
+- Native ZIP preserves bytes and directories, while 7-Zip preserves more metadata. 7-Zip restores timestamps and attributes that Zipper does not. The comparison does not show complete feature parity.
+- Native ZIP requested two workers, while direct 7-Zip ran as one process with its default thread allocation. The reports record wall time only, not CPU time. No one-worker native run was recorded. The [matched-thread re-run](../rust-dependencies/README.md) compares readers at equal worker counts.
 
 ## Reproduce
 

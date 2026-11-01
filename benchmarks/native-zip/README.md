@@ -35,7 +35,9 @@ The initial native ZIP prototype reparsed metadata per worker and lacked early r
 
 ## Limits
 
-This is an application comparison. Native preserves only bytes and directories. 7-Zip preserves additional metadata.
+This is an application comparison. Native preserves only bytes and directories. 7-Zip preserves additional metadata, including timestamps and attributes that Zipper does not restore.
+
+Native requested four workers, while direct 7-Zip ran as one process with its default thread allocation. The reports record wall time only, not CPU time. This baseline has no one-worker native measurement. The [matched-thread re-run](../rust-dependencies/README.md) compares readers at equal worker counts.
 
 These results do not establish that the zlib-rs codec alone is faster. They also do not establish that Zipper is the fastest ZIP implementation.
 

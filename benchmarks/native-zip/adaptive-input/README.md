@@ -1,6 +1,6 @@
 # Adaptive ZIP file read-ahead
 
-Adaptive read-ahead is retained on Windows only, for its disjoint large random streaming improvement. The final mixed-size validation shows no established gain or regression.
+Adaptive read-ahead is retained on Windows only, on the strength of one of ten Windows before and after comparisons. Streaming `native` extraction of the large random entry fell from 37.02 to 34.66 ms, about 6%, with a 0.87 ms gap between ranges. That returns it to the alpha's 35.21 ms level, with overlapping ranges, rather than passing it. The final mixed-size validation shows no established gain or regression.
 
 ## Question
 
@@ -16,7 +16,20 @@ Buffer resizing preserves the unread logical position. Added tests compare bytes
 
 ## Results
 
-The before and after samples for each platform are in the raw reports under `linux/` and `windows/` and in the `macos-*.json` files. This record has no summary table for them.
+The before and after samples for each platform are in the raw reports under `linux/` and `windows/` and in the `macos-*.json` files. Raw Linux large-random samples are missing, as Limits explains.
+
+### Decisive Windows comparison
+
+Windows ran five workloads with two engines each, for ten before and after comparisons. Only one has separate ranges. These rows come from `windows/large-random.json`.
+
+| Engine | Before median [range] ms | After median [range] ms | Alpha median [range] ms |
+|---|---|---|---|
+| native | 37.02 [36.24, 38.40] | 34.66 [33.08, 35.37] | 35.21 [33.16, 44.23] |
+| fast | 37.89 [36.48, 42.17] | 34.50 [32.92, 41.31] | 34.27 [32.89, 35.82] |
+
+The native rows differ by about 6%, with 0.87 ms between the before minimum and the after maximum. The native-fast ranges overlap. Neither after median is established as faster than the alpha.
+
+On Linux, large-mixed extraction regressed with separate ranges. Streaming `native` went from 123.41 [122.45, 123.88] to 127.49 [126.41, 131.05] ms, and native-fast went from 123.52 [122.57, 123.82] to 127.28 [126.53, 128.48] ms.
 
 ### Actual Windows alpha reference
 
@@ -50,11 +63,15 @@ The ranges overlap substantially. There is no established mixed-tree gain or reg
 
 ## Decision
 
-Retain only on Windows, for the disjoint large random streaming improvement. The additional input buffer is at most 248 KiB per active file reader, outside the compressed and decoded entry budget. The old published alpha asset is unchanged.
+Retain only on Windows, for the disjoint large random streaming improvement. That improvement is the only disjoint Windows result of ten, and it brings native extraction back to the alpha's level rather than beyond it. The additional input buffer is at most 248 KiB per active file reader, outside the compressed and decoded entry budget. The old published alpha asset is unchanged.
 
 ## Limits
 
 This is a bounded local result, not a claim of universal or state-of-the-art speed. The mixed-size validation shows neither a gain nor a regression.
+
+The keep rests on one comparison with a 0.87 ms gap between ranges. A rerun could close that gap.
+
+`linux/large-random.json` is not JSON. It holds the experiment's original Markdown notes, so the raw Linux large-random samples are missing from this record. Those notes report a Linux large-random regression, from 39.89 [39.29, 40.43] to 46.57 [46.18, 47.45] ms for `native` and from 39.37 [39.14, 40.59] to 46.44 [46.16, 47.42] ms for native-fast. No retained samples can confirm those summaries.
 
 ## Reproduce
 

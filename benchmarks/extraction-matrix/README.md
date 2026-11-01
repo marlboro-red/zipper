@@ -83,7 +83,8 @@ This matrix is the first measurement gate in the [extraction design](../../docs/
 - These are hosted-runner measurements, not a controlled cross-platform ranking. Hosted runners help with portability and finding bottlenecks, not with claims of hardware leadership.
 - Do not compare absolute times between separate hosted jobs as if hardware and load were fixed.
 - Three samples are preliminary diagnostics, especially where ranges are wide.
-- The matrix compares bytes and directories, not metadata fidelity. Metadata policies differ, and bsdtar uses tuned buffers and reduced metadata flags.
+- The matrix compares bytes and directories, not metadata fidelity. Metadata policies differ, and bsdtar uses tuned buffers and reduced metadata flags. 7-Zip restores timestamps and attributes that Zipper does not, and no 7-Zip flag disables them.
+- Zipper ran at explicit worker counts of 1, 2, 4, and 8, and the tables show 1 and 4. bsdtar and 7-Zip each ran as one process, with 7-Zip using its default extraction parallelism. Compare those readers with the one-worker column for equal worker counts. The reports record wall time only, not CPU time. The [matched-thread re-run](../rust-dependencies/README.md) repeats the comparison at equal worker counts.
 - Cache state is uncontrolled and warmed by archive creation and earlier runs.
 - Earlier Linux reports must not be used for memory comparisons.
 

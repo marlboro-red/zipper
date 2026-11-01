@@ -1,6 +1,6 @@
 # Real dependency-source extraction
 
-On a tree of 70 crates.io packages, the native archive is 14.5% smaller than the tested ZIP and extracts 1.73× faster than tuned plain TAR. Native-fast extracts the identical ZIP 2.22× faster than bsdtar, and native `.zipper` does not beat it on every metric.
+On a tree of 70 crates.io packages, the native archive is 14.5% smaller than the tested ZIP. With one thread, Zipper extracts the identical ZIP 1.20× to 1.33× faster than bsdtar and uses less CPU. The earlier 2.22× used four Zipper workers against single-process bsdtar, and that speed costs more CPU than bsdtar uses.
 
 ## Question
 
@@ -32,16 +32,39 @@ The report holds the binary and archive hashes. Every run checks every restored 
 | bsdtar / ZIP | 14,328,097 | 359.79 [357.05–380.24] | 6.14 |
 | bsdtar / TAR | 71,127,040 | 300.24 [295.44–322.99] | 4.44 |
 
-Native `.zipper` uses more memory and is slower than native-fast ZIP here. It does not dominate that reader on every metric. A [native level and block-size sweep on this corpus](level-sweep.md) measures the size and speed trade.
+The native archive extracts 1.73× faster than tuned plain TAR with four workers. Native `.zipper` uses more memory than native-fast ZIP here. Their extraction ranges overlap, so this run does not rank their speed.
+
+### Matched thread counts
+
+A second session at `40cfbed` ran every Zipper reader at 1 and 4 threads beside the single-process readers. It recorded CPU time (user plus system) for every process. Seven interleaved rounds followed one warmup, and every round passed the full byte and tree check.
+
+| Reader / format | Threads | Wall ms [range] | CPU ms | CPU per wall second | Peak RSS MiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Zipper native-fast / ZIP | 4 | 154.04 [148.08–194.91] | 467.01 | 3.03 | 8.58 |
+| Zipper / .zipper | 4 | 162.04 [156.79–196.50] | 499.04 | 3.08 | 25.95 |
+| Zipper native / ZIP | 4 | 164.28 [160.33–235.30] | 495.63 | 3.02 | 6.70 |
+| Zipper / .zipper | 1 | 237.59 [208.06–272.71] | 239.15 | 1.01 | 11.58 |
+| Zipper native-fast / ZIP | 1 | 260.21 [254.75–307.71] | 258.30 | 0.99 | 6.92 |
+| bsdtar / TAR | 1 | 288.34 [283.84–311.95] | 285.49 | 0.99 | 4.45 |
+| Zipper native / ZIP | 1 | 289.38 [283.45–326.28] | 286.52 | 0.99 | 5.61 |
+| bsdtar / ZIP | 1 | 346.32 [345.28–385.47] | 344.50 | 0.99 | 6.16 |
+| 7-Zip / ZIP | 1 | 450.20 [437.30–479.04] | 440.08 | 0.98 | 5.81 |
+
+- **Same thread count.** Native-fast at one thread is 1.33× faster than bsdtar on the same ZIP and uses 25% less CPU. Native at one thread is 1.20× faster. Both ranges are separate from bsdtar's.
+- **Four workers.** Native-fast is 2.25× faster than bsdtar in wall time but uses 36% more CPU in total.
+- **7-Zip.** It restores timestamps and attributes that Zipper does not, so its row is not a matched comparison.
+
+A [native level and block-size sweep on this corpus](level-sweep.md) measures the size and speed trade.
 
 ## Decision
 
-No decision was recorded. This record adds a real-code workload beside the synthetic tiny-file fixtures.
+No decision was recorded. This record adds a real-code workload beside the synthetic tiny-file fixtures. Report the matched-thread rows with any speed claim against bsdtar or 7-Zip.
 
 ## Limits
 
 - No result is a cold-cache or crash-durability measurement.
-- Zipper preserves bytes and directories, while external tools can still do different metadata work.
+- Zipper preserves bytes and directories. bsdtar runs with reduced-metadata flags. 7-Zip still restores timestamps and attributes.
+- The first table ran four Zipper workers against single-process readers and recorded wall time only. The matched-thread table corrects that.
 - External readers get an empty output root before timing. Zipper's time includes staging and publication.
 - Whole-process RSS is not an allocation-budget guarantee.
 - These are local measurements of one real-code tree, not a cross-platform leadership claim.
@@ -51,8 +74,10 @@ No decision was recorded. This record adds a real-code workload beside the synth
 ```sh
 python3 scripts/make_dependency_corpus.py /tmp/rust-dependencies
 python3 scripts/extraction_matrix.py /tmp/rust-dependencies \
-  --zipper target/release/zipper --output results/dependencies.json \
-  --native-format --threads 4 --runs 7 --sevenzip 7zz --tar /usr/bin/tar
+  --zipper target/release/zipper --output thread-parity.json \
+  --native-format --threads 1 4 --runs 7 --sevenzip 7zz --tar /usr/bin/tar
 ```
+
+This reproduces both tables. The first table came from `--threads 4` alone at `ed07524`. The script now refuses external readers unless `--threads` includes 1.
 
 Use the committed Cargo.lock and manifest to identify changes in dependency contents between runs.

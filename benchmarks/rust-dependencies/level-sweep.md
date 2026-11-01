@@ -1,6 +1,6 @@
 # Native level and block-size sweep on dependency sources
 
-On dependency sources, larger blocks and higher levels cut archive bytes by up to 48% against the default, and extraction ranges overlap for every block of at least 1 MiB. The default does not change, because Silesia showed a measurable slowdown and larger blocks cost memory.
+On dependency sources, larger blocks and higher levels cut archive bytes by up to 48% against the default, and extraction ranges overlap for almost every block of at least 1 MiB. The default does not change, because Silesia showed a measurable slowdown and larger blocks cost memory.
 
 ## Question
 
@@ -24,7 +24,7 @@ The [raw samples](level-sweep.json) hold every measurement.
 
 **Size.** The current default (L1 / 1 MiB) gives 5.51×. L3 / 4 MiB gives 7.35×, which is 25% fewer bytes. L19 / 16 MiB gives 10.56×, which is 48% fewer bytes. Block size matters more than on Silesia, because small source files gain from shared history across files within a block.
 
-**Extraction.** Every configuration of at least 1 MiB has a median between 182 and 217 ms, and their ranges overlap. This run does not establish a speed ranking among them. 64 KiB blocks are slower, with 232–245 ms medians.
+**Extraction.** Every configuration of at least 1 MiB has a median between 182 and 217 ms. Their ranges overlap except in three pairs. L9 / 1 MiB (197.41–228.92 ms) is slower than L-3 / 16 MiB, L3 / 16 MiB and L19 / 16 MiB. This run establishes no other speed ranking among them. 64 KiB blocks are slower, with 232–245 ms medians.
 
 **Memory.** Extraction peak RSS grows with block size. It is about 26 MiB at 1 MiB, 63–70 MiB at 4 MiB, and 75–84 MiB at 16 MiB. Creation at L15+ with 4 MiB+ blocks exceeds 270 MiB.
 
@@ -76,7 +76,7 @@ The [raw samples](level-sweep.json) hold every measurement.
 
 Do not change the default. On Silesia, L3 / 4 MiB extracted measurably slower than L1 / 1 MiB (43.07 ms vs 36.08 ms, with non-overlapping ranges). Larger blocks also increase memory and selected-file read amplification. A default change needs a matched experiment across both workloads, plus memory and `extract --path` cost.
 
-For source trees where size matters, `--level 3 --block-size-kib 4096` is the measured cost-effective setting on this machine.
+For source trees where size matters, `--level 3 --block-size-kib 4096` is a measured middle setting on this machine. L3 / 16 MiB is smaller (8,904,481 bytes) with an overlapping extraction range. L3 / 4 MiB wins only on cost. It needs less memory (64.7 vs 77.8 MiB to extract, 53.5 vs 94.5 MiB to create) and creates faster (542 vs 469 MiB/s).
 
 ## Limits
 

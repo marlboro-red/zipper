@@ -1,6 +1,6 @@
 # Matched-sync application comparison on 2026-10-29
 
-With the same file-sync operation for every engine, Zipper creates random data at 1479 MiB/s versus 1560–1565 MiB/s for the tar pipelines. The old roughly 3.5-fold gap was not an equivalent-sync comparison.
+With the same file-sync operation for every engine, Zipper creates random data at 1479 MiB/s versus 1560–1565 MiB/s for the tar pipelines. The creation ranges overlap, so that difference is not established. The old roughly 3.5-fold gap was not an equivalent-sync comparison.
 
 ## Question
 
@@ -53,13 +53,13 @@ The fixtures and engine revisions are described in the [corpus and revision repo
 
 ## Decision
 
-This correction changes measurement validity, not engine performance. The remaining random-data creation differences need longer runs and profiling before any optimization.
+This correction changes measurement validity, not engine performance. Random-data creation took 167.0–246.4 ms for Zipper and 152.9–225.3 ms for tar+zstd, so the ranges overlap and no difference is established. The remaining random-data creation differences need longer runs and profiling before any optimization.
 
 ## Limits
 
 The earlier caveats still apply:
 
-- Tar preserves more metadata.
+- Tar preserves more metadata. The tar commands used default bsdtar flags, which archive and restore extended attributes. Files created on this Mac carry `com.apple.provenance`, so tar extraction likely restored that attribute on each file. Zipper restores no extended attributes. The cost of that extra work was not measured.
 - The pipelines use different total thread counts and frame and window settings.
 - Caches are warm, and storage and thermals are not isolated.
 - Extraction is not explicitly synced.

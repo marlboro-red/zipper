@@ -180,7 +180,7 @@ def main():
         "[PNG](pareto.png) · [PDF](pareto.pdf) · [Native samples](sweep.json) · [Higher native levels](dense-sweep.json) · [Classic-format samples](classic-formats.json)", "",
         "Ratio means original bytes divided by complete archive bytes. Better points are toward the upper left. A point is on the observed Pareto frontier if no other measured configuration extracts in less or equal median time while producing a smaller or equal archive, with at least one strict improvement. Lines only connect observed points. They do not imply that intermediate configurations exist. Error bars show observed minima and maxima, not confidence intervals. The plot uses Zipper extraction time, not direct-backend time. The green points are the tuned bsdtar baselines.", "",
         "### Native frontier", "",
-        "The point numbers match the labels on the detail plot.", "",
+        "The point numbers match the labels on the detail plot. Points 1 to 3 come from `sweep.json`, and points 4 to 8 come from `dense-sweep.json`. Those are two sessions with different binaries, so this frontier joins points from both.", "",
         "| Point | Setting | Ratio | Extraction median (ms) | Range (ms) |", "| --- | --- | ---: | ---: | ---: |"]
     for i, p in enumerate(native_front, 1):
         m = p["measurement"]
@@ -213,6 +213,8 @@ def main():
         "- Overlapping ranges do not establish a reliable speed ranking.",
         "- Native and classic formats ran in separate sessions. Timing differences across those sessions are less controlled than comparisons within one session.",
         "- The runs did not flush caches or isolate thermals or storage.",
+        "- The native frontier mixes two sessions. Points 1 to 3 come from `sweep.json`, and points 4 to 8 come from `dense-sweep.json`. The two files record different `binary_sha256` values. The 1-minute load average rose from 1.54 to 3.37 during the first sweep and from 1.54 to 4.71 during the dense sweep. Points 3 and 4 sit on opposite sides of that boundary, and their ranges overlap.",
+        "- Native extraction and the native ZIP readers requested four workers. Each bsdtar baseline is one bsdtar process, and T2 adds four pzstd workers. The bsdtar baselines ran without reduced-metadata flags, so bsdtar restored metadata that Zipper does not. 7-Zip also restores timestamps and attributes that Zipper does not. Only wall time was recorded. The [matched-thread re-run](../rust-dependencies/README.md) compares readers at equal worker counts.",
         "- Native ZIP preserves only bytes and directories, so it is not yet a metadata-equivalent replacement. Tar, ZIP, and 7z metadata semantics also differ from native Zipper.",
         "- This page claims no cross-machine leadership and no equal-feature comparison.", "",
         "## Reproduce", "", "```sh",

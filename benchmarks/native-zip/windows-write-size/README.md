@@ -1,6 +1,6 @@
 # Bounded native-fast output writes on Windows
 
-Writing whole-buffer output in 256 KiB slices made large-entry extraction 5.38× to 6.72× faster on Windows. The change is retained only on Windows.
+Writing whole-buffer output in 256 KiB slices fixed a native-fast whole-buffer write regression on Windows. Against the old whole-write path, extraction became 5.38× to 6.72× faster. The streaming reader stayed faster on the compressible entry, at 33.12 ms versus 35.93 ms for the chunked path. The mixed and random speedups apply only with a budget above the 64 MiB default. The change is retained only on Windows.
 
 ## Question
 
@@ -26,7 +26,7 @@ No cache flushing or extraction fsync is requested. Protection settings were not
 | Compressible, 32 MiB | 193.37 [177.18–231.09] | 35.93 [35.32–36.51] | 5.38× | 33.12 | 35.95 / 35.93 |
 | Random, 32 MiB | 229.35 [215.19–263.43] | 37.25 [36.87–37.49] | 6.16× | 45.44 | 67.88 / 67.88 |
 
-After the change, whole-buffer mode beats streaming on mixed and random data in this run. Streaming still wins on compressible data and uses approximately 4 MiB RAM.
+The speedup column compares the chunked path with the old whole-write path, not with streaming. After the change, whole-buffer mode beats streaming on mixed and random data in this run, with separate ranges. Streaming took 124.16 [122.60–130.96] ms on mixed data and 45.44 [45.28–45.89] ms on random data. Streaming still wins on compressible data, at 33.12 [32.43–33.80] ms versus 35.93 [35.32–36.51] ms, also with separate ranges. Streaming uses approximately 4 MiB RAM.
 
 ### Windows integrity-only
 
@@ -40,13 +40,15 @@ Linux whole-write / chunked medians were 91.73 / 92.25 ms (mixed), 28.64 / 28.69
 
 Retain **only on Windows**. Linux and Mac retain whole writes.
 
-The default shared budget stays 64 MiB on Windows. The mixed and random inputs here still stream unless the user increases it. The compressible input fits the default budget, so that gain applies without increasing the budget.
+The change fixes the whole-buffer write regression in native-fast. It does not make native-fast faster than streaming on every input.
+
+The default shared budget stays 64 MiB on Windows. The mixed and random inputs here still stream unless the user increases it, so their 6.72× and 6.16× gains need a larger budget. The compressible input fits the default budget, so native-fast users get the 5.38× gain without increasing the budget. On that input the streaming `native` reader remains faster than either whole-buffer path.
 
 The production change is conditional on Windows. It executes the same chunk loop as the measured Windows candidate. Full Rust tests, formatting, Clippy and direct release byte checks pass. The experiment's Windows release tests exercise chunk boundaries and final partial chunks through existing large-entry, CRC-failure and cleanup tests. Validation still completes before buffered output is written, and failed extraction is never published.
 
 ## Limits
 
-These are end-to-end extraction gains against the old whole-buffer path, not universal speedups over streaming. The experiment identifies a beneficial write size on this hosted Windows system. It does not prove a kernel or antivirus cause. Do not multiply this gain by unrelated small-file reader or cache improvements.
+These are end-to-end extraction gains against the old whole-buffer path, not universal speedups over streaming. Of these three fixtures, only the compressible one uses the chunked path under the default 64 MiB Windows budget. Streaming beat it there. The experiment identifies a beneficial write size on this hosted Windows system. It does not prove a kernel or antivirus cause. Do not multiply this gain by unrelated small-file reader or cache improvements.
 
 ## Reproduce
 

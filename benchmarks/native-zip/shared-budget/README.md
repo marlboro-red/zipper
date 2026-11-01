@@ -1,6 +1,6 @@
 # Shared native-fast ZIP entry-buffer budget
 
-A shared entry-buffer budget cut extraction time for one large Deflate entry by 24.7% (1.33×), at a substantial memory cost. It is kept, with a default of 128 MiB on ARM64 macOS and 64 MiB elsewhere.
+A shared 128 MiB entry-buffer budget cut extraction time for one 61 MiB Deflate entry by 24.7% (1.33×), from 62.48 to 47.03 ms. Peak RSS rose from 3.11 to 96.28 MiB. The budget is kept, with a default of 128 MiB on ARM64 macOS and 64 MiB elsewhere. The 64 MiB default sends this entry back to streaming, so the gain applies by default only on ARM64 macOS.
 
 ## Question
 
@@ -24,7 +24,7 @@ The synthetic entry repeats a block 1,024 times. The block contains 32 KiB of de
 | Silesia, 12 files | 92.54 [91.21–104.88] | 88.67 [79.07–98.26] | 174.00 / 189.23 |
 | 10,000 tiny flat files | 337.33 [310.06–349.43] | 347.56 [338.89–367.51] | 9.75 / 9.75 |
 
-The large entry takes **24.7% less extraction time (1.33×)**. Silesia and tiny-file ranges overlap.
+The large entry takes **24.7% less extraction time (1.33×)** under the 128 MiB budget, at about 31 times the peak RSS. Its compressed and decoded bytes together exceed 64 MiB, so a 64 MiB budget streams it as before. Silesia and tiny-file ranges overlap.
 
 A separate baseline matrix found roughly 61 ms for both old native modes at 1/2/4/8 threads. It found 41 ms for tuned bsdtar on ZIP and 11 ms for plain TAR. Those measurements precede the change and come from a different session.
 

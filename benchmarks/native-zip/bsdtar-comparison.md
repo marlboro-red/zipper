@@ -1,6 +1,6 @@
 # ZIP extraction versus bsdtar
 
-On local macOS fixtures, native Zipper extracted identical ZIP bytes about twice as fast as bsdtar on small files, and native-fast was 1.99× as fast as tuned bsdtar on Silesia. Zipper's own format also extracted faster than tuned TAR pipelines on Silesia.
+On local macOS fixtures, native Zipper with four workers extracted identical ZIP bytes about twice as fast as single-process bsdtar on small files. On Silesia, native-fast was 1.99× as fast as tuned bsdtar at 174.2 MiB peak RSS, and the streaming `native` reader was 1.59× as fast at 4.9 MiB. Zipper's own format also extracted faster than tuned TAR pipelines on Silesia. These are wall-time comparisons at unequal worker counts.
 
 ## Question
 
@@ -123,6 +123,10 @@ The four-worker cap is a measured local heuristic. It is not a claim that four i
 Zipper's native readers preserve bytes and directories, not full archive metadata. The reduced-metadata bsdtar settings do not establish full feature equivalence. Metadata capabilities also differ between `.zipper` and TAR.
 
 bsdtar uses a single extraction process. These results are not a comparison against several coordinated tar extraction processes.
+
+Every Zipper row compared with bsdtar or 7-Zip ran four workers. The Silesia rows requested four, and the small-file rows used automatic selection, which picked four. bsdtar and 7-Zip each ran as one process, with 7-Zip using its default thread allocation. The reports record wall time only, not CPU time. The one-worker native sweep measured 237.95 ms on the grouped fixture and 575.03 ms on the flat fixture, against 269.14 and 657.09 ms for reduced-metadata bsdtar. That sweep used an older binary in a separate session, so those one-worker ratios of about 1.13× and 1.14× are approximate. The [matched-thread re-run](../rust-dependencies/README.md) compares readers at equal worker counts.
+
+The Silesia bsdtar rows ran without the reduced-metadata flags, so bsdtar restored metadata that Zipper does not. 7-Zip restores timestamps and attributes that Zipper does not.
 
 Earlier 2.7×/3× claims compared the default-buffer TAR settings. They must not be presented as gains over the stronger tuned baselines.
 
