@@ -55,6 +55,6 @@ Decisions made before these records existed are rows in [v2/decisions.tsv](v2/de
 
 1. Create `benchmarks/<area>/<experiment>/README.md` and put the raw data beside it.
 2. Use exactly six level-2 headings, in this order. They are `## Question`, `## Setup`, `## Results`, `## Decision`, `## Limits` and `## Reproduce`. Put the verdict in one or two sentences under the title.
-3. For a comparison with another tool, report the 1-thread Zipper row and CPU time next to the wall time. `scripts/extraction_matrix.py`, `scripts/compare_formats.py` and `scripts/compare_zstd.py` record both, pass reduced-metadata flags to tar, and write a `parity` section. State in Limits any difference that remains, such as 7-Zip restoring timestamps.
+3. For a comparison with another tool, report the 1-thread Zipper row and CPU time next to the wall time. `scripts/extraction_matrix.py`, `scripts/compare_formats.py` and `scripts/compare_zstd.py` record both and write a `parity` section. ZIP rows compare the native engines with default bsdtar, because both restore modes, times and links. Native-format rows pass reduced-metadata flags to tar. State in Limits any difference that remains, such as 7-Zip restoring timestamps.
 4. Add a row to the matching table on this page.
 5. Run `cargo xtask lint-docs`. It checks the headings, the links, and that every page is reachable from `README.md`.

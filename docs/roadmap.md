@@ -67,7 +67,7 @@ Exit checks:
 
 1. The reference comparison also compares permissions and modification times.
 2. `docs/reference/zip-reader.md` lists exactly what is restored and what is not.
-3. Benchmarks compare against default bsdtar, because both sides now do the same metadata work.
+3. Benchmarks compare against default bsdtar, because both sides now do the same metadata work. Done in `scripts/extraction_matrix.py` and `scripts/compare_formats.py`. The [bsdtar comparison](../benchmarks/native-zip/bsdtar-comparison.md) predates metadata restore, so M3 measures it again.
 
 ## M3. Fixed scoreboard
 
@@ -93,7 +93,7 @@ Extraction of many small files gets faster at matched threads and CPU, starting 
 Scope:
 
 - Trace macOS extraction outside timed runs and name the limiter before changing code.
-- Restate the 3× target against reduced-metadata bsdtar at matched parity before the first experiment.
+- Restate the 3× target against default bsdtar at matched parity before the first experiment.
 - Test one change at a time, following the design gates. Replicate on Linux and Windows after macOS.
 
 Exit checks:

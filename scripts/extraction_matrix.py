@@ -123,13 +123,15 @@ def main():
                 if label == '7zip':
                     commands[label] = [resolved, 'x', '-y', f'-o{output}', str(archive)]
                 else:
-                    for kind, path in [('zip', archive), ('tar', plain)]:
-                        commands[f'bsdtar-{kind}'] = [resolved, '-xf', str(path), '-C', str(output),
-                            '-b', '2048', *minimal_extract_flags(resolved)]
+                    commands['bsdtar-zip'] = [resolved, '-xf', str(archive), '-C', str(output), '-b', '2048']
+                    commands['bsdtar-tar'] = [resolved, '-xf', str(plain), '-C', str(output),
+                        '-b', '2048', *minimal_extract_flags(resolved)]
         result['commands'] = commands
         result['parity'] = {
-            'zipper_restores': 'file bytes and directories',
-            'bsdtar': 'reduced-metadata flags in its command, single process',
+            'zipper_restores': 'ZIP engines restore bytes, directories, permission bits, times and links; '
+                'the native format restores bytes and directories',
+            'bsdtar-zip': 'default metadata restore, 1 MiB reads, single process',
+            'bsdtar-tar': 'reduced-metadata flags to match the native format, single process',
             '7zip': 'restores timestamps and attributes; no flag disables them',
             'output_root': 'created before timing for external readers; Zipper stages and publishes inside timing',
             'threads': 'Zipper rows run at every --threads value, including 1 for a single-threaded comparison'}

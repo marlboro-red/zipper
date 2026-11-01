@@ -67,7 +67,9 @@ def main():
               "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
               "corpus": source.name, "input_bytes": total, "runs": args.runs, "warmup_rounds": 1,
               "creation_threads": args.threads, "extraction_threads": "7-Zip defaults for both paths",
-              "parity": {"zipper_restores": "file bytes and directories",
+              "parity": {"zipper_restores": "native engines restore bytes, directories, permission bits, times and links; "
+                                            "the 7-Zip engine restores what 7-Zip restores",
+                         "bsdtar": "default metadata restore, single process; the parity row for native engines",
                          "bsdtar-minimal": "reduced-metadata flags, single process",
                          "7zip": "restores timestamps and attributes; no flag disables them",
                          "native_single_thread": "-1t rows run Zipper with --threads 1"},
