@@ -22,7 +22,7 @@ M6 can close as soon as M1 and M2 do. M4 and M5 make the default faster and can 
 
 The repository enforces its own rules.
 
-- `cargo xtask gate fast` runs format, lint, tests, a release build and a byte-exact round trip. The pre-push hook runs it.
+- `cargo xtask gate fast` runs format, lint, a Windows lint, tests, a release build and a byte-exact round trip. The pre-push hook runs it.
 - `cargo xtask gate full` adds release tests and a benchmark smoke run. CI runs it on all three operating systems.
 - `cargo xtask lint-docs` checks writing rules, links, record headings, reachability and every path a page names.
 - Benchmark scripts record CPU time and refuse comparisons without a 1-thread Zipper row.

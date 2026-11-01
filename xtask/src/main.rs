@@ -15,6 +15,15 @@ const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | install-hoo
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
+    if env::var_os(STUB_TOOL).is_some() {
+        return match stub_tool(&args) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("xtask stub tool: {error:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let result = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["gate", "fast"] => gate(false),
         ["gate", "full"] => gate(true),
@@ -70,6 +79,7 @@ fn gate(full: bool) -> Result<()> {
             ])
         }),
         ("test", || cargo(&["test", "--workspace", "--locked"])),
+        ("windows clippy", windows_clippy),
         ("release build", || {
             cargo(&["build", "--release", "--locked", "--package", "zipper"])
         }),
@@ -102,6 +112,61 @@ fn gate(full: bool) -> Result<()> {
         "gate {} failed {failed} step(s)",
         if full { "full" } else { "fast" }
     );
+    Ok(())
+}
+
+/// Set when xtask runs as the C compiler or archiver for `windows_clippy`.
+const STUB_TOOL: &str = "XTASK_STUB_TOOL";
+const WINDOWS_TARGET: &str = "x86_64-pc-windows-gnu";
+
+/// Lints the Windows build from another host. Clippy only type-checks Rust,
+/// so the C dependencies build as empty objects and nothing links.
+fn windows_clippy() -> Result<()> {
+    if cfg!(windows) {
+        return Ok(());
+    }
+    let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let sysroot = Command::new(rustc).args(["--print", "sysroot"]).output()?;
+    let sysroot = PathBuf::from(String::from_utf8(sysroot.stdout)?.trim());
+    ensure!(
+        sysroot.join("lib/rustlib").join(WINDOWS_TARGET).is_dir(),
+        "run `rustup target add {WINDOWS_TARGET}` for this toolchain"
+    );
+    let tool = env::current_exe()?;
+    let suffix = WINDOWS_TARGET.replace('-', "_");
+    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let status = Command::new(cargo)
+        .current_dir(root())
+        .env(STUB_TOOL, "1")
+        .env(format!("CC_{suffix}"), &tool)
+        .env(format!("AR_{suffix}"), &tool)
+        .args([
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--locked",
+            "--target",
+            WINDOWS_TARGET,
+            "--target-dir",
+            "target/windows-clippy",
+            "--",
+            "-D",
+            "warnings",
+        ])
+        .status()?;
+    ensure!(status.success(), "Windows clippy exited with {status}");
+    Ok(())
+}
+
+/// Writes an empty object for `-o <file>` and an empty archive for `*.a`.
+fn stub_tool(args: &[String]) -> Result<()> {
+    if let Some(at) = args.iter().position(|arg| arg == "-o") {
+        let output = args.get(at + 1).context("-o without a file")?;
+        fs::write(output, b"")?;
+    }
+    for archive in args.iter().filter(|arg| arg.ends_with(".a")) {
+        fs::write(archive, b"!<arch>\n")?;
+    }
     Ok(())
 }
 

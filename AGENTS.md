@@ -26,7 +26,7 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 
 - Treat a change as done only when `cargo xtask gate fast` passes. CI runs `cargo xtask gate full`.
 - Run `cargo xtask install-hooks` once so pre-push runs the fast gate.
-- Expect the gate to format, lint, test, and build a release binary. It also checks a byte-exact round trip of `.zipper` and ZIP extraction, selected-path extraction, and truncated input cleanup.
+- Expect the gate to format, lint, test, and build a release binary. On macOS and Linux it also lints the Windows build, which needs `rustup target add x86_64-pc-windows-gnu` once. It also checks a byte-exact round trip of `.zipper` and ZIP extraction, selected-path extraction, and truncated input cleanup.
 - Use `scripts/compare_revisions.py` for direct byte-verified revision comparisons.
 - Run benchmarks on Unix. The benchmarks are Unix-oriented.
 
