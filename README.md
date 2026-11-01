@@ -130,8 +130,10 @@ Linux runner, it improved grouped/flat tiny-file extraction by 5.9×/2.0× at fo
 workers; see [matched Linux comparisons](benchmarks/native-zip/linux-cache/README.md). [Threefold-speed target
 investigation and verification results](benchmarks/native-zip/threefold/README.md).
 
-Next performance work: real-corpus level sweeps, similarity ordering, dictionaries,
-and measured block-size/worker scaling. See the research agenda above.
+[Level/block sweep on real dependency sources](benchmarks/rust-dependencies/level-sweep.md):
+there, `--level 3 --block-size-kib 4096` is 25% smaller than the default with
+overlapping extraction times. Next performance work: similarity ordering,
+dictionaries, and measured worker scaling. See the research agenda above.
 
 Run `python3 scripts/benchmark.py /path/to/corpus --runs 3 --threads 4` after a
 release build. On macOS/Linux this records per-process wall time and peak RSS,

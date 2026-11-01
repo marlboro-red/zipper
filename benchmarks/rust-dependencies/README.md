@@ -1,5 +1,7 @@
 # Real dependency-source extraction
 
+[Native level and block-size sweep on this corpus](level-sweep.md).
+
 A source-code workload complements the synthetic tiny-file fixtures: 70 locked
 crates.io packages, 3,981 regular files and 67,479,735 input bytes. The generator
 uses `cargo metadata --locked`, copies dependency trees without following symlinks,
