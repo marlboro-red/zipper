@@ -114,7 +114,8 @@ fn check_case(bytes: &[u8], read: Reader) -> bool {
             let written: u64 = walkdir::WalkDir::new(&destination)
                 .into_iter()
                 .map(|entry| entry.unwrap().metadata().unwrap())
-                .filter(|metadata| metadata.is_file())
+                // A link's own size is its target's length, which is its entry's data.
+                .filter(|metadata| metadata.is_file() || metadata.file_type().is_symlink())
                 .map(|metadata| metadata.len())
                 .sum();
             assert_eq!(

@@ -131,36 +131,75 @@ def writers(have):
     return found
 
 
+def walk(root):
+    """Every path under root, without following symlinks."""
+    found = []
+    for directory, subdirectories, files in os.walk(root):
+        found += [Path(directory) / name for name in subdirectories + files]
+    return sorted(found)
+
+
+def key(root, path):
+    return unicodedata.normalize("NFC", path.relative_to(root).as_posix())
+
+
 def tree(root):
-    """Map of NFC path to None for directories or (size, crc32) for files."""
+    """Map of NFC path to None for a directory, (size, crc32) for a file, or
+    ("link", target) for a symlink."""
     result = {}
-    for path in sorted(root.rglob("*")):
-        name = unicodedata.normalize("NFC", path.relative_to(root).as_posix())
-        if path.is_dir():
-            result[name] = None
+    for path in walk(root):
+        if path.is_symlink():
+            result[key(root, path)] = ["link", os.readlink(path)]
+        elif path.is_dir():
+            result[key(root, path)] = None
         else:
             data = path.read_bytes()
-            result[name] = [len(data), zlib.crc32(data)]
+            result[key(root, path)] = [len(data), zlib.crc32(data)]
     return result
 
 
 def modes(root):
-    """Map of NFC path to its permission bits."""
-    return {unicodedata.normalize("NFC", path.relative_to(root).as_posix()): path.lstat().st_mode & 0o777
-            for path in sorted(root.rglob("*"))}
+    """Map of NFC path to its permission bits, for paths that are not links."""
+    return {key(root, path): path.lstat().st_mode & 0o777 for path in walk(root) if not path.is_symlink()}
 
 
 def unlock(root):
     """Restores owner access so read-only directories can be deleted."""
-    for path in [root, *root.rglob("*")]:
+    for path in [root, *walk(root)]:
         if path.is_dir() and not path.is_symlink():
             path.chmod(path.stat().st_mode | 0o700)
 
 
 def times(root):
-    """Map of NFC path to its modification time in whole seconds."""
-    return {unicodedata.normalize("NFC", path.relative_to(root).as_posix()): int(path.lstat().st_mtime)
-            for path in sorted(root.rglob("*"))}
+    """Map of NFC path to its modification time in whole seconds, for paths
+    that are not links."""
+    return {key(root, path): int(path.lstat().st_mtime) for path in walk(root) if not path.is_symlink()}
+
+
+def write_link_source(root):
+    """A tree of relative links that stay inside it."""
+    (root / "text").mkdir(parents=True)
+    (root / "text/readme.txt").write_bytes(b"linked\n")
+    (root / "links").mkdir()
+    os.symlink("../text/readme.txt", root / "links/file-link")
+    os.symlink("../text", root / "links/dir-link")
+    os.symlink("file-link", root / "links/chain")
+
+
+def link_writers(have):
+    """Writers that store symlinks as links, from cwd containing `src`."""
+    found = []
+    if have("zip"):
+        found.append(("infozip-links", lambda target, cwd: run(["zip", "-q", "-r", "-y", str(target), "src"], cwd)))
+    if have("7zz"):
+        found.append(("7zip-links", lambda target, cwd: run(
+            ["7zz", "a", "-tzip", "-bd", "-snl", str(target), "src"], cwd)))
+    if have("bsdtar"):
+        found.append(("bsdtar-links", lambda target, cwd: run(["bsdtar", "--format", "zip", "-cf", str(target), "src"], cwd)))
+    if have("ditto"):
+        found.append(("ditto-links", lambda target, cwd: run(
+            ["ditto", "-c", "-k", "--norsrc", "--keepParent", "src", str(target)], cwd)))
+    return found
 
 
 # Info-ZIP unzip and bsdtar restore permission bits, including directory
@@ -201,6 +240,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="zipper-corpus-") as work:
         work = Path(work)
         write_source(work / "src")
+        write_link_source(work / "links" / "src")
         try:
             build(args, have, work, summary, manifests, all_modes, all_times)
         finally:
@@ -210,10 +250,12 @@ def main():
 
 def build(args, have, work, summary, manifests, all_modes, all_times):
     """Writes each archive and records what the reference readers agree on."""
-    source_times = times(work)
-    for name, write in writers(have):
+    jobs = [(name, write, work) for name, write in writers(have)]
+    jobs += [(name, write, work / "links") for name, write in link_writers(have)]
+    for name, write, source in jobs:
+        source_times = times(source)
         archive = args.output / f"{name}.zip"
-        write(archive.resolve(), work)
+        write(archive.resolve(), source)
         trees, reader_modes = {}, {}
         for reader, extract in readers(have):
             out = work / f"out-{name}-{reader}"
@@ -228,6 +270,13 @@ def build(args, have, work, summary, manifests, all_modes, all_times):
                     unlock(out)
                 shutil.rmtree(out, ignore_errors=True)
         opened = {r: t for r, t in trees.items() if isinstance(t, dict)}
+        # Only unzip and bsdtar create links. Other readers write files in
+        # their place, so link paths vote separately, like modes.
+        link_trees = [opened.get(reader, {}) for reader in MODE_READERS]
+        links = {path: value for path, value in link_trees[0].items()
+                 if isinstance(value, list) and value[0] == "link"
+                 and all(other.get(path) == value for other in link_trees[1:])}
+        opened = {r: {path: value for path, value in t.items() if path not in links} for r, t in opened.items()}
         votes = {}
         for reader, result in opened.items():
             votes.setdefault(json.dumps(result, sort_keys=True), []).append(reader)
@@ -241,7 +290,7 @@ def build(args, have, work, summary, manifests, all_modes, all_times):
             archive.unlink()
             print(f"{name}: fewer than three readers agree; excluded", file=sys.stderr)
             continue
-        manifests[name] = json.loads(winner)
+        manifests[name] = {**json.loads(winner), **links}
         zone_times = []
         for zone in ZONES:
             for reader, extract in readers(have, zone):
@@ -273,7 +322,12 @@ def write_manifest(args, summary, manifests, all_modes, all_times):
     lines = []
     for archive, expected in sorted(manifests.items()):
         for path, value in sorted(expected.items()):
-            fields = ["dir", "-"] if value is None else [str(value[0]), f"{value[1]:08x}"]
+            if value is None:
+                fields = ["dir", "-"]
+            elif value[0] == "link":
+                fields = ["link", value[1]]
+            else:
+                fields = [str(value[0]), f"{value[1]:08x}"]
             mode = all_modes[archive].get(path)
             fields.append("-" if mode is None else f"{mode:o}")
             time = all_times[archive].get(path)

@@ -26,6 +26,45 @@ struct Item {
     mode: Option<u32>,
     /// Modification time in seconds since the Unix epoch.
     modified: Option<i64>,
+    /// The entry's data is a symlink target, not file content.
+    symlink: bool,
+}
+
+/// Longest symlink target the native engines accept, in bytes.
+const MAX_LINK_TARGET: u64 = 4096;
+
+/// Checks a symlink target against the policy in docs/reference/zip-reader.md:
+/// relative, with every `..` before the first name, and resolving lexically
+/// inside the destination. The parent of every link is a real directory, so
+/// the leading `..` steps are exact. The names after them only descend, and a
+/// link they pass through was checked the same way. So the check holds however
+/// the filesystem matches names, such as ignoring case or normalization.
+fn check_link_target(name: &str, target: &[u8]) -> Result<()> {
+    let target = std::str::from_utf8(target).context("ZIP symlink target is not UTF-8")?;
+    ensure!(
+        !target.is_empty() && !target.contains('\0') && !target.starts_with('/'),
+        "ZIP symlink {name:?} has an unsafe target; use the compatibility backend"
+    );
+    let mut depth = name.matches('/').count();
+    let mut descended = false;
+    for component in target.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                ensure!(
+                    !descended,
+                    "ZIP symlink {name:?} has `..` after a name; use the compatibility backend"
+                );
+                depth = depth.checked_sub(1).with_context(|| {
+                    format!(
+                        "ZIP symlink {name:?} points outside the destination; use the compatibility backend"
+                    )
+                })?;
+            }
+            _ => descended = true,
+        }
+    }
+    Ok(())
 }
 
 const LOCAL_HEADER: u64 = 30;
@@ -368,17 +407,24 @@ fn scan(
             !file.encrypted(),
             "encrypted ZIP requires the compatibility backend"
         );
+        let symlink = file.is_symlink();
         ensure!(
-            !file.is_symlink(),
-            "ZIP symlinks require the compatibility backend"
+            !symlink || cfg!(unix),
+            "ZIP symlinks on this platform require the compatibility backend"
+        );
+        ensure!(
+            !symlink || file.size() <= MAX_LINK_TARGET,
+            "ZIP symlink target is too long"
         );
         let directory = file.is_dir();
         if let Some(mode) = file.unix_mode() {
             let kind = mode & 0o170000;
-            ensure!(
-                kind == 0 || kind == if directory { 0o040000 } else { 0o100000 },
-                "unsupported ZIP file type"
-            );
+            let expected = match (symlink, directory) {
+                (true, _) => 0o120000,
+                (false, true) => 0o040000,
+                (false, false) => 0o100000,
+            };
+            ensure!(kind == 0 || kind == expected, "unsupported ZIP file type");
         }
         ensure!(
             matches!(
@@ -422,6 +468,7 @@ fn scan(
             record_limit: 0,
             mode: file.unix_mode().map(|mode| mode & 0o777),
             modified: times.and_then(|times| clock.modified(&times[index])),
+            symlink,
         });
     }
     for item in &items {
@@ -900,6 +947,7 @@ pub fn read_archive_with_options(
     // stealing instead of fixed file lanes; Rayon does not promise start order.
     let mut work: Vec<_> = (0..items.len()).collect();
     work.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
+    let targets = std::sync::Mutex::new(Vec::new());
     let run = || {
         work.par_iter().try_for_each_init(
             || {
@@ -921,19 +969,31 @@ pub fn read_archive_with_options(
                 let prefer_streaming = destination.is_some()
                     && item.entry.size >= 16 * 1024 * 1024
                     && item.compressed <= item.entry.size / 128;
-                let reservation =
-                    if fast && !prefer_streaming && item.method == CompressionMethod::Deflated {
-                        item.entry
-                            .size
-                            .checked_add(item.compressed)
-                            .and_then(|bytes| usize::try_from(bytes).ok())
-                            .and_then(|bytes| budget.reserve(bytes))
-                    } else {
-                        None
-                    };
+                let reservation = if fast
+                    && !prefer_streaming
+                    && !item.symlink
+                    && item.method == CompressionMethod::Deflated
+                {
+                    item.entry
+                        .size
+                        .checked_add(item.compressed)
+                        .and_then(|bytes| usize::try_from(bytes).ok())
+                        .and_then(|bytes| budget.reserve(bytes))
+                } else {
+                    None
+                };
                 let buffered = reservation.is_some();
                 raw.seek(SeekFrom::Start(data_start))?;
                 let mut source = Read::take(&mut *raw, item.compressed);
+                if item.symlink {
+                    let mut target = Vec::new();
+                    stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                        target.extend_from_slice(bytes);
+                        Ok(())
+                    })?;
+                    targets.lock().unwrap().push((index, target));
+                    return Ok(());
+                }
                 let mut output = if let Some(temp) = &staging {
                     if !item.entry.directory {
                         let mut options = File::options();
@@ -1015,6 +1075,19 @@ pub fn read_archive_with_options(
             .num_threads(worker_limit)
             .build()?
             .install(run)?;
+    }
+    // Links are created only after every file is written, so no file is
+    // written through one.
+    for (index, target) in targets.into_inner().unwrap() {
+        let name = &items[index].entry.name;
+        check_link_target(name, &target)?;
+        #[cfg(unix)]
+        if let Some(temp) = &staging {
+            std::os::unix::fs::symlink(std::str::from_utf8(&target)?, temp.path().join(name))
+                .with_context(|| {
+                    format!("cannot create ZIP symlink {name:?}; use the compatibility backend")
+                })?;
+        }
     }
     if let (Some(temp), Some(dst)) = (staging, destination) {
         let directories: Vec<crate::Directory> = items

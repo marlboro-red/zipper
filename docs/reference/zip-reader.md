@@ -12,11 +12,12 @@ The reader supports these features:
 - Stored and Deflate entries.
 - Conventional ZIP64.
 - File bytes and directories.
+- Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
 
 The reader does not support these features:
 
 - Encryption.
-- Symlinks.
+- Symlinks that point outside the destination, and any symlink on Windows.
 - Codecs other than stored and Deflate.
 - Multi-disk archives.
 - Ambiguous end records.
@@ -48,6 +49,19 @@ On Windows it restores no permissions, no directory times, and no times for entr
 | Raw central-directory metadata | at most 64 MiB |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
+## Symlinks
+
+The native engines are stricter with symlinks than Info-ZIP `unzip` and bsdtar, which create links to any target. A symlink entry is created only when all of these hold:
+
+- The target is a relative UTF-8 path of at most 4,096 bytes, with no NUL byte and, on Windows, no backslash or drive letter.
+- Every `..` in the target comes before its first name, as in `../../shared/lib`.
+- Counted from the link's own directory, those `..` steps stay inside the destination.
+- No other entry uses the link as a directory.
+
+The `..` rule makes the check independent of how the filesystem compares names. A target such as `a/L/../x` climbs out of a link `a/L`, and a lexical check misses it when the filesystem matches `a/l` to `a/L` by ignoring case or Unicode normalization, as APFS does. A target that only descends after its `..` steps stays below the directory it reached, because every link it passes through obeys the same rule.
+
+Links are created after every file is written, so no file is written through a link. An archive with any other symlink is rejected, and the compatibility backend reads it. On Windows, creating a symlink needs special privileges, so the native engines reject every archive that contains one.
+
 ## Integrity checks
 
 Both native ZIP modes run these checks before publishing any output:
@@ -67,7 +81,7 @@ Both native ZIP modes run these checks before publishing any output:
 
 ## Reference corpus
 
-`tests/data/zip-corpus` holds 17 archives from these real ZIP writers:
+`tests/data/zip-corpus` holds 21 archives. Seventeen come from these real ZIP writers:
 
 - Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes.
 - 7-Zip, with Deflate, Copy and timestamps.
@@ -75,12 +89,14 @@ Both native ZIP modes run these checks before publishing any output:
 - macOS `ditto`.
 - Python `zipfile`, seekable and streaming, with Deflate, stored and ZIP64.
 
+Four more archives come from Info-ZIP `zip -y`, 7-Zip `-snl`, bsdtar and `ditto`, which store symlinks as links. Only `unzip` and bsdtar create links, so link targets are recorded where those two agree, and the other paths still need three readers. On Windows the test expects these archives to be rejected.
+
 The manifest also records each path's exact modification time where `unzip` and bsdtar both restore the source's own time under `TZ=UTC` and `TZ=Pacific/Auckland`. That covers the 11 Info-ZIP, bsdtar and `ditto` archives. The other archives carry only DOS times, which depend on the time zone. `tests/cli.rs` checks those under `TZ=UTC` and `TZ=Asia/Tokyo`.
  The source tree has empty files and directories, non-ASCII names, and files at the decoder's 64 KiB and 192 KiB slice boundaries.
 
 `scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 6 archives.
 
-`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on all 17 archives. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
+`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on all 21 archives. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
 
 ## Mutation testing
 

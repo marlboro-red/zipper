@@ -8,7 +8,7 @@ struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer).
     #[arg(long, global = true)]
     threads: Option<usize>,
-    /// ZIP reader: native is experimental and preserves bytes/directories only.
+    /// ZIP reader: native is experimental and restores files, directories, modes, times and safe symlinks.
     #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Backend)]
     zip_engine: ZipEngine,
     /// Shared native-fast ZIP entry-buffer MiB (128 on ARM64 macOS, 64 elsewhere; 0 streams).

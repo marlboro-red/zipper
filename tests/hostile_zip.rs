@@ -351,14 +351,6 @@ fn local_headers_must_match_the_central_directory() {
 #[test]
 fn special_file_types_are_rejected() {
     assert_rejected(
-        "symlink",
-        &[Raw {
-            version_made_by: 3 << 8 | 20,
-            external: 0o120777 << 16,
-            ..stored("link", b"../../outside")
-        }],
-    );
-    assert_rejected(
         "device",
         &[Raw {
             version_made_by: 3 << 8 | 20,
@@ -944,4 +936,95 @@ fn exact_times_follow_the_dos_era_and_field_priority() {
         extracted_time(at(unix_time(1_100_000_000), dos_2001)),
         1_100_000_000
     );
+}
+
+/// A Unix symlink entry whose data is `target`.
+fn symlink(name: &str, target: &str) -> Raw {
+    Raw {
+        version_made_by: 3 << 8 | 20,
+        external: 0o120777 << 16,
+        ..stored(name, target.as_bytes())
+    }
+}
+
+#[test]
+fn symlinks_must_stay_inside_the_destination() {
+    for (case, entries) in [
+        ("escaping link", vec![symlink("a/link", "../../outside")]),
+        ("absolute link", vec![symlink("link", "/etc/passwd")]),
+        ("empty target", vec![symlink("link", "")]),
+        (
+            "link through another link",
+            vec![symlink("x/up", ".."), symlink("y", "x/up/../outside")],
+        ),
+        // APFS matches `l` to `L` and NFD to NFC, so a name check alone misses these.
+        (
+            "link through a link spelled in another case",
+            vec![
+                stored("a/b/", b""),
+                symlink("a/b/L", "../.."),
+                symlink("m", "a/b/l/../outside"),
+            ],
+        ),
+        (
+            "link through a link in another normalization",
+            vec![
+                stored("a/b/", b""),
+                symlink("a/b/\u{e9}", "../.."),
+                symlink("m", "a/b/e\u{301}/../outside"),
+            ],
+        ),
+        (
+            "dot-dot after a name",
+            vec![symlink("m", "a/../../outside")],
+        ),
+        (
+            "file written through a link",
+            vec![
+                symlink("dir", "real"),
+                stored("real/", b""),
+                stored("dir/f", b"x"),
+            ],
+        ),
+    ] {
+        assert_rejected(case, &entries);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinks_inside_the_destination_are_created_after_files() {
+    let entries = [
+        stored("text/readme.txt", b"hello"),
+        symlink("links/file", "../text/readme.txt"),
+        symlink("links/dir", "../text"),
+        symlink("links/self", "."),
+        symlink("links/chain", "file"),
+        symlink("links/through", "dir/readme.txt"),
+    ];
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, &entries);
+        let destination = root.path().join("out");
+        read(&archive, Some(&destination)).unwrap();
+        let link = |name: &str| fs::read_link(destination.join(name)).unwrap();
+        assert_eq!(link("links/file"), Path::new("../text/readme.txt"));
+        assert_eq!(link("links/dir"), Path::new("../text"));
+        assert_eq!(fs::read(destination.join("links/chain")).unwrap(), b"hello");
+        assert_eq!(
+            fs::read(destination.join("links/through")).unwrap(),
+            b"hello"
+        );
+        assert_eq!(
+            fs::read(destination.join("links/dir/readme.txt")).unwrap(),
+            b"hello"
+        );
+    }
+}
+
+#[cfg(not(unix))]
+#[test]
+fn symlinks_are_left_to_the_backend_on_this_platform() {
+    assert_rejected("any symlink", &[symlink("link", "target")]);
 }

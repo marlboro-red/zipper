@@ -20,8 +20,10 @@ type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<Entry>>;
 /// What one extracted path must look like. A `None` field is not compared.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Expected {
-    /// File size and CRC-32, or `None` for a directory.
+    /// File size and CRC-32, or `None` for a directory or a link.
     content: Option<(u64, u32)>,
+    /// A symlink's target.
+    link: Option<String>,
     mode: Option<u32>,
     modified: Option<i64>,
 }
@@ -41,10 +43,12 @@ fn expected() -> BTreeMap<String, Tree> {
         let [archive, path, size, crc, mode, modified] = fields[..] else {
             panic!("bad manifest line {line:?}");
         };
-        let content =
-            (size != "dir").then(|| (size.parse().unwrap(), u32::from_str_radix(crc, 16).unwrap()));
+        let link = (size == "link").then(|| crc.to_string());
+        let content = (size != "dir" && size != "link")
+            .then(|| (size.parse().unwrap(), u32::from_str_radix(crc, 16).unwrap()));
         let value = Expected {
             content,
+            link,
             mode: optional(mode, |mode| u32::from_str_radix(mode, 8).unwrap()),
             modified: optional(modified, |seconds| seconds.parse().unwrap()),
         };
@@ -65,6 +69,16 @@ fn tree(root: &Path) -> Tree {
             let name = entry.path().strip_prefix(root).unwrap();
             let name: Vec<_> = name.iter().map(|part| part.to_str().unwrap()).collect();
             let metadata = entry.metadata().unwrap();
+            if entry.file_type().is_symlink() {
+                let target = fs::read_link(entry.path()).unwrap();
+                let value = Expected {
+                    content: None,
+                    link: Some(target.to_str().unwrap().to_string()),
+                    mode: None,
+                    modified: None,
+                };
+                return (name.join("/"), value);
+            }
             let content = entry.file_type().is_file().then(|| {
                 let data = fs::read(entry.path()).unwrap();
                 (data.len() as u64, crc32fast::hash(&data))
@@ -83,6 +97,7 @@ fn tree(root: &Path) -> Tree {
                 .map_or(0, |duration| duration.as_secs() as i64);
             let value = Expected {
                 content,
+                link: None,
                 mode,
                 modified: Some(modified),
             };
@@ -116,8 +131,14 @@ fn native_engines_match_the_reference_readers() {
         ] {
             let work = tempfile::tempdir().unwrap();
             let destination = work.path().join("out");
-            read(&corpus.join(format!("{name}.zip")), Some(&destination))
-                .unwrap_or_else(|error| panic!("{name} with {engine}: {error:#}"));
+            let result = read(&corpus.join(format!("{name}.zip")), Some(&destination));
+            // Other platforms leave every archive with symlinks to the backend.
+            if cfg!(not(unix)) && wanted.values().any(|value| value.link.is_some()) {
+                assert!(result.is_err(), "{name} with {engine} extracted links");
+                assert!(!destination.exists());
+                continue;
+            }
+            result.unwrap_or_else(|error| panic!("{name} with {engine}: {error:#}"));
             let mut actual = tree(&destination);
             #[cfg(unix)]
             let default = {

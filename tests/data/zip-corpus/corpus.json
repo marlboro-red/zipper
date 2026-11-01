@@ -45,6 +45,24 @@
     "unzip": "ok"
    }
   },
+  "7zip-links": {
+   "agreeing": [
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
   "7zip-timestamps": {
    "agreeing": [
     "7zip",
@@ -78,6 +96,24 @@
    ],
    "readers": {
     "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "bsdtar-links": {
+   "agreeing": [
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
     "bsdtar": "ok",
     "python": "ok",
     "unzip": "ok"
@@ -122,6 +158,24 @@
     "unzip": "ok"
    }
   },
+  "ditto-links": {
+   "agreeing": [
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
   "infozip-default": {
    "agreeing": [
     "7zip",
@@ -157,6 +211,24 @@
    ],
    "readers": {
     "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
+  "infozip-links": {
+   "agreeing": [
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
     "bsdtar": "ok",
     "python": "ok",
     "unzip": "ok"
