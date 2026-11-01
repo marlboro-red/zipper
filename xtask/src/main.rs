@@ -69,6 +69,7 @@ fn gate(full: bool) -> Result<()> {
     let mut steps: Vec<(&str, Step)> = vec![
         ("fmt", || cargo(&["fmt", "--all", "--check"])),
         ("docs", || docs::lint(&root())),
+        ("comments", || comments::lint(&root())),
         ("clippy", || {
             cargo(&[
                 "clippy",

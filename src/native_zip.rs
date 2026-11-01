@@ -1,5 +1,5 @@
-//! Opt-in ZIP extraction for regular files: stored/Deflate, bounded streaming,
-//! independent per-worker readers, and publication only after full verification.
+//! Opt-in ZIP extraction of stored and Deflate entries, published only after
+//! full verification. See `docs/reference/zip-reader.md` for what it restores.
 use crate::{Entry, parent, safe_path};
 use anyhow::{Context, Result, ensure};
 use rayon::prelude::*;
@@ -17,24 +17,16 @@ struct Item {
     crc: u32,
     compressed: u64,
     method: CompressionMethod,
-    /// Stored name bytes, kept only when they differ from the decoded name.
-    raw_name: Option<Box<[u8]>>,
+    stored_name_if_different: Option<Box<[u8]>>,
     header_start: u64,
-    /// Start of the next local record, or of the central directory.
-    record_limit: u64,
-    /// Permission bits to restore, without setuid, setgid or sticky bits.
+    next_record_start: u64,
     mode: Option<u32>,
-    /// Modification time in seconds since the Unix epoch.
     modified: Option<i64>,
-    /// The entry's data is a symlink target, not file content.
     symlink: bool,
 }
 
-/// Indices of directory entries that name the same directory as an earlier
-/// entry, on a filesystem that ignores case or normalization. Only the first
-/// entry's metadata is restored, as in unzip.
 #[cfg(unix)]
-fn merged_directories(root: &Path, items: &[Item]) -> Result<HashSet<usize>> {
+fn later_spellings_of_same_directory(root: &Path, items: &[Item]) -> Result<HashSet<usize>> {
     use std::os::unix::fs::MetadataExt;
     let mut claimed = HashSet::new();
     let mut merged = HashSet::new();
@@ -49,22 +41,57 @@ fn merged_directories(root: &Path, items: &[Item]) -> Result<HashSet<usize>> {
     Ok(merged)
 }
 
-/// Windows restores no directory metadata, so nothing needs merging.
 #[cfg(not(unix))]
-fn merged_directories(_: &Path, _: &[Item]) -> Result<HashSet<usize>> {
+fn later_spellings_of_same_directory(_: &Path, _: &[Item]) -> Result<HashSet<usize>> {
     Ok(HashSet::new())
 }
 
-/// Longest symlink target the native engines accept, in bytes.
+fn create_directories_in_archive_order(root: &Path, items: &[Item]) -> Result<()> {
+    let mut seen = HashSet::new();
+    for item in items {
+        let path = root.join(&item.entry.name);
+        let directory = if item.entry.directory {
+            path
+        } else {
+            parent(&path).to_owned()
+        };
+        if seen.insert(directory.clone()) {
+            fs::create_dir_all(directory)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg_attr(not(unix), allow(unused_variables))]
+fn create_links_after_files(
+    staging: Option<&Path>,
+    items: &[Item],
+    targets: Vec<(usize, Vec<u8>)>,
+) -> Result<()> {
+    for (index, target) in targets {
+        let name = &items[index].entry.name;
+        ensure_link_stays_inside(name, &target)?;
+        #[cfg(unix)]
+        if let Some(root) = staging {
+            std::os::unix::fs::symlink(std::str::from_utf8(&target)?, root.join(name))
+                .map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::AlreadyExists {
+                        anyhow::anyhow!(
+                            "ZIP symlink {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
+                        )
+                    } else {
+                        anyhow::Error::from(error)
+                            .context(format!("cannot create ZIP symlink {name:?}"))
+                    }
+                })?;
+        }
+    }
+    Ok(())
+}
+
 const MAX_LINK_TARGET: u64 = 4096;
 
-/// Checks a symlink target against the policy in docs/reference/zip-reader.md:
-/// relative, with every `..` before the first name, and resolving lexically
-/// inside the destination. The parent of every link is a real directory, so
-/// the leading `..` steps are exact. The names after them only descend, and a
-/// link they pass through was checked the same way. So the check holds however
-/// the filesystem matches names, such as ignoring case or normalization.
-fn check_link_target(name: &str, target: &[u8]) -> Result<()> {
+fn ensure_link_stays_inside(name: &str, target: &[u8]) -> Result<()> {
     let target = std::str::from_utf8(target).context("ZIP symlink target is not UTF-8")?;
     ensure!(
         !target.is_empty() && !target.contains('\0') && !target.starts_with('/'),
@@ -96,15 +123,14 @@ const LOCAL_HEADER: u64 = 30;
 
 impl Item {
     fn stored_name_len(&self) -> usize {
-        self.raw_name.as_ref().map_or(
+        self.stored_name_if_different.as_ref().map_or(
             self.entry.name.len() + usize::from(self.entry.directory),
             |raw| raw.len(),
         )
     }
 
-    /// Whether `bytes` equals the name exactly as the central directory stores it.
     fn stored_name_is(&self, bytes: &[u8]) -> bool {
-        match &self.raw_name {
+        match &self.stored_name_if_different {
             Some(raw) => **raw == *bytes,
             None => {
                 let (name, slash) = bytes.split_at(self.entry.name.len().min(bytes.len()));
@@ -123,10 +149,9 @@ impl Item {
 const MAX_METADATA: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: u64 = 100_000;
 
-// This accounts only for the two whole-entry buffers, not process RSS.
-struct BufferBudget(AtomicUsize);
+struct EntryBufferBudget(AtomicUsize);
 
-impl BufferBudget {
+impl EntryBufferBudget {
     fn reserve(&self, bytes: usize) -> Option<BufferReservation<'_>> {
         self.0
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |available| {
@@ -141,7 +166,7 @@ impl BufferBudget {
 }
 
 struct BufferReservation<'a> {
-    budget: &'a BufferBudget,
+    budget: &'a EntryBufferBudget,
     bytes: usize,
 }
 
@@ -160,10 +185,7 @@ fn entry_buffer(size: usize) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
-// Bound directory allocation before the general ZIP parser sees untrusted
-// counts/lengths. The opt-in path accepts conventional single-disk ZIP/ZIP64
-// records with no prepended executable, trailing data, or ZIP64 extension sector.
-fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, Renamed)> {
+fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredNameByIndex)> {
     let length = file.get_ref().metadata()?.len();
     ensure!(length >= 22, "truncated ZIP");
     let tail_size = length.min(22 + 65535) as usize;
@@ -179,8 +201,7 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, Renamed
         })
         .context("ZIP end record not found")?;
     let eocd = length - tail_size as u64 + end as u64;
-    // zip-rs tolerates trailing data and may select a record embedded in the
-    // comment. Restrict this opt-in reader to one unambiguous final record.
+    // EXTERNAL(zip crate): it accepts trailing data and may pick an end record inside a comment.
     ensure!(
         !tail[end + 4..]
             .windows(4)
@@ -236,12 +257,11 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, Renamed
         start.checked_add(bytes) == Some(directory_end),
         "unsupported ZIP central-directory extent"
     );
-    // Validate the complete raw record chain, including comments and extras.
     file.seek(SeekFrom::Start(start))?;
     let mut position = start;
     let (mut name_field, mut extra_field) = (Vec::new(), Vec::new());
     let mut times = Vec::with_capacity(count as usize);
-    let mut renamed = Renamed::new();
+    let mut stored_names = StoredNameByIndex::new();
     for index in 0..count as usize {
         ensure!(
             directory_end - position >= 46,
@@ -260,14 +280,14 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, Renamed
         file.read_exact(&mut name_field)?;
         extra_field.resize(extra as usize, 0);
         file.read_exact(&mut extra_field)?;
-        zip64_values(&extra_field)?;
-        // Python and 7-Zip do not fall back to CP437 for a flagged name.
+        single_zip64_field(&extra_field)?;
+        // EXTERNAL(Python zipfile, 7-Zip): no CP437 fallback for a flagged name.
         ensure!(
             header[9] & 0x08 == 0 || std::str::from_utf8(&name_field).is_ok(),
             "ZIP name flagged as UTF-8 is not UTF-8"
         );
-        if check_unicode_path(&extra_field, &name_field)? {
-            renamed.insert(index, name_field.as_slice().into());
+        if unicode_path_respells_name(&extra_field, &name_field)? {
+            stored_names.insert(index, name_field.as_slice().into());
         }
         times.push(EntryTime {
             exact: exact_time(&extra_field),
@@ -277,19 +297,18 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, Renamed
     }
     ensure!(position == directory_end, "ZIP directory count mismatch");
     file.seek(SeekFrom::Start(0))?;
-    Ok((count, times, renamed))
+    Ok((count, times, stored_names))
 }
 
-/// Time fields from a central record: an exact Unix time from an extra field,
-/// and the DOS time (low 16 bits) and date (high 16 bits).
 struct EntryTime {
     exact: Option<u32>,
     dos: u32,
 }
 
-/// Exact modification time from a central extra field. The extended
-/// timestamp (0x5455) wins over the older Info-ZIP Unix field (0x5855), as in
-/// Info-ZIP unzip. Like unzip and bsdtar, this ignores the NTFS field.
+const EXTENDED_TIMESTAMP: u16 = 0x5455;
+const INFOZIP_UNIX: u16 = 0x5855;
+
+// EXTERNAL(Info-ZIP unzip): extended time wins, and the NTFS field is ignored.
 fn exact_time(mut extra: &[u8]) -> Option<u32> {
     let (mut extended, mut unix) = (None, None);
     while extra.len() >= 4 {
@@ -301,8 +320,10 @@ fn exact_time(mut extra: &[u8]) -> Option<u32> {
                 .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
         };
         match id {
-            0x5455 if body.first().is_some_and(|flags| flags & 1 != 0) => extended = seconds(1),
-            0x5855 => unix = seconds(4),
+            EXTENDED_TIMESTAMP if body.first().is_some_and(|flags| flags & 1 != 0) => {
+                extended = seconds(1)
+            }
+            INFOZIP_UNIX => unix = seconds(4),
             _ => {}
         }
         extra = &extra[4 + length..];
@@ -310,8 +331,6 @@ fn exact_time(mut extra: &[u8]) -> Option<u32> {
     extended.or(unix)
 }
 
-/// Fields of a DOS date and time, unvalidated: year, month, day, hour,
-/// minute and second.
 fn dos_fields(dos: u32) -> [i64; 6] {
     let (time, date) = (dos & 0xffff, dos >> 16);
     [
@@ -324,44 +343,43 @@ fn dos_fields(dos: u32) -> [i64; 6] {
     ]
 }
 
-/// Converts entry times to Unix seconds, caching the local offset of each DOS
-/// date and hour, because `mktime` is slow and DOS times cluster.
 #[derive(Default)]
 struct Clock {
-    offsets: HashMap<u32, Option<i64>>,
+    local_offset_by_dos_hour: HashMap<u32, Option<i64>>,
 }
 
 impl Clock {
     fn modified(&mut self, time: &EntryTime) -> Option<i64> {
         let dos_utc = {
             let [year, month, day, hour, minute, second] = dos_fields(time.dos);
-            days_from_civil(year, month.clamp(1, 12), day.max(1)) * 86_400
+            days_since_unix_epoch(year, month.clamp(1, 12), day.max(1)) * 86_400
                 + hour * 3_600
                 + minute * 60
                 + second
         };
         if let Some(raw) = time.exact {
-            // Writers store this field as 32 bits with no agreed sign. Take
-            // whichever reading lies nearer the DOS time, so a 1969 file is
-            // not dated 2106 and a 2040 file is not dated 1904.
-            let (unsigned, signed) = (raw as i64, raw as i32 as i64);
-            return Some(if (unsigned - dos_utc).abs() <= (signed - dos_utc).abs() {
-                unsigned
-            } else {
-                signed
-            });
+            return Some(reading_nearer_dos_time(raw, dos_utc));
         }
         let [year, month, day, hour, minute, second] = dos_fields(time.dos);
         let base = *self
-            .offsets
+            .local_offset_by_dos_hour
             .entry(time.dos & 0xffff_f800)
-            .or_insert_with(|| local_time([year, month, day, hour, 0, 0]));
+            .or_insert_with(|| mktime_seconds([year, month, day, hour, 0, 0]));
         Some(base? + minute * 60 + second)
     }
 }
 
-/// Days from 1970-01-01 to a proleptic Gregorian date.
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+// EXTERNAL(ZIP writers): the 32-bit time field has no agreed sign.
+fn reading_nearer_dos_time(raw: u32, dos_utc: i64) -> i64 {
+    let (unsigned, signed) = (raw as i64, raw as i32 as i64);
+    if (unsigned - dos_utc).abs() <= (signed - dos_utc).abs() {
+        unsigned
+    } else {
+        signed
+    }
+}
+
+fn days_since_unix_epoch(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
     let year_of_era = year - era * 400;
@@ -369,10 +387,8 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year - 719_468
 }
 
-/// Interprets local wall-clock fields with `mktime`, which normalizes values
-/// out of range the way bsdtar does. Other platforms keep the extraction time.
 #[cfg(unix)]
-fn local_time([year, month, day, hour, minute, second]: [i64; 6]) -> Option<i64> {
+fn mktime_seconds([year, month, day, hour, minute, second]: [i64; 6]) -> Option<i64> {
     // SAFETY: tm is plain data, and zeroed is a valid value for every field.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     tm.tm_year = (year - 1900) as i32;
@@ -388,7 +404,7 @@ fn local_time([year, month, day, hour, minute, second]: [i64; 6]) -> Option<i64>
 }
 
 #[cfg(not(unix))]
-fn local_time(_: [i64; 6]) -> Option<i64> {
+fn mktime_seconds(_: [i64; 6]) -> Option<i64> {
     None
 }
 
@@ -401,21 +417,17 @@ fn system_time(seconds: i64) -> std::time::SystemTime {
     }
 }
 
-/// The stored names of entries that the `zip` crate renames from a Unicode
-/// path field, by entry index. The crate reports the field's name instead.
-type Renamed = HashMap<usize, Box<[u8]>>;
+type StoredNameByIndex = HashMap<usize, Box<[u8]>>;
 
-/// An opened archive, each entry's exact modification time, and the stored
-/// names the `zip` crate replaced.
-type Opened = (
-    ZipArchive<crate::zip_reader::Reader>,
-    Vec<EntryTime>,
-    Renamed,
-);
+struct Opened {
+    archive: ZipArchive<crate::zip_reader::Reader>,
+    times: Vec<EntryTime>,
+    stored_names: StoredNameByIndex,
+}
 
 fn open(path: &Path, cache: bool) -> Result<Opened> {
     let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
-    let (count, times, renamed) = preflight(&mut file)?;
+    let (count, times, stored_names) = preflight(&mut file)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
     } else {
@@ -426,14 +438,17 @@ fn open(path: &Path, cache: bool) -> Result<Opened> {
         archive.len() as u64 == count && archive.offset() == 0,
         "ZIP parser disagrees with validated directory"
     );
-    Ok((archive, times, renamed))
+    Ok(Opened {
+        archive,
+        times,
+        stored_names,
+    })
 }
 
-/// `times` is `None` when the caller does not need modification times.
 fn scan(
     archive: &ZipArchive<crate::zip_reader::Reader>,
     times: Option<&[EntryTime]>,
-    renamed: &Renamed,
+    stored_names: &StoredNameByIndex,
 ) -> Result<Vec<Item>> {
     ensure!(archive.len() <= 1_000_000, "ZIP entry limit exceeded");
     ensure!(
@@ -488,9 +503,9 @@ fn scan(
             "duplicate ZIP path"
         );
         let decoded_len = name.len() + usize::from(directory);
-        let raw = match renamed.get(&index) {
+        let raw = match stored_names.get(&index) {
             Some(raw) => {
-                let decoded = decode_name(raw);
+                let decoded = decode_name_like_zip_crate(raw);
                 ensure!(
                     decoded.strip_suffix('/').unwrap_or(&decoded) == name,
                     "ZIP parser disagrees with validated directory"
@@ -499,9 +514,11 @@ fn scan(
             }
             None => file.name_raw(),
         };
-        let raw_name = (raw.len() != decoded_len || !raw.starts_with(name.as_bytes()))
-            .then(|| Box::<[u8]>::from(raw));
-        metadata_bytes += name.len() + raw_name.as_ref().map_or(0, |raw| raw.len()) + 64;
+        let stored_name_if_different = (raw.len() != decoded_len
+            || !raw.starts_with(name.as_bytes()))
+        .then(|| Box::<[u8]>::from(raw));
+        metadata_bytes +=
+            name.len() + stored_name_if_different.as_ref().map_or(0, |raw| raw.len()) + 64;
         ensure!(
             metadata_bytes <= 64 * 1024 * 1024,
             "ZIP metadata limit exceeded"
@@ -516,9 +533,9 @@ fn scan(
             crc: file.crc32(),
             compressed: file.compressed_size(),
             method: file.compression(),
-            raw_name,
+            stored_name_if_different,
             header_start: file.header_start(),
-            record_limit: 0,
+            next_record_start: 0,
             mode: file.unix_mode().map(|mode| mode & 0o777),
             modified: times.and_then(|times| clock.modified(&times[index])),
             symlink,
@@ -531,22 +548,19 @@ fn scan(
             prefix = p;
         }
     }
-    // Each local record must end before the next one starts. Overlapping or
-    // shared records let one archive mean different things to different readers.
+    assign_record_limits(&mut items, archive.central_directory_start())?;
+    Ok(items)
+}
+
+fn assign_record_limits(items: &mut [Item], central_start: u64) -> Result<()> {
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_unstable_by_key(|&index| items[index].header_start);
-    // Records tile the archive from offset 0, so no unreferenced bytes can
-    // hold a record that only a streaming reader would see.
     let first = order
         .first()
-        .map_or(archive.central_directory_start(), |&index| {
-            items[index].header_start
-        });
+        .map_or(central_start, |&index| items[index].header_start);
     ensure!(first == 0, "ZIP has bytes before its first record");
     let ends = order.iter().skip(1).map(|&index| items[index].header_start);
-    let limits: Vec<u64> = ends
-        .chain(std::iter::once(archive.central_directory_start()))
-        .collect();
+    let limits: Vec<u64> = ends.chain(std::iter::once(central_start)).collect();
     for (&index, limit) in order.iter().zip(limits) {
         let item = &mut items[index];
         let minimum = item
@@ -557,17 +571,14 @@ fn scan(
             minimum.is_some_and(|end| end <= limit),
             "overlapping ZIP entries"
         );
-        item.record_limit = limit;
+        item.next_record_start = limit;
     }
-    Ok(items)
+    Ok(())
 }
 
-/// Code page 437 characters for bytes 0x80 to 0xFF. Lower bytes are ASCII.
 const CP437_HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
 
-/// Decodes a stored name the way the `zip` crate does: as UTF-8 when it is
-/// valid, and as code page 437 otherwise.
-fn decode_name(stored: &[u8]) -> std::borrow::Cow<'_, str> {
+fn decode_name_like_zip_crate(stored: &[u8]) -> std::borrow::Cow<'_, str> {
     static HIGH: std::sync::LazyLock<Vec<char>> =
         std::sync::LazyLock::new(|| CP437_HIGH.chars().collect());
     match std::str::from_utf8(stored) {
@@ -583,12 +594,7 @@ fn decode_name(stored: &[u8]) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// Rejects an Info-ZIP Unicode path field (ID 0x7075) that names the entry
-/// differently from its decoded stored name. Readers disagree on whether to
-/// honor it, so the field may only repeat the name. A field with a stale CRC
-/// is ignored by readers that check it, so it must repeat the stored bytes.
-/// Returns whether an accepted field spells the name in different bytes.
-fn check_unicode_path(mut extra: &[u8], stored_name: &[u8]) -> Result<bool> {
+fn unicode_path_respells_name(mut extra: &[u8], stored_name: &[u8]) -> Result<bool> {
     let mut renames = false;
     while extra.len() >= 4 {
         let id = u16::from_le_bytes([extra[0], extra[1]]);
@@ -605,7 +611,7 @@ fn check_unicode_path(mut extra: &[u8], stored_name: &[u8]) -> Result<bool> {
             ensure!(
                 body[5..] == *stored_name
                     || (crc == crc32fast::hash(stored_name)
-                        && body[5..] == *decode_name(stored_name).as_bytes()),
+                        && body[5..] == *decode_name_like_zip_crate(stored_name).as_bytes()),
                 "ZIP Unicode path field renames an entry; use the compatibility backend"
             );
             renames |= body[5..] != *stored_name;
@@ -615,9 +621,7 @@ fn check_unicode_path(mut extra: &[u8], stored_name: &[u8]) -> Result<bool> {
     Ok(renames)
 }
 
-/// Values of the ZIP64 extra field (ID 1), if present. Readers disagree on
-/// which of two ZIP64 fields wins, so a second one is rejected.
-fn zip64_values(mut extra: &[u8]) -> Result<Vec<u64>> {
+fn single_zip64_field(mut extra: &[u8]) -> Result<Vec<u64>> {
     let mut values = Vec::new();
     let mut seen = false;
     while extra.len() >= 4 {
@@ -639,10 +643,12 @@ fn zip64_values(mut extra: &[u8]) -> Result<Vec<u64>> {
     Ok(values)
 }
 
-/// Require the local header to agree with the central directory, and the
-/// record to end exactly where the next record or the central directory
-/// starts. Returns the payload offset and whether a data descriptor follows.
-fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Result<(u64, bool)> {
+struct LocalRecord {
+    data_start: u64,
+    has_descriptor: bool,
+}
+
+fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Result<LocalRecord> {
     reader.seek(SeekFrom::Start(item.header_start))?;
     let header = crate::number::<30>(reader)?;
     let read16 = |at: usize| u16::from_le_bytes([header[at], header[at + 1]]);
@@ -665,18 +671,15 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
         item.stored_name_is(&name) && read16(8) == method,
         "ZIP local header disagrees with central directory"
     );
-    // With a data descriptor, producers may zero or mark unknown any local
-    // field. Info-ZIP writing to a pipe zeroes the CRC and compressed size but
-    // keeps the size.
+    // EXTERNAL(Info-ZIP zip): writing to a pipe zeroes the local CRC and compressed size.
     let deferred = flags & 8 != 0;
     let agrees = |local: u64, central: u64| {
         local == central || (deferred && (local == 0 || local == u32::MAX as u64))
     };
     let (crc, mut compressed, mut size) = (read32(14), read32(18) as u64, read32(22) as u64);
-    // APPNOTE 4.5.3: the local ZIP64 field holds both sizes, original first.
-    // Accept the shorter form some writers use, in order.
-    check_unicode_path(&extra, &name)?;
-    let zip64 = zip64_values(&extra)?;
+    // SPEC(APPNOTE 4.5.3): the local ZIP64 field holds both sizes, original first.
+    unicode_path_respells_name(&extra, &name)?;
+    let zip64 = single_zip64_field(&extra)?;
     let marked = |value: u64| value == u32::MAX as u64;
     let (original, packed) = match zip64[..] {
         [original, packed, ..] => (Some(original), Some(packed)),
@@ -701,14 +704,16 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
     let data_start = item.header_start + LOCAL_HEADER + name.len() as u64 + extra.len() as u64;
     let data_end = data_start
         .checked_add(item.compressed)
-        .filter(|&end| end <= item.record_limit)
+        .filter(|&end| end <= item.next_record_start)
         .context("overlapping ZIP entries")?;
-    let tail = item.record_limit - data_end;
+    let tail = item.next_record_start - data_end;
     if !deferred {
         ensure!(tail == 0, "ZIP has bytes between records");
-        return Ok((data_start, false));
+        return Ok(LocalRecord {
+            data_start,
+            has_descriptor: false,
+        });
     }
-    // The descriptor fills the rest of the record. Each length has one form.
     let (signature, wide) = match tail {
         12 => (false, false),
         16 => (true, false),
@@ -736,12 +741,12 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
             && field(4 + width, width) == item.entry.size,
         "ZIP data descriptor disagrees with central directory"
     );
-    Ok((data_start, true))
+    Ok(LocalRecord {
+        data_start,
+        has_descriptor: true,
+    })
 }
 
-/// libdeflate whole-buffer decoding that also requires the Deflate stream to
-/// end exactly at the end of its input. Trailing bytes inside an entry's
-/// compressed size could hold a record that only a streaming reader sees.
 struct ExactInflater(std::ptr::NonNull<libdeflate_sys::libdeflate_decompressor>);
 
 impl ExactInflater {
@@ -787,42 +792,35 @@ impl Drop for ExactInflater {
     }
 }
 
-/// Finds a data descriptor hidden inside stored data. A streaming reader ends
-/// a stored entry at the first descriptor signature whose CRC and sizes match
-/// the bytes before it, so such a match could hide a record after it. Nested
-/// archives contain descriptors for their own entries, which do not match.
 #[derive(Default)]
-struct DescriptorScan {
-    /// Unscanned bytes kept from earlier chunks, and this chunk.
-    window: Vec<u8>,
-    /// CRC state and entry offset at the start of `window`.
-    crc: crc32fast::Hasher,
-    offset: u64,
+struct HiddenDescriptorScan {
+    pending: Vec<u8>,
+    crc_before_pending: crc32fast::Hasher,
+    pending_offset: u64,
 }
 
-impl DescriptorScan {
-    /// Signature plus CRC plus two 64-bit sizes.
-    const LONGEST: usize = 4 + 4 + 16;
+const SIGNATURE_LEN: usize = 4;
+const WIDE_DESCRIPTOR_LEN: usize = SIGNATURE_LEN + 4 + 2 * 8;
+const DESCRIPTOR_SCAN_PIECE: usize = 4096;
 
+impl HiddenDescriptorScan {
     fn feed(&mut self, chunk: &[u8]) -> Result<()> {
-        self.window.extend_from_slice(chunk);
-        // Keep the last 3 bytes, which may start a signature split by a read.
-        let mut retain_from = self.window.len().saturating_sub(3);
+        self.pending.extend_from_slice(chunk);
+        let mut retain_from = self.pending.len().saturating_sub(SIGNATURE_LEN - 1);
         let mut scanned = 0;
-        while let Some(found) = self.window[scanned..]
+        while let Some(found) = self.pending[scanned..]
             .windows(4)
             .position(|bytes| bytes == b"PK\x07\x08")
         {
             let at = scanned + found;
-            let fields = &self.window[at + 4..];
-            if fields.len() < Self::LONGEST - 4 {
-                // Wait for the rest of this descriptor before judging it.
+            let fields = &self.pending[at + SIGNATURE_LEN..];
+            if fields.len() < WIDE_DESCRIPTOR_LEN - SIGNATURE_LEN {
                 retain_from = at;
                 break;
             }
-            let mut crc = self.crc.clone();
-            crc.update(&self.window[..at]);
-            let (crc, length) = (crc.finalize() as u64, self.offset + at as u64);
+            let mut crc = self.crc_before_pending.clone();
+            crc.update(&self.pending[..at]);
+            let (crc, length) = (crc.finalize() as u64, self.pending_offset + at as u64);
             let narrow =
                 |at: usize| u32::from_le_bytes(fields[at..at + 4].try_into().unwrap()) as u64;
             let wide = |at: usize| u64::from_le_bytes(fields[at..at + 8].try_into().unwrap());
@@ -835,28 +833,22 @@ impl DescriptorScan {
             );
             scanned = at + 1;
         }
-        self.crc.update(&self.window[..retain_from]);
-        self.offset += retain_from as u64;
-        self.window.drain(..retain_from);
+        self.crc_before_pending.update(&self.pending[..retain_from]);
+        self.pending_offset += retain_from as u64;
+        self.pending.drain(..retain_from);
         Ok(())
     }
 }
 
-/// Flushes an extracted file and then sets its modification time, which a
-/// later write would otherwise replace.
 fn finish(output: &mut BufWriter<File>, item: &Item) -> Result<()> {
     output.flush()?;
-    // Best effort, as unzip and bsdtar only warn when a time cannot be set.
+    // EXTERNAL(Info-ZIP unzip, bsdtar): both only warn when a time cannot be set.
     if let Some(seconds) = item.modified {
         let _ = output.get_ref().set_modified(system_time(seconds));
     }
     Ok(())
 }
 
-/// Streams one entry's payload to `sink`, checking its CRC and exact length.
-/// Deflate input must end exactly at the compressed size. A stored entry
-/// followed by a data descriptor must not hide a matching descriptor inside
-/// its data.
 fn stream_entry(
     input: &mut impl Read,
     item: &Item,
@@ -879,7 +871,7 @@ fn stream_entry(
             item.compressed == item.entry.size,
             "stored ZIP entry sizes differ"
         );
-        let mut scan = descriptor.then(DescriptorScan::default);
+        let mut scan = descriptor.then(HiddenDescriptorScan::default);
         loop {
             let length = input.read(buffer)?;
             if length == 0 {
@@ -887,8 +879,9 @@ fn stream_entry(
             }
             let chunk = &buffer[..length];
             if let Some(scan) = &mut scan {
-                // Small pieces keep the scan window near 4 KiB per worker.
-                chunk.chunks(4096).try_for_each(|piece| scan.feed(piece))?;
+                chunk
+                    .chunks(DESCRIPTOR_SCAN_PIECE)
+                    .try_for_each(|piece| scan.feed(piece))?;
             }
             emit(chunk)?;
         }
@@ -928,16 +921,17 @@ fn stream_entry(
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    let (archive, _, renamed) = open(path, false)?;
-    Ok(scan(&archive, None, &renamed)?
+    let opened = open(path, false)?;
+    Ok(scan(&opened.archive, None, &opened.stored_names)?
         .into_iter()
         .map(|item| item.entry)
         .collect())
 }
 
-/// Verify and optionally extract a stored/Deflate ZIP. This opt-in engine keeps
-/// file bytes and directories, not permissions, timestamps, or extended metadata.
-/// The archive and destination parent must not be modified concurrently.
+/// Verify and optionally extract a stored/Deflate ZIP. It restores files,
+/// directories, Unix modes, modification times and symlinks that stay inside
+/// the destination. The archive and destination parent must not be modified
+/// concurrently.
 pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
     read_archive_with_options(path, destination, ReadOptions::default())
 }
@@ -984,21 +978,23 @@ pub fn read_archive_with_options(
         "ZIP threads must be 1..64"
     );
     let fast = options.fast;
-    let budget = BufferBudget(AtomicUsize::new(options.buffer_bytes.unwrap_or(
+    let budget = EntryBufferBudget(AtomicUsize::new(options.buffer_bytes.unwrap_or(
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             128 * 1024 * 1024
         } else {
             64 * 1024 * 1024
         },
     )));
-    // Linux extraction benefits from avoiding shared input seeks/reads for tiny
-    // archives. Other platforms retain caching only for integrity verification.
-    // This retained-input cache is separate from the live entry-buffer budget.
-    let (archive, times, renamed) = open(
+    // RECORD(benchmarks/native-zip/linux-cache/README.md): Linux extraction caches archives up to 8 MiB.
+    let Opened {
+        archive,
+        times,
+        stored_names,
+    } = open(
         path,
         fast && (destination.is_none() || cfg!(target_os = "linux")),
     )?;
-    let items = scan(&archive, Some(&times), &renamed)?;
+    let items = scan(&archive, Some(&times), &stored_names)?;
     drop(times);
     let staging = if let Some(dst) = destination {
         ensure!(
@@ -1015,32 +1011,17 @@ pub fn read_archive_with_options(
         None
     };
     if let Some(temp) = &staging {
-        // In archive order, so on a filesystem that ignores case the first
-        // spelling of a directory wins, as in unzip and Python.
-        let mut seen = HashSet::new();
-        for item in &items {
-            let path = temp.path().join(&item.entry.name);
-            let directory = if item.entry.directory {
-                path
-            } else {
-                parent(&path).to_owned()
-            };
-            if seen.insert(directory.clone()) {
-                fs::create_dir_all(directory)?;
-            }
-        }
+        create_directories_in_archive_order(temp.path(), &items)?;
     }
     let merged = match &staging {
-        Some(temp) => merged_directories(temp.path(), &items)?,
+        Some(temp) => later_spellings_of_same_directory(temp.path(), &items)?,
         None => HashSet::new(),
     };
-    // ZIP entries are independent outputs. Use descending-size order and work
-    // stealing instead of fixed file lanes; Rayon does not promise start order.
-    let mut work: Vec<_> = (0..items.len()).collect();
-    work.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
+    let mut largest_first: Vec<_> = (0..items.len()).collect();
+    largest_first.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
     let targets = std::sync::Mutex::new(Vec::new());
     let run = || {
-        work.par_iter().try_for_each_init(
+        largest_first.par_iter().try_for_each_init(
             || {
                 (
                     archive.clone().into_inner(),
@@ -1050,13 +1031,11 @@ pub fn read_archive_with_options(
             },
             |(raw, buffer, codec), &index| {
                 let item = &items[index];
-                let (data_start, descriptor) = check_local_header(raw, item)?;
-                // Never wait for memory while holding worker resources. If a
-                // reservation cannot fit now, this entry uses streaming instead.
-                // Declare the lease before buffers so it outlives them on errors.
-                // Large, very compressible outputs are faster through streaming
-                // on measured workloads and avoid whole-entry allocation/copying.
-                // Verification-only reads keep their existing decoder policy.
+                let LocalRecord {
+                    data_start,
+                    has_descriptor: descriptor,
+                } = check_local_header(raw, item)?;
+                // RECORD(benchmarks/native-zip/decoder-selection/README.md): large, compressible entries stream.
                 let prefer_streaming = destination.is_some()
                     && item.entry.size >= 16 * 1024 * 1024
                     && item.compressed <= item.entry.size / 128;
@@ -1089,7 +1068,7 @@ pub fn read_archive_with_options(
                     if !item.entry.directory {
                         let mut options = File::options();
                         options.write(true).create_new(true);
-                        // The OS applies the umask, as bsdtar does.
+                        // EXTERNAL(bsdtar): the OS applies the umask.
                         #[cfg(unix)]
                         std::os::unix::fs::OpenOptionsExt::mode(
                             &mut options,
@@ -1114,8 +1093,6 @@ pub fn read_archive_with_options(
                     None
                 };
                 if buffered {
-                    // Allocate exact entry lengths while holding the shared lease.
-                    // Reusing independently grown buffers would violate accounting.
                     let mut compressed = entry_buffer(item.compressed as usize)?;
                     let mut decoded = entry_buffer(item.entry.size as usize)?;
                     source.read_exact(&mut compressed)?;
@@ -1126,9 +1103,7 @@ pub fn read_archive_with_options(
                     );
                     ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
                     if let Some(output) = &mut output {
-                        // Large single writes were costly on measured Windows
-                        // workloads. Bound write size without allocating copies;
-                        // other platforms retain their measured whole-buffer path.
+                        // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
                         if cfg!(windows) {
                             for chunk in decoded.chunks(256 * 1024) {
                                 output.write_all(chunk)?;
@@ -1153,10 +1128,7 @@ pub fn read_archive_with_options(
             },
         )
     };
-    // On macOS, tiny-file creation saturates before all CPU workers are useful:
-    // extra concurrent creates increase filesystem contention. Keep this policy
-    // limited to measured tiny-file workloads; larger entries retain parallel
-    // codec scaling. The caller's pool remains an upper bound.
+    // RECORD(benchmarks/native-zip/bsdtar-comparison.md): macOS caps tiny-file extraction workers.
     let automatic_limit = if cfg!(target_os = "macos")
         && staging.is_some()
         && items.iter().filter(|item| !item.entry.directory).count() >= 1024
@@ -1170,32 +1142,16 @@ pub fn read_archive_with_options(
     if rayon::current_num_threads() <= worker_limit {
         run()?;
     } else {
-        // Also bound library callers whose Rayon pool exceeds the CLI maximum.
         rayon::ThreadPoolBuilder::new()
             .num_threads(worker_limit)
             .build()?
             .install(run)?;
     }
-    // Links are created only after every file is written, so no file is
-    // written through one.
-    for (index, target) in targets.into_inner().unwrap() {
-        let name = &items[index].entry.name;
-        check_link_target(name, &target)?;
-        #[cfg(unix)]
-        if let Some(temp) = &staging {
-            std::os::unix::fs::symlink(std::str::from_utf8(&target)?, temp.path().join(name))
-                .map_err(|error| {
-                    if error.kind() == std::io::ErrorKind::AlreadyExists {
-                        anyhow::anyhow!(
-                            "ZIP symlink {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-                        )
-                    } else {
-                        anyhow::Error::from(error)
-                            .context(format!("cannot create ZIP symlink {name:?}"))
-                    }
-                })?;
-        }
-    }
+    create_links_after_files(
+        staging.as_ref().map(|temp| temp.path()),
+        &items,
+        targets.into_inner().unwrap(),
+    )?;
     if let (Some(temp), Some(dst)) = (staging, destination) {
         let directories: Vec<crate::Directory> = items
             .iter()
@@ -1219,7 +1175,7 @@ mod budget_tests {
 
     #[test]
     fn concurrent_reservations_never_exceed_budget_and_release_on_unwind() {
-        let budget = BufferBudget(AtomicUsize::new(8));
+        let budget = EntryBufferBudget(AtomicUsize::new(8));
         let held = Barrier::new(16);
         let release = Barrier::new(16);
         std::thread::scope(|scope| {
@@ -1230,8 +1186,11 @@ mod budget_tests {
                 scope.spawn(move || {
                     let reservation = budget.reserve(1);
                     held.wait();
-                    // Exactly eight leases must be live; none can release early.
-                    assert_eq!(budget.0.load(Ordering::Relaxed), 0);
+                    assert_eq!(
+                        budget.0.load(Ordering::Relaxed),
+                        0,
+                        "all eight leases are live together"
+                    );
                     assert!(budget.reserve(1).is_none());
                     release.wait();
                     drop(reservation);
@@ -1268,7 +1227,7 @@ mod descriptor_scan_tests {
     }
 
     fn scan_in_pieces(data: &[u8], piece: usize) -> Result<()> {
-        let mut scan = DescriptorScan::default();
+        let mut scan = HiddenDescriptorScan::default();
         data.chunks(piece).try_for_each(|chunk| scan.feed(chunk))
     }
 

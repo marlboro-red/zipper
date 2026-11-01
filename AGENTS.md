@@ -30,6 +30,13 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 - Use `scripts/compare_revisions.py` for direct byte-verified revision comparisons.
 - Run benchmarks on Unix. The benchmarks are Unix-oriented.
 
+## Comments
+
+- Write no comment the code can carry. Rename, extract a function, or name a constant instead.
+- A line comment starts with a keep-list tag. The tags are `SAFETY:`, `SPEC(<section>):`, `EXTERNAL(<system>):`, `RECORD(benchmarks/<record>):` and `LINK: <url>`. It runs at most 3 lines. `cargo xtask lint-comments` runs in the gate and checks the tag, the length and that a `RECORD` path exists.
+- Doc comments are for public contracts, which are `pub` items of the library and clap help text.
+- Before committing Rust changes, have the read-only [`zipper-comments`](.claude/agents/zipper-comments.md) agent judge the comments in the diff. It checks that each tag is true, which the lint cannot.
+
 ## Documentation
 
 - Keep format contracts in [`docs/reference/format.md`](docs/reference/format.md).

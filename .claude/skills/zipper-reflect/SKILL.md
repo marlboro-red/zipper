@@ -35,3 +35,4 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | A planted break that never applied | the `zipper-review` skill, step 5 |
 | A reviewer brief rebuilt by hand, missing a rule | the `zipper-adversary` agent in `.claude/agents/` |
 | Code that compiles only on the host OS, failing Windows CI | the `windows clippy` step in `cargo xtask gate fast` |
+| Comments that excuse code instead of reshaping it | `cargo xtask lint-comments` in the gate, and the `zipper-comments` agent |
