@@ -13,6 +13,7 @@ The reader supports these features:
 - Conventional ZIP64.
 - File bytes and directories.
 - Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
+- Names stored as UTF-8, and other names decoded as code page 437. A name that is valid UTF-8 is read as UTF-8 even without the UTF-8 flag, because Info-ZIP and `ditto` store UTF-8 names without it. A name with the UTF-8 flag that is not valid UTF-8 is rejected, because Python and 7-Zip do not decode it as CP437.
 
 The reader does not support these features:
 
@@ -75,7 +76,7 @@ Both native ZIP modes run these checks before publishing any output:
 - Each Deflate stream ends exactly at its compressed size, so no bytes can hide after it.
 - A stored entry followed by a data descriptor does not contain a descriptor whose CRC and sizes match the bytes before it. A streaming reader would end the entry there. Descriptors that describe other data, as in a nested archive, are allowed.
 - Names are unique and safe, and no file is also used as a directory.
-- A Unicode path extra field (`0x7075`), local or central, names the entry exactly as its stored name does. The `zip` crate renames an entry from the central field and some streaming readers use the local one, so a different name is rejected and left to the compatibility backend. Old archives that pair a CP437 stored name with the same name in UTF-8 are rejected too.
+- A Unicode path extra field (`0x7075`), local or central, names the entry as its stored name does. The `zip` crate renames an entry from the central field and some streaming readers use the local one, so a different name is rejected and left to the compatibility backend. The field may spell a CP437 stored name in UTF-8 when its CRC matches the stored bytes. Readers that honor the field and readers that decode CP437 then reach the same name. bsdtar and 7-Zip use neither on some archives, and they already disagree on CP437 names without a field. A field whose content is not UTF-8 is rejected. A field with a stale CRC must repeat the stored bytes, because readers that check the CRC ignore it.
 
 `list` runs only the central-directory checks, including the central Unicode path and ZIP64 field checks, and the first-record check. It does not read local headers, so it does not detect bytes hidden between records or a Unicode path field present only in a local header. `test` and `extract` detect both.
 

@@ -138,7 +138,7 @@ fn entry_buffer(size: usize) -> Result<Vec<u8>> {
 // Bound directory allocation before the general ZIP parser sees untrusted
 // counts/lengths. The opt-in path accepts conventional single-disk ZIP/ZIP64
 // records with no prepended executable, trailing data, or ZIP64 extension sector.
-fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>)> {
+fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, Renamed)> {
     let length = file.get_ref().metadata()?.len();
     ensure!(length >= 22, "truncated ZIP");
     let tail_size = length.min(22 + 65535) as usize;
@@ -216,7 +216,8 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>)> {
     let mut position = start;
     let (mut name_field, mut extra_field) = (Vec::new(), Vec::new());
     let mut times = Vec::with_capacity(count as usize);
-    for _ in 0..count {
+    let mut renamed = Renamed::new();
+    for index in 0..count as usize {
         ensure!(
             directory_end - position >= 46,
             "truncated ZIP central entry"
@@ -235,7 +236,14 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>)> {
         extra_field.resize(extra as usize, 0);
         file.read_exact(&mut extra_field)?;
         zip64_values(&extra_field)?;
-        check_unicode_path(&extra_field, &name_field)?;
+        // Python and 7-Zip do not fall back to CP437 for a flagged name.
+        ensure!(
+            header[9] & 0x08 == 0 || std::str::from_utf8(&name_field).is_ok(),
+            "ZIP name flagged as UTF-8 is not UTF-8"
+        );
+        if check_unicode_path(&extra_field, &name_field)? {
+            renamed.insert(index, name_field.as_slice().into());
+        }
         times.push(EntryTime {
             exact: exact_time(&extra_field),
             dos: u32::from_le_bytes(header[12..16].try_into().unwrap()),
@@ -244,7 +252,7 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>)> {
     }
     ensure!(position == directory_end, "ZIP directory count mismatch");
     file.seek(SeekFrom::Start(0))?;
-    Ok((count, times))
+    Ok((count, times, renamed))
 }
 
 /// Time fields from a central record: an exact Unix time from an extra field,
@@ -368,12 +376,21 @@ fn system_time(seconds: i64) -> std::time::SystemTime {
     }
 }
 
-/// An opened archive and each entry's exact modification time.
-type Opened = (ZipArchive<crate::zip_reader::Reader>, Vec<EntryTime>);
+/// The stored names of entries that the `zip` crate renames from a Unicode
+/// path field, by entry index. The crate reports the field's name instead.
+type Renamed = HashMap<usize, Box<[u8]>>;
+
+/// An opened archive, each entry's exact modification time, and the stored
+/// names the `zip` crate replaced.
+type Opened = (
+    ZipArchive<crate::zip_reader::Reader>,
+    Vec<EntryTime>,
+    Renamed,
+);
 
 fn open(path: &Path, cache: bool) -> Result<Opened> {
     let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
-    let (count, times) = preflight(&mut file)?;
+    let (count, times, renamed) = preflight(&mut file)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
     } else {
@@ -384,13 +401,14 @@ fn open(path: &Path, cache: bool) -> Result<Opened> {
         archive.len() as u64 == count && archive.offset() == 0,
         "ZIP parser disagrees with validated directory"
     );
-    Ok((archive, times))
+    Ok((archive, times, renamed))
 }
 
 /// `times` is `None` when the caller does not need modification times.
 fn scan(
     archive: &ZipArchive<crate::zip_reader::Reader>,
     times: Option<&[EntryTime]>,
+    renamed: &Renamed,
 ) -> Result<Vec<Item>> {
     ensure!(archive.len() <= 1_000_000, "ZIP entry limit exceeded");
     ensure!(
@@ -445,7 +463,17 @@ fn scan(
             "duplicate ZIP path"
         );
         let decoded_len = name.len() + usize::from(directory);
-        let raw = file.name_raw();
+        let raw = match renamed.get(&index) {
+            Some(raw) => {
+                let decoded = decode_name(raw);
+                ensure!(
+                    decoded.strip_suffix('/').unwrap_or(&decoded) == name,
+                    "ZIP parser disagrees with validated directory"
+                );
+                raw
+            }
+            None => file.name_raw(),
+        };
         let raw_name = (raw.len() != decoded_len || !raw.starts_with(name.as_bytes()))
             .then(|| Box::<[u8]>::from(raw));
         metadata_bytes += name.len() + raw_name.as_ref().map_or(0, |raw| raw.len()) + 64;
@@ -509,9 +537,34 @@ fn scan(
     Ok(items)
 }
 
+/// Code page 437 characters for bytes 0x80 to 0xFF. Lower bytes are ASCII.
+const CP437_HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
+
+/// Decodes a stored name the way the `zip` crate does: as UTF-8 when it is
+/// valid, and as code page 437 otherwise.
+fn decode_name(stored: &[u8]) -> std::borrow::Cow<'_, str> {
+    static HIGH: std::sync::LazyLock<Vec<char>> =
+        std::sync::LazyLock::new(|| CP437_HIGH.chars().collect());
+    match std::str::from_utf8(stored) {
+        Ok(name) => name.into(),
+        Err(_) => stored
+            .iter()
+            .map(|&byte| match byte {
+                0..0x80 => char::from(byte),
+                _ => HIGH[usize::from(byte - 0x80)],
+            })
+            .collect::<String>()
+            .into(),
+    }
+}
+
 /// Rejects an Info-ZIP Unicode path field (ID 0x7075) that names the entry
-/// differently from its stored name. Readers disagree on whether to honor it.
-fn check_unicode_path(mut extra: &[u8], stored_name: &[u8]) -> Result<()> {
+/// differently from its decoded stored name. Readers disagree on whether to
+/// honor it, so the field may only repeat the name. A field with a stale CRC
+/// is ignored by readers that check it, so it must repeat the stored bytes.
+/// Returns whether an accepted field spells the name in different bytes.
+fn check_unicode_path(mut extra: &[u8], stored_name: &[u8]) -> Result<bool> {
+    let mut renames = false;
     while extra.len() >= 4 {
         let id = u16::from_le_bytes([extra[0], extra[1]]);
         let length = u16::from_le_bytes([extra[2], extra[3]]) as usize;
@@ -519,15 +572,22 @@ fn check_unicode_path(mut extra: &[u8], stored_name: &[u8]) -> Result<()> {
             .get(4..4 + length)
             .context("truncated ZIP extra field")?;
         if id == 0x7075 {
-            ensure!(body.len() >= 5, "malformed ZIP Unicode path field");
             ensure!(
-                body[5..] == *stored_name,
+                body.len() >= 5 && std::str::from_utf8(&body[5..]).is_ok(),
+                "malformed ZIP Unicode path field"
+            );
+            let crc = u32::from_le_bytes(body[1..5].try_into().unwrap());
+            ensure!(
+                body[5..] == *stored_name
+                    || (crc == crc32fast::hash(stored_name)
+                        && body[5..] == *decode_name(stored_name).as_bytes()),
                 "ZIP Unicode path field renames an entry; use the compatibility backend"
             );
+            renames |= body[5..] != *stored_name;
         }
         extra = &extra[4 + length..];
     }
-    Ok(())
+    Ok(renames)
 }
 
 /// Values of the ZIP64 extra field (ID 1), if present. Readers disagree on
@@ -843,8 +903,8 @@ fn stream_entry(
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    let (archive, _) = open(path, false)?;
-    Ok(scan(&archive, None)?
+    let (archive, _, renamed) = open(path, false)?;
+    Ok(scan(&archive, None, &renamed)?
         .into_iter()
         .map(|item| item.entry)
         .collect())
@@ -909,11 +969,11 @@ pub fn read_archive_with_options(
     // Linux extraction benefits from avoiding shared input seeks/reads for tiny
     // archives. Other platforms retain caching only for integrity verification.
     // This retained-input cache is separate from the live entry-buffer budget.
-    let (archive, times) = open(
+    let (archive, times, renamed) = open(
         path,
         fast && (destination.is_none() || cfg!(target_os = "linux")),
     )?;
-    let items = scan(&archive, Some(&times))?;
+    let items = scan(&archive, Some(&times), &renamed)?;
     drop(times);
     let staging = if let Some(dst) = destination {
         ensure!(

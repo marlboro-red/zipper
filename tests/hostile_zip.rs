@@ -29,6 +29,7 @@ struct Raw {
     /// Exact bytes written after the data when `descriptor` is set.
     descriptor_bytes: Option<Vec<u8>>,
     local_flags: u16,
+    central_flags: u16,
     central_extra: Vec<u8>,
     /// DOS time (low 16 bits) and date (high 16 bits).
     dos: u32,
@@ -52,6 +53,7 @@ fn stored(name: &str, data: &[u8]) -> Raw {
         padding: Vec::new(),
         descriptor_bytes: None,
         local_flags: 0,
+        central_flags: 0,
         central_extra: Vec::new(),
         dos: 0,
     }
@@ -144,7 +146,9 @@ fn zip_bytes(entries: &[Raw], tail: &[u8]) -> Vec<u8> {
         out.extend_from_slice(b"PK\x01\x02");
         out.extend_from_slice(&entry.version_made_by.to_le_bytes());
         out.extend_from_slice(&20u16.to_le_bytes());
-        out.extend_from_slice(&(if entry.descriptor { 8u16 } else { 0 }).to_le_bytes());
+        out.extend_from_slice(
+            &((if entry.descriptor { 8u16 } else { 0 }) | entry.central_flags).to_le_bytes(),
+        );
         out.extend_from_slice(&entry.method.to_le_bytes());
         out.extend_from_slice(&entry.dos.to_le_bytes());
         out.extend_from_slice(&entry.crc.to_le_bytes());
@@ -765,6 +769,79 @@ fn unicode_path_fields_cannot_rename_entries() {
         read(&archive, Some(&destination)).unwrap();
         assert_eq!(fs::read(destination.join("a.txt")).unwrap(), b"x");
     }
+}
+
+/// `café.txt` with `é` stored as CP437 byte 0x82, without the UTF-8 flag.
+const CP437_NAME: &[u8] = b"caf\x82.txt";
+
+#[test]
+fn cp437_names_decode_and_may_carry_a_matching_unicode_path() {
+    let field = unicode_path(CP437_NAME, "caf\u{e9}.txt");
+    for entry in [
+        Raw {
+            name: CP437_NAME.to_vec(),
+            ..stored("x", b"x")
+        },
+        Raw {
+            name: CP437_NAME.to_vec(),
+            central_extra: field.clone(),
+            local_extra: field.clone(),
+            ..stored("x", b"x")
+        },
+    ] {
+        for read in [read_archive as Reader, read_archive_fast as Reader] {
+            let root = tempfile::tempdir().unwrap();
+            let archive = root.path().join("case.zip");
+            write_zip(&archive, std::slice::from_ref(&entry));
+            let destination = root.path().join("out");
+            read(&archive, Some(&destination)).unwrap();
+            assert_eq!(fs::read(destination.join("caf\u{e9}.txt")).unwrap(), b"x");
+        }
+    }
+    // A UTF-8 stored name decodes as UTF-8, so its CP437 reading is a rename.
+    let utf8 = "caf\u{e9}.txt".as_bytes();
+    assert_rejected(
+        "Unicode path equal to the CP437 reading of a UTF-8 name",
+        &[Raw {
+            central_extra: unicode_path(utf8, "caf\u{251c}\u{ae}.txt"),
+            ..stored("caf\u{e9}.txt", b"x")
+        }],
+    );
+    // Python rejects a Unicode path field whose content is not UTF-8.
+    assert_rejected(
+        "Unicode path field that is not UTF-8",
+        &[Raw {
+            name: CP437_NAME.to_vec(),
+            central_extra: {
+                let mut field = unicode_path(CP437_NAME, "");
+                field[2] += CP437_NAME.len() as u8;
+                field.extend_from_slice(CP437_NAME);
+                field
+            },
+            ..stored("x", b"x")
+        }],
+    );
+    // Python and 7-Zip do not fall back to CP437 for a name flagged as UTF-8.
+    assert_rejected(
+        "UTF-8 flag on a name that is not UTF-8",
+        &[Raw {
+            name: CP437_NAME.to_vec(),
+            local_flags: 0x800,
+            central_flags: 0x800,
+            ..stored("x", b"x")
+        }],
+    );
+    // A reader that checks the CRC ignores this field and keeps the stored name.
+    let mut stale = field;
+    stale[5] ^= 1;
+    assert_rejected(
+        "local Unicode path with a stale CRC",
+        &[Raw {
+            name: CP437_NAME.to_vec(),
+            local_extra: stale,
+            ..stored("x", b"x")
+        }],
+    );
 }
 
 #[test]
