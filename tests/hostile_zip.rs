@@ -24,14 +24,11 @@ struct Raw {
     descriptor: bool,
     local_compressed: Option<u32>,
     local_extra: Vec<u8>,
-    /// Bytes written before the local header, outside any record.
-    padding: Vec<u8>,
-    /// Exact bytes written after the data when `descriptor` is set.
-    descriptor_bytes: Option<Vec<u8>>,
+    bytes_before_local_header: Vec<u8>,
+    descriptor_override: Option<Vec<u8>>,
     local_flags: u16,
     central_flags: u16,
     central_extra: Vec<u8>,
-    /// DOS time (low 16 bits) and date (high 16 bits).
     dos: u32,
 }
 
@@ -50,8 +47,8 @@ fn stored(name: &str, data: &[u8]) -> Raw {
         descriptor: false,
         local_compressed: None,
         local_extra: Vec::new(),
-        padding: Vec::new(),
-        descriptor_bytes: None,
+        bytes_before_local_header: Vec::new(),
+        descriptor_override: None,
         local_flags: 0,
         central_flags: 0,
         central_extra: Vec::new(),
@@ -71,12 +68,10 @@ fn deflated(name: &str, data: &[u8]) -> Raw {
     }
 }
 
-/// Writes a ZIP with every header field under the test's control.
 fn write_zip(path: &Path, entries: &[Raw]) {
     write_zip_with_tail(path, entries, &[]);
 }
 
-/// A data descriptor with or without its signature, in 32-bit or ZIP64 form.
 fn descriptor(entry: &Raw, signature: bool, wide: bool) -> Vec<u8> {
     let mut bytes = if signature {
         b"PK\x07\x08".to_vec()
@@ -94,17 +89,21 @@ fn descriptor(entry: &Raw, signature: bool, wide: bool) -> Vec<u8> {
     bytes
 }
 
-/// Like `write_zip`, with `tail` written between the last record and the
-/// central directory.
-fn write_zip_with_tail(path: &Path, entries: &[Raw], tail: &[u8]) {
-    fs::write(path, zip_bytes(entries, tail)).unwrap();
+fn orphan_local_record() -> Vec<u8> {
+    const NAME: &str = "evil.txt";
+    const DATA: &[u8] = b"hidden";
+    zip_bytes(&[stored(NAME, DATA)], &[])[..30 + NAME.len() + DATA.len()].to_vec()
+}
+
+fn write_zip_with_tail(path: &Path, entries: &[Raw], before_central_directory: &[u8]) {
+    fs::write(path, zip_bytes(entries, before_central_directory)).unwrap();
 }
 
 fn zip_bytes(entries: &[Raw], tail: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut offsets = Vec::new();
     for entry in entries {
-        out.extend_from_slice(&entry.padding);
+        out.extend_from_slice(&entry.bytes_before_local_header);
         offsets.push(out.len() as u32);
         if entry.local_offset.is_some() {
             continue;
@@ -134,7 +133,7 @@ fn zip_bytes(entries: &[Raw], tail: &[u8]) -> Vec<u8> {
         out.extend_from_slice(&entry.payload);
         if entry.descriptor {
             let bytes = entry
-                .descriptor_bytes
+                .descriptor_override
                 .clone()
                 .unwrap_or_else(|| descriptor(entry, true, false));
             out.extend_from_slice(&bytes);
@@ -173,7 +172,6 @@ fn zip_bytes(entries: &[Raw], tail: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Lists every path under `root` except the archive itself.
 fn leftovers(root: &Path) -> Vec<String> {
     let mut found: Vec<String> = walkdir::WalkDir::new(root)
         .min_depth(1)
@@ -193,9 +191,7 @@ fn leftovers(root: &Path) -> Vec<String> {
     found
 }
 
-/// Extracts with both native readers and requires a rejection that publishes
-/// nothing anywhere under the temporary root, including above the destination.
-fn assert_rejected(case: &str, entries: &[Raw]) {
+fn assert_rejected_without_leftovers(case: &str, entries: &[Raw]) {
     for (reader, read) in [
         ("native", read_archive as Reader),
         ("native-fast", read_archive_fast as Reader),
@@ -222,7 +218,7 @@ fn assert_rejected(case: &str, entries: &[Raw]) {
     }
 }
 
-/// A local ZIP64 extra field holding both sizes, original first.
+// SPEC(APPNOTE 4.5.3): a local ZIP64 field holds both sizes, original first.
 fn zip64_extra(size: u64, compressed: u64) -> Vec<u8> {
     let mut field = vec![1, 0, 16, 0];
     field.extend_from_slice(&size.to_le_bytes());
@@ -242,22 +238,22 @@ fn declared_sizes_bound_decoded_data() {
         crc: 0,
         ..deflated("bomb.bin", &data)
     };
-    assert_rejected("zero declared size hides data", &[hidden]);
-    assert_rejected(
+    assert_rejected_without_leftovers("zero declared size hides data", &[hidden]);
+    assert_rejected_without_leftovers(
         "declared size smaller than data",
         &[Raw {
             size: 10,
             ..deflated("short.bin", &data)
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "declared size larger than data",
         &[Raw {
             size: 2 << 20,
             ..deflated("long.bin", &data)
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "local and central sizes disagree",
         &[Raw {
             local_size: Some(10),
@@ -268,14 +264,14 @@ fn declared_sizes_bound_decoded_data() {
 
 #[test]
 fn checksums_and_stored_lengths_are_enforced() {
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "wrong CRC",
         &[Raw {
             crc: 1,
             ..deflated("crc.bin", b"payload")
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "stored entry shorter than declared",
         &[Raw {
             size: 100,
@@ -297,17 +293,17 @@ fn unsafe_names_never_escape() {
         "",
         "nul\0byte.txt",
     ] {
-        assert_rejected(name, &[stored(name, b"x")]);
+        assert_rejected_without_leftovers(name, &[stored(name, b"x")]);
     }
 }
 
 #[test]
 fn ambiguous_entry_sets_are_rejected() {
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "duplicate names",
         &[stored("a.txt", b"one"), stored("a.txt", b"two")],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "file used as a directory",
         &[stored("a", b"file"), stored("a/b.txt", b"child")],
     );
@@ -315,7 +311,7 @@ fn ambiguous_entry_sets_are_rejected() {
 
 #[test]
 fn local_headers_must_match_the_central_directory() {
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "local and central names disagree",
         &[Raw {
             local_name: Some(b"other.txt".to_vec()),
@@ -324,7 +320,7 @@ fn local_headers_must_match_the_central_directory() {
     );
     let data = megabyte_of_zeros();
     let entry = deflated("zip64.bin", &data);
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "local ZIP64 compressed size disagrees",
         &[Raw {
             local_compressed: Some(u32::MAX),
@@ -332,7 +328,7 @@ fn local_headers_must_match_the_central_directory() {
             ..entry
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "data descriptor with a wrong local size",
         &[Raw {
             descriptor: true,
@@ -340,7 +336,7 @@ fn local_headers_must_match_the_central_directory() {
             ..deflated("deferred.bin", &megabyte_of_zeros())
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "two entries share one local record",
         &[
             stored("first.txt", b"shared"),
@@ -354,7 +350,7 @@ fn local_headers_must_match_the_central_directory() {
 
 #[test]
 fn special_file_types_are_rejected() {
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "device",
         &[Raw {
             version_made_by: 3 << 8 | 20,
@@ -450,7 +446,7 @@ fn cp437_names_are_matched_by_their_stored_bytes() {
         fs::read(destination.join("\u{fc}ber.txt")).unwrap(),
         b"cp437"
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "CP437 local name differs",
         &[Raw {
             local_name: Some(b"\x82ber.txt".to_vec()),
@@ -461,21 +457,20 @@ fn cp437_names_are_matched_by_their_stored_bytes() {
 
 #[test]
 fn records_must_tile_the_archive_without_gaps() {
-    // A complete local record that no central entry points to.
-    let hidden_record = zip_bytes(&[stored("evil.txt", b"hidden")], &[])[..30 + 8 + 6].to_vec();
-    assert_rejected(
+    let hidden_record = orphan_local_record();
+    assert_rejected_without_leftovers(
         "record hidden before the first entry",
         &[Raw {
-            padding: hidden_record.clone(),
+            bytes_before_local_header: hidden_record.clone(),
             ..stored("a.txt", b"a")
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "record hidden between entries",
         &[
             stored("a.txt", b"a"),
             Raw {
-                padding: hidden_record.clone(),
+                bytes_before_local_header: hidden_record.clone(),
                 ..stored("b.txt", b"b")
             },
         ],
@@ -500,33 +495,33 @@ fn data_descriptors_must_match_the_central_directory() {
     };
     let mut wrong_crc = entry.clone();
     wrong_crc.crc ^= 1;
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "descriptor CRC disagrees",
         &[Raw {
-            descriptor_bytes: Some(descriptor(&wrong_crc, true, false)),
+            descriptor_override: Some(descriptor(&wrong_crc, true, false)),
             ..entry.clone()
         }],
     );
     let mut wrong_size = entry.clone();
     wrong_size.size += 1;
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "descriptor size disagrees",
         &[Raw {
-            descriptor_bytes: Some(descriptor(&wrong_size, true, false)),
+            descriptor_override: Some(descriptor(&wrong_size, true, false)),
             ..entry.clone()
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "descriptor with trailing bytes",
         &[Raw {
-            descriptor_bytes: Some([descriptor(&entry, true, false), vec![0; 4]].concat()),
+            descriptor_override: Some([descriptor(&entry, true, false), vec![0; 4]].concat()),
             ..entry.clone()
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "flagged entry without a descriptor",
         &[Raw {
-            descriptor_bytes: Some(Vec::new()),
+            descriptor_override: Some(Vec::new()),
             ..entry
         }],
     );
@@ -534,7 +529,7 @@ fn data_descriptors_must_match_the_central_directory() {
 
 #[test]
 fn local_fields_that_other_readers_trust_must_agree() {
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "local encryption flag",
         &[Raw {
             local_flags: 1,
@@ -545,7 +540,7 @@ fn local_fields_that_other_readers_trust_must_agree() {
     let entry = deflated("zip64.bin", &data);
     let packed = entry.payload.len() as u64;
     let size = entry.size as u64;
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "two local ZIP64 fields",
         &[Raw {
             local_size: Some(u32::MAX),
@@ -554,14 +549,14 @@ fn local_fields_that_other_readers_trust_must_agree() {
             ..entry.clone()
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "two central ZIP64 fields",
         &[Raw {
             central_extra: [zip64_extra(size, packed), zip64_extra(7, 7)].concat(),
             ..entry.clone()
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "local ZIP64 field lies while 32-bit sizes are real",
         &[Raw {
             local_extra: zip64_extra(7, packed),
@@ -580,7 +575,7 @@ fn every_descriptor_form_extracts() {
         .map(|(index, (signature, wide))| Raw {
             name: format!("form-{index}.txt").into_bytes(),
             descriptor: true,
-            descriptor_bytes: Some(descriptor(&base, signature, wide)),
+            descriptor_override: Some(descriptor(&base, signature, wide)),
             ..base.clone()
         })
         .collect();
@@ -601,16 +596,15 @@ fn every_descriptor_form_extracts() {
 
 #[test]
 fn entries_hold_nothing_beyond_their_own_data() {
-    // A complete local record that no central entry points to.
-    let hidden = zip_bytes(&[stored("evil.txt", b"hidden")], &[])[..30 + 8 + 6].to_vec();
+    let hidden = orphan_local_record();
     let text = b"visible ".repeat(64);
     let mut trailing = deflated("a.txt", &text);
     trailing.payload.extend_from_slice(&hidden);
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "record after the Deflate stream ends",
         std::slice::from_ref(&trailing),
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "record after the Deflate stream ends, with a descriptor",
         &[Raw {
             descriptor: true,
@@ -624,7 +618,7 @@ fn entries_hold_nothing_beyond_their_own_data() {
     smuggled.extend_from_slice(&(prefix.len() as u32).to_le_bytes());
     smuggled.extend_from_slice(&(prefix.len() as u32).to_le_bytes());
     smuggled.extend_from_slice(&hidden);
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "fake descriptor inside stored data",
         &[Raw {
             descriptor: true,
@@ -648,9 +642,7 @@ fn entries_hold_nothing_beyond_their_own_data() {
     }
 }
 
-/// Data that a streaming reader would end at a fake descriptor: `prefix`,
-/// then a descriptor that matches it, then `rest`.
-fn fake_descriptor(prefix: &[u8], wide: bool, rest: &[u8]) -> Vec<u8> {
+fn data_with_matching_descriptor(prefix: &[u8], wide: bool, rest: &[u8]) -> Vec<u8> {
     let mut data = prefix.to_vec();
     data.extend_from_slice(b"PK\x07\x08");
     data.extend_from_slice(&crc32fast::hash(prefix).to_le_bytes());
@@ -672,14 +664,14 @@ fn stored_descriptor_signatures_are_judged_by_their_fields() {
     for (case, data) in [
         (
             "ZIP64 fake descriptor",
-            fake_descriptor(b"innocent\n", true, &hidden),
+            data_with_matching_descriptor(b"innocent\n", true, &hidden),
         ),
         (
             "fake descriptor split across reads",
-            fake_descriptor(&boundary, false, &hidden),
+            data_with_matching_descriptor(&boundary, false, &hidden),
         ),
     ] {
-        assert_rejected(
+        assert_rejected_without_leftovers(
             case,
             &[Raw {
                 descriptor: true,
@@ -687,10 +679,8 @@ fn stored_descriptor_signatures_are_judged_by_their_fields() {
             }],
         );
     }
-    // A nested archive written by a streaming tool contains descriptors that
-    // describe its own entries, not the outer prefix.
     let mut nested = b"PK\x03\x04 inner header ".to_vec();
-    nested.extend_from_slice(&fake_descriptor(b"inner data", false, b" more")[..]);
+    nested.extend_from_slice(&data_with_matching_descriptor(b"inner data", false, b" more")[..]);
     nested.splice(0..0, b"outer prefix ".iter().copied());
     for read in [read_archive as Reader, read_archive_fast as Reader] {
         let root = tempfile::tempdir().unwrap();
@@ -706,8 +696,7 @@ fn stored_descriptor_signatures_are_judged_by_their_fields() {
     }
 }
 
-/// An Info-ZIP Unicode path field (0x7075) naming `name` for stored name `stored`.
-fn unicode_path(stored: &[u8], name: &str) -> Vec<u8> {
+fn unicode_path_field(stored: &[u8], name: &str) -> Vec<u8> {
     let mut field = vec![0x75, 0x70];
     field.extend_from_slice(&((1 + 4 + name.len()) as u16).to_le_bytes());
     field.push(1);
@@ -718,37 +707,37 @@ fn unicode_path(stored: &[u8], name: &str) -> Vec<u8> {
 
 #[test]
 fn unicode_path_fields_cannot_rename_entries() {
-    let renaming = unicode_path(b"a.txt", "renamed.txt");
-    assert_rejected(
+    let renaming = unicode_path_field(b"a.txt", "renamed.txt");
+    assert_rejected_without_leftovers(
         "central Unicode path renames the entry",
         &[Raw {
             central_extra: renaming.clone(),
             ..stored("a.txt", b"x")
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "local Unicode path renames the entry",
         &[Raw {
             local_extra: renaming,
             ..stored("a.txt", b"x")
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "directory renamed by a Unicode path",
         &[Raw {
-            central_extra: unicode_path(b"d/", "evil/"),
+            central_extra: unicode_path_field(b"d/", "evil/"),
             ..stored("d/", b"")
         }],
     );
-    let same_field = unicode_path(b"a.txt", "a.txt");
-    assert_rejected(
+    let same_field = unicode_path_field(b"a.txt", "a.txt");
+    assert_rejected_without_leftovers(
         "two Unicode path fields",
         &[Raw {
-            central_extra: [same_field.clone(), unicode_path(b"a.txt", "evil.txt")].concat(),
+            central_extra: [same_field.clone(), unicode_path_field(b"a.txt", "evil.txt")].concat(),
             ..stored("a.txt", b"x")
         }],
     );
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "short Unicode path field",
         &[Raw {
             central_extra: vec![0x75, 0x70, 4, 0, 1, 0, 0, 0],
@@ -771,7 +760,7 @@ fn unicode_path_fields_cannot_rename_entries() {
     }
 }
 
-/// APFS ignores case and Unicode normalization when it compares names.
+// EXTERNAL(APFS): names compare ignoring case and Unicode normalization.
 #[cfg(target_os = "macos")]
 #[test]
 fn names_that_collide_on_the_filesystem_fail_or_merge_in_archive_order() {
@@ -796,7 +785,7 @@ fn names_that_collide_on_the_filesystem_fail_or_merge_in_archive_order() {
             assert_eq!(leftovers(root.path()), Vec::<String>::new());
         }
     }
-    // A merged directory takes the first entry's mode and time, as in unzip.
+    // EXTERNAL(Info-ZIP unzip): a merged directory keeps the first entry's mode and time.
     let directory = |name: &str, mode: u32, time: u32| Raw {
         version_made_by: 3 << 8 | 20,
         external: mode << 16,
@@ -821,7 +810,7 @@ fn names_that_collide_on_the_filesystem_fail_or_merge_in_archive_order() {
             assert_eq!(metadata.mtime(), 631_152_000);
         }
     }
-    // Directories merge, as in unzip and Python, under the first spelling.
+    // EXTERNAL(Info-ZIP unzip, Python zipfile): directories merge under the first spelling.
     for (first, second) in [("D", "d"), ("d", "D")] {
         for read in [read_archive as Reader, read_archive_fast as Reader] {
             for _ in 0..8 {
@@ -846,19 +835,18 @@ fn names_that_collide_on_the_filesystem_fail_or_merge_in_archive_order() {
     }
 }
 
-/// `café.txt` with `é` stored as CP437 byte 0x82, without the UTF-8 flag.
-const CP437_NAME: &[u8] = b"caf\x82.txt";
+const CAFE_IN_CP437: &[u8] = b"caf\x82.txt";
 
 #[test]
 fn cp437_names_decode_and_may_carry_a_matching_unicode_path() {
-    let field = unicode_path(CP437_NAME, "caf\u{e9}.txt");
+    let field = unicode_path_field(CAFE_IN_CP437, "caf\u{e9}.txt");
     for entry in [
         Raw {
-            name: CP437_NAME.to_vec(),
+            name: CAFE_IN_CP437.to_vec(),
             ..stored("x", b"x")
         },
         Raw {
-            name: CP437_NAME.to_vec(),
+            name: CAFE_IN_CP437.to_vec(),
             central_extra: field.clone(),
             local_extra: field.clone(),
             ..stored("x", b"x")
@@ -873,46 +861,45 @@ fn cp437_names_decode_and_may_carry_a_matching_unicode_path() {
             assert_eq!(fs::read(destination.join("caf\u{e9}.txt")).unwrap(), b"x");
         }
     }
-    // A UTF-8 stored name decodes as UTF-8, so its CP437 reading is a rename.
     let utf8 = "caf\u{e9}.txt".as_bytes();
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "Unicode path equal to the CP437 reading of a UTF-8 name",
         &[Raw {
-            central_extra: unicode_path(utf8, "caf\u{251c}\u{ae}.txt"),
+            central_extra: unicode_path_field(utf8, "caf\u{251c}\u{ae}.txt"),
             ..stored("caf\u{e9}.txt", b"x")
         }],
     );
-    // Python rejects a Unicode path field whose content is not UTF-8.
-    assert_rejected(
+    // EXTERNAL(Python zipfile): a Unicode path field must be UTF-8.
+    assert_rejected_without_leftovers(
         "Unicode path field that is not UTF-8",
         &[Raw {
-            name: CP437_NAME.to_vec(),
+            name: CAFE_IN_CP437.to_vec(),
             central_extra: {
-                let mut field = unicode_path(CP437_NAME, "");
-                field[2] += CP437_NAME.len() as u8;
-                field.extend_from_slice(CP437_NAME);
+                let mut field = unicode_path_field(CAFE_IN_CP437, "");
+                field[2] += CAFE_IN_CP437.len() as u8;
+                field.extend_from_slice(CAFE_IN_CP437);
                 field
             },
             ..stored("x", b"x")
         }],
     );
-    // Python and 7-Zip do not fall back to CP437 for a name flagged as UTF-8.
-    assert_rejected(
+    // EXTERNAL(Python zipfile, 7-Zip): no CP437 fallback for a name flagged as UTF-8.
+    assert_rejected_without_leftovers(
         "UTF-8 flag on a name that is not UTF-8",
         &[Raw {
-            name: CP437_NAME.to_vec(),
+            name: CAFE_IN_CP437.to_vec(),
             local_flags: 0x800,
             central_flags: 0x800,
             ..stored("x", b"x")
         }],
     );
-    // A reader that checks the CRC ignores this field and keeps the stored name.
+    // SPEC(APPNOTE 4.6.9): a reader ignores a field whose CRC does not match.
     let mut stale = field;
     stale[5] ^= 1;
-    assert_rejected(
+    assert_rejected_without_leftovers(
         "local Unicode path with a stale CRC",
         &[Raw {
-            name: CP437_NAME.to_vec(),
+            name: CAFE_IN_CP437.to_vec(),
             local_extra: stale,
             ..stored("x", b"x")
         }],
@@ -921,8 +908,6 @@ fn cp437_names_decode_and_may_carry_a_matching_unicode_path() {
 
 #[test]
 fn output_that_cannot_fit_is_refused_before_writing() {
-    // About 16 TiB declared by 4,096 one-byte entries: more than any test
-    // machine has free, and refused before a byte is decoded.
     let entries: Vec<Raw> = (0..4096)
         .map(|index| Raw {
             size: u32::MAX - 1,
@@ -938,7 +923,6 @@ fn output_that_cannot_fit_is_refused_before_writing() {
         assert!(error.contains("free"), "{error}");
         assert_eq!(leftovers(root.path()), Vec::<String>::new());
     }
-    // A ZIP64 size of 2^64 - 1 must not wrap the rounded estimate to zero.
     let mut endless = deflated("endless.bin", &megabyte_of_zeros());
     endless.size = u32::MAX;
     endless.central_extra = [vec![1, 0, 8, 0], u64::MAX.to_le_bytes().to_vec()].concat();
@@ -1027,7 +1011,6 @@ fn an_entry_may_use_any_safe_root_name() {
     }
 }
 
-/// A DOS date and time packed as the ZIP header stores them.
 fn dos(year: u32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> u32 {
     ((year - 1980) << 25 | month << 21 | day << 16) | (hour << 11 | minute << 5 | (second / 2))
 }
@@ -1068,13 +1051,11 @@ fn exact_times_follow_the_dos_era_and_field_priority() {
         dos,
         ..stored("a.txt", b"x")
     };
-    // A 1969 time stored as 32 bits reads as 2106 when taken as unsigned.
     let before_1970 = -54_000_i32 as u32;
     assert_eq!(
         extracted_time(at(extended_time(before_1970), dos(1980, 1, 1, 0, 0, 0))),
         -54_000
     );
-    // A real 2040 time has its top bit set too.
     assert_eq!(
         extracted_time(at(extended_time(2_208_988_800), dos(2040, 1, 1, 0, 0, 0))),
         2_208_988_800
@@ -1090,7 +1071,6 @@ fn exact_times_follow_the_dos_era_and_field_priority() {
     );
 }
 
-/// A Unix symlink entry whose data is `target`.
 fn symlink(name: &str, target: &str) -> Raw {
     Raw {
         version_made_by: 3 << 8 | 20,
@@ -1109,7 +1089,7 @@ fn symlinks_must_stay_inside_the_destination() {
             "link through another link",
             vec![symlink("x/up", ".."), symlink("y", "x/up/../outside")],
         ),
-        // APFS matches `l` to `L` and NFD to NFC, so a name check alone misses these.
+        // EXTERNAL(APFS): `l` matches `L`, and NFD matches NFC.
         (
             "link through a link spelled in another case",
             vec![
@@ -1139,7 +1119,7 @@ fn symlinks_must_stay_inside_the_destination() {
             ],
         ),
     ] {
-        assert_rejected(case, &entries);
+        assert_rejected_without_leftovers(case, &entries);
     }
 }
 
@@ -1178,5 +1158,5 @@ fn symlinks_inside_the_destination_are_created_after_files() {
 #[cfg(not(unix))]
 #[test]
 fn symlinks_are_left_to_the_backend_on_this_platform() {
-    assert_rejected("any symlink", &[symlink("link", "target")]);
+    assert_rejected_without_leftovers("any symlink", &[symlink("link", "target")]);
 }

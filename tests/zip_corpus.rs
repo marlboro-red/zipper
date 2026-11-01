@@ -17,13 +17,13 @@ use zipper::{
 
 type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<Entry>>;
 
-/// What one extracted path must look like. A `None` field is not compared.
+const NATIVE_EXTRACTS_LINKS: bool = cfg!(unix);
+const RESTORES_DIRECTORY_TIMES: bool = cfg!(unix);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Expected {
-    /// File size and CRC-32, or `None` for a directory or a link.
-    content: Option<(u64, u32)>,
-    /// A symlink's target.
-    link: Option<String>,
+    size_and_crc: Option<(u64, u32)>,
+    link_target: Option<String>,
     mode: Option<u32>,
     modified: Option<i64>,
 }
@@ -43,12 +43,12 @@ fn expected() -> BTreeMap<String, Tree> {
         let [archive, path, size, crc, mode, modified] = fields[..] else {
             panic!("bad manifest line {line:?}");
         };
-        let link = (size == "link").then(|| crc.to_string());
-        let content = (size != "dir" && size != "link")
+        let link_target = (size == "link").then(|| crc.to_string());
+        let size_and_crc = (size != "dir" && size != "link")
             .then(|| (size.parse().unwrap(), u32::from_str_radix(crc, 16).unwrap()));
         let value = Expected {
-            content,
-            link,
+            size_and_crc,
+            link_target,
             mode: optional(mode, |mode| u32::from_str_radix(mode, 8).unwrap()),
             modified: optional(modified, |seconds| seconds.parse().unwrap()),
         };
@@ -72,14 +72,14 @@ fn tree(root: &Path) -> Tree {
             if entry.file_type().is_symlink() {
                 let target = fs::read_link(entry.path()).unwrap();
                 let value = Expected {
-                    content: None,
-                    link: Some(target.to_str().unwrap().to_string()),
+                    size_and_crc: None,
+                    link_target: Some(target.to_str().unwrap().to_string()),
                     mode: None,
                     modified: None,
                 };
                 return (name.join("/"), value);
             }
-            let content = entry.file_type().is_file().then(|| {
+            let size_and_crc = entry.file_type().is_file().then(|| {
                 let data = fs::read(entry.path()).unwrap();
                 (data.len() as u64, crc32fast::hash(&data))
             });
@@ -96,8 +96,8 @@ fn tree(root: &Path) -> Tree {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |duration| duration.as_secs() as i64);
             let value = Expected {
-                content,
-                link: None,
+                size_and_crc,
+                link_target: None,
                 mode,
                 modified: Some(modified),
             };
@@ -106,9 +106,8 @@ fn tree(root: &Path) -> Tree {
         .collect()
 }
 
-/// The mode a new directory gets, which bounds every restored mode.
 #[cfg(unix)]
-fn default_mode(work: &Path) -> u32 {
+fn umask_ceiling_mode(work: &Path) -> u32 {
     use std::os::unix::fs::PermissionsExt;
     let probe = work.join("probe");
     fs::create_dir(&probe).unwrap();
@@ -132,8 +131,7 @@ fn native_engines_match_the_reference_readers() {
             let work = tempfile::tempdir().unwrap();
             let destination = work.path().join("out");
             let result = read(&corpus.join(format!("{name}.zip")), Some(&destination));
-            // Other platforms leave every archive with symlinks to the backend.
-            if cfg!(not(unix)) && wanted.values().any(|value| value.link.is_some()) {
+            if !NATIVE_EXTRACTS_LINKS && wanted.values().any(|value| value.link_target.is_some()) {
                 assert!(result.is_err(), "{name} with {engine} extracted links");
                 assert!(!destination.exists());
                 continue;
@@ -142,15 +140,14 @@ fn native_engines_match_the_reference_readers() {
             let mut actual = tree(&destination);
             #[cfg(unix)]
             let default = {
-                let default = default_mode(work.path());
+                let default = umask_ceiling_mode(work.path());
                 let root = tree(work.path()).remove("out").unwrap();
                 assert_eq!(root.mode, Some(default), "{name} root with {engine}");
                 default
             };
-            common::unlock(work.path());
+            common::make_tree_deletable(work.path());
             let mut expected = wanted.clone();
             for (path, value) in &mut expected {
-                // Modes were recorded under umask 022, and are compared on Unix.
                 #[cfg(unix)]
                 {
                     value.mode = value.mode.map(|mode| mode & default);
@@ -159,8 +156,7 @@ fn native_engines_match_the_reference_readers() {
                 {
                     value.mode = None;
                 }
-                // Directory times are restored on Unix only.
-                if cfg!(not(unix)) && value.content.is_none() {
+                if !RESTORES_DIRECTORY_TIMES && value.size_and_crc.is_none() {
                     value.modified = None;
                 }
                 let found = actual.get_mut(path);

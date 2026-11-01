@@ -1,6 +1,8 @@
 use std::{fs, io::Write, path::Path, process::Command};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
+const RESERVED_DEFLATE_BLOCK: u8 = 0xff;
+
 fn archive(
     path: &Path,
     entries: &[(&str, &[u8])],
@@ -177,8 +179,11 @@ fn many_tiny_entries_recover_and_failure_never_publishes() -> anyhow::Result<()>
         );
         assert!(!output.exists());
     }
-    // No hidden staging directories survive a failed parallel extraction.
-    assert_eq!(fs::read_dir(temp.path())?.count(), 5);
+    assert_eq!(
+        fs::read_dir(temp.path())?.count(),
+        5,
+        "a failed parallel extraction leaves no staging directory"
+    );
     Ok(())
 }
 
@@ -247,8 +252,6 @@ fn oversized_central_directory_is_rejected_before_parsing() -> anyhow::Result<()
     use std::io::{Seek, SeekFrom};
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("oversized.zip");
-    // Sparse fixture: advertised directory exceeds the allocation guard. No
-    // directory bytes need to be read to reject it.
     let mut file = fs::File::create(&path)?;
     let length = 64u32 * 1024 * 1024 + 1;
     file.seek(SeekFrom::Start(length as u64))?;
@@ -268,7 +271,6 @@ fn oversized_central_directory_is_rejected_before_parsing() -> anyhow::Result<()
 fn zip64_end_records_and_empty_archives() -> anyhow::Result<()> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("zip64.zip");
-    // Minimal empty ZIP64 with an explicit EOCD64 and locator.
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"PK\x06\x06");
     bytes.extend_from_slice(&44u64.to_le_bytes());
@@ -285,11 +287,9 @@ fn zip64_end_records_and_empty_archives() -> anyhow::Result<()> {
     bytes.extend_from_slice(&[0; 2]);
     fs::write(&path, &bytes)?;
     assert!(zipper::native_zip::read_archive(&path, None)?.is_empty());
-    // A forged enormous extension must fail before allocating that sector.
     bytes[4..12].copy_from_slice(&u64::MAX.to_le_bytes());
     fs::write(&path, &bytes)?;
     assert!(zipper::native_zip::list(&path).is_err());
-    // Empty standard ZIP.
     let writer = ZipWriter::new(fs::File::create(&path)?);
     writer.finish()?;
     let out = temp.path().join("out");
@@ -346,7 +346,6 @@ fn fast_zip_checks_crc_across_old_buffer_boundary() -> anyhow::Result<()> {
         );
         assert_eq!(fs::read(out.join("data"))?, bytes);
         assert_eq!(fs::read(out.join("zero"))?, b"");
-        // Corrupt the central-directory CRC, leaving a valid Deflate stream.
         let mut damaged = fs::read(&input)?;
         let at = damaged.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
         damaged[at + 16] ^= 1;
@@ -386,7 +385,7 @@ fn fast_zip_rejects_wrong_sizes_and_malformed_deflate() -> anyhow::Result<()> {
     let start = reader.by_index_raw(0)?.data_start().unwrap() as usize;
     drop(reader);
     let mut damaged = original.clone();
-    damaged[start] = 0xff; // Reserved Deflate block type.
+    damaged[start] = RESERVED_DEFLATE_BLOCK;
     fs::write(&path, damaged)?;
     assert!(zipper::native_zip::read_archive_fast(&path, None).is_err());
     let out = temp.path().join("malformed");

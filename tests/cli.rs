@@ -109,9 +109,8 @@ fn max_extracted_bytes_caps_native_archives_before_writing() -> anyhow::Result<(
     Ok(())
 }
 
-/// Days from 1970-01-01 to a proleptic Gregorian date.
 #[cfg(unix)]
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+fn days_since_unix_epoch(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
     let year_of_era = year - era * 400;
@@ -128,7 +127,7 @@ fn dos_times_are_read_in_the_local_time_zone() -> anyhow::Result<()> {
     let path = "src/text/readme.txt";
     let mut zip = zip::ZipArchive::new(fs::File::open(&archive)?)?;
     let time = zip.by_name(path)?.last_modified().unwrap();
-    let as_utc = days_from_civil(time.year().into(), time.month().into(), time.day().into())
+    let as_utc = days_since_unix_epoch(time.year().into(), time.month().into(), time.day().into())
         * 86_400
         + i64::from(time.hour()) * 3_600
         + i64::from(time.minute()) * 60
@@ -155,7 +154,6 @@ fn dos_times_are_read_in_the_local_time_zone() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// One stored entry, `a.txt`, with the given DOS time (low 16 bits) and date.
 #[cfg(unix)]
 fn dos_only_zip(dos: u32) -> Vec<u8> {
     let (name, data) = (b"a.txt", b"x");
@@ -203,16 +201,14 @@ fn dos_times_follow_daylight_saving_and_normalize_like_bsdtar() -> anyhow::Resul
     let pack = |year: u32, month: u32, day: u32, hour: u32| {
         (year - 1980) << 25 | month << 21 | day << 16 | hour << 11
     };
-    // Noon on 2024-07-01 in New York is daylight time, four hours behind UTC.
-    let summer = days_from_civil(2024, 7, 1) * 86_400 + 16 * 3_600;
+    let noon_edt_in_utc = days_since_unix_epoch(2024, 7, 1) * 86_400 + 16 * 3_600;
     assert_eq!(
         restored_dos_time(pack(2024, 7, 1, 12), "America/New_York")?,
-        summer
+        noon_edt_in_utc
     );
-    // Month 13 of 2020 normalizes to January 2021.
     assert_eq!(
         restored_dos_time(pack(2020, 13, 1, 0), "UTC")?,
-        1_609_459_200
+        days_since_unix_epoch(2021, 1, 1) * 86_400
     );
     Ok(())
 }

@@ -1,9 +1,6 @@
 use std::path::Path;
 
-/// Restores owner access to `root` and every directory below it, parents
-/// first, so a temporary directory holding restored read-only directories can
-/// be deleted.
-pub fn unlock(root: &Path) {
+pub fn make_tree_deletable(root: &Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -13,7 +10,7 @@ pub fn unlock(root: &Path) {
         }
         for entry in std::fs::read_dir(root).into_iter().flatten().flatten() {
             if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-                unlock(&entry.path());
+                make_tree_deletable(&entry.path());
             }
         }
     }

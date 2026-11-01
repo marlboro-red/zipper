@@ -38,7 +38,27 @@ impl Rng {
 const SIGNATURES: [&[u8]; 4] = [b"PK\x01\x02", b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"];
 const EDGE_VALUES: [u32; 6] = [0, 1, 0x7fff_ffff, 0xffff_fffe, 0xffff_ffff, 0x0001_0000];
 
-/// Applies one to three mutations, favoring header fields.
+fn overwrite_field_near_signature(bytes: &mut [u8], rng: &mut Rng) {
+    let signature = SIGNATURES[rng.below(SIGNATURES.len())];
+    let starts: Vec<usize> = bytes
+        .windows(4)
+        .enumerate()
+        .filter(|(_, window)| window == &signature)
+        .map(|(at, _)| at)
+        .collect();
+    if starts.is_empty() {
+        return;
+    }
+    let at = starts[rng.below(starts.len())] + 4 + rng.below(42);
+    let value = EDGE_VALUES[rng.below(EDGE_VALUES.len())].to_le_bytes();
+    let width = [1, 2, 4][rng.below(3)];
+    for (offset, byte) in value.iter().take(width).enumerate() {
+        if let Some(slot) = bytes.get_mut(at + offset) {
+            *slot = *byte;
+        }
+    }
+}
+
 fn mutate(archive: &[u8], rng: &mut Rng) -> Vec<u8> {
     let mut bytes = archive.to_vec();
     for _ in 0..1 + rng.below(3) {
@@ -60,34 +80,13 @@ fn mutate(archive: &[u8], rng: &mut Rng) -> Vec<u8> {
                 let insert: Vec<u8> = (0..count).map(|_| rng.next() as u8).collect();
                 bytes.splice(at..at, insert);
             }
-            _ => {
-                // Overwrite a field near a record signature with an edge value.
-                let signature = SIGNATURES[rng.below(SIGNATURES.len())];
-                let starts: Vec<usize> = bytes
-                    .windows(4)
-                    .enumerate()
-                    .filter(|(_, window)| window == &signature)
-                    .map(|(at, _)| at)
-                    .collect();
-                if starts.is_empty() {
-                    continue;
-                }
-                let at = starts[rng.below(starts.len())] + 4 + rng.below(42);
-                let value = EDGE_VALUES[rng.below(EDGE_VALUES.len())].to_le_bytes();
-                let width = [1, 2, 4][rng.below(3)];
-                for (offset, byte) in value.iter().take(width).enumerate() {
-                    if let Some(slot) = bytes.get_mut(at + offset) {
-                        *slot = *byte;
-                    }
-                }
-            }
+            _ => overwrite_field_near_signature(&mut bytes, rng),
         }
     }
     bytes
 }
 
-/// Returns whether the reader accepted the mutant.
-fn check_case(bytes: &[u8], read: Reader) -> bool {
+fn reader_accepts_cleanly(bytes: &[u8], read: Reader) -> bool {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("case.zip");
     fs::write(&archive, bytes).unwrap();
@@ -96,7 +95,7 @@ fn check_case(bytes: &[u8], read: Reader) -> bool {
     let destination = parent.join("out");
     let extracted = read(&archive, Some(&destination));
     let verified = read(&archive, None);
-    common::unlock(root.path());
+    common::make_tree_deletable(root.path());
     let left: Vec<_> = fs::read_dir(&parent)
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
@@ -114,7 +113,7 @@ fn check_case(bytes: &[u8], read: Reader) -> bool {
             let written: u64 = walkdir::WalkDir::new(&destination)
                 .into_iter()
                 .map(|entry| entry.unwrap().metadata().unwrap())
-                // A link's own size is its target's length, which is its entry's data.
+                // EXTERNAL(POSIX lstat): a link's size is its target's length.
                 .filter(|metadata| metadata.is_file() || metadata.file_type().is_symlink())
                 .map(|metadata| metadata.len())
                 .sum();
@@ -152,7 +151,7 @@ fn mutated_corpus_archives_never_panic_or_leak_output() {
             ("native", read_archive as Reader),
             ("native-fast", read_archive_fast as Reader),
         ] {
-            match catch_unwind(AssertUnwindSafe(|| check_case(&mutant, read))) {
+            match catch_unwind(AssertUnwindSafe(|| reader_accepts_cleanly(&mutant, read))) {
                 Ok(true) => accepted += 1,
                 Ok(false) => {}
                 Err(panic) => {

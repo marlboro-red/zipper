@@ -161,8 +161,10 @@ fn small_file_packing_and_thread_count_determinism() -> anyhow::Result<()> {
             .install(|| zipper::create(path, std::slice::from_ref(&input), 1))?;
     }
     assert_eq!(fs::read(&single)?, fs::read(&parallel)?);
-    // 1.4 MiB of strongly related files should share history across boundaries.
-    assert!(fs::metadata(&single)?.len() < 25_000);
+    assert!(
+        fs::metadata(&single)?.len() < 25_000,
+        "related files share history across block boundaries"
+    );
     zipper::read_archive(&single, Some(&t.path().join("out")))?;
     for n in 0..500 {
         let name = format!("file-{n:04}");

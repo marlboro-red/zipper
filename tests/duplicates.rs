@@ -62,7 +62,6 @@ fn duplicates_are_exact_deterministic_and_overlap_safe() -> Result<()> {
             "Scanned 8 files; 3 duplicate groups; 131083 duplicate payload bytes; 0 non-regular entries skipped\n"
         );
     }
-    // The command never changes data, including nonmatching files.
     assert_eq!(fs::read(data.join("same-prefix-different-tail"))?, large);
     assert!(zipper::duplicates::find(&[data.join("missing")]).is_err());
     assert!(zipper::duplicates::find(&[]).is_err());
@@ -82,7 +81,7 @@ fn symlinks_are_skipped_and_hardlinks_are_logical_duplicates() -> Result<()> {
     assert_eq!(result.scanned_files, 2);
     assert_eq!(result.skipped_entries, 2);
     assert_eq!(result.groups.len(), 1);
-    assert_eq!(result.duplicate_bytes, 7); // Logical bytes, not disk savings.
+    assert_eq!(result.duplicate_bytes, 7, "logical bytes, not disk savings");
     let result = zipper::duplicates::find(&[root.path().join("symlink")])?;
     assert_eq!(result.scanned_files, 0);
     assert_eq!(result.skipped_entries, 1);
