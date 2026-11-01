@@ -30,6 +30,31 @@ struct Item {
     symlink: bool,
 }
 
+/// Indices of directory entries that name the same directory as an earlier
+/// entry, on a filesystem that ignores case or normalization. Only the first
+/// entry's metadata is restored, as in unzip.
+#[cfg(unix)]
+fn merged_directories(root: &Path, items: &[Item]) -> Result<HashSet<usize>> {
+    use std::os::unix::fs::MetadataExt;
+    let mut claimed = HashSet::new();
+    let mut merged = HashSet::new();
+    for (index, item) in items.iter().enumerate() {
+        if item.entry.directory {
+            let metadata = fs::metadata(root.join(&item.entry.name))?;
+            if !claimed.insert((metadata.dev(), metadata.ino())) {
+                merged.insert(index);
+            }
+        }
+    }
+    Ok(merged)
+}
+
+/// Windows restores no directory metadata, so nothing needs merging.
+#[cfg(not(unix))]
+fn merged_directories(_: &Path, _: &[Item]) -> Result<HashSet<usize>> {
+    Ok(HashSet::new())
+}
+
 /// Longest symlink target the native engines accept, in bytes.
 const MAX_LINK_TARGET: u64 = 4096;
 
@@ -990,19 +1015,25 @@ pub fn read_archive_with_options(
         None
     };
     if let Some(temp) = &staging {
-        let mut directories = HashSet::new();
+        // In archive order, so on a filesystem that ignores case the first
+        // spelling of a directory wins, as in unzip and Python.
+        let mut seen = HashSet::new();
         for item in &items {
             let path = temp.path().join(&item.entry.name);
-            directories.insert(if item.entry.directory {
+            let directory = if item.entry.directory {
                 path
             } else {
                 parent(&path).to_owned()
-            });
-        }
-        for directory in directories {
-            fs::create_dir_all(directory)?;
+            };
+            if seen.insert(directory.clone()) {
+                fs::create_dir_all(directory)?;
+            }
         }
     }
+    let merged = match &staging {
+        Some(temp) => merged_directories(temp.path(), &items)?,
+        None => HashSet::new(),
+    };
     // ZIP entries are independent outputs. Use descending-size order and work
     // stealing instead of fixed file lanes; Rayon does not promise start order.
     let mut work: Vec<_> = (0..items.len()).collect();
@@ -1064,9 +1095,18 @@ pub fn read_archive_with_options(
                             &mut options,
                             item.mode.unwrap_or(0o666),
                         );
-                        Some(BufWriter::new(
-                            options.open(temp.path().join(&item.entry.name))?,
-                        ))
+                        let path = temp.path().join(&item.entry.name);
+                        let file = options.open(path).map_err(|error| {
+                            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                                anyhow::anyhow!(
+                                    "ZIP entry {:?} collides with another entry on this filesystem, which ignores case or Unicode normalization",
+                                    item.entry.name
+                                )
+                            } else {
+                                error.into()
+                            }
+                        })?;
+                        Some(BufWriter::new(file))
                     } else {
                         None
                     }
@@ -1144,16 +1184,24 @@ pub fn read_archive_with_options(
         #[cfg(unix)]
         if let Some(temp) = &staging {
             std::os::unix::fs::symlink(std::str::from_utf8(&target)?, temp.path().join(name))
-                .with_context(|| {
-                    format!("cannot create ZIP symlink {name:?}; use the compatibility backend")
+                .map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::AlreadyExists {
+                        anyhow::anyhow!(
+                            "ZIP symlink {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
+                        )
+                    } else {
+                        anyhow::Error::from(error)
+                            .context(format!("cannot create ZIP symlink {name:?}"))
+                    }
                 })?;
         }
     }
     if let (Some(temp), Some(dst)) = (staging, destination) {
         let directories: Vec<crate::Directory> = items
             .iter()
-            .filter(|item| item.entry.directory)
-            .map(|item| crate::Directory {
+            .enumerate()
+            .filter(|(index, item)| item.entry.directory && !merged.contains(index))
+            .map(|(_, item)| crate::Directory {
                 name: &item.entry.name,
                 mode: item.mode,
                 modified: item.modified.map(system_time),

@@ -771,6 +771,81 @@ fn unicode_path_fields_cannot_rename_entries() {
     }
 }
 
+/// APFS ignores case and Unicode normalization when it compares names.
+#[cfg(target_os = "macos")]
+#[test]
+fn names_that_collide_on_the_filesystem_fail_or_merge_in_archive_order() {
+    for (case, entries) in [
+        (
+            "files that differ by case",
+            [stored("A.txt", b"1"), stored("a.txt", b"2")],
+        ),
+        (
+            "files that differ by normalization",
+            [stored("\u{e9}.txt", b"1"), stored("e\u{301}.txt", b"2")],
+        ),
+    ] {
+        for read in [read_archive as Reader, read_archive_fast as Reader] {
+            let root = tempfile::tempdir().unwrap();
+            let archive = root.path().join("case.zip");
+            write_zip(&archive, &entries);
+            let error = read(&archive, Some(&root.path().join("out")))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("collides"), "{case}: {error}");
+            assert_eq!(leftovers(root.path()), Vec::<String>::new());
+        }
+    }
+    // A merged directory takes the first entry's mode and time, as in unzip.
+    let directory = |name: &str, mode: u32, time: u32| Raw {
+        version_made_by: 3 << 8 | 20,
+        external: mode << 16,
+        central_extra: extended_time(time),
+        ..stored(name, b"")
+    };
+    let entries = [
+        directory("d/", 0o40700, 631_152_000),
+        directory("D/", 0o40750, 1_591_401_600),
+        stored("d/x", b"1"),
+    ];
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        for _ in 0..8 {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            let root = tempfile::tempdir().unwrap();
+            let archive = root.path().join("case.zip");
+            write_zip(&archive, &entries);
+            let destination = root.path().join("out");
+            read(&archive, Some(&destination)).unwrap();
+            let metadata = fs::metadata(destination.join("d")).unwrap();
+            assert_eq!(metadata.permissions().mode() & 0o777, 0o700);
+            assert_eq!(metadata.mtime(), 631_152_000);
+        }
+    }
+    // Directories merge, as in unzip and Python, under the first spelling.
+    for (first, second) in [("D", "d"), ("d", "D")] {
+        for read in [read_archive as Reader, read_archive_fast as Reader] {
+            for _ in 0..8 {
+                let root = tempfile::tempdir().unwrap();
+                let archive = root.path().join("case.zip");
+                write_zip(
+                    &archive,
+                    &[
+                        stored(&format!("{first}/x"), b"1"),
+                        stored(&format!("{second}/y"), b"2"),
+                    ],
+                );
+                let destination = root.path().join("out");
+                read(&archive, Some(&destination)).unwrap();
+                let names: Vec<_> = fs::read_dir(&destination)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect();
+                assert_eq!(names, [first]);
+            }
+        }
+    }
+}
+
 /// `café.txt` with `é` stored as CP437 byte 0x82, without the UTF-8 flag.
 const CP437_NAME: &[u8] = b"caf\x82.txt";
 

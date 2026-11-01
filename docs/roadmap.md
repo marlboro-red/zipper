@@ -61,7 +61,7 @@ Scope:
 - Modification times from the DOS fields and the extended timestamp field. Directory times are set after their children. Done in [timestamp restore](../benchmarks/native-zip/timestamps/README.md).
 - A symlink policy, decided and documented before implementation. The [ZIP reader reference](reference/zip-reader.md#symlinks) records the decision, which is to create only links that stay inside the destination.
 - Filename decoding for UTF-8 and CP437, and a Unicode path field that spells a CP437 name in UTF-8. Done in the [ZIP reader reference](reference/zip-reader.md#supported-archives). No three reference readers agree on a CP437 name on macOS, so the corpus cannot hold one, and `tests/hostile_zip.rs` covers it.
-- A Unicode normalization policy. Zipper keeps stored name bytes today, while bsdtar on macOS rewrites names to NFD.
+- A Unicode normalization policy. Done in the [ZIP reader reference](reference/zip-reader.md#name-normalization). Zipper keeps stored name bytes, as `unzip`, Python and 7-Zip do.
 
 Exit checks:
 

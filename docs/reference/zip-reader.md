@@ -50,6 +50,13 @@ On Windows it restores no permissions, no directory times, and no times for entr
 | Raw central-directory metadata | at most 64 MiB |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
+## Name normalization
+
+The native engines write each name with its stored bytes, as Info-ZIP `unzip`, Python and 7-Zip do. bsdtar on macOS rewrites names to Unicode NFD instead. APFS and NTFS ignore case, and APFS also ignores normalization, so two entries can name one file there:
+
+- Two files that collide fail the extraction with an error naming the entry, and nothing is published.
+- Two directories that collide merge into one, as in `unzip` and Python. The merged directory takes the spelling, mode and time of the first entry in the central directory.
+
 ## Symlinks
 
 The native engines are stricter with symlinks than Info-ZIP `unzip` and bsdtar, which create links to any target. A symlink entry is created only when all of these hold:
