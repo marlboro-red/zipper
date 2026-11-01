@@ -218,7 +218,7 @@ fn lint_text(text: &str, dir: &Path) -> Vec<(usize, String)> {
     let mut problems = Vec::new();
     let mut fenced = false;
     let mut paragraph: Vec<(usize, String)> = Vec::new();
-    let frontmatter = if text.starts_with("---\n") {
+    let frontmatter = if text.lines().next() == Some("---") {
         text.lines()
             .skip(1)
             .position(|l| l == "---")
@@ -481,6 +481,10 @@ mod tests {
     fn skips_yaml_frontmatter() {
         assert_eq!(
             messages("---\nname: x\ndescription: a: b\n---\n# T\n"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            messages("---\r\nname: x\r\n---\r\n# T\r\n"),
             Vec::<String>::new()
         );
         assert_eq!(messages("# T\n\nLabel: text here.\n").len(), 1);
