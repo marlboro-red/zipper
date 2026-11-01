@@ -590,5 +590,33 @@
       "bsdtar-zip": 0.6652389999999997,
       "bsdtar-tar": 0.5611694579999984
     }
+  },
+  "counters": {
+    "revision": "6422dffb941c47c524f736b77cc3969e69d8146d",
+    "tree_clean": true,
+    "rows": {
+      "native-1": {
+        "archive_reads": 7806,
+        "archive_bytes_read": 63932382,
+        "files_created": 10000,
+        "directory_create_calls": 1,
+        "symlinks_created": 0,
+        "output_writes": 8000,
+        "output_bytes_written": 9536000,
+        "metadata_calls": 10001,
+        "decode_nanos": 3006557
+      },
+      "native-fast-1": {
+        "archive_reads": 7806,
+        "archive_bytes_read": 63932382,
+        "files_created": 10000,
+        "directory_create_calls": 1,
+        "symlinks_created": 0,
+        "output_writes": 8000,
+        "output_bytes_written": 9536000,
+        "metadata_calls": 10001,
+        "decode_nanos": 5442942
+      }
+    }
   }
 }

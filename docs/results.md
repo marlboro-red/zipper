@@ -37,6 +37,13 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 | `7zip` | 603.88 [552.36–617.92] | 572.38 | 0.95 | 5.9 | 1.10× | +0.5% |
 | `bsdtar-tar` | 564.57 [549.59–594.54] | 532.95 | 0.94 | 4.3 | 1.17× | +0.6% |
 
+Counters from one extraction per engine at one thread, outside timed runs, at `6422dff`.
+
+| Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `native-1` | 3.01 | 7,806 | 61.0 | 21.20 | 10,000 | 1 | 0 | 8,000 | 9.1 | 10,001 |
+| `native-fast-1` | 5.44 | 7,806 | 61.0 | 21.20 | 10,000 | 1 | 0 | 8,000 | 9.1 | 10,001 |
+
 ## 4,000 grouped files
 
 - 4,000 input files and 16,366,890 input bytes.
@@ -54,6 +61,13 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 | `bsdtar-zip` | 274.29 [272.78–296.49] | 272.89 | 0.99 | 5.3 | 1.00× | +1.2% |
 | `7zip` | 252.65 [251.69–257.35] | 251.13 | 0.99 | 4.7 | 1.09× | -0.2% |
 | `bsdtar-tar` | 225.87 [222.57–240.33] | 224.70 | 0.99 | 4.3 | 1.21× | +1.4% |
+
+Counters from one extraction per engine at one thread, outside timed runs, at `6422dff`.
+
+| Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `native-1` | 4.13 | 174 | 1.3 | 1.50 | 4,000 | 41 | 0 | 4,000 | 15.6 | 4,041 |
+| `native-fast-1` | 10.55 | 174 | 1.3 | 1.50 | 4,000 | 41 | 0 | 4,000 | 15.6 | 4,041 |
 
 ## Rust dependency sources
 
@@ -73,6 +87,13 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 | `7zip` | 459.07 [450.98–474.56] | 452.31 | 0.99 | 5.7 | 0.85× | -2.8% |
 | `bsdtar-tar` | 279.54 [278.06–288.50] | 278.31 | 1.00 | 4.5 | 1.40× | +0.1% |
 
+Counters from one extraction per engine at one thread, outside timed runs, at `6422dff`.
+
+| Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `native-1` | 50.67 | 5,314 | 44.2 | 3.25 | 3,981 | 997 | 0 | 4,400 | 64.4 | 4,978 |
+| `native-fast-1` | 35.17 | 5,302 | 44.2 | 3.25 | 3,981 | 997 | 0 | 3,981 | 64.4 | 4,978 |
+
 ## Silesia
 
 - 12 input files and 211,938,580 input bytes.
@@ -90,6 +111,13 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 | `bsdtar-zip` | 186.57 [186.04–202.69] | 185.10 | 0.99 | 4.7 | 1.00× | +1.2% |
 | `7zip` | 530.91 [530.21–544.15] | 529.18 | 1.00 | 4.4 | 0.35× | +0.2% |
 | `bsdtar-tar` | 27.67 [27.60–28.11] | 26.47 | 0.96 | 4.2 | 6.74× | +10.9% |
+
+Counters from one extraction per engine at one thread, outside timed runs, at `6422dff`.
+
+| Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `native-1` | 207.97 | 1,061 | 65.1 | 1.00 | 12 | 1 | 0 | 1,638 | 202.1 | 13 |
+| `native-fast-1` | 144.82 | 26 | 65.1 | 1.00 | 12 | 1 | 0 | 12 | 202.1 | 13 |
 
 ## One large compressible entry
 
@@ -109,6 +137,13 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 | `7zip` | 147.41 [146.56–147.97] | 145.97 | 0.99 | 3.9 | 0.39× | +0.5% |
 | `bsdtar-tar` | 32.46 [31.99–33.75] | 31.29 | 0.96 | 4.2 | 1.76× | +10.9% |
 
+Counters from one extraction per engine at one thread, outside timed runs, at `6422dff`.
+
+| Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `native-1` | 28.94 | 13 | 0.6 | 1.01 | 1 | 1 | 0 | 1,373 | 256.0 | 2 |
+| `native-fast-1` | 28.87 | 13 | 0.6 | 1.01 | 1 | 1 | 0 | 1,373 | 256.0 | 2 |
+
 ## One large random entry
 
 - 1 input file and 268,435,456 input bytes.
@@ -127,6 +162,13 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 | `7zip` | 83.19 [80.30–87.91] | 81.79 | 0.98 | 4.3 | 0.54× | +6.3% |
 | `bsdtar-tar` | 31.74 [31.04–34.35] | 30.32 | 0.96 | 4.2 | 1.42× | +11.3% |
 
+Counters from one extraction per engine at one thread, outside timed runs, at `6422dff`.
+
+| Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `native-1` | 5.63 | 4,101 | 256.1 | 1.00 | 1 | 1 | 0 | 4,099 | 256.0 | 2 |
+| `native-fast-1` | 5.62 | 4,101 | 256.1 | 1.00 | 1 | 1 | 0 | 4,099 | 256.0 | 2 |
+
 ## Mixed tree
 
 - 4,002 input files and 49,921,328 input bytes.
@@ -144,3 +186,10 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 | `bsdtar-zip` | 290.81 [286.15–316.53] | 289.51 | 1.00 | 5.6 | 1.00× | +0.5% |
 | `7zip` | 291.88 [291.05–295.81] | 290.31 | 0.99 | 5.7 | 1.00× | -0.0% |
 | `bsdtar-tar` | 239.84 [228.15–256.44] | 232.08 | 0.97 | 4.3 | 1.21× | +5.4% |
+
+Counters from one extraction per engine at one thread, outside timed runs, at `6422dff`.
+
+| Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `native-1` | 15.39 | 488 | 20.4 | 1.02 | 4,002 | 44 | 0 | 4,354 | 47.6 | 4,046 |
+| `native-fast-1` | 18.55 | 186 | 20.4 | 1.02 | 4,002 | 44 | 0 | 4,002 | 47.6 | 4,046 |
