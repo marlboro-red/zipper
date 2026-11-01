@@ -64,6 +64,19 @@ Both native ZIP modes run these checks before publishing any output:
 
 `tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
 
+## Mutation testing
+
+`tests/zip_fuzz.rs` mutates corpus archives with seeded bit flips, truncations, insertions and edge values written into header fields. Both engines extract every mutant. Each case must either fail and leave nothing in the destination's parent, or succeed with verification agreeing and exactly the declared bytes written. A panic fails the test.
+
+The gate runs 1,000 cases. To run more, or to replay a reported failure:
+
+```sh
+ZIPPER_FUZZ_CASES=300000 cargo test --release --test zip_fuzz
+ZIPPER_FUZZ_SEED=303 ZIPPER_FUZZ_CASES=1 cargo test --release --test zip_fuzz
+```
+
+A run of 300,000 cases on 2026-11-01 at this revision found no failure. In a 20,000-case sample, 3,588 of 40,000 extractions accepted their mutant, mostly through changed timestamps, attributes or comments. The rest were rejected. This is random mutation, not coverage-guided fuzzing. A coverage-guided `cargo fuzz` target needs a nightly toolchain and is not set up.
+
 ## Engines
 
 ### `native`
