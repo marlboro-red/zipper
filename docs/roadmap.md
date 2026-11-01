@@ -83,7 +83,7 @@ Scope:
 Exit checks:
 
 1. `docs/results.md` is generated, and the gate fails when it does not match the committed JSON. Done in the `results` gate step.
-2. Two sessions on one host record the session-to-session drift for each workload.
+2. Two sessions on one host record the session-to-session drift for each workload. Done on 2026-11-02 in the drift column of [Results](results.md). Most rows moved less than 5%, and rows near 25 ms moved up to 11%.
 3. One command reproduces every published number.
 
 ## M4. Small-file output path
