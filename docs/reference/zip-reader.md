@@ -42,17 +42,19 @@ Both native ZIP modes run these checks before publishing any output:
 - With a data descriptor, the bytes after the data are exactly one descriptor of 12, 16, 20 or 24 bytes, and its CRC and sizes match the central directory.
 - The local encryption flag is clear, and any local ZIP64 sizes match the central directory.
 - No local or central record has two ZIP64 extra fields. Readers disagree on which one wins.
+- Each Deflate stream ends exactly at its compressed size, so no bytes can hide after it.
+- A stored entry followed by a data descriptor does not contain a descriptor whose CRC and sizes match the bytes before it. A streaming reader would end the entry there. Descriptors that describe other data, as in a nested archive, are allowed.
 - Names are unique and safe, and no file is also used as a directory.
 
 `list` runs only the central-directory checks and the first-record check. It does not read local headers, so it does not detect bytes hidden between records.
 
-These checks do not yet cover bytes after a Deflate stream ends inside its declared size, or a fake data descriptor inside stored data. The [roadmap](../roadmap.md#m1-correctness-contract-for-zip) tracks them.
+A Unicode path extra field (`0x7075`) is not yet checked against the stored name. The [roadmap](../roadmap.md#m1-correctness-contract-for-zip) tracks them.
 
 ## Engines
 
 ### `native`
 
-`native` streams every entry.
+`native` streams every entry. Each worker reads compressed input in 64 KiB slices and decodes Deflate with zlib-rs into a 192 KiB output slice, both carved from one 256 KiB buffer.
 Streaming buffers scale with workers, not expanded file size.
 
 ### `native-fast`

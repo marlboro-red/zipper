@@ -346,8 +346,8 @@ fn zip64_values(mut extra: &[u8]) -> Result<Vec<u64>> {
 
 /// Require the local header to agree with the central directory, and the
 /// record to end exactly where the next record or the central directory
-/// starts. Returns the payload offset.
-fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Result<u64> {
+/// starts. Returns the payload offset and whether a data descriptor follows.
+fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Result<(u64, bool)> {
     reader.seek(SeekFrom::Start(item.header_start))?;
     let header = crate::number::<30>(reader)?;
     let read16 = |at: usize| u16::from_le_bytes([header[at], header[at + 1]]);
@@ -410,7 +410,7 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
     let tail = item.record_limit - data_end;
     if !deferred {
         ensure!(tail == 0, "ZIP has bytes between records");
-        return Ok(data_start);
+        return Ok((data_start, false));
     }
     // The descriptor fills the rest of the record. Each length has one form.
     let (signature, wide) = match tail {
@@ -440,7 +440,183 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
             && field(4 + width, width) == item.entry.size,
         "ZIP data descriptor disagrees with central directory"
     );
-    Ok(data_start)
+    Ok((data_start, true))
+}
+
+/// libdeflate whole-buffer decoding that also requires the Deflate stream to
+/// end exactly at the end of its input. Trailing bytes inside an entry's
+/// compressed size could hold a record that only a streaming reader sees.
+struct ExactInflater(std::ptr::NonNull<libdeflate_sys::libdeflate_decompressor>);
+
+impl ExactInflater {
+    fn new() -> Self {
+        // SAFETY: the allocator takes no arguments and returns null on failure.
+        let decompressor = unsafe { libdeflate_sys::libdeflate_alloc_decompressor() };
+        Self(std::ptr::NonNull::new(decompressor).expect("libdeflate decompressor allocation"))
+    }
+
+    fn inflate(&mut self, input: &[u8], output: &mut [u8]) -> Result<usize> {
+        let (mut read, mut written) = (0, 0);
+        // SAFETY: the decompressor is live until drop and used by one thread.
+        // Both slices are valid for their stated lengths, and libdeflate writes
+        // at most `output.len()` bytes.
+        let result = unsafe {
+            libdeflate_sys::libdeflate_deflate_decompress_ex(
+                self.0.as_ptr(),
+                input.as_ptr().cast(),
+                input.len(),
+                output.as_mut_ptr().cast(),
+                output.len(),
+                &mut read,
+                &mut written,
+            )
+        };
+        ensure!(
+            result == libdeflate_sys::libdeflate_result_LIBDEFLATE_SUCCESS,
+            "invalid ZIP Deflate data"
+        );
+        ensure!(
+            read == input.len(),
+            "ZIP Deflate stream ends before its compressed size"
+        );
+        Ok(written)
+    }
+}
+
+impl Drop for ExactInflater {
+    fn drop(&mut self) {
+        // SAFETY: the pointer came from libdeflate_alloc_decompressor and is
+        // freed exactly once.
+        unsafe { libdeflate_sys::libdeflate_free_decompressor(self.0.as_ptr()) }
+    }
+}
+
+/// Finds a data descriptor hidden inside stored data. A streaming reader ends
+/// a stored entry at the first descriptor signature whose CRC and sizes match
+/// the bytes before it, so such a match could hide a record after it. Nested
+/// archives contain descriptors for their own entries, which do not match.
+#[derive(Default)]
+struct DescriptorScan {
+    /// Unscanned bytes kept from earlier chunks, and this chunk.
+    window: Vec<u8>,
+    /// CRC state and entry offset at the start of `window`.
+    crc: crc32fast::Hasher,
+    offset: u64,
+}
+
+impl DescriptorScan {
+    /// Signature plus CRC plus two 64-bit sizes.
+    const LONGEST: usize = 4 + 4 + 16;
+
+    fn feed(&mut self, chunk: &[u8]) -> Result<()> {
+        self.window.extend_from_slice(chunk);
+        // Keep the last 3 bytes, which may start a signature split by a read.
+        let mut retain_from = self.window.len().saturating_sub(3);
+        let mut scanned = 0;
+        while let Some(found) = self.window[scanned..]
+            .windows(4)
+            .position(|bytes| bytes == b"PK\x07\x08")
+        {
+            let at = scanned + found;
+            let fields = &self.window[at + 4..];
+            if fields.len() < Self::LONGEST - 4 {
+                // Wait for the rest of this descriptor before judging it.
+                retain_from = at;
+                break;
+            }
+            let mut crc = self.crc.clone();
+            crc.update(&self.window[..at]);
+            let (crc, length) = (crc.finalize() as u64, self.offset + at as u64);
+            let narrow =
+                |at: usize| u32::from_le_bytes(fields[at..at + 4].try_into().unwrap()) as u64;
+            let wide = |at: usize| u64::from_le_bytes(fields[at..at + 8].try_into().unwrap());
+            let describes_prefix = narrow(0) == crc
+                && ((narrow(4), narrow(8)) == (length, length)
+                    || (wide(4), wide(12)) == (length, length));
+            ensure!(
+                !describes_prefix,
+                "stored ZIP entry contains a data descriptor for its own prefix"
+            );
+            scanned = at + 1;
+        }
+        self.crc.update(&self.window[..retain_from]);
+        self.offset += retain_from as u64;
+        self.window.drain(..retain_from);
+        Ok(())
+    }
+}
+
+/// Streams one entry's payload to `sink`, checking its CRC and exact length.
+/// Deflate input must end exactly at the compressed size. A stored entry
+/// followed by a data descriptor must not hide a matching descriptor inside
+/// its data.
+fn stream_entry(
+    input: &mut impl Read,
+    item: &Item,
+    descriptor: bool,
+    buffer: &mut [u8],
+    mut sink: impl FnMut(&[u8]) -> Result<()>,
+) -> Result<()> {
+    let mut crc = crc32fast::Hasher::new();
+    let mut written = 0u64;
+    let mut emit = |bytes: &[u8]| -> Result<()> {
+        written = written
+            .checked_add(bytes.len() as u64)
+            .filter(|&total| total <= item.entry.size)
+            .context("ZIP decoded size exceeds metadata")?;
+        crc.update(bytes);
+        sink(bytes)
+    };
+    if item.method == CompressionMethod::Stored {
+        ensure!(
+            item.compressed == item.entry.size,
+            "stored ZIP entry sizes differ"
+        );
+        let mut scan = descriptor.then(DescriptorScan::default);
+        loop {
+            let length = input.read(buffer)?;
+            if length == 0 {
+                break;
+            }
+            let chunk = &buffer[..length];
+            if let Some(scan) = &mut scan {
+                // Small pieces keep the scan window near 4 KiB per worker.
+                chunk.chunks(4096).try_for_each(|piece| scan.feed(piece))?;
+            }
+            emit(chunk)?;
+        }
+    } else {
+        let (input_buffer, output_buffer) = buffer.split_at_mut(64 * 1024);
+        let mut inflater = flate2::Decompress::new(false);
+        let (mut start, mut end) = (0, 0);
+        loop {
+            if start == end {
+                end = input.read(input_buffer)?;
+                start = 0;
+            }
+            let (consumed, produced) = (inflater.total_in(), inflater.total_out());
+            let status = inflater.decompress(
+                &input_buffer[start..end],
+                output_buffer,
+                flate2::FlushDecompress::None,
+            )?;
+            let consumed = (inflater.total_in() - consumed) as usize;
+            let produced = (inflater.total_out() - produced) as usize;
+            start += consumed;
+            emit(&output_buffer[..produced])?;
+            if status == flate2::Status::StreamEnd {
+                break;
+            }
+            ensure!(consumed > 0 || produced > 0, "truncated ZIP Deflate stream");
+        }
+        ensure!(
+            inflater.total_in() == item.compressed,
+            "ZIP Deflate stream ends before its compressed size"
+        );
+    }
+    ensure!(written == item.entry.size, "ZIP decoded size mismatch");
+    ensure!(crc.finalize() == item.crc, "ZIP CRC mismatch");
+    Ok(())
 }
 
 /// List validated central-directory entries; payload CRCs are not checked.
@@ -544,15 +720,14 @@ pub fn read_archive_with_options(
         work.par_iter().try_for_each_init(
             || {
                 (
-                    archive.clone(),
                     archive.clone().into_inner(),
                     vec![0u8; 256 * 1024],
-                    fast.then(libdeflater::Decompressor::new),
+                    fast.then(ExactInflater::new),
                 )
             },
-            |(archive, raw, buffer, codec), &index| {
+            |(raw, buffer, codec), &index| {
                 let item = &items[index];
-                let data_start = check_local_header(raw, item)?;
+                let (data_start, descriptor) = check_local_header(raw, item)?;
                 // Never wait for memory while holding worker resources. If a
                 // reservation cannot fit now, this entry uses streaming instead.
                 // Declare the lease before buffers so it outlives them on errors.
@@ -573,19 +748,8 @@ pub fn read_archive_with_options(
                         None
                     };
                 let buffered = reservation.is_some();
-                let mut source = if buffered {
-                    archive.by_index_raw(index)?
-                } else {
-                    archive.by_index(index)?
-                };
-                ensure!(
-                    source.size() == item.entry.size
-                        && source.crc32() == item.crc
-                        && source.compressed_size() == item.compressed
-                        && source.compression() == item.method
-                        && source.data_start() == Some(data_start),
-                    "ZIP changed during extraction"
-                );
+                raw.seek(SeekFrom::Start(data_start))?;
+                let mut source = Read::take(&mut *raw, item.compressed);
                 let mut output = if let Some(temp) = &staging {
                     if !item.entry.directory {
                         Some(BufWriter::new(
@@ -606,10 +770,7 @@ pub fn read_archive_with_options(
                     let mut compressed = entry_buffer(item.compressed as usize)?;
                     let mut decoded = entry_buffer(item.entry.size as usize)?;
                     source.read_exact(&mut compressed)?;
-                    let length = codec
-                        .as_mut()
-                        .unwrap()
-                        .deflate_decompress(&compressed, &mut decoded)?;
+                    let length = codec.as_mut().unwrap().inflate(&compressed, &mut decoded)?;
                     ensure!(
                         length as u64 == item.entry.size,
                         "ZIP decoded size mismatch"
@@ -630,24 +791,12 @@ pub fn read_archive_with_options(
                     }
                     return Ok(());
                 }
-                let mut written = 0u64;
-                loop {
-                    let len = source.read(buffer)?;
-                    if len == 0 {
-                        break;
-                    }
-                    written = written
-                        .checked_add(len as u64)
-                        .context("ZIP size overflow")?;
-                    ensure!(
-                        written <= item.entry.size,
-                        "ZIP decoded size exceeds metadata"
-                    );
+                stream_entry(&mut source, item, descriptor, buffer, |bytes| {
                     if let Some(output) = &mut output {
-                        output.write_all(&buffer[..len])?;
+                        output.write_all(bytes)?;
                     }
-                }
-                ensure!(written == item.entry.size, "ZIP decoded size mismatch");
+                    Ok(())
+                })?;
                 if let Some(output) = &mut output {
                     output.flush()?;
                 }
@@ -726,5 +875,42 @@ mod budget_tests {
         assert!(entry_buffer(usize::MAX).is_err());
         assert!(budget.reserve(usize::MAX).is_none());
         assert!(budget.reserve(8).is_some());
+    }
+}
+
+#[cfg(test)]
+mod descriptor_scan_tests {
+    use super::*;
+
+    fn with_descriptor(prefix: &[u8], rest: &[u8]) -> Vec<u8> {
+        let mut data = prefix.to_vec();
+        data.extend_from_slice(b"PK\x07\x08");
+        data.extend_from_slice(&crc32fast::hash(prefix).to_le_bytes());
+        data.extend_from_slice(&(prefix.len() as u32).to_le_bytes());
+        data.extend_from_slice(&(prefix.len() as u32).to_le_bytes());
+        data.extend_from_slice(rest);
+        data
+    }
+
+    fn scan_in_pieces(data: &[u8], piece: usize) -> Result<()> {
+        let mut scan = DescriptorScan::default();
+        data.chunks(piece).try_for_each(|chunk| scan.feed(chunk))
+    }
+
+    #[test]
+    fn finds_a_matching_descriptor_at_any_read_size() {
+        let hostile = with_descriptor(b"prefix bytes", &[0; 40]);
+        for piece in [1, 2, 3, 5, 23, 24, 1024] {
+            assert!(scan_in_pieces(&hostile, piece).is_err(), "piece {piece}");
+        }
+    }
+
+    #[test]
+    fn ignores_descriptors_that_describe_other_data() {
+        let mut nested = b"outer ".to_vec();
+        nested.extend_from_slice(&with_descriptor(b"inner", &[0; 40]));
+        for piece in [1, 2, 3, 5, 23, 24, 1024] {
+            assert!(scan_in_pieces(&nested, piece).is_ok(), "piece {piece}");
+        }
     }
 }

@@ -599,3 +599,110 @@ fn every_descriptor_form_extracts() {
         }
     }
 }
+
+#[test]
+fn entries_hold_nothing_beyond_their_own_data() {
+    // A complete local record that no central entry points to.
+    let hidden = zip_bytes(&[stored("evil.txt", b"hidden")], &[])[..30 + 8 + 6].to_vec();
+    let text = b"visible ".repeat(64);
+    let mut trailing = deflated("a.txt", &text);
+    trailing.payload.extend_from_slice(&hidden);
+    assert_rejected(
+        "record after the Deflate stream ends",
+        std::slice::from_ref(&trailing),
+    );
+    assert_rejected(
+        "record after the Deflate stream ends, with a descriptor",
+        &[Raw {
+            descriptor: true,
+            ..trailing
+        }],
+    );
+    let prefix = b"innocent\n";
+    let mut smuggled = prefix.to_vec();
+    smuggled.extend_from_slice(b"PK\x07\x08");
+    smuggled.extend_from_slice(&crc32fast::hash(prefix).to_le_bytes());
+    smuggled.extend_from_slice(&(prefix.len() as u32).to_le_bytes());
+    smuggled.extend_from_slice(&(prefix.len() as u32).to_le_bytes());
+    smuggled.extend_from_slice(&hidden);
+    assert_rejected(
+        "fake descriptor inside stored data",
+        &[Raw {
+            descriptor: true,
+            ..stored("a.txt", &smuggled)
+        }],
+    );
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        let honest = Raw {
+            descriptor: true,
+            ..stored("stored.bin", &text)
+        };
+        write_zip(
+            &archive,
+            &[honest, stored("signature.bin", b"PK\x07\x08 is fine here")],
+        );
+        let destination = root.path().join("out");
+        read(&archive, Some(&destination)).unwrap();
+        assert_eq!(fs::read(destination.join("stored.bin")).unwrap(), text);
+    }
+}
+
+/// Data that a streaming reader would end at a fake descriptor: `prefix`,
+/// then a descriptor that matches it, then `rest`.
+fn fake_descriptor(prefix: &[u8], wide: bool, rest: &[u8]) -> Vec<u8> {
+    let mut data = prefix.to_vec();
+    data.extend_from_slice(b"PK\x07\x08");
+    data.extend_from_slice(&crc32fast::hash(prefix).to_le_bytes());
+    for _ in 0..2 {
+        if wide {
+            data.extend_from_slice(&(prefix.len() as u64).to_le_bytes());
+        } else {
+            data.extend_from_slice(&(prefix.len() as u32).to_le_bytes());
+        }
+    }
+    data.extend_from_slice(rest);
+    data
+}
+
+#[test]
+fn stored_descriptor_signatures_are_judged_by_their_fields() {
+    let hidden = zip_bytes(&[stored("evil.txt", b"hidden")], &[])[..30 + 8 + 6].to_vec();
+    let boundary = vec![b'x'; 256 * 1024 - 2];
+    for (case, data) in [
+        (
+            "ZIP64 fake descriptor",
+            fake_descriptor(b"innocent\n", true, &hidden),
+        ),
+        (
+            "fake descriptor split across reads",
+            fake_descriptor(&boundary, false, &hidden),
+        ),
+    ] {
+        assert_rejected(
+            case,
+            &[Raw {
+                descriptor: true,
+                ..stored("a.txt", &data)
+            }],
+        );
+    }
+    // A nested archive written by a streaming tool contains descriptors that
+    // describe its own entries, not the outer prefix.
+    let mut nested = b"PK\x03\x04 inner header ".to_vec();
+    nested.extend_from_slice(&fake_descriptor(b"inner data", false, b" more")[..]);
+    nested.splice(0..0, b"outer prefix ".iter().copied());
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        let entry = Raw {
+            descriptor: true,
+            ..stored("nested.zip", &nested)
+        };
+        write_zip(&archive, &[entry]);
+        let destination = root.path().join("out");
+        read(&archive, Some(&destination)).unwrap();
+        assert_eq!(fs::read(destination.join("nested.zip")).unwrap(), nested);
+    }
+}

@@ -39,11 +39,9 @@ Scope:
 - A hostile collection with a test for each case. It covers path traversal, absolute paths, drive letters, duplicate names, names that collide by case, overlapping entries, a zero declared size hiding real data, local and central headers that disagree, truncation and inconsistent ZIP64 fields.
 - Fuzz targets for the central-directory and local-header parsers.
 - Local headers that agree with the central directory, and records that do not overlap. Done in the [local-header check](../benchmarks/native-zip/local-header-check/README.md).
-- Open findings from its review, where a streaming reader could see a hidden record that Zipper does not:
-  - bytes after a Deflate stream ends inside its declared size
-  - a fake data descriptor inside stored data
-  - a Unicode path extra field (`0x7075`) that names an entry differently from its stored name
+- One finding from its review is still open. A Unicode path extra field (`0x7075`) can name an entry differently from its stored name.
 - Records that tile the archive, with checked data descriptors, the local encryption flag and local ZIP64 sizes. Done in the [record layout check](../benchmarks/native-zip/record-layout/README.md).
+- Deflate streams that end exactly at their compressed size, and stored entries that cannot hide a descriptor. Done in [exact decoding](../benchmarks/native-zip/exact-decoding/README.md).
 - A limit on total extracted bytes, with a documented default.
 
 Exit checks:

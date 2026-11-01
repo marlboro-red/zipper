@@ -582,6 +582,8 @@ dependencies = [
  "anyhow",
  "clap",
  "crc32fast",
+ "flate2",
+ "libdeflate-sys",
  "libdeflater",
  "rayon",
  "tempfile",
