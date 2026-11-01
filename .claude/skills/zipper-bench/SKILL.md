@@ -41,7 +41,7 @@ Answer each question from the JSON, not from memory.
 
 1. Write the record with the `zipper-docs` skill and its six fixed headings.
 2. Put the verdict sentence under the title. It carries the caveat that matters most, not only the best ratio.
-3. Add a row to `benchmarks/README.md`. Update `docs/results.md` only from the record.
+3. Add a row to `benchmarks/README.md`. Never edit `docs/results.md`. Run `cargo xtask bench` to remeasure the scoreboard and regenerate it.
 4. Keep or revert the change. Log a reverted experiment as carefully as a kept one.
 
 ## Signs you skipped this

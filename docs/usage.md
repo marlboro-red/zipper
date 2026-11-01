@@ -158,6 +158,7 @@ These records compare Zipper with other tools:
 
 - [V2 results and experiment decisions](../benchmarks/v2/README.md).
 - [Matched-sync v2 comparison against tar+zstd and tar+pzstd](../benchmarks/v2/zstd-fullsync.md).
-- [Results](results.md), including the decompression and ratio Pareto curve with classic formats.
+- [Results](results.md), the generated scoreboard of fixed workloads.
+- [Silesia extraction time versus compression ratio](../benchmarks/silesia/README.md), including the Pareto curve with classic formats.
 
 The [roadmap](roadmap.md) lists the next ZIP extraction work. The [research agenda](research.md) covers native-format ideas such as similarity ordering and dictionaries.

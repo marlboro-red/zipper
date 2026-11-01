@@ -30,6 +30,7 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 - Expect the gate to format, lint, test, and build a release binary. On macOS and Linux it also lints the Windows build, which needs `rustup target add x86_64-pc-windows-gnu` once. It also checks a byte-exact round trip of `.zipper` and ZIP extraction, selected-path extraction, and truncated input cleanup.
 - Use `scripts/compare_revisions.py` for direct byte-verified revision comparisons.
 - Run benchmarks on Unix. The benchmarks are Unix-oriented.
+- Never edit `docs/results.md`. `cargo xtask bench` measures the fixed workloads and regenerates it, and the gate fails when it differs from `benchmarks/scoreboard/`.
 
 ## Comments
 

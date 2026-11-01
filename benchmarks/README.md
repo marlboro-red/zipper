@@ -1,6 +1,6 @@
 # Experiment log
 
-Every performance experiment has one record in this directory, with its raw data beside it. This page lists them, newest first within each area. For the current headline numbers, read [Results](../docs/results.md).
+Every performance experiment has one record in this directory, with its raw data beside it. This page lists them, newest first within each area. For the current headline numbers, read [Results](../docs/results.md). `cargo xtask bench` generates that page from the JSON in `scoreboard/`.
 
 All records are local measurements. Each one names its machine, revision, run count and verification.
 

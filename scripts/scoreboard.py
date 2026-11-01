@@ -63,6 +63,17 @@ def digest_manifest(result):
     result['manifest_sha256'] = hashlib.sha256(text).hexdigest()
 
 
+def previous_session(path, result):
+    """Medians of the last session that measured the same Zipper binary, for drift."""
+    if not path.exists():
+        return None
+    earlier = json.loads(path.read_text(encoding='utf-8'))
+    if earlier['zipper_sha256'] != result['zipper_sha256']:
+        return None
+    return {'recorded': earlier['recorded'], 'revision': earlier['revision'],
+            'median_seconds': {name: row['median_seconds'] for name, row in earlier['results'].items()}}
+
+
 def run(args):
     dirty = [line for line in git('status', '--porcelain').splitlines()
              if not line[3:].startswith(('benchmarks/scoreboard/', 'docs/results.md'))]
@@ -90,6 +101,7 @@ def run(args):
         result['revision'] = git('rev-parse', 'HEAD')
         result['tree_clean'] = not dirty
         result['recorded'] = datetime.date.today().isoformat()
+        result['previous_session'] = previous_session(SCOREBOARD / f'{name}.json', result)
         (SCOREBOARD / f'{name}.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
     RESULTS.write_text(render(), encoding='utf-8')
 
@@ -106,14 +118,17 @@ def table(result):
     rows = result['results']
     order = [name for name in ROW_ORDER if name in rows] + sorted(set(rows) - set(ROW_ORDER))
     parity = rows.get(PARITY_ROW)
-    lines = ['| Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time |',
-             '| --- | ---: | ---: | ---: | ---: | ---: |']
+    earlier = (result.get('previous_session') or {}).get('median_seconds', {})
+    lines = ['| Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time '
+             '| Drift from previous session |',
+             '| --- | ---: | ---: | ---: | ---: | ---: | ---: |']
     for name in order:
         row = rows[name]
         ratio = f"{parity['median_seconds'] / row['median_seconds']:.2f}×" if parity else 'no bsdtar row'
+        drift = f"{row['median_seconds'] / earlier[name] - 1:+.1%}" if name in earlier else 'none recorded'
         lines.append(f"| `{name}` | {ms(row['median_seconds'])} [{ms(row['min_seconds'])}–{ms(row['max_seconds'])}] "
                      f"| {ms(row['median_cpu_seconds'])} | {row['cpu_per_wall']:.2f} "
-                     f"| {row['peak_rss_bytes'] / 2**20:.1f} | {ratio} |")
+                     f"| {row['peak_rss_bytes'] / 2**20:.1f} | {ratio} | {drift} |")
     return lines
 
 
@@ -131,7 +146,9 @@ def render():
              '- `native` and `native-fast` rows are Zipper ZIP engines at 1 and 4 threads.',
              '  `bsdtar-zip` restores default metadata, which matches what the native engines restore.',
              '  `bsdtar-tar` uses reduced-metadata flags. `7zip` restores times and attributes.',
-             '- Peak memory is the peak resident size of one process. Caches are warm.', '']
+             '- Peak memory is the peak resident size of one process. Caches are warm.',
+             '- Drift compares each median with the previous session that measured the same Zipper binary.',
+             '  It shows how far one host moves between sessions, so a change smaller than the drift is noise.', '']
     found = {path.stem: json.loads(path.read_text(encoding='utf-8'))
              for path in sorted(SCOREBOARD.glob('*.json'))}
     missing = [name for name in WORKLOADS if name not in found]

@@ -142,6 +142,7 @@ fn gate(full: bool) -> Result<()> {
         ("fmt", || cargo(&["fmt", "--all", "--check"])),
         ("docs", || docs::lint(&root())),
         ("comments", || comments::lint(&root())),
+        ("results", || scoreboard(&["check"])),
         ("clippy", || {
             cargo(&[
                 "clippy",

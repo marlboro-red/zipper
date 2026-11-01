@@ -82,7 +82,7 @@ Scope:
 
 Exit checks:
 
-1. `docs/results.md` is generated, and the gate fails when it does not match the committed JSON.
+1. `docs/results.md` is generated, and the gate fails when it does not match the committed JSON. Done in the `results` gate step.
 2. Two sessions on one host record the session-to-session drift for each workload.
 3. One command reproduces every published number.
 
