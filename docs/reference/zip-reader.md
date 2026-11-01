@@ -45,10 +45,9 @@ Both native ZIP modes run these checks before publishing any output:
 - Each Deflate stream ends exactly at its compressed size, so no bytes can hide after it.
 - A stored entry followed by a data descriptor does not contain a descriptor whose CRC and sizes match the bytes before it. A streaming reader would end the entry there. Descriptors that describe other data, as in a nested archive, are allowed.
 - Names are unique and safe, and no file is also used as a directory.
+- A Unicode path extra field (`0x7075`), local or central, names the entry exactly as its stored name does. The `zip` crate renames an entry from the central field and some streaming readers use the local one, so a different name is rejected and left to the compatibility backend. Old archives that pair a CP437 stored name with the same name in UTF-8 are rejected too.
 
-`list` runs only the central-directory checks and the first-record check. It does not read local headers, so it does not detect bytes hidden between records.
-
-A Unicode path extra field (`0x7075`) is not yet checked against the stored name. The [roadmap](../roadmap.md#m1-correctness-contract-for-zip) tracks them.
+`list` runs only the central-directory checks, including the central Unicode path and ZIP64 field checks, and the first-record check. It does not read local headers, so it does not detect bytes hidden between records or a Unicode path field present only in a local header. `test` and `extract` detect both.
 
 ## Engines
 

@@ -706,3 +706,68 @@ fn stored_descriptor_signatures_are_judged_by_their_fields() {
         assert_eq!(fs::read(destination.join("nested.zip")).unwrap(), nested);
     }
 }
+
+/// An Info-ZIP Unicode path field (0x7075) naming `name` for stored name `stored`.
+fn unicode_path(stored: &[u8], name: &str) -> Vec<u8> {
+    let mut field = vec![0x75, 0x70];
+    field.extend_from_slice(&((1 + 4 + name.len()) as u16).to_le_bytes());
+    field.push(1);
+    field.extend_from_slice(&crc32fast::hash(stored).to_le_bytes());
+    field.extend_from_slice(name.as_bytes());
+    field
+}
+
+#[test]
+fn unicode_path_fields_cannot_rename_entries() {
+    let renaming = unicode_path(b"a.txt", "renamed.txt");
+    assert_rejected(
+        "central Unicode path renames the entry",
+        &[Raw {
+            central_extra: renaming.clone(),
+            ..stored("a.txt", b"x")
+        }],
+    );
+    assert_rejected(
+        "local Unicode path renames the entry",
+        &[Raw {
+            local_extra: renaming,
+            ..stored("a.txt", b"x")
+        }],
+    );
+    assert_rejected(
+        "directory renamed by a Unicode path",
+        &[Raw {
+            central_extra: unicode_path(b"d/", "evil/"),
+            ..stored("d/", b"")
+        }],
+    );
+    let same_field = unicode_path(b"a.txt", "a.txt");
+    assert_rejected(
+        "two Unicode path fields",
+        &[Raw {
+            central_extra: [same_field.clone(), unicode_path(b"a.txt", "evil.txt")].concat(),
+            ..stored("a.txt", b"x")
+        }],
+    );
+    assert_rejected(
+        "short Unicode path field",
+        &[Raw {
+            central_extra: vec![0x75, 0x70, 4, 0, 1, 0, 0, 0],
+            ..stored("a.txt", b"x")
+        }],
+    );
+    let same = same_field;
+    for read in [read_archive as Reader, read_archive_fast as Reader] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        let entry = Raw {
+            central_extra: same.clone(),
+            local_extra: same.clone(),
+            ..stored("a.txt", b"x")
+        };
+        write_zip(&archive, &[entry]);
+        let destination = root.path().join("out");
+        read(&archive, Some(&destination)).unwrap();
+        assert_eq!(fs::read(destination.join("a.txt")).unwrap(), b"x");
+    }
+}

@@ -171,7 +171,7 @@ fn preflight(file: &mut BufReader<File>) -> Result<u64> {
     // Validate the complete raw record chain, including comments and extras.
     file.seek(SeekFrom::Start(start))?;
     let mut position = start;
-    let mut extra_field = Vec::new();
+    let (mut name_field, mut extra_field) = (Vec::new(), Vec::new());
     for _ in 0..count {
         ensure!(
             directory_end - position >= 46,
@@ -186,10 +186,12 @@ fn preflight(file: &mut BufReader<File>) -> Result<u64> {
             position <= directory_end,
             "ZIP central entry exceeds directory"
         );
-        file.seek_relative(name as i64)?;
+        name_field.resize(name as usize, 0);
+        file.read_exact(&mut name_field)?;
         extra_field.resize(extra as usize, 0);
         file.read_exact(&mut extra_field)?;
         zip64_values(&extra_field)?;
+        check_unicode_path(&extra_field, &name_field)?;
         file.seek_relative(comment as i64)?;
     }
     ensure!(position == directory_end, "ZIP directory count mismatch");
@@ -320,6 +322,27 @@ fn scan(archive: &ZipArchive<crate::zip_reader::Reader>) -> Result<Vec<Item>> {
     Ok(items)
 }
 
+/// Rejects an Info-ZIP Unicode path field (ID 0x7075) that names the entry
+/// differently from its stored name. Readers disagree on whether to honor it.
+fn check_unicode_path(mut extra: &[u8], stored_name: &[u8]) -> Result<()> {
+    while extra.len() >= 4 {
+        let id = u16::from_le_bytes([extra[0], extra[1]]);
+        let length = u16::from_le_bytes([extra[2], extra[3]]) as usize;
+        let body = extra
+            .get(4..4 + length)
+            .context("truncated ZIP extra field")?;
+        if id == 0x7075 {
+            ensure!(body.len() >= 5, "malformed ZIP Unicode path field");
+            ensure!(
+                body[5..] == *stored_name,
+                "ZIP Unicode path field renames an entry; use the compatibility backend"
+            );
+        }
+        extra = &extra[4 + length..];
+    }
+    Ok(())
+}
+
 /// Values of the ZIP64 extra field (ID 1), if present. Readers disagree on
 /// which of two ZIP64 fields wins, so a second one is rejected.
 fn zip64_values(mut extra: &[u8]) -> Result<Vec<u64>> {
@@ -380,6 +403,7 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
     let (crc, mut compressed, mut size) = (read32(14), read32(18) as u64, read32(22) as u64);
     // APPNOTE 4.5.3: the local ZIP64 field holds both sizes, original first.
     // Accept the shorter form some writers use, in order.
+    check_unicode_path(&extra, &name)?;
     let zip64 = zip64_values(&extra)?;
     let marked = |value: u64| value == u32::MAX as u64;
     let (original, packed) = match zip64[..] {
