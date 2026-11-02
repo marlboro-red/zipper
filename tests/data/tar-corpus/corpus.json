@@ -1,0 +1,838 @@
+{
+ "missing_tools": [],
+ "python": "3.14.6",
+ "readers": [
+  "python",
+  "gnutar",
+  "bsdtar",
+  "7zip"
+ ],
+ "writers": {
+  "bsdtar-gnutar-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "bsdtar-gnutar-long": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "bsdtar-gnutar-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "failed: CalledProcessError",
+    "python": "ok"
+   }
+  },
+  "bsdtar-pax-gzip": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "failed: CalledProcessError",
+    "python": "ok"
+   }
+  },
+  "bsdtar-pax-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "bsdtar-pax-long": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [
+    "7zip"
+   ],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "bsdtar-pax-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "failed: CalledProcessError",
+    "python": "ok"
+   }
+  },
+  "bsdtar-pax-xz": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "failed: CalledProcessError",
+    "python": "ok"
+   }
+  },
+  "bsdtar-ustar-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "bsdtar-ustar-long": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "bsdtar-ustar-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "failed: CalledProcessError",
+    "python": "ok"
+   }
+  },
+  "bsdtar-v7tar-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "bsdtar-v7tar-long": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "bsdtar-v7tar-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "failed: CalledProcessError",
+    "python": "ok"
+   }
+  },
+  "gnutar-gnu-gzip": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-gnu-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-gnu-long": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-gnu-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-oldgnu-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-oldgnu-long": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-oldgnu-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-pax-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-pax-long": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-pax-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-pax-xz": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-pax-zstd": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-ustar-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-ustar-long": {
+   "refused": "CalledProcessError"
+  },
+  "gnutar-ustar-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-v7-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "gnutar-v7-long": {
+   "refused": "CalledProcessError"
+  },
+  "gnutar-v7-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-gnu-gzip-members": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-gnu-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-gnu-long": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-gnu-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-gnu-zstd": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-pax-gzip": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-pax-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-pax-long": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-pax-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-pax-xz": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-ustar-links": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: CalledProcessError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
+  "python-ustar-long": {
+   "refused": "ValueError"
+  },
+  "python-ustar-short": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  }
+ }
+}
