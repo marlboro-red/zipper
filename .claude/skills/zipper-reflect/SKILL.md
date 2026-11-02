@@ -38,6 +38,9 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | Comments that excuse code instead of reshaping it | `cargo xtask lint-comments` in the gate, and the `zipper-comments` agent |
 | A hand-written CI watcher reading an empty run ID | `cargo xtask ci-wait`, which finds the run by full SHA and refuses an unpushed HEAD |
 | `rm -rf` on paths built from unguarded variables, and deletions inside the repository | the `.claude/hooks/guard_destructive.py` PreToolUse hook |
+| A relative `rm` after a `cd` to an empty variable, which runs in the home folder | the same hook, with its cases in `.claude/hooks/test_guard_destructive.py` run by the `hooks` gate step |
+| Archive routing that trusted 7-Zip's format detection or parsed its output | the signature allowlist in `src/compat.rs` passes `-t`, never parses output and never falls back, with one test per bypass in `tests/cli.rs` |
+| Verdict lines rewritten because the sentence lint ignored a period inside `**` | `sentences_end_inside_emphasis_and_brackets` in `xtask/src/docs.rs` |
 | A commit message citing a hash typed from memory | `.githooks/commit-msg` and `cargo xtask lint-commits` in pre-push |
 | Published numbers that their revision cannot reproduce | the `results` gate step rejects scoreboard JSON measured on a dirty tree |
 | A hand-edited results page | the `results` gate step renders `docs/results.md` from the JSON and compares |

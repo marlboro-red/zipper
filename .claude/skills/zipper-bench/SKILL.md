@@ -32,7 +32,7 @@ Answer each question from the JSON, not from memory.
 
 1. **What limits it?** Name the limiter, such as decode CPU, output syscalls, input reads or memory. Cite a profile or trace. If you cannot name it, the verdict is inconclusive.
 2. **Is it like for like?** Same archive bytes, thread count, metadata work, sync and session. The JSON `parity` section lists what remains unmatched. Put every remaining difference in Limits.
-3. **Does it beat the spread?** Overlapping ranges mean no established difference. A median gap inside the session-to-session drift is not a result. The same archive has differed by 11% between sessions.
+3. **Does it beat the spread?** Overlapping ranges mean no established difference. A median gap inside the session-to-session drift is not a result. The same archive has differed by 11% between sessions. On hosted CI runners, compare only rows from one run, because two Windows runs differed by nearly 2×.
 4. **Did anything fail?** The scripts stop on a failed command or a byte mismatch. Check that the run finished every round.
 5. **Does it hold by default?** If a gain needs a non-default flag, budget or platform, the verdict says so.
 6. **Is it the user's path?** Report end-to-end extraction next to any component number.
