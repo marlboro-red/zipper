@@ -138,6 +138,27 @@ fn ci_wait() -> Result<()> {
     Ok(())
 }
 
+const MACOS_SYSTEM_ZLIB: &str = "/usr/lib/libz.1.dylib";
+
+// RECORD(benchmarks/native-zip/system-zlib/README.md): Apple's zlib is the measured decoder.
+fn ensure_system_zlib() -> Result<()> {
+    if !cfg!(target_os = "macos") {
+        return Ok(());
+    }
+    let binary = root().join("target/release/zipper");
+    let libraries = output("otool", &["-L", &binary.to_string_lossy()])?;
+    let zlibs: Vec<&str> = libraries
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|library| library.contains("libz."))
+        .collect();
+    ensure!(
+        zlibs == [MACOS_SYSTEM_ZLIB],
+        "release binary links {zlibs:?}, not {MACOS_SYSTEM_ZLIB}; unset PKG_CONFIG_PATH entries that point at another zlib"
+    );
+    Ok(())
+}
+
 type Step = fn() -> Result<()>;
 
 fn gate(full: bool) -> Result<()> {
@@ -160,7 +181,8 @@ fn gate(full: bool) -> Result<()> {
         ("test", || cargo(&["test", "--workspace", "--locked"])),
         ("windows clippy", windows_clippy),
         ("release build", || {
-            cargo(&["build", "--release", "--locked", "--package", "zipper"])
+            cargo(&["build", "--release", "--locked", "--package", "zipper"])?;
+            ensure_system_zlib()
         }),
         ("release round trip", round_trip),
     ];

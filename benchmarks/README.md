@@ -18,6 +18,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-02 | [System zlib for streamed Deflate on macOS](native-zip/system-zlib/README.md) | Kept on macOS. Silesia extracts 1.23× faster at one thread and 1.18× at four, with 22% less CPU at four. Linux and Windows unchanged. |
 | 2026-11-02 | [Write-behind for large entries](native-zip/write-behind/README.md) | Kept. With a spare thread, a 256 MiB entry extracts 1.62× faster when random and 1.34× when compressible, with CPU within 6% and 5 MiB more peak memory. |
 | 2026-11-02 | [Small-file creation cost on macOS](native-zip/create-cost/README.md) | Native extraction runs 5% to 6.2% above the system-call floor. 3× over default bsdtar is below that floor on macOS. |
 | 2026-11-01 | [Timestamp restore](native-zip/timestamps/README.md) | Kept. Times match `unzip` and bsdtar. One call per file costs about 3% to 11%. Measured on a busy machine. |
