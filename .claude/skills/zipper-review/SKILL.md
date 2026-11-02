@@ -19,6 +19,7 @@ The author always finds a reason the code is safe. A reviewer who has not seen t
 
 - **Sizes.** Decoded length is checked against the declared size during decoding, not after. A declared size of zero still gets a CRC check. Allocation sizes never come straight from the archive.
 - **Counts.** Entry counts and central-directory size stay under the documented limits before allocation.
+- **Budgets.** Every allocation the archive controls is charged to a documented limit, including derived ones such as implied parent directories, link targets and work queued for other threads. Ask the reviewer for peak memory at 1 and 64 threads on a slow destination.
 - **Paths.** Absolute paths, `..`, drive letters, backslashes, NUL bytes, empty names, duplicate names and names that collide on a case-insensitive filesystem are rejected or handled.
 - **Structure.** Overlapping entries, local headers that disagree with the central directory, ambiguous end records, truncation at every boundary, and ZIP64 fields that are present but inconsistent.
 - **Output.** Nothing is published on failure. Output goes to a private staging directory. An existing destination is refused. No path follows a symlink out of the destination.

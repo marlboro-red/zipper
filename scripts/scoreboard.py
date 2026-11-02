@@ -111,10 +111,32 @@ def dirty_paths():
             if not line[3:].startswith(('benchmarks/scoreboard/', 'docs/results.md'))]
 
 
+BUSY_PERCENT = 25
+OWN_PROCESSES = ('claude', 'python', 'cargo', 'rustc', 'zipper', 'bsdtar', 'tar', '7zz', '7z', 'ps')
+
+
+def busy_processes():
+    """Other processes whose recent CPU share would slow the measured runs."""
+    if platform.system() == 'Windows':
+        return []
+    listing = subprocess.run(['ps', '-Ao', 'pcpu=,comm='], capture_output=True, text=True, check=True).stdout
+    busy = []
+    for line in listing.splitlines():
+        share, _, command = line.strip().partition(' ')
+        name = os.path.basename(command.strip()).lower()
+        if float(share) >= BUSY_PERCENT and not name.startswith(OWN_PROCESSES):
+            busy.append(f'{share}% {command.strip()}')
+    return busy
+
+
 def run(args):
     dirty = dirty_paths()
     if dirty and not args.allow_dirty:
         sys.exit('commit first; the scoreboard names the measured revision:\n' + '\n'.join(dirty))
+    busy = busy_processes()
+    if busy and not args.allow_busy:
+        sys.exit(f'other processes use {BUSY_PERCENT}% CPU or more; stop them or pass --allow-busy:\n'
+                 + '\n'.join(busy))
     zipper = ROOT / 'target' / 'release' / ('zipper.exe' if platform.system() == 'Windows' else 'zipper')
     names = args.only or list(WORKLOADS)
     if args.counters_only:
@@ -148,6 +170,7 @@ def run(args):
         result['workload'] = name
         result['revision'] = git('rev-parse', 'HEAD')
         result['tree_clean'] = not dirty
+        result['busy_processes'] = busy
         result['recorded'] = datetime.date.today().isoformat()
         result['previous_session'] = previous_session(scoreboard / f'{name}.json', result)
         result['counters'] = counted(name, result)
@@ -270,6 +293,8 @@ def main():
     measure.add_argument('--runs', type=int, default=7)
     measure.add_argument('--only', nargs='+', choices=list(WORKLOADS))
     measure.add_argument('--allow-dirty', action='store_true', help='for trials; the JSON records tree_clean false')
+    measure.add_argument('--allow-busy', action='store_true',
+                         help='measure while other processes load the CPU; the JSON lists them')
     measure.add_argument('--scoreboard-dir', type=Path, help='write the JSON here instead of benchmarks/scoreboard')
     measure.add_argument('--no-render', action='store_true', help='leave docs/results.md alone, as on other platforms')
     measure.add_argument('--counters-only', action='store_true',
