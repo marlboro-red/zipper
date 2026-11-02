@@ -12,12 +12,12 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M1. Correctness contract for ZIP](#m1-correctness-contract-for-zip) | Done | M0 |
 | [M2. Metadata fidelity](#m2-metadata-fidelity) | Done | M1 |
 | [M3. Fixed scoreboard](#m3-fixed-scoreboard) | Done | M0 |
-| [M4. Small-file output path](#m4-small-file-output-path) | macOS at its floor; Linux and Windows open | M3 |
-| [M5. Remaining extraction headroom](#m5-remaining-extraction-headroom) | Next | M3 |
+| [M4. Small-file output path](#m4-small-file-output-path) | Done | M3 |
+| [M5. Remaining extraction headroom](#m5-remaining-extraction-headroom) | Done | M3 |
 | [M6. Native reader as the default](#m6-native-reader-as-the-default) | Done | M1, M2 |
-| [M7. Native tar family](#m7-native-tar-family) | Planned | M5 |
+| [M7. Native tar family](#m7-native-tar-family) | Next | M5 |
 
-M6 closed on 2 November 2026. M5 comes next, so M7 builds on an implementation that is at its limits. Extracting `.tar.gz` through 7-Zip still stops at the inner `.tar` until M7.
+M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. Extracting `.tar.gz` through 7-Zip still stops at the inner `.tar` until M7.
 
 ## M0. Verified workflow
 
