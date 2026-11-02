@@ -305,7 +305,10 @@ fn flush(paragraph: &mut Vec<(usize, String)>, problems: &mut Vec<(usize, String
     let mut count = 0;
     for word in text.split_whitespace() {
         count += 1;
-        if word.ends_with(['.', '?', '!']) {
+        if word
+            .trim_end_matches(['*', '_', ')', '"'])
+            .ends_with(['.', '?', '!'])
+        {
             if count > MAX_SENTENCE_WORDS {
                 problems.push((start, format!("sentence of {count} words; split it")));
             }
@@ -497,6 +500,15 @@ mod tests {
             Vec::<String>::new()
         );
         assert_eq!(messages("# T\n\nLabel: text here.\n").len(), 1);
+    }
+
+    #[test]
+    fn sentences_end_inside_emphasis_and_brackets() {
+        let words = "word ".repeat(20);
+        for close in ["**", "*", "_", ")", "\""] {
+            let text = format!("**{words}end.{close} {words}end.\n");
+            assert_eq!(messages(&text), Vec::<String>::new(), "closing {close}");
+        }
     }
 
     #[test]
