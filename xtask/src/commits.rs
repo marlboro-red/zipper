@@ -63,11 +63,11 @@ pub fn lint_message_file(root: &Path, path: &Path) -> Result<()> {
 pub fn lint_unpushed(root: &Path) -> Result<()> {
     let range = Command::new("git")
         .current_dir(root)
-        .args(["rev-list", "@{upstream}..HEAD"])
+        .args(["rev-list", "HEAD", "--not", "--remotes"])
         .output()?;
     ensure!(
         range.status.success(),
-        "HEAD has no upstream to compare with"
+        "cannot list commits missing from every remote"
     );
     for commit in String::from_utf8(range.stdout)?.lines() {
         let message = Command::new("git")
