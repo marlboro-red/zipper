@@ -8,11 +8,12 @@ use std::{
     time::{Duration, Instant},
 };
 mod comments;
+mod commits;
 mod docs;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | lint-commit-msg FILE | lint-commits | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -32,6 +33,8 @@ fn main() -> ExitCode {
         ["lint-comments"] => comments::lint(&root()),
         ["install-hooks"] => install_hooks(),
         ["ci-wait"] => ci_wait(),
+        ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
+        ["lint-commits"] => commits::lint_unpushed(&root()),
         ["bench", ref rest @ ..] => bench(rest),
         _ => Err(anyhow::anyhow!(USAGE)),
     };
@@ -272,7 +275,9 @@ fn install_hooks() -> Result<()> {
         .args(["config", "core.hooksPath", ".githooks"])
         .status()?;
     ensure!(status.success(), "git config exited with {status}");
-    println!("pre-push now runs `cargo xtask gate fast`");
+    println!(
+        "commit-msg now checks cited hashes, and pre-push runs `cargo xtask lint-commits` and `cargo xtask gate fast`"
+    );
     Ok(())
 }
 
