@@ -150,30 +150,30 @@ impl Item {
 const MAX_METADATA: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: u64 = 100_000;
 
-struct EntryBufferBudget(AtomicUsize);
+struct Budget(AtomicUsize);
 
-impl EntryBufferBudget {
-    fn reserve(&self, bytes: usize) -> Option<BufferReservation<'_>> {
+impl Budget {
+    fn reserve(&self, units: usize) -> Option<Reservation<'_>> {
         self.0
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |available| {
-                available.checked_sub(bytes)
+                available.checked_sub(units)
             })
             .ok()
-            .map(|_| BufferReservation {
+            .map(|_| Reservation {
                 budget: self,
-                bytes,
+                units,
             })
     }
 }
 
-struct BufferReservation<'a> {
-    budget: &'a EntryBufferBudget,
-    bytes: usize,
+struct Reservation<'a> {
+    budget: &'a Budget,
+    units: usize,
 }
 
-impl Drop for BufferReservation<'_> {
+impl Drop for Reservation<'_> {
     fn drop(&mut self) {
-        self.budget.0.fetch_add(self.bytes, Ordering::Relaxed);
+        self.budget.0.fetch_add(self.units, Ordering::Relaxed);
     }
 }
 
@@ -872,6 +872,67 @@ fn finish(output: &mut BufWriter<OutputFile>, item: &Item) -> Result<()> {
     Ok(())
 }
 
+const WRITE_BEHIND_MIN: u64 = 16 * 1024 * 1024;
+const WRITE_BEHIND_CHUNK: usize = 1024 * 1024;
+const WRITE_BEHIND_DEPTH: usize = 4;
+
+fn write_behind(
+    mut output: BufWriter<OutputFile>,
+    produce: impl FnOnce(&mut dyn FnMut(&[u8]) -> Result<()>) -> Result<()>,
+) -> Result<BufWriter<OutputFile>> {
+    std::thread::scope(|scope| {
+        let (full, filled) = std::sync::mpsc::sync_channel::<Vec<u8>>(WRITE_BEHIND_DEPTH);
+        let (empty, emptied) = std::sync::mpsc::sync_channel::<Vec<u8>>(WRITE_BEHIND_DEPTH + 1);
+        for _ in 0..WRITE_BEHIND_DEPTH + 1 {
+            empty.send(Vec::with_capacity(WRITE_BEHIND_CHUNK))?;
+        }
+        let writer = scope.spawn(move || -> std::io::Result<BufWriter<OutputFile>> {
+            for mut chunk in filled {
+                // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
+                if cfg!(windows) {
+                    for slice in chunk.chunks(256 * 1024) {
+                        output.write_all(slice)?;
+                    }
+                } else {
+                    output.write_all(&chunk)?;
+                }
+                chunk.clear();
+                let _ = empty.send(chunk);
+            }
+            Ok(output)
+        });
+        let mut current = emptied.recv()?;
+        let mut writer_stopped = false;
+        let produced = produce(&mut |mut bytes: &[u8]| {
+            while !bytes.is_empty() {
+                let room = WRITE_BEHIND_CHUNK - current.len();
+                let (now, later) = bytes.split_at(room.min(bytes.len()));
+                current.extend_from_slice(now);
+                bytes = later;
+                if current.len() == WRITE_BEHIND_CHUNK {
+                    let next = emptied.recv().inspect_err(|_| writer_stopped = true)?;
+                    full.send(std::mem::replace(&mut current, next))
+                        .inspect_err(|_| writer_stopped = true)?;
+                }
+            }
+            Ok(())
+        });
+        if produced.is_ok() && !current.is_empty() {
+            let _ = full.send(current);
+        }
+        drop(full);
+        let written = writer
+            .join()
+            .map_err(|_| anyhow::anyhow!("ZIP output writer panicked"))?;
+        match (produced, written) {
+            (Ok(()), Ok(output)) => Ok(output),
+            (Err(_), Err(io)) if writer_stopped => Err(io.into()),
+            (Err(error), _) => Err(error),
+            (Ok(()), Err(io)) => Err(io.into()),
+        }
+    })
+}
+
 fn stream_entry(
     input: &mut impl Read,
     item: &Item,
@@ -1003,7 +1064,7 @@ pub fn read_archive_with_options(
         "ZIP threads must be 1..64"
     );
     let fast = options.fast;
-    let budget = EntryBufferBudget(AtomicUsize::new(options.buffer_bytes.unwrap_or(
+    let budget = Budget(AtomicUsize::new(options.buffer_bytes.unwrap_or(
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             128 * 1024 * 1024
         } else {
@@ -1044,6 +1105,22 @@ pub fn read_archive_with_options(
     };
     let mut largest_first: Vec<_> = (0..items.len()).collect();
     largest_first.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
+    // RECORD(benchmarks/native-zip/bsdtar-comparison.md): macOS caps tiny-file extraction workers.
+    let automatic_limit = if cfg!(target_os = "macos")
+        && staging.is_some()
+        && items.iter().filter(|item| !item.entry.directory).count() >= 1024
+        && items.iter().all(|item| item.entry.size <= 16 * 1024)
+    {
+        4
+    } else {
+        64
+    };
+    let worker_limit = options.threads.unwrap_or(automatic_limit);
+    let pool_threads = rayon::current_num_threads().min(worker_limit);
+    let entries_with_payload = items.iter().filter(|item| !item.entry.directory).count();
+    let spare_threads = Budget(AtomicUsize::new(
+        pool_threads.saturating_sub(entries_with_payload),
+    ));
     let targets = std::sync::Mutex::new(Vec::new());
     let run = || {
         largest_first.par_iter().try_for_each_init(
@@ -1143,6 +1220,16 @@ pub fn read_archive_with_options(
                     }
                     return Ok(());
                 }
+                if item.entry.size >= WRITE_BEHIND_MIN
+                    && let Some(writer_thread) = spare_threads.reserve(1)
+                    && let Some(unwritten) = output.take()
+                {
+                    let mut written = write_behind(unwritten, |sink| {
+                        stream_entry(&mut source, item, descriptor, buffer, sink)
+                    })?;
+                    drop(writer_thread);
+                    return finish(&mut written, item);
+                }
                 stream_entry(&mut source, item, descriptor, buffer, |bytes| {
                     if let Some(output) = &mut output {
                         output.write_all(bytes)?;
@@ -1156,17 +1243,6 @@ pub fn read_archive_with_options(
             },
         )
     };
-    // RECORD(benchmarks/native-zip/bsdtar-comparison.md): macOS caps tiny-file extraction workers.
-    let automatic_limit = if cfg!(target_os = "macos")
-        && staging.is_some()
-        && items.iter().filter(|item| !item.entry.directory).count() >= 1024
-        && items.iter().all(|item| item.entry.size <= 16 * 1024)
-    {
-        4
-    } else {
-        64
-    };
-    let worker_limit = options.threads.unwrap_or(automatic_limit);
     if rayon::current_num_threads() <= worker_limit {
         run()?;
     } else {
@@ -1203,7 +1279,7 @@ mod budget_tests {
 
     #[test]
     fn concurrent_reservations_never_exceed_budget_and_release_on_unwind() {
-        let budget = EntryBufferBudget(AtomicUsize::new(8));
+        let budget = Budget(AtomicUsize::new(8));
         let held = Barrier::new(16);
         let release = Barrier::new(16);
         std::thread::scope(|scope| {

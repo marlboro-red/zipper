@@ -160,6 +160,7 @@ The [shared-budget measurements](../../benchmarks/native-zip/shared-budget/READM
 Parsed metadata is shared across workers.
 The `native-fast` budget is not a peak RSS cap.
 Metadata, worker state, the archive cache, and allocator-retained memory are additional to it.
+A streamed entry with a writer thread also holds five 1 MiB write buffers, outside the budget.
 
 ## Concurrency
 
@@ -173,6 +174,8 @@ An explicit `--threads N` overrides it.
 Verification-only reads and larger files keep their existing concurrency.
 Windows and Linux do not apply this macOS-specific policy.
 The [small-file ZIP versus bsdtar measurements](../../benchmarks/native-zip/bsdtar-comparison.md) record the evidence.
+
+A streamed entry of at least 16 MiB gets a writer thread when the pool has more threads than entries with a payload. Every entry that is not a directory counts, including symlinks. The worker then decodes while the writer thread writes, so the number of busy threads never exceeds `--threads`. Spare threads are counted once, before extraction starts. `--threads 1` never gets a writer thread. The [write-behind measurements](../../benchmarks/native-zip/write-behind/README.md) record the evidence.
 
 ## Input read-ahead
 

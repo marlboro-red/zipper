@@ -554,3 +554,58 @@ fn streaming_empty_entries_still_validate_crc_and_cleanup() -> anyhow::Result<()
     }
     Ok(())
 }
+
+#[test]
+fn large_entries_written_behind_decoding_match_and_fail_closed() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let mut data = Vec::with_capacity(20 << 20);
+    let mut state = 0x9e37_79b9_u32;
+    while data.len() < 20 << 20 {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        data.extend_from_slice(&state.to_le_bytes());
+        data.extend_from_slice(b"text that compresses ");
+    }
+    for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
+        let input = temp.path().join(format!("{method:?}.zip"));
+        archive(&input, &[("big", &data)], method)?;
+        for (engine, read) in [
+            ("native", zipper::native_zip::read_archive as Reader),
+            ("native-fast", zipper::native_zip::read_archive_fast),
+        ] {
+            let out = temp.path().join(format!("{method:?}-{engine}"));
+            read(&input, Some(&out))?;
+            assert!(fs::read(out.join("big"))? == data, "{method:?} {engine}");
+        }
+        let original = fs::read(&input)?;
+        let mut reader = zip::ZipArchive::new(fs::File::open(&input)?)?;
+        let entry = reader.by_index_raw(0)?;
+        let (start, length) = (
+            entry.data_start().unwrap() as usize,
+            entry.compressed_size() as usize,
+        );
+        drop(entry);
+        drop(reader);
+        let mut damaged = original.clone();
+        damaged[start + length - 1000] ^= 0x55;
+        let truncated = original[..start + length - 1000].to_vec();
+        for (case, bytes) in [("damaged", damaged), ("truncated", truncated)] {
+            fs::write(&input, bytes)?;
+            let out = temp.path().join(format!("{method:?}-{case}"));
+            assert!(
+                zipper::native_zip::read_archive(&input, Some(&out)).is_err(),
+                "{method:?} {case}"
+            );
+            assert!(!out.exists(), "{method:?} {case}");
+        }
+    }
+    let leftovers: Vec<_> = fs::read_dir(temp.path())?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "staging left behind: {leftovers:?}");
+    Ok(())
+}
+
+type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<zipper::Entry>>;
