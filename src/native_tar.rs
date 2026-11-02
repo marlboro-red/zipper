@@ -29,6 +29,8 @@ const QUEUED_FILES: usize = 16;
 const QUEUED_CHUNKS_PER_FILE: usize = 4;
 const BYTES_IN_FLIGHT: usize = 16 * 1024 * 1024;
 const DEFAULT_WRITERS: usize = 4;
+// RECORD(benchmarks/cross-platform/tar-folder-lanes/README.md): one writer per folder is faster on Windows.
+const ONE_WRITER_PER_FOLDER: bool = cfg!(windows);
 const READ_ERROR: &str = "cannot read the tar stream";
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
@@ -104,7 +106,7 @@ struct Job<'f> {
 }
 
 struct Writers<'f> {
-    jobs: Mutex<Option<SyncSender<Job<'f>>>>,
+    lanes: Mutex<Vec<SyncSender<Job<'f>>>>,
     flight: &'f InFlight,
     pending: Mutex<usize>,
     idle: Condvar,
@@ -114,10 +116,17 @@ struct Writers<'f> {
 impl<'f> Writers<'f> {
     fn send(&self, job: Job<'f>) -> Result<()> {
         *self.pending.lock().unwrap() += 1;
-        let sent = match &*self.jobs.lock().unwrap() {
-            Some(jobs) => jobs.send(job).is_ok(),
-            None => false,
+        let lanes = self.lanes.lock().unwrap();
+        let lane = match lanes.len() {
+            0 | 1 => 0,
+            count => {
+                let folder = job.name.rfind('/').map_or("", |slash| &job.name[..slash]);
+                let mut hasher = std::hash::DefaultHasher::new();
+                std::hash::Hash::hash(&folder.to_lowercase(), &mut hasher);
+                std::hash::Hasher::finish(&hasher) as usize % count
+            }
         };
+        let sent = lanes.get(lane).is_some_and(|lane| lane.send(job).is_ok());
         ensure!(sent, "tar writers stopped");
         self.check()
     }
@@ -145,7 +154,7 @@ impl<'f> Writers<'f> {
     }
 
     fn close(&self) {
-        self.jobs.lock().unwrap().take();
+        self.lanes.lock().unwrap().clear();
     }
 
     fn work(&self, jobs: &Mutex<Receiver<Job<'f>>>) {
@@ -694,7 +703,8 @@ impl<'a, 'f> Extraction<'a, 'f> {
         };
         let directory = &name[..slash];
         if self.created_directories.insert(directory.to_owned()) {
-            fs::create_dir_all(root.join(directory))?;
+            fs::create_dir_all(root.join(directory))
+                .with_context(|| format!("cannot create the folder of tar entry {name:?}"))?;
             counters::add(Counter::DirectoryCreateCalls, 1);
         }
         Ok(())
@@ -1021,10 +1031,15 @@ pub fn read_archive(
         "tar writers must be between 1 and 64"
     );
     let flight = InFlight::default();
-    let (jobs, queue) = sync_channel(QUEUED_FILES);
-    let queue = Mutex::new(queue);
+    let lane_count = if ONE_WRITER_PER_FOLDER { count } else { 1 };
+    let (lanes, queues): (Vec<_>, Vec<_>) = (0..lane_count)
+        .map(|_| {
+            let (lane, queue) = sync_channel(QUEUED_FILES);
+            (lane, Mutex::new(queue))
+        })
+        .unzip();
     let writers = Writers {
-        jobs: Mutex::new(Some(jobs)),
+        lanes: Mutex::new(lanes),
         flight: &flight,
         pending: Mutex::new(0),
         idle: Condvar::new(),
@@ -1032,7 +1047,11 @@ pub fn read_archive(
     };
     std::thread::scope(|scope| {
         let threads: Vec<_> = (0..count)
-            .map(|_| scope.spawn(|| writers.work(&queue)))
+            .map(|index| {
+                let queue = &queues[index % lane_count];
+                let writers = &writers;
+                scope.spawn(move || writers.work(queue))
+            })
             .collect();
         let output = Output {
             root: temp.path(),

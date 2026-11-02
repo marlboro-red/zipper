@@ -1,0 +1,98 @@
+{
+  "flat-tiny.tar": {
+    "before": {
+      "median_seconds": 0.16489383399999724,
+      "min_seconds": 0.16320599899998456,
+      "max_seconds": 0.17142707600001472
+    },
+    "after": {
+      "median_seconds": 0.16582425100000364,
+      "min_seconds": 0.1633589870000094,
+      "max_seconds": 0.16776057499998842
+    }
+  },
+  "flat-tiny.tar.gz": {
+    "before": {
+      "median_seconds": 0.1680717859999845,
+      "min_seconds": 0.16401391900001272,
+      "max_seconds": 0.17274961300000768
+    },
+    "after": {
+      "median_seconds": 0.1674546849999956,
+      "min_seconds": 0.16605454799997688,
+      "max_seconds": 0.1693203419999918
+    }
+  },
+  "grouped.tar": {
+    "before": {
+      "median_seconds": 0.05323867300000984,
+      "min_seconds": 0.05111522900000409,
+      "max_seconds": 0.054575477000014416
+    },
+    "after": {
+      "median_seconds": 0.05250219599997763,
+      "min_seconds": 0.05168883199999641,
+      "max_seconds": 0.05351231800000278
+    }
+  },
+  "grouped.tar.gz": {
+    "before": {
+      "median_seconds": 0.051695790999986,
+      "min_seconds": 0.04974407700001393,
+      "max_seconds": 0.053301633999979
+    },
+    "after": {
+      "median_seconds": 0.05086282499999584,
+      "min_seconds": 0.05003244600004564,
+      "max_seconds": 0.05252271899999528
+    }
+  },
+  "dependencies.tar": {
+    "before": {
+      "median_seconds": 0.09201381799999808,
+      "min_seconds": 0.08463644099998646,
+      "max_seconds": 0.09661616099998582
+    },
+    "after": {
+      "median_seconds": 0.09400734099995134,
+      "min_seconds": 0.08655818700003692,
+      "max_seconds": 0.0966533540000114
+    }
+  },
+  "dependencies.tar.gz": {
+    "before": {
+      "median_seconds": 0.19930649200000516,
+      "min_seconds": 0.1939340459999812,
+      "max_seconds": 0.2026715490000015
+    },
+    "after": {
+      "median_seconds": 0.2009182790000068,
+      "min_seconds": 0.19851822699996546,
+      "max_seconds": 0.20543242600001577
+    }
+  },
+  "mixed.tar": {
+    "before": {
+      "median_seconds": 0.06439904499995919,
+      "min_seconds": 0.06339274199996225,
+      "max_seconds": 0.06581568800004334
+    },
+    "after": {
+      "median_seconds": 0.06377297300002738,
+      "min_seconds": 0.06092133199996397,
+      "max_seconds": 0.06828690800000459
+    }
+  },
+  "mixed.tar.gz": {
+    "before": {
+      "median_seconds": 0.0802239669999949,
+      "min_seconds": 0.07895812399999613,
+      "max_seconds": 0.08288400399999318
+    },
+    "after": {
+      "median_seconds": 0.08240246599996226,
+      "min_seconds": 0.08071484599997802,
+      "max_seconds": 0.08308496500001183
+    }
+  }
+}

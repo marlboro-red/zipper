@@ -58,7 +58,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 | One pax header, GNU long name or long link | at most 1 MiB |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-One thread decodes and checks the stream. Four writer threads create and write the files, or the number `--threads` sets. A file larger than 1 MiB streams to one writer in order. At most 16 MiB of file data waits between the decoder and the writers, so memory does not grow with file size or writer count. A repeated file name waits for every pending write before it replaces the file.
+One thread decodes and checks the stream. Four writer threads create and write the files, or the number `--threads` sets. A file larger than 1 MiB streams to one writer in order. On Windows, all files of one folder go to the same writer, because creating files in one folder from several threads is slower there. At most 16 MiB of file data waits between the decoder and the writers, so memory does not grow with file size or writer count. A repeated file name waits for every pending write before it replaces the file.
 
 ## Reference corpus
 
