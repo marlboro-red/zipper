@@ -1,0 +1,98 @@
+{
+  "large-compressible.zip": {
+    "before": {
+      "median_seconds": 0.1222539999998844,
+      "min_seconds": 0.12074310000002697,
+      "max_seconds": 0.12599160000013399
+    },
+    "after": {
+      "median_seconds": 0.16349620000005416,
+      "min_seconds": 0.16009910000002492,
+      "max_seconds": 0.1681421999999202
+    }
+  },
+  "large-compressible.tar.gz": {
+    "before": {
+      "median_seconds": 0.18104539999990266,
+      "min_seconds": 0.18017620000000534,
+      "max_seconds": 0.182144899999912
+    },
+    "after": {
+      "median_seconds": 0.17067630000019562,
+      "min_seconds": 0.1648145999999997,
+      "max_seconds": 0.1747490000000198
+    }
+  },
+  "large-random.zip": {
+    "before": {
+      "median_seconds": 0.06969540000000052,
+      "min_seconds": 0.06828390000009676,
+      "max_seconds": 0.08997530000010556
+    },
+    "after": {
+      "median_seconds": 0.06988109999997505,
+      "min_seconds": 0.06876889999989544,
+      "max_seconds": 0.0727251000000706
+    }
+  },
+  "large-random.tar.gz": {
+    "before": {
+      "median_seconds": 0.12182080000002316,
+      "min_seconds": 0.12130090000005112,
+      "max_seconds": 0.12382870000010371
+    },
+    "after": {
+      "median_seconds": 0.06618479999997362,
+      "min_seconds": 0.0655627999999524,
+      "max_seconds": 0.07714450000003126
+    }
+  },
+  "silesia.zip": {
+    "before": {
+      "median_seconds": 0.16254019999996672,
+      "min_seconds": 0.15828959999998915,
+      "max_seconds": 0.35665419999986625
+    },
+    "after": {
+      "median_seconds": 0.12942920000000413,
+      "min_seconds": 0.12438590000010663,
+      "max_seconds": 0.196187000000009
+    }
+  },
+  "silesia.tar.gz": {
+    "before": {
+      "median_seconds": 0.3942807000000812,
+      "min_seconds": 0.392707400000063,
+      "max_seconds": 0.5628048999999464
+    },
+    "after": {
+      "median_seconds": 0.283699100000149,
+      "min_seconds": 0.28238839999994525,
+      "max_seconds": 0.42955209999990984
+    }
+  },
+  "dependencies.zip": {
+    "before": {
+      "median_seconds": 1.9866930999999113,
+      "min_seconds": 1.5974977999999282,
+      "max_seconds": 4.112413800000013
+    },
+    "after": {
+      "median_seconds": 2.4598697999999786,
+      "min_seconds": 1.412977200000114,
+      "max_seconds": 5.226469899999984
+    }
+  },
+  "dependencies.tar.gz": {
+    "before": {
+      "median_seconds": 3.3298201000002337,
+      "min_seconds": 2.846155799999906,
+      "max_seconds": 5.085570299999972
+    },
+    "after": {
+      "median_seconds": 3.3108831999998074,
+      "min_seconds": 2.8482566000002407,
+      "max_seconds": 5.577160499999991
+    }
+  }
+}

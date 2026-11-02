@@ -1,0 +1,242 @@
+{
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "threads": 4,
+  "runs": 11,
+  "warmup_rounds": 1,
+  "archive_format": "tar",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "compressible",
+  "input_bytes": 268435456,
+  "archive_bytes": 652142,
+  "archive_sha256": "cbb43ba480ee67e7f6c72c25af7f7bf999254e649f364f6095f2bc9c741f0b46",
+  "readers": {
+    "before": {
+      "mode": "native",
+      "binary": "/home/runner/work/zipper/zipper/target/compare-bin/before",
+      "sha256": "e534e02a896d30ebb89d04ca3f1bb2f4643546e7906b3d4e564aff74e8021d10",
+      "threads": null
+    },
+    "after": {
+      "mode": "native",
+      "binary": "/home/runner/work/zipper/zipper/target/compare-bin/after",
+      "sha256": "5b5aae090f68f445bc9bbd601b18974093439ecb8dbcbd8c10fa2dd9388e8126",
+      "threads": null
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    2.74951171875,
+    1.314453125,
+    0.51025390625
+  ],
+  "order_including_warmup": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ]
+  ],
+  "results": {
+    "before": {
+      "samples": [
+        {
+          "seconds": 0.22657461399998624,
+          "peak_rss_bytes": 7704576,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.22540282899998942,
+          "peak_rss_bytes": 7651328,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.2261023529999875,
+          "peak_rss_bytes": 7618560,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.22636213000001248,
+          "peak_rss_bytes": 7663616,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.22537534299999606,
+          "peak_rss_bytes": 7647232,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.225488122999991,
+          "peak_rss_bytes": 7712768,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.22570995700002072,
+          "peak_rss_bytes": 7671808,
+          "cpu_seconds": 0.29000000000000004,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.22601614699999573,
+          "peak_rss_bytes": 7622656,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.22544878900001208,
+          "peak_rss_bytes": 7585792,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.22545522199999368,
+          "peak_rss_bytes": 7585792,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.2252567019999958,
+          "peak_rss_bytes": 7647232,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        }
+      ],
+      "median_seconds": 0.225488122999991,
+      "min_seconds": 0.2252567019999958,
+      "max_seconds": 0.22657461399998624,
+      "mib_s": 1135.3147855153782,
+      "peak_rss_bytes": 7712768
+    },
+    "after": {
+      "samples": [
+        {
+          "seconds": 0.20797171199998843,
+          "peak_rss_bytes": 7766016,
+          "cpu_seconds": 0.26,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.20943386799999075,
+          "peak_rss_bytes": 7757824,
+          "cpu_seconds": 0.27,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.20838545399999475,
+          "peak_rss_bytes": 7720960,
+          "cpu_seconds": 0.27,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.20826087400001825,
+          "peak_rss_bytes": 7733248,
+          "cpu_seconds": 0.26,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.2077580059999775,
+          "peak_rss_bytes": 7720960,
+          "cpu_seconds": 0.26,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.20823669800000744,
+          "peak_rss_bytes": 7729152,
+          "cpu_seconds": 0.27,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.20860032600000977,
+          "peak_rss_bytes": 7589888,
+          "cpu_seconds": 0.27,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.20828327500001365,
+          "peak_rss_bytes": 7643136,
+          "cpu_seconds": 0.26,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.21693738999999823,
+          "peak_rss_bytes": 7634944,
+          "cpu_seconds": 0.28,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.20813714299998765,
+          "peak_rss_bytes": 7589888,
+          "cpu_seconds": 0.27,
+          "verified_bytes": 268435456
+        },
+        {
+          "seconds": 0.20871639199998526,
+          "peak_rss_bytes": 7655424,
+          "cpu_seconds": 0.26,
+          "verified_bytes": 268435456
+        }
+      ],
+      "median_seconds": 0.20828327500001365,
+      "min_seconds": 0.2077580059999775,
+      "max_seconds": 0.21693738999999823,
+      "mib_s": 1229.095327025097,
+      "peak_rss_bytes": 7766016
+    }
+  },
+  "load_average_end": [
+    2.689453125,
+    1.326171875,
+    0.5185546875
+  ]
+}

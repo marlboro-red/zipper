@@ -1,0 +1,242 @@
+{
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "threads": 4,
+  "runs": 11,
+  "warmup_rounds": 1,
+  "archive_format": "zip",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "dependencies",
+  "input_bytes": 78153035,
+  "archive_bytes": 17144081,
+  "archive_sha256": "8772238cb59fd2fbfc393544b0f4076d99ceebaed5304969c697016ce6f42ea3",
+  "readers": {
+    "before": {
+      "mode": "native",
+      "binary": "/home/runner/work/zipper/zipper/target/compare-bin/before",
+      "sha256": "e534e02a896d30ebb89d04ca3f1bb2f4643546e7906b3d4e564aff74e8021d10",
+      "threads": null
+    },
+    "after": {
+      "mode": "native",
+      "binary": "/home/runner/work/zipper/zipper/target/compare-bin/after",
+      "sha256": "5b5aae090f68f445bc9bbd601b18974093439ecb8dbcbd8c10fa2dd9388e8126",
+      "threads": null
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    1.7744140625,
+    1.3212890625,
+    0.57373046875
+  ],
+  "order_including_warmup": [
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "before",
+      "after"
+    ],
+    [
+      "after",
+      "before"
+    ]
+  ],
+  "results": {
+    "before": {
+      "samples": [
+        {
+          "seconds": 0.16467231799998672,
+          "peak_rss_bytes": 11390976,
+          "cpu_seconds": 0.5,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.16231134200000952,
+          "peak_rss_bytes": 11313152,
+          "cpu_seconds": 0.5,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.17861763199999814,
+          "peak_rss_bytes": 10993664,
+          "cpu_seconds": 0.48,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.16166855400001623,
+          "peak_rss_bytes": 11313152,
+          "cpu_seconds": 0.49,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.16388307300002225,
+          "peak_rss_bytes": 11341824,
+          "cpu_seconds": 0.49,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.17975050500001544,
+          "peak_rss_bytes": 10936320,
+          "cpu_seconds": 0.48,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.16161981400000514,
+          "peak_rss_bytes": 11366400,
+          "cpu_seconds": 0.49,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.15714290599999003,
+          "peak_rss_bytes": 11292672,
+          "cpu_seconds": 0.49,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.16208519200000637,
+          "peak_rss_bytes": 11550720,
+          "cpu_seconds": 0.5,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.17529861200000596,
+          "peak_rss_bytes": 11059200,
+          "cpu_seconds": 0.48,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.15962561800000685,
+          "peak_rss_bytes": 11358208,
+          "cpu_seconds": 0.5,
+          "verified_bytes": 78153035
+        }
+      ],
+      "median_seconds": 0.16231134200000952,
+      "min_seconds": 0.15714290599999003,
+      "max_seconds": 0.17975050500001544,
+      "mib_s": 459.1949109058217,
+      "peak_rss_bytes": 11550720
+    },
+    "after": {
+      "samples": [
+        {
+          "seconds": 0.1588912290000053,
+          "peak_rss_bytes": 10993664,
+          "cpu_seconds": 0.45999999999999996,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.16269908000003852,
+          "peak_rss_bytes": 11083776,
+          "cpu_seconds": 0.44000000000000006,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.15828599700000723,
+          "peak_rss_bytes": 10878976,
+          "cpu_seconds": 0.45,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.1585255129999723,
+          "peak_rss_bytes": 10977280,
+          "cpu_seconds": 0.45,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.15317657900004633,
+          "peak_rss_bytes": 11440128,
+          "cpu_seconds": 0.46,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.15972688199997265,
+          "peak_rss_bytes": 11001856,
+          "cpu_seconds": 0.45,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.16383500200004164,
+          "peak_rss_bytes": 11014144,
+          "cpu_seconds": 0.46,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.1601254579999818,
+          "peak_rss_bytes": 10993664,
+          "cpu_seconds": 0.45000000000000007,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.1595599830000083,
+          "peak_rss_bytes": 11145216,
+          "cpu_seconds": 0.44,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.15748330500002794,
+          "peak_rss_bytes": 11005952,
+          "cpu_seconds": 0.44999999999999996,
+          "verified_bytes": 78153035
+        },
+        {
+          "seconds": 0.1575989199999981,
+          "peak_rss_bytes": 10997760,
+          "cpu_seconds": 0.46,
+          "verified_bytes": 78153035
+        }
+      ],
+      "median_seconds": 0.1588912290000053,
+      "min_seconds": 0.15317657900004633,
+      "max_seconds": 0.16383500200004164,
+      "mib_s": 469.0790215279677,
+      "peak_rss_bytes": 11440128
+    }
+  },
+  "load_average_end": [
+    1.4306640625,
+    1.2841796875,
+    0.5908203125
+  ]
+}
