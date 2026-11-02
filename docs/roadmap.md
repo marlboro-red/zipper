@@ -15,9 +15,9 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M4. Small-file output path](#m4-small-file-output-path) | Done | M3 |
 | [M5. Remaining extraction headroom](#m5-remaining-extraction-headroom) | Done | M3 |
 | [M6. Native reader as the default](#m6-native-reader-as-the-default) | Done | M1, M2 |
-| [M7. Native tar family](#m7-native-tar-family) | Next | M5 |
+| [M7. Native tar family](#m7-native-tar-family) | In progress | M5 |
 
-M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. Extracting `.tar.gz` through 7-Zip still stops at the inner `.tar` until M7.
+M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 now reads plain, gzip, zstd and xz tar in process by default. Its tar scoreboard rows and performance work remain.
 
 ## M0. Verified workflow
 
@@ -143,11 +143,11 @@ Exit checks:
 
 Scope:
 
-- A streaming tar reader with the M1 safety contract and the M2 metadata contract, applied to tar entries.
-- Decompression for gzip, zstd and xz in front of it, so `.tar.gz`, `.tgz`, `.tar.zst` and `.tar.xz` extract their files and not an inner `.tar`.
-- POSIX ustar, pax and GNU headers, plus old tar without the `ustar` marker.
-- A reference corpus from GNU tar, bsdtar and Python `tarfile`.
-- Hostile tar tests for traversal, absolute names, links that escape, hard links, special files, duplicate names and truncation.
+- A streaming tar reader with the M1 safety contract and the M2 metadata contract, applied to tar entries. Done in the [tar reader reference](reference/tar-reader.md).
+- Decompression for gzip, zstd and xz in front of it, so `.tar.gz`, `.tgz`, `.tar.zst` and `.tar.xz` extract their files and not an inner `.tar`. Done.
+- POSIX ustar, pax and GNU headers, plus old tar without the `ustar` marker. Done, except GNU sparse files.
+- A reference corpus from GNU tar, bsdtar and Python `tarfile`. Done in the [tar reference corpus](reference/tar-reader.md#reference-corpus).
+- Hostile tar tests for traversal, absolute names, links that escape, hard links, special files, duplicate names and truncation. Done in `tests/hostile_tar.rs`, after an adversarial review.
 - Scoreboard rows for the tar workloads against bsdtar.
 
 Exit checks:

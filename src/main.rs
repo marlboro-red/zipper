@@ -8,7 +8,7 @@ struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer).
     #[arg(long, global = true)]
     threads: Option<usize>,
-    /// Reader for ZIP and other foreign archives. Native ZIP restores files, directories, modes, times and safe symlinks.
+    /// Reader for ZIP, tar and other foreign archives. Native readers restore files, directories, modes, times and safe links.
     #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Auto)]
     zip_engine: ZipEngine,
     /// Shared native-fast ZIP entry-buffer MiB (128 on ARM64 macOS, 64 elsewhere; 0 streams).
@@ -20,7 +20,7 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Native for ZIP, with no fallback; 7-Zip for other formats.
+    /// Native for ZIP and tar, with no fallback; 7-Zip for other formats.
     Auto,
     /// 7-Zip for every archive that is not .zipper.
     Backend,
@@ -75,15 +75,19 @@ fn starts_with_zip_signature(archive: &std::path::Path) -> Result<bool> {
 
 enum Reader {
     Native { fast: bool },
+    Tar,
     Backend { format: Option<String> },
 }
 
 fn choose_reader(engine: ZipEngine, archive: &std::path::Path) -> Result<Reader> {
     Ok(match engine {
+        ZipEngine::Backend => Reader::Backend { format: None },
+        _ if starts_with_zip_signature(archive)? => Reader::Native {
+            fast: engine == ZipEngine::NativeFast,
+        },
+        _ if zipper::native_tar::sniff(archive)?.is_some() => Reader::Tar,
         ZipEngine::Native => Reader::Native { fast: false },
         ZipEngine::NativeFast => Reader::Native { fast: true },
-        ZipEngine::Backend => Reader::Backend { format: None },
-        ZipEngine::Auto if starts_with_zip_signature(archive)? => Reader::Native { fast: false },
         ZipEngine::Auto => match zipper::compat::pinned_format(archive)? {
             Some(format) => Reader::Backend {
                 format: Some(format),
@@ -169,10 +173,19 @@ fn main() -> Result<()> {
                             },
                         )?;
                     }
+                    Reader::Tar => {
+                        zipper::native_tar::read_archive(
+                            &archive,
+                            Some(&output),
+                            zipper::native_tar::ReadOptions {
+                                max_output_bytes: max_extracted_bytes,
+                            },
+                        )?;
+                    }
                     Reader::Backend { format } => {
                         anyhow::ensure!(
                             max_extracted_bytes.is_none(),
-                            "--max-extracted-bytes needs a .zipper archive or a ZIP read in process"
+                            "--max-extracted-bytes needs a .zipper archive or a ZIP or tar read in process"
                         );
                         zipper::compat::run("x", &archive, Some(&output), format.as_deref())?;
                     }
@@ -195,6 +208,11 @@ fn main() -> Result<()> {
             } else {
                 match choose_reader(cli.zip_engine, &archive)? {
                     Reader::Native { .. } => print(zipper::native_zip::list(&archive)?),
+                    Reader::Tar => print(zipper::native_tar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_tar::ReadOptions::default(),
+                    )?),
                     Reader::Backend { format } => {
                         zipper::compat::run("l", &archive, None, format.as_deref())?
                     }
@@ -220,6 +238,11 @@ fn main() -> Result<()> {
                             },
                         )?)
                     }
+                    Reader::Tar => report(zipper::native_tar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_tar::ReadOptions::default(),
+                    )?),
                     Reader::Backend { format } => {
                         zipper::compat::run("t", &archive, None, format.as_deref())?
                     }

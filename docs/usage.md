@@ -88,7 +88,7 @@ Archive-level deduplication is not implemented yet.
 
 ## Read ZIP, 7z, and other existing formats
 
-`extract`, `list`, and `test` read ZIP archives in process and delegate other formats to `7zz` or `7z` on PATH.
+`extract`, `list`, and `test` read ZIP and tar archives in process and delegate other formats to `7zz` or `7z` on PATH.
 To use another executable, set `ZIPPER_7Z` to its path. To send ZIP archives to 7-Zip as well, pass `--zip-engine backend`.
 The installed backend decides which formats work and which extraction protections apply.
 This default path is an external compatibility bridge.
@@ -115,6 +115,17 @@ Pick the engine by workload:
 
 The default is `native` because it uses little memory. On the [scoreboard](results.md), its peak stays under 9 MiB, while `native-fast` reaches 187 MiB on Silesia. `native-fast` is at most 1.10× faster on every other workload, and 1.32× faster on Silesia at one thread.
 The [ZIP reader reference](reference/zip-reader.md) lists supported features, limits, budgets, and caching rules.
+
+## Read tar archives in process
+
+Plain tar, and tar inside gzip, zstd or xz, use the in-process tar reader by default:
+
+```sh
+zipper extract source.tar.gz -o restored
+zipper test source.tar.zst
+```
+
+The reader recognizes a tar by its first header, not by its file name. A `.gz` or `.xz` file that holds no tar still goes to 7-Zip. If the archive uses sparse files or names that are not UTF-8, the error says so, and `--zip-engine backend` reads it with 7-Zip. The [tar reader reference](reference/tar-reader.md) lists supported formats and checks.
 
 ## Choose the thread count
 

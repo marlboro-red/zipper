@@ -1,6 +1,7 @@
 pub mod compat;
 pub mod counters;
 pub mod duplicates;
+pub mod native_tar;
 pub mod native_zip;
 mod pipeline;
 mod v1;
@@ -56,6 +57,78 @@ fn parent(path: &Path) -> &Path {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."))
+}
+
+fn create_new_file(path: &Path, mode_masked_by_umask: u32) -> std::io::Result<File> {
+    let mut options = File::options();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, mode_masked_by_umask);
+    #[cfg(not(unix))]
+    let _ = mode_masked_by_umask;
+    options.open(path)
+}
+
+fn set_modified_best_effort(file: &File, time: std::time::SystemTime) {
+    let _ = file.set_modified(time);
+    counters::add(counters::Counter::MetadataCalls, 1);
+}
+
+pub(crate) const MAX_LINK_TARGET: u64 = 4096;
+
+fn ensure_link_stays_inside(format: &str, name: &str, target: &str) -> Result<()> {
+    ensure!(
+        !target.is_empty()
+            && target.len() as u64 <= MAX_LINK_TARGET
+            && !target.contains('\0')
+            && !target.starts_with('/'),
+        "{format} symlink {name:?} has an unsafe target"
+    );
+    let mut depth = name.matches('/').count();
+    let mut descended = false;
+    for component in target.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                ensure!(
+                    !descended,
+                    "{format} symlink {name:?} has `..` after a name"
+                );
+                depth = depth.checked_sub(1).with_context(|| {
+                    format!("{format} symlink {name:?} points outside the destination")
+                })?;
+            }
+            _ => descended = true,
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn later_spellings_of_same_directory<'a>(
+    root: &Path,
+    directories: impl Iterator<Item = Option<&'a str>>,
+) -> Result<std::collections::HashSet<usize>> {
+    use std::os::unix::fs::MetadataExt;
+    let mut claimed = std::collections::HashSet::new();
+    let mut merged = std::collections::HashSet::new();
+    for (index, name) in directories.enumerate() {
+        if let Some(name) = name {
+            let metadata = std::fs::metadata(root.join(name))?;
+            if !claimed.insert((metadata.dev(), metadata.ino())) {
+                merged.insert(index);
+            }
+        }
+    }
+    Ok(merged)
+}
+
+#[cfg(not(unix))]
+fn later_spellings_of_same_directory<'a>(
+    _: &Path,
+    _: impl Iterator<Item = Option<&'a str>>,
+) -> Result<std::collections::HashSet<usize>> {
+    Ok(std::collections::HashSet::new())
 }
 
 #[cfg_attr(not(unix), allow(dead_code))]

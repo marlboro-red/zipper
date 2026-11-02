@@ -45,25 +45,13 @@ fn crowded_folder(items: &[Item]) -> bool {
         })
 }
 
-#[cfg(unix)]
 fn later_spellings_of_same_directory(root: &Path, items: &[Item]) -> Result<HashSet<usize>> {
-    use std::os::unix::fs::MetadataExt;
-    let mut claimed = HashSet::new();
-    let mut merged = HashSet::new();
-    for (index, item) in items.iter().enumerate() {
-        if item.entry.directory {
-            let metadata = fs::metadata(root.join(&item.entry.name))?;
-            if !claimed.insert((metadata.dev(), metadata.ino())) {
-                merged.insert(index);
-            }
-        }
-    }
-    Ok(merged)
-}
-
-#[cfg(not(unix))]
-fn later_spellings_of_same_directory(_: &Path, _: &[Item]) -> Result<HashSet<usize>> {
-    Ok(HashSet::new())
+    crate::later_spellings_of_same_directory(
+        root,
+        items
+            .iter()
+            .map(|item| item.entry.directory.then_some(item.entry.name.as_str())),
+    )
 }
 
 fn create_directories_in_archive_order(root: &Path, items: &[Item]) -> Result<()> {
@@ -111,29 +99,9 @@ fn create_links_after_files(
     Ok(())
 }
 
-const MAX_LINK_TARGET: u64 = 4096;
-
 fn ensure_link_stays_inside(name: &str, target: &[u8]) -> Result<()> {
     let target = std::str::from_utf8(target).context("ZIP symlink target is not UTF-8")?;
-    ensure!(
-        !target.is_empty() && !target.contains('\0') && !target.starts_with('/'),
-        "ZIP symlink {name:?} has an unsafe target"
-    );
-    let mut depth = name.matches('/').count();
-    let mut descended = false;
-    for component in target.split('/') {
-        match component {
-            "" | "." => {}
-            ".." => {
-                ensure!(!descended, "ZIP symlink {name:?} has `..` after a name");
-                depth = depth.checked_sub(1).with_context(|| {
-                    format!("ZIP symlink {name:?} points outside the destination")
-                })?;
-            }
-            _ => descended = true,
-        }
-    }
-    Ok(())
+    crate::ensure_link_stays_inside("ZIP", name, target)
 }
 
 const LOCAL_HEADER: u64 = 30;
@@ -491,7 +459,7 @@ fn scan(
             "ZIP symlinks are not supported on this platform; pass --zip-engine backend to read it with 7-Zip"
         );
         ensure!(
-            !symlink || file.size() <= MAX_LINK_TARGET,
+            !symlink || file.size() <= crate::MAX_LINK_TARGET,
             "ZIP symlink target is too long"
         );
         let directory = file.is_dir();
@@ -880,10 +848,8 @@ impl Write for OutputFile {
 
 fn finish(output: &mut BufWriter<OutputFile>, item: &Item) -> Result<()> {
     output.flush()?;
-    // EXTERNAL(Info-ZIP unzip, bsdtar): both only warn when a time cannot be set.
     if let Some(seconds) = item.modified {
-        let _ = output.get_ref().0.set_modified(system_time(seconds));
-        counters::add(Counter::MetadataCalls, 1);
+        crate::set_modified_best_effort(&output.get_ref().0, system_time(seconds));
     }
     Ok(())
 }
@@ -1186,16 +1152,9 @@ pub fn read_archive_with_options(
                 }
                 let mut output = if let Some(temp) = &staging {
                     if !item.entry.directory {
-                        let mut options = File::options();
-                        options.write(true).create_new(true);
-                        // EXTERNAL(bsdtar): the OS applies the umask.
-                        #[cfg(unix)]
-                        std::os::unix::fs::OpenOptionsExt::mode(
-                            &mut options,
-                            item.mode.unwrap_or(0o666),
-                        );
                         let path = temp.path().join(&item.entry.name);
-                        let file = options.open(path).map_err(|error| {
+                        let file = crate::create_new_file(&path, item.mode.unwrap_or(0o666))
+                            .map_err(|error| {
                             if error.kind() == std::io::ErrorKind::AlreadyExists {
                                 anyhow::anyhow!(
                                     "ZIP entry {:?} collides with another entry on this filesystem, which ignores case or Unicode normalization",

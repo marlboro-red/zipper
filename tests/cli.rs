@@ -375,7 +375,7 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
     let mut shebang_with_zip = b"#!/bin/sh\nexit 0\n".to_vec();
     shebang_with_zip.extend(&zip);
     for (name, bytes, switch) in [
-        ("a.tar", tar_with_zip, Some("-ttar ")),
+        ("a.tar", tar_with_zip, None),
         ("b.bin", sevenzip_with_zip.clone(), Some("-t7z ")),
         ("c.7z.001", sevenzip_with_zip, Some("-t7z.split ")),
         ("d.bin", shebang_with_zip, None),
@@ -401,7 +401,9 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
                 assert!(!result.status.success(), "{name}");
                 assert!(log.is_empty(), "{name} reached 7-Zip: {log}");
                 assert!(
-                    stderr.contains("--zip-engine backend") || stderr.contains("ZIP"),
+                    stderr.contains("--zip-engine backend")
+                        || stderr.contains("ZIP")
+                        || stderr.contains("tar"),
                     "{name}: {stderr}"
                 );
             }
@@ -523,5 +525,116 @@ fn wildcards_in_7zip_paths_are_refused_before_7zip_runs() -> anyhow::Result<()> 
         );
         assert!(!t.path().join(output).exists());
     }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn default_engine_reads_tar_family_in_process_and_never_hands_it_to_7zip() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let t = tempfile::tempdir()?;
+    let backend = t.path().join("backend");
+    fs::write(
+        &backend,
+        "#!/bin/sh\necho \"$*\" >> \"$0.log\"\n\
+         for a; do case $a in -o*) d=${a#-o};; esac; done\necho 7zip > \"$d/marker\"\n",
+    )?;
+    fs::set_permissions(&backend, fs::Permissions::from_mode(0o700))?;
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/tar-corpus");
+    let zipper = |args: &[&std::ffi::OsStr]| {
+        Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .current_dir(t.path())
+            .args(args)
+            .env("ZIPPER_7Z", &backend)
+            .output()
+    };
+    for archive in [
+        "python-pax-short.tar",
+        "gnutar-gnu-gzip.tar.gz",
+        "gnutar-pax-zstd.tar.zst",
+        "gnutar-pax-xz.tar.xz",
+    ] {
+        let path = corpus.join(archive);
+        let output = t.path().join(format!("out-{archive}"));
+        let result = zipper(&[
+            "extract".as_ref(),
+            path.as_os_str(),
+            "-o".as_ref(),
+            output.as_os_str(),
+        ])?;
+        assert!(
+            result.status.success(),
+            "{archive}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            fs::read(output.join("src/nested/deep/deeper/leaf.txt"))?,
+            b"leaf\n",
+            "{archive}"
+        );
+        for command in ["list", "test"] {
+            let checked = zipper(&[command.as_ref(), path.as_os_str()])?;
+            assert!(checked.status.success(), "{command} {archive}");
+        }
+    }
+    let mut escaping = vec![0u8; 512];
+    escaping[..9].copy_from_slice(b"../escape");
+    escaping[100..108].copy_from_slice(b"0000644\0");
+    escaping[124..136].copy_from_slice(b"00000000000\0");
+    escaping[156] = b'0';
+    escaping[257..263].copy_from_slice(b"ustar\0");
+    escaping[148..156].fill(b' ');
+    let sum: u32 = escaping.iter().map(|&byte| u32::from(byte)).sum();
+    escaping[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+    escaping.extend_from_slice(&[0; 1024]);
+    let mut gzipped = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut gzipped, &escaping)?;
+    fs::write(t.path().join("escape.tar.gz"), gzipped.finish()?)?;
+    let mut corrupt = fs::read(corpus.join("python-pax-short.tar"))?;
+    corrupt[0] = b'X';
+    let mut gzipped = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut gzipped, &corrupt)?;
+    fs::write(t.path().join("corrupt.tar.gz"), gzipped.finish()?)?;
+    let corrupt = zipper(&[
+        "extract".as_ref(),
+        "corrupt.tar.gz".as_ref(),
+        "-o".as_ref(),
+        "corrupt".as_ref(),
+    ])?;
+    assert!(!corrupt.status.success());
+    assert!(!t.path().join("corrupt").exists());
+    let mut not_tar = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut not_tar, b"just a compressed file\n")?;
+    fs::write(t.path().join("note.gz"), not_tar.finish()?)?;
+    let rejected = zipper(&[
+        "extract".as_ref(),
+        "escape.tar.gz".as_ref(),
+        "-o".as_ref(),
+        "escape".as_ref(),
+    ])?;
+    assert!(!rejected.status.success());
+    assert!(!t.path().join("escape").exists());
+    assert!(
+        !t.path().join("backend.log").exists(),
+        "a hostile tar reached 7-Zip"
+    );
+    let limited = zipper(&[
+        "extract".as_ref(),
+        corpus.join("python-pax-short.tar").as_os_str(),
+        "-o".as_ref(),
+        "limited".as_ref(),
+        "--max-extracted-bytes".as_ref(),
+        "100".as_ref(),
+    ])?;
+    assert!(!limited.status.success());
+    assert!(!t.path().join("limited").exists());
+    let passed = zipper(&[
+        "extract".as_ref(),
+        "note.gz".as_ref(),
+        "-o".as_ref(),
+        "note".as_ref(),
+    ])?;
+    assert!(passed.status.success());
+    assert!(fs::read_to_string(t.path().join("backend.log"))?.contains("-tgzip "));
     Ok(())
 }

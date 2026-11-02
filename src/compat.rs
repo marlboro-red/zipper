@@ -39,9 +39,8 @@ const PINNED_FORMATS: &[(&[u8], usize, &str)] = &[
     (b"BZh", 0, "bzip2"),
     (b"\xFD7zXZ\x00", 0, "xz"),
     (b"MSCF", 0, "cab"),
-    (b"ustar", 257, "tar"),
 ];
-const SIGNATURE_WINDOW: usize = 257 + 5;
+const SIGNATURE_WINDOW: usize = 8;
 
 /// The `-t` switch for a format the default engine sends to 7-Zip, or `None`
 /// when the file starts with none of them. The first volume of a split
