@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(version, about = "Zipper — a parallel archive engine")]
 struct Cli {
-    /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer).
+    /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers).
     #[arg(long, global = true)]
     threads: Option<usize>,
     /// Reader for ZIP, tar and other foreign archives. Native readers restore files, directories, modes, times and safe links.
@@ -179,6 +179,7 @@ fn main() -> Result<()> {
                             Some(&output),
                             zipper::native_tar::ReadOptions {
                                 max_output_bytes: max_extracted_bytes,
+                                writers: cli.threads,
                             },
                         )?;
                     }

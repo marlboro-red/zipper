@@ -14,6 +14,12 @@ All records are local measurements. Each one names its machine, revision, run co
 | 2026-10-29 | [Indexed v2 measurements](v2/README.md) | V2 improves large-file extraction and small-file density. Compression speed is mixed. |
 | 2026-10-29 | [First baseline against 7-Zip](7zip-baseline.md) | Faster than 7-Zip LZMA2 level 1 at unmatched ratios. It set the v2 priorities. |
 
+## Tar reader
+
+| Date | Experiment | Verdict |
+| --- | --- | --- |
+| 2026-11-02 | [Writer pool for tar extraction](native-tar/writer-pool/README.md) | Kept. Four writer threads make small-file tar extraction 3.0× to 5.6× faster and large gzip entries 1.11× to 1.24× faster. Measured under load from a game. |
+
 ## ZIP reader
 
 | Date | Experiment | Verdict |

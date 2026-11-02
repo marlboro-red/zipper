@@ -45,6 +45,28 @@ def write_zip(source, archive):
                         shutil.copyfileobj(data, entry)
 
 
+def write_tar(source, plain):
+    """A ustar archive with fixed owners, times and modes."""
+    with tarfile.open(plain, 'w', format=tarfile.USTAR_FORMAT) as out:
+        for path in [source] + sorted(source.rglob('*')):
+            info = out.gettarinfo(str(path), path.relative_to(source.parent).as_posix())
+            info.uid = info.gid = info.mtime = 0
+            info.uname = info.gname = ''
+            info.mode = 0o755 if path.is_dir() else 0o644
+            if path.is_file():
+                with path.open('rb') as data:
+                    out.addfile(info, data)
+            else:
+                out.addfile(info)
+
+
+def write_gzip(plain, compressed):
+    """gzip level 6, the `tar czf` default, with an empty name and zero time."""
+    with plain.open('rb') as source_tar, compressed.open('wb') as raw:
+        with gzip.GzipFile(filename='', mode='wb', compresslevel=6, fileobj=raw, mtime=0) as out:
+            shutil.copyfileobj(source_tar, out, 1024 * 1024)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
@@ -89,21 +111,9 @@ def main():
         plain = work / 'input.tar'
         print("Creating ZIP and TAR fixtures", file=sys.stderr, flush=True)
         write_zip(source, archive)
-        with tarfile.open(plain, 'w', format=tarfile.USTAR_FORMAT) as out:
-            for path in [source] + sorted(source.rglob('*')):
-                info = out.gettarinfo(str(path), path.relative_to(source.parent).as_posix())
-                info.uid = info.gid = info.mtime = 0
-                info.uname = info.gname = ''
-                info.mode = 0o755 if path.is_dir() else 0o644
-                if path.is_file():
-                    with path.open('rb') as data:
-                        out.addfile(info, data)
-                else:
-                    out.addfile(info)
+        write_tar(source, plain)
         compressed = work / 'input.tar.gz'
-        with plain.open('rb') as source_tar, compressed.open('wb') as raw:
-            with gzip.GzipFile(filename='', mode='wb', compresslevel=6, fileobj=raw, mtime=0) as out:
-                shutil.copyfileobj(source_tar, out, 1024 * 1024)
+        write_gzip(plain, compressed)
         archives = [archive, plain, compressed]
         if args.save_zip:
             shutil.copyfile(archive, args.save_zip)

@@ -441,6 +441,7 @@ fn output_limit_is_enforced_before_writing() {
     fs::write(&archive, &bytes).unwrap();
     let limited = |limit| ReadOptions {
         max_output_bytes: Some(limit),
+        ..ReadOptions::default()
     };
     assert!(read_archive(&archive, Some(&root.path().join("small")), limited(5999)).is_err());
     assert!(!root.path().join("small").exists());

@@ -11,7 +11,12 @@ use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
     io::{BufReader, Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
+    sync::{
+        Condvar, Mutex,
+        mpsc::{Receiver, SyncSender, sync_channel},
+    },
+    time::SystemTime,
 };
 
 const BLOCK: usize = 512;
@@ -19,6 +24,11 @@ const COPY_BUFFER: usize = 1024 * 1024;
 const MAX_EXTENSION: u64 = 1024 * 1024;
 const MAX_ENTRIES: usize = 1_000_000;
 const MAX_METADATA: usize = 64 * 1024 * 1024;
+const CHUNK: usize = 1024 * 1024;
+const QUEUED_FILES: usize = 16;
+const QUEUED_CHUNKS_PER_FILE: usize = 4;
+const BYTES_IN_FLIGHT: usize = 16 * 1024 * 1024;
+const DEFAULT_WRITERS: usize = 4;
 const READ_ERROR: &str = "cannot read the tar stream";
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
@@ -31,12 +41,164 @@ pub enum Compression {
     Xz,
 }
 
-/// Tar extraction limits.
+/// Tar extraction options.
 #[derive(Clone, Copy, Default)]
 pub struct ReadOptions {
     /// Cap on declared output bytes. Without it, extraction must fit in the
     /// destination filesystem's free space.
     pub max_output_bytes: Option<u64>,
+    /// Threads that create and write files while one thread decodes the
+    /// stream, 1–64. Default: 4.
+    pub writers: Option<usize>,
+}
+
+struct InFlight {
+    bytes: Mutex<usize>,
+    freed: Condvar,
+}
+
+impl InFlight {
+    fn take(&self, capacity: usize) -> Chunk<'_> {
+        let mut bytes = self.bytes.lock().unwrap();
+        while *bytes > 0 && *bytes + capacity > BYTES_IN_FLIGHT {
+            bytes = self.freed.wait(bytes).unwrap();
+        }
+        *bytes += capacity;
+        Chunk {
+            data: Vec::with_capacity(capacity),
+            reserved: capacity,
+            flight: self,
+        }
+    }
+}
+
+struct Chunk<'f> {
+    data: Vec<u8>,
+    reserved: usize,
+    flight: &'f InFlight,
+}
+
+impl Drop for Chunk<'_> {
+    fn drop(&mut self) {
+        *self.flight.bytes.lock().unwrap() -= self.reserved;
+        self.flight.freed.notify_all();
+    }
+}
+
+struct Job<'f> {
+    path: PathBuf,
+    name: String,
+    mode: u32,
+    modified: Option<SystemTime>,
+    first: Chunk<'f>,
+    rest: Option<Receiver<Chunk<'f>>>,
+}
+
+struct Writers<'f> {
+    jobs: Mutex<Option<SyncSender<Job<'f>>>>,
+    flight: &'f InFlight,
+    pending: Mutex<usize>,
+    idle: Condvar,
+    failure: Mutex<Option<anyhow::Error>>,
+}
+
+impl<'f> Writers<'f> {
+    fn send(&self, job: Job<'f>) -> Result<()> {
+        *self.pending.lock().unwrap() += 1;
+        let sent = match &*self.jobs.lock().unwrap() {
+            Some(jobs) => jobs.send(job).is_ok(),
+            None => false,
+        };
+        ensure!(sent, "tar writers stopped");
+        self.check()
+    }
+
+    fn check(&self) -> Result<()> {
+        match self.failure.lock().unwrap().take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    fn stopped(&self) -> anyhow::Error {
+        self.check()
+            .err()
+            .unwrap_or_else(|| anyhow::anyhow!("tar writers stopped"))
+    }
+
+    fn drain(&self) -> Result<()> {
+        let mut pending = self.pending.lock().unwrap();
+        while *pending > 0 {
+            pending = self.idle.wait(pending).unwrap();
+        }
+        drop(pending);
+        self.check()
+    }
+
+    fn close(&self) {
+        self.jobs.lock().unwrap().take();
+    }
+
+    fn work(&self, jobs: &Mutex<Receiver<Job<'f>>>) {
+        loop {
+            let next = jobs.lock().unwrap().recv();
+            let Ok(mut job) = next else {
+                return;
+            };
+            if self.failure.lock().unwrap().is_none() {
+                let written =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| write_job(&mut job)))
+                        .unwrap_or_else(|_| {
+                            Err(anyhow::anyhow!(
+                                "a tar writer panicked writing {:?}",
+                                job.name
+                            ))
+                        });
+                if let Err(error) = written {
+                    self.failure.lock().unwrap().get_or_insert(error);
+                }
+            }
+            drop(job);
+            let mut pending = self.pending.lock().unwrap();
+            *pending -= 1;
+            if *pending == 0 {
+                self.idle.notify_all();
+            }
+        }
+    }
+}
+
+fn write_job(job: &mut Job) -> Result<()> {
+    let name = &job.name;
+    let mut file = crate::create_new_file(&job.path, job.mode).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            anyhow::anyhow!(
+                "tar entry {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
+            )
+        } else {
+            anyhow::Error::from(error).context(format!("cannot create tar entry {name:?}"))
+        }
+    })?;
+    counters::add(Counter::FilesCreated, 1);
+    let mut write = |bytes: &[u8]| -> Result<()> {
+        if !bytes.is_empty() {
+            file.write_all(bytes)
+                .with_context(|| format!("cannot write tar entry {name:?}"))?;
+            counters::add(Counter::OutputWrites, 1);
+            counters::add(Counter::OutputBytesWritten, bytes.len() as u64);
+        }
+        Ok(())
+    };
+    write(&job.first.data)?;
+    if let Some(rest) = &job.rest {
+        for chunk in rest {
+            write(&chunk.data)?;
+        }
+    }
+    if let Some(time) = job.modified {
+        crate::set_modified_best_effort(&file, time);
+    }
+    Ok(())
 }
 
 /// Returns the compression of a tar archive, or `None` when the file does not
@@ -408,8 +570,14 @@ impl Budget {
     }
 }
 
-struct Extraction<'a> {
-    root: Option<&'a Path>,
+#[derive(Clone, Copy)]
+struct Output<'a, 'f> {
+    root: &'a Path,
+    writers: &'a Writers<'f>,
+}
+
+struct Extraction<'a, 'f> {
+    output: Option<Output<'a, 'f>>,
     nodes: HashMap<String, Node>,
     metadata_bytes: usize,
     created_directories: HashSet<String>,
@@ -429,7 +597,26 @@ fn entry_name(raw: &str) -> &str {
     name
 }
 
-impl Extraction<'_> {
+impl<'a, 'f> Extraction<'a, 'f> {
+    fn new(output: Option<Output<'a, 'f>>, budget: Budget) -> Self {
+        Extraction {
+            output,
+            nodes: HashMap::new(),
+            metadata_bytes: 0,
+            created_directories: HashSet::new(),
+            directories: Vec::new(),
+            directory_index: HashMap::new(),
+            hard_links: Vec::new(),
+            symlinks: Vec::new(),
+            entries: Vec::new(),
+            budget,
+        }
+    }
+
+    fn root(&self) -> Option<&'a Path> {
+        self.output.map(|output| output.root)
+    }
+
     fn charge_name(&mut self, bytes: usize) -> Result<()> {
         self.metadata_bytes += bytes;
         ensure!(
@@ -472,7 +659,7 @@ impl Extraction<'_> {
     }
 
     fn create_parent(&mut self, name: &str) -> Result<()> {
-        let (Some(root), Some(slash)) = (self.root, name.rfind('/')) else {
+        let (Some(root), Some(slash)) = (self.root(), name.rfind('/')) else {
             return Ok(());
         };
         let directory = &name[..slash];
@@ -493,37 +680,70 @@ impl Extraction<'_> {
         replaces: bool,
     ) -> Result<()> {
         self.budget.charge(size)?;
-        let Some(root) = self.root else {
+        let Some(Output { root, writers }) = self.output else {
             return input.copy(size, |_| Ok(()));
         };
         self.create_parent(name)?;
         if replaces {
+            writers.drain()?;
             fs::remove_file(root.join(name))?;
         }
-        let mut file = crate::create_new_file(&root.join(name), mode).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                anyhow::anyhow!(
-                    "tar entry {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-                )
-            } else {
-                anyhow::Error::from(error).context(format!("cannot create tar entry {name:?}"))
+        let mut job = Some((root.join(name), name.to_owned()));
+        let mut stream: Option<SyncSender<Chunk>> = None;
+        let mut remaining = size;
+        let mut chunk = writers.flight.take(size.min(CHUNK as u64) as usize);
+        let modified = modified.and_then(Time::system_time);
+        input.copy(size, |mut bytes| {
+            while !bytes.is_empty() {
+                let room = CHUNK - chunk.data.len();
+                let (now, later) = bytes.split_at(room.min(bytes.len()));
+                chunk.data.extend_from_slice(now);
+                remaining -= now.len() as u64;
+                bytes = later;
+                if chunk.data.len() == CHUNK && remaining > 0 {
+                    let empty = Chunk {
+                        data: Vec::new(),
+                        reserved: 0,
+                        flight: writers.flight,
+                    };
+                    let full = std::mem::replace(&mut chunk, empty);
+                    match &stream {
+                        Some(chunks) => chunks.send(full).map_err(|_| writers.stopped())?,
+                        None => {
+                            let (chunks, rest) = sync_channel(QUEUED_CHUNKS_PER_FILE);
+                            let (path, name) = job.take().expect("a job until it is sent");
+                            writers.send(Job {
+                                path,
+                                name,
+                                mode,
+                                modified,
+                                first: full,
+                                rest: Some(rest),
+                            })?;
+                            stream = Some(chunks);
+                        }
+                    }
+                    chunk = writers.flight.take(remaining.min(CHUNK as u64) as usize);
+                }
             }
-        })?;
-        counters::add(Counter::FilesCreated, 1);
-        input.copy(size, |bytes| {
-            file.write_all(bytes)?;
-            counters::add(Counter::OutputWrites, 1);
-            counters::add(Counter::OutputBytesWritten, bytes.len() as u64);
             Ok(())
         })?;
-        if let Some(time) = modified.and_then(Time::system_time) {
-            crate::set_modified_best_effort(&file, time);
+        match (job, stream) {
+            (Some((path, name)), _) => writers.send(Job {
+                path,
+                name,
+                mode,
+                modified,
+                first: chunk,
+                rest: None,
+            }),
+            (None, Some(chunks)) => chunks.send(chunk).map_err(|_| writers.stopped()),
+            (None, None) => unreachable!("a sent job always has a chunk stream"),
         }
-        Ok(())
     }
 
     fn create_links(&self) -> Result<()> {
-        let Some(root) = self.root else {
+        let Some(root) = self.root() else {
             return Ok(());
         };
         for (name, target) in &self.hard_links {
@@ -620,7 +840,7 @@ impl Extraction<'_> {
             _ if directory => {
                 ensure!(size == 0, "tar directory {name:?} has data");
                 self.claim(&name, Node::Directory)?;
-                if self.root.is_some() {
+                if self.output.is_some() {
                     self.create_parent(&format!("{name}/"))?;
                 }
                 let metadata = DirectoryMetadata {
@@ -695,54 +915,7 @@ impl Extraction<'_> {
     }
 }
 
-/// Verify and optionally extract a plain or compressed tar archive into a new
-/// directory. It restores files, directories, hard links, Unix modes,
-/// modification times and symlinks that stay inside the destination.
-pub fn read_archive(
-    path: &Path,
-    destination: Option<&Path>,
-    options: ReadOptions,
-) -> Result<Vec<Entry>> {
-    let compression = sniff(path)?.context("not a tar archive")?;
-    let staging = match destination {
-        Some(destination) => {
-            ensure!(
-                fs::symlink_metadata(destination).is_err(),
-                "extraction destination must not exist"
-            );
-            Some(tempfile::tempdir_in(parent(destination))?)
-        }
-        None => None,
-    };
-    let free = match (destination, options.max_output_bytes) {
-        (Some(destination), None) => {
-            let folder = parent(destination);
-            crate::available_bytes(folder)
-                .with_context(|| format!("cannot measure free space at {}", folder.display()))?
-        }
-        _ => u64::MAX,
-    };
-    let mut extraction = Extraction {
-        root: staging.as_ref().map(|temp| temp.path()),
-        nodes: HashMap::new(),
-        metadata_bytes: 0,
-        created_directories: HashSet::new(),
-        directories: Vec::new(),
-        directory_index: HashMap::new(),
-        hard_links: Vec::new(),
-        symlinks: Vec::new(),
-        entries: Vec::new(),
-        budget: Budget {
-            limit: options.max_output_bytes,
-            free,
-            declared: 0,
-            estimate: 0,
-        },
-    };
-    let mut input = Input {
-        reader: decoder(path, compression)?,
-        buffer: vec![0; COPY_BUFFER],
-    };
+fn parse(extraction: &mut Extraction, input: &mut Input) -> Result<()> {
     let mut extensions = Extensions::default();
     loop {
         let block = input
@@ -784,30 +957,142 @@ pub fn read_archive(
                 );
                 extensions.long_link = Some(input.data(size, "GNU long link")?);
             }
-            _ => extraction.member(&mut input, &block, std::mem::take(&mut extensions))?,
+            _ => extraction.member(input, &block, std::mem::take(&mut extensions))?,
         }
     }
+    Ok(())
+}
+
+/// Verify and optionally extract a plain or compressed tar archive into a new
+/// directory. It restores files, directories, hard links, Unix modes,
+/// modification times and symlinks that stay inside the destination.
+pub fn read_archive(
+    path: &Path,
+    destination: Option<&Path>,
+    options: ReadOptions,
+) -> Result<Vec<Entry>> {
+    let compression = sniff(path)?.context("not a tar archive")?;
+    let staging = match destination {
+        Some(destination) => {
+            ensure!(
+                fs::symlink_metadata(destination).is_err(),
+                "extraction destination must not exist"
+            );
+            Some(tempfile::tempdir_in(parent(destination))?)
+        }
+        None => None,
+    };
+    let free = match (destination, options.max_output_bytes) {
+        (Some(destination), None) => {
+            let folder = parent(destination);
+            crate::available_bytes(folder)
+                .with_context(|| format!("cannot measure free space at {}", folder.display()))?
+        }
+        _ => u64::MAX,
+    };
+    let budget = Budget {
+        limit: options.max_output_bytes,
+        free,
+        declared: 0,
+        estimate: 0,
+    };
+    let mut input = Input {
+        reader: decoder(path, compression)?,
+        buffer: vec![0; COPY_BUFFER],
+    };
+    let (Some(temp), Some(destination)) = (&staging, destination) else {
+        let mut extraction = Extraction::new(None, budget);
+        parse(&mut extraction, &mut input)?;
+        return Ok(extraction.entries);
+    };
+    let count = options.writers.unwrap_or(DEFAULT_WRITERS);
+    ensure!(
+        (1..=64).contains(&count),
+        "tar writers must be between 1 and 64"
+    );
+    let flight = InFlight {
+        bytes: Mutex::new(0),
+        freed: Condvar::new(),
+    };
+    let (jobs, queue) = sync_channel(QUEUED_FILES);
+    let queue = Mutex::new(queue);
+    let writers = Writers {
+        jobs: Mutex::new(Some(jobs)),
+        flight: &flight,
+        pending: Mutex::new(0),
+        idle: Condvar::new(),
+        failure: Mutex::new(None),
+    };
+    std::thread::scope(|scope| {
+        let threads: Vec<_> = (0..count)
+            .map(|_| scope.spawn(|| writers.work(&queue)))
+            .collect();
+        let output = Output {
+            root: temp.path(),
+            writers: &writers,
+        };
+        let mut extraction = Extraction::new(Some(output), budget);
+        let parsed = parse(&mut extraction, &mut input);
+        writers.close();
+        let joined: Vec<_> = threads.into_iter().map(|thread| thread.join()).collect();
+        parsed?;
+        ensure!(joined.iter().all(Result::is_ok), "a tar writer panicked");
+        writers.check()?;
+        publish(&extraction, temp.path(), destination)?;
+        Ok(extraction.entries)
+    })
+}
+
+fn publish(extraction: &Extraction, staging: &Path, destination: &Path) -> Result<()> {
     extraction.create_links()?;
-    if let (Some(temp), Some(destination)) = (&staging, destination) {
-        let merged = crate::later_spellings_of_same_directory(
-            temp.path(),
-            extraction
-                .directories
-                .iter()
-                .map(|directory| Some(directory.name.as_str())),
-        )?;
-        let directories: Vec<crate::Directory> = extraction
+    let merged = crate::later_spellings_of_same_directory(
+        staging,
+        extraction
             .directories
             .iter()
-            .enumerate()
-            .filter(|(index, _)| !merged.contains(index))
-            .map(|(_, directory)| crate::Directory {
-                name: &directory.name,
-                mode: Some(directory.mode),
-                modified: directory.modified.and_then(Time::system_time),
-            })
-            .collect();
-        crate::publish(temp.path(), destination, &directories)?;
+            .map(|directory| Some(directory.name.as_str())),
+    )?;
+    let directories: Vec<crate::Directory> = extraction
+        .directories
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !merged.contains(index))
+        .map(|(_, directory)| crate::Directory {
+            name: &directory.name,
+            mode: Some(directory.mode),
+            modified: directory.modified.and_then(Time::system_time),
+        })
+        .collect();
+    crate::publish(staging, destination, &directories)
+}
+
+#[cfg(test)]
+mod in_flight_tests {
+    use super::*;
+
+    #[test]
+    fn chunks_in_flight_never_exceed_the_budget_and_release_on_drop() {
+        let flight = InFlight {
+            bytes: Mutex::new(0),
+            freed: Condvar::new(),
+        };
+        let peak = Mutex::new(0usize);
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                scope.spawn(|| {
+                    for _ in 0..200 {
+                        let held = flight.take(CHUNK + 1);
+                        let now = *flight.bytes.lock().unwrap();
+                        let mut peak = peak.lock().unwrap();
+                        *peak = (*peak).max(now);
+                        drop(peak);
+                        std::thread::yield_now();
+                        drop(held);
+                    }
+                });
+            }
+        });
+        assert!(*peak.lock().unwrap() <= BYTES_IN_FLIGHT);
+        assert_eq!(*flight.bytes.lock().unwrap(), 0);
     }
-    Ok(extraction.entries)
 }
