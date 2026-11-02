@@ -2,9 +2,11 @@
 """Compare two Zipper binaries on the scoreboard workloads, interleaved.
 
 For each workload and archive format, write the scoreboard's fixture once and
-run scripts/compare_zip_readers.py with both binaries in shuffled rounds. Both
-binaries run on the same host in the same session, so their ratio holds even
-where absolute times drift between sessions, as on hosted runners."""
+run scripts/compare_zip_readers.py with both binaries in shuffled rounds,
+extracting under target/bench-work as the scoreboard does. Extracting into the
+Windows temp folder ran small-file rows about five times slower than the
+scoreboard. Both binaries run on the same host in the same session, so their
+ratio holds even where absolute times drift between sessions."""
 import argparse
 import json
 from pathlib import Path
@@ -57,7 +59,7 @@ def main():
                 subprocess.run([sys.executable, str(ROOT / 'scripts' / 'compare_zip_readers.py'),
                                 str(archive), str(source),
                                 '--archive-format', 'zip' if form == 'zip' else 'tar',
-                                '--runs', str(args.runs),
+                                '--runs', str(args.runs), '--work-dir', str(work),
                                 '--reader', 'before', 'native', str(args.before.resolve()),
                                 '--reader', 'after', 'native', str(args.after.resolve()),
                                 '--reader-threads', 'before', 'auto', '--reader-threads', 'after', 'auto'],

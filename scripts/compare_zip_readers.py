@@ -32,6 +32,7 @@ def main():
                         help="override shared entry-buffer budget for a native-fast reader")
     parser.add_argument("--operation", choices=["extract", "list", "test"], default="extract")
     parser.add_argument("--cooldown", type=float, default=0, help="untimed seconds after cleanup, 0..10")
+    parser.add_argument("--work-dir", type=Path, help="parent for restored trees; the system temp folder by default")
     args = parser.parse_args()
     if args.runs < 1 or not 1 <= args.threads <= 64 or not 0 <= args.cooldown <= 10:
         parser.error("positive runs and threads 1..64 required")
@@ -71,7 +72,7 @@ def main():
     samples = {label: [] for label in readers}
     order = []
     rng = random.Random(20261029)
-    with tempfile.TemporaryDirectory(prefix="zipper-readers-") as work:
+    with tempfile.TemporaryDirectory(prefix="zipper-readers-", dir=args.work_dir) as work:
         for iteration in range(args.runs + 1):
             labels = list(readers)
             rng.shuffle(labels)
