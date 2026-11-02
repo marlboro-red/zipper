@@ -26,8 +26,10 @@ def create(directory, start, count, write, times):
         fd = os.open(os.path.join(directory, f'record-{index:06}.dat'), flags, 0o644)
         if write and index % 5:
             os.write(fd, DATA)
-        if times:
+        if times and os.utime in os.supports_fd:
             os.utime(fd, (1600000000, 1600000000))
+        elif times:
+            os.utime(os.path.join(directory, f'record-{index:06}.dat'), (1600000000, 1600000000))
         os.close(fd)
 
 

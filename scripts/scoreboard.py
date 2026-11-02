@@ -4,6 +4,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -116,14 +117,16 @@ def run(args):
     names = args.only or list(WORKLOADS)
     if args.counters_only:
         for name in names:
-            path = SCOREBOARD / f'{name}.json'
+            path = scoreboard / f'{name}.json'
             result = json.loads(path.read_text(encoding='utf-8'))
             result['counters'] = counted(name, result)
             path.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
-        RESULTS.write_text(render(), encoding='utf-8')
+        if not args.no_render:
+            RESULTS.write_text(render(), encoding='utf-8')
         return
+    scoreboard = args.scoreboard_dir.resolve() if args.scoreboard_dir else SCOREBOARD
     WORK.mkdir(parents=True, exist_ok=True)
-    SCOREBOARD.mkdir(parents=True, exist_ok=True)
+    scoreboard.mkdir(parents=True, exist_ok=True)
     for name in names:
         corpus, subpath, _ = WORKLOADS[name]
         source = (prepared(corpus) / subpath).resolve()
@@ -131,8 +134,10 @@ def run(args):
         command = [sys.executable, str(ROOT / 'scripts' / 'extraction_matrix.py'), str(source),
                    '--zipper', str(zipper), '--output', str(raw), '--work-dir', str(WORK),
                    '--threads', *THREADS, '--runs', str(args.runs), '--save-zip', str(WORK / f'{name}.zip')]
-        for flag, tool in [('--tar', 'bsdtar'), ('--sevenzip', '7zz')]:
-            if shutil.which(tool):
+        for flag, variable, names in [('--tar', 'ZIPPER_BENCH_TAR', ['bsdtar']),
+                                      ('--sevenzip', 'ZIPPER_BENCH_7Z', ['7zz', '7z'])]:
+            tool = os.environ.get(variable) or next(filter(shutil.which, names), None)
+            if tool:
                 command += [flag, tool]
         print(f'scoreboard: {name}', file=sys.stderr, flush=True)
         subprocess.run(command, cwd=ROOT, check=True)
@@ -142,10 +147,11 @@ def run(args):
         result['revision'] = git('rev-parse', 'HEAD')
         result['tree_clean'] = not dirty
         result['recorded'] = datetime.date.today().isoformat()
-        result['previous_session'] = previous_session(SCOREBOARD / f'{name}.json', result)
+        result['previous_session'] = previous_session(scoreboard / f'{name}.json', result)
         result['counters'] = counted(name, result)
-        (SCOREBOARD / f'{name}.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
-    RESULTS.write_text(render(), encoding='utf-8')
+        (scoreboard / f'{name}.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+    if not args.no_render:
+        RESULTS.write_text(render(), encoding='utf-8')
 
 
 def count(number, noun):
@@ -244,6 +250,8 @@ def main():
     measure.add_argument('--runs', type=int, default=7)
     measure.add_argument('--only', nargs='+', choices=list(WORKLOADS))
     measure.add_argument('--allow-dirty', action='store_true', help='for trials; the JSON records tree_clean false')
+    measure.add_argument('--scoreboard-dir', type=Path, help='write the JSON here instead of benchmarks/scoreboard')
+    measure.add_argument('--no-render', action='store_true', help='leave docs/results.md alone, as on other platforms')
     measure.add_argument('--counters-only', action='store_true',
                          help='keep the timings and recount each recorded ZIP with the counters build')
     commands.add_parser('render', help='rewrite docs/results.md from the JSON')

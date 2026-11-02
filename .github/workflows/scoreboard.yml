@@ -1,0 +1,54 @@
+name: Cross-platform scoreboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Measured rounds after one warmup
+        default: '7'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      SCOREBOARD_RUNS: ${{ inputs.runs }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate inputs
+        run: python -c 'import os; r=int(os.environ["SCOREBOARD_RUNS"]); assert 1 <= r <= 31'
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Install Linux baselines
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y 7zip libarchive-tools
+      - name: Locate baselines
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            echo 'ZIPPER_BENCH_7Z=C:/Program Files/7-Zip/7z.exe' >> "$GITHUB_ENV"
+            echo 'ZIPPER_BENCH_TAR=C:/Windows/System32/tar.exe' >> "$GITHUB_ENV"
+          else
+            echo "ZIPPER_BENCH_7Z=$(command -v 7zz || command -v 7z)" >> "$GITHUB_ENV"
+            echo "ZIPPER_BENCH_TAR=$(command -v bsdtar)" >> "$GITHUB_ENV"
+          fi
+      - name: Scoreboard
+        run: cargo +1.96.0 xtask bench --runs "$SCOREBOARD_RUNS" --scoreboard-dir target/ci-scoreboard --no-render
+      - name: File creation floor
+        run: |
+          mkdir -p target/bench-work/probe
+          python scripts/probe_create_cost.py --root target/bench-work/probe \
+            --output target/ci-scoreboard/create-cost.json --runs "$SCOREBOARD_RUNS"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scoreboard-${{ matrix.os }}
+          path: target/ci-scoreboard/
