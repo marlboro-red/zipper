@@ -42,6 +42,8 @@ WORKLOADS = {
 
 ROW_ORDER = ['native-auto', 'native-1', 'native-4', 'native-fast-1', 'native-fast-4', 'bsdtar-zip', '7zip', 'bsdtar-tar']
 PARITY_ROW = 'bsdtar-zip'
+TAR_PARITY = {'tar-native': 'bsdtar-tar-default', 'bsdtar-tar-default': 'bsdtar-tar-default',
+              'tar-gz-native': 'bsdtar-tar-gz', 'bsdtar-tar-gz': 'bsdtar-tar-gz'}
 
 
 def git(*args):
@@ -162,16 +164,25 @@ def ms(seconds):
     return f'{seconds * 1000:,.2f}'
 
 
-def table(result):
+def table(result, tar=False):
     rows = result['results']
-    order = [name for name in ROW_ORDER if name in rows] + sorted(set(rows) - set(ROW_ORDER))
-    parity = rows.get(PARITY_ROW)
+    if tar:
+        order = [name for name in TAR_PARITY if name in rows]
+        parity_of = lambda name: rows.get(TAR_PARITY[name])
+        heading = 'bsdtar time on the same file ÷ row time'
+    else:
+        order = [name for name in ROW_ORDER if name in rows] + sorted(set(rows) - set(ROW_ORDER) - set(TAR_PARITY))
+        parity_of = lambda name: rows.get(PARITY_ROW)
+        heading = 'bsdtar-zip time ÷ row time'
+    if not order:
+        return []
     earlier = (result.get('previous_session') or {}).get('median_seconds', {})
-    lines = ['| Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time '
+    lines = [f'| Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | {heading} '
              '| Drift from previous session |',
              '| --- | ---: | ---: | ---: | ---: | ---: | ---: |']
     for name in order:
         row = rows[name]
+        parity = parity_of(name)
         ratio = f"{parity['median_seconds'] / row['median_seconds']:.2f}×" if parity else 'no bsdtar row'
         drift = f"{row['median_seconds'] / earlier[name] - 1:+.1%}" if name in earlier else 'none recorded'
         lines.append(f"| `{name}` | {ms(row['median_seconds'])} [{ms(row['min_seconds'])}–{ms(row['max_seconds'])}] "
@@ -212,6 +223,8 @@ def render():
              '  `native-auto` is the default engine with no `--threads` flag, so Zipper picks the workers.',
              '  `bsdtar-zip` restores default metadata, which matches what the native engines restore.',
              '  `bsdtar-tar` uses reduced-metadata flags. `7zip` restores times and attributes.',
+             '- Tar rows extract the TAR and its gzip form. `tar-native` and `tar-gz-native` run the default',
+             '  engine. `bsdtar-tar-default` and `bsdtar-tar-gz` restore default metadata, as Zipper does.',
              '- Peak memory is the peak resident size of one process. Caches are warm.',
              '- Drift compares each median with the previous session that measured the same Zipper binary.',
              '  It shows how far one host moves between sessions, so a change smaller than the drift is noise.', '']
@@ -232,6 +245,12 @@ def render():
                   f"- {count(result['runs'], 'measured round')} after one warmup.",
                   f"- `{result['platform']}` on `{result['machine']}` with {result['cpu_count']} logical CPUs.", '',
                   *table(result), '', *counter_table(result)]
+        tar_rows = table(result, tar=True)
+        if tar_rows:
+            tar_bytes = result['archives']['input.tar']['bytes']
+            gz_bytes = result['archives']['input.tar.gz']['bytes']
+            lines += [f"Tar rows read a TAR of {tar_bytes:,} bytes and its gzip level 6 form of {gz_bytes:,} bytes.", '',
+                      *tar_rows, '']
     return '\n'.join(lines).rstrip('\n') + '\n'
 
 

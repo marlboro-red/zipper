@@ -16,6 +16,8 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
   `native-auto` is the default engine with no `--threads` flag, so Zipper picks the workers.
   `bsdtar-zip` restores default metadata, which matches what the native engines restore.
   `bsdtar-tar` uses reduced-metadata flags. `7zip` restores times and attributes.
+- Tar rows extract the TAR and its gzip form. `tar-native` and `tar-gz-native` run the default
+  engine. `bsdtar-tar-default` and `bsdtar-tar-gz` restore default metadata, as Zipper does.
 - Peak memory is the peak resident size of one process. Caches are warm.
 - Drift compares each median with the previous session that measured the same Zipper binary.
   It shows how far one host moves between sessions, so a change smaller than the drift is noise.

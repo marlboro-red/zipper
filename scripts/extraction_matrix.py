@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Portable, interleaved extraction comparisons with direct byte verification."""
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -99,7 +100,11 @@ def main():
                         out.addfile(info, data)
                 else:
                     out.addfile(info)
-        archives = [archive, plain]
+        compressed = work / 'input.tar.gz'
+        with plain.open('rb') as source_tar, compressed.open('wb') as raw:
+            with gzip.GzipFile(filename='', mode='wb', compresslevel=6, fileobj=raw, mtime=0) as out:
+                shutil.copyfileobj(source_tar, out, 1024 * 1024)
+        archives = [archive, plain, compressed]
         if args.save_zip:
             shutil.copyfile(archive, args.save_zip)
         native = work / 'input.zipper'
@@ -114,6 +119,8 @@ def main():
         output = work / 'out'
         commands = {}
         commands['native-auto'] = [str(zipper), '--zip-engine', 'native', 'extract', str(archive), '-o', str(output)]
+        commands['tar-native'] = [str(zipper), 'extract', str(plain), '-o', str(output)]
+        commands['tar-gz-native'] = [str(zipper), 'extract', str(compressed), '-o', str(output)]
         for threads in sorted(set(args.threads)):
             if args.native_format:
                 commands[f'zipper-{threads}'] = [str(zipper), '--threads', str(threads),
@@ -134,12 +141,18 @@ def main():
                     commands['bsdtar-zip'] = [resolved, '-xf', str(archive), '-C', str(output), '-b', '2048']
                     commands['bsdtar-tar'] = [resolved, '-xf', str(plain), '-C', str(output),
                         '-b', '2048', *minimal_extract_flags(resolved)]
+                    commands['bsdtar-tar-default'] = [resolved, '-xf', str(plain), '-C', str(output), '-b', '2048']
+                    commands['bsdtar-tar-gz'] = [resolved, '-xf', str(compressed), '-C', str(output), '-b', '2048']
         result['commands'] = commands
         result['parity'] = {
             'zipper_restores': 'ZIP engines restore bytes, directories, permission bits, times and links; '
                 'the native format restores bytes and directories',
             'bsdtar-zip': 'default metadata restore, 1 MiB reads, single process',
             'bsdtar-tar': 'reduced-metadata flags to match the native format, single process',
+            'bsdtar-tar-default': 'default metadata restore on the plain TAR, 1 MiB reads, single process',
+            'bsdtar-tar-gz': 'default metadata restore on the gzip level 6 TAR, 1 MiB reads, single process',
+            'tar-native': 'the default engine on the plain TAR; restores bytes, directories, modes and times',
+            'tar-gz-native': 'the default engine on the gzip level 6 TAR',
             '7zip': 'restores timestamps and attributes; no flag disables them',
             'output_root': 'created before timing for external readers; Zipper stages and publishes inside timing',
             'threads': 'Zipper rows run at every --threads value, including 1 for a single-threaded comparison'}
