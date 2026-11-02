@@ -111,6 +111,8 @@ The manifest also records each path's exact modification time where `unzip` and 
 
 `tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on all 21 archives. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
 
+The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 94 ZIP archives from PyPI, Maven, Go and GitHub with Zipper and default bsdtar. All matched, along with the 154 tar archives in the same set.
+
 ## Mutation testing
 
 `tests/zip_fuzz.rs` mutates corpus archives with seeded bit flips, truncations, insertions and edge values written into header fields. Both engines extract every mutant. Each case must either fail and leave nothing in the destination's parent, or succeed with verification agreeing and exactly the declared bytes written. A panic fails the test.

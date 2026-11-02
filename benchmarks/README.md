@@ -14,6 +14,12 @@ All records are local measurements. Each one names its machine, revision, run co
 | 2026-10-29 | [Indexed v2 measurements](v2/README.md) | V2 improves large-file extraction and small-file density. Compression speed is mixed. |
 | 2026-10-29 | [First baseline against 7-Zip](7zip-baseline.md) | Faster than 7-Zip LZMA2 level 1 at unmatched ratios. It set the v2 priorities. |
 
+## Real-world archives
+
+| Date | Experiment | Verdict |
+| --- | --- | --- |
+| 2026-11-03 | [Real-world archives against bsdtar](realworld/README.md) | All 248 popular ZIP, wheel, jar and tar archives extract identically with Zipper and default bsdtar, across 189,576 paths. macOS only. |
+
 ## Tar reader
 
 | Date | Experiment | Verdict |

@@ -1,0 +1,1738 @@
+[
+ {
+  "name": "pypi-sdist:boto3-1.43.123.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 105
+ },
+ {
+  "name": "pypi-wheel:boto3-1.43.123-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 95
+ },
+ {
+  "name": "pypi-sdist:packaging-26.3.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 117
+ },
+ {
+  "name": "pypi-wheel:packaging-26.3-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 33
+ },
+ {
+  "name": "pypi-sdist:typing_extensions-4.16.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 11
+ },
+ {
+  "name": "pypi-wheel:typing_extensions-4.16.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 7
+ },
+ {
+  "name": "pypi-sdist:certifi-2026.10.23.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 23
+ },
+ {
+  "name": "pypi-wheel:certifi-2026.10.23-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 16
+ },
+ {
+  "name": "pypi-sdist:idna-3.20.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 35
+ },
+ {
+  "name": "pypi-wheel:idna-3.20-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 19
+ },
+ {
+  "name": "pypi-sdist:urllib3-2.8.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 148
+ },
+ {
+  "name": "pypi-wheel:urllib3-2.8.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 49
+ },
+ {
+  "name": "pypi-sdist:charset_normalizer-3.5.2.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 97
+ },
+ {
+  "name": "pypi-wheel:charset_normalizer-3.5.2-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 23
+ },
+ {
+  "name": "pypi-sdist:requests-2.34.2.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 101
+ },
+ {
+  "name": "pypi-wheel:requests-2.34.2-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 29
+ },
+ {
+  "name": "pypi-sdist:cryptography-50.0.2.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 566
+ },
+ {
+  "name": "pypi-wheel:cryptography-50.0.2-cp311-abi3-macosx_11_0_arm64.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 141
+ },
+ {
+  "name": "pypi-sdist:cffi-2.1.1.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 264
+ },
+ {
+  "name": "pypi-wheel:cffi-2.1.1-cp310-cp310-macosx_10_15_x86_64.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 34
+ },
+ {
+  "name": "pypi-sdist:pluggy-1.7.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 106
+ },
+ {
+  "name": "pypi-wheel:pluggy-1.7.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 22
+ },
+ {
+  "name": "pypi-sdist:pyyaml-6.0.3.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 656
+ },
+ {
+  "name": "pypi-wheel:pyyaml-6.0.3-cp310-cp310-macosx_10_13_x86_64.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 28
+ },
+ {
+  "name": "pypi-sdist:pycparser-3.12.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 211
+ },
+ {
+  "name": "pypi-wheel:pycparser-3.12-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 16
+ },
+ {
+  "name": "pypi-sdist:pygments-2.21.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 3419
+ },
+ {
+  "name": "pypi-wheel:pygments-2.21.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 356
+ },
+ {
+  "name": "pypi-sdist:python_dateutil-4.0.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 97
+ },
+ {
+  "name": "pypi-wheel:python_dateutil-4.0.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 32
+ },
+ {
+  "name": "pypi-sdist:six-1.17.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 19
+ },
+ {
+  "name": "pypi-wheel:six-1.17.0-py2.py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 7
+ },
+ {
+  "name": "pypi-sdist:setuptools-84.2.1.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 599
+ },
+ {
+  "name": "pypi-wheel:setuptools-84.2.1-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 403
+ },
+ {
+  "name": "pypi-sdist:pydantic-2.14.2.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 370
+ },
+ {
+  "name": "pypi-wheel:pydantic-2.14.2-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 119
+ },
+ {
+  "name": "pypi-sdist:pydantic_core-2.50.2.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 302
+ },
+ {
+  "name": "pypi-wheel:pydantic_core-2.50.2-cp310-cp310-macosx_10_12_x86_64.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 16
+ },
+ {
+  "name": "pypi-sdist:click-8.5.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 120
+ },
+ {
+  "name": "pypi-wheel:click-8.5.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 25
+ },
+ {
+  "name": "pypi-sdist:numpy-2.5.4.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 10989
+ },
+ {
+  "name": "pypi-wheel:numpy-2.5.4-cp312-cp312-macosx_10_13_x86_64.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1045
+ },
+ {
+  "name": "pypi-sdist:botocore-1.43.123.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 4971
+ },
+ {
+  "name": "pypi-wheel:botocore-1.43.123-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 2934
+ },
+ {
+  "name": "pypi-sdist:anyio-4.16.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 280
+ },
+ {
+  "name": "pypi-wheel:anyio-4.16.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 60
+ },
+ {
+  "name": "pypi-sdist:annotated_types-0.8.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 24
+ },
+ {
+  "name": "pypi-wheel:annotated_types-0.8.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 10
+ },
+ {
+  "name": "pypi-sdist:pytest-9.2.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 729
+ },
+ {
+  "name": "pypi-wheel:pytest-9.2.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 100
+ },
+ {
+  "name": "pypi-sdist:iniconfig-2.3.1.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 32
+ },
+ {
+  "name": "pypi-wheel:iniconfig-2.3.1-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 13
+ },
+ {
+  "name": "pypi-sdist:typing_inspection-0.4.4.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 45
+ },
+ {
+  "name": "pypi-wheel:typing_inspection-0.4.4-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 12
+ },
+ {
+  "name": "pypi-sdist:h11-0.16.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 69
+ },
+ {
+  "name": "pypi-wheel:h11-0.16.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 20
+ },
+ {
+  "name": "pypi-sdist:attrs-26.1.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 143
+ },
+ {
+  "name": "pypi-wheel:attrs-26.1.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 39
+ },
+ {
+  "name": "pypi-sdist:markupsafe-3.0.4.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 44
+ },
+ {
+  "name": "pypi-wheel:markupsafe-3.0.4-cp310-cp310-macosx_10_9_x86_64.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 14
+ },
+ {
+  "name": "pypi-sdist:httpx-0.28.1.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 77
+ },
+ {
+  "name": "pypi-wheel:httpx-0.28.1-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 33
+ },
+ {
+  "name": "pypi-sdist:httpcore-1.0.9.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 70
+ },
+ {
+  "name": "pypi-wheel:httpcore-1.0.9-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 42
+ },
+ {
+  "name": "pypi-sdist:s3transfer-0.19.3.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 71
+ },
+ {
+  "name": "pypi-wheel:s3transfer-0.19.3-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 24
+ },
+ {
+  "name": "pypi-sdist:protobuf-7.36.2.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 331
+ },
+ {
+  "name": "pypi-wheel:protobuf-7.36.2-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 70
+ },
+ {
+  "name": "pypi-sdist:python_dotenv-1.2.4.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 56
+ },
+ {
+  "name": "pypi-wheel:python_dotenv-1.2.4-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 18
+ },
+ {
+  "name": "pypi-sdist:pyjwt-2.15.1.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 95
+ },
+ {
+  "name": "pypi-wheel:pyjwt-2.15.1-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 22
+ },
+ {
+  "name": "pypi-sdist:jinja2-3.1.6.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 105
+ },
+ {
+  "name": "pypi-wheel:jinja2-3.1.6-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 34
+ },
+ {
+  "name": "pypi-sdist:pandas-3.1.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 2241
+ },
+ {
+  "name": "pypi-wheel:pandas-3.1.0-cp311-cp311-macosx_10_9_x86_64.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1720
+ },
+ {
+  "name": "pypi-sdist:aiobotocore-3.10.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 163
+ },
+ {
+  "name": "pypi-wheel:aiobotocore-3.10.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 46
+ },
+ {
+  "name": "pypi-sdist:starlette-1.10.0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 168
+ },
+ {
+  "name": "pypi-wheel:starlette-1.10.0-py3-none-any.whl",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 45
+ },
+ {
+  "name": "npm:lodash@4.18.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1053
+ },
+ {
+  "name": "npm:react@19.3.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 29
+ },
+ {
+  "name": "npm:express@5.3.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 12
+ },
+ {
+  "name": "npm:typescript@7.0.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 434
+ },
+ {
+  "name": "npm:axios@1.21.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 111
+ },
+ {
+  "name": "npm:chalk@6.0.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 17
+ },
+ {
+  "name": "npm:commander@15.0.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 15
+ },
+ {
+  "name": "npm:debug@4.4.3",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 9
+ },
+ {
+  "name": "npm:tslib@2.9.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 16
+ },
+ {
+  "name": "npm:semver@7.8.5",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 59
+ },
+ {
+  "name": "npm:uuid@14.0.3",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 74
+ },
+ {
+  "name": "npm:moment@2.31.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 562
+ },
+ {
+  "name": "npm:webpack@5.112.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 983
+ },
+ {
+  "name": "npm:eslint@10.14.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 443
+ },
+ {
+  "name": "npm:prettier@3.9.10",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 60
+ },
+ {
+  "name": "npm:next@16.4.4",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 9401
+ },
+ {
+  "name": "npm:vue@3.5.44",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 42
+ },
+ {
+  "name": "npm:rxjs@7.8.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 2365
+ },
+ {
+  "name": "npm:jquery@4.0.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 191
+ },
+ {
+  "name": "npm:yargs@18.2.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 68
+ },
+ {
+  "name": "npm:esbuild@0.28.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 10
+ },
+ {
+  "name": "npm:rollup@4.67.4",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 34
+ },
+ {
+  "name": "npm:vite@8.3.5",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 46
+ },
+ {
+  "name": "npm:@babel/core@8.1.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 24
+ },
+ {
+  "name": "npm:core-js@3.51.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 3916
+ },
+ {
+  "name": "npm:zod@4.6.7",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 870
+ },
+ {
+  "name": "npm:dotenv@18.0.9",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 9
+ },
+ {
+  "name": "npm:glob@14.0.3",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 77
+ },
+ {
+  "name": "npm:minimatch@11.0.4",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 41
+ },
+ {
+  "name": "npm:ws@8.22.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 21
+ },
+ {
+  "name": "npm:node-fetch@3.3.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 22
+ },
+ {
+  "name": "npm:bluebird@3.7.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 49
+ },
+ {
+  "name": "npm:underscore@1.13.8",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 509
+ },
+ {
+  "name": "npm:classnames@2.5.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 11
+ },
+ {
+  "name": "npm:prop-types@15.8.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 14
+ },
+ {
+  "name": "npm:date-fns@4.4.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 5337
+ },
+ {
+  "name": "npm:three@0.187.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1401
+ },
+ {
+  "name": "npm:socket.io@4.8.4",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 36
+ },
+ {
+  "name": "npm:mongoose@9.11.4",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 340
+ },
+ {
+  "name": "npm:sharp@0.35.5",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 52
+ },
+ {
+  "name": "crate:hashbrown-0.17.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 58
+ },
+ {
+  "name": "crate:syn-3.0.9",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 115
+ },
+ {
+  "name": "crate:getrandom-0.4.3",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 54
+ },
+ {
+  "name": "crate:bitflags-2.13.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 70
+ },
+ {
+  "name": "crate:rand_core-0.10.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 22
+ },
+ {
+  "name": "crate:rand-0.10.3",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 44
+ },
+ {
+  "name": "crate:libc-0.2.191",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 682
+ },
+ {
+  "name": "crate:quote-1.0.47",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 41
+ },
+ {
+  "name": "crate:proc-macro2-1.0.107",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 39
+ },
+ {
+  "name": "crate:base64-0.23.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 51
+ },
+ {
+  "name": "crate:windows-sys-0.61.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 506
+ },
+ {
+  "name": "crate:indexmap-2.14.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 53
+ },
+ {
+  "name": "crate:itertools-0.15.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 99
+ },
+ {
+  "name": "crate:thiserror-impl-2.0.21",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 19
+ },
+ {
+  "name": "crate:thiserror-2.0.21",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 112
+ },
+ {
+  "name": "crate:cfg-if-1.0.5",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 19
+ },
+ {
+  "name": "crate:memchr-2.8.3",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 77
+ },
+ {
+  "name": "crate:regex-syntax-0.8.11",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 48
+ },
+ {
+  "name": "crate:serde-1.0.229",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 40
+ },
+ {
+  "name": "crate:unicode-ident-1.0.27",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 36
+ },
+ {
+  "name": "crate:rand_chacha-0.10.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 14
+ },
+ {
+  "name": "crate:itoa-1.0.18",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 20
+ },
+ {
+  "name": "crate:serde_derive-1.0.229",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 40
+ },
+ {
+  "name": "crate:serde_json-1.0.154",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 102
+ },
+ {
+  "name": "crate:heck-0.5.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 18
+ },
+ {
+  "name": "crate:autocfg-1.5.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 28
+ },
+ {
+  "name": "crate:once_cell-1.21.4",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 36
+ },
+ {
+  "name": "crate:log-0.4.35",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 32
+ },
+ {
+  "name": "crate:cc-1.11.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 44
+ },
+ {
+  "name": "crate:regex-automata-0.4.18",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 131
+ },
+ {
+  "name": "crate:socket2-0.6.5",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 16
+ },
+ {
+  "name": "crate:smallvec-1.16.4",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 13
+ },
+ {
+  "name": "crate:rustix-1.1.6",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 405
+ },
+ {
+  "name": "crate:regex-1.13.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 62
+ },
+ {
+  "name": "crate:aho-corasick-1.1.5",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 57
+ },
+ {
+  "name": "crate:digest-0.11.3",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 33
+ },
+ {
+  "name": "crate:clap-4.6.7",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 158
+ },
+ {
+  "name": "crate:ryu-1.0.23",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 48
+ },
+ {
+  "name": "crate:block-buffer-0.12.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 15
+ },
+ {
+  "name": "crate:linux-raw-sys-0.12.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 495
+ },
+ {
+  "name": "maven:guava-33.7.2-jre.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 2003
+ },
+ {
+  "name": "maven:commons-lang3-3.21.0.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 472
+ },
+ {
+  "name": "maven:jackson-databind-2.22.4.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 853
+ },
+ {
+  "name": "maven:slf4j-api-2.1.0-alpha1.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 73
+ },
+ {
+  "name": "maven:junit-4.13.2.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 389
+ },
+ {
+  "name": "maven:junit-jupiter-api-6.1.3.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 273
+ },
+ {
+  "name": "maven:gson-2.15.0.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 243
+ },
+ {
+  "name": "maven:httpclient-4.5.14.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 511
+ },
+ {
+  "name": "maven:commons-io-2.22.0.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 458
+ },
+ {
+  "name": "maven:mockito-core-5.24.0.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 659
+ },
+ {
+  "name": "maven:kotlin-stdlib-2.5.0-Beta2.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1098
+ },
+ {
+  "name": "maven:spring-core-7.1.0-RC1.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1334
+ },
+ {
+  "name": "maven:netty-common-5.0.0.Alpha2.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 296
+ },
+ {
+  "name": "maven:snakeyaml-2.7.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 275
+ },
+ {
+  "name": "maven:logback-classic-1.6.6.jar",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 223
+ },
+ {
+  "name": "go:golang.org/x/text@v0.43.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 583
+ },
+ {
+  "name": "go:golang.org/x/net@v0.62.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 896
+ },
+ {
+  "name": "go:golang.org/x/sys@v0.49.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 574
+ },
+ {
+  "name": "go:golang.org/x/crypto@v0.58.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 455
+ },
+ {
+  "name": "go:github.com/spf13/cobra@v1.10.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 77
+ },
+ {
+  "name": "go:github.com/stretchr/testify@v1.12.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 105
+ },
+ {
+  "name": "go:github.com/gin-gonic/gin@v1.12.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 150
+ },
+ {
+  "name": "go:google.golang.org/grpc@v1.85.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1385
+ },
+ {
+  "name": "go:github.com/google/uuid@v1.6.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 36
+ },
+ {
+  "name": "go:github.com/sirupsen/logrus@v1.10.2",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 76
+ },
+ {
+  "name": "go:gopkg.in/yaml.v3@v3.0.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 28
+ },
+ {
+  "name": "go:github.com/pkg/errors@v0.9.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 19
+ },
+ {
+  "name": "go:golang.org/x/tools@v0.52.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 2295
+ },
+ {
+  "name": "go:github.com/prometheus/client_golang@v1.25.0",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 221
+ },
+ {
+  "name": "go:github.com/gorilla/mux@v1.8.1",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 31
+ },
+ {
+  "name": "github:codecrafters-io/build-your-own-x@aa17439b62f3.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 5
+ },
+ {
+  "name": "github:codecrafters-io/build-your-own-x@aa17439b62f3.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 5
+ },
+ {
+  "name": "github:sindresorhus/awesome@bc98e517ddca.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 27
+ },
+ {
+  "name": "github:sindresorhus/awesome@bc98e517ddca.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 27
+ },
+ {
+  "name": "github:public-apis/public-apis@2676ca49d557.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 16
+ },
+ {
+  "name": "github:public-apis/public-apis@2676ca49d557.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 16
+ },
+ {
+  "name": "github:EbookFoundation/free-programming-books@b4c4cc4040b6.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 247
+ },
+ {
+  "name": "github:EbookFoundation/free-programming-books@b4c4cc4040b6.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 247
+ },
+ {
+  "name": "github:donnemartin/system-design-primer@ae9bbd7b02d9.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 162
+ },
+ {
+  "name": "github:donnemartin/system-design-primer@ae9bbd7b02d9.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 162
+ },
+ {
+  "name": "github:jwasham/coding-interview-university@717298bf219a.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 52
+ },
+ {
+  "name": "github:jwasham/coding-interview-university@717298bf219a.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 52
+ },
+ {
+  "name": "github:awesome-selfhosted/awesome-selfhosted@ebc8cb0883fc.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 10
+ },
+ {
+  "name": "github:awesome-selfhosted/awesome-selfhosted@ebc8cb0883fc.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 10
+ },
+ {
+  "name": "github:vinta/awesome-python@2a1a1959a3a6.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 151
+ },
+ {
+  "name": "github:vinta/awesome-python@2a1a1959a3a6.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 151
+ },
+ {
+  "name": "github:obra/superpowers@2ce8aa15d05b.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 301
+ },
+ {
+  "name": "github:obra/superpowers@2ce8aa15d05b.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 301
+ },
+ {
+  "name": "github:mattpocock/skills@4ae2317ddb22.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 283
+ },
+ {
+  "name": "github:mattpocock/skills@4ae2317ddb22.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 283
+ },
+ {
+  "name": "github:affaan-m/ECC@b38be6a7f635.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 6450
+ },
+ {
+  "name": "github:affaan-m/ECC@b38be6a7f635.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 6450
+ },
+ {
+  "name": "github:practical-tutorials/project-based-learning@2146917314b5.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 19
+ },
+ {
+  "name": "github:practical-tutorials/project-based-learning@2146917314b5.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 19
+ },
+ {
+  "name": "github:trimstray/the-book-of-secret-knowledge@7d37069a361d.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 10
+ },
+ {
+  "name": "github:trimstray/the-book-of-secret-knowledge@7d37069a361d.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 10
+ },
+ {
+  "name": "github:multica-ai/andrej-karpathy-skills@2c606141936f.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 15
+ },
+ {
+  "name": "github:multica-ai/andrej-karpathy-skills@2c606141936f.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 15
+ },
+ {
+  "name": "github:TheAlgorithms/Python@6e03a48579ca.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1977
+ },
+ {
+  "name": "github:TheAlgorithms/Python@6e03a48579ca.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1977
+ },
+ {
+  "name": "github:vuejs/vue@9e8870794008.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 613
+ },
+ {
+  "name": "github:vuejs/vue@9e8870794008.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 613
+ },
+ {
+  "name": "github:ossu/computer-science@33d44a44e352.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 52
+ },
+ {
+  "name": "github:ossu/computer-science@33d44a44e352.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 52
+ },
+ {
+  "name": "github:DigitalPlatDev/FreeDomain@9c7c54110705.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 104
+ },
+ {
+  "name": "github:DigitalPlatDev/FreeDomain@9c7c54110705.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 104
+ },
+ {
+  "name": "github:yt-dlp/yt-dlp@b77c9304e1c4.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1291
+ },
+ {
+  "name": "github:yt-dlp/yt-dlp@b77c9304e1c4.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1291
+ },
+ {
+  "name": "github:trekhleb/javascript-algorithms@85293e3e2b88.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 946
+ },
+ {
+  "name": "github:trekhleb/javascript-algorithms@85293e3e2b88.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 946
+ },
+ {
+  "name": "github:ultraworkers/claw-code@51cfca114cf5.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 539
+ },
+ {
+  "name": "github:ultraworkers/claw-code@51cfca114cf5.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 539
+ },
+ {
+  "name": "github:microsoft/markitdown@7482c092d9c0.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 228
+ },
+ {
+  "name": "github:microsoft/markitdown@7482c092d9c0.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 228
+ },
+ {
+  "name": "github:avelino/awesome-go@e67d008c1c56.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 126
+ },
+ {
+  "name": "github:avelino/awesome-go@e67d008c1c56.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 126
+ },
+ {
+  "name": "github:ohmyzsh/ohmyzsh@b509b1c6ed0c.tar.gz",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1626
+ },
+ {
+  "name": "github:ohmyzsh/ohmyzsh@b509b1c6ed0c.zip",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1626
+ },
+ {
+  "name": "release:python-source",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 5171
+ },
+ {
+  "name": "release:node-binary",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 6061
+ },
+ {
+  "name": "release:coreutils",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 3470
+ },
+ {
+  "name": "release:tar-source",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 1249
+ },
+ {
+  "name": "release:zstd-source",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 745
+ },
+ {
+  "name": "release:go-binary",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 14734
+ },
+ {
+  "name": "release:cmake-source",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 28611
+ },
+ {
+  "name": "release:curl-source",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 3961
+ },
+ {
+  "name": "release:git-source",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 4750
+ },
+ {
+  "name": "release:openssl-source",
+  "zipper_exit": 0,
+  "bsdtar_exit": 0,
+  "differences": {},
+  "files": 5678
+ }
+]

@@ -79,4 +79,6 @@ The short tree has empty files and directories, non-ASCII names, files of 512 an
 
 `tests/tar_corpus.rs` requires the reader to reproduce every manifest exactly. Regenerate the corpus on macOS with `/opt/homebrew/bin/python3.14 scripts/make_tar_corpus.py`, with GNU tar installed as `gtar`. Owners are written as 0 with empty names.
 
+The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 248 popular archives from package registries and GitHub with Zipper and default bsdtar. All 154 tar and 94 ZIP archives matched.
+
 `tests/hostile_tar.rs` holds one case per rejected layout. Each case must fail and leave nothing in the destination's parent, both when extracting and when only verifying.

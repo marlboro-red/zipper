@@ -1,0 +1,1490 @@
+[
+ {
+  "name": "pypi-sdist:boto3-1.43.123.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/fc/8a/64b46f075149f9160da44aa7e1052dd18431b9ad4435beb0cfb02cc48624/boto3-1.43.123.tar.gz",
+  "sha256": "055fabb990c5d2f31fce4ca569255bd640cdd11a3ca68c9ecad35f4f8a5b83b5",
+  "bytes": 112638
+ },
+ {
+  "name": "pypi-wheel:boto3-1.43.123-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/96/b2/a7986c327f80aa6f1544f4cb8f2fa7da4e1fccd472379a21cad0508b8a0e/boto3-1.43.123-py3-none-any.whl",
+  "sha256": "d18d66e1e13faa0c25d0b1b8c5ce946e29fb5fc0b6456b655a93a678ff4cc313",
+  "bytes": 140044
+ },
+ {
+  "name": "pypi-sdist:packaging-26.3.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/7d/fa/3944b40b07da9ce895c0e6303a5ab7d53da063554f534556b134a54d6093/packaging-26.3.tar.gz",
+  "sha256": "94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79",
+  "bytes": 313412
+ },
+ {
+  "name": "pypi-wheel:packaging-26.3-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+  "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+  "bytes": 129956
+ },
+ {
+  "name": "pypi-sdist:typing_extensions-4.16.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/f6/cc/6253133b5bb138fc3306cebfbda2c520f545d36b5be2c7255cc528bb45d6/typing_extensions-4.16.0.tar.gz",
+  "sha256": "dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5",
+  "bytes": 113555
+ },
+ {
+  "name": "pypi-wheel:typing_extensions-4.16.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+  "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+  "bytes": 45571
+ },
+ {
+  "name": "pypi-sdist:certifi-2026.10.23.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/fd/11/b524cbd9bbdaca58608e4cf4053fd463417549e1959fa8d3aa18319f9555/certifi-2026.10.23.tar.gz",
+  "sha256": "a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd",
+  "bytes": 136225
+ },
+ {
+  "name": "pypi-wheel:certifi-2026.10.23-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl",
+  "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+  "bytes": 135082
+ },
+ {
+  "name": "pypi-sdist:idna-3.20.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/f5/08/8eea9d4b8302028f3abb2c0813953f7aec26d33b7a8960ed760e65ff29fa/idna-3.20.tar.gz",
+  "sha256": "a7db850025b95ded1eae8a46181a1a6c56c92c96f0e2b005d9ff8dc0210cab44",
+  "bytes": 216463
+ },
+ {
+  "name": "pypi-wheel:idna-3.20-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl",
+  "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+  "bytes": 69583
+ },
+ {
+  "name": "pypi-sdist:urllib3-2.8.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz",
+  "sha256": "63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63",
+  "bytes": 458972
+ },
+ {
+  "name": "pypi-wheel:urllib3-2.8.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl",
+  "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+  "bytes": 135717
+ },
+ {
+  "name": "pypi-sdist:charset_normalizer-3.5.2.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/33/1c/f41d4e74c28ab327ff3acd36053f7ea506c55872d7a90b0fa71aa3ab0c89/charset_normalizer-3.5.2.tar.gz",
+  "sha256": "39de2a259fc954455c57274dc94c79d5842774e1247a016aff30bc0efed0f4ef",
+  "bytes": 172659
+ },
+ {
+  "name": "pypi-wheel:charset_normalizer-3.5.2-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/fc/ad/d07d7862a62ffa6d79d68074d14823243dd235a77c45262acbf6adeb28bf/charset_normalizer-3.5.2-py3-none-any.whl",
+  "sha256": "b6b751274acb69d77b3323d6b7dbaa3c7fdfc1eb829b7eb61d262f32e1af9685",
+  "bytes": 68872
+ },
+ {
+  "name": "pypi-sdist:requests-2.34.2.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz",
+  "sha256": "f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed",
+  "bytes": 142856
+ },
+ {
+  "name": "pypi-wheel:requests-2.34.2-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+  "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+  "bytes": 73075
+ },
+ {
+  "name": "pypi-sdist:cryptography-50.0.2.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/9d/af/182eb91b0df3fe75c4d9f26fe70684569566745f6ba7e5c9c73a862c5252/cryptography-50.0.2.tar.gz",
+  "sha256": "7b46165bb56eb4704e2eaaf86f3c940d19154535d9b0ca7d6d590b04060e00d5",
+  "bytes": 880623
+ },
+ {
+  "name": "pypi-wheel:cryptography-50.0.2-cp311-abi3-macosx_11_0_arm64.whl",
+  "url": "https://files.pythonhosted.org/packages/e5/56/d194340cc4a57535e82e1bee9e89667ac4b7c13b5d3f59686deae3094dd5/cryptography-50.0.2-cp311-abi3-macosx_11_0_arm64.whl",
+  "sha256": "fa8f5efb344d6908a1ce62f4a24e2e5780f825d6f53f5f50ec5ffacac72936cb",
+  "bytes": 3914904
+ },
+ {
+  "name": "pypi-sdist:cffi-2.1.1.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz",
+  "sha256": "dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be",
+  "bytes": 530807
+ },
+ {
+  "name": "pypi-wheel:cffi-2.1.1-cp310-cp310-macosx_10_15_x86_64.whl",
+  "url": "https://files.pythonhosted.org/packages/b6/d2/2cde336b375f55c76ca670f0be3978cc048e31e24f3b4d7ce8473150a388/cffi-2.1.1-cp310-cp310-macosx_10_15_x86_64.whl",
+  "sha256": "baed1e86cc735622097354b9d1281406caf42ff42a886d29faa8e8d1630333be",
+  "bytes": 183779
+ },
+ {
+  "name": "pypi-sdist:pluggy-1.7.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/bf/db/7fc19e6f2dc92a966727031389fc2e08b558f0f25eb7403c1119ad4713cd/pluggy-1.7.0.tar.gz",
+  "sha256": "d1eaa46ebb595891b860ab086b4d09c8588af65ebd4361b8e8f4bb8920b90ba8",
+  "bytes": 123304
+ },
+ {
+  "name": "pypi-wheel:pluggy-1.7.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/40/9e/2b38731e0fc536806f16490e1a12d7f0dc2a1235aa8cc07bcc75416a7daa/pluggy-1.7.0-py3-none-any.whl",
+  "sha256": "7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec",
+  "bytes": 27082
+ },
+ {
+  "name": "pypi-sdist:pyyaml-6.0.3.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz",
+  "sha256": "d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f",
+  "bytes": 130960
+ },
+ {
+  "name": "pypi-wheel:pyyaml-6.0.3-cp310-cp310-macosx_10_13_x86_64.whl",
+  "url": "https://files.pythonhosted.org/packages/f4/a0/39350dd17dd6d6c6507025c0e53aef67a9293a6d37d3511f23ea510d5800/pyyaml-6.0.3-cp310-cp310-macosx_10_13_x86_64.whl",
+  "sha256": "214ed4befebe12df36bcc8bc2b64b396ca31be9304b8f59e25c11cf94a4c033b",
+  "bytes": 184227
+ },
+ {
+  "name": "pypi-sdist:pycparser-3.12.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/cb/27/eeb9f307bf07060f3d9f9aa0fb8c15b01bdfded0a941e4b2719c7f94cacd/pycparser-3.12.tar.gz",
+  "sha256": "f03387877eab82ce01bbdfd0ba7252ee55a90b1c708d5129e2ce915475cf1db6",
+  "bytes": 158785
+ },
+ {
+  "name": "pypi-wheel:pycparser-3.12-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/b6/ae/315bbeee126a769cbde43cf4908acb4b40408d8bf8bbf334dd7368d8dadf/pycparser-3.12-py3-none-any.whl",
+  "sha256": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+  "bytes": 62600
+ },
+ {
+  "name": "pypi-sdist:pygments-2.21.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/49/2e/ced460408999b33da6b31b0021b0f37d329e202d4169aeb164493778f25b/pygments-2.21.0.tar.gz",
+  "sha256": "610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c",
+  "bytes": 5005329
+ },
+ {
+  "name": "pypi-wheel:pygments-2.21.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+  "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+  "bytes": 1250147
+ },
+ {
+  "name": "pypi-sdist:python_dateutil-4.0.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/18/39/b3927f3616f6223832f9b760e4208e8a7c7e1dea2b4d9ad7d32a5d214c3a/python_dateutil-4.0.0.tar.gz",
+  "sha256": "d7295ff14fdc0f92f662100bfb6c551d160ca090f2939f1ec5b9794265c03f06",
+  "bytes": 250419
+ },
+ {
+  "name": "pypi-wheel:python_dateutil-4.0.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/2f/a9/52b89563d154433d79b51ed1eb4842bf7334cb2696891a7fe135618853d7/python_dateutil-4.0.0-py3-none-any.whl",
+  "sha256": "a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c",
+  "bytes": 92853
+ },
+ {
+  "name": "pypi-sdist:six-1.17.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz",
+  "sha256": "ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81",
+  "bytes": 34031
+ },
+ {
+  "name": "pypi-wheel:six-1.17.0-py2.py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+  "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+  "bytes": 11050
+ },
+ {
+  "name": "pypi-sdist:setuptools-84.2.1.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/70/b3/c19426f783614d625699a4b247faf628ea9ab1db228674491767b417f9e1/setuptools-84.2.1.tar.gz",
+  "sha256": "3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc",
+  "bytes": 1230289
+ },
+ {
+  "name": "pypi-wheel:setuptools-84.2.1-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl",
+  "sha256": "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2",
+  "bytes": 876263
+ },
+ {
+  "name": "pypi-sdist:pydantic-2.14.2.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/9f/d5/b4867fa7c7f04c34997d7d8aad744f64d210bb99d67cf18bf3fb1eea1aed/pydantic-2.14.2.tar.gz",
+  "sha256": "fb7b2db6cefe8414dd612edeede49c4c433acb0432b0f92b95024e45f66c505d",
+  "bytes": 911596
+ },
+ {
+  "name": "pypi-wheel:pydantic-2.14.2-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/97/01/c71a71258b58659c72504e5fd65b451f6e36e34dc931d0b237ded213c814/pydantic-2.14.2-py3-none-any.whl",
+  "sha256": "7efbf7507b937931cd32a5755acb00ea1cf5ccb1d4e8067a5850d5069e382118",
+  "bytes": 490403
+ },
+ {
+  "name": "pypi-sdist:pydantic_core-2.50.2.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/af/8e/23ec1021834e35041fbb2f10946141e6acdfd39379c45cc4d65a4e8a1d98/pydantic_core-2.50.2.tar.gz",
+  "sha256": "1b0e8dc3932cf4e9ed5727570325cacc716b9409ffc794a221c0ccc72e8eb775",
+  "bytes": 518711
+ },
+ {
+  "name": "pypi-wheel:pydantic_core-2.50.2-cp310-cp310-macosx_10_12_x86_64.whl",
+  "url": "https://files.pythonhosted.org/packages/00/46/5fabd45007e53349fa9ff22c95968cb451acbc7d912dd8a9980ffa2325c1/pydantic_core-2.50.2-cp310-cp310-macosx_10_12_x86_64.whl",
+  "sha256": "6258754c473b3045a7aa30b833a8a331a1ab36c6147cb230789861d80bb26f83",
+  "bytes": 2163662
+ },
+ {
+  "name": "pypi-sdist:click-8.5.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/c7/0e/7fa0ef50764b67090eca4114772a2abf8b6148198475e54c660b97caeee6/click-8.5.0.tar.gz",
+  "sha256": "ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34",
+  "bytes": 382235
+ },
+ {
+  "name": "pypi-wheel:click-8.5.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl",
+  "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+  "bytes": 125251
+ },
+ {
+  "name": "pypi-sdist:numpy-2.5.4.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/95/b0/c7453d0b6e2073c3264468b106ee1563750cecc910965e67357e3698c83e/numpy-2.5.4.tar.gz",
+  "sha256": "9a94cf751c9ad8ebaa835bcd3d40dacf8534ad086b88c38029b65123c7999d2a",
+  "bytes": 20866315
+ },
+ {
+  "name": "pypi-wheel:numpy-2.5.4-cp312-cp312-macosx_10_13_x86_64.whl",
+  "url": "https://files.pythonhosted.org/packages/d0/97/ba2074e92b7befea137e77ea8471e768bbd87c339b7e8c9f5a931949f977/numpy-2.5.4-cp312-cp312-macosx_10_13_x86_64.whl",
+  "sha256": "c6342f54c67093cae5c0227eb0eb772fdb79f2a2c37a6eb278b9909ee06aa356",
+  "bytes": 17001609
+ },
+ {
+  "name": "pypi-sdist:botocore-1.43.123.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/e0/de/011fc2a47fb066c47064b122498d2fd21f55bc90ea514acbddc37ca0f8c1/botocore-1.43.123.tar.gz",
+  "sha256": "80948cb9b1cdf1a1a25809089a42e3a1bc4af0258d198222db6e97dcc660dd0c",
+  "bytes": 16486269
+ },
+ {
+  "name": "pypi-wheel:botocore-1.43.123-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/db/96/4f2dffd304425c07160ab2c12cb13322d852fd956fe9d4386228c93f02ea/botocore-1.43.123-py3-none-any.whl",
+  "sha256": "e30580f9c1282c321529238ff8ff75066096a2adbd0a293c8ae592c21d1733a3",
+  "bytes": 16185987
+ },
+ {
+  "name": "pypi-sdist:anyio-4.16.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/a1/98/7e457a3b014976887a050561955c0b76e1e7e2d6e27b78ecef2ef80518f2/anyio-4.16.0.tar.gz",
+  "sha256": "59bb03251907983d1603d27c3087ddb1e93299ea2163adcdba37899a4fb12ffb",
+  "bytes": 310971
+ },
+ {
+  "name": "pypi-wheel:anyio-4.16.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/a9/16/7757fb84c819accc7d7e9af5291b261e4abb8627ee040f99e7d35ef2457a/anyio-4.16.0-py3-none-any.whl",
+  "sha256": "c66ae634e0b8228396b801741beb3294326d4b6102f7bba4041c0dfb58c29026",
+  "bytes": 134521
+ },
+ {
+  "name": "pypi-sdist:annotated_types-0.8.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/5f/56/a8120250d128bed162cd73c76d45f6ef9991f3e068f62a8ee060afa3104a/annotated_types-0.8.0.tar.gz",
+  "sha256": "13b2beaad985e05e2d6407ee4c4f35590b11f8d693a258a561055cac8f64cab7",
+  "bytes": 15893
+ },
+ {
+  "name": "pypi-wheel:annotated_types-0.8.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl",
+  "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+  "bytes": 13427
+ },
+ {
+  "name": "pypi-sdist:pytest-9.2.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/79/42/bb4641652e58dedeac2ec51abc1f8cae4fee4ec63899a0999016229a0f2a/pytest-9.2.0.tar.gz",
+  "sha256": "97c4f3b1f3c7414aa36465e09b8220f1d03627993bd51b1282e193753c80557b",
+  "bytes": 1797555
+ },
+ {
+  "name": "pypi-wheel:pytest-9.2.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/51/39/1f5d8c8877a0fa327db959c19341d4be61660de1ab6b7391f9eb805bcd67/pytest-9.2.0-py3-none-any.whl",
+  "sha256": "07acdcf88ec174f907dc01af70bf52d49b014bbab03faeeade31c96b18c2e588",
+  "bytes": 411776
+ },
+ {
+  "name": "pypi-sdist:iniconfig-2.3.1.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/01/e1/2069291243c926a2ff1cd706c7f3eeb9b62144bf60f77c9fb9ff2fb26bd3/iniconfig-2.3.1.tar.gz",
+  "sha256": "67f4b9c50da0dedf52af349e7749a80a9057a5031199791b906c3bb3ae878960",
+  "bytes": 21209
+ },
+ {
+  "name": "pypi-wheel:iniconfig-2.3.1-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/56/43/4ca9e49d27a1fcf6bece6f6aec0ea46bb9112489b93d4b688fb415457bdb/iniconfig-2.3.1-py3-none-any.whl",
+  "sha256": "9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7",
+  "bytes": 7552
+ },
+ {
+  "name": "pypi-sdist:typing_inspection-0.4.4.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/a3/26/b09b8010994eccc3c09092e6b34058f36a460eea2d4c3e8b910c695975a0/typing_inspection-0.4.4.tar.gz",
+  "sha256": "547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47",
+  "bytes": 76928
+ },
+ {
+  "name": "pypi-wheel:typing_inspection-0.4.4-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
+  "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+  "bytes": 14750
+ },
+ {
+  "name": "pypi-sdist:h11-0.16.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz",
+  "sha256": "4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1",
+  "bytes": 101250
+ },
+ {
+  "name": "pypi-wheel:h11-0.16.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl",
+  "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+  "bytes": 37515
+ },
+ {
+  "name": "pypi-sdist:attrs-26.1.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/9a/8e/82a0fe20a541c03148528be8cac2408564a6c9a0cc7e9171802bc1d26985/attrs-26.1.0.tar.gz",
+  "sha256": "d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32",
+  "bytes": 952055
+ },
+ {
+  "name": "pypi-wheel:attrs-26.1.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl",
+  "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+  "bytes": 67548
+ },
+ {
+  "name": "pypi-sdist:markupsafe-3.0.4.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/38/9b/e422a865e1d5d57d0e509b4e0bf1c1a70a7f6382c29a5aa428df994c8bc8/markupsafe-3.0.4.tar.gz",
+  "sha256": "2e9ad7dd851bf45fab9f75cbff4cb493fee9979e8d8c7c9c3ee119022518edd6",
+  "bytes": 153777
+ },
+ {
+  "name": "pypi-wheel:markupsafe-3.0.4-cp310-cp310-macosx_10_9_x86_64.whl",
+  "url": "https://files.pythonhosted.org/packages/41/aa/9a65962e364bf19745f6bec7bde398fb1f5ca53ad2e734258e6198cc32ba/markupsafe-3.0.4-cp310-cp310-macosx_10_9_x86_64.whl",
+  "sha256": "dd8ea6ebee7aedbf7c749fa80521d9ccf1ba473e0d1e14805caafbaad281c889",
+  "bytes": 11521
+ },
+ {
+  "name": "pypi-sdist:httpx-0.28.1.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz",
+  "sha256": "75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc",
+  "bytes": 141406
+ },
+ {
+  "name": "pypi-wheel:httpx-0.28.1-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl",
+  "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+  "bytes": 73517
+ },
+ {
+  "name": "pypi-sdist:httpcore-1.0.9.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/06/94/82699a10bca87a5556c9c59b5963f2d039dbd239f25bc2a63907a05a14cb/httpcore-1.0.9.tar.gz",
+  "sha256": "6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8",
+  "bytes": 85484
+ },
+ {
+  "name": "pypi-wheel:httpcore-1.0.9-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl",
+  "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+  "bytes": 78784
+ },
+ {
+  "name": "pypi-sdist:s3transfer-0.19.3.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/49/c5/0a5ce655109cb96b8dfad36908a4e108d15f5dc2eff8fbc3146c4312e704/s3transfer-0.19.3.tar.gz",
+  "sha256": "8326acc3d056d7f7b8a37110c7d2aea41f67e83f6ae79cd3b5fbcca34c726406",
+  "bytes": 166087
+ },
+ {
+  "name": "pypi-wheel:s3transfer-0.19.3-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/e2/a4/88f9e10498759121060b8050a1554753dfc04df39bbbcc7aad9ecc8d9440/s3transfer-0.19.3-py3-none-any.whl",
+  "sha256": "24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553",
+  "bytes": 90252
+ },
+ {
+  "name": "pypi-sdist:protobuf-7.36.2.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/d9/89/5b8517baa72f84a67b8a307ba953c91057af618bf40bf676f3c03551f8f0/protobuf-7.36.2.tar.gz",
+  "sha256": "497d0463ff3316681da6c0b9e8d06cb465d61abce00b613ab42226175644d1bb",
+  "bytes": 512737
+ },
+ {
+  "name": "pypi-wheel:protobuf-7.36.2-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/e4/04/d52c7016b04b6c5108f26691f9d33ec82a9b65d041f1a9c771137693d618/protobuf-7.36.2-py3-none-any.whl",
+  "sha256": "bdb3a345d48db958e6ce1f18e508beb0cc981d64f24088427549c866cd039f1e",
+  "bytes": 179806
+ },
+ {
+  "name": "pypi-sdist:python_dotenv-1.2.4.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/74/26/2fbeedb218a787a5eea551c7532cac4e009f83d689dd2faa0d0353473f86/python_dotenv-1.2.4.tar.gz",
+  "sha256": "f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0",
+  "bytes": 60824
+ },
+ {
+  "name": "pypi-wheel:python_dotenv-1.2.4-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl",
+  "sha256": "42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc",
+  "bytes": 23266
+ },
+ {
+  "name": "pypi-sdist:pyjwt-2.15.1.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/43/ea/5194e52748b0da83d71e082d75496eaec6e58f419f5e184786ded517e6a9/pyjwt-2.15.1.tar.gz",
+  "sha256": "4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8",
+  "bytes": 121252
+ },
+ {
+  "name": "pypi-wheel:pyjwt-2.15.1-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/50/ca/44de4e75f8aadc457f0634be3b542815078ded46dca30efb960edeecad6e/pyjwt-2.15.1-py3-none-any.whl",
+  "sha256": "42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193",
+  "bytes": 33860
+ },
+ {
+  "name": "pypi-sdist:jinja2-3.1.6.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz",
+  "sha256": "0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d",
+  "bytes": 245115
+ },
+ {
+  "name": "pypi-wheel:jinja2-3.1.6-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+  "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+  "bytes": 134899
+ },
+ {
+  "name": "pypi-sdist:pandas-3.1.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/55/b1/a10c0d1a7e3ce44eb42635771004aa503e3b9ddde0bd39c524dda65f7eff/pandas-3.1.0.tar.gz",
+  "sha256": "ecb9b2d8a817b1e1ba1fdb90c0abe9eab31b4fdf2562b7a56b86ac66ace17e49",
+  "bytes": 5933421
+ },
+ {
+  "name": "pypi-wheel:pandas-3.1.0-cp311-cp311-macosx_10_9_x86_64.whl",
+  "url": "https://files.pythonhosted.org/packages/36/f2/d8d89ee886df6d959d7b9f483a55a0e5a1d5b034f08c32f4343a524af802/pandas-3.1.0-cp311-cp311-macosx_10_9_x86_64.whl",
+  "sha256": "d53387f8bbff4e7aa567619d4034ffdb1836db1e768a482851b904bbeeed8ef9",
+  "bytes": 11595013
+ },
+ {
+  "name": "pypi-sdist:aiobotocore-3.10.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/16/40/659f2ac3915d329e3e8e5bf674d35ce1774f3117c6f60339d5e05e505c36/aiobotocore-3.10.0.tar.gz",
+  "sha256": "35480ef11c51e23087273b85d97f80da2f356a46ce5f3fb88e24483cd343ffdb",
+  "bytes": 530781
+ },
+ {
+  "name": "pypi-wheel:aiobotocore-3.10.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/7f/bc/3bb8965204ba51bbf4d021bc89d1357cd2179a17ef71b5fc429e21b511a2/aiobotocore-3.10.0-py3-none-any.whl",
+  "sha256": "de0ccbcb82b6b0009f1b6667f48442e9d0432f9b8bfe6172fa51777cbea89d03",
+  "bytes": 102759
+ },
+ {
+  "name": "pypi-sdist:starlette-1.10.0.tar.gz",
+  "url": "https://files.pythonhosted.org/packages/48/bb/3d8757f21e9a53d9035c9eb039a777047139a16bfdbedfc7a58241c3d914/starlette-1.10.0.tar.gz",
+  "sha256": "b8399098d4c1e3522734f7235dc79b1fc967f96cf139c81e0fa30479e0685f9b",
+  "bytes": 2734356
+ },
+ {
+  "name": "pypi-wheel:starlette-1.10.0-py3-none-any.whl",
+  "url": "https://files.pythonhosted.org/packages/88/2e/947cfe02def9371c07cd5bf5b6b61c829e9aecb9904db02a66cfafbc1eec/starlette-1.10.0-py3-none-any.whl",
+  "sha256": "478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4",
+  "bytes": 80571
+ },
+ {
+  "name": "npm:lodash@4.18.1",
+  "url": "https://registry.npmjs.org/lodash/-/lodash-4.18.1.tgz",
+  "sha256": "696942c2a488c9d7428e9ca5f12ccf03b52de01dcdbfe4d4751d392f0491ae16",
+  "bytes": 315640
+ },
+ {
+  "name": "npm:react@19.3.1",
+  "url": "https://registry.npmjs.org/react/-/react-19.3.1.tgz",
+  "sha256": "56936913918dcf1f7a6fe58784e79df54b18200a88655ce809cf5e9c4ef871aa",
+  "bytes": 26394
+ },
+ {
+  "name": "npm:express@5.3.0",
+  "url": "https://registry.npmjs.org/express/-/express-5.3.0.tgz",
+  "sha256": "62450d99e36dc393295f1ddd93cb9291e658c169f3b700b0110c1ae8fa799930",
+  "bytes": 22968
+ },
+ {
+  "name": "npm:typescript@7.0.2",
+  "url": "https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz",
+  "sha256": "da2513f4b95176d6dde8b51aab7afe8a927656c9d277369793f77f7e59371c08",
+  "bytes": 365612
+ },
+ {
+  "name": "npm:axios@1.21.0",
+  "url": "https://registry.npmjs.org/axios/-/axios-1.21.0.tgz",
+  "sha256": "3d34c8aee6495b566848b8fcfc1a70daa2921a6d9626961f6379bba29b296e8a",
+  "bytes": 624851
+ },
+ {
+  "name": "npm:chalk@6.0.1",
+  "url": "https://registry.npmjs.org/chalk/-/chalk-6.0.1.tgz",
+  "sha256": "22a5b05d62a304c950f24dedb466ea07fb4b458e58bb37b2fe2c69ed2c9ba6c3",
+  "bytes": 16463
+ },
+ {
+  "name": "npm:commander@15.0.0",
+  "url": "https://registry.npmjs.org/commander/-/commander-15.0.0.tgz",
+  "sha256": "632c1e039b31e98fa79c4fae5b10a5ffbbf9df0f21c9ffb3d74e95734b30696f",
+  "bytes": 52736
+ },
+ {
+  "name": "npm:debug@4.4.3",
+  "url": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+  "sha256": "89c1ac9c946ee8905a875837114528e97eeae35e03be3190584b2216af43e4a7",
+  "bytes": 13449
+ },
+ {
+  "name": "npm:tslib@2.9.1",
+  "url": "https://registry.npmjs.org/tslib/-/tslib-2.9.1.tgz",
+  "sha256": "8092ae46b512c361b086443cc1b6ae94bfe2587b75034663e4b89d24ba40670a",
+  "bytes": 19229
+ },
+ {
+  "name": "npm:semver@7.8.5",
+  "url": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+  "sha256": "d85045d4300d7d57c891336b95df532e73f34c22ffcd222452b6d08b9d127d5d",
+  "bytes": 29399
+ },
+ {
+  "name": "npm:uuid@14.0.3",
+  "url": "https://registry.npmjs.org/uuid/-/uuid-14.0.3.tgz",
+  "sha256": "4750af69abb91dae4c49e4c71c96fd6a3bd0613900f18429b955ad6fb8099977",
+  "bytes": 14991
+ },
+ {
+  "name": "npm:moment@2.31.0",
+  "url": "https://registry.npmjs.org/moment/-/moment-2.31.0.tgz",
+  "sha256": "efddf549c13aa7cf270f573d9c464978ab0810c0652673ae6af1189bb56ab3f8",
+  "bytes": 762471
+ },
+ {
+  "name": "npm:webpack@5.112.2",
+  "url": "https://registry.npmjs.org/webpack/-/webpack-5.112.2.tgz",
+  "sha256": "fb618a5eba0f16fa43ed720cc4634df4e88c65d594c0e0ad2c5c0c9be4057dfe",
+  "bytes": 3202602
+ },
+ {
+  "name": "npm:eslint@10.14.0",
+  "url": "https://registry.npmjs.org/eslint/-/eslint-10.14.0.tgz",
+  "sha256": "e15ffa02262a7d359f9385e2d468f289dd309715261b2e3aa276ccd26ed14720",
+  "bytes": 630183
+ },
+ {
+  "name": "npm:prettier@3.9.10",
+  "url": "https://registry.npmjs.org/prettier/-/prettier-3.9.10.tgz",
+  "sha256": "9dc72045591793dff972432fb78722f7ab91aaa90a7fa8c1261ede55969246b7",
+  "bytes": 2801570
+ },
+ {
+  "name": "npm:next@16.4.4",
+  "url": "https://registry.npmjs.org/next/-/next-16.4.4.tgz",
+  "sha256": "19c02153be8c1419bf1d1ef020f5cfcf8cd0a34066540b6e74c9e33df95e5b7b",
+  "bytes": 43648709
+ },
+ {
+  "name": "npm:vue@3.5.44",
+  "url": "https://registry.npmjs.org/vue/-/vue-3.5.44.tgz",
+  "sha256": "33cd651dcae080f76c110bdb035faf9e0bab35f44cd4bd9cf8cf40ae7ed97256",
+  "bytes": 681347
+ },
+ {
+  "name": "npm:rxjs@7.8.2",
+  "url": "https://registry.npmjs.org/rxjs/-/rxjs-7.8.2.tgz",
+  "sha256": "2312f8ffd9726ffd7bd53ea12c5f13663d09a3dc3326f448c70b88f5ef6fac82",
+  "bytes": 751525
+ },
+ {
+  "name": "npm:jquery@4.0.0",
+  "url": "https://registry.npmjs.org/jquery/-/jquery-4.0.0.tgz",
+  "sha256": "7ac123e4992439dc6a966cb4444fceb7f4698db94904a1256df542d5deb80f59",
+  "bytes": 887975
+ },
+ {
+  "name": "npm:yargs@18.2.0",
+  "url": "https://registry.npmjs.org/yargs/-/yargs-18.2.0.tgz",
+  "sha256": "44ddd9d39e41a7d73dd794b6d229f2b92fd655d394ef59e2ca34d31df6181d13",
+  "bytes": 48841
+ },
+ {
+  "name": "npm:esbuild@0.28.2",
+  "url": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.2.tgz",
+  "sha256": "e045f94c235c7adc50e77ba2a579c7bec41b496b6b47c3a7845f7c1e19959a88",
+  "bytes": 34207
+ },
+ {
+  "name": "npm:rollup@4.67.4",
+  "url": "https://registry.npmjs.org/rollup/-/rollup-4.67.4.tgz",
+  "sha256": "5a83f6d2c389443153dd376b65fcff54d77f1391623b06f12bb2f51d3de44246",
+  "bytes": 601472
+ },
+ {
+  "name": "npm:vite@8.3.5",
+  "url": "https://registry.npmjs.org/vite/-/vite-8.3.5.tgz",
+  "sha256": "7f22c2a78d15bac5ad755c5f413806048db453604fa0c293f6a0613890dc7c17",
+  "bytes": 587457
+ },
+ {
+  "name": "npm:@babel/core@8.1.0",
+  "url": "https://registry.npmjs.org/@babel/core/-/core-8.1.0.tgz",
+  "sha256": "2b63d6499e3b2f50a392517a26af873e7ae37847e58fcbaf59b2c40f8cedaab9",
+  "bytes": 40551
+ },
+ {
+  "name": "npm:core-js@3.51.0",
+  "url": "https://registry.npmjs.org/core-js/-/core-js-3.51.0.tgz",
+  "sha256": "2a7abc3121a44b75acdf02b9bdd7408e22633f70f422fc0bd5b9e00abb17bb31",
+  "bytes": 317056
+ },
+ {
+  "name": "npm:zod@4.6.7",
+  "url": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz",
+  "sha256": "84efd155bed93270286e793fc951be270b536cbd5b0eeb111f0fa3967201d698",
+  "bytes": 1141941
+ },
+ {
+  "name": "npm:dotenv@18.0.9",
+  "url": "https://registry.npmjs.org/dotenv/-/dotenv-18.0.9.tgz",
+  "sha256": "d3a797ba2dea4970b314e65156703965e83cc5f926ffec6648b9540f9ad5715a",
+  "bytes": 15409
+ },
+ {
+  "name": "npm:glob@14.0.3",
+  "url": "https://registry.npmjs.org/glob/-/glob-14.0.3.tgz",
+  "sha256": "f936d47081e316874bcd0ad9ed38a4275c7a16f5dd3300917231e0030a0acd91",
+  "bytes": 434414
+ },
+ {
+  "name": "npm:minimatch@11.0.4",
+  "url": "https://registry.npmjs.org/minimatch/-/minimatch-11.0.4.tgz",
+  "sha256": "b97c503756b43cf21478a99901ff3e4670274aaeb93b5a432de7c93c1a059b88",
+  "bytes": 102738
+ },
+ {
+  "name": "npm:ws@8.22.1",
+  "url": "https://registry.npmjs.org/ws/-/ws-8.22.1.tgz",
+  "sha256": "a5cdb19c7090b816ffc109b6d928d352aa2bce73e38f73bd9678d484a62d2f75",
+  "bytes": 35214
+ },
+ {
+  "name": "npm:node-fetch@3.3.2",
+  "url": "https://registry.npmjs.org/node-fetch/-/node-fetch-3.3.2.tgz",
+  "sha256": "615af90e363f8f276b4b54f8e6c163cf3686dce1d8867dd7e52cbed4d38d2dab",
+  "bytes": 31722
+ },
+ {
+  "name": "npm:bluebird@3.7.2",
+  "url": "https://registry.npmjs.org/bluebird/-/bluebird-3.7.2.tgz",
+  "sha256": "c68b0b2a44f58961277e975053c6f0053d93bac8f68cef9dae596f2a04806ddc",
+  "bytes": 139293
+ },
+ {
+  "name": "npm:underscore@1.13.8",
+  "url": "https://registry.npmjs.org/underscore/-/underscore-1.13.8.tgz",
+  "sha256": "6547214df2878ae60cc552422ef14af38b8d4e3aa613be5bfe9c52b775d96f7a",
+  "bytes": 218015
+ },
+ {
+  "name": "npm:classnames@2.5.1",
+  "url": "https://registry.npmjs.org/classnames/-/classnames-2.5.1.tgz",
+  "sha256": "6c9e10fc21a14499b74bfe1e8e8dd7a6152da02fb575c3ffd3cd71f67390ebf1",
+  "bytes": 8659
+ },
+ {
+  "name": "npm:prop-types@15.8.1",
+  "url": "https://registry.npmjs.org/prop-types/-/prop-types-15.8.1.tgz",
+  "sha256": "1c739eb05d8a462c286a4e9dd02f2ce5485c6fa3529244e9ff9b13a3671aa557",
+  "bytes": 22651
+ },
+ {
+  "name": "npm:date-fns@4.4.0",
+  "url": "https://registry.npmjs.org/date-fns/-/date-fns-4.4.0.tgz",
+  "sha256": "eb106d1e9276213d6144b221c103e4abb7d92186734f7505f5a3860427b41a06",
+  "bytes": 1594616
+ },
+ {
+  "name": "npm:three@0.187.0",
+  "url": "https://registry.npmjs.org/three/-/three-0.187.0.tgz",
+  "sha256": "ff540832ded0cfe919764d24a3d88f3e2a05f23303f876423e4f893841e90728",
+  "bytes": 4795351
+ },
+ {
+  "name": "npm:socket.io@4.8.4",
+  "url": "https://registry.npmjs.org/socket.io/-/socket.io-4.8.4.tgz",
+  "sha256": "eac2f8dd36bd1ddc827407c6890cc9fa305e5f94038b9abdba98a4351934c6c2",
+  "bytes": 351869
+ },
+ {
+  "name": "npm:mongoose@9.11.4",
+  "url": "https://registry.npmjs.org/mongoose/-/mongoose-9.11.4.tgz",
+  "sha256": "55f79b695ab4e6efd2c9b01fe068da95dd14fc45a16cb976091983342adf1cb3",
+  "bytes": 480380
+ },
+ {
+  "name": "npm:sharp@0.35.5",
+  "url": "https://registry.npmjs.org/sharp/-/sharp-0.35.5.tgz",
+  "sha256": "3b6bbbe6b308f5c383938ca4a31926cd5d79c4651ed8c5fda16a97da2014a9ac",
+  "bytes": 214749
+ },
+ {
+  "name": "crate:hashbrown-0.17.1",
+  "url": "https://static.crates.io/crates/hashbrown/hashbrown-0.17.1.crate",
+  "sha256": "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a",
+  "bytes": 155512
+ },
+ {
+  "name": "crate:syn-3.0.9",
+  "url": "https://static.crates.io/crates/syn/syn-3.0.9.crate",
+  "sha256": "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b",
+  "bytes": 313970
+ },
+ {
+  "name": "crate:getrandom-0.4.3",
+  "url": "https://static.crates.io/crates/getrandom/getrandom-0.4.3.crate",
+  "sha256": "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099",
+  "bytes": 52437
+ },
+ {
+  "name": "crate:bitflags-2.13.2",
+  "url": "https://static.crates.io/crates/bitflags/bitflags-2.13.2.crate",
+  "sha256": "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06",
+  "bytes": 51678
+ },
+ {
+  "name": "crate:rand_core-0.10.1",
+  "url": "https://static.crates.io/crates/rand_core/rand_core-0.10.1.crate",
+  "sha256": "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69",
+  "bytes": 22833
+ },
+ {
+  "name": "crate:rand-0.10.3",
+  "url": "https://static.crates.io/crates/rand/rand-0.10.3.crate",
+  "sha256": "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af",
+  "bytes": 105994
+ },
+ {
+  "name": "crate:libc-0.2.191",
+  "url": "https://static.crates.io/crates/libc/libc-0.2.191.crate",
+  "sha256": "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a",
+  "bytes": 855401
+ },
+ {
+  "name": "crate:quote-1.0.47",
+  "url": "https://static.crates.io/crates/quote/quote-1.0.47.crate",
+  "sha256": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001",
+  "bytes": 31622
+ },
+ {
+  "name": "crate:proc-macro2-1.0.107",
+  "url": "https://static.crates.io/crates/proc-macro2/proc-macro2-1.0.107.crate",
+  "sha256": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9",
+  "bytes": 59588
+ },
+ {
+  "name": "crate:base64-0.23.1",
+  "url": "https://static.crates.io/crates/base64/base64-0.23.1.crate",
+  "sha256": "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5",
+  "bytes": 93605
+ },
+ {
+  "name": "crate:windows-sys-0.61.2",
+  "url": "https://static.crates.io/crates/windows-sys/windows-sys-0.61.2.crate",
+  "sha256": "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc",
+  "bytes": 2517186
+ },
+ {
+  "name": "crate:indexmap-2.14.2",
+  "url": "https://static.crates.io/crates/indexmap/indexmap-2.14.2.crate",
+  "sha256": "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855",
+  "bytes": 103014
+ },
+ {
+  "name": "crate:itertools-0.15.0",
+  "url": "https://static.crates.io/crates/itertools/itertools-0.15.0.crate",
+  "sha256": "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc",
+  "bytes": 164131
+ },
+ {
+  "name": "crate:thiserror-impl-2.0.21",
+  "url": "https://static.crates.io/crates/thiserror-impl/thiserror-impl-2.0.21.crate",
+  "sha256": "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524",
+  "bytes": 21637
+ },
+ {
+  "name": "crate:thiserror-2.0.21",
+  "url": "https://static.crates.io/crates/thiserror/thiserror-2.0.21.crate",
+  "sha256": "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e",
+  "bytes": 29021
+ },
+ {
+  "name": "crate:cfg-if-1.0.5",
+  "url": "https://static.crates.io/crates/cfg-if/cfg-if-1.0.5.crate",
+  "sha256": "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600",
+  "bytes": 9578
+ },
+ {
+  "name": "crate:memchr-2.8.3",
+  "url": "https://static.crates.io/crates/memchr/memchr-2.8.3.crate",
+  "sha256": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
+  "bytes": 99165
+ },
+ {
+  "name": "crate:regex-syntax-0.8.11",
+  "url": "https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.11.crate",
+  "sha256": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
+  "bytes": 359055
+ },
+ {
+  "name": "crate:serde-1.0.229",
+  "url": "https://static.crates.io/crates/serde/serde-1.0.229.crate",
+  "sha256": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba",
+  "bytes": 83669
+ },
+ {
+  "name": "crate:unicode-ident-1.0.27",
+  "url": "https://static.crates.io/crates/unicode-ident/unicode-ident-1.0.27.crate",
+  "sha256": "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563",
+  "bytes": 48807
+ },
+ {
+  "name": "crate:rand_chacha-0.10.0",
+  "url": "https://static.crates.io/crates/rand_chacha/rand_chacha-0.10.0.crate",
+  "sha256": "3e6af7f3e25ded52c41df4e0b1af2d047e45896c2f3281792ed68a1c243daedb",
+  "bytes": 19763
+ },
+ {
+  "name": "crate:itoa-1.0.18",
+  "url": "https://static.crates.io/crates/itoa/itoa-1.0.18.crate",
+  "sha256": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
+  "bytes": 15935
+ },
+ {
+  "name": "crate:serde_derive-1.0.229",
+  "url": "https://static.crates.io/crates/serde_derive/serde_derive-1.0.229.crate",
+  "sha256": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348",
+  "bytes": 59864
+ },
+ {
+  "name": "crate:serde_json-1.0.154",
+  "url": "https://static.crates.io/crates/serde_json/serde_json-1.0.154.crate",
+  "sha256": "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6",
+  "bytes": 158079
+ },
+ {
+  "name": "crate:heck-0.5.0",
+  "url": "https://static.crates.io/crates/heck/heck-0.5.0.crate",
+  "sha256": "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea",
+  "bytes": 11517
+ },
+ {
+  "name": "crate:autocfg-1.5.1",
+  "url": "https://static.crates.io/crates/autocfg/autocfg-1.5.1.crate",
+  "sha256": "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53",
+  "bytes": 18911
+ },
+ {
+  "name": "crate:once_cell-1.21.4",
+  "url": "https://static.crates.io/crates/once_cell/once_cell-1.21.4.crate",
+  "sha256": "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50",
+  "bytes": 35010
+ },
+ {
+  "name": "crate:log-0.4.35",
+  "url": "https://static.crates.io/crates/log/log-0.4.35.crate",
+  "sha256": "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c",
+  "bytes": 54093
+ },
+ {
+  "name": "crate:cc-1.11.0",
+  "url": "https://static.crates.io/crates/cc/cc-1.11.0.crate",
+  "sha256": "375989decec1a0fa424442bed520fa12ede43a48475ce8c7417d2c69b32b5f6b",
+  "bytes": 150366
+ },
+ {
+  "name": "crate:regex-automata-0.4.18",
+  "url": "https://static.crates.io/crates/regex-automata/regex-automata-0.4.18.crate",
+  "sha256": "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2",
+  "bytes": 628707
+ },
+ {
+  "name": "crate:socket2-0.6.5",
+  "url": "https://static.crates.io/crates/socket2/socket2-0.6.5.crate",
+  "sha256": "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4",
+  "bytes": 60031
+ },
+ {
+  "name": "crate:smallvec-1.16.4",
+  "url": "https://static.crates.io/crates/smallvec/smallvec-1.16.4.crate",
+  "sha256": "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8",
+  "bytes": 34822
+ },
+ {
+  "name": "crate:rustix-1.1.6",
+  "url": "https://static.crates.io/crates/rustix/rustix-1.1.6.crate",
+  "sha256": "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa",
+  "bytes": 426484
+ },
+ {
+  "name": "crate:regex-1.13.1",
+  "url": "https://static.crates.io/crates/regex/regex-1.13.1.crate",
+  "sha256": "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d",
+  "bytes": 157118
+ },
+ {
+  "name": "crate:aho-corasick-1.1.5",
+  "url": "https://static.crates.io/crates/aho-corasick/aho-corasick-1.1.5.crate",
+  "sha256": "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba",
+  "bytes": 184315
+ },
+ {
+  "name": "crate:digest-0.11.3",
+  "url": "https://static.crates.io/crates/digest/digest-0.11.3.crate",
+  "sha256": "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2",
+  "bytes": 28955
+ },
+ {
+  "name": "crate:clap-4.6.7",
+  "url": "https://static.crates.io/crates/clap/clap-4.6.7.crate",
+  "sha256": "aa8876b300ab35ba921adea3dfd70157a46249b33f95c9084ae5709785478946",
+  "bytes": 65831
+ },
+ {
+  "name": "crate:ryu-1.0.23",
+  "url": "https://static.crates.io/crates/ryu/ryu-1.0.23.crate",
+  "sha256": "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f",
+  "bytes": 52823
+ },
+ {
+  "name": "crate:block-buffer-0.12.1",
+  "url": "https://static.crates.io/crates/block-buffer/block-buffer-0.12.1.crate",
+  "sha256": "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa",
+  "bytes": 15902
+ },
+ {
+  "name": "crate:linux-raw-sys-0.12.1",
+  "url": "https://static.crates.io/crates/linux-raw-sys/linux-raw-sys-0.12.1.crate",
+  "sha256": "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53",
+  "bytes": 3006116
+ },
+ {
+  "name": "maven:guava-33.7.2-jre.jar",
+  "url": "https://repo1.maven.org/maven2/com/google/guava/guava/33.7.2-jre/guava-33.7.2-jre.jar",
+  "sha256": "b530942257fb935f8b2cfaa5f8eb5bd59c555fd8e8d01b8ce98912e077ea606c",
+  "bytes": 3057659
+ },
+ {
+  "name": "maven:commons-lang3-3.21.0.jar",
+  "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.21.0/commons-lang3-3.21.0.jar",
+  "sha256": "a2af247ec4db6eb8947e18e23e0433e4871a7c5d0a40e1f92e46ede54ae1defe",
+  "bytes": 749083
+ },
+ {
+  "name": "maven:jackson-databind-2.22.4.jar",
+  "url": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.22.4/jackson-databind-2.22.4.jar",
+  "sha256": "d4cbf8947087f305869826801913abdc50735a1fab2074a1993e7bc67ca974a3",
+  "bytes": 1714464
+ },
+ {
+  "name": "maven:slf4j-api-2.1.0-alpha1.jar",
+  "url": "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.1.0-alpha1/slf4j-api-2.1.0-alpha1.jar",
+  "sha256": "9ab7ffa646202b499d05995a3ec82f31bccb7a50345c1514d8cb42ec8ccea353",
+  "bytes": 70922
+ },
+ {
+  "name": "maven:junit-4.13.2.jar",
+  "url": "https://repo1.maven.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar",
+  "sha256": "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3",
+  "bytes": 384581
+ },
+ {
+  "name": "maven:junit-jupiter-api-6.1.3.jar",
+  "url": "https://repo1.maven.org/maven2/org/junit/jupiter/junit-jupiter-api/6.1.3/junit-jupiter-api-6.1.3.jar",
+  "sha256": "555d6cf20fa1710884dd01b86cc5785397ba73e21ada2d4b784f5f1a14dcafc4",
+  "bytes": 312568
+ },
+ {
+  "name": "maven:gson-2.15.0.jar",
+  "url": "https://repo1.maven.org/maven2/com/google/code/gson/gson/2.15.0/gson-2.15.0.jar",
+  "sha256": "96d3dd843dc2911de01cdabcd50064cb9e860353102a0a78c96fd833d396fc7d",
+  "bytes": 316396
+ },
+ {
+  "name": "maven:httpclient-4.5.14.jar",
+  "url": "https://repo1.maven.org/maven2/org/apache/httpcomponents/httpclient/4.5.14/httpclient-4.5.14.jar",
+  "sha256": "c8bc7e1c51a6d4ce72f40d2ebbabf1c4b68bfe76e732104b04381b493478e9d6",
+  "bytes": 785639
+ },
+ {
+  "name": "maven:commons-io-2.22.0.jar",
+  "url": "https://repo1.maven.org/maven2/commons-io/commons-io/2.22.0/commons-io-2.22.0.jar",
+  "sha256": "2b9a7b1f726fb86216dbd2c8321eabe0221dbd5b1be81c18e1cb53811b104758",
+  "bytes": 609182
+ },
+ {
+  "name": "maven:mockito-core-5.24.0.jar",
+  "url": "https://repo1.maven.org/maven2/org/mockito/mockito-core/5.24.0/mockito-core-5.24.0.jar",
+  "sha256": "97a1f835ad84075255aa37809e4379eff541273c02c6201cbad49bd5950932cd",
+  "bytes": 728768
+ },
+ {
+  "name": "maven:kotlin-stdlib-2.5.0-Beta2.jar",
+  "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.5.0-Beta2/kotlin-stdlib-2.5.0-Beta2.jar",
+  "sha256": "bcc8380470f1b4ff3795d9083ce6b9aa299e74e32f655fc9248f1801b63d36ef",
+  "bytes": 1906807
+ },
+ {
+  "name": "maven:spring-core-7.1.0-RC1.jar",
+  "url": "https://repo1.maven.org/maven2/org/springframework/spring-core/7.1.0-RC1/spring-core-7.1.0-RC1.jar",
+  "sha256": "6891ea8ce076db169127150e670176c704f2c406102b64dd6222bf485e0ce406",
+  "bytes": 2072671
+ },
+ {
+  "name": "maven:netty-common-5.0.0.Alpha2.jar",
+  "url": "https://repo1.maven.org/maven2/io/netty/netty-common/5.0.0.Alpha2/netty-common-5.0.0.Alpha2.jar",
+  "sha256": "9f7c0e1b714010aef694186aa02babaa5efc450dff2a7b46350c55296f968cf2",
+  "bytes": 441190
+ },
+ {
+  "name": "maven:snakeyaml-2.7.jar",
+  "url": "https://repo1.maven.org/maven2/org/yaml/snakeyaml/2.7/snakeyaml-2.7.jar",
+  "sha256": "2e194eba45a67dee19a4e272f4a04b18de8054e9f598b094382f6dae0b0e4b5e",
+  "bytes": 332460
+ },
+ {
+  "name": "maven:logback-classic-1.6.6.jar",
+  "url": "https://repo1.maven.org/maven2/ch/qos/logback/logback-classic/1.6.6/logback-classic-1.6.6.jar",
+  "sha256": "5230217ccba7a9d31dda1dd878e5606037a7972282c7d3f8eac1efa80e9463d9",
+  "bytes": 292546
+ },
+ {
+  "name": "go:golang.org/x/text@v0.43.0",
+  "url": "https://proxy.golang.org/golang.org/x/text/@v/v0.43.0.zip",
+  "sha256": "b75131f628f6e2e4892fd638d33127e952a5027775e0162b94ba069cb4e13863",
+  "bytes": 7337809
+ },
+ {
+  "name": "go:golang.org/x/net@v0.62.0",
+  "url": "https://proxy.golang.org/golang.org/x/net/@v/v0.62.0.zip",
+  "sha256": "50e869800f4921e910eb6550369f937c7187d130a7f7f78a26ef9b589a7071a6",
+  "bytes": 1876204
+ },
+ {
+  "name": "go:golang.org/x/sys@v0.49.0",
+  "url": "https://proxy.golang.org/golang.org/x/sys/@v/v0.49.0.zip",
+  "sha256": "e73a06591ca0d7016ce3ccb45c36a8ed7128468aecc1a357f94d815c760c6b31",
+  "bytes": 2115196
+ },
+ {
+  "name": "go:golang.org/x/crypto@v0.58.0",
+  "url": "https://proxy.golang.org/golang.org/x/crypto/@v/v0.58.0.zip",
+  "sha256": "b0a45594cda20ddb4264d84aeff9b588b8570bf6a2833c51a0b821734a298d95",
+  "bytes": 2344115
+ },
+ {
+  "name": "go:github.com/spf13/cobra@v1.10.2",
+  "url": "https://proxy.golang.org/github.com/spf13/cobra/@v/v1.10.2.zip",
+  "sha256": "a00aae6fcd631e0fde52c98604452ff70e1b73c3b8a560d68db15aff5e26872d",
+  "bytes": 241429
+ },
+ {
+  "name": "go:github.com/stretchr/testify@v1.12.1",
+  "url": "https://proxy.golang.org/github.com/stretchr/testify/@v/v1.12.1.zip",
+  "sha256": "6874ed1c4b0b7e9feb27989b16c179b36590020633436ae260cefc5f5565589f",
+  "bytes": 208461
+ },
+ {
+  "name": "go:github.com/gin-gonic/gin@v1.12.0",
+  "url": "https://proxy.golang.org/github.com/gin-gonic/gin/@v/v1.12.0.zip",
+  "sha256": "ae8cf99332b133a0d527acbb68c0177a4290b781cb4089fc4893a261e45ab63e",
+  "bytes": 257239
+ },
+ {
+  "name": "go:google.golang.org/grpc@v1.85.0",
+  "url": "https://proxy.golang.org/google.golang.org/grpc/@v/v1.85.0.zip",
+  "sha256": "bd1ce651075f55e5bad492f9e1ee7cc013f1b96770981556d2a9cb5ee2c31e1e",
+  "bytes": 3165341
+ },
+ {
+  "name": "go:github.com/google/uuid@v1.6.0",
+  "url": "https://proxy.golang.org/github.com/google/uuid/@v/v1.6.0.zip",
+  "sha256": "d0f02f377217f42702e259684e06441edbf5140dddcc34ba9bea56038b38a6ed",
+  "bytes": 31981
+ },
+ {
+  "name": "go:github.com/sirupsen/logrus@v1.10.2",
+  "url": "https://proxy.golang.org/github.com/sirupsen/logrus/@v/v1.10.2.zip",
+  "sha256": "73a40737da86682dd536ec2c87dff0f589eeeed81873362b08ed009818747b52",
+  "bytes": 99228
+ },
+ {
+  "name": "go:gopkg.in/yaml.v3@v3.0.1",
+  "url": "https://proxy.golang.org/gopkg.in/yaml.v3/@v/v3.0.1.zip",
+  "sha256": "aab8fbc4e6300ea08e6afe1caea18a21c90c79f489f52c53e2f20431f1a9a015",
+  "bytes": 104623
+ },
+ {
+  "name": "go:github.com/pkg/errors@v0.9.1",
+  "url": "https://proxy.golang.org/github.com/pkg/errors/@v/v0.9.1.zip",
+  "sha256": "d4c36b8bcd0616290a3913215e0f53b931bd6e00670596f2960df1b44af2bd07",
+  "bytes": 17866
+ },
+ {
+  "name": "go:golang.org/x/tools@v0.52.0",
+  "url": "https://proxy.golang.org/golang.org/x/tools/@v/v0.52.0.zip",
+  "sha256": "90b2a941aa5f2fe87564b8e38c3f03796de2e3597b7f4c52a9a6a53201b32c48",
+  "bytes": 2874579
+ },
+ {
+  "name": "go:github.com/prometheus/client_golang@v1.25.0",
+  "url": "https://proxy.golang.org/github.com/prometheus/client_golang/@v/v1.25.0.zip",
+  "sha256": "677986b15218e6e5f740fd0801a6024726e71bf909ca1a504417eae281df4519",
+  "bytes": 440089
+ },
+ {
+  "name": "go:github.com/gorilla/mux@v1.8.1",
+  "url": "https://proxy.golang.org/github.com/gorilla/mux/@v/v1.8.1.zip",
+  "sha256": "728243623caa67f64e4a0b6c59dde3f762918d9e729266167ba46d8df56c193a",
+  "bytes": 60113
+ },
+ {
+  "name": "github:codecrafters-io/build-your-own-x@aa17439b62f3.tar.gz",
+  "url": "https://codeload.github.com/codecrafters-io/build-your-own-x/tar.gz/aa17439b62f384511a5561ce308e9598b94d8989",
+  "sha256": "78c41f5a2dd630e74b48c21d889c6f9222078972cccf75f2088c045925e8712d",
+  "bytes": 41445
+ },
+ {
+  "name": "github:codecrafters-io/build-your-own-x@aa17439b62f3.zip",
+  "url": "https://codeload.github.com/codecrafters-io/build-your-own-x/zip/aa17439b62f384511a5561ce308e9598b94d8989",
+  "sha256": "ff8841e2ee226171472e86362a2e3fd74123e99063e829a7047855276a760535",
+  "bytes": 42199
+ },
+ {
+  "name": "github:sindresorhus/awesome@bc98e517ddca.tar.gz",
+  "url": "https://codeload.github.com/sindresorhus/awesome/tar.gz/bc98e517ddca672f55f9857d714fc3ea3c3540b2",
+  "sha256": "4296dd1863a9055891193b7eeaa5c373a66a65ffd12435babf5a1745c4858d6f",
+  "bytes": 172230
+ },
+ {
+  "name": "github:sindresorhus/awesome@bc98e517ddca.zip",
+  "url": "https://codeload.github.com/sindresorhus/awesome/zip/bc98e517ddca672f55f9857d714fc3ea3c3540b2",
+  "sha256": "cd6e58b9b31480411aaa3e1fab39a78574403cdce5a80d767988ef4c327a51be",
+  "bytes": 176435
+ },
+ {
+  "name": "github:public-apis/public-apis@2676ca49d557.tar.gz",
+  "url": "https://codeload.github.com/public-apis/public-apis/tar.gz/2676ca49d557ef14a0f478311506dae947639028",
+  "sha256": "cc6be2ce64a2e346ade3333b83d25509eaff12fdf862bbb670d9bd32d7a6bbab",
+  "bytes": 13772
+ },
+ {
+  "name": "github:public-apis/public-apis@2676ca49d557.zip",
+  "url": "https://codeload.github.com/public-apis/public-apis/zip/2676ca49d557ef14a0f478311506dae947639028",
+  "sha256": "c2201d28b3bdf141f2af86ff34c991f6d0f9cfdb4d43adcf0e16649610f6b29f",
+  "bytes": 18357
+ },
+ {
+  "name": "github:EbookFoundation/free-programming-books@b4c4cc4040b6.tar.gz",
+  "url": "https://codeload.github.com/EbookFoundation/free-programming-books/tar.gz/b4c4cc4040b614d2aca81ad5f2bcd92ed3d422ec",
+  "sha256": "56564e48e77b3ad6e92db0b32d87f674adef22b1c6a63dec127da91eb7dbc64b",
+  "bytes": 734831
+ },
+ {
+  "name": "github:EbookFoundation/free-programming-books@b4c4cc4040b6.zip",
+  "url": "https://codeload.github.com/EbookFoundation/free-programming-books/zip/b4c4cc4040b614d2aca81ad5f2bcd92ed3d422ec",
+  "sha256": "ca9216ae136e9dacd82b9eb92d9d6a47055a97c78706ce2c3dadd2e9e5085846",
+  "bytes": 861044
+ },
+ {
+  "name": "github:donnemartin/system-design-primer@ae9bbd7b02d9.tar.gz",
+  "url": "https://codeload.github.com/donnemartin/system-design-primer/tar.gz/ae9bbd7b02d90b9866215de185217d33f39ab733",
+  "sha256": "e157221eed93b0d5f9da4d525a99262c968c49e07b367c4682b17d7818a27232",
+  "bytes": 12505395
+ },
+ {
+  "name": "github:donnemartin/system-design-primer@ae9bbd7b02d9.zip",
+  "url": "https://codeload.github.com/donnemartin/system-design-primer/zip/ae9bbd7b02d90b9866215de185217d33f39ab733",
+  "sha256": "9d61be84ddcad608919a1cfbb6c9a33574f7fb89f9ec3d859efe7db7172f0e4c",
+  "bytes": 12554573
+ },
+ {
+  "name": "github:jwasham/coding-interview-university@717298bf219a.tar.gz",
+  "url": "https://codeload.github.com/jwasham/coding-interview-university/tar.gz/717298bf219a30d7fb0671285c5f057b1bb74b27",
+  "sha256": "3ed18a56dfa927a54942eac0b90753879380bcad7fd5449332ca6ffa772c3bbb",
+  "bytes": 3009226
+ },
+ {
+  "name": "github:jwasham/coding-interview-university@717298bf219a.zip",
+  "url": "https://codeload.github.com/jwasham/coding-interview-university/zip/717298bf219a30d7fb0671285c5f057b1bb74b27",
+  "sha256": "172ef47bc2d431f57ce9230ed4b164997abdb36b223ac3a1041e556a1b4e49e0",
+  "bytes": 3024246
+ },
+ {
+  "name": "github:awesome-selfhosted/awesome-selfhosted@ebc8cb0883fc.tar.gz",
+  "url": "https://codeload.github.com/awesome-selfhosted/awesome-selfhosted/tar.gz/ebc8cb0883fcf5cf061245db9398b9a93fd6628a",
+  "sha256": "b15909ee77d55cb71a68aa940ccad905a7919663a6859415055c8ecc903d34e2",
+  "bytes": 116128
+ },
+ {
+  "name": "github:awesome-selfhosted/awesome-selfhosted@ebc8cb0883fc.zip",
+  "url": "https://codeload.github.com/awesome-selfhosted/awesome-selfhosted/zip/ebc8cb0883fcf5cf061245db9398b9a93fd6628a",
+  "sha256": "23b54519ff61844128d7a9dce2d5d0b16487917aa4ee6c6d51474849470cb1f7",
+  "bytes": 118391
+ },
+ {
+  "name": "github:vinta/awesome-python@2a1a1959a3a6.tar.gz",
+  "url": "https://codeload.github.com/vinta/awesome-python/tar.gz/2a1a1959a3a6e6853ecb229b7a8deb5790367442",
+  "sha256": "dac0691d9736107caa0a0b22f56388f968d2d3f59b8fba68d086ee69b6e502b8",
+  "bytes": 470025
+ },
+ {
+  "name": "github:vinta/awesome-python@2a1a1959a3a6.zip",
+  "url": "https://codeload.github.com/vinta/awesome-python/zip/2a1a1959a3a6e6853ecb229b7a8deb5790367442",
+  "sha256": "9852f5ea31e977757c0f833a3a47b02dd992843e095aa6136161da7552034bab",
+  "bytes": 540102
+ },
+ {
+  "name": "github:obra/superpowers@2ce8aa15d05b.tar.gz",
+  "url": "https://codeload.github.com/obra/superpowers/tar.gz/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+  "sha256": "da34247c51339cdd6175b3590261f16e25b08d46669afd5b6fc3f842ab303e20",
+  "bytes": 523136
+ },
+ {
+  "name": "github:obra/superpowers@2ce8aa15d05b.zip",
+  "url": "https://codeload.github.com/obra/superpowers/zip/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+  "sha256": "e82e5293d5609dd5214c2f0cadd9aab6cc059800b245865a2c892b252a5beee3",
+  "bytes": 676995
+ },
+ {
+  "name": "github:mattpocock/skills@4ae2317ddb22.tar.gz",
+  "url": "https://codeload.github.com/mattpocock/skills/tar.gz/4ae2317ddb22b046e26455e4f9c9b3aaaf62212d",
+  "sha256": "75b8a2ddccef7fc11059373dff29900934fc46bcb7bfdcfb034a699ce2cb0176",
+  "bytes": 278609
+ },
+ {
+  "name": "github:mattpocock/skills@4ae2317ddb22.zip",
+  "url": "https://codeload.github.com/mattpocock/skills/zip/4ae2317ddb22b046e26455e4f9c9b3aaaf62212d",
+  "sha256": "05a6d96644897c9895c9d1bf493341f6d8f600dd56552f9cde81fd6aa956452d",
+  "bytes": 401687
+ },
+ {
+  "name": "github:affaan-m/ECC@b38be6a7f635.tar.gz",
+  "url": "https://codeload.github.com/affaan-m/ECC/tar.gz/b38be6a7f6350964d59328b52f0624e1d1d552d1",
+  "sha256": "8f9dbd961e6130ccf366be5243573ea55d6155499a462f4d6bed8fdb00101819",
+  "bytes": 35971402
+ },
+ {
+  "name": "github:affaan-m/ECC@b38be6a7f635.zip",
+  "url": "https://codeload.github.com/affaan-m/ECC/zip/b38be6a7f6350964d59328b52f0624e1d1d552d1",
+  "sha256": "b8e1d28e20d22514c84fe152f10f67996be72cb722125b03c6735d809e858dda",
+  "bytes": 39488477
+ },
+ {
+  "name": "github:practical-tutorials/project-based-learning@2146917314b5.tar.gz",
+  "url": "https://codeload.github.com/practical-tutorials/project-based-learning/tar.gz/2146917314b5e98e58513c930c0a745cc6c7100c",
+  "sha256": "478d01633ae1e72d2c6cb3be4fe5ab6a59942e2323001457c39d49dadb5f8fcd",
+  "bytes": 48671
+ },
+ {
+  "name": "github:practical-tutorials/project-based-learning@2146917314b5.zip",
+  "url": "https://codeload.github.com/practical-tutorials/project-based-learning/zip/2146917314b5e98e58513c930c0a745cc6c7100c",
+  "sha256": "141907676b89bef7d1b849a01c836bc9943a709014e46fafdb24b190c54f85ec",
+  "bytes": 54683
+ },
+ {
+  "name": "github:trimstray/the-book-of-secret-knowledge@7d37069a361d.tar.gz",
+  "url": "https://codeload.github.com/trimstray/the-book-of-secret-knowledge/tar.gz/7d37069a361d3fd9f214480755f7969744e866fa",
+  "sha256": "955f6986dda41193d282de1d0f9a6c4d40e18957bdd22e943d5632f3d929d440",
+  "bytes": 105344
+ },
+ {
+  "name": "github:trimstray/the-book-of-secret-knowledge@7d37069a361d.zip",
+  "url": "https://codeload.github.com/trimstray/the-book-of-secret-knowledge/zip/7d37069a361d3fd9f214480755f7969744e866fa",
+  "sha256": "92ad15e1011d37e62978b82eeba01b957497b1ef61e0f5cbbc9445c470d0af65",
+  "bytes": 107729
+ },
+ {
+  "name": "github:multica-ai/andrej-karpathy-skills@2c606141936f.tar.gz",
+  "url": "https://codeload.github.com/multica-ai/andrej-karpathy-skills/tar.gz/2c606141936f1eeef17fa3043a72095b4765b9c2",
+  "sha256": "10d372aba5bf8d55993c5dfebb2e0475ad5e7eecfc498d782c0e6ccf13d97ea5",
+  "bytes": 12867
+ },
+ {
+  "name": "github:multica-ai/andrej-karpathy-skills@2c606141936f.zip",
+  "url": "https://codeload.github.com/multica-ai/andrej-karpathy-skills/zip/2c606141936f1eeef17fa3043a72095b4765b9c2",
+  "sha256": "3b5fcfc0cb80c644cfe954db5380f90cb81175dad4f7352332d308abef440dd6",
+  "bytes": 20380
+ },
+ {
+  "name": "github:TheAlgorithms/Python@6e03a48579ca.tar.gz",
+  "url": "https://codeload.github.com/TheAlgorithms/Python/tar.gz/6e03a48579ca212a08b36be00378f887dc41a003",
+  "sha256": "8dea8df7d2faf42242714dc70da6bbc35639cc3ae93754d72d5a32e0530db463",
+  "bytes": 8458142
+ },
+ {
+  "name": "github:TheAlgorithms/Python@6e03a48579ca.zip",
+  "url": "https://codeload.github.com/TheAlgorithms/Python/zip/6e03a48579ca212a08b36be00378f887dc41a003",
+  "sha256": "bf7a91b093765d1bcdbf484cd229fd180d7834fcd2d0d95fe8a06b8aa7dabda3",
+  "bytes": 9234903
+ },
+ {
+  "name": "github:vuejs/vue@9e8870794008.tar.gz",
+  "url": "https://codeload.github.com/vuejs/vue/tar.gz/9e88707940088cb1f4cd7dd210c9168a50dc347c",
+  "sha256": "5970ad3611cef631f05c0862c254eda0da878d9df8b65d177266ef5addc70f94",
+  "bytes": 586017
+ },
+ {
+  "name": "github:vuejs/vue@9e8870794008.zip",
+  "url": "https://codeload.github.com/vuejs/vue/zip/9e88707940088cb1f4cd7dd210c9168a50dc347c",
+  "sha256": "8ef492dd3c4de2ac47a09c9ffe7b82b695337664c9e3e8d47171612ddd768f98",
+  "bytes": 826996
+ },
+ {
+  "name": "github:ossu/computer-science@33d44a44e352.tar.gz",
+  "url": "https://codeload.github.com/ossu/computer-science/tar.gz/33d44a44e3526ede8e862bf1ad50ae5ae7a2f112",
+  "sha256": "d8b24adee441b9b7ab86feab628511bd7aae32a9eb04b3cb8890ba1827957ea1",
+  "bytes": 378760
+ },
+ {
+  "name": "github:ossu/computer-science@33d44a44e352.zip",
+  "url": "https://codeload.github.com/ossu/computer-science/zip/33d44a44e3526ede8e862bf1ad50ae5ae7a2f112",
+  "sha256": "6acf30f12d04c84c03cea82a107ed26628a53b71a807a19f719f0962ccc8cfe5",
+  "bytes": 389591
+ },
+ {
+  "name": "github:DigitalPlatDev/FreeDomain@9c7c54110705.tar.gz",
+  "url": "https://codeload.github.com/DigitalPlatDev/FreeDomain/tar.gz/9c7c54110705760267b07b6e6a6d406d1172a1bf",
+  "sha256": "4de60dc2e6686ede63ee7b5e6fdbbee6501dc512013bee24220b89d18fedae68",
+  "bytes": 1053546
+ },
+ {
+  "name": "github:DigitalPlatDev/FreeDomain@9c7c54110705.zip",
+  "url": "https://codeload.github.com/DigitalPlatDev/FreeDomain/zip/9c7c54110705760267b07b6e6a6d406d1172a1bf",
+  "sha256": "1f3efbb5404e854fdfcd0c7d9f4f4a0c512a38417f3f11681f87aa560462aa72",
+  "bytes": 1100183
+ },
+ {
+  "name": "github:yt-dlp/yt-dlp@b77c9304e1c4.tar.gz",
+  "url": "https://codeload.github.com/yt-dlp/yt-dlp/tar.gz/b77c9304e1c4220cca450c583491904daf8455af",
+  "sha256": "6da1f0c85006694eaf86352344326c39d6d554e3994424cddb56b02a729a2589",
+  "bytes": 3085863
+ },
+ {
+  "name": "github:yt-dlp/yt-dlp@b77c9304e1c4.zip",
+  "url": "https://codeload.github.com/yt-dlp/yt-dlp/zip/b77c9304e1c4220cca450c583491904daf8455af",
+  "sha256": "9314e94839a2d20c9bf3bc2d8d3b89ea098567792edcb1f3f3f7a5a9e8dee9b1",
+  "bytes": 3820714
+ },
+ {
+  "name": "github:trekhleb/javascript-algorithms@85293e3e2b88.tar.gz",
+  "url": "https://codeload.github.com/trekhleb/javascript-algorithms/tar.gz/85293e3e2b88f4d2ce330d956b139cf628aa1e82",
+  "sha256": "299abc4982e9c7a612c93f70a031a8818457c4b57c1245ba8596734592642594",
+  "bytes": 7561436
+ },
+ {
+  "name": "github:trekhleb/javascript-algorithms@85293e3e2b88.zip",
+  "url": "https://codeload.github.com/trekhleb/javascript-algorithms/zip/85293e3e2b88f4d2ce330d956b139cf628aa1e82",
+  "sha256": "37385a422d0509e7e49a27162d592d5a97436641155e84061747b14cad3224da",
+  "bytes": 7965342
+ },
+ {
+  "name": "github:ultraworkers/claw-code@51cfca114cf5.tar.gz",
+  "url": "https://codeload.github.com/ultraworkers/claw-code/tar.gz/51cfca114cf506a5d7a53ab1bffa8e1bbd3c780d",
+  "sha256": "56d077f76b3771197e01b7e7410ce071c39e0d937c5447057544a28895ca19e0",
+  "bytes": 6888247
+ },
+ {
+  "name": "github:ultraworkers/claw-code@51cfca114cf5.zip",
+  "url": "https://codeload.github.com/ultraworkers/claw-code/zip/51cfca114cf506a5d7a53ab1bffa8e1bbd3c780d",
+  "sha256": "75f9b44d06b52de872ef51c6b1a46e627ebc22192fbf2c9ac8803adca57c87d4",
+  "bytes": 7117184
+ },
+ {
+  "name": "github:microsoft/markitdown@7482c092d9c0.tar.gz",
+  "url": "https://codeload.github.com/microsoft/markitdown/tar.gz/7482c092d9c0074a89803c9fdb63a969e7fe17fc",
+  "sha256": "78e81b59c3d6eef2cb7939fea1ba659f677957cdf9332eb4fb268ecd767e80c1",
+  "bytes": 6148830
+ },
+ {
+  "name": "github:microsoft/markitdown@7482c092d9c0.zip",
+  "url": "https://codeload.github.com/microsoft/markitdown/zip/7482c092d9c0074a89803c9fdb63a969e7fe17fc",
+  "sha256": "e192317bca2d9c668f7297c8d41231af862f3b8a04642bcb96666b75aebc489a",
+  "bytes": 6257035
+ },
+ {
+  "name": "github:avelino/awesome-go@e67d008c1c56.tar.gz",
+  "url": "https://codeload.github.com/avelino/awesome-go/tar.gz/e67d008c1c56286eb40996f3c1fd1ca35f43a3cd",
+  "sha256": "03036ffd01098a1ae660b38c268622616a1a4b65e15eb5f768974c6df24080f8",
+  "bytes": 1669400
+ },
+ {
+  "name": "github:avelino/awesome-go@e67d008c1c56.zip",
+  "url": "https://codeload.github.com/avelino/awesome-go/zip/e67d008c1c56286eb40996f3c1fd1ca35f43a3cd",
+  "sha256": "c79c662dd4ad7359fa7883ab3bb833054a18945cbb7b4753ac455989cca07377",
+  "bytes": 1691813
+ },
+ {
+  "name": "github:ohmyzsh/ohmyzsh@b509b1c6ed0c.tar.gz",
+  "url": "https://codeload.github.com/ohmyzsh/ohmyzsh/tar.gz/b509b1c6ed0c1ba37de12cbd37f30b2b2f61193a",
+  "sha256": "2c61648f01654f1782832c230007a48ce7c0475b4e190294af13cb2b568b1758",
+  "bytes": 3516444
+ },
+ {
+  "name": "github:ohmyzsh/ohmyzsh@b509b1c6ed0c.zip",
+  "url": "https://codeload.github.com/ohmyzsh/ohmyzsh/zip/b509b1c6ed0c1ba37de12cbd37f30b2b2f61193a",
+  "sha256": "a50014caca1f0755423ee668db92c335b2438d2cfaeacb09cb1eb4fc2018c631",
+  "bytes": 4048930
+ },
+ {
+  "name": "release:python-source",
+  "url": "https://www.python.org/ftp/python/3.13.1/Python-3.13.1.tar.xz",
+  "sha256": "9cf9427bee9e2242e3877dd0f6b641c1853ca461f39d6503ce260a59c80bf0d9",
+  "bytes": 22589692
+ },
+ {
+  "name": "release:node-binary",
+  "url": "https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-x64.tar.xz",
+  "sha256": "83bf07dd343002a26211cf1fcd46a9d9534219aad42ee02847816940bf610a72",
+  "bytes": 29235364
+ },
+ {
+  "name": "release:coreutils",
+  "url": "https://ftp.gnu.org/gnu/coreutils/coreutils-9.5.tar.xz",
+  "sha256": "cd328edeac92f6a665de9f323c93b712af1858bc2e0d88f3f7100469470a1b8a",
+  "bytes": 6007136
+ },
+ {
+  "name": "release:tar-source",
+  "url": "https://ftp.gnu.org/gnu/tar/tar-1.35.tar.xz",
+  "sha256": "4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16",
+  "bytes": 2317208
+ },
+ {
+  "name": "release:zstd-source",
+  "url": "https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.zst",
+  "sha256": "4aa8dd1c1115c0fd6b6b66c35c7f6ce7bd58cc1dfd3e4f175b45b39e84b14352",
+  "bytes": 1845516
+ },
+ {
+  "name": "release:go-binary",
+  "url": "https://go.dev/dl/go1.23.3.linux-amd64.tar.gz",
+  "sha256": "a0afb9744c00648bafb1b90b4aba5bdb86f424f02f9275399ce0c20b93a2c3a8",
+  "bytes": 73629129
+ },
+ {
+  "name": "release:cmake-source",
+  "url": "https://github.com/Kitware/CMake/releases/download/v3.31.0/cmake-3.31.0.tar.gz",
+  "sha256": "300b71db6d69dcc1ab7c5aae61cbc1aa2778a3e00cbd918bc720203e311468c3",
+  "bytes": 11699894
+ },
+ {
+  "name": "release:curl-source",
+  "url": "https://curl.se/download/curl-8.11.0.tar.xz",
+  "sha256": "db59cf0d671ca6e7f5c2c5ec177084a33a79e04c97e71cf183a5cdea235054eb",
+  "bytes": 2750684
+ },
+ {
+  "name": "release:git-source",
+  "url": "https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.47.0.tar.xz",
+  "sha256": "1ce114da88704271b43e027c51e04d9399f8c88e9ef7542dae7aebae7d87bc4e",
+  "bytes": 7652728
+ },
+ {
+  "name": "release:openssl-source",
+  "url": "https://github.com/openssl/openssl/releases/download/openssl-3.4.0/openssl-3.4.0.tar.gz",
+  "sha256": "e15dda82fe2fe8139dc2ac21a36d4ca01d5313c75f99f46c4e8a27709b7294bf",
+  "bytes": 18320899
+ }
+]
