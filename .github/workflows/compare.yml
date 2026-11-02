@@ -1,0 +1,73 @@
+name: Compare two revisions
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Revision to compare against the dispatched ref
+        required: true
+      workloads:
+        description: Scoreboard workloads, space separated
+        default: large-compressible large-random silesia
+        required: true
+      formats:
+        description: Archive formats, space separated (zip tar tar.gz)
+        default: zip tar.gz
+        required: true
+      runs:
+        description: Measured rounds after one warmup
+        default: '11'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      BASE: ${{ inputs.base }}
+      WORKLOADS: ${{ inputs.workloads }}
+      FORMATS: ${{ inputs.formats }}
+      RUNS: ${{ inputs.runs }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Validate inputs
+        run: |
+          python - <<'EOF'
+          import os, re
+          assert re.fullmatch(r'[0-9a-f]{7,40}', os.environ['BASE'])
+          assert re.fullmatch(r'[a-z -]+', os.environ['WORKLOADS'])
+          assert re.fullmatch(r'[a-z. ]+', os.environ['FORMATS'])
+          assert 1 <= int(os.environ['RUNS']) <= 31
+          EOF
+      - run: rustup toolchain install 1.96.0 --profile minimal
+      - name: Build both revisions
+        run: |
+          git worktree add ../base "$BASE"
+          (cd ../base && cargo +1.96.0 build --release --locked --package zipper)
+          cargo +1.96.0 build --release --locked --package zipper
+          mkdir -p target/compare-bin
+          suffix=""; [ "$RUNNER_OS" = Windows ] && suffix=".exe"
+          cp "../base/target/release/zipper$suffix" "target/compare-bin/before$suffix"
+          cp "target/release/zipper$suffix" "target/compare-bin/after$suffix"
+          echo "SUFFIX=$suffix" >> "$GITHUB_ENV"
+      - name: Compare
+        run: |
+          python scripts/compare_workloads.py --before "target/compare-bin/before$SUFFIX" \
+            --after "target/compare-bin/after$SUFFIX" --workloads $WORKLOADS --formats $FORMATS \
+            --runs "$RUNS" --output-dir target/compare-results
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: compare-${{ matrix.os }}
+          path: target/compare-results/
