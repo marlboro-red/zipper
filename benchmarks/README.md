@@ -49,6 +49,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-02 | [Scoreboard on Linux and Windows runners](cross-platform/scoreboard-2026-11-02/README.md) | Native at one thread beats bsdtar on every workload on both. At four threads, Windows loses on flat tiny files because parallel creation is slower there. |
 | 2026-10-30 | [Portable extraction matrix](extraction-matrix/README.md) | Found a Linux input bottleneck and a Windows large-entry regression. The ZIP reader records above address both. |
 | 2026-10-30 | [Real dependency-source extraction](rust-dependencies/README.md) | At one thread, native-fast is 1.33× faster than bsdtar with 25% less CPU. The native archive is 14.5% smaller than the ZIP. |
 | 2026-10-29 | [ZIP extraction versus bsdtar](native-zip/bsdtar-comparison.md) | Four Zipper workers against one bsdtar process. One worker narrows small files to about 1.13×. Silesia is 1.99× with native-fast or 1.59× streaming. |

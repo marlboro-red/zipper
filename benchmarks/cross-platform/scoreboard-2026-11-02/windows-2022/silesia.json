@@ -1,0 +1,609 @@
+{
+  "platform": "Windows-2022Server-10.0.20348-SP0",
+  "machine": "AMD64",
+  "cpu_count": 4,
+  "python": "3.12.10",
+  "source": "D:\\a\\zipper\\zipper\\target\\bench-corpora\\silesia\\silesia",
+  "files": 12,
+  "input_bytes": 211938580,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "cache": "uncontrolled, warmed by creation and prior runs; not cold-cache",
+  "semantics": "bytes and directory membership; metadata fidelity not compared; no fsync",
+  "memory": "single process peak working set (Windows) or wait4 peak RSS (Unix); not process tree",
+  "verification": "direct bytes and exact full output tree, outside timed region",
+  "zipper_sha256": "f7ee9d9c81ba4f090b262764cc9f9c8ffb4973e9135074e494ab556942578d5b",
+  "commands": {
+    "native-1": [
+      "D:\\a\\zipper\\zipper\\target\\release\\zipper.exe",
+      "--zip-engine",
+      "native",
+      "--threads",
+      "1",
+      "extract",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\input.zip",
+      "-o",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\out"
+    ],
+    "native-fast-1": [
+      "D:\\a\\zipper\\zipper\\target\\release\\zipper.exe",
+      "--zip-engine",
+      "native-fast",
+      "--threads",
+      "1",
+      "extract",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\input.zip",
+      "-o",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\out"
+    ],
+    "native-4": [
+      "D:\\a\\zipper\\zipper\\target\\release\\zipper.exe",
+      "--zip-engine",
+      "native",
+      "--threads",
+      "4",
+      "extract",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\input.zip",
+      "-o",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\out"
+    ],
+    "native-fast-4": [
+      "D:\\a\\zipper\\zipper\\target\\release\\zipper.exe",
+      "--zip-engine",
+      "native-fast",
+      "--threads",
+      "4",
+      "extract",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\input.zip",
+      "-o",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\out"
+    ],
+    "7zip": [
+      "C:/Program Files/7-Zip\\7z.exe",
+      "x",
+      "-y",
+      "-oD:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\out",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\input.zip"
+    ],
+    "bsdtar-zip": [
+      "C:/Windows/System32\\tar.exe",
+      "-xf",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\input.zip",
+      "-C",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\out",
+      "-b",
+      "2048"
+    ],
+    "bsdtar-tar": [
+      "C:/Windows/System32\\tar.exe",
+      "-xf",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\input.tar",
+      "-C",
+      "D:\\a\\zipper\\zipper\\target\\bench-work\\zipper-matrix-z3x4_u33\\out",
+      "-b",
+      "2048",
+      "-m",
+      "--no-same-owner",
+      "--no-same-permissions",
+      "--no-acls",
+      "--no-xattrs",
+      "--no-fflags"
+    ]
+  },
+  "archives": {
+    "input.zip": {
+      "bytes": 68221755,
+      "sha256": "c71d02c06a121ae1b08068e00932eb6748ced30f908846bb88d3fe0f29dfd728"
+    },
+    "input.tar": {
+      "bytes": 211957760,
+      "sha256": "1953965768007e9333e4b9718fcfefc422a6503734d58574cdb312bd00484eb2"
+    }
+  },
+  "results": {
+    "native-1": {
+      "samples": [
+        {
+          "seconds": 0.5417357999999695,
+          "peak_rss_bytes": 5152768,
+          "cpu_seconds": 0.53125,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.5428377999996883,
+          "peak_rss_bytes": 5148672,
+          "cpu_seconds": 0.546875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.5434971999998197,
+          "peak_rss_bytes": 5124096,
+          "cpu_seconds": 0.5625,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.5507293000000573,
+          "peak_rss_bytes": 5152768,
+          "cpu_seconds": 0.578125,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.5445310999998583,
+          "peak_rss_bytes": 5156864,
+          "cpu_seconds": 0.546875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.5427460999999312,
+          "peak_rss_bytes": 5152768,
+          "cpu_seconds": 0.546875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.5477279000001545,
+          "peak_rss_bytes": 5156864,
+          "cpu_seconds": 0.546875,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.5434971999998197,
+      "min_seconds": 0.5417357999999695,
+      "max_seconds": 0.5507293000000573,
+      "files_s": 22.079230582979967,
+      "mib_s": 371.8885403672335,
+      "peak_rss_bytes": 5156864,
+      "median_cpu_seconds": 0.546875,
+      "cpu_per_wall": 1.0062149354222643
+    },
+    "native-fast-1": {
+      "samples": [
+        {
+          "seconds": 0.4924885999998878,
+          "peak_rss_bytes": 57749504,
+          "cpu_seconds": 0.5,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.49748730000010255,
+          "peak_rss_bytes": 57753600,
+          "cpu_seconds": 0.5,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.49386039999990317,
+          "peak_rss_bytes": 57753600,
+          "cpu_seconds": 0.515625,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.4939759000003505,
+          "peak_rss_bytes": 57749504,
+          "cpu_seconds": 0.5,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.48992050000015297,
+          "peak_rss_bytes": 57745408,
+          "cpu_seconds": 0.484375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.4918382000000747,
+          "peak_rss_bytes": 57737216,
+          "cpu_seconds": 0.484375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.4905868000000737,
+          "peak_rss_bytes": 57753600,
+          "cpu_seconds": 0.5,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.4924885999998878,
+      "min_seconds": 0.48992050000015297,
+      "max_seconds": 0.49748730000010255,
+      "files_s": 24.3660462394515,
+      "mib_s": 410.4062112334324,
+      "peak_rss_bytes": 57753600,
+      "median_cpu_seconds": 0.5,
+      "cpu_per_wall": 1.0152519266438125
+    },
+    "native-4": {
+      "samples": [
+        {
+          "seconds": 0.23050270000021555,
+          "peak_rss_bytes": 8679424,
+          "cpu_seconds": 0.703125,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.23078260000011142,
+          "peak_rss_bytes": 8749056,
+          "cpu_seconds": 0.703125,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21396599999980026,
+          "peak_rss_bytes": 8663040,
+          "cpu_seconds": 0.71875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21970509999982824,
+          "peak_rss_bytes": 8740864,
+          "cpu_seconds": 0.71875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.208155600000282,
+          "peak_rss_bytes": 8667136,
+          "cpu_seconds": 0.71875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2322756999997182,
+          "peak_rss_bytes": 8753152,
+          "cpu_seconds": 0.734375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21410729999979594,
+          "peak_rss_bytes": 8744960,
+          "cpu_seconds": 0.734375,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.21970509999982824,
+      "min_seconds": 0.208155600000282,
+      "max_seconds": 0.2322756999997182,
+      "files_s": 54.6186683878043,
+      "mib_s": 919.9621692977056,
+      "peak_rss_bytes": 8753152,
+      "median_cpu_seconds": 0.71875,
+      "cpu_per_wall": 3.2714306586445283
+    },
+    "native-fast-4": {
+      "samples": [
+        {
+          "seconds": 0.20478600000024016,
+          "peak_rss_bytes": 56033280,
+          "cpu_seconds": 0.65625,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.19702730000017254,
+          "peak_rss_bytes": 70225920,
+          "cpu_seconds": 0.671875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.22782139999981155,
+          "peak_rss_bytes": 60964864,
+          "cpu_seconds": 0.671875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2033078999997997,
+          "peak_rss_bytes": 56041472,
+          "cpu_seconds": 0.65625,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.20369829999981448,
+          "peak_rss_bytes": 56078336,
+          "cpu_seconds": 0.625,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.1938823999998931,
+          "peak_rss_bytes": 70803456,
+          "cpu_seconds": 0.65625,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.19495540000025358,
+          "peak_rss_bytes": 56049664,
+          "cpu_seconds": 0.625,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.2033078999997997,
+      "min_seconds": 0.1938823999998931,
+      "max_seconds": 0.22782139999981155,
+      "files_s": 59.02377625272713,
+      "mib_s": 994.1590090784001,
+      "peak_rss_bytes": 70803456,
+      "median_cpu_seconds": 0.65625,
+      "cpu_per_wall": 3.227862763821015
+    },
+    "7zip": {
+      "samples": [
+        {
+          "seconds": 1.1798917999999503,
+          "peak_rss_bytes": 7331840,
+          "cpu_seconds": 1.171875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 1.1771590000003016,
+          "peak_rss_bytes": 7340032,
+          "cpu_seconds": 1.171875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 1.1812471000002915,
+          "peak_rss_bytes": 7331840,
+          "cpu_seconds": 1.171875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 1.1776166999998168,
+          "peak_rss_bytes": 7335936,
+          "cpu_seconds": 1.171875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 1.1765219000003526,
+          "peak_rss_bytes": 7340032,
+          "cpu_seconds": 1.171875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 1.1819080000000213,
+          "peak_rss_bytes": 7344128,
+          "cpu_seconds": 1.171875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 1.176203600000008,
+          "peak_rss_bytes": 7331840,
+          "cpu_seconds": 1.171875,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 1.1776166999998168,
+      "min_seconds": 1.176203600000008,
+      "max_seconds": 1.1819080000000213,
+      "files_s": 10.190072881950355,
+      "mib_s": 171.63511726832914,
+      "peak_rss_bytes": 7344128,
+      "median_cpu_seconds": 1.171875,
+      "cpu_per_wall": 0.9951243048779644
+    },
+    "bsdtar-zip": {
+      "samples": [
+        {
+          "seconds": 0.8630209000002651,
+          "peak_rss_bytes": 5783552,
+          "cpu_seconds": 0.875,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.8599059000002853,
+          "peak_rss_bytes": 5783552,
+          "cpu_seconds": 0.859375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.8632056999999804,
+          "peak_rss_bytes": 5783552,
+          "cpu_seconds": 0.859375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.8581749999998465,
+          "peak_rss_bytes": 5787648,
+          "cpu_seconds": 0.859375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.8585946000002878,
+          "peak_rss_bytes": 5783552,
+          "cpu_seconds": 0.859375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.862591600000087,
+          "peak_rss_bytes": 5783552,
+          "cpu_seconds": 0.859375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.8633778999997048,
+          "peak_rss_bytes": 5791744,
+          "cpu_seconds": 0.859375,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.862591600000087,
+      "min_seconds": 0.8581749999998465,
+      "max_seconds": 0.8633778999997048,
+      "files_s": 13.91156602962374,
+      "mib_s": 234.31758482414034,
+      "peak_rss_bytes": 5791744,
+      "median_cpu_seconds": 0.859375,
+      "cpu_per_wall": 0.9962710047256584
+    },
+    "bsdtar-tar": {
+      "samples": [
+        {
+          "seconds": 0.11876609999990251,
+          "peak_rss_bytes": 5349376,
+          "cpu_seconds": 0.109375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.11712289999968561,
+          "peak_rss_bytes": 5349376,
+          "cpu_seconds": 0.109375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.11643000000003667,
+          "peak_rss_bytes": 5345280,
+          "cpu_seconds": 0.109375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.11721709999983432,
+          "peak_rss_bytes": 5341184,
+          "cpu_seconds": 0.125,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.11954139999988911,
+          "peak_rss_bytes": 5349376,
+          "cpu_seconds": 0.109375,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.11541530000022249,
+          "peak_rss_bytes": 5349376,
+          "cpu_seconds": 0.125,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.11692360000006374,
+          "peak_rss_bytes": 5349376,
+          "cpu_seconds": 0.125,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.11712289999968561,
+      "min_seconds": 0.11541530000022249,
+      "max_seconds": 0.11954139999988911,
+      "files_s": 102.45647947610767,
+      "mib_s": 1725.7118838600638,
+      "peak_rss_bytes": 5349376,
+      "median_cpu_seconds": 0.109375,
+      "cpu_per_wall": 0.9338481202249397
+    }
+  },
+  "7zip": {
+    "binary": "C:/Program Files/7-Zip\\7z.exe",
+    "sha256": "94205cfc054dd3bbeb978905bc619a65b3f04e9e73bb2717841110b6f46d962e",
+    "version": "\n7-Zip 26.05 (x64) : Copyright (c) 1999-2026 Igor Pavlov : 2026-10-21\n\n\nLibs:\n 0 : 26.05 : C:\\Program Files\\7-Zip\\7z.dll\n\nFormats:\n 0 C...F..........c.a.m+.. w...0  7z       7z            7 z BC AF ' 1C\n 0  ......................  APFS     apfs img      offset=32 N X S B 00\n 0  ......................  APM      apm           E R\n 0  ......................  Ar       ar a deb udeb lib ! < a r c h > 0A\n 0  ......................  Arj      arj           ` EA\n 0  K.....O.....X.........  Base64   b64           \n 0  ......O...............  COFF     obj           \n 0  ...F..................  Cab      cab           M S C F 00 00 00 00\n 0  ......................  Chm      chm chi chq chw I T S F 03 00 00 00 ` 00 00 00\n 0  ......................  Compound msi msp msm doc xls ppt aaf D0 CF 11 E0 A1 B1 1A E1\n 0  ....M.................  Cpio     cpio          0 7 0 7 0  ||  C7 q  ||  q C7\n 0  ......................  CramFS   cramfs        offset=16 C o m p r e s s e d 20 R O M F S\n 0  .....G..B.............  Dmg      dmg           k o l y 00 00 00 04 00 00 02 00\n 0  .........E............  ELF      elf           \u007f E L F\n 0  ......................  Ext      ext ext2 ext3 ext4 img offset=1080 S EF\n 0  ......................  FAT      fat img       offset=510 U AA\n 0  ......................  FLV      flv           F L V 01\n 0  ......................  GPT      gpt mbr       offset=512 E F I 20 P A R T 00 00 01 00\n 0  ....M.................  HFS      hfs hfsx      offset=1024 B D  ||  H + 00 04  ||  H X 00 05\n 0  ...F..................  Hxs      hxs hxi hxr hxq hxw lit I T O L I T L S 01 00 00 00 ( 00 00 00\n 0  ......O...............  IHex     ihex          \n 0  ......................  Iso      iso img       offset=32769 C D 0 0 1\n 0  ......................  LP       lpimg img     offset=4096 g D l a 4 00 00 00\n 0  ......................  Lzh      lzh lha       offset=2 - l h\n 0  .......P..............  MBR      mbr           \n 0  ....M....E............  MachO    macho         CE FA ED FE  ||  CF FA ED FE  ||  FE ED FA CE  ||  FE ED FA CF\n 0  ......................  MsLZ     mslz          S Z D D 88 F0 ' 3 A\n 0  ....M....E............  Mub      mub           CA FE BA BE 00 00 00  ||  B9 FA F1 0E\n 0  ......................  NTFS     ntfs img      offset=3 N T F S 20 20 20 20 00\n 0  ...F.G................  Nsis     nsis          offset=4 EF BE AD DE N u l l s o f t I n s t\n 0  .........E............  PE       exe dll sys   M Z\n 0  ......................  Ppmd     pmd           8F AF AC 84\n 0  ......................  QCOW     qcow qcow2 qcow2c Q F I FB 00 00 00\n 0  ...F..................  Rar      rar r00       R a r ! 1A 07 00\n 0  ...F..................  Rar5     rar r00       R a r ! 1A 07 01 00\n 0  ......................  Rpm      rpm           ED AB EE DB\n 0  K.....................  SWF      swf           F W S\n 0  ....M.................  SWFc     swf (~.swf)   C W S  ||  Z W S\n 0  ......................  Sparse   simg img      : FF & ED 01 00\n 0  ......................  Split    001           \n 0  ....M.................  SquashFS squashfs      h s q s  ||  s q s h  ||  s h s q  ||  q s h s\n 0  .........E............  TE       te            V Z\n 0  ...FM.................  UEFIc    scap          BD 86 f ; v 0D 0 @ B7 0E B5 Q 9E / C5 A0  ||  8B A6 < J # w FB H 80 = W 8C C1 FE C4 M  ||  B9 82 91 S B5 AB 91 C B6 9A E3 A9 C F7 / CC\n 0  ...FM.................  UEFIf    uefif         offset=16 D9 T 93 z h 04 J D 81 CE 0B F6 17 D8 90 DF  ||  x E5 8C 8C = 8A 1C O 99 5 89 a 85 C3 - D3\n 0  ....M.O...............  Udf      udf iso img   offset=32768 00 B E A 0 1 01 00  ||  01 C D 0 0 1\n 0  ......................  VDI      vdi           offset=64 \u007f 10 DA BE\n 0  .....G................  VHD      vhd           c o n e c t i x 00 00 00\n 0  ......................  VHDX     vhdx avhdx    v h d x f i l e\n 0  ......................  VMDK     vmdk          K D M V\n 0  ......................  Xar      xar pkg xip   x a r ! 00\n 0  ......................  Z        z taz (.tar)  1F 9D\n 0 CK.....................  bzip2    bz2 bzip2 tbz2 (.tar) tbz (.tar) B Z h\n 0 CK.................m+.. .u..1  gzip     gz gzip tgz (.tar) tpz (.tar) apk (.tar) 1F 8B 08\n 0  K.....O...............  lzma     lzma          \n 0  K.....................  lzma86   lzma86        \n 0 C......O...LH......m+.. wu.n1  tar      tar ova       offset=257 u s t a r\n 0 C.SN.......LH..c.a.m+.. w...0  wim      wim swm esd ppkg M S W I M 00 00 00\n 0 CK.....................  xz       xz txz (.tar) FD 7 z X Z 00\n 0 C...FMG........c.a.m+.. wud.0  zip      zip z01 zipx jar xpi odt ods docx xlsx epub ipa apk appx P K 03 04  ||  P K 05 06  ||  P K 06 06  ||  P K 07 08 P K  ||  P K 0 0 P K\n 0  K.....................  zstd     zst tzst (.tar) ( B5 / FD\n   CK.....O.....XC........  Hash     sha256 sha512 sha384 sha224 sha512-224 sha512-256 sha3-224 sha3-256 sha3-384 sha3-512 sha1 sha2 sha3 sha md5 blake2s blake2b blake2sp xxh64 crc32 crc64 cksum asc \n\nCodecs:\n 0 4ED   303011B BCJ2\n 0  EDF  3030103 BCJ\n 0  EDF  3030205 PPC\n 0  EDF  3030401 IA64\n 0  EDF  3030501 ARM\n 0  EDF  3030701 ARMT\n 0  EDF  3030805 SPARC\n 0  EDF        A ARM64\n 0  EDF        B RISCV\n 0  EDF    20302 Swap2\n 0  EDF    20304 Swap4\n 0  ED     40202 BZip2\n 0  ED         0 Copy\n 0  ED     40109 Deflate64\n 0  ED     40108 Deflate\n 0  EDF        3 Delta\n 0  ED        21 LZMA2\n 0  ED     30101 LZMA\n 0  ED     30401 PPMD\n 0   D     40301 Rar1\n 0   D     40302 Rar2\n 0   D     40303 Rar3\n 0   D     40305 Rar5\n 0  EDF  6F10701 7zAES\n 0  EDF  6F00181 AES256CBC\n\nHashers:\n 0    4        1 CRC32\n 0   16      208 MD5\n 0   20      201 SHA1\n 0   32        A SHA256\n 0   32      231 SHA3-256\n 0   48      222 SHA384\n 0   64      223 SHA512\n 0    8      211 XXH64\n 0    8        4 CRC64\n 0   32      202 BLAKE2sp\n"
+  },
+  "bsdtar": {
+    "binary": "C:/Windows/System32\\tar.exe",
+    "sha256": "c3986bef47ce216a8f464e8284287f707f032aa41fd401c005c1b04305b520e1",
+    "version": "bsdtar 3.8.9 - libarchive 3.8.9 zlib/1.2.5.f-ipp cng/2.0 libb2/bundled \n"
+  },
+  "parity": {
+    "zipper_restores": "ZIP engines restore bytes, directories, permission bits, times and links; the native format restores bytes and directories",
+    "bsdtar-zip": "default metadata restore, 1 MiB reads, single process",
+    "bsdtar-tar": "reduced-metadata flags to match the native format, single process",
+    "7zip": "restores timestamps and attributes; no flag disables them",
+    "output_root": "created before timing for external readers; Zipper stages and publishes inside timing",
+    "threads": "Zipper rows run at every --threads value, including 1 for a single-threaded comparison"
+  },
+  "order_including_warmup": [
+    [
+      "native-fast-4",
+      "native-1",
+      "bsdtar-zip",
+      "native-4",
+      "bsdtar-tar",
+      "native-fast-1",
+      "7zip"
+    ],
+    [
+      "native-1",
+      "native-fast-1",
+      "native-fast-4",
+      "native-4",
+      "bsdtar-tar",
+      "7zip",
+      "bsdtar-zip"
+    ],
+    [
+      "native-fast-1",
+      "7zip",
+      "bsdtar-tar",
+      "native-fast-4",
+      "bsdtar-zip",
+      "native-4",
+      "native-1"
+    ],
+    [
+      "native-fast-4",
+      "bsdtar-tar",
+      "7zip",
+      "native-4",
+      "bsdtar-zip",
+      "native-1",
+      "native-fast-1"
+    ],
+    [
+      "native-4",
+      "native-1",
+      "native-fast-1",
+      "bsdtar-tar",
+      "7zip",
+      "native-fast-4",
+      "bsdtar-zip"
+    ],
+    [
+      "7zip",
+      "bsdtar-tar",
+      "native-fast-1",
+      "bsdtar-zip",
+      "native-4",
+      "native-fast-4",
+      "native-1"
+    ],
+    [
+      "bsdtar-zip",
+      "native-1",
+      "bsdtar-tar",
+      "native-fast-4",
+      "native-4",
+      "native-fast-1",
+      "7zip"
+    ],
+    [
+      "bsdtar-tar",
+      "native-4",
+      "7zip",
+      "native-fast-4",
+      "native-1",
+      "native-fast-1",
+      "bsdtar-zip"
+    ]
+  ],
+  "manifest_sha256": "7bedf43bbd5448f72d68e1f803970f4074cd4c9866bce3efa3a664219211ca32",
+  "workload": "silesia",
+  "revision": "fedeec542c4904493a6b8c8bc8a0c09a15595a2d",
+  "tree_clean": true,
+  "recorded": "2026-11-02",
+  "previous_session": null,
+  "counters": {
+    "revision": "fedeec542c4904493a6b8c8bc8a0c09a15595a2d",
+    "tree_clean": true,
+    "rows": {
+      "native-1": {
+        "archive_reads": 151,
+        "archive_bytes_read": 69174268,
+        "files_created": 12,
+        "directory_create_calls": 1,
+        "symlinks_created": 0,
+        "output_writes": 485,
+        "output_bytes_written": 211938580,
+        "metadata_calls": 0,
+        "decode_nanos": 450396300
+      },
+      "native-fast-1": {
+        "archive_reads": 62,
+        "archive_bytes_read": 68285688,
+        "files_created": 12,
+        "directory_create_calls": 1,
+        "symlinks_created": 0,
+        "output_writes": 738,
+        "output_bytes_written": 211938580,
+        "metadata_calls": 0,
+        "decode_nanos": 313065100
+      }
+    }
+  }
+}
