@@ -56,6 +56,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-02 | [Tar rows on Linux and Windows runners](cross-platform/tar-scoreboard/README.md) | Plain tar beats default bsdtar on every Linux workload and five of seven Windows ones. The gzip rows lose on the large entries, where the decoder is zlib-rs. |
 | 2026-11-02 | [Windows worker cap for crowded folders](cross-platform/windows-folder-cap/README.md) | Kept. The Windows default uses one worker only when one folder holds 1,024 tiny files, and now beats bsdtar on every workload. |
 | 2026-11-02 | [Scoreboard on Linux and Windows runners](cross-platform/scoreboard-2026-11-02/README.md) | Native at one thread beats bsdtar on every workload on both. At four threads, Windows loses on flat tiny files because parallel creation is slower there. |
 | 2026-10-30 | [Portable extraction matrix](extraction-matrix/README.md) | Found a Linux input bottleneck and a Windows large-entry regression. The ZIP reader records above address both. |

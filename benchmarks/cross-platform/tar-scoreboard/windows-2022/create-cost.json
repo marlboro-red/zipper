@@ -1,0 +1,317 @@
+{
+  "platform": "Windows-2022Server-10.0.20348-SP0",
+  "machine": "AMD64",
+  "cpu_count": 4,
+  "root": "D:\\a\\zipper\\zipper\\target\\bench-work\\probe",
+  "files": 10000,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "samples": {
+    "create-close-1": [
+      {
+        "wall_us_per_file": 25.7772500000101,
+        "cpu_us_per_file": 25.0
+      },
+      {
+        "wall_us_per_file": 32.17842999997629,
+        "cpu_us_per_file": 29.6875
+      },
+      {
+        "wall_us_per_file": 30.07183999998233,
+        "cpu_us_per_file": 26.5625
+      },
+      {
+        "wall_us_per_file": 25.976740000032805,
+        "cpu_us_per_file": 25.0
+      },
+      {
+        "wall_us_per_file": 25.933719999966343,
+        "cpu_us_per_file": 26.5625
+      },
+      {
+        "wall_us_per_file": 25.921510000034687,
+        "cpu_us_per_file": 25.0
+      },
+      {
+        "wall_us_per_file": 26.109840000026452,
+        "cpu_us_per_file": 26.5625
+      }
+    ],
+    "create-write-close-1": [
+      {
+        "wall_us_per_file": 47.525610000002416,
+        "cpu_us_per_file": 40.625
+      },
+      {
+        "wall_us_per_file": 41.19344999999157,
+        "cpu_us_per_file": 40.625
+      },
+      {
+        "wall_us_per_file": 41.44857000001139,
+        "cpu_us_per_file": 42.1875
+      },
+      {
+        "wall_us_per_file": 46.48514000000432,
+        "cpu_us_per_file": 45.3125
+      },
+      {
+        "wall_us_per_file": 41.22071000001597,
+        "cpu_us_per_file": 40.625
+      },
+      {
+        "wall_us_per_file": 42.26022000002558,
+        "cpu_us_per_file": 43.75
+      },
+      {
+        "wall_us_per_file": 42.33857999997781,
+        "cpu_us_per_file": 40.625
+      }
+    ],
+    "create-write-times-close-1": [
+      {
+        "wall_us_per_file": 61.32640999999239,
+        "cpu_us_per_file": 60.9375
+      },
+      {
+        "wall_us_per_file": 70.63963000000513,
+        "cpu_us_per_file": 62.5
+      },
+      {
+        "wall_us_per_file": 64.51569999999265,
+        "cpu_us_per_file": 59.375
+      },
+      {
+        "wall_us_per_file": 62.88383999999496,
+        "cpu_us_per_file": 62.5
+      },
+      {
+        "wall_us_per_file": 66.14853000000949,
+        "cpu_us_per_file": 62.5
+      },
+      {
+        "wall_us_per_file": 65.6433300000117,
+        "cpu_us_per_file": 62.5
+      },
+      {
+        "wall_us_per_file": 67.23557999998775,
+        "cpu_us_per_file": 59.375
+      }
+    ],
+    "create-close-4-shared-dir": [
+      {
+        "wall_us_per_file": 58.78029000000424,
+        "cpu_us_per_file": 57.8125
+      },
+      {
+        "wall_us_per_file": 56.48639999999432,
+        "cpu_us_per_file": 62.5
+      },
+      {
+        "wall_us_per_file": 59.53992999998263,
+        "cpu_us_per_file": 70.3125
+      },
+      {
+        "wall_us_per_file": 56.489860000010594,
+        "cpu_us_per_file": 59.375
+      },
+      {
+        "wall_us_per_file": 59.99051999997392,
+        "cpu_us_per_file": 65.625
+      },
+      {
+        "wall_us_per_file": 58.88676000004124,
+        "cpu_us_per_file": 65.625
+      },
+      {
+        "wall_us_per_file": 60.02180000000408,
+        "cpu_us_per_file": 59.375
+      }
+    ],
+    "create-close-4-own-dirs": [
+      {
+        "wall_us_per_file": 22.328029999971477,
+        "cpu_us_per_file": 59.375
+      },
+      {
+        "wall_us_per_file": 28.422039999986737,
+        "cpu_us_per_file": 51.5625
+      },
+      {
+        "wall_us_per_file": 22.047150000025795,
+        "cpu_us_per_file": 54.6875
+      },
+      {
+        "wall_us_per_file": 22.22991000003276,
+        "cpu_us_per_file": 62.5
+      },
+      {
+        "wall_us_per_file": 22.296349999987797,
+        "cpu_us_per_file": 60.9375
+      },
+      {
+        "wall_us_per_file": 22.35780999999406,
+        "cpu_us_per_file": 56.25
+      },
+      {
+        "wall_us_per_file": 26.756539999996672,
+        "cpu_us_per_file": 62.5
+      }
+    ],
+    "create-write-times-close-2": [
+      {
+        "wall_us_per_file": 82.22014000002673,
+        "cpu_us_per_file": 103.125
+      },
+      {
+        "wall_us_per_file": 75.86455999999089,
+        "cpu_us_per_file": 114.0625
+      },
+      {
+        "wall_us_per_file": 77.61940000000322,
+        "cpu_us_per_file": 101.5625
+      },
+      {
+        "wall_us_per_file": 86.96178000000145,
+        "cpu_us_per_file": 118.75
+      },
+      {
+        "wall_us_per_file": 81.49518000000171,
+        "cpu_us_per_file": 107.8125
+      },
+      {
+        "wall_us_per_file": 89.12081000003127,
+        "cpu_us_per_file": 106.25
+      },
+      {
+        "wall_us_per_file": 77.74546000000555,
+        "cpu_us_per_file": 110.9375
+      }
+    ],
+    "create-write-times-close-4": [
+      {
+        "wall_us_per_file": 93.29740000002857,
+        "cpu_us_per_file": 162.5
+      },
+      {
+        "wall_us_per_file": 90.27538000000277,
+        "cpu_us_per_file": 148.4375
+      },
+      {
+        "wall_us_per_file": 91.7062900000019,
+        "cpu_us_per_file": 164.0625
+      },
+      {
+        "wall_us_per_file": 94.43354999998519,
+        "cpu_us_per_file": 140.625
+      },
+      {
+        "wall_us_per_file": 106.69262999999775,
+        "cpu_us_per_file": 146.875
+      },
+      {
+        "wall_us_per_file": 102.47107999998661,
+        "cpu_us_per_file": 134.375
+      },
+      {
+        "wall_us_per_file": 97.10645000000113,
+        "cpu_us_per_file": 145.3125
+      }
+    ],
+    "create-write-times-close-8": [
+      {
+        "wall_us_per_file": 96.28990999999587,
+        "cpu_us_per_file": 150.0
+      },
+      {
+        "wall_us_per_file": 88.92997999996624,
+        "cpu_us_per_file": 167.1875
+      },
+      {
+        "wall_us_per_file": 90.95940999995946,
+        "cpu_us_per_file": 150.0
+      },
+      {
+        "wall_us_per_file": 100.55867000000944,
+        "cpu_us_per_file": 150.0
+      },
+      {
+        "wall_us_per_file": 93.41247000002113,
+        "cpu_us_per_file": 159.375
+      },
+      {
+        "wall_us_per_file": 93.97909999997864,
+        "cpu_us_per_file": 165.625
+      },
+      {
+        "wall_us_per_file": 101.5214399999877,
+        "cpu_us_per_file": 154.6875
+      }
+    ]
+  },
+  "medians": {
+    "create-close-1": {
+      "wall_us_per_file": 25.976740000032805,
+      "cpu_us_per_file": 26.5625,
+      "wall_range": [
+        25.7772500000101,
+        32.17842999997629
+      ]
+    },
+    "create-write-close-1": {
+      "wall_us_per_file": 42.26022000002558,
+      "cpu_us_per_file": 40.625,
+      "wall_range": [
+        41.19344999999157,
+        47.525610000002416
+      ]
+    },
+    "create-write-times-close-1": {
+      "wall_us_per_file": 65.6433300000117,
+      "cpu_us_per_file": 62.5,
+      "wall_range": [
+        61.32640999999239,
+        70.63963000000513
+      ]
+    },
+    "create-close-4-shared-dir": {
+      "wall_us_per_file": 58.88676000004124,
+      "cpu_us_per_file": 62.5,
+      "wall_range": [
+        56.48639999999432,
+        60.02180000000408
+      ]
+    },
+    "create-close-4-own-dirs": {
+      "wall_us_per_file": 22.328029999971477,
+      "cpu_us_per_file": 59.375,
+      "wall_range": [
+        22.047150000025795,
+        28.422039999986737
+      ]
+    },
+    "create-write-times-close-2": {
+      "wall_us_per_file": 81.49518000000171,
+      "cpu_us_per_file": 107.8125,
+      "wall_range": [
+        75.86455999999089,
+        89.12081000003127
+      ]
+    },
+    "create-write-times-close-4": {
+      "wall_us_per_file": 94.43354999998519,
+      "cpu_us_per_file": 146.875,
+      "wall_range": [
+        90.27538000000277,
+        106.69262999999775
+      ]
+    },
+    "create-write-times-close-8": {
+      "wall_us_per_file": 93.97909999997864,
+      "cpu_us_per_file": 154.6875,
+      "wall_range": [
+        88.92997999996624,
+        101.5214399999877
+      ]
+    }
+  }
+}
