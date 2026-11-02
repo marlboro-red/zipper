@@ -14,7 +14,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M3. Fixed scoreboard](#m3-fixed-scoreboard) | Done | M0 |
 | [M4. Small-file output path](#m4-small-file-output-path) | macOS at its floor; Linux and Windows open | M3 |
 | [M5. Large single entries](#m5-large-single-entries) | Planned | M3 |
-| [M6. Native reader as the default](#m6-native-reader-as-the-default) | Planned | M1, M2 |
+| [M6. Native reader as the default](#m6-native-reader-as-the-default) | Done | M1, M2 |
 
 M6 can close as soon as M1 and M2 do. M4 and M5 make the default faster and can continue after it.
 
