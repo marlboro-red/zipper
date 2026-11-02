@@ -7,6 +7,7 @@ Blocks:
   repository's target/ directory;
 - such an `rm` whose target uses a variable without a `${NAME:?}` guard, or a
   variable whose value is not assigned literally earlier in the same command;
+- such an `rm` with a relative target after a `cd` whose destination is unknown;
 - `git worktree remove --force` and `git clean -f`.
 """
 import json
@@ -68,7 +69,11 @@ def resolve(target, assignments, cwd):
     if ANY_VARIABLE.search(expanded) or "`" in expanded:
         raise ValueError(f"`{target}` expands a variable without a ${{NAME:?}} guard, so an empty value could widen the deletion")
     expanded = os.path.expanduser(expanded)
-    return expanded if os.path.isabs(expanded) else os.path.join(cwd, expanded)
+    if os.path.isabs(expanded):
+        return expanded
+    if cwd is None:
+        raise ValueError(f"`{target}` is relative to a directory an earlier `cd` left unknown")
+    return os.path.join(cwd, expanded)
 
 
 def check_rm(arguments, assignments, cwd):
@@ -118,11 +123,12 @@ def check(command, cwd, depth=0):
             continue
         program = os.path.basename(segment[0])
         arguments = segment[1:]
-        if program == "cd" and arguments:
+        if program == "cd":
+            target = arguments[-1] if arguments else "~"
             try:
-                cwd = resolve(arguments[0], assignments, cwd)
+                cwd = None if target == "-" else resolve(target, assignments, cwd)
             except ValueError:
-                pass
+                cwd = None
         elif program == "rm":
             check_rm(arguments, assignments, cwd)
         elif program == "git" and "clean" in arguments and any(

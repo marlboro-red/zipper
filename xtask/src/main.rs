@@ -167,6 +167,7 @@ fn gate(full: bool) -> Result<()> {
         ("docs", || docs::lint(&root())),
         ("comments", || comments::lint(&root())),
         ("results", || scoreboard(&["check"])),
+        ("hooks", hook_tests),
         ("clippy", || {
             cargo(&[
                 "clippy",
@@ -449,6 +450,21 @@ fn python() -> Result<&'static str> {
         .into_iter()
         .find(|name| Command::new(name).arg("--version").output().is_ok())
         .context("python3 or python is required")
+}
+
+fn hook_tests() -> Result<()> {
+    if cfg!(windows) {
+        return Ok(());
+    }
+    let status = Command::new(python()?)
+        .current_dir(root())
+        .arg(".claude/hooks/test_guard_destructive.py")
+        .status()?;
+    ensure!(
+        status.success(),
+        "test_guard_destructive.py exited with {status}"
+    );
+    Ok(())
 }
 
 fn scoreboard(args: &[&str]) -> Result<()> {
