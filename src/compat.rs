@@ -64,8 +64,11 @@ pub fn pinned_format(archive: &Path) -> Result<Option<String>> {
 // EXTERNAL(7-Zip): it expands `*` and `?` in archive paths even after `--`,
 // and replaces `*` in the -o path with the archive name.
 fn ensure_no_wildcards(path: &Path) -> Result<()> {
+    let named = path.components().any(|component| {
+        matches!(component, std::path::Component::Normal(name) if name.to_string_lossy().contains(['*', '?']))
+    });
     ensure!(
-        !path.to_string_lossy().contains(['*', '?']),
+        !named,
         "7-Zip treats `*` and `?` in {} as wildcards; rename the path",
         path.display()
     );
@@ -117,4 +120,16 @@ pub fn run(
         std::fs::rename(temp.path(), dst)?;
     }
     Ok(())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verbatim_prefix_is_not_a_wildcard() {
+        assert!(ensure_no_wildcards(Path::new(r"\\?\C:\work\a.7z")).is_ok());
+        assert!(ensure_no_wildcards(Path::new(r"\\?\C:\work\a?.7z")).is_err());
+        assert!(ensure_no_wildcards(Path::new(r"\\?\C:\p*\out")).is_err());
+    }
 }
