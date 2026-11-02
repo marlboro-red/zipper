@@ -1,6 +1,6 @@
 # Real-world archives against bsdtar
 
-**All 248 popular archives extracted identically with Zipper's default engine and default bsdtar.** That covers 189,576 paths, with the same bytes, symlink targets, permission bits and file modification times. Zipper rejected none. The sources are registries and GitHub on one day, compared on macOS only, so the result does not cover Windows-made ZIPs or archives that only old tools write.
+**All 248 popular archives extracted identically with Zipper's default engine and default bsdtar, and Zipper was faster on every one, taking 10.51 s in total against 18.11 s.** That covers 189,576 paths, with the same bytes, symlink targets, permission bits and file modification times. Zipper rejected none. The sources are registries and GitHub on one day, compared on macOS only, so the result does not cover Windows-made ZIPs or archives that only old tools write.
 
 ## Question
 
@@ -46,6 +46,25 @@ The largest archive was the CMake source tarball, with 28,611 paths. `results.js
 
 The first run used `bsdtar -xpf`, which restores modes exactly and ignores the umask. That run covered 250 archives, including the two the manifest leaves out, and differed on modes in 108 of them, such as `775` for directories in GitHub archives. Zipper applies the umask, as default bsdtar does. Against `bsdtar -xf`, all four archives checked by hand matched on every path, and then the full run matched.
 
+### Timing
+
+`scripts/realworld_diff.py time` extracted each archive with each tool for three rounds after one warmup, alternating which tool ran first. Zipper ran at `0d369f0` with its default threads, and bsdtar runs on one thread. The table sums the medians per source. Raw samples are in `timings.json`.
+
+| Source | Archives | Zipper s | bsdtar s | bsdtar ÷ Zipper, total | Median per archive | Lowest per archive |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| PyPI source packages | 40 | 1.20 | 2.22 | 1.85× | 1.66× | 1.23× |
+| PyPI wheels | 40 | 0.50 | 0.83 | 1.65× | 1.32× | 1.10× |
+| npm packages | 40 | 1.22 | 2.35 | 1.93× | 1.48× | 1.04× |
+| Crates | 40 | 0.26 | 0.41 | 1.58× | 1.42× | 1.17× |
+| Maven jars | 15 | 0.47 | 0.82 | 1.74× | 1.62× | 1.34× |
+| Go modules | 15 | 0.37 | 0.62 | 1.68× | 1.47× | 1.11× |
+| GitHub source archives | 48 | 1.61 | 2.82 | 1.75× | 1.62× | 1.10× |
+| Release tarballs | 10 | 4.88 | 8.04 | 1.65× | 1.82× | 1.28× |
+
+The largest archives took the longest. The CMake source took 1,169 against 2,080 ms, the Node.js binary 1,141 against 1,459 ms and the Go binary 751 against 1,256 ms. 156 archives took bsdtar under 20 ms, and on those the medians were 4.4 against 6.0 ms, mostly process start. The closest result was an npm package at 3.0 against 3.2 ms.
+
+### Planted differences
+
 To check that the comparison can fail, a wrapper changed one file's bytes and another file's mode after Zipper extracted. On three archives, the comparison reported exactly one content difference and one mode difference each.
 
 ## Decision
@@ -54,13 +73,14 @@ No code change. The result adds a real-world check to the synthetic corpora. Rer
 
 ## Limits
 
-One day's registry contents, on macOS only. bsdtar is the only reference here, and earlier records show it differs from GNU tar, Python and `unzip` in places. Directory times were not compared. Windows-made ZIPs, macOS Archive Utility ZIPs, self-extracting archives and archives over 150 MiB are absent. The archives themselves are not committed. The URLs and hashes are.
+One day's registry contents, on macOS only. The timings come from three rounds per tool in one session, with warm caches, and compare Zipper's default threads with single-threaded bsdtar. bsdtar is the only reference here, and earlier records show it differs from GNU tar, Python and `unzip` in places. Directory times were not compared. Windows-made ZIPs, macOS Archive Utility ZIPs, self-extracting archives and archives over 150 MiB are absent. The archives themselves are not committed. The URLs and hashes are.
 
 ## Reproduce
 
 ```sh
 python3 -I scripts/realworld_diff.py fetch
 python3 -I scripts/realworld_diff.py compare
+python3 -I scripts/realworld_diff.py time --runs 3
 ```
 
 `resolve` picks a new set from the registries and rewrites `sources.json`.

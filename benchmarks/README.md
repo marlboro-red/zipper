@@ -18,7 +18,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
-| 2026-11-03 | [Real-world archives against bsdtar](realworld/README.md) | All 248 popular ZIP, wheel, jar and tar archives extract identically with Zipper and default bsdtar, across 189,576 paths. macOS only. |
+| 2026-11-03 | [Real-world archives against bsdtar](realworld/README.md) | All 248 popular ZIP, wheel, jar and tar archives extract identically with Zipper and default bsdtar, across 189,576 paths. Zipper was faster on all 248, 10.51 s against 18.11 s in total. macOS only. |
 
 ## Tar reader
 

@@ -13,9 +13,11 @@ import json
 import os
 from pathlib import Path
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
+import time
 import unicodedata
 import urllib.request
 import xml.etree.ElementTree
@@ -285,18 +287,71 @@ def compare(args):
     print(f'{same} of {len(results)} archives extract identically', file=sys.stderr)
 
 
+def timed_extract(command, stdin_command=None):
+    start = time.perf_counter()
+    if stdin_command:
+        unpack = subprocess.Popen(stdin_command, stdout=subprocess.PIPE)
+        result = subprocess.run(command, stdin=unpack.stdout, capture_output=True)
+        unpack.stdout.close()
+        unpack.wait()
+    else:
+        result = subprocess.run(command, capture_output=True)
+    elapsed = time.perf_counter() - start
+    if result.returncode:
+        raise RuntimeError(f'{command[0]} failed: {result.stderr.decode(errors="replace")[-200:]}')
+    return elapsed
+
+
+def time_all(args):
+    """Wall time of each tool per archive, alternating which runs first."""
+    sources = json.loads(args.manifest.read_text(encoding='utf-8'))
+    WORK.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for index, source in enumerate(sources):
+        archive = cached(source)
+        print(f'[{index + 1}/{len(sources)}] {source["name"]}', file=sys.stderr, flush=True)
+        samples = {'zipper': [], 'bsdtar': []}
+        for round_index in range(args.runs + 1):
+            order = ['zipper', 'bsdtar'] if round_index % 2 else ['bsdtar', 'zipper']
+            for tool in order:
+                with tempfile.TemporaryDirectory(dir=WORK) as work:
+                    out = Path(work) / 'out'
+                    if tool == 'zipper':
+                        seconds = timed_extract([str(args.zipper), 'extract', str(archive), '-o', str(out)])
+                    else:
+                        out.mkdir()
+                        zst = archive.name.endswith('.zst')
+                        seconds = timed_extract([args.bsdtar, '-xf', '-' if zst else str(archive), '-C', str(out)],
+                                                ['zstd', '-dc', str(archive)] if zst else None)
+                    unlock(out)
+                if round_index:
+                    samples[tool].append(seconds)
+        rows.append({'name': source['name'], 'bytes': source['bytes'],
+                     **{f'{tool}_seconds': statistics.median(values) for tool, values in samples.items()},
+                     'samples': samples})
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(rows, indent=1) + '\n', encoding='utf-8')
+    zipper = sum(row['zipper_seconds'] for row in rows)
+    bsdtar = sum(row['bsdtar_seconds'] for row in rows)
+    faster = sum(row['zipper_seconds'] < row['bsdtar_seconds'] for row in rows)
+    print(f'total {zipper:.2f} s against {bsdtar:.2f} s; Zipper faster on {faster} of {len(rows)}', file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ['resolve', 'fetch', 'compare']:
+    for name in ['resolve', 'fetch', 'compare', 'time']:
         command = commands.add_parser(name)
         command.add_argument('--manifest', type=Path, default=ROOT / 'benchmarks' / 'realworld' / 'sources.json')
-        if name == 'compare':
+        if name in ('compare', 'time'):
             command.add_argument('--zipper', type=Path, default=ROOT / 'target' / 'release' / 'zipper')
             command.add_argument('--bsdtar', default=shutil.which('bsdtar') or 'bsdtar')
-            command.add_argument('--output', type=Path, default=ROOT / 'benchmarks' / 'realworld' / 'results.json')
+            command.add_argument('--output', type=Path, default=ROOT / 'benchmarks' / 'realworld' /
+                                 ('results.json' if name == 'compare' else 'timings.json'))
+        if name == 'time':
+            command.add_argument('--runs', type=int, default=3)
     args = parser.parse_args()
-    {'resolve': resolve, 'fetch': fetch, 'compare': compare}[args.command](args)
+    {'resolve': resolve, 'fetch': fetch, 'compare': compare, 'time': time_all}[args.command](args)
 
 
 if __name__ == '__main__':
