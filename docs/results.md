@@ -13,6 +13,7 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
   ZIP and one TAR with fixed metadata, then extracts them in interleaved, shuffled rounds.
 - Every extraction is compared byte for byte with the source, outside the timed region.
 - `native` and `native-fast` rows are Zipper ZIP engines at 1 and 4 threads.
+  `native-auto` is the default engine with no `--threads` flag, so Zipper picks the workers.
   `bsdtar-zip` restores default metadata, which matches what the native engines restore.
   `bsdtar-tar` uses reduced-metadata flags. `7zip` restores times and attributes.
 - Peak memory is the peak resident size of one process. Caches are warm.

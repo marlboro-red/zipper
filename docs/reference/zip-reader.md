@@ -172,8 +172,8 @@ Automatic native ZIP extraction on macOS uses at most four workers when both of 
 The limit avoids the measured filesystem contention from using every CPU.
 An explicit `--threads N` overrides it.
 Verification-only reads and larger files keep their existing concurrency.
-Windows and Linux do not apply this macOS-specific policy.
-The [small-file ZIP versus bsdtar measurements](../../benchmarks/native-zip/bsdtar-comparison.md) record the evidence.
+Windows applies the same conditions with one worker, because parallel file creation there was slower than serial. Linux has no cap.
+The [small-file ZIP versus bsdtar measurements](../../benchmarks/native-zip/bsdtar-comparison.md) and the [Linux and Windows scoreboard](../../benchmarks/cross-platform/scoreboard-2026-11-02/README.md) record the evidence.
 
 A streamed entry of at least 16 MiB gets a writer thread when the pool has more threads than entries with a payload. Every entry that is not a directory counts, including symlinks. The worker then decodes while the writer thread writes, so the number of busy threads never exceeds `--threads`. Spare threads are counted once, before extraction starts. `--threads 1` never gets a writer thread. The [write-behind measurements](../../benchmarks/native-zip/write-behind/README.md) record the evidence.
 

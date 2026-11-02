@@ -113,6 +113,7 @@ def main():
             result['archives'][path.name] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
         output = work / 'out'
         commands = {}
+        commands['native-auto'] = [str(zipper), '--zip-engine', 'native', 'extract', str(archive), '-o', str(output)]
         for threads in sorted(set(args.threads)):
             if args.native_format:
                 commands[f'zipper-{threads}'] = [str(zipper), '--threads', str(threads),

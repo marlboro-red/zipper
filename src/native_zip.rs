@@ -1105,13 +1105,15 @@ pub fn read_archive_with_options(
     };
     let mut largest_first: Vec<_> = (0..items.len()).collect();
     largest_first.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
-    // RECORD(benchmarks/native-zip/bsdtar-comparison.md): macOS caps tiny-file extraction workers.
-    let automatic_limit = if cfg!(target_os = "macos")
-        && staging.is_some()
+    let tiny_files = staging.is_some()
         && items.iter().filter(|item| !item.entry.directory).count() >= 1024
-        && items.iter().all(|item| item.entry.size <= 16 * 1024)
-    {
+        && items.iter().all(|item| item.entry.size <= 16 * 1024);
+    // RECORD(benchmarks/native-zip/bsdtar-comparison.md): macOS caps tiny-file extraction workers.
+    // RECORD(benchmarks/cross-platform/scoreboard-2026-11-02/README.md): parallel creation is slower on Windows.
+    let automatic_limit = if tiny_files && cfg!(target_os = "macos") {
         4
+    } else if tiny_files && cfg!(windows) {
+        1
     } else {
         64
     };
