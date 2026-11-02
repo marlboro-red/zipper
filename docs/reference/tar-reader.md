@@ -82,3 +82,9 @@ The short tree has empty files and directories, non-ASCII names, files of 512 an
 The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 248 popular archives from package registries and GitHub with Zipper and default bsdtar. All 154 tar and 94 ZIP archives matched.
 
 `tests/hostile_tar.rs` holds one case per rejected layout. Each case must fail and leave nothing in the destination's parent, both when extracting and when only verifying.
+
+## Mutation testing
+
+`tests/tar_fuzz.rs` mutates the plain corpus tars with seeded bit flips, truncations and insertions. It also overwrites header fields with edge values such as `../escape`, base-256 numbers and other entry types, then repairs the header checksum so the parser goes past it. It inserts pax headers with hostile records, and gzips a quarter of the mutants. The reader extracts each mutant with one or four writers. Each case must either fail and leave nothing in the destination's parent, or succeed with verification agreeing and every file at its declared size. A panic fails the test.
+
+The gate runs 1,000 cases. `ZIPPER_FUZZ_CASES` and `ZIPPER_FUZZ_SEED` set a longer run or replay a failure, as for the ZIP test. A run of 300,000 cases on 2026-11-03 found no failure, and 51,825 of its mutants extracted. Removing the name check made the test fail on case 181, which wrote outside the destination. This is random mutation, not coverage-guided fuzzing.
