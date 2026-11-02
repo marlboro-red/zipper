@@ -1,8 +1,11 @@
 # In-process ZIP reader
 
-Zipper has an experimental parallel Rust ZIP reader.
-`--zip-engine native` and `--zip-engine native-fast` select it for `extract` and `test`.
-Without `--zip-engine`, `extract`, `list`, and `test` delegate non-native archives to the 7-Zip compatibility backend, which remains the default.
+Zipper reads ZIP archives with its own parallel Rust reader by default.
+The default engine, `--zip-engine auto`, decides from the file's leading bytes and never from 7-Zip's output. A file that starts with a ZIP record signature goes to the in-process reader. A file that starts with the signature of 7z, RAR, gzip, bzip2, xz, CAB or ustar tar goes to 7-Zip with that format pinned by `-t`. A `*.001` volume gets the split chain, such as `-t7z.split`. A pinned 7-Zip cannot reopen the file as a ZIP, even when a ZIP is appended or a wrong password is typed. Every other file goes to the in-process reader, which rejects anything that is not a ZIP it supports. Use `--zip-engine backend` for other formats 7-Zip reads, such as ISO, DMG, WIM, ARJ, zstd and old tar without the `ustar` marker, and for split ZIP volumes. ISO is not pinned, because `-tiso` makes 7-Zip skip a disc's UDF tree. Zipper refuses `*` and `?` in any path it gives 7-Zip, because 7-Zip expands them as wildcards.
+
+A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as encryption, another compression method or more than one disk, the error names `--zip-engine backend`. Passing that flag is the user's decision.
+
+`--zip-engine native` and `--zip-engine native-fast` select the reader explicitly. `--zip-engine backend` sends every archive except `.zipper` to 7-Zip. Whenever 7-Zip extracts, under either engine, it anchors an absolute symlink target inside its output directory. Zipper renames that directory into place, so such a link can dangle outside the destination.
 The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 
 ## Supported archives
@@ -22,7 +25,7 @@ The reader does not support these features:
 - Codecs other than stored and Deflate.
 - Multi-disk archives.
 - Ambiguous end records.
-- Data before the first record, such as a self-extracting executable from `zip -A`. The compatibility backend still reads these.
+- Data before the first record, such as a self-extracting executable from `zip -A`. The default engine reads it in process and rejects it, because no 7-Zip signature matches.
 
 It restores Unix permission bits the way bsdtar does:
 

@@ -101,7 +101,7 @@ fn ensure_link_stays_inside(name: &str, target: &[u8]) -> Result<()> {
     let target = std::str::from_utf8(target).context("ZIP symlink target is not UTF-8")?;
     ensure!(
         !target.is_empty() && !target.contains('\0') && !target.starts_with('/'),
-        "ZIP symlink {name:?} has an unsafe target; use the compatibility backend"
+        "ZIP symlink {name:?} has an unsafe target"
     );
     let mut depth = name.matches('/').count();
     let mut descended = false;
@@ -109,14 +109,9 @@ fn ensure_link_stays_inside(name: &str, target: &[u8]) -> Result<()> {
         match component {
             "" | "." => {}
             ".." => {
-                ensure!(
-                    !descended,
-                    "ZIP symlink {name:?} has `..` after a name; use the compatibility backend"
-                );
+                ensure!(!descended, "ZIP symlink {name:?} has `..` after a name");
                 depth = depth.checked_sub(1).with_context(|| {
-                    format!(
-                        "ZIP symlink {name:?} points outside the destination; use the compatibility backend"
-                    )
+                    format!("ZIP symlink {name:?} points outside the destination")
                 })?;
             }
             _ => descended = true,
@@ -193,7 +188,10 @@ fn entry_buffer(size: usize) -> Result<Vec<u8>> {
 
 fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredNameByIndex)> {
     let length = file.get_ref().metadata()?.len();
-    ensure!(length >= 22, "truncated ZIP");
+    ensure!(
+        length >= 22,
+        "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend"
+    );
     let tail_size = length.min(22 + 65535) as usize;
     file.seek(SeekFrom::End(-(tail_size as i64)))?;
     let mut tail = vec![0; tail_size];
@@ -205,20 +203,20 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredN
                 && i + 22 + u16::from_le_bytes(tail[i + 20..i + 22].try_into().unwrap()) as usize
                     == tail.len()
         })
-        .context("ZIP end record not found")?;
+        .context("ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend")?;
     let eocd = length - tail_size as u64 + end as u64;
     // EXTERNAL(zip crate): it accepts trailing data and may pick an end record inside a comment.
     ensure!(
         !tail[end + 4..]
             .windows(4)
             .any(|bytes| bytes == b"PK\x05\x06"),
-        "ambiguous ZIP end records require the compatibility backend"
+        "ZIP has ambiguous end records"
     );
     let read16 = |at| u16::from_le_bytes(tail[end + at..end + at + 2].try_into().unwrap());
     let read32 = |at| u32::from_le_bytes(tail[end + at..end + at + 4].try_into().unwrap());
     ensure!(
         read16(4) == 0 && read16(6) == 0 && read16(8) == read16(10),
-        "multi-disk ZIP requires backend"
+        "multi-disk ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
     );
     let mut count = read16(10) as u64;
     let mut bytes = read32(12) as u64;
@@ -250,7 +248,7 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredN
         count = u64::from_le_bytes(record[32..40].try_into()?);
         ensure!(
             u64::from_le_bytes(record[24..32].try_into()?) == count,
-            "multi-disk ZIP64 requires backend"
+            "multi-disk ZIP64 is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
         bytes = u64::from_le_bytes(record[40..48].try_into()?);
         start = u64::from_le_bytes(record[48..56].try_into()?);
@@ -469,12 +467,12 @@ fn scan(
         let file = archive.by_index_data(index)?;
         ensure!(
             !file.encrypted(),
-            "encrypted ZIP requires the compatibility backend"
+            "encrypted ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
         let symlink = file.is_symlink();
         ensure!(
             !symlink || cfg!(unix),
-            "ZIP symlinks on this platform require the compatibility backend"
+            "ZIP symlinks are not supported on this platform; pass --zip-engine backend to read it with 7-Zip"
         );
         ensure!(
             !symlink || file.size() <= MAX_LINK_TARGET,
@@ -495,7 +493,7 @@ fn scan(
                 file.compression(),
                 CompressionMethod::Stored | CompressionMethod::Deflated
             ),
-            "ZIP compression method requires the compatibility backend"
+            "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
         let name = file.name()?.into_owned();
         let name = if directory {
@@ -564,7 +562,10 @@ fn assign_record_limits(items: &mut [Item], central_start: u64) -> Result<()> {
     let first = order
         .first()
         .map_or(central_start, |&index| items[index].header_start);
-    ensure!(first == 0, "ZIP has bytes before its first record");
+    ensure!(
+        first == 0,
+        "ZIP has bytes before its first record, as a self-extractor does; pass --zip-engine backend to read it with 7-Zip"
+    );
     let ends = order.iter().skip(1).map(|&index| items[index].header_start);
     let limits: Vec<u64> = ends.chain(std::iter::once(central_start)).collect();
     for (&index, limit) in order.iter().zip(limits) {
@@ -618,7 +619,7 @@ fn unicode_path_respells_name(mut extra: &[u8], stored_name: &[u8]) -> Result<bo
                 body[5..] == *stored_name
                     || (crc == crc32fast::hash(stored_name)
                         && body[5..] == *decode_name_like_zip_crate(stored_name).as_bytes()),
-                "ZIP Unicode path field renames an entry; use the compatibility backend"
+                "ZIP Unicode path field renames an entry"
             );
             renames |= body[5..] != *stored_name;
         }
@@ -667,7 +668,7 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
     let flags = read16(6);
     ensure!(
         flags & 1 == 0,
-        "encrypted ZIP requires the compatibility backend"
+        "ZIP local header is encrypted but its central entry is not"
     );
     let method = match item.method {
         CompressionMethod::Stored => 0,

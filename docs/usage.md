@@ -56,7 +56,7 @@ Before writing anything, `extract` adds up the declared size of every entry. By 
 target/release/zipper extract backup.zipper --output restored --max-extracted-bytes 10000000000
 ```
 
-The limit applies to `.zipper` v2 archives and to ZIP archives read with `--zip-engine native` or `native-fast`. Legacy v1 archives have no size index, so they refuse the option. The default ZIP engine, the 7-Zip backend, applies its own rules and refuses the option too. On a compressed filesystem the free-space estimate can be too strict, so pass a cap to override it.
+The limit applies to `.zipper` v2 archives and to ZIP archives the in-process reader handles, which is the default. Legacy v1 archives have no size index, so they refuse the option. The 7-Zip backend applies its own rules and refuses the option too. On a compressed filesystem the free-space estimate can be too strict, so pass a cap to override it.
 
 ## Extract selected paths
 
@@ -88,8 +88,8 @@ Archive-level deduplication is not implemented yet.
 
 ## Read ZIP, 7z, and other existing formats
 
-`extract`, `list`, and `test` delegate non-native archives to `7zz` or `7z` on PATH.
-To use another executable, set `ZIPPER_7Z` to its path.
+`extract`, `list`, and `test` read ZIP archives in process and delegate other formats to `7zz` or `7z` on PATH.
+To use another executable, set `ZIPPER_7Z` to its path. To send ZIP archives to 7-Zip as well, pass `--zip-engine backend`.
 The installed backend decides which formats work and which extraction protections apply.
 This default path is an external compatibility bridge.
 Native `--threads` does not configure the compatibility backend.
@@ -97,12 +97,14 @@ Legacy listing uses the backend's listing operation and does not validate payloa
 
 ## Read ZIP archives in process
 
-To read a ZIP archive without 7-Zip, pass the experimental `--zip-engine native`:
+ZIP archives use the in-process `native` reader by default, with no flag:
 
 ```sh
-zipper --zip-engine native --threads 4 extract files.zip -o restored
-zipper --zip-engine native test files.zip
+zipper --threads 4 extract files.zip -o restored
+zipper test files.zip
 ```
+
+If the archive is encrypted, uses another compression method or spans disks, the error says so. To read it with 7-Zip, pass `--zip-engine backend`. Zipper never makes that switch itself, because 7-Zip accepts some archives the in-process reader rejects as unsafe.
 
 Pick the engine by workload:
 
@@ -111,7 +113,7 @@ Pick the engine by workload:
 - `--zip-engine native-fast` adds a libdeflate buffer decoder with a shared buffer budget.
 - To change the `native-fast` buffer budget, pass `--zip-buffer-mib N`. `--zip-buffer-mib 0` forces streaming.
 
-The compatibility backend remains the default.
+The default is `native` because it uses little memory. On the [scoreboard](results.md), its peak stays under 9 MiB, while `native-fast` reaches 187 MiB on Silesia. `native-fast` is at most 1.10× faster on every other workload, and 1.32× faster on Silesia at one thread.
 The [ZIP reader reference](reference/zip-reader.md) lists supported features, limits, budgets, and caching rules.
 
 ## Choose the thread count

@@ -122,7 +122,7 @@ Exit checks:
 
 Scope:
 
-- Make the native reader the default `--zip-engine` and choose between `native` and `native-fast` from M3 data.
+- Make the native reader the default `--zip-engine` and choose between `native` and `native-fast` from M3 data. Done. The default `auto` engine uses `native`, which peaks under 9 MiB on every scoreboard workload.
 - Keep 7-Zip for formats other than ZIP.
 - Update the Windows package and the docs.
 

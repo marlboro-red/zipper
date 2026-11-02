@@ -8,8 +8,8 @@ struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer).
     #[arg(long, global = true)]
     threads: Option<usize>,
-    /// ZIP reader: native is experimental and restores files, directories, modes, times and safe symlinks.
-    #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Backend)]
+    /// Reader for ZIP and other foreign archives. Native ZIP restores files, directories, modes, times and safe symlinks.
+    #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Auto)]
     zip_engine: ZipEngine,
     /// Shared native-fast ZIP entry-buffer MiB (128 on ARM64 macOS, 64 elsewhere; 0 streams).
     /// Metadata, worker state and verification archive cache are additional.
@@ -20,6 +20,9 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
+    /// Native for ZIP, with no fallback; 7-Zip for other formats.
+    Auto,
+    /// 7-Zip for every archive that is not .zipper.
     Backend,
     Native,
     /// Native ZIP with a shared entry-buffer budget and streaming fallback.
@@ -64,6 +67,32 @@ enum Command {
         summary: bool,
     },
 }
+fn starts_with_zip_signature(archive: &std::path::Path) -> Result<bool> {
+    let mut signature = [0; 4];
+    let read = std::io::Read::read(&mut std::fs::File::open(archive)?, &mut signature)?;
+    Ok(read == 4 && matches!(&signature, b"PK\x03\x04" | b"PK\x05\x06"))
+}
+
+enum Reader {
+    Native { fast: bool },
+    Backend { format: Option<String> },
+}
+
+fn choose_reader(engine: ZipEngine, archive: &std::path::Path) -> Result<Reader> {
+    Ok(match engine {
+        ZipEngine::Native => Reader::Native { fast: false },
+        ZipEngine::NativeFast => Reader::Native { fast: true },
+        ZipEngine::Backend => Reader::Backend { format: None },
+        ZipEngine::Auto if starts_with_zip_signature(archive)? => Reader::Native { fast: false },
+        ZipEngine::Auto => match zipper::compat::pinned_format(archive)? {
+            Some(format) => Reader::Backend {
+                format: Some(format),
+            },
+            None => Reader::Native { fast: false },
+        },
+    })
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     if let Some(n) = cli.threads {
@@ -126,64 +155,76 @@ fn main() -> Result<()> {
         } => {
             if !paths.is_empty() || zipper::compat::is_native(&archive)? {
                 zipper::extract(&archive, &output, &paths, max_extracted_bytes)?;
-            } else if cli.zip_engine != ZipEngine::Backend {
-                zipper::native_zip::read_archive_with_options(
-                    &archive,
-                    Some(&output),
-                    zipper::native_zip::ReadOptions {
-                        fast: cli.zip_engine == ZipEngine::NativeFast,
-                        threads: cli.threads,
-                        buffer_bytes,
-                        max_output_bytes: max_extracted_bytes,
-                    },
-                )?;
             } else {
-                anyhow::ensure!(
-                    max_extracted_bytes.is_none(),
-                    "--max-extracted-bytes requires a native archive or --zip-engine native"
-                );
-                zipper::compat::run("x", &archive, Some(&output))?;
+                match choose_reader(cli.zip_engine, &archive)? {
+                    Reader::Native { fast } => {
+                        zipper::native_zip::read_archive_with_options(
+                            &archive,
+                            Some(&output),
+                            zipper::native_zip::ReadOptions {
+                                fast,
+                                threads: cli.threads,
+                                buffer_bytes,
+                                max_output_bytes: max_extracted_bytes,
+                            },
+                        )?;
+                    }
+                    Reader::Backend { format } => {
+                        anyhow::ensure!(
+                            max_extracted_bytes.is_none(),
+                            "--max-extracted-bytes needs a .zipper archive or a ZIP read in process"
+                        );
+                        zipper::compat::run("x", &archive, Some(&output), format.as_deref())?;
+                    }
+                }
             }
         }
         Command::List { archive } => {
-            let native = zipper::compat::is_native(&archive)?;
-            if !native && cli.zip_engine == ZipEngine::Backend {
-                return zipper::compat::run("l", &archive, None);
-            }
-            let entries = if native {
-                zipper::list_archive(&archive)?
-            } else {
-                zipper::native_zip::list(&archive)?
+            let print = |entries: Vec<zipper::Entry>| {
+                for e in entries {
+                    println!(
+                        "{}\t{}\t{:?}",
+                        if e.directory { "dir" } else { "file" },
+                        e.size,
+                        e.name
+                    );
+                }
             };
-            for e in entries {
-                println!(
-                    "{}\t{}\t{:?}",
-                    if e.directory { "dir" } else { "file" },
-                    e.size,
-                    e.name
-                );
+            if zipper::compat::is_native(&archive)? {
+                print(zipper::list_archive(&archive)?);
+            } else {
+                match choose_reader(cli.zip_engine, &archive)? {
+                    Reader::Native { .. } => print(zipper::native_zip::list(&archive)?),
+                    Reader::Backend { format } => {
+                        zipper::compat::run("l", &archive, None, format.as_deref())?
+                    }
+                }
             }
         }
         Command::Test { archive } => {
-            let native = zipper::compat::is_native(&archive)?;
-            if !native && cli.zip_engine == ZipEngine::Backend {
-                return zipper::compat::run("t", &archive, None);
-            }
-            let entries = if native {
-                zipper::read_archive(&archive, None)?
+            let report =
+                |entries: Vec<zipper::Entry>| println!("Verified {} entries", entries.len());
+            if zipper::compat::is_native(&archive)? {
+                report(zipper::read_archive(&archive, None)?);
             } else {
-                zipper::native_zip::read_archive_with_options(
-                    &archive,
-                    None,
-                    zipper::native_zip::ReadOptions {
-                        fast: cli.zip_engine == ZipEngine::NativeFast,
-                        threads: cli.threads,
-                        buffer_bytes,
-                        max_output_bytes: None,
-                    },
-                )?
-            };
-            println!("Verified {} entries", entries.len());
+                match choose_reader(cli.zip_engine, &archive)? {
+                    Reader::Native { fast } => {
+                        report(zipper::native_zip::read_archive_with_options(
+                            &archive,
+                            None,
+                            zipper::native_zip::ReadOptions {
+                                fast,
+                                threads: cli.threads,
+                                buffer_bytes,
+                                max_output_bytes: None,
+                            },
+                        )?)
+                    }
+                    Reader::Backend { format } => {
+                        zipper::compat::run("t", &archive, None, format.as_deref())?
+                    }
+                }
+            }
         }
     }
     Ok(())

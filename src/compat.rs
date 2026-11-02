@@ -29,22 +29,75 @@ fn backend() -> Result<std::ffi::OsString> {
     )
 }
 
-pub fn run(action: &str, archive: &Path, destination: Option<&Path>) -> Result<()> {
+/// Formats the default engine hands to 7-Zip, by signature and offset, with
+/// the 7-Zip `-t` name that pins each one. ZIP is absent on purpose.
+const PINNED_FORMATS: &[(&[u8], usize, &str)] = &[
+    (b"7z\xBC\xAF\x27\x1C", 0, "7z"),
+    (b"Rar!\x1A\x07\x01\x00", 0, "rar5"),
+    (b"Rar!\x1A\x07\x00", 0, "rar"),
+    (b"\x1F\x8B", 0, "gzip"),
+    (b"BZh", 0, "bzip2"),
+    (b"\xFD7zXZ\x00", 0, "xz"),
+    (b"MSCF", 0, "cab"),
+    (b"ustar", 257, "tar"),
+];
+const SIGNATURE_WINDOW: usize = 257 + 5;
+
+/// The `-t` switch for a format the default engine sends to 7-Zip, or `None`
+/// when the file starts with none of them. The first volume of a split
+/// archive, named `*.001`, gets the split chain, such as `-t7z.split`.
+pub fn pinned_format(archive: &Path) -> Result<Option<String>> {
+    let mut head = Vec::with_capacity(SIGNATURE_WINDOW);
+    File::open(archive)?
+        .take(SIGNATURE_WINDOW as u64)
+        .read_to_end(&mut head)?;
+    let split = archive
+        .canonicalize()?
+        .extension()
+        .is_some_and(|extension| extension == "001");
+    Ok(PINNED_FORMATS
+        .iter()
+        .find(|(signature, at, _)| head.get(*at..at + signature.len()) == Some(*signature))
+        .map(|(_, _, name)| format!("-t{name}{}", if split { ".split" } else { "" })))
+}
+
+// EXTERNAL(7-Zip): it expands `*` and `?` in archive paths even after `--`,
+// and replaces `*` in the -o path with the archive name.
+fn ensure_no_wildcards(path: &Path) -> Result<()> {
+    ensure!(
+        !path.to_string_lossy().contains(['*', '?']),
+        "7-Zip treats `*` and `?` in {} as wildcards; rename the path",
+        path.display()
+    );
+    Ok(())
+}
+
+/// Run 7-Zip `action` on `archive`. `format` pins the format, as from
+/// [`pinned_format`], so 7-Zip cannot open the file as another one.
+pub fn run(
+    action: &str,
+    archive: &Path,
+    destination: Option<&Path>,
+    format: Option<&str>,
+) -> Result<()> {
     ensure!(
         ["x", "l", "t"].contains(&action),
         "unsupported backend action"
     );
     let archive = archive.canonicalize()?;
+    ensure_no_wildcards(&archive)?;
     let mut command = Command::new(backend()?);
-    command.arg(action).arg("-y");
+    command.arg(action).arg("-y").args(format);
     let staging = if let Some(dst) = destination {
         ensure!(
             std::fs::symlink_metadata(dst).is_err(),
             "extraction destination must not exist"
         );
         let temp = tempfile::tempdir_in(super::parent(dst))?;
+        let staging = temp.path().canonicalize()?;
+        ensure_no_wildcards(&staging)?;
         let mut flag = std::ffi::OsString::from("-o");
-        flag.push(temp.path().canonicalize()?);
+        flag.push(staging);
         command.arg(flag);
         Some(temp)
     } else {

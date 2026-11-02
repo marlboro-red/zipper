@@ -50,6 +50,9 @@ with tempfile.TemporaryDirectory() as tmp:
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
         for path in source.rglob("*"):
             output.write(path, path.relative_to(source).as_posix())
+    run("test", archive)
+    run("extract", archive, "--output", root / "default-zip")
+    verify(root / "default-zip")
     for engine in ("native", "native-fast"):
         run("--zip-engine", engine, "test", archive)
         destination = root / engine / "zip"
