@@ -970,7 +970,7 @@ fn stream_entry(
             emit(chunk)?;
         }
     } else {
-        let (input_buffer, output_buffer) = buffer.split_at_mut(64 * 1024);
+        let (input_buffer, output_buffer) = buffer.split_at_mut(512 * 1024);
         let mut inflater = flate2::Decompress::new(false);
         let (mut start, mut end) = (0, 0);
         loop {
@@ -1127,7 +1127,7 @@ pub fn read_archive_with_options(
             || {
                 (
                     archive.clone().into_inner(),
-                    vec![0u8; 256 * 1024],
+                    vec![0u8; 1024 * 1024],
                     fast.then(ExactInflater::new),
                 )
             },
