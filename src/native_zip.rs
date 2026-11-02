@@ -29,6 +29,22 @@ struct Item {
     symlink: bool,
 }
 
+const CROWDED_FOLDER_FILES: usize = 1024;
+
+fn crowded_folder(items: &[Item]) -> bool {
+    let mut files_per_folder: HashMap<&str, usize> = HashMap::new();
+    items
+        .iter()
+        .filter(|item| !item.entry.directory)
+        .any(|item| {
+            let name = &item.entry.name;
+            let folder = name.rfind('/').map_or("", |slash| &name[..slash]);
+            let files = files_per_folder.entry(folder).or_default();
+            *files += 1;
+            *files >= CROWDED_FOLDER_FILES
+        })
+}
+
 #[cfg(unix)]
 fn later_spellings_of_same_directory(root: &Path, items: &[Item]) -> Result<HashSet<usize>> {
     use std::os::unix::fs::MetadataExt;
@@ -1109,10 +1125,10 @@ pub fn read_archive_with_options(
         && items.iter().filter(|item| !item.entry.directory).count() >= 1024
         && items.iter().all(|item| item.entry.size <= 16 * 1024);
     // RECORD(benchmarks/native-zip/bsdtar-comparison.md): macOS caps tiny-file extraction workers.
-    // RECORD(benchmarks/cross-platform/scoreboard-2026-11-02/README.md): parallel creation is slower on Windows.
+    // RECORD(benchmarks/cross-platform/scoreboard-2026-11-02/README.md): one Windows folder serializes creation.
     let automatic_limit = if tiny_files && cfg!(target_os = "macos") {
         4
-    } else if tiny_files && cfg!(windows) {
+    } else if tiny_files && cfg!(windows) && crowded_folder(&items) {
         1
     } else {
         64
