@@ -52,21 +52,26 @@ pub struct ReadOptions {
     pub writers: Option<usize>,
 }
 
+#[derive(Default)]
 struct InFlight {
     bytes: Mutex<usize>,
     freed: Condvar,
+    spare: Mutex<Vec<Vec<u8>>>,
 }
 
 impl InFlight {
-    fn take(&self, capacity: usize) -> Chunk<'_> {
+    fn take(&self, length: usize) -> Chunk<'_> {
         let mut bytes = self.bytes.lock().unwrap();
-        while *bytes > 0 && *bytes + capacity > BYTES_IN_FLIGHT {
+        while *bytes > 0 && *bytes + length > BYTES_IN_FLIGHT {
             bytes = self.freed.wait(bytes).unwrap();
         }
-        *bytes += capacity;
+        *bytes += length;
+        drop(bytes);
+        let recycled = (length == CHUNK)
+            .then(|| self.spare.lock().unwrap().pop())
+            .flatten();
         Chunk {
-            data: Vec::with_capacity(capacity),
-            reserved: capacity,
+            data: recycled.unwrap_or_else(|| vec![0; length]),
             flight: self,
         }
     }
@@ -74,13 +79,17 @@ impl InFlight {
 
 struct Chunk<'f> {
     data: Vec<u8>,
-    reserved: usize,
     flight: &'f InFlight,
 }
 
 impl Drop for Chunk<'_> {
     fn drop(&mut self) {
-        *self.flight.bytes.lock().unwrap() -= self.reserved;
+        let data = std::mem::take(&mut self.data);
+        let length = data.len();
+        if length == CHUNK {
+            self.flight.spare.lock().unwrap().push(data);
+        }
+        *self.flight.bytes.lock().unwrap() -= length;
         self.flight.freed.notify_all();
     }
 }
@@ -499,6 +508,27 @@ impl Input {
         Ok(())
     }
 
+    fn fill(&mut self, buffer: &mut [u8]) -> Result<()> {
+        let mut filled = 0;
+        while filled < buffer.len() {
+            let read = self
+                .reader
+                .read(&mut buffer[filled..])
+                .context(READ_ERROR)?;
+            ensure!(read > 0, "truncated tar entry");
+            counters::add(Counter::ArchiveReads, 1);
+            counters::add(Counter::ArchiveBytesRead, read as u64);
+            filled += read;
+        }
+        Ok(())
+    }
+
+    fn skip_padding(&mut self, size: u64) -> Result<()> {
+        let padding = (size.next_multiple_of(BLOCK as u64) - size) as usize;
+        let mut buffer = [0u8; BLOCK];
+        self.fill(&mut buffer[..padding])
+    }
+
     fn data(&mut self, size: u64, what: &str) -> Result<Vec<u8>> {
         ensure!(size <= MAX_EXTENSION, "tar {what} is larger than 1 MiB");
         let mut data = Vec::with_capacity(size as usize);
@@ -690,56 +720,36 @@ impl<'a, 'f> Extraction<'a, 'f> {
         }
         let mut job = Some((root.join(name), name.to_owned()));
         let mut stream: Option<SyncSender<Chunk>> = None;
-        let mut remaining = size;
-        let mut chunk = writers.flight.take(size.min(CHUNK as u64) as usize);
         let modified = modified.and_then(Time::system_time);
-        input.copy(size, |mut bytes| {
-            while !bytes.is_empty() {
-                let room = CHUNK - chunk.data.len();
-                let (now, later) = bytes.split_at(room.min(bytes.len()));
-                chunk.data.extend_from_slice(now);
-                remaining -= now.len() as u64;
-                bytes = later;
-                if chunk.data.len() == CHUNK && remaining > 0 {
-                    let empty = Chunk {
-                        data: Vec::new(),
-                        reserved: 0,
-                        flight: writers.flight,
-                    };
-                    let full = std::mem::replace(&mut chunk, empty);
-                    match &stream {
-                        Some(chunks) => chunks.send(full).map_err(|_| writers.stopped())?,
-                        None => {
-                            let (chunks, rest) = sync_channel(QUEUED_CHUNKS_PER_FILE);
-                            let (path, name) = job.take().expect("a job until it is sent");
-                            writers.send(Job {
-                                path,
-                                name,
-                                mode,
-                                modified,
-                                first: full,
-                                rest: Some(rest),
-                            })?;
-                            stream = Some(chunks);
-                        }
-                    }
-                    chunk = writers.flight.take(remaining.min(CHUNK as u64) as usize);
-                }
+        let mut remaining = size;
+        loop {
+            let mut chunk = writers.flight.take(remaining.min(CHUNK as u64) as usize);
+            input.fill(&mut chunk.data)?;
+            remaining -= chunk.data.len() as u64;
+            if let Some(chunks) = &stream {
+                chunks.send(chunk).map_err(|_| writers.stopped())?;
+            } else {
+                let (path, name) = job.take().expect("a job until it is sent");
+                let rest = (remaining > 0).then(|| {
+                    let (chunks, rest) = sync_channel(QUEUED_CHUNKS_PER_FILE);
+                    stream = Some(chunks);
+                    rest
+                });
+                writers.send(Job {
+                    path,
+                    name,
+                    mode,
+                    modified,
+                    first: chunk,
+                    rest,
+                })?;
             }
-            Ok(())
-        })?;
-        match (job, stream) {
-            (Some((path, name)), _) => writers.send(Job {
-                path,
-                name,
-                mode,
-                modified,
-                first: chunk,
-                rest: None,
-            }),
-            (None, Some(chunks)) => chunks.send(chunk).map_err(|_| writers.stopped()),
-            (None, None) => unreachable!("a sent job always has a chunk stream"),
+            if remaining == 0 {
+                break;
+            }
         }
+        drop(stream);
+        input.skip_padding(size)
     }
 
     fn create_links(&self) -> Result<()> {
@@ -1010,10 +1020,7 @@ pub fn read_archive(
         (1..=64).contains(&count),
         "tar writers must be between 1 and 64"
     );
-    let flight = InFlight {
-        bytes: Mutex::new(0),
-        freed: Condvar::new(),
-    };
+    let flight = InFlight::default();
     let (jobs, queue) = sync_channel(QUEUED_FILES);
     let queue = Mutex::new(queue);
     let writers = Writers {
@@ -1072,16 +1079,13 @@ mod in_flight_tests {
 
     #[test]
     fn chunks_in_flight_never_exceed_the_budget_and_release_on_drop() {
-        let flight = InFlight {
-            bytes: Mutex::new(0),
-            freed: Condvar::new(),
-        };
+        let flight = InFlight::default();
         let peak = Mutex::new(0usize);
         std::thread::scope(|scope| {
             for _ in 0..16 {
                 scope.spawn(|| {
-                    for _ in 0..200 {
-                        let held = flight.take(CHUNK + 1);
+                    for round in 0..200 {
+                        let held = flight.take(CHUNK + round % 2);
                         let now = *flight.bytes.lock().unwrap();
                         let mut peak = peak.lock().unwrap();
                         *peak = (*peak).max(now);
@@ -1094,5 +1098,7 @@ mod in_flight_tests {
         });
         assert!(*peak.lock().unwrap() <= BYTES_IN_FLIGHT);
         assert_eq!(*flight.bytes.lock().unwrap(), 0);
+        let spare = flight.spare.lock().unwrap();
+        assert!(!spare.is_empty() && spare.len() <= BYTES_IN_FLIGHT / CHUNK);
     }
 }
