@@ -15,8 +15,9 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M4. Small-file output path](#m4-small-file-output-path) | macOS at its floor; Linux and Windows open | M3 |
 | [M5. Large single entries](#m5-large-single-entries) | Planned | M3 |
 | [M6. Native reader as the default](#m6-native-reader-as-the-default) | Done | M1, M2 |
+| [M7. Native tar family](#m7-native-tar-family) | Next | M6 |
 
-M6 can close as soon as M1 and M2 do. M4 and M5 make the default faster and can continue after it.
+M6 closed on 2 November 2026. M7 comes before M4 and M5, because extracting `.tar.gz` through 7-Zip stops at the inner `.tar`.
 
 ## M0. Verified workflow
 
@@ -131,6 +132,25 @@ Exit checks:
 1. Default ZIP extraction runs in-process on all three operating systems in CI.
 2. The M1 and M2 checks pass on all three operating systems.
 3. `docs/usage.md` and `docs/reference/zip-reader.md` describe the new default.
+
+## M7. Native tar family
+
+`zipper extract` reads tar and compressed tar in process, so the archives most people extract on macOS and Linux no longer need 7-Zip.
+
+Scope:
+
+- A streaming tar reader with the M1 safety contract and the M2 metadata contract, applied to tar entries.
+- Decompression for gzip, zstd and xz in front of it, so `.tar.gz`, `.tgz`, `.tar.zst` and `.tar.xz` extract their files and not an inner `.tar`.
+- POSIX ustar, pax and GNU headers, plus old tar without the `ustar` marker.
+- A reference corpus from GNU tar, bsdtar and Python `tarfile`.
+- Hostile tar tests for traversal, absolute names, links that escape, hard links, special files, duplicate names and truncation.
+- Scoreboard rows for the tar workloads against bsdtar.
+
+Exit checks:
+
+1. The default engine extracts every corpus tar format in process on all three operating systems, with the same tree as the reference readers.
+2. Every hostile tar layout has a test that failed before its fix, and the adversarial review finds no escape.
+3. `docs/reference/` documents the tar reader, and the scoreboard shows its tar rows.
 
 ## Close a milestone
 
