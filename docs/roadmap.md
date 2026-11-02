@@ -13,11 +13,11 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M2. Metadata fidelity](#m2-metadata-fidelity) | Done | M1 |
 | [M3. Fixed scoreboard](#m3-fixed-scoreboard) | Done | M0 |
 | [M4. Small-file output path](#m4-small-file-output-path) | macOS at its floor; Linux and Windows open | M3 |
-| [M5. Large single entries](#m5-large-single-entries) | Planned | M3 |
+| [M5. Remaining extraction headroom](#m5-remaining-extraction-headroom) | Next | M3 |
 | [M6. Native reader as the default](#m6-native-reader-as-the-default) | Done | M1, M2 |
-| [M7. Native tar family](#m7-native-tar-family) | Next | M6 |
+| [M7. Native tar family](#m7-native-tar-family) | Planned | M5 |
 
-M6 closed on 2 November 2026. M7 comes before M4 and M5, because extracting `.tar.gz` through 7-Zip stops at the inner `.tar`.
+M6 closed on 2 November 2026. M5 comes next, so M7 builds on an implementation that is at its limits. Extracting `.tar.gz` through 7-Zip still stops at the inner `.tar` until M7.
 
 ## M0. Verified workflow
 
@@ -102,18 +102,22 @@ Exit checks:
 1. A kept change beats the spread on the M3 small-file workloads at matched threads, with CPU time reported.
 2. Linux and Windows show no regression on the same workloads.
 
-## M5. Large single entries
+## M5. Remaining extraction headroom
 
-One large Deflate entry extracts faster without unbounded memory.
+Every scoreboard workload that is not at its measured limit gets faster, without unbounded memory.
 
 Scope:
 
+- Profile each slow path outside timed runs and name its limiter before changing code.
+- The copy path of a large entry. Native takes 57 ms for the 256 MiB random entry, where bsdtar takes 43 ms.
+- One-thread Deflate decoding. Native takes 239 ms on Silesia at one thread, where bsdtar takes 184 ms.
+- The read amplification of tiny entries, which read 21 times the ZIP size on flat-tiny.
 - Parallel decoding of a single Deflate entry above a size threshold, with streaming as the fallback.
 - A memory-mapped input experiment, with a fallback when the archive changes during extraction.
 
 Exit checks:
 
-1. A single-entry speedup beats the spread, with CPU time and peak memory reported.
+1. Each kept change beats the session drift on its scoreboard rows, with CPU time and peak memory reported.
 2. The memory bound is documented and tested, and CRC checks still cover every byte.
 3. Hostile Deflate streams pass the `zipper-review` skill.
 
