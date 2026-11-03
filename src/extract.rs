@@ -86,10 +86,6 @@ pub struct ExtractOptions<'a> {
     pub engine: Engine,
     /// Shared ZIP entry-buffer budget for `Engine::NativeFast`.
     pub zip_buffer_bytes: Option<usize>,
-    /// Write the NTFS alternate data streams a 7z archive stores, as 7-Zip's
-    /// `-sns` does. Windows only. Without it, streams are checked and not
-    /// written.
-    pub alternate_streams: bool,
 }
 
 /// Extract any archive Zipper reads into `destination`, choosing the reader
@@ -103,10 +99,6 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
     );
     crate::progress::Tracker::new(options.control, None, None).check()?;
     let reader = choose_reader(options.engine, archive)?;
-    ensure!(
-        !options.alternate_streams || reader == Reader::SevenZip,
-        "--streams needs a 7z archive read in process"
-    );
     match reader {
         Reader::Zip { fast } => {
             native_zip::read_archive_with_options(
@@ -133,7 +125,6 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     existing: options.existing,
                     paths: options.paths,
                     control: options.control,
-                    alternate_streams: options.alternate_streams,
                 },
             )?;
         }

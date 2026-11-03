@@ -76,13 +76,7 @@ pub struct ReadOptions<'a> {
     pub paths: &'a [String],
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
-    /// Write NTFS alternate data streams, the `file:stream` entries 7-Zip's
-    /// `-sns` stores, onto their files. Windows only. Without it, streams are
-    /// checked and not written.
-    pub alternate_streams: bool,
 }
-
-const MAX_STREAM_BYTES: u64 = 64 * 1024 * 1024;
 
 // EXTERNAL(Kani 0.68): building an anyhow error reaches catch_unwind, which crashes Kani's
 // compiler, so the readers Kani proves return this type and convert at the boundary.
@@ -558,7 +552,6 @@ enum Kind {
     File,
     Directory,
     Symlink,
-    AltStream,
 }
 
 fn file_time(filetime: u64) -> Option<SystemTime> {
@@ -695,22 +688,7 @@ fn read_files(bytes: &mut Bytes, streams: &Streams) -> Result<Vec<Item>> {
             (kind, Some(stream))
         };
         let name = name.trim_end_matches('/').to_owned();
-        let windows_entry =
-            attributes[index].is_some() && attribute & ATTRIBUTE_UNIX_EXTENSION == 0;
-        let kind = match name.split_once(':').filter(|_| windows_entry) {
-            Some(_) => {
-                ensure!(
-                    kind == Kind::File,
-                    "7z stream {name:?} is not a file's data"
-                );
-                split_stream(&name)?;
-                Kind::AltStream
-            }
-            None => {
-                safe_path(&name)?;
-                kind
-            }
-        };
+        safe_path(&name)?;
         let (size, crc) = stream.map_or((0, None), |(folder, file)| {
             streams.files_by_folder[folder][file]
         });
@@ -738,23 +716,6 @@ fn read_files(bytes: &mut Bytes, streams: &Streams) -> Result<Vec<Item>> {
     Ok(items)
 }
 
-fn split_stream(name: &str) -> Result<(&str, &str)> {
-    let (base, stream) = name.split_once(':').context("7z stream name has no `:`")?;
-    safe_path(base)?;
-    crate::ntfs_streams::ensure_plain_stream_name(stream)?;
-    Ok((base, stream))
-}
-
-fn base_name(item: &Item) -> &str {
-    match item.kind {
-        Kind::AltStream => item
-            .name
-            .split_once(':')
-            .map_or(&item.name, |(base, _)| base),
-        _ => &item.name,
-    }
-}
-
 fn check_names(items: &[Item]) -> Result<()> {
     let mut kinds: HashMap<&str, Option<Kind>> = HashMap::new();
     for item in items {
@@ -771,25 +732,6 @@ fn check_names(items: &[Item]) -> Result<()> {
             Some(None) => bail!("7z file used as directory: {name:?}"),
             Some(_) => bail!("duplicate 7z path: {name:?}"),
         }
-    }
-    let mut streams = std::collections::HashSet::new();
-    for item in items.iter().filter(|item| item.kind == Kind::AltStream) {
-        ensure!(
-            streams.insert((
-                base_name(item),
-                item.name[base_name(item).len()..].to_lowercase()
-            )),
-            "7z streams {:?} differ only by case, which NTFS ignores",
-            item.name
-        );
-        ensure!(
-            matches!(
-                kinds.get(base_name(item)),
-                Some(Some(Kind::File | Kind::Directory))
-            ),
-            "7z stream {:?} belongs to no file or folder",
-            item.name
-        );
     }
     Ok(())
 }
@@ -1570,10 +1512,6 @@ pub fn read_archive(
             .is_none_or(|threads| (1..=64).contains(&threads)),
         "7z threads must be 1..64"
     );
-    ensure!(
-        !options.alternate_streams || cfg!(windows),
-        "NTFS alternate data streams can only be written on Windows"
-    );
     let (_, archive) = open(path)?;
     for folder in &archive.folders {
         check_methods(folder)?;
@@ -1586,22 +1524,8 @@ pub fn read_archive(
     let chosen: Vec<bool> = archive
         .items
         .iter()
-        .map(|item| crate::is_selected(base_name(item), &selection))
+        .map(|item| crate::is_selected(&item.name, &selection))
         .collect();
-    let write_streams = options.alternate_streams && destination.is_some();
-    if write_streams {
-        let stream_bytes: u64 = archive
-            .items
-            .iter()
-            .zip(&chosen)
-            .filter(|(item, chosen)| **chosen && item.kind == Kind::AltStream)
-            .map(|(item, _)| item.size)
-            .sum();
-        ensure!(
-            stream_bytes <= MAX_STREAM_BYTES,
-            "7z alternate data streams exceed {MAX_STREAM_BYTES} bytes"
-        );
-    }
     let entries: Vec<Entry> = archive
         .items
         .iter()
@@ -1633,7 +1557,7 @@ pub fn read_archive(
         {
             let folder = match item.kind {
                 Kind::Directory => root.join(&item.name),
-                _ => crate::parent(&root.join(base_name(item))).to_owned(),
+                _ => crate::parent(&root.join(&item.name)).to_owned(),
             };
             fs::create_dir_all(folder)?;
         }
@@ -1656,7 +1580,6 @@ pub fn read_archive(
         released: Condvar::new(),
     };
     let targets = Mutex::new(Vec::new());
-    let alternate_streams = Mutex::new(Vec::new());
     let threads = options
         .threads
         .unwrap_or_else(rayon::current_num_threads)
@@ -1672,11 +1595,7 @@ pub fn read_archive(
         for &index in &by_folder[folder_index] {
             let item = &archive.items[index];
             let write = root.filter(|_| chosen[index]);
-            let mut target = if item.kind == Kind::AltStream && write_streams {
-                Vec::with_capacity(item.size as usize)
-            } else {
-                Vec::new()
-            };
+            let mut target = Vec::new();
             let mut output = match (write, item.kind) {
                 (Some(root), Kind::File) => {
                     let file = crate::create_new_file(
@@ -1711,8 +1630,6 @@ pub fn read_archive(
                 remaining -= read as u64;
                 if let Some(output) = &mut output {
                     output.write_all(bytes)?;
-                } else if write.is_some() && item.kind == Kind::AltStream && write_streams {
-                    target.extend_from_slice(bytes);
                 } else if write.is_some() && item.kind == Kind::Symlink {
                     ensure!(
                         target.len() + read <= crate::MAX_LINK_TARGET as usize,
@@ -1741,8 +1658,6 @@ pub fn read_archive(
             }
             if write.is_some() && item.kind == Kind::Symlink {
                 targets.lock().unwrap().push((index, target));
-            } else if write.is_some() && item.kind == Kind::AltStream && write_streams {
-                alternate_streams.lock().unwrap().push((index, target));
             }
             if chosen[index] {
                 tracker.file_done()?;
@@ -1796,8 +1711,6 @@ pub fn read_archive(
                 crate::set_modified_best_effort(&file, time);
             }
             tracker.file_done()?;
-        } else if chosen[index] && item.kind == Kind::AltStream && item.stream.is_none() {
-            tracker.file_done()?;
         }
     }
     tracker.finish();
@@ -1806,28 +1719,6 @@ pub fn read_archive(
         &archive.items,
         targets.into_inner().unwrap(),
     )?;
-    if write_streams {
-        let mut written = alternate_streams.into_inner().unwrap();
-        written.extend(
-            archive
-                .items
-                .iter()
-                .enumerate()
-                .filter(|&(index, item)| {
-                    chosen[index] && item.kind == Kind::AltStream && item.stream.is_none()
-                })
-                .map(|(index, _)| (index, Vec::new())),
-        );
-        for (index, data) in written {
-            let item = &archive.items[index];
-            let stream = &item.name[base_name(item).len() + 1..];
-            crate::ntfs_streams::write_stream(
-                &staging.path().join(base_name(item)),
-                stream,
-                &data,
-            )?;
-        }
-    }
     let names: Vec<Option<&str>> = archive
         .items
         .iter()
@@ -1870,37 +1761,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
     let mut start = [0u8; 6];
     let read = File::open(path)?.read(&mut start)?;
     Ok(read == 6 && &start == SIGNATURE)
-}
-
-#[cfg(test)]
-mod stream_name_tests {
-    use super::*;
-
-    #[test]
-    fn accepted_stream_names_split_into_a_safe_path_and_one_plain_stream() {
-        let alphabet = ['a', ':', '/', '.', '$', ' ', '*', '\\'];
-        let mut names = vec![String::new()];
-        for _ in 0..6 {
-            names = names
-                .iter()
-                .flat_map(|name| alphabet.map(|character| format!("{name}{character}")))
-                .collect();
-            for name in &names {
-                if let Ok((base, stream)) = split_stream(name) {
-                    assert_eq!(format!("{base}:{stream}"), *name);
-                    assert!(safe_path(base).is_ok(), "{name:?}");
-                    assert!(!base.contains(':') && !stream.contains(':'), "{name:?}");
-                    assert!(
-                        !stream.is_empty()
-                            && !stream.starts_with('$')
-                            && !stream.contains(['/', '\\', '*'])
-                            && !stream.ends_with(['.', ' ']),
-                        "{name:?}"
-                    );
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]

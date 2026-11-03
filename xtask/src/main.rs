@@ -164,7 +164,12 @@ fn ship() -> Result<()> {
     let checked = ci_wait();
     push(&["push", "--quiet", "origin", "--delete", &branch])?;
     checked?;
-    push(&["push", "--no-verify", "origin", "HEAD:main"])?;
+    push(&[
+        "push",
+        "--no-verify",
+        "origin",
+        &format!("{head}:refs/heads/main"),
+    ])?;
     println!("shipped {head} to main after its CI run passed");
     Ok(())
 }

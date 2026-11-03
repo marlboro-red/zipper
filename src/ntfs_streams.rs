@@ -60,24 +60,6 @@ pub(crate) fn write_stream(base: &Path, name: &str, data: &[u8]) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-pub(crate) fn write_stream(_: &Path, _: &str, _: &[u8]) -> Result<()> {
-    anyhow::bail!("NTFS alternate data streams can only be written on Windows")
-}
-
-pub(crate) fn ensure_plain_stream_name(name: &str) -> Result<()> {
-    anyhow::ensure!(
-        !name.is_empty()
-            && name.len() <= 255
-            && !name.starts_with('$')
-            && !name.contains(['/', '\\', ':', '<', '>', '"', '|', '?', '*'])
-            && !name.chars().any(char::is_control)
-            && !name.ends_with(['.', ' ']),
-        "unsafe NTFS stream name {name:?}"
-    );
-    Ok(())
-}
-
-#[cfg(not(windows))]
 pub(crate) fn mark_extracted_files(_: &Path, _: &[u8]) -> Result<()> {
     Ok(())
 }

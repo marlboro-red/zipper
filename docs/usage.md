@@ -51,16 +51,6 @@ A folder selects everything under it, even when the archive has no entry for the
 
 For ZIP, `extract --path` decodes only the selected entries. For 7z it decodes only the folders that hold selected files. Both validate what they decode, not unrelated payloads. Tar archives refuse `--path`, because a tar stream has no index.
 
-## Write NTFS streams on Windows
-
-A 7z archive made with 7-Zip's `-sns` stores NTFS alternate data streams as `file:stream` entries. Zipper checks them and writes none by default. On Windows, pass `--streams` to write them onto their files:
-
-```sh
-target/release/zipper extract backup.7z --output restored --streams
-```
-
-Library callers set `alternate_streams` in `ExtractOptions`. The [7z reader reference](reference/7z-reader.md) lists the checks. Separately, every reader copies the archive's own Mark of the Web onto the files it extracts, as the [Windows notes](reference/windows.md#mark-of-the-web) describe.
-
 ## Extract from Rust
 
 `zipper::extract_archive` reads any archive the CLI reads. It picks the reader from the archive's first bytes, as `zipper extract` does. `ExtractOptions` holds the same choices as the CLI flags, plus a progress callback and a cancel flag in `zipper::Control`:

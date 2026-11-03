@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 24 |
+| `native` | 23 |
 | `partial` | 5 |
 | `backend` | 68 |
-| `missing` | 13 |
+| `missing` | 14 |
 | `dropped` | 2 |
 
-51 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+52 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -152,6 +152,6 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `-snl` | `native` | Links that stay inside the destination are created. Windows needs Developer Mode or administrator rights. | `symlinks_inside_the_destination_are_created_after_files` in `tests/hostile_zip.rs`, `symlinks_must_stay_inside_the_destination` in `tests/hostile_zip.rs` |
 | `-snh` | `partial` | Tar hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs` |
 | `-sni` | `missing` |  | No proof yet. |
-| `-sns` | `native` | With `--streams` on Windows, 7z streams are written onto their files. Without it they are checked and skipped. | `stored_streams_are_written_only_when_asked` in `tests/streams.rs`, `unsafe_alternate_stream_names_are_refused` in `tests/hostile_7z.rs` |
+| `-sns` | `missing` | 7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader in M17 adds them. | No proof yet. |
 | `-snz` | `native` | On Windows, every reader copies the archive's mark onto each extracted file. | `extracted_files_carry_the_archives_mark_of_the_web` in `tests/zone.rs` |
 | `-spf` | `dropped` | Absolute paths are refused, because they write outside the destination. | `unsafe_names_never_escape` in `tests/hostile_zip.rs` |
