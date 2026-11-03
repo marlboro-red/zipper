@@ -12,7 +12,7 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 
 The reader supports these features:
 
-- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard and XZ entries. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
+- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
 - Conventional ZIP64.
 - File bytes and directories.
 - Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
@@ -22,7 +22,7 @@ The reader does not support these features:
 
 - Encryption.
 - Symlinks that point outside the destination.
-- PPMd, Shrink, Implode and other legacy methods.
+- Shrink, Implode and other legacy methods.
 - Multi-disk archives.
 - Ambiguous end records.
 - Data before the first record, such as a self-extracting executable from `zip -A`. The default engine reads it in process and rejects it, because no 7-Zip signature matches.

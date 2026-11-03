@@ -1179,6 +1179,24 @@ fn compressed(name: &str, data: &[u8], method: u16, payload: Vec<u8>) -> Raw {
     }
 }
 
+fn ppmd_payload(data: &[u8], end_marker: bool) -> Vec<u8> {
+    use std::io::Write as _;
+    let (order, megabytes) = (6u16, 16u16);
+    let mut payload = ((order - 1) | ((megabytes - 1) << 4))
+        .to_le_bytes()
+        .to_vec();
+    let mut encoder = ppmd_rust::Ppmd8Encoder::new(
+        Vec::new(),
+        u32::from(order),
+        u32::from(megabytes) << 20,
+        ppmd_rust::RestoreMethod::Restart,
+    )
+    .unwrap();
+    encoder.write_all(data).unwrap();
+    payload.extend(encoder.finish(end_marker).unwrap());
+    payload
+}
+
 fn method_payloads(data: &[u8]) -> Vec<(&'static str, u16, Vec<u8>)> {
     use std::io::Write as _;
     let mut bzip2 = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::best());
@@ -1186,6 +1204,7 @@ fn method_payloads(data: &[u8]) -> Vec<(&'static str, u16, Vec<u8>)> {
     let mut xz = liblzma::write::XzEncoder::new(Vec::new(), 6);
     xz.write_all(data).unwrap();
     vec![
+        ("ppmd", 98, ppmd_payload(data, true)),
         ("zstandard", 93, zstd::encode_all(data, 3).unwrap()),
         ("bzip2", 12, bzip2.finish().unwrap()),
         ("xz", 95, xz.finish().unwrap()),
@@ -1282,4 +1301,42 @@ fn deflate64_streams_must_end_exactly_at_their_compressed_size() {
         "empty Deflate64 data",
         &[compressed("f", b"", DEFLATE64, Vec::new())],
     );
+}
+
+#[test]
+fn ppmd_entries_need_their_end_marker() {
+    let data = b"text that PPMd compresses ".repeat(200);
+    assert_rejected_without_leftovers(
+        "PPMd without its end marker",
+        &[compressed("f", &data, 98, ppmd_payload(&data, false))],
+    );
+}
+
+#[test]
+fn ppmd_entries_cut_before_their_end_marker_are_refused() {
+    let data = b"text that PPMd compresses ".repeat(200);
+    let payload = ppmd_payload(&data, true);
+    for cut in 1..=6 {
+        assert_rejected_without_leftovers(
+            &format!("PPMd cut by {cut}"),
+            &[compressed(
+                "f",
+                &data,
+                98,
+                payload[..payload.len() - cut].to_vec(),
+            )],
+        );
+    }
+    let empty = ppmd_payload(b"", true);
+    for cut in 1..empty.len() - 2 {
+        assert_rejected_without_leftovers(
+            &format!("an empty PPMd entry cut by {cut}"),
+            &[compressed(
+                "f",
+                b"",
+                98,
+                empty[..empty.len() - cut].to_vec(),
+            )],
+        );
+    }
 }

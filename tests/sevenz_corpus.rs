@@ -37,7 +37,7 @@ fn native_reader_matches_the_reference_readers() {
 #[test]
 fn unsupported_methods_are_refused_by_name_and_routed_to_7zip() {
     let refused = std::fs::read_to_string(corpus().join("refused.tsv")).unwrap();
-    assert!(refused.lines().count() >= 4);
+    assert!(refused.lines().count() >= 3);
     for line in refused.lines() {
         let (name, error) = line.split_once('\t').unwrap();
         let archive = corpus().join(name);
@@ -56,7 +56,7 @@ fn unsupported_methods_are_refused_by_name_and_routed_to_7zip() {
 }
 
 #[test]
-fn a_bzip2_archive_extracts_the_same_files_as_lzma2() {
+fn bzip2_and_ppmd_archives_extract_the_same_files_as_lzma2() {
     let files = |name: &str| {
         let work = tempfile::tempdir().unwrap();
         let out = work.path().join("out");
@@ -84,4 +84,5 @@ fn a_bzip2_archive_extracts_the_same_files_as_lzma2() {
         found
     };
     assert_eq!(files("refused-bzip2.7z"), files("7zip-lzma2-short.7z"));
+    assert_eq!(files("refused-ppmd.7z"), files("7zip-lzma2-short.7z"));
 }

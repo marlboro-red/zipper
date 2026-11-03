@@ -241,7 +241,7 @@
       "status": "native"
     },
     "PPMD": {
-      "status": "backend"
+      "status": "native"
     },
     "7zAES": {
       "status": "missing",
@@ -285,7 +285,7 @@
       "status": "native"
     },
     "PPMd": {
-      "status": "backend"
+      "status": "native"
     },
     "ZipCrypto": {
       "status": "missing",

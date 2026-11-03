@@ -537,7 +537,7 @@ fn scan(
         ensure!(
             matches!(
                 method_code(file.compression()),
-                STORED | DEFLATE | DEFLATE64 | BZIP2 | LZMA | ZSTANDARD | XZ
+                STORED | DEFLATE | DEFLATE64 | BZIP2 | LZMA | ZSTANDARD | XZ | PPMD
             ),
             "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
@@ -1009,6 +1009,8 @@ const BZIP2: u16 = 12;
 const LZMA: u16 = 14;
 const ZSTANDARD: u16 = 93;
 const XZ: u16 = 95;
+const PPMD: u16 = 98;
+const PPMD_LARGEST_MODEL: u64 = 256 << 20;
 const OTHER_METHOD_INPUT: usize = 256 * 1024;
 const LZMA_SMALLEST_DICTIONARY: u64 = 4096;
 const ZIP_DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
@@ -1076,6 +1078,36 @@ fn method_code(method: CompressionMethod) -> u16 {
     method.to_u16()
 }
 
+struct EndMarked<R: Read> {
+    decoder: ppmd_rust::Ppmd8Decoder<crate::EndWatched<R>>,
+    remaining: u64,
+}
+
+impl<R: Read> Read for EndMarked<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self.remaining == 0 {
+            let mut probe = [0u8; 1];
+            if self.decoder.read(&mut probe)? > 0 {
+                return Err(std::io::Error::other(
+                    "ZIP PPMd data goes on past its declared size",
+                ));
+            }
+            if self.decoder.get_ref().ran_out {
+                return Err(std::io::Error::other(
+                    "ZIP PPMd stream ends before its end marker",
+                ));
+            }
+            return Ok(0);
+        }
+        let wanted = buffer
+            .len()
+            .min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
+        let read = self.decoder.read(&mut buffer[..wanted])?;
+        self.remaining -= read as u64;
+        Ok(read)
+    }
+}
+
 fn method_decoder<'a>(
     item: &Item,
     input: &'a mut std::io::BufReader<&mut dyn Read>,
@@ -1105,6 +1137,31 @@ fn method_decoder<'a>(
                 std::io::Cursor::new(header).chain(input),
                 liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
             ))
+        }
+        PPMD => {
+            let mut header = [0u8; 2];
+            input
+                .read_exact(&mut header)
+                .context("truncated ZIP PPMd header")?;
+            // SPEC(APPNOTE 5.10): order - 1 in bits 0-3, model MiB - 1 in bits 4-11, then the restore method.
+            let fields = u16::from_le_bytes(header);
+            let order = u32::from(fields & 0x0f) + 1;
+            let memory = (u32::from((fields >> 4) & 0xff) + 1) << 20;
+            let restore = ppmd_rust::RestoreMethod::from(fields >> 12);
+            ensure!(
+                restore != ppmd_rust::RestoreMethod::Unsupported,
+                "ZIP PPMd restore method is not supported"
+            );
+            let input = crate::EndWatched {
+                inner: input,
+                ran_out: false,
+            };
+            let decoder = ppmd_rust::Ppmd8Decoder::new(input, order, memory, restore)
+                .map_err(|error| anyhow::anyhow!("cannot start the ZIP PPMd decoder: {error:?}"))?;
+            Box::new(EndMarked {
+                decoder,
+                remaining: item.entry.size,
+            })
         }
         other => anyhow::bail!("ZIP compression method {other} is not supported"),
     })
@@ -1150,8 +1207,11 @@ fn stream_entry(
     } else if method_code(item.method) == DEFLATE64 {
         inflate64(input, item.compressed, buffer, emit)?;
     } else if method_code(item.method) != DEFLATE {
-        let _reservation = matches!(method_code(item.method), XZ | LZMA)
-            .then(|| decoder_memory.reserve(item.entry.size));
+        let _reservation = match method_code(item.method) {
+            XZ | LZMA => Some(decoder_memory.reserve(item.entry.size)),
+            PPMD => Some(decoder_memory.reserve(PPMD_LARGEST_MODEL)),
+            _ => None,
+        };
         let input: &mut dyn Read = input;
         let mut input = std::io::BufReader::with_capacity(OTHER_METHOD_INPUT, input);
         let mut decoder = method_decoder(item, &mut input)?;

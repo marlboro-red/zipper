@@ -7,7 +7,7 @@ Zipper reads 7z archives with its own Rust reader by default. The default engine
 The reader decodes these methods:
 
 - LZMA and LZMA2, through liblzma.
-- Copy, Deflate, Deflate64 and BZip2. Each BZip2 stream after the first must bring 4 KiB of output, as in the [single compressed file reader](stream-reader.md).
+- Copy, Deflate, Deflate64, BZip2 and PPMd. A PPMd model counts its full size against the decoder budget, because the decoder allocates it at the start. A PPMd folder must end exactly at its packed size. Unlike 7-Zip, Zipper does not check that the PPMd range coder ends in a clean state, because the decoder crate keeps that state private. The folder's size and CRC still bound every byte written. Each BZip2 stream after the first must bring 4 KiB of output, as in the [single compressed file reader](stream-reader.md).
 - Unused packed bytes after a Deflate or Deflate64 stream are not checked. The folder's size and CRC still bound every byte written.
 - The x86 (BCJ), ARM, ARM Thumb, ARM64, RISC-V, PowerPC, SPARC and IA-64 branch filters, and the Delta filter, in front of LZMA or LZMA2.
 
@@ -15,7 +15,7 @@ It reads solid and non-solid archives, solid blocks, compressed and plain header
 
 The reader does not support these features:
 
-- BCJ2, PPMd and the byte-swap filters. The default engine sends these archives to 7-Zip.
+- BCJ2 and the byte-swap filters, and a PPMd model larger than the 2 GiB decoder budget. The default engine sends these archives to 7-Zip.
 - Encrypted archives and encrypted headers. These go to 7-Zip too.
 - Anti-items, which delete files during an update, external data and additional header streams.
 - Windows reparse points, devices and FIFOs.
@@ -49,4 +49,4 @@ Folders decode in parallel on their own worker threads, up to `--threads`, large
 
 ## Reference corpus
 
-`scripts/make_7z_corpus.py` writes 44 archives from 7-Zip and libarchive, over the short and long trees of the tar corpus and a tree of links. It covers each supported method, solid blocks, plain headers and non-solid archives. 7-Zip and bsdtar must extract the same tree, and `tests/sevenz_corpus.rs` checks the reader against it, including modes and times. Four more archives use PPMd, BCJ2, a password and an LZMA setting liblzma refuses, and the test checks that the reader refuses each by name and that the default engine sends them to 7-Zip. A BZip2 archive kept under its old name, `refused-bzip2.7z`, must extract the same files as `7zip-lzma2-short.7z`.
+`scripts/make_7z_corpus.py` writes 44 archives from 7-Zip and libarchive, over the short and long trees of the tar corpus and a tree of links. It covers each supported method, solid blocks, plain headers and non-solid archives. 7-Zip and bsdtar must extract the same tree, and `tests/sevenz_corpus.rs` checks the reader against it, including modes and times. Three more archives use BCJ2, a password and an LZMA setting liblzma refuses, and the test checks that the reader refuses each by name and that the default engine sends them to 7-Zip. BZip2 and PPMd archives kept under their old names, `refused-bzip2.7z` and `refused-ppmd.7z`, must extract the same files as `7zip-lzma2-short.7z`.

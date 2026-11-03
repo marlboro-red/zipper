@@ -888,6 +888,7 @@ enum Method {
     Deflate,
     Deflate64,
     Bzip2,
+    Ppmd,
     Lzma,
     Lzma2,
     Filter(fn(&mut liblzma::stream::Filters, &[u8]) -> Result<(), liblzma::stream::Error>),
@@ -900,6 +901,7 @@ fn method(coder: &Coder) -> Result<Method> {
         [0x04, 0x01, 0x08] => Method::Deflate,
         [0x04, 0x01, 0x09] => Method::Deflate64,
         [0x04, 0x02, 0x02] => Method::Bzip2,
+        [0x03, 0x04, 0x01] => Method::Ppmd,
         [0x03, 0x01, 0x01] => Method::Lzma,
         [0x21] => Method::Lzma2,
         [0x03] => {
@@ -989,6 +991,9 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
         .collect::<Result<Vec<_>>>()?;
     match methods.as_slice() {
         [Method::Copy] | [Method::Deflate] | [Method::Deflate64] | [Method::Bzip2] => {}
+        [Method::Ppmd] => {
+            ppmd_parameters(&folder.output_to_packed[0].properties)?;
+        }
         [filters @ .., Method::Lzma | Method::Lzma2]
             if filters
                 .iter()
@@ -1013,7 +1018,7 @@ fn lzma_filters(folder: &Folder, methods: &[Method]) -> Result<liblzma::stream::
             Method::Filter(add) => add(&mut filters, &properties),
             Method::Lzma => filters.lzma1_properties(&properties).map(drop),
             Method::Lzma2 => filters.lzma2_properties(&properties).map(drop),
-            Method::Copy | Method::Deflate | Method::Deflate64 | Method::Bzip2 => {
+            Method::Copy | Method::Deflate | Method::Deflate64 | Method::Bzip2 | Method::Ppmd => {
                 return Err(unsupported(format!(
                     "7z folder combines methods in a way that is not supported; {BACKEND_HINT}"
                 )));
@@ -1062,6 +1067,27 @@ fn dictionary_capped_at_output(method: &Method, properties: &[u8], output: u64) 
     })
 }
 
+fn ppmd_parameters(properties: &[u8]) -> Result<(u32, u32)> {
+    // SPEC(7-Zip PpmdDecoder.cpp): one order byte, then the model size as a little-endian u32.
+    let [order, a, b, c, d] = properties[..] else {
+        return Err(unsupported(format!(
+            "7z PPMd properties are not 5 bytes; {BACKEND_HINT}"
+        )));
+    };
+    let memory = u32::from_le_bytes([a, b, c, d]);
+    if !(ppmd_rust::PPMD7_MIN_ORDER..=ppmd_rust::PPMD7_MAX_ORDER).contains(&u32::from(order))
+        || !(ppmd_rust::PPMD7_MIN_MEM_SIZE..=ppmd_rust::PPMD7_MAX_MEM_SIZE).contains(&memory)
+    {
+        bail!("7z PPMd properties are out of range");
+    }
+    if u64::from(memory) > DECODER_MEMORY {
+        return Err(unsupported(format!(
+            "7z PPMd model of {memory} bytes exceeds the {DECODER_MEMORY}-byte decoder budget; {BACKEND_HINT}"
+        )));
+    }
+    Ok((u32::from(order), memory))
+}
+
 fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
     let lzma2_only = matches!(
         folder.output_to_packed.as_slice(),
@@ -1082,9 +1108,37 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
             lzma2_dictionary(properties[0]).min(folder.size)
         }
         Some((Ok(Method::Bzip2), _)) => BZIP2_DECODER_MEMORY,
+        Some((Ok(Method::Ppmd), properties)) => {
+            ppmd_parameters(properties).map_or(0, |(_, memory)| u64::from(memory))
+        }
         _ => 0,
     }
     .max(64 * 1024)
+}
+
+struct PpmdFolder<R: Read> {
+    decoder: ppmd_rust::Ppmd7Decoder<crate::EndWatched<std::io::Take<R>>>,
+    remaining: u64,
+}
+
+impl<R: Read> Read for PpmdFolder<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self.remaining == 0 {
+            let input = self.decoder.get_ref();
+            if input.ran_out || input.inner.limit() > 0 {
+                return Err(std::io::Error::other(
+                    "7z PPMd stream does not end at its packed size",
+                ));
+            }
+            return Ok(0);
+        }
+        let wanted = buffer
+            .len()
+            .min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
+        let read = self.decoder.read(&mut buffer[..wanted])?;
+        self.remaining -= read as u64;
+        Ok(read)
+    }
 }
 
 struct LzmaReader<R> {
@@ -1163,6 +1217,19 @@ fn folder_reader(
         [Method::Deflate64] => Box::new(deflate64::Deflate64Decoder::with_buffer(packed)),
         [Method::Bzip2] => {
             crate::native_tar::decode(packed, crate::native_tar::Compression::Bzip2)?
+        }
+        [Method::Ppmd] => {
+            let (order, memory) = ppmd_parameters(&folder.output_to_packed[0].properties)?;
+            let packed = crate::EndWatched {
+                inner: packed,
+                ran_out: false,
+            };
+            let decoder = ppmd_rust::Ppmd7Decoder::new(packed, order, memory)
+                .map_err(|error| anyhow::anyhow!("cannot start the 7z PPMd decoder: {error:?}"))?;
+            Box::new(PpmdFolder {
+                decoder,
+                remaining: folder.size,
+            })
         }
         _ => {
             let stream = liblzma::stream::Stream::new_raw_decoder(&lzma_filters(folder, &methods)?)

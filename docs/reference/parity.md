@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 43 |
+| `native` | 45 |
 | `partial` | 1 |
-| `backend` | 59 |
+| `backend` | 57 |
 | `missing` | 7 |
 | `dropped` | 2 |
 
@@ -112,7 +112,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Delta` | `native` |  | `tests/data/parity/archives/7z-delta.7z` |
 | `LZMA2` | `native` |  | `tests/data/parity/archives/7z-lzma2.7z` |
 | `LZMA` | `native` |  | `tests/data/parity/archives/7z-lzma.7z` |
-| `PPMD` | `backend` |  | `tests/data/parity/archives/7z-ppmd.7z` |
+| `PPMD` | `native` |  | `tests/data/parity/archives/7z-ppmd.7z` |
 | `7zAES` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | `tests/data/parity/archives/7z-7zaes.7z` |
 | `AES256CBC` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | No proof yet. |
 
@@ -129,7 +129,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `LZMA` | `native` |  | `tests/data/parity/archives/zip-lzma.zip` |
 | `Zstandard` | `native` | 7-Zip 26.05 cannot write it, so the proof is a built entry. | `other_methods_decode_exactly_and_refuse_damage` in `tests/hostile_zip.rs` |
 | `XZ` | `native` |  | `tests/data/parity/archives/zip-xz.zip` |
-| `PPMd` | `backend` |  | `tests/data/parity/archives/zip-ppmd.zip` |
+| `PPMd` | `native` |  | `tests/data/parity/archives/zip-ppmd.zip` |
 | `ZipCrypto` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | `tests/data/parity/archives/zip-zipcrypto.zip` |
 | `WinZip AES` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | `tests/data/parity/archives/zip-winzip-aes.zip` |
 

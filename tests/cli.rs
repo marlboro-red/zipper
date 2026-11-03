@@ -289,13 +289,13 @@ fn default_engine_reads_zip_in_process_and_never_hands_it_to_7zip() -> anyhow::R
 
     for (name, bytes, expected) in [
         (
-            "ppmd.zip",
-            stored_zip(&[("f", 98)])?,
+            "wavpack.zip",
+            stored_zip(&[("f", 97)])?,
             "--zip-engine backend",
         ),
         (
-            "ppmd-then-escape.zip",
-            stored_zip(&[("f", 98), ("../escape", 0)])?,
+            "wavpack-then-escape.zip",
+            stored_zip(&[("f", 97), ("../escape", 0)])?,
             "--zip-engine backend",
         ),
         (

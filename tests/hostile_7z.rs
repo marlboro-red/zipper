@@ -1,7 +1,7 @@
 //! Crafted 7z archives that real writers never produce. Each must be refused
 //! with nothing left behind, or extract only inside the destination, and a
 //! well-formed one must extract the same bytes at every thread count.
-use std::fs;
+use std::{fs, path::Path};
 use zipper::native_7z::{ReadOptions, read_archive};
 
 const UNIX_FILE: u32 = 0o100644 << 16 | 0x8000;
@@ -335,7 +335,7 @@ fn unsupported_methods_are_refused() {
     for (id, words) in [
         (vec![0x02, 0x03, 0x02], "method 020302"),
         (vec![0x06, 0xF1, 0x07, 0x01], "encrypted"),
-        (vec![0x03, 0x04, 0x01], "method 030401"),
+        (vec![0x02, 0x03, 0x04], "method 020304"),
     ] {
         assert_refused(
             &format!("{id:?}"),
@@ -603,4 +603,33 @@ fn a_damaged_lzma2_segment_fails_on_every_thread_count() {
             );
         }
     }
+}
+
+#[test]
+fn a_ppmd_model_beyond_the_decoder_budget_goes_to_7zip() {
+    let mut properties = vec![6];
+    properties.extend_from_slice(&0xffff_ff00u32.to_le_bytes());
+    let bytes = copy_folder_archive(
+        &[file("a", b"x")],
+        HeaderDamage {
+            coder: Some((vec![0x03, 0x04, 0x01], properties)),
+            ..HeaderDamage::default()
+        },
+    );
+    assert_refused("a 4 GiB PPMd model", &bytes, "decoder budget");
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("big-model.7z");
+    fs::write(&archive, &bytes).unwrap();
+    assert!(zipper::native_7z::needs_backend(&archive).unwrap());
+}
+
+#[test]
+fn a_ppmd_folder_must_end_at_its_packed_size() {
+    let archive =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/7z-hostile/ppmd-padded.7z");
+    assert_refused(
+        "a PPMd folder padded by one byte",
+        &fs::read(archive).unwrap(),
+        "packed size",
+    );
 }

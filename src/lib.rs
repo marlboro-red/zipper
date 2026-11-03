@@ -87,6 +87,21 @@ fn ensure_plain_windows_name(component: &str) -> Result<()> {
     Ok(())
 }
 
+/// Input for a decoder that treats an early end of input as a clean finish:
+/// it records whether the decoder ever asked past the last byte.
+pub(crate) struct EndWatched<R> {
+    pub(crate) inner: R,
+    pub(crate) ran_out: bool,
+}
+
+impl<R: std::io::Read> std::io::Read for EndWatched<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buffer)?;
+        self.ran_out |= read == 0 && !buffer.is_empty();
+        Ok(read)
+    }
+}
+
 fn parent(path: &Path) -> &Path {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
