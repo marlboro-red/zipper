@@ -141,18 +141,11 @@ fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Resul
             Existing::RenameNew | Existing::RenameExisting => (&paths[0], &paths[1..]),
         };
         std::fs::rename(kept, into.join(name))?;
-        let path = std::path::Path::new(name);
-        let (stem, extension) = (path.file_stem().unwrap_or_default(), path.extension());
         let mut number = 0;
         for other in others {
             let renamed = loop {
                 number += 1;
-                let mut candidate = stem.to_owned();
-                candidate.push(format!("_{number}"));
-                if let Some(extension) = extension {
-                    candidate.push(".");
-                    candidate.push(extension);
-                }
+                let candidate = crate::staging::numbered(name, number);
                 if taken.insert(candidate.clone()) {
                     break candidate;
                 }

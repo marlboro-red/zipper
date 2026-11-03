@@ -1340,3 +1340,71 @@ fn ppmd_entries_cut_before_their_end_marker_are_refused() {
         );
     }
 }
+
+fn small_method_payloads(data: &[u8]) -> Vec<(&'static str, u16, Vec<u8>)> {
+    use std::io::Write as _;
+    let mut stored = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::none());
+    stored.write_all(data).unwrap();
+    let mut lzma = Vec::new();
+    {
+        let stream = liblzma::stream::Stream::new_lzma_encoder(
+            &liblzma::stream::LzmaOptions::new_preset(1).unwrap(),
+        )
+        .unwrap();
+        let mut encoder = liblzma::write::XzEncoder::new_stream(&mut lzma, stream);
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap();
+    }
+    let mut zip_lzma = vec![9, 20, 5, 0];
+    zip_lzma.extend_from_slice(&lzma[..5]);
+    zip_lzma.extend_from_slice(&lzma[13..]);
+    let (order, megabytes) = (4u16, 1u16);
+    let mut ppmd = ((order - 1) | ((megabytes - 1) << 4))
+        .to_le_bytes()
+        .to_vec();
+    let mut encoder = ppmd_rust::Ppmd8Encoder::new(
+        Vec::new(),
+        u32::from(order),
+        u32::from(megabytes) << 20,
+        ppmd_rust::RestoreMethod::Restart,
+    )
+    .unwrap();
+    encoder.write_all(data).unwrap();
+    ppmd.extend(encoder.finish(true).unwrap());
+    let mut methods = method_payloads(data);
+    methods.retain(|(name, _, _)| *name != "ppmd");
+    methods.extend([
+        ("deflate64", 9, stored.finish().unwrap()),
+        ("lzma", 14, zip_lzma),
+        ("ppmd", 98, ppmd),
+    ]);
+    methods
+}
+
+#[test]
+fn every_cut_and_every_padding_of_each_method_is_refused() {
+    let data: Vec<u8> = b"short text for every method, ".repeat(6);
+    for (method_name, method, payload) in small_method_payloads(&data) {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("ok.zip");
+        write_zip(&archive, &[compressed("f", &data, method, payload.clone())]);
+        read_archive(&archive, Some(&root.path().join("out")))
+            .unwrap_or_else(|error| panic!("{method_name}: {error:#}"));
+        for cut in 0..payload.len() {
+            assert_rejected_without_leftovers(
+                &format!("{method_name} cut to {cut} of {}", payload.len()),
+                &[compressed("f", &data, method, payload[..cut].to_vec())],
+            );
+        }
+        for junk in 1..=8 {
+            for byte in [0x00, 0xff] {
+                let mut padded = payload.clone();
+                padded.extend(std::iter::repeat_n(byte, junk));
+                assert_rejected_without_leftovers(
+                    &format!("{method_name} with {junk} bytes of {byte:#x} after it"),
+                    &[compressed("f", &data, method, padded)],
+                );
+            }
+        }
+    }
+}

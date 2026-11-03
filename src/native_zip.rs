@@ -1078,6 +1078,34 @@ fn method_code(method: CompressionMethod) -> u16 {
     method.to_u16()
 }
 
+fn lzma_alone_header(prefix: [u8; 9], size: u64) -> Field<[u8; 13]> {
+    // SPEC(APPNOTE 5.8.8): two version bytes, a two-byte properties size of 5, then the properties.
+    field_check(
+        u16::from_le_bytes([prefix[2], prefix[3]]) == 5,
+        "unsupported ZIP LZMA properties size",
+    )?;
+    let mut header = [0u8; 13];
+    header[0] = prefix[4];
+    let dictionary = u32::from_le_bytes([prefix[5], prefix[6], prefix[7], prefix[8]]);
+    let needed = u32::try_from(size.max(LZMA_SMALLEST_DICTIONARY)).unwrap_or(u32::MAX);
+    header[1..5].copy_from_slice(&dictionary.min(needed).to_le_bytes());
+    header[5..].copy_from_slice(&size.to_le_bytes());
+    Ok(header)
+}
+
+fn ppmd8_fields(fields: u16) -> Field<(u32, u32, u16)> {
+    // SPEC(APPNOTE 5.10): order - 1 in bits 0-3, model MiB - 1 in bits 4-11, then the restore method.
+    let order = u32::from(fields & 0x0f) + 1;
+    let memory = (u32::from((fields >> 4) & 0xff) + 1) << 20;
+    let restore = fields >> 12;
+    field_check(
+        order >= ppmd_rust::PPMD8_MIN_ORDER,
+        "ZIP PPMd order is below the smallest",
+    )?;
+    field_check(restore <= 1, "ZIP PPMd restore method is not supported")?;
+    Ok((order, memory, restore))
+}
+
 struct EndMarked<R: Read> {
     decoder: ppmd_rust::Ppmd8Decoder<crate::EndWatched<R>>,
     remaining: u64,
@@ -1121,18 +1149,7 @@ fn method_decoder<'a>(
             input
                 .read_exact(&mut prefix)
                 .context("truncated ZIP LZMA header")?;
-            // SPEC(APPNOTE 5.8.8): two version bytes, a two-byte properties size of 5, then the properties.
-            ensure!(
-                u16::from_le_bytes([prefix[2], prefix[3]]) == 5,
-                "unsupported ZIP LZMA properties size"
-            );
-            let mut header = [0u8; 13];
-            header[..5].copy_from_slice(&prefix[4..]);
-            let dictionary = u32::from_le_bytes(header[1..5].try_into().unwrap());
-            let needed =
-                u32::try_from(item.entry.size.max(LZMA_SMALLEST_DICTIONARY)).unwrap_or(u32::MAX);
-            header[1..5].copy_from_slice(&dictionary.min(needed).to_le_bytes());
-            header[5..].copy_from_slice(&item.entry.size.to_le_bytes());
+            let header = lzma_alone_header(prefix, item.entry.size)?;
             Box::new(liblzma::bufread::XzDecoder::new_stream(
                 std::io::Cursor::new(header).chain(input),
                 liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
@@ -1143,15 +1160,8 @@ fn method_decoder<'a>(
             input
                 .read_exact(&mut header)
                 .context("truncated ZIP PPMd header")?;
-            // SPEC(APPNOTE 5.10): order - 1 in bits 0-3, model MiB - 1 in bits 4-11, then the restore method.
-            let fields = u16::from_le_bytes(header);
-            let order = u32::from(fields & 0x0f) + 1;
-            let memory = (u32::from((fields >> 4) & 0xff) + 1) << 20;
-            let restore = ppmd_rust::RestoreMethod::from(fields >> 12);
-            ensure!(
-                restore != ppmd_rust::RestoreMethod::Unsupported,
-                "ZIP PPMd restore method is not supported"
-            );
+            let (order, memory, restore) = ppmd8_fields(u16::from_le_bytes(header))?;
+            let restore = ppmd_rust::RestoreMethod::from(restore);
             let input = crate::EndWatched {
                 inner: input,
                 ran_out: false,
@@ -1716,6 +1726,33 @@ mod proofs {
             let width = if wide { 8 } else { 4 };
             assert!(tail as usize == usize::from(signature) * 4 + 4 + 2 * width);
             let _ = descriptor_values(&descriptor[..tail as usize], signature, wide);
+        }
+    }
+
+    #[kani::proof]
+    fn lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need() {
+        let prefix: [u8; 9] = kani::any();
+        let size: u64 = kani::any();
+        if let Ok(header) = lzma_alone_header(prefix, size) {
+            let declared = u32::from_le_bytes([prefix[5], prefix[6], prefix[7], prefix[8]]);
+            let used = u32::from_le_bytes([header[1], header[2], header[3], header[4]]);
+            assert!(header[0] == prefix[4]);
+            assert!(u64::from_le_bytes(header[5..].try_into().unwrap()) == size);
+            assert!(used <= declared);
+            assert!(u64::from(used) >= u64::from(declared).min(size));
+        }
+    }
+
+    #[kani::proof]
+    fn ppmd_headers_stay_inside_the_decoders_bounds() {
+        let fields: u16 = kani::any();
+        if let Ok((order, memory, restore)) = ppmd8_fields(fields) {
+            assert!((ppmd_rust::PPMD8_MIN_ORDER..=ppmd_rust::PPMD8_MAX_ORDER).contains(&order));
+            assert!(
+                (ppmd_rust::PPMD8_MIN_MEM_SIZE..=ppmd_rust::PPMD8_MAX_MEM_SIZE).contains(&memory)
+            );
+            assert!(u64::from(memory) <= PPMD_LARGEST_MODEL);
+            assert!(restore <= 1);
         }
     }
 }

@@ -142,17 +142,22 @@ fn set_modified_best_effort(file: &File, time: std::time::SystemTime) {
 
 pub(crate) const MAX_LINK_TARGET: u64 = 4096;
 
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn windows_link_target(target: &str) -> String {
+    target
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>()
+        .join("\\")
+}
+
 fn create_symlink(format: &str, root: &Path, name: &str, target: &str) -> Result<()> {
     let link = root.join(name);
     #[cfg(unix)]
     let created = std::os::unix::fs::symlink(target, &link);
     #[cfg(windows)]
     let created = {
-        let target = target
-            .split('/')
-            .filter(|component| !component.is_empty())
-            .collect::<Vec<_>>()
-            .join("\\");
+        let target = windows_link_target(target);
         let resolved = parent(&link).join(&target);
         if std::fs::metadata(resolved).is_ok_and(|metadata| metadata.is_dir()) {
             std::os::windows::fs::symlink_dir(&target, &link)
@@ -606,6 +611,46 @@ mod tests {
                         };
                         assert!(depth >= 0, "{name:?} -> {target:?}");
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn windows_link_targets_only_drop_empty_parts_and_swap_separators() {
+        for target in every_string(b"a/.", 6) {
+            let converted = windows_link_target(&target);
+            let kept: Vec<&str> = target.split('/').filter(|part| !part.is_empty()).collect();
+            assert_eq!(
+                converted
+                    .split('\\')
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>(),
+                kept
+            );
+            assert!(
+                !converted.contains('/') && !converted.contains("\\\\"),
+                "{target:?}"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn accepted_link_targets_are_plain_relative_paths_to_windows() {
+        for target in every_string(b"a/. \\:", 5) {
+            if ensure_link_stays_inside("ZIP", "n", &target).is_err() {
+                continue;
+            }
+            let converted = windows_link_target(&target);
+            for component in Path::new(&converted).components() {
+                match component {
+                    Component::Normal(part) => {
+                        let part = part.to_str().unwrap();
+                        assert!(!part.ends_with(['.', ' ']), "{target:?} gave {converted:?}");
+                    }
+                    Component::ParentDir | Component::CurDir => {}
+                    other => panic!("{target:?} gave {converted:?} with {other:?}"),
                 }
             }
         }

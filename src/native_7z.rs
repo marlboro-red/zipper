@@ -1069,23 +1069,30 @@ fn dictionary_capped_at_output(method: &Method, properties: &[u8], output: u64) 
 
 fn ppmd_parameters(properties: &[u8]) -> Result<(u32, u32)> {
     // SPEC(7-Zip PpmdDecoder.cpp): one order byte, then the model size as a little-endian u32.
-    let [order, a, b, c, d] = properties[..] else {
+    let Some((order, memory)) = ppmd7_fields(properties) else {
         return Err(unsupported(format!(
             "7z PPMd properties are not 5 bytes; {BACKEND_HINT}"
         )));
     };
-    let memory = u32::from_le_bytes([a, b, c, d]);
-    if !(ppmd_rust::PPMD7_MIN_ORDER..=ppmd_rust::PPMD7_MAX_ORDER).contains(&u32::from(order))
-        || !(ppmd_rust::PPMD7_MIN_MEM_SIZE..=ppmd_rust::PPMD7_MAX_MEM_SIZE).contains(&memory)
-    {
-        bail!("7z PPMd properties are out of range");
-    }
+    check(
+        (ppmd_rust::PPMD7_MIN_ORDER..=ppmd_rust::PPMD7_MAX_ORDER).contains(&order)
+            && (ppmd_rust::PPMD7_MIN_MEM_SIZE..=ppmd_rust::PPMD7_MAX_MEM_SIZE).contains(&memory),
+        "7z PPMd properties are out of range",
+        "",
+    )?;
     if u64::from(memory) > DECODER_MEMORY {
         return Err(unsupported(format!(
             "7z PPMd model of {memory} bytes exceeds the {DECODER_MEMORY}-byte decoder budget; {BACKEND_HINT}"
         )));
     }
-    Ok((u32::from(order), memory))
+    Ok((order, memory))
+}
+
+fn ppmd7_fields(properties: &[u8]) -> Option<(u32, u32)> {
+    let [order, a, b, c, d] = properties[..] else {
+        return None;
+    };
+    Some((u32::from(order), u32::from_le_bytes([a, b, c, d])))
 }
 
 fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
@@ -2026,6 +2033,20 @@ mod proofs {
             assert_eq!(chunk.header == 6, control >= 0xC0);
         } else {
             assert!(control == 0 || (3..0x80).contains(&control));
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn ppmd_properties_read_only_five_bytes() {
+        let bytes: [u8; 6] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= 6);
+        let read = ppmd7_fields(&bytes[..length]);
+        assert!(read.is_some() == (length == 5));
+        if let Some((order, memory)) = read {
+            assert!(order == u32::from(bytes[0]));
+            assert!(memory == u32::from_le_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]));
         }
     }
 }

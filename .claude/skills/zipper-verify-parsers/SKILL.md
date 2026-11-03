@@ -1,6 +1,6 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, or the tar numeric fields (octal, number, size_field) in src/native_tar.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, or the ZIP LZMA and PPMd headers and 7z PPMd properties, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
@@ -22,6 +22,9 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `the_end_record_is_the_last_signature_and_reaches_the_end` | on any ZIP tail of up to 26 bytes, the end record `end_record` accepts has its signature, its comment reaches the end, and no signature follows it | 26 s |
 | `zip64_fields_never_panic_and_fit_their_field` | `single_zip64_field` never panics on any extra field of up to 20 bytes and returns no more values than fit | 27 s |
 | `every_descriptor_layout_reads_exactly_its_bytes` | each data descriptor length `descriptor_layout` accepts is read in full by `descriptor_values`, inside its bytes | 2 s |
+| `lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need` | `lzma_alone_header` keeps the ZIP LZMA properties byte and the size, and caps the dictionary no lower than the entry or the declared dictionary needs | 3 s |
+| `ppmd_headers_stay_inside_the_decoders_bounds` | every ZIP PPMd header `ppmd8_fields` accepts has an order, model size and restore method the decoder accepts, within its 256 MiB reservation | 1 s |
+| `ppmd_properties_read_only_five_bytes` | `ppmd7_fields` reads exactly five 7z PPMd property bytes and nothing else | 2 s |
 
 Some checks are too heavy for Kani, so exhaustive unit tests cover them:
 
@@ -66,3 +69,6 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | `octal` slices `digits[end + 1..]` | a failed slice bounds check |
 | `end_record` skips the check for a second end signature after the one it picks | `the_end_record_is_the_last_signature_and_reaches_the_end` fails |
 | `descriptor_layout` marks the 20-byte layout as signed | `every_descriptor_layout_reads_exactly_its_bytes` fails |
+| `lzma_alone_header` caps every dictionary at 4096 | `lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need` fails |
+| `ppmd8_fields` drops the smallest-order check | `ppmd_headers_stay_inside_the_decoders_bounds` fails |
+| `ppmd7_fields` accepts more than five bytes | `ppmd_properties_read_only_five_bytes` fails |

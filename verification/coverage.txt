@@ -52,13 +52,36 @@ item = src/native_zip.rs | pub fn read_archive_with_options(
 
 [overwrite]
 skill = .claude/skills/zipper-verify-overwrite/SKILL.md
-fingerprint = 64f177eae88b221f
+fingerprint = 9ace3aa24008ef26
 full-check = cargo test --release --test overwrite_exhaustive ZIPPER_MERGE_STRIDE=1
 item = src/staging.rs | pub(crate) fn stage(
 item = src/staging.rs | impl Staging {
 item = src/staging.rs | fn plan(
 item = src/staging.rs | fn same_filesystem(
+item = src/staging.rs | fn free_name(
+item = src/staging.rs | pub(crate) fn numbered(
+item = src/staging.rs | fn rename_without_replacing(
+item = src/staging.rs | impl Step {
 item = src/lib.rs | pub(crate) fn publish(
+
+[zip-decoder-budget]
+skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
+fingerprint = c41427e187f3e706
+item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
+item = src/native_zip.rs | fn stream_entry(
+item = src/native_zip.rs | pub fn read_archive_with_options(
+item = src/memory.rs | impl Memory {
+item = src/memory.rs | impl Drop for Reservation<'_> {
+
+[link-escape]
+skill = .claude/skills/zipper-verify-links/SKILL.md
+fingerprint = a4e0a4e1b7480923
+full-check = cargo test --release --test link_escape_exhaustive ZIPPER_LINK_STRIDE=1
+item = src/staging.rs | fn ensure_links_stay_in_archive_paths(
+item = src/staging.rs | fn owner_after_publish(
+item = src/staging.rs | fn join_rest(
+item = src/lib.rs | fn create_symlink(
+item = src/lib.rs | fn ensure_link_stays_inside(
 
 [7z-lzma2-segments]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
@@ -71,7 +94,7 @@ item = src/native_7z.rs | impl Read for ParallelLzma2 {
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 15f5a8cf34a6a55f
+fingerprint = c20d331ea34a94aa
 full-check = cargo kani
 item = src/native_7z.rs | struct Malformed {
 item = src/native_7z.rs | fn check(
@@ -83,6 +106,9 @@ item = src/native_zip.rs | fn exact_time(
 item = src/native_zip.rs | fn ntfs_time(
 item = src/native_zip.rs | fn dos_fields(
 item = src/native_zip.rs | fn reading_nearer_dos_time(
+item = src/native_zip.rs | fn lzma_alone_header(
+item = src/native_zip.rs | fn ppmd8_fields(
+item = src/native_7z.rs | fn ppmd7_fields(
 item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) fn field_check(
 item = src/native_tar.rs | fn octal(

@@ -349,21 +349,25 @@ fn allow_replacing(existing: &Path) -> Result<()> {
 
 const LONGEST_NAME: usize = 255;
 
+pub(crate) fn numbered(name: &std::ffi::OsStr, number: u64) -> std::ffi::OsString {
+    let path = Path::new(name);
+    let mut numbered = path.file_stem().unwrap_or_default().to_owned();
+    numbered.push(format!("_{number}"));
+    if let Some(extension) = path.extension() {
+        numbered.push(".");
+        numbered.push(extension);
+    }
+    numbered
+}
+
 fn free_name(
     staging: &Path,
     destination: &Path,
     path: &Path,
     taken: &mut HashSet<PathBuf>,
 ) -> Result<PathBuf> {
-    let stem = path.file_stem().unwrap_or_default();
-    let extension = path.extension();
     for number in 1.. {
-        let mut name = stem.to_owned();
-        name.push(format!("_{number}"));
-        if let Some(extension) = extension {
-            name.push(".");
-            name.push(extension);
-        }
+        let name = numbered(path.file_name().unwrap_or_default(), number);
         #[cfg(windows)]
         let length = std::os::windows::ffi::OsStrExt::encode_wide(name.as_os_str()).count();
         #[cfg(not(windows))]
@@ -465,6 +469,44 @@ fn kind(metadata: &fs::Metadata) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbered_names_are_new_distinct_and_keep_their_extension_on_every_short_name() {
+        let mut names = vec![String::new()];
+        for _ in 0..5 {
+            names = names
+                .iter()
+                .flat_map(|name| ['a', '.', '_', '1'].map(|character| format!("{name}{character}")))
+                .collect();
+            for name in names.iter().filter(|name| {
+                Path::new(name.as_str()).file_name() == Some(std::ffi::OsStr::new(name.as_str()))
+            }) {
+                let original = Path::new(name.as_str());
+                let mut seen = HashSet::new();
+                for number in 1..=12 {
+                    let renamed = numbered(original.as_os_str(), number);
+                    let renamed_path = Path::new(&renamed);
+                    assert_ne!(
+                        renamed.as_os_str(),
+                        original.as_os_str(),
+                        "{name:?} {number}"
+                    );
+                    assert!(seen.insert(renamed.clone()), "{name:?} repeats at {number}");
+                    assert_eq!(renamed_path.extension(), original.extension(), "{name:?}");
+                    assert_eq!(
+                        renamed_path.file_name(),
+                        Some(renamed.as_os_str()),
+                        "{name:?}"
+                    );
+                    assert_eq!(
+                        renamed.len(),
+                        name.len() + format!("_{number}").len(),
+                        "{name:?}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn a_rename_into_place_never_replaces_what_appeared_there() {

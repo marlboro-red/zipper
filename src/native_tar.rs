@@ -1354,3 +1354,35 @@ mod proofs {
         }
     }
 }
+
+#[cfg(test)]
+mod bzip2_stream_tests {
+    use super::*;
+
+    fn stream(bytes: usize) -> Vec<u8> {
+        let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::fast());
+        encoder.write_all(&vec![b'z'; bytes]).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn each_stream_after_the_first_needs_its_share_of_output() {
+        for first in [0, 1, 4095, 4096, 8191, 8192] {
+            for count in 1..=4u64 {
+                let mut input = stream(first);
+                for _ in 1..count {
+                    input.extend(stream(0));
+                }
+                let mut output = Vec::new();
+                let read = decode(std::io::Cursor::new(input), Compression::Bzip2)
+                    .unwrap()
+                    .read_to_end(&mut output);
+                let allowed = count - 1 <= first as u64 / BZIP2_OUTPUT_PER_EXTRA_STREAM;
+                assert_eq!(read.is_ok(), allowed, "{count} streams after {first} bytes");
+                if allowed {
+                    assert_eq!(output.len(), first);
+                }
+            }
+        }
+    }
+}
