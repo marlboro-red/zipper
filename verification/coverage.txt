@@ -33,18 +33,18 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = c422e356d8604412
+fingerprint = 08f6e17cdbad22b7
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
-item = src/native_7z.rs | struct Memory {
-item = src/native_7z.rs | impl Memory {
-item = src/native_7z.rs | struct Reservation<'a> {
-item = src/native_7z.rs | impl Drop for Reservation<'_> {
+item = src/memory.rs | pub(crate) struct Memory {
+item = src/memory.rs | impl Memory {
+item = src/memory.rs | pub(crate) struct Reservation<'a> {
+item = src/memory.rs | impl Drop for Reservation<'_> {
 item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 03102aafd4b0d3e7
+fingerprint = befec16a78489652
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
 item = src/progress.rs | impl<'a> Tracker<'a> {

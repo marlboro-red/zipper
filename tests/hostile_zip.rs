@@ -1170,3 +1170,116 @@ fn windows_link_targets_are_plain_relative_names() {
         assert_rejected_without_leftovers(target, &[symlink("link", target)]);
     }
 }
+
+fn compressed(name: &str, data: &[u8], method: u16, payload: Vec<u8>) -> Raw {
+    Raw {
+        method,
+        payload,
+        ..stored(name, data)
+    }
+}
+
+fn method_payloads(data: &[u8]) -> Vec<(&'static str, u16, Vec<u8>)> {
+    use std::io::Write as _;
+    let mut bzip2 = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::best());
+    bzip2.write_all(data).unwrap();
+    let mut xz = liblzma::write::XzEncoder::new(Vec::new(), 6);
+    xz.write_all(data).unwrap();
+    vec![
+        ("zstandard", 93, zstd::encode_all(data, 3).unwrap()),
+        ("bzip2", 12, bzip2.finish().unwrap()),
+        ("xz", 95, xz.finish().unwrap()),
+    ]
+}
+
+#[test]
+fn other_methods_decode_exactly_and_refuse_damage() {
+    let data: Vec<u8> = (0..20_000u32)
+        .flat_map(|n| (n % 251).to_le_bytes())
+        .collect();
+    for (method_name, method, payload) in method_payloads(&data) {
+        for (reader, read) in [
+            ("native", read_archive as Reader),
+            ("native-fast", read_archive_fast as Reader),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let archive = root.path().join("ok.zip");
+            write_zip(&archive, &[compressed("f", &data, method, payload.clone())]);
+            read(&archive, Some(&root.path().join("out")))
+                .unwrap_or_else(|error| panic!("{method_name} {reader}: {error:#}"));
+            assert_eq!(
+                fs::read(root.path().join("out/f")).unwrap(),
+                data,
+                "{method_name}"
+            );
+        }
+        for cut in (0..payload.len()).step_by(payload.len().div_ceil(40)) {
+            assert_rejected_without_leftovers(
+                &format!("{method_name} cut to {cut}"),
+                &[compressed("f", &data, method, payload[..cut].to_vec())],
+            );
+        }
+        let mut trailing = payload.clone();
+        trailing.extend_from_slice(b"junk");
+        assert_rejected_without_leftovers(
+            &format!("{method_name} with data after its stream"),
+            &[compressed("f", &data, method, trailing)],
+        );
+        assert_rejected_without_leftovers(
+            &format!("{method_name} with a wrong CRC"),
+            &[Raw {
+                crc: crc32fast::hash(&data) ^ 1,
+                ..compressed("f", &data, method, payload.clone())
+            }],
+        );
+        assert_rejected_without_leftovers(
+            &format!("{method_name} declaring less output"),
+            &[Raw {
+                size: data.len() as u32 - 1,
+                ..compressed("f", &data, method, payload.clone())
+            }],
+        );
+    }
+}
+
+#[test]
+fn deflate64_streams_must_end_exactly_at_their_compressed_size() {
+    use std::io::Write as _;
+    const DEFLATE64: u16 = 9;
+    let data: Vec<u8> = (0..3000u32).map(|n| (n * 7 % 256) as u8).collect();
+    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::none());
+    encoder.write_all(&data).unwrap();
+    let stream = encoder.finish().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("ok.zip");
+    write_zip(
+        &archive,
+        &[compressed("f", &data, DEFLATE64, stream.clone())],
+    );
+    read_archive(&archive, Some(&root.path().join("out"))).unwrap();
+    assert_eq!(fs::read(root.path().join("out/f")).unwrap(), data);
+    for cut in [0, 1, stream.len() / 2, stream.len() - 1] {
+        assert_rejected_without_leftovers(
+            &format!("Deflate64 cut to {cut}"),
+            &[compressed("f", &data, DEFLATE64, stream[..cut].to_vec())],
+        );
+    }
+    for junk in [&b"\x01"[..], b"\xff\xff", b"\x00\x00"] {
+        let mut padded = stream.clone();
+        padded.extend_from_slice(junk);
+        assert_rejected_without_leftovers(
+            &format!("Deflate64 with {} junk bytes", junk.len()),
+            &[compressed("f", &data, DEFLATE64, padded)],
+        );
+    }
+    let mut no_final = vec![0x00, 3, 0, !3u8, !0u8];
+    no_final.extend_from_slice(b"abc");
+    assert_rejected_without_leftovers(
+        "Deflate64 without a final block",
+        &[compressed("f", b"abc", DEFLATE64, no_final)],
+    );
+    assert_rejected_without_leftovers(
+        "empty Deflate64 data",
+        &[compressed("f", b"", DEFLATE64, Vec::new())],
+    );
+}

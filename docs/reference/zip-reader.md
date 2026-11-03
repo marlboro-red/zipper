@@ -12,7 +12,7 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 
 The reader supports these features:
 
-- Stored and Deflate entries.
+- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard and XZ entries. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
 - Conventional ZIP64.
 - File bytes and directories.
 - Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
@@ -22,7 +22,7 @@ The reader does not support these features:
 
 - Encryption.
 - Symlinks that point outside the destination.
-- Codecs other than stored and Deflate.
+- PPMd, Shrink, Implode and other legacy methods.
 - Multi-disk archives.
 - Ambiguous end records.
 - Data before the first record, such as a self-extracting executable from `zip -A`. The default engine reads it in process and rejects it, because no 7-Zip signature matches.
@@ -171,6 +171,8 @@ Parsed metadata is shared across workers.
 The `native-fast` budget is not a peak RSS cap.
 Metadata, worker state, the archive cache, and allocator-retained memory are additional to it.
 A streamed entry with a writer thread also holds five 1 MiB write buffers, outside the budget.
+An XZ or LZMA entry's dictionary can use as much memory as the entry's size. Before decoding one, a worker reserves that size, at most 2 GiB, from a 2 GiB budget that all workers share, as the 7z reader does. So all XZ and LZMA decoders together use about 2 GiB at most, plus one entry larger than that. An LZMA dictionary larger than its entry is cut to the entry's size, which decodes the same bytes.
+A Deflate64 entry runs two decoders over one read, one without the last compressed byte, so a stream with bytes after its end is refused. It costs about twice the CPU of one decoder.
 
 ## Concurrency
 

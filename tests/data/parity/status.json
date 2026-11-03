@@ -266,19 +266,23 @@
       "status": "native"
     },
     "Deflate64": {
-      "status": "backend"
+      "status": "native"
     },
     "BZip2": {
-      "status": "backend"
+      "status": "native"
     },
     "LZMA": {
-      "status": "backend"
+      "status": "native"
     },
     "Zstandard": {
-      "status": "backend"
+      "status": "native",
+      "note": "7-Zip 26.05 cannot write it, so the proof is a built entry.",
+      "tests": [
+        "tests/hostile_zip.rs::other_methods_decode_exactly_and_refuse_damage"
+      ]
     },
     "XZ": {
-      "status": "backend"
+      "status": "native"
     },
     "PPMd": {
       "status": "backend"

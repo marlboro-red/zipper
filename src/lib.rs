@@ -2,6 +2,7 @@ pub mod compat;
 pub mod counters;
 pub mod duplicates;
 mod extract;
+mod memory;
 pub mod native_7z;
 pub mod native_stream;
 pub mod native_tar;

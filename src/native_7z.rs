@@ -9,7 +9,7 @@ use std::{
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
-        Arc, Condvar, Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc::{Receiver, sync_channel},
     },
@@ -1444,49 +1444,6 @@ fn decode_segment(
     Ok(decoded)
 }
 
-struct Memory {
-    total: u64,
-    available: Mutex<u64>,
-    released: Condvar,
-}
-
-impl Memory {
-    fn reserve(&self, wanted: u64) -> Reservation<'_> {
-        let amount = wanted.min(self.total);
-        let mut available = self
-            .available
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        while *available < amount {
-            available = self
-                .released
-                .wait(available)
-                .unwrap_or_else(|poison| poison.into_inner());
-        }
-        *available -= amount;
-        Reservation {
-            memory: self,
-            amount,
-        }
-    }
-}
-
-struct Reservation<'a> {
-    memory: &'a Memory,
-    amount: u64,
-}
-
-impl Drop for Reservation<'_> {
-    fn drop(&mut self) {
-        *self
-            .memory
-            .available
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner()) += self.amount;
-        self.memory.released.notify_all();
-    }
-}
-
 /// List the entries the 7z header describes. Payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
     let (_, archive) = open(path)?;
@@ -1575,11 +1532,7 @@ pub fn read_archive(
         })
         .collect();
     wanted.sort_unstable_by_key(|&folder| std::cmp::Reverse(archive.folders[folder].size));
-    let memory = Memory {
-        total: DECODER_MEMORY,
-        available: Mutex::new(DECODER_MEMORY),
-        released: Condvar::new(),
-    };
+    let memory = crate::memory::Memory::new(DECODER_MEMORY);
     let targets = Mutex::new(Vec::new());
     let threads = options
         .threads

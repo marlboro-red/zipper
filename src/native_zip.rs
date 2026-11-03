@@ -536,8 +536,8 @@ fn scan(
         }
         ensure!(
             matches!(
-                file.compression(),
-                CompressionMethod::Stored | CompressionMethod::Deflated
+                method_code(file.compression()),
+                STORED | DEFLATE | DEFLATE64 | BZIP2 | LZMA | ZSTANDARD | XZ
             ),
             "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
@@ -761,10 +761,7 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
         flags & 1 == 0,
         "ZIP local header is encrypted but its central entry is not"
     );
-    let method = match item.method {
-        CompressionMethod::Stored => 0,
-        _ => 8,
-    };
+    let method = method_code(item.method);
     ensure!(
         item.stored_name_is(&name) && read16(8) == method,
         "ZIP local header disagrees with central directory"
@@ -1004,11 +1001,121 @@ fn write_behind(
     })
 }
 
+// SPEC(APPNOTE 4.4.5): compression method numbers.
+const STORED: u16 = 0;
+const DEFLATE: u16 = 8;
+const DEFLATE64: u16 = 9;
+const BZIP2: u16 = 12;
+const LZMA: u16 = 14;
+const ZSTANDARD: u16 = 93;
+const XZ: u16 = 95;
+const OTHER_METHOD_INPUT: usize = 256 * 1024;
+const LZMA_SMALLEST_DICTIONARY: u64 = 4096;
+const ZIP_DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
+
+fn inflate64(
+    input: &mut impl Read,
+    compressed: u64,
+    buffer: &mut [u8],
+    mut emit: impl FnMut(&[u8]) -> Result<()>,
+) -> Result<()> {
+    let (input_buffer, outputs) = buffer.split_at_mut(512 * 1024);
+    let (output, spare_output) = outputs.split_at_mut(outputs.len() / 2);
+    let mut whole = deflate64::InflaterManaged::new();
+    let mut without_last_byte = deflate64::InflaterManaged::new();
+    let (mut position, mut used) = (0u64, 0u64);
+    loop {
+        let length = input.read(input_buffer)?;
+        if length == 0 {
+            break;
+        }
+        let chunk = &input_buffer[..length];
+        used += inflate64_chunk(&mut whole, chunk, output, &mut emit)?;
+        let before_last = compressed.saturating_sub(1).saturating_sub(position);
+        let shorter = &chunk[..length.min(usize::try_from(before_last).unwrap_or(usize::MAX))];
+        inflate64_chunk(&mut without_last_byte, shorter, spare_output, &mut |_| {
+            Ok(())
+        })?;
+        position += length as u64;
+    }
+    ensure!(
+        whole.finished() && used == compressed,
+        "truncated ZIP Deflate64 stream"
+    );
+    ensure!(
+        compressed == 0 || !without_last_byte.input_finished(),
+        "ZIP Deflate64 stream has data after its end"
+    );
+    Ok(())
+}
+
+fn inflate64_chunk(
+    inflater: &mut deflate64::InflaterManaged,
+    mut bytes: &[u8],
+    output: &mut [u8],
+    emit: &mut dyn FnMut(&[u8]) -> Result<()>,
+) -> Result<u64> {
+    let mut used = 0;
+    loop {
+        let result = inflater.inflate(bytes, output);
+        ensure!(!result.data_error, "invalid ZIP Deflate64 data");
+        used += result.bytes_consumed as u64;
+        bytes = &bytes[result.bytes_consumed..];
+        emit(&output[..result.bytes_written])?;
+        if result.bytes_consumed == 0 && result.bytes_written == 0 {
+            return Ok(used);
+        }
+    }
+}
+
+#[expect(
+    deprecated,
+    reason = "the zip crate names other methods only behind features this build leaves off"
+)]
+fn method_code(method: CompressionMethod) -> u16 {
+    method.to_u16()
+}
+
+fn method_decoder<'a>(
+    item: &Item,
+    input: &'a mut std::io::BufReader<&mut dyn Read>,
+) -> Result<Box<dyn Read + 'a>> {
+    Ok(match method_code(item.method) {
+        BZIP2 => Box::new(bzip2::bufread::BzDecoder::new(input)),
+        ZSTANDARD => Box::new(zstd::stream::read::Decoder::with_buffer(input)?.single_frame()),
+        XZ => Box::new(liblzma::bufread::XzDecoder::new(input)),
+        LZMA => {
+            let mut prefix = [0u8; 9];
+            input
+                .read_exact(&mut prefix)
+                .context("truncated ZIP LZMA header")?;
+            // SPEC(APPNOTE 5.8.8): two version bytes, a two-byte properties size of 5, then the properties.
+            ensure!(
+                u16::from_le_bytes([prefix[2], prefix[3]]) == 5,
+                "unsupported ZIP LZMA properties size"
+            );
+            let mut header = [0u8; 13];
+            header[..5].copy_from_slice(&prefix[4..]);
+            let dictionary = u32::from_le_bytes(header[1..5].try_into().unwrap());
+            let needed =
+                u32::try_from(item.entry.size.max(LZMA_SMALLEST_DICTIONARY)).unwrap_or(u32::MAX);
+            header[1..5].copy_from_slice(&dictionary.min(needed).to_le_bytes());
+            header[5..].copy_from_slice(&item.entry.size.to_le_bytes());
+            Box::new(liblzma::bufread::XzDecoder::new_stream(
+                std::io::Cursor::new(header).chain(input),
+                liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
+            ))
+        }
+        other => anyhow::bail!("ZIP compression method {other} is not supported"),
+    })
+}
+
 fn stream_entry(
     input: &mut impl Read,
     item: &Item,
     descriptor: bool,
     buffer: &mut [u8],
+    decoder_memory: &crate::memory::Memory,
     mut sink: impl FnMut(&[u8]) -> Result<()>,
 ) -> Result<()> {
     let mut crc = crc32fast::Hasher::new();
@@ -1040,6 +1147,28 @@ fn stream_entry(
             }
             emit(chunk)?;
         }
+    } else if method_code(item.method) == DEFLATE64 {
+        inflate64(input, item.compressed, buffer, emit)?;
+    } else if method_code(item.method) != DEFLATE {
+        let _reservation = matches!(method_code(item.method), XZ | LZMA)
+            .then(|| decoder_memory.reserve(item.entry.size));
+        let input: &mut dyn Read = input;
+        let mut input = std::io::BufReader::with_capacity(OTHER_METHOD_INPUT, input);
+        let mut decoder = method_decoder(item, &mut input)?;
+        loop {
+            let length = decoder
+                .read(buffer)
+                .context("invalid ZIP compressed data")?;
+            if length == 0 {
+                break;
+            }
+            emit(&buffer[..length])?;
+        }
+        drop(decoder);
+        ensure!(
+            std::io::BufRead::fill_buf(&mut input)?.is_empty(),
+            "ZIP compressed stream ends before its compressed size"
+        );
     } else {
         let (input_buffer, output_buffer) = buffer.split_at_mut(512 * 1024);
         let mut inflater = flate2::Decompress::new(false);
@@ -1146,6 +1275,7 @@ pub fn read_archive_with_options(
         "ZIP threads must be 1..64"
     );
     let fast = options.fast;
+    let decoder_memory = crate::memory::Memory::new(ZIP_DECODER_MEMORY);
     let budget = Budget(AtomicUsize::new(options.buffer_bytes.unwrap_or(
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             128 * 1024 * 1024
@@ -1265,7 +1395,7 @@ pub fn read_archive_with_options(
                 let mut source = Read::take(&mut *raw, item.compressed);
                 if item.symlink {
                     let mut target = Vec::new();
-                    stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                    stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
                         target.extend_from_slice(bytes);
                         Ok(())
                     })?;
@@ -1326,7 +1456,7 @@ pub fn read_archive_with_options(
                     && let Some(unwritten) = output.take()
                 {
                     let mut written = write_behind(unwritten, |sink| {
-                        stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                        stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
                             tracker.add_bytes(bytes.len() as u64)?;
                             sink(bytes)
                         })
@@ -1335,7 +1465,7 @@ pub fn read_archive_with_options(
                     finish(&mut written, item)?;
                     return finished(item);
                 }
-                stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
                     tracker.add_bytes(bytes.len() as u64)?;
                     if let Some(output) = &mut output {
                         output.write_all(bytes)?;
