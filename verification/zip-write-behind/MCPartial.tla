@@ -1,0 +1,3 @@
+---- MODULE MCPartial ----
+EXTENDS WriteBehind
+====

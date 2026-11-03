@@ -185,7 +185,7 @@ Verification-only reads and larger files keep their existing concurrency.
 Windows uses one worker under the same conditions when one folder holds at least 1,024 of the files, because parallel creation in one folder was slower than serial there. Linux has no cap.
 The [small-file ZIP versus bsdtar measurements](../../benchmarks/native-zip/bsdtar-comparison.md) and the [Linux and Windows scoreboard](../../benchmarks/cross-platform/scoreboard-2026-11-02/README.md) record the evidence.
 
-A streamed entry of at least 16 MiB gets a writer thread when the pool has more threads than entries with a payload. Every entry that is not a directory counts, including symlinks. The worker then decodes while the writer thread writes, so the number of busy threads never exceeds `--threads`. Spare threads are counted once, before extraction starts. `--threads 1` never gets a writer thread. The [write-behind measurements](../../benchmarks/native-zip/write-behind/README.md) record the evidence.
+A streamed entry of at least 16 MiB gets a writer thread when the pool has more threads than entries with a payload. Every entry that is not a directory counts, including symlinks. The worker then decodes while the writer thread writes, so the number of busy threads never exceeds `--threads`. Spare threads are counted once, before extraction starts. `--threads 1` never gets a writer thread. The [write-behind measurements](../../benchmarks/native-zip/write-behind/README.md) record the evidence. A TLA+ model in `verification/zip-write-behind/` checks every order of the two threads' steps, within a bound, for hangs, lost or reordered buffers, a misreported error and unbounded buffers. The `zipper-verify-zip-write-behind` skill in `.claude/skills/` runs it.
 
 ## Input read-ahead
 
