@@ -49,7 +49,7 @@ enum Command {
         /// Extract into an existing directory, replacing files of the same name.
         #[arg(long)]
         overwrite: bool,
-        /// Extract an exact archive path or directory subtree (v2 only; repeatable).
+        /// Extract an exact archive path or folder subtree (.zipper v2 and ZIP; repeatable).
         #[arg(long = "path")]
         paths: Vec<String>,
         /// Refuse archives whose declared output exceeds this many bytes. By
@@ -166,7 +166,7 @@ fn main() -> Result<()> {
             } else {
                 zipper::Existing::Refuse
             };
-            if !paths.is_empty() || zipper::compat::is_native(&archive)? {
+            if zipper::compat::is_native(&archive)? {
                 zipper::extract_with(&archive, &output, &paths, max_extracted_bytes, existing)?;
             } else {
                 match choose_reader(cli.zip_engine, &archive)? {
@@ -180,8 +180,12 @@ fn main() -> Result<()> {
                                 buffer_bytes,
                                 max_output_bytes: max_extracted_bytes,
                                 existing,
+                                paths: &paths,
                             },
                         )?;
+                    }
+                    Reader::Tar | Reader::Backend { .. } if !paths.is_empty() => {
+                        anyhow::bail!("--path needs a .zipper or ZIP archive")
                     }
                     Reader::Tar => {
                         zipper::native_tar::read_archive(

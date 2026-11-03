@@ -165,7 +165,7 @@ An application can call Zipper as a Rust library to update an installed folder, 
 Scope:
 
 - Extraction into an existing folder, where each archive file replaces the file of the same name by rename. Done with `zipper::Existing::Overwrite` and `zipper extract --overwrite`, in every reader.
-- Selected folders and files from a ZIP archive, as `--path` already does for `.zipper` v2.
+- Selected folders and files from a ZIP archive, as `--path` already does for `.zipper` v2. Done with `paths` in `native_zip::ReadOptions` and `zipper extract --path`.
 - A progress callback that reports entries and bytes written.
 - Cancellation from another thread. A cancelled extraction changes nothing in the destination.
 - One library function that picks the reader for an archive, as `zipper extract` does.

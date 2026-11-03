@@ -133,6 +133,38 @@ fn later_spellings_of_same_directory<'a>(
     Ok(std::collections::HashSet::new())
 }
 
+pub(crate) fn checked_selection(paths: &[String]) -> Result<Vec<&str>> {
+    paths
+        .iter()
+        .map(|path| {
+            let path = path.trim_end_matches('/');
+            safe_path(path)?;
+            Ok(path)
+        })
+        .collect()
+}
+
+pub(crate) fn is_selected(name: &str, selection: &[&str]) -> bool {
+    selection.is_empty()
+        || selection.iter().any(|path| {
+            name.strip_prefix(path)
+                .is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
+        })
+}
+
+pub(crate) fn ensure_each_selected_path_matches<'a>(
+    selection: &[&str],
+    names: impl Iterator<Item = &'a str> + Clone,
+) -> Result<()> {
+    for path in selection {
+        ensure!(
+            names.clone().any(|name| is_selected(name, &[path])),
+            "selected path not found: {path}"
+        );
+    }
+    Ok(())
+}
+
 #[cfg_attr(not(unix), allow(dead_code))]
 #[derive(Clone, Copy)]
 pub(crate) struct Directory<'a> {

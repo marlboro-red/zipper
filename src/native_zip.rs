@@ -1021,7 +1021,7 @@ pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<
 
 /// Native ZIP decoding and concurrency options.
 #[derive(Clone, Copy, Default)]
-pub struct ReadOptions {
+pub struct ReadOptions<'a> {
     /// Use the bounded whole-buffer libdeflate path for eligible entries.
     pub fast: bool,
     /// Override automatic concurrency with a maximum of 1–64 workers.
@@ -1036,6 +1036,9 @@ pub struct ReadOptions {
     pub max_output_bytes: Option<u64>,
     /// What to do when the destination exists.
     pub existing: crate::Existing,
+    /// Exact entry paths or folder subtrees to read. Empty reads every entry.
+    /// Each path must name an entry or a folder that holds one.
+    pub paths: &'a [String],
 }
 
 pub fn read_archive_with_options(
@@ -1066,6 +1069,19 @@ pub fn read_archive_with_options(
     )?;
     let items = scan(&archive, Some(&times), &stored_names)?;
     drop(times);
+    let selection = crate::checked_selection(options.paths)?;
+    crate::ensure_each_selected_path_matches(
+        &selection,
+        items.iter().map(|item| item.entry.name.as_str()),
+    )?;
+    let (selected, skipped): (Vec<_>, Vec<_>) = items
+        .into_iter()
+        .partition(|item| crate::is_selected(&item.entry.name, &selection));
+    let mut headers = archive.clone().into_inner();
+    for item in &skipped {
+        check_local_header(&mut headers, item)?;
+    }
+    let items = selected;
     let staging = match destination {
         Some(destination) => {
             let staging = crate::staging::stage(destination, options.existing)?;

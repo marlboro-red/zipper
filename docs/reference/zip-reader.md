@@ -90,7 +90,7 @@ Both native ZIP modes run these checks before publishing any output:
 - Names are unique and safe, and no file is also used as a directory.
 - A Unicode path extra field (`0x7075`), local or central, names the entry as its stored name does. The `zip` crate renames an entry from the central field and some streaming readers use the local one, so a different name is rejected and left to the compatibility backend. The field may spell a CP437 stored name in UTF-8 when its CRC matches the stored bytes. Readers that honor the field and readers that decode CP437 then reach the same name. bsdtar and 7-Zip use neither on some archives, and they already disagree on CP437 names without a field. A field whose content is not UTF-8 is rejected. A field with a stale CRC must repeat the stored bytes, because readers that check the CRC ignore it.
 
-`list` runs only the central-directory checks, including the central Unicode path and ZIP64 field checks, and the first-record check. It does not read local headers, so it does not detect bytes hidden between records or a Unicode path field present only in a local header. `test` and `extract` detect both.
+`list` runs only the central-directory checks, including the central Unicode path and ZIP64 field checks, and the first-record check. It does not read local headers, so it does not detect bytes hidden between records or a Unicode path field present only in a local header. `test` and `extract` detect both. `extract --path` checks the local header and data descriptor of every entry, but decodes and checks the payload of selected entries only.
 
 ## Reference corpus
 

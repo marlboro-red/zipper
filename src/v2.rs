@@ -431,26 +431,15 @@ pub(super) fn read_archive_limited(
 ) -> Result<Vec<Entry>> {
     let mut file = File::open(path)?;
     let index = read_index(&mut file)?;
-    for name in selected {
-        safe_path(name)?;
-        ensure!(
-            index.items.iter().any(|i| &i.entry.name == name),
-            "selected path not found: {name}"
-        );
-    }
+    let selection = crate::checked_selection(selected)?;
+    crate::ensure_each_selected_path_matches(
+        &selection,
+        index.items.iter().map(|i| i.entry.name.as_str()),
+    )?;
     let items: Vec<_> = index
         .items
         .iter()
-        .filter(|i| {
-            selected.is_empty()
-                || selected.iter().any(|s| {
-                    i.entry.name == *s
-                        || i.entry
-                            .name
-                            .strip_prefix(s)
-                            .is_some_and(|tail| tail.starts_with('/'))
-                })
-        })
+        .filter(|i| crate::is_selected(&i.entry.name, &selection))
         .cloned()
         .collect();
     let mut needed = vec![selected.is_empty(); index.blocks.len()];

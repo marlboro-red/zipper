@@ -72,14 +72,16 @@ Zipper never writes through a link that is already in the destination. A link th
 
 ## Extract selected paths
 
-To extract part of an archive, pass `--path` with an exact path or a directory subtree:
+To extract part of a `.zipper` v2 or ZIP archive, pass `--path` with an exact path or a folder. Repeat it to select more:
 
 ```sh
 target/release/zipper extract backup.zipper --output selected --path data/subdir
+target/release/zipper extract bundle.zip --output selected --path assets/icons --path readme.txt
 ```
 
-`extract --path` decodes only the blocks that intersect the selection.
-It validates those blocks, not unrelated payloads.
+A folder selects everything under it, even when the archive has no entry for the folder itself. Each path must match at least one entry, or the extraction fails before writing anything. `--path` combines with `--overwrite`. Library callers set `paths` in `native_zip::ReadOptions`.
+
+For `.zipper` archives, `extract --path` decodes only the blocks that intersect the selection. For ZIP it decodes only the selected entries. Both validate what they decode, not unrelated payloads. Tar archives refuse `--path`, because a tar stream has no index.
 
 ## Find duplicate files
 
