@@ -1039,6 +1039,8 @@ pub struct ReadOptions<'a> {
     /// Exact entry paths or folder subtrees to read. Empty reads every entry.
     /// Each path must name an entry or a folder that holds one.
     pub paths: &'a [String],
+    /// Progress reports and cancellation.
+    pub control: crate::Control<'a>,
 }
 
 pub fn read_archive_with_options(
@@ -1082,6 +1084,19 @@ pub fn read_archive_with_options(
         check_local_header(&mut headers, item)?;
     }
     let items = selected;
+    let tracker = crate::progress::Tracker::new(
+        options.control,
+        Some(items.iter().filter(|item| !item.entry.directory).count() as u64),
+        Some(items.iter().map(|item| item.entry.size).sum()),
+    );
+    tracker.check()?;
+    let finished = |item: &Item| {
+        if item.entry.directory {
+            tracker.check()
+        } else {
+            tracker.file_done()
+        }
+    };
     let staging = match destination {
         Some(destination) => {
             let staging = crate::staging::stage(destination, options.existing)?;
@@ -1132,6 +1147,7 @@ pub fn read_archive_with_options(
                 )
             },
             |(raw, buffer, codec), &index| {
+                tracker.check()?;
                 let item = &items[index];
                 let LocalRecord {
                     data_start,
@@ -1163,8 +1179,9 @@ pub fn read_archive_with_options(
                         target.extend_from_slice(bytes);
                         Ok(())
                     })?;
+                    tracker.add_bytes(target.len() as u64)?;
                     targets.lock().unwrap().push((index, target));
-                    return Ok(());
+                    return finished(item);
                 }
                 let mut output = if let Some(temp) = &staging {
                     if !item.entry.directory {
@@ -1211,19 +1228,25 @@ pub fn read_archive_with_options(
                         }
                         finish(output, item)?;
                     }
-                    return Ok(());
+                    tracker.add_bytes(item.entry.size)?;
+                    return finished(item);
                 }
                 if item.entry.size >= WRITE_BEHIND_MIN
                     && let Some(writer_thread) = spare_threads.reserve(1)
                     && let Some(unwritten) = output.take()
                 {
                     let mut written = write_behind(unwritten, |sink| {
-                        stream_entry(&mut source, item, descriptor, buffer, sink)
+                        stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                            tracker.add_bytes(bytes.len() as u64)?;
+                            sink(bytes)
+                        })
                     })?;
                     drop(writer_thread);
-                    return finish(&mut written, item);
+                    finish(&mut written, item)?;
+                    return finished(item);
                 }
                 stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                    tracker.add_bytes(bytes.len() as u64)?;
                     if let Some(output) = &mut output {
                         output.write_all(bytes)?;
                     }
@@ -1232,7 +1255,7 @@ pub fn read_archive_with_options(
                 if let Some(output) = &mut output {
                     finish(output, item)?;
                 }
-                Ok(())
+                finished(item)
             },
         )
     };
@@ -1249,6 +1272,7 @@ pub fn read_archive_with_options(
         &items,
         targets.into_inner().unwrap(),
     )?;
+    tracker.check()?;
     if let Some(staging) = staging {
         let directories: Vec<crate::Directory> = items
             .iter()

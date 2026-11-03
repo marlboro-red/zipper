@@ -4,11 +4,13 @@ pub mod duplicates;
 pub mod native_tar;
 pub mod native_zip;
 mod pipeline;
+mod progress;
 mod staging;
 mod v1;
 mod v2;
 mod zip_reader;
 use anyhow::{Context, Result, bail, ensure};
+pub use progress::{Cancelled, Control, Progress};
 pub use staging::Existing;
 use std::{
     fs::File,

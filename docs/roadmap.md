@@ -166,8 +166,8 @@ Scope:
 
 - Extraction into an existing folder, where each archive file replaces the file of the same name by rename. Done with `zipper::Existing::Overwrite` and `zipper extract --overwrite`, in every reader.
 - Selected folders and files from a ZIP archive, as `--path` already does for `.zipper` v2. Done with `paths` in `native_zip::ReadOptions` and `zipper extract --path`.
-- A progress callback that reports entries and bytes written.
-- Cancellation from another thread. A cancelled extraction changes nothing in the destination.
+- A progress callback that reports files and decoded bytes. Done for ZIP and tar with `zipper::Control`.
+- Cancellation from another thread. A cancelled extraction changes nothing in the destination. Done for ZIP and tar, with `tests/control.rs`.
 - One library function that picks the reader for an archive, as `zipper extract` does.
 
 Exit checks:

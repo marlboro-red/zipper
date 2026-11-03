@@ -1,6 +1,7 @@
 //! In-process extraction of plain, gzip, zstd and xz tar archives, published
 //! only after the whole archive reads cleanly. See
 //! `docs/reference/tar-reader.md` for what it accepts and restores.
+use crate::progress::Tracker;
 use crate::{
     Entry,
     counters::{self, Counter},
@@ -45,7 +46,7 @@ pub enum Compression {
 
 /// Tar extraction options.
 #[derive(Clone, Copy, Default)]
-pub struct ReadOptions {
+pub struct ReadOptions<'a> {
     /// Cap on declared output bytes. Without it, extraction must fit in the
     /// destination filesystem's free space.
     pub max_output_bytes: Option<u64>,
@@ -54,6 +55,8 @@ pub struct ReadOptions {
     pub writers: Option<usize>,
     /// What to do when the destination exists.
     pub existing: crate::Existing,
+    /// Progress reports and cancellation.
+    pub control: crate::Control<'a>,
 }
 
 #[derive(Default)]
@@ -628,6 +631,7 @@ struct Extraction<'a, 'f> {
     symlinks: Vec<(String, String)>,
     entries: Vec<Entry>,
     budget: Budget,
+    tracker: Tracker<'a>,
 }
 
 fn entry_name(raw: &str) -> &str {
@@ -639,7 +643,7 @@ fn entry_name(raw: &str) -> &str {
 }
 
 impl<'a, 'f> Extraction<'a, 'f> {
-    fn new(output: Option<Output<'a, 'f>>, budget: Budget) -> Self {
+    fn new(output: Option<Output<'a, 'f>>, budget: Budget, tracker: Tracker<'a>) -> Self {
         Extraction {
             output,
             nodes: HashMap::new(),
@@ -651,6 +655,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             symlinks: Vec::new(),
             entries: Vec::new(),
             budget,
+            tracker,
         }
     }
 
@@ -723,7 +728,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
     ) -> Result<()> {
         self.budget.charge(size)?;
         let Some(Output { root, writers }) = self.output else {
-            return input.copy(size, |_| Ok(()));
+            return input.copy(size, |bytes| self.tracker.add_bytes(bytes.len() as u64));
         };
         self.create_parent(name)?;
         if replaces {
@@ -738,6 +743,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             let mut chunk = writers.flight.take(remaining.min(CHUNK as u64) as usize);
             input.fill(&mut chunk.data)?;
             remaining -= chunk.data.len() as u64;
+            self.tracker.add_bytes(chunk.data.len() as u64)?;
             if let Some(chunks) = &stream {
                 chunks.send(chunk).map_err(|_| writers.stopped())?;
             } else {
@@ -887,7 +893,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
                     size,
                     directory: false,
                 });
-                return Ok(());
+                return self.tracker.file_done();
             }
             b'1' => {
                 ensure!(size == 0, "tar hard link {name:?} has data");
@@ -933,6 +939,9 @@ impl<'a, 'f> Extraction<'a, 'f> {
             size: 0,
             directory,
         });
+        if !directory {
+            self.tracker.file_done()?;
+        }
         Ok(())
     }
 }
@@ -940,6 +949,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
 fn parse(extraction: &mut Extraction, input: &mut Input) -> Result<()> {
     let mut extensions = Extensions::default();
     loop {
+        extraction.tracker.check()?;
         let block = input
             .block()?
             .context("tar ends without its end-of-archive marker")?;
@@ -1016,7 +1026,8 @@ pub fn read_archive(
         buffer: vec![0; COPY_BUFFER],
     };
     let Some(staging) = staging else {
-        let mut extraction = Extraction::new(None, budget);
+        let mut extraction =
+            Extraction::new(None, budget, Tracker::new(options.control, None, None));
         parse(&mut extraction, &mut input)?;
         return Ok(extraction.entries);
     };
@@ -1052,13 +1063,20 @@ pub fn read_archive(
             root: staging.path(),
             writers: &writers,
         };
-        let mut extraction = Extraction::new(Some(output), budget);
-        let parsed = parse(&mut extraction, &mut input);
+        let mut extraction = Extraction::new(
+            Some(output),
+            budget,
+            Tracker::new(options.control, None, None),
+        );
+        let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            parse(&mut extraction, &mut input)
+        }));
         writers.close();
         let joined: Vec<_> = threads.into_iter().map(|thread| thread.join()).collect();
-        parsed?;
+        parsed.unwrap_or_else(|panic| std::panic::resume_unwind(panic))?;
         ensure!(joined.iter().all(Result::is_ok), "a tar writer panicked");
         writers.check()?;
+        extraction.tracker.check()?;
         publish(&extraction, &staging)?;
         Ok(extraction.entries)
     })

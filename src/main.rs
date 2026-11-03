@@ -181,6 +181,7 @@ fn main() -> Result<()> {
                                 max_output_bytes: max_extracted_bytes,
                                 existing,
                                 paths: &paths,
+                                ..Default::default()
                             },
                         )?;
                     }
@@ -195,6 +196,7 @@ fn main() -> Result<()> {
                                 max_output_bytes: max_extracted_bytes,
                                 writers: cli.threads,
                                 existing,
+                                ..Default::default()
                             },
                         )?;
                     }
