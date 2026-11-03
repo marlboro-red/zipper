@@ -110,6 +110,15 @@ fn end_of_braced_body_or_semicolon(text: &str) -> usize {
     bytes.len()
 }
 
+// EXTERNAL(Git on Windows): checkouts can turn LF into CRLF.
+fn fnv1a(mut hash: u64, bytes: impl Iterator<Item = u8>) -> u64 {
+    for byte in bytes.filter(|&byte| byte != b'\r') {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 fn fingerprint(root: &Path, verification: &Verification) -> Result<String> {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for (path, opening) in &verification.items {
@@ -122,10 +131,7 @@ fn fingerprint(root: &Path, verification: &Verification) -> Result<String> {
             verification.name
         );
         for text in texts {
-            for byte in path.bytes().chain(text.bytes()) {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-            }
+            hash = fnv1a(hash, path.bytes().chain(text.bytes()));
         }
     }
     Ok(format!("{hash:016x}"))
@@ -204,6 +210,11 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_endings_do_not_change_a_fingerprint() {
+        assert_eq!(fnv1a(1, "a\r\nb\r\n".bytes()), fnv1a(1, "a\nb\n".bytes()));
+    }
 
     #[test]
     fn items_end_at_their_closing_brace_or_semicolon() {
