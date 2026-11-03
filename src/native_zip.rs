@@ -1,5 +1,6 @@
 //! Opt-in ZIP extraction of stored and Deflate entries, published only after
 //! full verification. See `docs/reference/zip-reader.md` for what it restores.
+use crate::{BadField, Field, field_check};
 use crate::{
     Entry,
     counters::{self, Counter},
@@ -180,22 +181,8 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredN
     file.seek(SeekFrom::End(-(tail_size as i64)))?;
     let mut tail = vec![0; tail_size];
     file.read_exact(&mut tail)?;
-    let end = (0..=tail.len() - 22)
-        .rev()
-        .find(|&i| {
-            tail[i..i + 4] == *b"PK\x05\x06"
-                && i + 22 + u16::from_le_bytes(tail[i + 20..i + 22].try_into().unwrap()) as usize
-                    == tail.len()
-        })
-        .context("ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend")?;
+    let end = end_record(&tail)?;
     let eocd = length - tail_size as u64 + end as u64;
-    // EXTERNAL(zip crate): it accepts trailing data and may pick an end record inside a comment.
-    ensure!(
-        !tail[end + 4..]
-            .windows(4)
-            .any(|bytes| bytes == b"PK\x05\x06"),
-        "ZIP has ambiguous end records"
-    );
     let read16 = |at| u16::from_le_bytes(tail[end + at..end + at + 2].try_into().unwrap());
     let read32 = |at| u32::from_le_bytes(tail[end + at..end + at + 4].try_into().unwrap());
     ensure!(
@@ -287,6 +274,31 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredN
     ensure!(position == directory_end, "ZIP directory count mismatch");
     file.seek(SeekFrom::Start(0))?;
     Ok((count, times, stored_names))
+}
+
+const END_RECORD: usize = 22;
+const END_SIGNATURE: &[u8; 4] = b"PK\x05\x06";
+
+fn end_record(tail: &[u8]) -> Field<usize> {
+    let comment = |at: usize| usize::from(u16::from_le_bytes([tail[at + 20], tail[at + 21]]));
+    let end = (0..=tail.len().saturating_sub(END_RECORD))
+        .rev()
+        .find(|&at| {
+            tail.len() >= at + END_RECORD
+                && tail[at..at + 4] == *END_SIGNATURE
+                && at + END_RECORD + comment(at) == tail.len()
+        })
+        .ok_or(BadField(
+            "ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend",
+        ))?;
+    // EXTERNAL(zip crate): it accepts trailing data and may pick an end record inside a comment.
+    field_check(
+        !tail[end + 4..]
+            .windows(4)
+            .any(|bytes| bytes == END_SIGNATURE),
+        "ZIP has ambiguous end records",
+    )?;
+    Ok(end)
 }
 
 struct EntryTime {
@@ -607,30 +619,44 @@ fn scan(
 }
 
 fn assign_record_limits(items: &mut [Item], central_start: u64) -> Result<()> {
-    let mut order: Vec<usize> = (0..items.len()).collect();
-    order.sort_unstable_by_key(|&index| items[index].header_start);
-    let first = order
-        .first()
-        .map_or(central_start, |&index| items[index].header_start);
-    ensure!(
-        first == 0,
-        "ZIP has bytes before its first record, as a self-extractor does; pass --zip-engine backend to read it with 7-Zip"
-    );
-    let ends = order.iter().skip(1).map(|&index| items[index].header_start);
-    let limits: Vec<u64> = ends.chain(std::iter::once(central_start)).collect();
-    for (&index, limit) in order.iter().zip(limits) {
-        let item = &mut items[index];
-        let minimum = item
-            .header_start
-            .checked_add(LOCAL_HEADER + item.stored_name_len() as u64)
-            .and_then(|end| end.checked_add(item.compressed));
-        ensure!(
-            minimum.is_some_and(|end| end <= limit),
-            "overlapping ZIP entries"
-        );
+    let records: Vec<_> = items
+        .iter()
+        .map(|item| {
+            let span = (LOCAL_HEADER + item.stored_name_len() as u64).checked_add(item.compressed);
+            (item.header_start, span)
+        })
+        .collect();
+    for (item, limit) in items
+        .iter_mut()
+        .zip(record_limits(&records, central_start)?)
+    {
         item.next_record_start = limit;
     }
     Ok(())
+}
+
+fn record_limits(records: &[(u64, Option<u64>)], central_start: u64) -> Field<Vec<u64>> {
+    let mut order: Vec<usize> = (0..records.len()).collect();
+    order.sort_unstable_by_key(|&index| records[index].0);
+    let first = order
+        .first()
+        .map_or(central_start, |&index| records[index].0);
+    field_check(
+        first == 0,
+        "ZIP has bytes before its first record, as a self-extractor does; pass --zip-engine backend to read it with 7-Zip",
+    )?;
+    let ends = order.iter().skip(1).map(|&index| records[index].0);
+    let mut limits = vec![0; records.len()];
+    for (&index, limit) in order.iter().zip(ends.chain(std::iter::once(central_start))) {
+        let (start, span) = records[index];
+        field_check(
+            span.and_then(|span| start.checked_add(span))
+                .is_some_and(|end| end <= limit),
+            "overlapping ZIP entries",
+        )?;
+        limits[index] = limit;
+    }
+    Ok(limits)
 }
 
 const CP437_HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
@@ -678,7 +704,7 @@ fn unicode_path_respells_name(mut extra: &[u8], stored_name: &[u8]) -> Result<bo
     Ok(renames)
 }
 
-fn single_zip64_field(mut extra: &[u8]) -> Result<Vec<u64>> {
+fn single_zip64_field(mut extra: &[u8]) -> Field<Vec<u64>> {
     let mut values = Vec::new();
     let mut seen = false;
     while extra.len() >= 4 {
@@ -686,9 +712,9 @@ fn single_zip64_field(mut extra: &[u8]) -> Result<Vec<u64>> {
         let length = u16::from_le_bytes([extra[2], extra[3]]) as usize;
         let body = extra
             .get(4..4 + length)
-            .context("truncated ZIP extra field")?;
+            .ok_or(BadField("truncated ZIP extra field"))?;
         if id == 1 {
-            ensure!(!seen, "ZIP entry has two ZIP64 extra fields");
+            field_check(!seen, "ZIP entry has two ZIP64 extra fields")?;
             seen = true;
             values.extend(
                 body.chunks_exact(8)
@@ -698,6 +724,33 @@ fn single_zip64_field(mut extra: &[u8]) -> Result<Vec<u64>> {
         extra = &extra[4 + length..];
     }
     Ok(values)
+}
+
+const DESCRIPTOR_SIGNATURE: &[u8; 4] = b"PK\x07\x08";
+
+fn descriptor_layout(tail: u64) -> Field<(bool, bool)> {
+    match tail {
+        12 => Ok((false, false)),
+        16 => Ok((true, false)),
+        20 => Ok((false, true)),
+        24 => Ok((true, true)),
+        _ => Err(BadField("ZIP data descriptor has an unexpected length")),
+    }
+}
+
+fn descriptor_values(descriptor: &[u8], signature: bool, wide: bool) -> Field<[u64; 3]> {
+    field_check(
+        !signature || descriptor.starts_with(DESCRIPTOR_SIGNATURE),
+        "invalid ZIP data descriptor",
+    )?;
+    let body = &descriptor[if signature { 4 } else { 0 }..];
+    let field = |at: usize, width: usize| {
+        let mut bytes = [0; 8];
+        bytes[..width].copy_from_slice(&body[at..at + width]);
+        u64::from_le_bytes(bytes)
+    };
+    let width = if wide { 8 } else { 4 };
+    Ok([field(0, 4), field(4, width), field(4 + width, width)])
 }
 
 struct LocalRecord {
@@ -771,31 +824,13 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
             has_descriptor: false,
         });
     }
-    let (signature, wide) = match tail {
-        12 => (false, false),
-        16 => (true, false),
-        20 => (false, true),
-        24 => (true, true),
-        _ => anyhow::bail!("ZIP data descriptor has an unexpected length"),
-    };
+    let (signature, wide) = descriptor_layout(tail)?;
     reader.seek(SeekFrom::Start(data_end))?;
     let mut descriptor = vec![0; tail as usize];
     reader.read_exact(&mut descriptor)?;
     ensure!(
-        !signature || descriptor.starts_with(b"PK\x07\x08"),
-        "invalid ZIP data descriptor"
-    );
-    let body = &descriptor[if signature { 4 } else { 0 }..];
-    let field = |at: usize, width: usize| {
-        let mut bytes = [0; 8];
-        bytes[..width].copy_from_slice(&body[at..at + width]);
-        u64::from_le_bytes(bytes)
-    };
-    let width = if wide { 8 } else { 4 };
-    ensure!(
-        field(0, 4) == item.crc as u64
-            && field(4, width) == item.compressed
-            && field(4 + width, width) == item.entry.size,
+        descriptor_values(&descriptor, signature, wide)?
+            == [item.crc as u64, item.compressed, item.entry.size],
         "ZIP data descriptor disagrees with central directory"
     );
     Ok(LocalRecord {
@@ -1462,5 +1497,115 @@ mod proofs {
             + minute * 60
             + second;
         let _ = reading_nearer_dos_time(kani::any(), utc);
+    }
+
+    const TAIL: usize = 26;
+
+    #[kani::proof]
+    #[kani::unwind(27)]
+    fn the_end_record_is_the_last_signature_and_reaches_the_end() {
+        let bytes: [u8; TAIL] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= TAIL);
+        let tail = &bytes[..length];
+        if let Ok(end) = end_record(tail) {
+            let comment = usize::from(u16::from_le_bytes([tail[end + 20], tail[end + 21]]));
+            assert!(tail[end..end + 4] == *END_SIGNATURE);
+            assert!(end + END_RECORD + comment == tail.len());
+            for later in end + 1..tail.len().saturating_sub(3) {
+                assert!(tail[later..later + 4] != *END_SIGNATURE);
+            }
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn zip64_fields_never_panic_and_fit_their_field() {
+        let extra: [u8; EXTRA] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= EXTRA);
+        if let Ok(values) = single_zip64_field(&extra[..length]) {
+            assert!(values.len() <= length.saturating_sub(4) / 8);
+        }
+    }
+
+    #[kani::proof]
+    fn every_descriptor_layout_reads_exactly_its_bytes() {
+        let tail: u64 = kani::any();
+        let descriptor: [u8; 24] = kani::any();
+        if let Ok((signature, wide)) = descriptor_layout(tail) {
+            let width = if wide { 8 } else { 4 };
+            assert!(tail as usize == usize::from(signature) * 4 + 4 + 2 * width);
+            let _ = descriptor_values(&descriptor[..tail as usize], signature, wide);
+        }
+    }
+}
+
+#[cfg(test)]
+mod record_limit_tests {
+    use super::*;
+
+    fn layouts(records: usize) -> Vec<Vec<(u64, Option<u64>)>> {
+        let choices: Vec<(u64, Option<u64>)> = (0..6)
+            .flat_map(|start| [None, Some(1), Some(2), Some(3)].map(|span| (start, span)))
+            .collect();
+        (0..records).fold(vec![Vec::new()], |layouts, _| {
+            layouts
+                .iter()
+                .flat_map(|layout| {
+                    choices.iter().map(move |choice| {
+                        let mut next = layout.clone();
+                        next.push(*choice);
+                        next
+                    })
+                })
+                .collect()
+        })
+    }
+
+    fn expected_limits(records: &[(u64, Option<u64>)], central_start: u64) -> Option<Vec<u64>> {
+        let mut starts: Vec<u64> = records.iter().map(|record| record.0).collect();
+        starts.sort();
+        starts.dedup();
+        if starts.len() != records.len() || starts.first().copied().unwrap_or(central_start) != 0 {
+            return None;
+        }
+        records
+            .iter()
+            .map(|&(start, span)| {
+                let limit = starts
+                    .iter()
+                    .copied()
+                    .find(|&other| other > start)
+                    .unwrap_or(central_start);
+                (start + span? <= limit).then_some(limit)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn record_limits_accept_exactly_the_layouts_without_overlap() {
+        for count in 0..=3 {
+            for records in layouts(count) {
+                for central_start in 0..9 {
+                    assert_eq!(
+                        record_limits(&records, central_start).ok(),
+                        expected_limits(&records, central_start),
+                        "{records:?} with the directory at {central_start}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn record_limits_refuse_a_span_that_overflows() {
+        for records in [
+            vec![(0, Some(1)), (1, Some(u64::MAX))],
+            vec![(0, Some(1)), (2, Some(u64::MAX - 1))],
+            vec![(0, None)],
+        ] {
+            assert!(record_limits(&records, u64::MAX).is_err(), "{records:?}");
+        }
     }
 }

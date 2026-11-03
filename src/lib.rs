@@ -19,6 +19,29 @@ fn number<const N: usize>(r: &mut impl Read) -> Result<[u8; N]> {
     r.read_exact(&mut b)?;
     Ok(b)
 }
+// EXTERNAL(Kani 0.68): building an anyhow error reaches catch_unwind, which crashes Kani's
+// compiler, so the field readers Kani proves return this type and convert at the boundary.
+#[derive(Debug)]
+pub(crate) struct BadField(pub(crate) &'static str);
+
+impl std::fmt::Display for BadField {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(self.0)
+    }
+}
+
+impl std::error::Error for BadField {}
+
+pub(crate) type Field<T> = std::result::Result<T, BadField>;
+
+pub(crate) fn field_check(holds: bool, message: &'static str) -> Field<()> {
+    if holds {
+        Ok(())
+    } else {
+        Err(BadField(message))
+    }
+}
+
 fn safe_path(s: &str) -> Result<()> {
     ensure!(!s.is_empty() && s.len() <= 4096, "invalid path length");
     ensure!(!s.contains(['\\', ':', '\0']), "unsafe archive path: {s:?}");

@@ -2,6 +2,7 @@
 //! only after the whole archive reads cleanly. See
 //! `docs/reference/tar-reader.md` for what it accepts and restores.
 use crate::progress::Tracker;
+use crate::{BadField, Field, field_check};
 use crate::{
     Entry,
     counters::{self, Counter},
@@ -268,29 +269,6 @@ fn checksum_matches(block: &[u8; BLOCK]) -> bool {
         signed += i64::from(byte as i8);
     }
     stored == unsigned || i64::try_from(stored) == Ok(signed)
-}
-
-// EXTERNAL(Kani 0.68): building an anyhow error reaches catch_unwind, which crashes Kani's
-// compiler, so the field readers Kani proves return this type and convert at the boundary.
-#[derive(Debug)]
-struct BadField(&'static str);
-
-impl std::fmt::Display for BadField {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str(self.0)
-    }
-}
-
-impl std::error::Error for BadField {}
-
-type Field<T> = std::result::Result<T, BadField>;
-
-fn field_check(holds: bool, message: &'static str) -> Field<()> {
-    if holds {
-        Ok(())
-    } else {
-        Err(BadField(message))
-    }
 }
 
 fn octal(field: &[u8]) -> Field<u64> {

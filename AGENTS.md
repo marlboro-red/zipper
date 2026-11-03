@@ -65,6 +65,6 @@ Use these skills from `.claude/skills/` for the judgment that checks cannot make
 | [`zipper-verify-7z-workers`](.claude/skills/zipper-verify-7z-workers/SKILL.md) | You change the 7z folder workers, the decoder memory budget or the cancel checks in `src/native_7z.rs`. |
 | [`zipper-verify-overwrite`](.claude/skills/zipper-verify-overwrite/SKILL.md) | You change extraction into an existing folder in `src/staging.rs` or the publish path. |
 | [`zipper-verify-progress`](.claude/skills/zipper-verify-progress/SKILL.md) | You change `Tracker` in `src/progress.rs` or how a Rayon pool reports progress. |
-| [`zipper-verify-parsers`](.claude/skills/zipper-verify-parsers/SKILL.md) | You change the 7z header readers, the LZMA2 chunk scan, the ZIP time fields or the tar numeric fields. |
+| [`zipper-verify-parsers`](.claude/skills/zipper-verify-parsers/SKILL.md) | You change the 7z header readers, the LZMA2 chunk scan, the ZIP time fields, end record or data descriptor, or the tar numeric fields. |
 
 The `zipper-review` skill spawns the read-only [`zipper-adversary`](.claude/agents/zipper-adversary.md) agent.
