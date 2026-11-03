@@ -11,7 +11,6 @@ use std::path::Path;
 use zipper::native_tar::{ReadOptions, read_archive};
 
 const EXTRACTS_SYMLINKS: bool = cfg!(unix);
-const RESTORES_DIRECTORY_TIMES: bool = cfg!(unix);
 
 #[test]
 fn native_reader_matches_the_reference_readers() {
@@ -44,6 +43,6 @@ fn native_reader_matches_the_reference_readers() {
             continue;
         }
         result.unwrap_or_else(|error| panic!("{name}: {error:#}"));
-        corpus::assert_tree_matches_manifest(work.path(), wanted, RESTORES_DIRECTORY_TIMES, name);
+        corpus::assert_tree_matches_manifest(work.path(), wanted, name);
     }
 }

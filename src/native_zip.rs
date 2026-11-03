@@ -279,6 +279,7 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredN
         }
         times.push(EntryTime {
             exact: exact_time(&extra_field),
+            ntfs: ntfs_time(&extra_field),
             dos: u32::from_le_bytes(header[12..16].try_into().unwrap()),
         });
         file.seek_relative(comment as i64)?;
@@ -290,13 +291,14 @@ fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredN
 
 struct EntryTime {
     exact: Option<u32>,
+    ntfs: Option<i64>,
     dos: u32,
 }
 
 const EXTENDED_TIMESTAMP: u16 = 0x5455;
 const INFOZIP_UNIX: u16 = 0x5855;
 
-// EXTERNAL(Info-ZIP unzip): extended time wins, and the NTFS field is ignored.
+// EXTERNAL(Info-ZIP unzip, bsdtar): extended time wins over every other field.
 fn exact_time(mut extra: &[u8]) -> Option<u32> {
     let (mut extended, mut unix) = (None, None);
     while extra.len() >= 4 {
@@ -317,6 +319,37 @@ fn exact_time(mut extra: &[u8]) -> Option<u32> {
         extra = &extra[4 + length..];
     }
     extended.or(unix)
+}
+
+const NTFS_TIMES: u16 = 0x000A;
+const NTFS_TIMES_TAG: u16 = 0x0001;
+const FILETIME_TICKS_PER_SECOND: i64 = 10_000_000;
+const UNIX_EPOCH_IN_FILETIME_SECONDS: i64 = 11_644_473_600;
+
+fn ntfs_time(mut extra: &[u8]) -> Option<i64> {
+    while extra.len() >= 4 {
+        let id = u16::from_le_bytes([extra[0], extra[1]]);
+        let length = u16::from_le_bytes([extra[2], extra[3]]) as usize;
+        let body = extra.get(4..4 + length)?;
+        if id == NTFS_TIMES {
+            let mut attributes = body.get(4..)?;
+            while attributes.len() >= 4 {
+                let tag = u16::from_le_bytes([attributes[0], attributes[1]]);
+                let size = u16::from_le_bytes([attributes[2], attributes[3]]) as usize;
+                let value = attributes.get(4..4 + size)?;
+                if tag == NTFS_TIMES_TAG && size >= 8 {
+                    let ticks =
+                        i64::try_from(u64::from_le_bytes(value[..8].try_into().unwrap())).ok()?;
+                    return Some(
+                        ticks / FILETIME_TICKS_PER_SECOND - UNIX_EPOCH_IN_FILETIME_SECONDS,
+                    );
+                }
+                attributes = &attributes[4 + size..];
+            }
+        }
+        extra = &extra[4 + length..];
+    }
+    None
 }
 
 fn dos_fields(dos: u32) -> [i64; 6] {
@@ -347,6 +380,10 @@ impl Clock {
         };
         if let Some(raw) = time.exact {
             return Some(reading_nearer_dos_time(raw, dos_utc));
+        }
+        // EXTERNAL(7-Zip): it reads the NTFS field, which unzip and bsdtar ignore.
+        if time.ntfs.is_some() {
+            return time.ntfs;
         }
         let [year, month, day, hour, minute, second] = dos_fields(time.dos);
         let base = *self
@@ -391,7 +428,36 @@ fn mktime_seconds([year, month, day, hour, minute, second]: [i64; 6]) -> Option<
     (seconds != -1).then_some(seconds as i64)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn mktime_seconds([year, month, day, hour, minute, second]: [i64; 6]) -> Option<i64> {
+    use windows_sys::Win32::{
+        Foundation::SYSTEMTIME, System::Time::TzSpecificLocalTimeToSystemTimeEx,
+    };
+    let field = |value: i64| u16::try_from(value).ok();
+    let local = SYSTEMTIME {
+        wYear: field(year)?,
+        wMonth: field(month)?,
+        wDayOfWeek: 0,
+        wDay: field(day)?,
+        wHour: field(hour)?,
+        wMinute: field(minute)?,
+        wSecond: field(second)?,
+        wMilliseconds: 0,
+    };
+    let mut utc = SYSTEMTIME::default();
+    // SAFETY: both pointers refer to live SYSTEMTIME values for the call, and
+    // a null time zone pointer is allowed and selects the current zone.
+    let converted =
+        unsafe { TzSpecificLocalTimeToSystemTimeEx(std::ptr::null(), &local, &mut utc) };
+    (converted != 0).then(|| {
+        days_since_unix_epoch(utc.wYear.into(), utc.wMonth.into(), utc.wDay.into()) * 86_400
+            + i64::from(utc.wHour) * 3_600
+            + i64::from(utc.wMinute) * 60
+            + i64::from(utc.wSecond)
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
 fn mktime_seconds(_: [i64; 6]) -> Option<i64> {
     None
 }

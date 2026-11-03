@@ -186,8 +186,8 @@ pub(crate) fn publish(staging: &Path, destination: &Path, directories: &[Directo
     let published = (|| {
         #[cfg(unix)]
         unix_modes::apply(staging, directories)?;
-        #[cfg(not(unix))]
-        let _ = directories;
+        #[cfg(windows)]
+        restore_directory_times(staging, directories);
         std::fs::rename(staging, destination)?;
         anyhow::Ok(())
     })();
@@ -196,6 +196,26 @@ pub(crate) fn publish(staging: &Path, destination: &Path, directories: &[Directo
         unix_modes::unlock_tree_for_cleanup(staging);
     }
     published
+}
+
+#[cfg(windows)]
+pub(crate) fn restore_directory_times(root: &Path, directories: &[Directory]) {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+    };
+    for directory in directories {
+        // EXTERNAL(Windows): a folder opens only with backup semantics.
+        if let Some(time) = directory.modified
+            && let Ok(handle) = std::fs::OpenOptions::new()
+                .access_mode(FILE_WRITE_ATTRIBUTES)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(root.join(directory.name))
+        {
+            let _ = handle.set_modified(time);
+            counters::add(counters::Counter::MetadataCalls, 1);
+        }
+    }
 }
 
 #[cfg(unix)]

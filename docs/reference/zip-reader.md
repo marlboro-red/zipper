@@ -33,17 +33,17 @@ It restores Unix permission bits the way bsdtar does:
 - The user's umask limits every mode, as it does for a new file. Info-ZIP `unzip` ignores the umask, so it can restore wider modes such as `666` or `777`.
 - Directory modes are applied after all files are written, deepest first, so a read-only directory can still receive its children. A directory entry listed after its own contents still gets its mode, which bsdtar and `unzip` skip.
 
-It restores modification times the way Info-ZIP `unzip` and bsdtar do:
+It restores modification times the way Info-ZIP `unzip` and bsdtar do, and reads the NTFS field as 7-Zip does:
 
 - The extended timestamp field (`0x5455`) gives an exact UTC time. Info-ZIP and bsdtar write it.
 - Otherwise the older Info-ZIP Unix field (`0x5855`), which `ditto` writes, gives an exact time.
-- Otherwise the DOS date and time are read in the local time zone, with 2-second resolution.
-- The NTFS field (`0x000a`) is ignored, as both reference readers ignore it, so 7-Zip archives get their DOS time.
+- Otherwise the NTFS field (`0x000a`), which 7-Zip and other Windows tools write, gives an exact UTC time. `unzip` and bsdtar ignore it and use the DOS time, rounded to an even second.
+- Otherwise the DOS date and time are read in the local time zone, with 2-second resolution. On Windows the local time zone's own rules for that date apply.
 - A 32-bit exact time with its top bit set is read as signed or unsigned, whichever lies nearer the DOS time, so a 1969 file is not dated 2106.
 - Invalid DOS fields, such as month 13, are normalized as bsdtar does. Setting a time is best effort.
 - Directory times are set after all files are written.
 
-On Windows it restores no permissions, no directory times, and no times for entries that have only a DOS time.
+On Windows it restores no permissions. It restores file and directory times as on Unix.
 
 It never restores owners, access times, extended attributes, ACLs, file flags or macOS metadata.
 

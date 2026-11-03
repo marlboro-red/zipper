@@ -11,7 +11,6 @@ use std::path::Path;
 use zipper::native_7z::{ReadOptions, read_archive};
 
 const EXTRACTS_SYMLINKS: bool = cfg!(unix);
-const RESTORES_DIRECTORY_TIMES: bool = cfg!(unix);
 
 fn corpus() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/7z-corpus")
@@ -36,7 +35,7 @@ fn native_reader_matches_the_reference_readers() {
             continue;
         }
         result.unwrap_or_else(|error| panic!("{name}: {error:#}"));
-        corpus::assert_tree_matches_manifest(work.path(), wanted, RESTORES_DIRECTORY_TIMES, name);
+        corpus::assert_tree_matches_manifest(work.path(), wanted, name);
         read_archive(&archive, None, ReadOptions::default())
             .unwrap_or_else(|error| panic!("{name} verification: {error:#}"));
     }

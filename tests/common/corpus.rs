@@ -93,12 +93,7 @@ fn umask_ceiling_mode(work: &Path) -> u32 {
     fs::metadata(&probe).unwrap().permissions().mode() & 0o777
 }
 
-pub fn assert_tree_matches_manifest(
-    work: &Path,
-    wanted: &Tree,
-    restores_directory_times: bool,
-    label: &str,
-) {
+pub fn assert_tree_matches_manifest(work: &Path, wanted: &Tree, label: &str) {
     let destination = work.join("out");
     let mut actual = tree(&destination);
     #[cfg(unix)]
@@ -118,9 +113,6 @@ pub fn assert_tree_matches_manifest(
         #[cfg(not(unix))]
         {
             value.mode = None;
-        }
-        if !restores_directory_times && value.size_and_crc.is_none() {
-            value.modified = None;
         }
         if let Some(found) = actual.get_mut(path) {
             if value.mode.is_none() {

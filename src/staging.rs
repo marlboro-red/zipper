@@ -93,8 +93,8 @@ impl Staging {
         }
         #[cfg(unix)]
         crate::unix_modes::apply_with_default(&self.destination, &created, default)?;
-        #[cfg(not(unix))]
-        let _ = created;
+        #[cfg(windows)]
+        crate::restore_directory_times(&self.destination, &created);
         Ok(())
     }
 }

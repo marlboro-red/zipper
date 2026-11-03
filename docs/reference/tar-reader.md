@@ -34,7 +34,7 @@ The reader restores permission bits and times the way the [ZIP reader](zip-reade
 - Files get their modification time, with the nanoseconds of a pax `mtime`. Directory times are set after all files are written.
 - Hard links share one file. Symlinks get no time or mode.
 
-On Windows it restores no permissions and no directory times, and it rejects every archive with a symlink. It never restores owners, access times, extended attributes or ACLs.
+On Windows it restores no permissions, and it rejects every archive with a symlink. File and directory times are restored as on Unix. It never restores owners, access times, extended attributes or ACLs.
 
 ## Safety checks
 
