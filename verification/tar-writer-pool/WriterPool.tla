@@ -43,10 +43,16 @@ VARIABLES
     job,        \* writer -> file it holds, or 0
     written,    \* file -> chunks written to disk
     removing,   \* the decoder is removing an earlier file of the same name
-    result      \* "none", "ok" or "error": what `read_archive` returns
+    result,     \* "none", "ok" or "error": what `read_archive` returns
+    dropping,   \* chunks inside `Drop for Chunk`, buffer not yet on the spare list
+    pushed,     \* chunks inside `Drop for Chunk`, on the spare list, bytes not yet freed
+    spare,      \* buffers on `InFlight::spare`
+    allocated   \* buffers ever allocated with `vec![0; length]`
 
 vars == <<dpc, f, taken, holding, inflight, lanesOpen, laneQ, stream, sending,
-          receiving, pending, failure, everFailed, wpc, job, written, removing, result>>
+          receiving, pending, failure, everFailed, wpc, job, written, removing, result,
+          dropping, pushed, spare, allocated>>
+drops == <<dropping, pushed, spare, allocated>>
 
 Init ==
     /\ dpc = "start"
@@ -67,6 +73,10 @@ Init ==
     /\ written = [x \in Files |-> 0]
     /\ removing = FALSE
     /\ result = "none"
+    /\ dropping = 0
+    /\ pushed = 0
+    /\ spare = 0
+    /\ allocated = 0
 
 -----------------------------------------------------------------------------
 (* Decoder: `parse` -> `Extraction::member` -> `write_file`.               *)
@@ -79,6 +89,7 @@ DecoderNextFile ==
        ELSE dpc' = IF f \in Replaces THEN "drain" ELSE "take"
     /\ UNCHANGED <<f, taken, holding, inflight, lanesOpen, laneQ, stream, sending,
                    receiving, pending, failure, everFailed, wpc, job, written, removing, result>>
+    /\ UNCHANGED drops
 
 \* `writers.drain()` returns once `pending` is 0, then `check()` takes any failure.
 DecoderDrains ==
@@ -89,6 +100,7 @@ DecoderDrains ==
        ELSE /\ dpc' = "remove" /\ removing' = TRUE /\ UNCHANGED failure
     /\ UNCHANGED <<f, taken, holding, inflight, lanesOpen, laneQ, stream, sending,
                    receiving, pending, everFailed, wpc, job, written, result>>
+    /\ UNCHANGED drops
 
 \* `fs::remove_file(root.join(name))` for the earlier file of the same name.
 DecoderRemovesEarlierFile ==
@@ -97,6 +109,7 @@ DecoderRemovesEarlierFile ==
     /\ removing' = FALSE
     /\ UNCHANGED <<f, taken, holding, inflight, lanesOpen, laneQ, stream, sending,
                    receiving, pending, failure, everFailed, wpc, job, written, result>>
+    /\ UNCHANGED drops
 
 \* `writers.flight.take(..)` blocks while other chunks would pass the budget,
 \* then `input.fill` reads the chunk.
@@ -104,6 +117,10 @@ DecoderTakesChunk ==
     /\ dpc = "take"
     /\ inflight = 0 \/ inflight + 1 <= Budget
     /\ inflight' = inflight + 1
+    /\ IF spare > 0
+       THEN /\ spare' = spare - 1 /\ UNCHANGED allocated
+       ELSE /\ allocated' = allocated + 1 /\ UNCHANGED spare
+    /\ UNCHANGED <<dropping, pushed>>
     /\ holding' = TRUE
     /\ taken' = taken + 1
     /\ dpc' = IF taken = 0 THEN "count" ELSE "send_chunk"
@@ -116,7 +133,8 @@ DecoderFindsCorruptInput ==
     /\ DecoderCanFail
     /\ dpc \in {"take", "count", "send_chunk"}
     /\ dpc' = "failing"
-    /\ inflight' = IF holding THEN inflight - 1 ELSE inflight
+    /\ dropping' = IF holding THEN dropping + 1 ELSE dropping
+    /\ UNCHANGED <<inflight, pushed, spare, allocated>>
     /\ holding' = FALSE
     /\ sending' = [sending EXCEPT ![f] = FALSE]
     /\ UNCHANGED <<f, taken, lanesOpen, laneQ, stream, receiving, pending, failure,
@@ -129,6 +147,7 @@ DecoderCountsJob ==
     /\ dpc' = "send_job"
     /\ UNCHANGED <<f, taken, holding, inflight, lanesOpen, laneQ, stream, sending,
                    receiving, failure, everFailed, wpc, job, written, removing, result>>
+    /\ UNCHANGED drops
 
 \* `lane.send(job)` blocks while the lane is full. Any lane may be the hash.
 \* Then `self.check()` takes a stored failure and returns it.
@@ -148,6 +167,7 @@ DecoderSendsJob ==
                  /\ UNCHANGED failure
     /\ UNCHANGED <<f, taken, inflight, lanesOpen, stream, pending, everFailed, wpc, job,
                    written, removing, result>>
+    /\ UNCHANGED drops
 
 \* `chunks.send(chunk)` blocks while the stream is full. With the receiver
 \* gone it fails, and the chunk drops (`writers.stopped()`).
@@ -158,10 +178,11 @@ DecoderSendsChunk ==
           /\ stream' = [stream EXCEPT ![f] = @ + 1]
           /\ holding' = FALSE
           /\ dpc' = IF taken < ChunksPerFile[f] THEN "take" ELSE "next"
-          /\ UNCHANGED <<inflight, failure>>
+          /\ UNCHANGED <<inflight, failure, dropping>>
        \/ /\ ~receiving[f]
           /\ holding' = FALSE
-          /\ inflight' = inflight - 1
+          /\ dropping' = dropping + 1
+          /\ UNCHANGED inflight
           /\ sending' = [sending EXCEPT ![f] = FALSE]
           /\ failure' = FALSE
           /\ dpc' = "failing"
@@ -169,6 +190,7 @@ DecoderSendsChunk ==
     /\ UNCHANGED <<f, taken, lanesOpen, laneQ, receiving, pending, everFailed, wpc,
                    job, written, removing, result>>
     /\ (receiving[f] => UNCHANGED sending)
+    /\ UNCHANGED <<pushed, spare, allocated>>
 
 \* `drop(stream)` at the end of `write_file`; on to the next member.
 DecoderFinishesFile ==
@@ -179,6 +201,7 @@ DecoderFinishesFile ==
     /\ dpc' = "start"
     /\ UNCHANGED <<holding, inflight, lanesOpen, laneQ, stream, receiving, pending,
                    failure, everFailed, wpc, job, written, removing, result>>
+    /\ UNCHANGED drops
 
 \* `writers.close()` after `parse` returns, success or error.
 DecoderClosesLanes ==
@@ -187,15 +210,18 @@ DecoderClosesLanes ==
     /\ dpc' = IF dpc = "closing" THEN "joining" ELSE "joining_failed"
     /\ UNCHANGED <<f, taken, holding, inflight, laneQ, stream, sending, receiving,
                    pending, failure, everFailed, wpc, job, written, removing, result>>
+    /\ UNCHANGED drops
 
 \* Every writer thread is joined; then `parsed?` and `writers.check()?`.
 DecoderJoins ==
     /\ dpc \in {"joining", "joining_failed"}
     /\ \A w \in W : wpc[w] = "exited"
+    /\ dropping = 0 /\ pushed = 0
     /\ result' = IF dpc = "joining_failed" \/ failure THEN "error" ELSE "ok"
     /\ dpc' = "done"
     /\ UNCHANGED <<f, taken, holding, inflight, lanesOpen, laneQ, stream, sending,
                    receiving, pending, failure, everFailed, wpc, job, written, removing>>
+    /\ UNCHANGED drops
 
 -----------------------------------------------------------------------------
 (* Writers: `Writers::work` and `write_job`.                               *)
@@ -215,6 +241,7 @@ WriterReceives(w) ==
             /\ UNCHANGED <<job, laneQ>>
     /\ UNCHANGED <<dpc, f, taken, holding, inflight, lanesOpen, stream, sending,
                    receiving, pending, failure, everFailed, written, removing, result>>
+    /\ UNCHANGED drops
 
 \* `write(&job.first.data)`, which can fail or panic.
 WriterWritesFirst(w) ==
@@ -230,6 +257,7 @@ WriterWritesFirst(w) ==
             /\ UNCHANGED written
     /\ UNCHANGED <<dpc, f, taken, holding, inflight, lanesOpen, laneQ, stream, sending,
                    receiving, pending, job, removing, result>>
+    /\ UNCHANGED drops
 
 \* `for chunk in rest { write(&chunk.data)? }`: each chunk drops after its
 \* write; the loop ends when the decoder drops the sender.
@@ -238,7 +266,8 @@ WriterWritesRest(w) ==
     /\ LET x == job[w] IN
          \/ /\ stream[x] > 0
             /\ stream' = [stream EXCEPT ![x] = @ - 1]
-            /\ inflight' = inflight - 1
+            /\ dropping' = dropping + 1
+            /\ UNCHANGED inflight
             /\ \/ /\ written' = [written EXCEPT ![x] = @ + 1]
                   /\ UNCHANGED <<failure, everFailed, wpc>>
                \/ /\ WritesCanFail
@@ -249,16 +278,17 @@ WriterWritesRest(w) ==
          \/ /\ stream[x] = 0
             /\ ~sending[x]
             /\ wpc' = [wpc EXCEPT ![w] = "drop"]
-            /\ UNCHANGED <<stream, inflight, written, failure, everFailed>>
+            /\ UNCHANGED <<stream, inflight, written, failure, everFailed, dropping>>
     /\ UNCHANGED <<dpc, f, taken, holding, lanesOpen, laneQ, sending, receiving,
-                   pending, job, removing, result>>
+                   pending, job, removing, result, pushed, spare, allocated>>
 
 \* `drop(job)`: the first chunk, the stream receiver and its queued chunks
 \* drop; then `pending -= 1` and `notify_all` at zero.
 WriterDropsJob(w) ==
     /\ wpc[w] = "drop"
     /\ LET x == job[w] IN
-         /\ inflight' = inflight - 1 - stream[x]
+         /\ dropping' = dropping + 1 + stream[x]
+         /\ UNCHANGED <<inflight, pushed, spare, allocated>>
          /\ stream' = [stream EXCEPT ![x] = 0]
          /\ receiving' = [receiving EXCEPT ![x] = FALSE]
     /\ pending' = pending - 1
@@ -266,6 +296,25 @@ WriterDropsJob(w) ==
     /\ wpc' = [wpc EXCEPT ![w] = "idle"]
     /\ UNCHANGED <<dpc, f, taken, holding, lanesOpen, laneQ, sending, failure,
                    everFailed, written, removing, result>>
+
+\* `Drop for Chunk`, first half: `self.flight.spare.lock().push(data)`.
+ChunkGoesToSpare ==
+    /\ dropping > 0
+    /\ dropping' = dropping - 1
+    /\ spare' = spare + 1
+    /\ pushed' = pushed + 1
+    /\ UNCHANGED <<dpc, f, taken, holding, inflight, lanesOpen, laneQ, stream, sending,
+                   receiving, pending, failure, everFailed, wpc, job, written, removing,
+                   result, allocated>>
+
+\* `Drop for Chunk`, second half: `*bytes -= length` and `freed.notify_all()`.
+ChunkFreesBudget ==
+    /\ pushed > 0
+    /\ pushed' = pushed - 1
+    /\ inflight' = inflight - 1
+    /\ UNCHANGED <<dpc, f, taken, holding, lanesOpen, laneQ, stream, sending,
+                   receiving, pending, failure, everFailed, wpc, job, written, removing,
+                   result, dropping, spare, allocated>>
 
 \* The run has ended; nothing changes.
 Finished ==
@@ -279,6 +328,7 @@ Next ==
     \/ DecoderClosesLanes \/ DecoderJoins
     \/ \E w \in W : WriterReceives(w) \/ WriterWritesFirst(w)
                     \/ WriterWritesRest(w) \/ WriterDropsJob(w)
+    \/ ChunkGoesToSpare \/ ChunkFreesBudget
     \/ Finished
 
 Spec == Init /\ [][Next]_vars
@@ -300,6 +350,10 @@ FailureIsReported == (dpc = "done" /\ everFailed) => result = "error"
 
 \* An earlier file of the same name is removed only when no writer holds a job.
 RemoveAfterDrain == removing => \A w \in W : job[w] = 0
+
+\* No more buffers are allocated than the budget allows, because a dropped
+\* chunk is on the spare list before its bytes count as free.
+AllocationsBounded == allocated <= Budget
 
 \* No file is written past its size.
 NoOverwrite == \A x \in Files : written[x] <= ChunksPerFile[x]

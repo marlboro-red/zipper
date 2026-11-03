@@ -20,13 +20,15 @@ Each rule is an invariant in `WriterPool.tla`. TLC also checks that no state is 
 | `FailureIsReported` | A run in which a write failed never reports success. | A failed extraction looks good. |
 | `RemoveAfterDrain` | A file that repeats an earlier name removes the earlier copy only when no writer holds a job. | The removal races a writer, and the wrong bytes survive. |
 | `NoOverwrite` | No file gets more chunks than it has. | Corrupt output. |
+| `AllocationsBounded` | No more 1 MiB buffers are ever allocated than the budget allows, because a dropped chunk is on the spare list before its bytes count as free. | Memory grows past the budget as buffers pile up on the spare list. |
 
 ## What the model covers
 
 | Covered code | Model |
 | --- | --- |
 | `InFlight::take`, which waits while other chunks would pass `BYTES_IN_FLIGHT` | `DecoderTakesChunk` |
-| `Drop for Chunk` | the `inflight` decrements in `WriterWritesRest` and `WriterDropsJob` |
+| `Drop for Chunk`: first `spare.push(data)`, then `*bytes -= length` | `ChunkGoesToSpare`, then `ChunkFreesBudget`, two steps other threads can run between; every drop site adds to `dropping` |
+| The `spare.pop()` in `InFlight::take`, or a new `vec![0; length]` | the `spare` and `allocated` updates in `DecoderTakesChunk` |
 | `Writers::send`, which counts, sends to a lane and calls `check` | `DecoderCountsJob`, `DecoderSendsJob` |
 | `Writers::drain`, `Writers::check`, `Writers::stopped` | `DecoderDrains`, the `failure` resets |
 | `Writers::close` | `DecoderClosesLanes` |
@@ -36,10 +38,10 @@ Each rule is an invariant in `WriterPool.tla`. TLC also checks that no state is 
 
 One chunk in the model is one `Chunk` of up to `CHUNK` bytes, so the budget is `BYTES_IN_FLIGHT / CHUNK`. A write that fails and a writer that panics are the same step, because `catch_unwind` turns the panic into an error. A panic in `parse` takes the same path as corrupt input. The lane hash is any lane, so the Windows model covers every hash outcome.
 
-The model leaves out file contents, the `spare` buffer list, the filesystem, progress reports and `ReadOptions` validation.
+The model leaves out file contents, the filesystem, progress reports and `ReadOptions` validation. It treats every chunk as a full 1 MiB buffer, so every drop returns its buffer to the spare list.
 
 - The bound is 4 files of 2, 3, 1 and 2 chunks, the fourth repeating a name, 3 writers, a budget of 3 chunks, 2 jobs per lane queue and 2 chunks per stream. `MCUnix` has one shared lane, and `MCWindows` has one lane per writer.
-- Each model runs in about one second, with 10,848 and 13,049 distinct states.
+- Each model runs in a few seconds, with 53,227 and 59,831 distinct states.
 - `verification/coverage.txt` lists the covered code under `[tar-writer-pool]`, with its fingerprint when this check last passed.
 
 ## When to run it
@@ -70,11 +72,11 @@ The rules are proven able to fail. Each of these model changes, which match plau
 | `DecoderTakesChunk` no longer waits on the budget, as if `InFlight::take` lost its loop | `BudgetHolds` |
 | `WriterDropsJob` keeps `receiving` true, as if a failed writer kept its stream receiver | `NothingLeaks` |
 
-The model also catches the three pool bugs that reviews found before `05233ac` and `10d858e` were committed. Each was back-tested by changing only the actions the old code did differently and running the unchanged rules:
+The model also catches the four pool bugs that reviews found before `05233ac`, `93ac28a` and `10d858e` were committed. Each was back-tested by changing only the actions the old code did differently and running the unchanged rules:
 
 | Old code | Rule that breaks | Path in the code's words |
 | --- | --- | --- |
 | No `InFlight` budget, only the queue sizes, which let 64 writers hold 389 MB | `BudgetHolds` | The decoder sends two files and takes a fourth chunk while three are queued. |
 | `Writers::work` without `catch_unwind`, so a panicking writer never decremented `pending` | `NoDeadlock` | Writers panic mid-file, and the next file with a repeated name waits in `drain()` forever. |
 | `parse` without `catch_unwind` in the scope, so a panicking progress callback skipped `writers.close()` | `NoDeadlock` | The decoder panics at its first step, and the writers wait on open lanes forever. |
-
+| `Drop for Chunk` that freed the bytes before pushing the buffer to the spare list | `AllocationsBounded` | A writer drops a chunk, the budget frees first, and the decoder takes a chunk while the spare list is still empty, so it allocates a buffer past the budget. |
