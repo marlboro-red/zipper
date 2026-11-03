@@ -60,6 +60,14 @@ The reader checks the whole archive before it publishes anything, and it publish
 
 One thread decodes and checks the stream. Four writer threads create and write the files, or the number `--threads` sets. A file larger than 1 MiB streams to one writer in order. On Windows, all files of one folder go to the same writer, because creating files in one folder from several threads is slower there. At most 16 MiB of file data waits between the decoder and the writers, so memory does not grow with file size or writer count. A repeated file name waits for every pending write before it replaces the file.
 
+## Extraction options
+
+These options work the same way in every reader. [Usage](../usage.md#extract-into-an-existing-folder) shows them.
+
+- `Existing::Overwrite`, or `zipper extract --overwrite`, extracts into an existing folder. The whole archive decodes into a hidden staging folder first. Each file then replaces the file of the same name by rename. `tests/overwrite.rs` covers links and conflicts in the destination.
+- `Control` carries a progress callback and a cancel flag. `tests/control.rs` covers cancellation at any point.
+- `paths`, or `--path`, selects entries. Tar refuses it, because a tar stream has no index.
+
 ## Reference corpus
 
 `tests/data/tar-corpus` holds 42 archives from three writers over three source trees:
