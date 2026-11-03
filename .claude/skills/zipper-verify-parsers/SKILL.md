@@ -1,11 +1,11 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, or the ZIP time fields in src/native_zip.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields in src/native_zip.rs, or the tar numeric fields (octal, number, size_field) in src/native_tar.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
 
-A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs` and `src/native_zip.rs`.
+A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs` and `src/native_tar.rs`.
 
 ## The proofs
 
@@ -16,6 +16,14 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `chunk_headers_stay_within_lzma2_limits` | `chunk_header` on any control byte and size fields gives sizes within LZMA2's limits and the exact reset and properties flags | 1 s |
 | `time_fields_never_panic_on_any_extra_field` | `exact_time` and `ntfs_time` never panic on any extra field of up to 20 bytes | 80 s |
 | `dos_time_arithmetic_never_overflows` | the DOS date arithmetic never overflows for any 32-bit DOS time | 2 s |
+| `numeric_fields_never_panic_on_any_bytes` | `octal` and `size_field` never panic on any field of 1 to 12 bytes, and a size always fits an `i64` | 14 s |
+| `every_value_reads_back_from_its_encoding` | every `i64` reads back from its 12-byte base-256 field, and every value below 8^11 from its octal field | 9 s |
+| `base_256_fields_have_one_spelling` | a base-256 field that `number` accepts is the one encoding of its value | 4 s |
+
+Some checks are too heavy for Kani, so exhaustive unit tests cover them:
+
+- `checksum_matches` over 512 symbolic bytes ran past 300 s. It reads its field with `octal`, which the proofs cover, and sums at most 512 bytes of 255.
+- The tar pax readers and the path and symlink escape checks in `src/lib.rs` use std's string search, which ran past 300 s on 2-byte inputs. `pax_times_equal_their_decimal_value_on_every_short_string`, `pax_records_split_back_into_their_exact_bytes_on_every_short_string` and the two escape tests in `src/lib.rs` check every short string instead.
 
 `SegmentPlan`, which splits an LZMA2 stream into segments that decode on their own, is too heavy for Kani. Four attempts ran out of time or memory. `segment_plans_start_at_resets_and_cover_the_folder_for_every_short_stream` in `src/native_7z.rs` checks it instead on every stream of up to four chunks of every kind, every minimum size and every folder boundary, more than 600,000 cases.
 
@@ -49,3 +57,6 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | --- | --- |
 | `Bytes::number` computes its mask as `0xFF >> (extra + 1)` on a `u8`, the bug the 7z review found | `attempt to shift right with overflow` |
 | `ntfs_time` reads a time without checking that the attribute holds 8 bytes | a failed slice bounds check |
+| `number` drops the `i64::MIN >> 8` check before a negative base-256 shift | `base_256_fields_have_one_spelling` fails |
+| `octal` subtracts `b'1'` instead of `b'0'` | `every_value_reads_back_from_its_encoding` fails |
+| `octal` slices `digits[end + 1..]` | a failed slice bounds check |

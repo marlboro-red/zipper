@@ -78,7 +78,7 @@ pub struct ReadOptions<'a> {
     pub control: crate::Control<'a>,
 }
 
-// EXTERNAL(Kani 0.68): building an anyhow error reaches catch_unwind, which crashes its
+// EXTERNAL(Kani 0.68): building an anyhow error reaches catch_unwind, which crashes Kani's
 // compiler, so the readers Kani proves return this type and convert at the boundary.
 #[derive(Debug)]
 struct Malformed {

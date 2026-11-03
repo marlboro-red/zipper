@@ -270,50 +270,73 @@ fn checksum_matches(block: &[u8; BLOCK]) -> bool {
     stored == unsigned || i64::try_from(stored) == Ok(signed)
 }
 
-fn octal(field: &[u8]) -> Result<u64> {
+// EXTERNAL(Kani 0.68): building an anyhow error reaches catch_unwind, which crashes Kani's
+// compiler, so the field readers Kani proves return this type and convert at the boundary.
+#[derive(Debug)]
+struct BadField(&'static str);
+
+impl std::fmt::Display for BadField {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(self.0)
+    }
+}
+
+impl std::error::Error for BadField {}
+
+type Field<T> = std::result::Result<T, BadField>;
+
+fn field_check(holds: bool, message: &'static str) -> Field<()> {
+    if holds {
+        Ok(())
+    } else {
+        Err(BadField(message))
+    }
+}
+
+fn octal(field: &[u8]) -> Field<u64> {
     let digits = field.trim_ascii_start();
     let end = digits
         .iter()
         .position(|&byte| byte == 0 || byte == b' ')
         .unwrap_or(digits.len());
-    ensure!(
+    field_check(
         digits[end..].iter().all(|&byte| byte == 0 || byte == b' '),
-        "tar numeric field has bytes after its terminator"
-    );
+        "tar numeric field has bytes after its terminator",
+    )?;
     digits[..end].iter().try_fold(0u64, |value, &digit| {
-        ensure!(
+        field_check(
             (b'0'..=b'7').contains(&digit),
-            "tar numeric field is not octal"
-        );
+            "tar numeric field is not octal",
+        )?;
         value
             .checked_mul(8)
             .map(|value| value + u64::from(digit - b'0'))
-            .context("tar numeric field overflows")
+            .ok_or(BadField("tar numeric field overflows"))
     })
 }
 
-fn number(field: &[u8]) -> Result<i64> {
+fn number(field: &[u8]) -> Field<i64> {
     match field[0] {
         0x80 => field[1..].iter().try_fold(0i64, |value, &byte| {
             value
                 .checked_mul(256)
                 .map(|value| value | i64::from(byte))
-                .context("tar base-256 field overflows")
+                .ok_or(BadField("tar base-256 field overflows"))
         }),
         0xff => {
             let mut value = -1i64;
             for &byte in &field[1..] {
-                ensure!(value >= i64::MIN >> 8, "tar base-256 field overflows");
+                field_check(value >= i64::MIN >> 8, "tar base-256 field overflows")?;
                 value = (value << 8) | i64::from(byte);
             }
             Ok(value)
         }
-        _ => i64::try_from(octal(field)?).context("tar numeric field overflows"),
+        _ => i64::try_from(octal(field)?).map_err(|_| BadField("tar numeric field overflows")),
     }
 }
 
-fn size_field(field: &[u8]) -> Result<u64> {
-    u64::try_from(number(field)?).context("tar entry size is negative")
+fn size_field(field: &[u8]) -> Field<u64> {
+    u64::try_from(number(field)?).map_err(|_| BadField("tar entry size is negative"))
 }
 
 fn text(field: &[u8]) -> &[u8] {
@@ -1134,5 +1157,139 @@ mod in_flight_tests {
         assert_eq!(*flight.bytes.lock().unwrap(), 0);
         let spare = flight.spare.lock().unwrap();
         assert!(!spare.is_empty() && spare.len() <= BYTES_IN_FLIGHT / CHUNK);
+    }
+}
+
+#[cfg(test)]
+mod field_tests {
+    use super::*;
+
+    fn every_string(alphabet: &[u8], longest: usize) -> Vec<String> {
+        let mut all = vec![String::new()];
+        let mut previous = vec![String::new()];
+        for _ in 0..longest {
+            previous = previous
+                .iter()
+                .flat_map(|text| {
+                    alphabet
+                        .iter()
+                        .map(move |byte| format!("{text}{}", *byte as char))
+                })
+                .collect();
+            all.extend(previous.iter().cloned());
+        }
+        all
+    }
+
+    fn decimal_nanos(text: &str) -> Option<i128> {
+        let (negative, body) = match text.strip_prefix('-') {
+            Some(body) => (true, body),
+            None => (false, text),
+        };
+        let (whole, fraction) = body.split_once('.').unwrap_or((body, ""));
+        let digits = |part: &str| part.bytes().all(|byte| byte.is_ascii_digit());
+        if whole.is_empty() || !digits(whole) || !digits(fraction) {
+            return None;
+        }
+        let fraction: String = fraction
+            .chars()
+            .chain(std::iter::repeat('0'))
+            .take(9)
+            .collect();
+        let nanos = whole.parse::<i128>().ok()? * 1_000_000_000 + fraction.parse::<i128>().ok()?;
+        Some(if negative { -nanos } else { nanos })
+    }
+
+    #[test]
+    fn pax_times_equal_their_decimal_value_on_every_short_string() {
+        let mut strings = every_string(b"-0.59", 8);
+        strings
+            .extend(["1.0000000009", "-1.0000000009", "-9223372036854775808.5"].map(String::from));
+        for text in strings {
+            match (pax_time(&text), decimal_nanos(&text)) {
+                (Ok(time), Some(nanos)) => {
+                    assert!(time.nanos < 1_000_000_000, "{text:?}");
+                    assert_eq!(
+                        i128::from(time.seconds) * 1_000_000_000 + i128::from(time.nanos),
+                        nanos,
+                        "{text:?}"
+                    );
+                }
+                (Err(_), None) => {}
+                (Err(_), Some(_)) if text.starts_with("-9223372036854775808.") => {}
+                (time, nanos) => panic!("{text:?}: {:?} against {nanos:?}", time.is_ok()),
+            }
+        }
+    }
+
+    #[test]
+    fn pax_records_split_back_into_their_exact_bytes_on_every_short_string() {
+        for text in every_string(b"456 =\na", 7) {
+            let Ok(records) = pax_records(text.as_bytes()) else {
+                continue;
+            };
+            let mut rebuilt = Vec::new();
+            for (key, value) in records {
+                assert!(!key.is_empty() && !key.contains('='), "{text:?}");
+                let body = 1 + key.len() + 1 + value.len() + 1;
+                let length = (1..=3)
+                    .map(|digits| body + digits)
+                    .find(|length| length.to_string().len() + body == *length)
+                    .unwrap();
+                rebuilt.extend(format!("{length} {key}=").bytes());
+                rebuilt.extend(value);
+                rebuilt.push(b'\n');
+            }
+            assert_eq!(rebuilt, text.as_bytes(), "{text:?}");
+        }
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    fn base_256(value: i64) -> [u8; 12] {
+        let mut field = if value < 0 { [0xff; 12] } else { [0; 12] };
+        field[0] = if value < 0 { 0xff } else { 0x80 };
+        field[4..].copy_from_slice(&value.to_be_bytes());
+        field
+    }
+
+    #[kani::proof]
+    #[kani::unwind(13)]
+    fn numeric_fields_never_panic_on_any_bytes() {
+        let bytes: [u8; 12] = kani::any();
+        let length: usize = kani::any();
+        kani::assume((1..=12).contains(&length));
+        let field = &bytes[..length];
+        let _ = octal(field);
+        if let Ok(size) = size_field(field) {
+            assert!(i64::try_from(size).is_ok());
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(13)]
+    fn every_value_reads_back_from_its_encoding() {
+        let value: i64 = kani::any();
+        assert!(matches!(number(&base_256(value)), Ok(read) if read == value));
+        let small: u64 = kani::any();
+        kani::assume(small < 8u64.pow(11));
+        let mut field = [0u8; 12];
+        for (index, byte) in field[..11].iter_mut().enumerate() {
+            *byte = b'0' + ((small >> (3 * (10 - index))) & 7) as u8;
+        }
+        assert!(matches!(octal(&field), Ok(read) if read == small));
+    }
+
+    #[kani::proof]
+    #[kani::unwind(13)]
+    fn base_256_fields_have_one_spelling() {
+        let field: [u8; 12] = kani::any();
+        kani::assume(field[0] == 0x80 || field[0] == 0xff);
+        if let Ok(value) = number(&field) {
+            assert!(base_256(value) == field);
+        }
     }
 }

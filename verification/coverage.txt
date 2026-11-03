@@ -71,7 +71,7 @@ item = src/native_7z.rs | impl Read for ParallelLzma2 {
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 7bf20aae2666ac3a
+fingerprint = 387d11ad205c1ede
 full-check = cargo kani
 item = src/native_7z.rs | struct Malformed {
 item = src/native_7z.rs | fn check(
@@ -83,4 +83,9 @@ item = src/native_zip.rs | fn exact_time(
 item = src/native_zip.rs | fn ntfs_time(
 item = src/native_zip.rs | fn dos_fields(
 item = src/native_zip.rs | fn reading_nearer_dos_time(
+item = src/native_tar.rs | struct BadField(
+item = src/native_tar.rs | fn field_check(
+item = src/native_tar.rs | fn octal(
+item = src/native_tar.rs | fn number(
+item = src/native_tar.rs | fn size_field(
 item = src/native_zip.rs | fn days_since_unix_epoch(
