@@ -42,7 +42,7 @@ Raw `sweep.json`, `formats.json`, corpus hashes, and environment details are sto
 
 ## Decision
 
-Performance results are not used as CI pass or fail thresholds because they are noisy. `.github/workflows/ci.yml` exercises cross-platform release correctness separately. The local Apple M5 [Pareto curve](../silesia/README.md) covers more levels, block sizes, and reader choices.
+Performance results are not used as CI pass or fail thresholds because they are noisy. `.github/workflows/ci.yml` exercises cross-platform release correctness separately.
 
 ## Limits
 

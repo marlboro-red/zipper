@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 from process_metrics import timed
-from compare_revisions import inventory, verify
+from bench_common import inventory, verify
 
 
 def main():

@@ -36,7 +36,7 @@ Preserving the shared ZIP reader's buffer on seeks gave overlapping small-file a
 
 ### Rejected libdeflate CRC for v2
 
-Replacing v2's CRC32 implementation with the already-linked libdeflate CRC did not establish a reliable improvement. The four-corpus creation and extraction measurements were noisy. Independent equivalence checks passed. See the [raw results](../v2/libdeflate-crc.json).
+Replacing v2's CRC32 implementation with the already-linked libdeflate CRC did not establish a reliable improvement. The four-corpus creation and extraction measurements were noisy. Independent equivalence checks passed. The raw results were removed with the native format.
 
 ### Streaming output buffer sweep
 

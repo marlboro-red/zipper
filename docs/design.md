@@ -3,9 +3,7 @@
 Zipper's next objective is **complete, verified extraction**, including creating
 the output tree. Decoder throughput is a component metric. This page explains the
 extraction direction set by the review of 30 October 2026, and why it looks the way
-it does. The wider research agenda, with its baselines and benchmark standard, is in
-[the research agenda](research.md). The byte layout is specified in
-[the format reference](reference/format.md).
+it does. Zipper reads ZIP, tar and 7z; it no longer has a format of its own.
 
 The review reached these conclusions:
 
@@ -15,8 +13,8 @@ The review reached these conclusions:
 - Removing decoding from the current output implementation does not approach 3×.
   Output work has to be executed differently.
 - The recent 10–16× gain in ZIP integrity verification is not an extraction gain.
-- The v2 independent-block format and the compatibility readers stay. Execution is
-  rebuilt around a validated extraction plan, one measured seam at a time.
+- Execution is rebuilt around a validated extraction plan, one measured seam at a
+  time.
 
 ## Retained changes improve the input path only
 
@@ -60,64 +58,12 @@ Several attempts failed, and the failures carry information:
 These results argue against assuming that more queues or asynchronous code are
 inherently faster. No current result establishes Windows extraction performance.
 
-## The v2 layout separates file boundaries from compression boundaries
-
-The research of 29 October proposed this layout for the native v2 format. The
-review keeps its independent blocks. The research called it a proposal, and said
-the current format should remain readable while v2 is experimental. It listed the
-contracts to settle before freezing the layout.
-
-Most of the layout has since shipped as the v2 format. Files share independent
-blocks of 1 MiB by default, each stored with Zstandard or raw. A compressed,
-checksummed index maps paths to payload extents. Creation overlaps reading,
-codec work and writing through bounded per-worker queues, and workers reuse
-codec contexts and payload buffers. Shared dictionaries and file attributes are
-not implemented. [The format reference](reference/format.md) is the contract;
-the table below is the original proposal.
-
-```mermaid
-flowchart LR
-  A[Scan files and collect metadata] --> B[Bounded sampling and grouping]
-  B --> C[Pack small files into groups]
-  C --> D[Independent blocks with optional shared dictionary]
-  D --> E[Reusable worker contexts and buffer pool]
-  E --> F[Bounded reorder queue and writer]
-  F --> G[Indexed archive with checked metadata]
-```
-
-| Concern | Proposed contract | Why it matters |
-| --- | --- | --- |
-| File manifest | Paths, types, attributes, sizes, and ordered payload extents | File boundaries need not be compression boundaries |
-| Blocks | Codec/transform ID, sizes, checksum, optional dictionary ID | Explicit decode and resource requirements |
-| Dictionary dependencies | Immutable, embedded, bounded per group | Shared redundancy without serial previous-block dependence |
-| Index | File-to-block extents and physical offsets, with integrity checks | Fast listing and selective extraction |
-| Streaming | Forward records plus a trailing index; seekable readers use the index | Avoid requiring a full input scan merely to list files |
-| Memory budget | Byte-counted queues, contexts, metadata, dictionaries, and buffers | A task-count bound alone does not bound memory |
-| Publication | Verified temporary output; explicit durability mode | Compare equivalent output guarantees |
-| Compatibility | Legacy readers isolated behind the same extraction policy | Native speed experiments do not weaken existing-format handling |
-
-For creation, the research proposed replacing the read-eight, compress-eight,
-write-eight barrier with an overlapped pipeline:
-
-- Reuse worker-local codec contexts and buffers.
-- Avoid nested codec thread pools when the archive scheduler already owns
-  parallelism.
-- Use a bounded reorder window, or independent indexed block locations, so one
-  slow block cannot cause unbounded buffering.
-- Give metadata discovery a bounded-memory option.
-
-Candidate block sizes are 64 KiB, 256 KiB, 1 MiB, 4 MiB, and 16 MiB. Candidate
-group budgets are 4–64 MiB. These are experiment ranges, not chosen defaults.
-Measure full extraction and single-file read amplification together. A 4 KiB file
-that requires a 16 MiB decode can turn a great full-extraction result into a poor
-interactive product.
-
 ## A validated plan drives execution
 
 Rebuild execution around a validated extraction plan, and introduce each seam only
 when an experiment needs it. The plan describes directory dependencies, file
 extents, decode units, expected sizes and checksums, and metadata. A ZIP decode
-unit is normally one entry. A v2 unit is one independently compressed block.
+unit is normally one entry. A 7z unit is one folder, or one LZMA2 segment of it.
 Format adapters keep their validation rules rather than forcing all formats into
 an unsafe common parser.
 
@@ -130,8 +76,8 @@ The executor should account for four distinct resources:
 - Outstanding output operations and open descriptors under separate limits.
 - Metadata and index storage and format limits, reported separately from buffer use.
 
-Today a per-worker fast-ZIP allocation cap and separate v2 decode and write pools
-do not constitute a process-wide resource contract. Reserve buffer capacity before
+Today a per-worker fast-ZIP allocation cap and the tar and 7z budgets do not
+constitute a process-wide resource contract. Reserve buffer capacity before
 scheduling work, and release it only after all consumers finish. Streaming fallback
 must work when a whole-buffer decode does not fit. Describe an allocation budget
 honestly. It is not an exact RSS limit once libraries, stacks, and allocators count.
@@ -201,20 +147,6 @@ cancellation, bounded memory, CRC validation, and malicious inputs would all nee
 proof and tests. Keep libdeflate or streaming fallback when parallel startup costs
 exceed the benefit. [Rapidgzip paper](https://arxiv.org/abs/2308.08955).
 
-### The native format changes only for a measured benefit
-
-For the native format, optimize creation for measured decode cost as well as ratio.
-Choose block boundaries and grouping that expose parallelism without excessive read
-amplification. Independently indexed blocks already provide the foundation. A new
-format version is justified only by a measured benefit that v2 cannot express.
-
-Deduplication is one such case. v2's cumulative file offsets cannot represent shared
-content extents, so any archive deduplication design must be versioned. The current
-duplicates command only reports byte-verified equality. Neither small-file fixture
-contains redundant payload bytes, so deduplication cannot explain away the current
-bottleneck. Reflinks need platform and metadata-safe fallbacks. Hardlinks would
-change independent-file semantics.
-
 ### Mounting is a separate product
 
 Mounting an archive is a separate product opportunity when the actual need is fast
@@ -247,15 +179,14 @@ latency there. Never report mount time as full extraction time.
    and explicit CPU and I/O limits. Compare against current RSS and speed.
    Concurrency changes require independent review. Do not attempt a broad executor
    rewrite without a workload showing why each new mechanism is needed.
-5. **Pursue parallel Deflate and native layout separately.** Each needs its own
+5. **Pursue parallel Deflate separately.** Each needs its own
    controlled baseline and fallback. Do not mix codec, scheduler, and file-output
    changes in one experiment, or attribute their combined result to one feature.
 
-Extraction comparisons follow [the benchmark standard](research.md#a-benchmark-standard-strong-enough-to-support-the-ambition),
+Extraction comparisons follow the rules of the [experiment log](../benchmarks/README.md),
 with these extraction-specific rules:
 
-- Compare identical legacy archives against current 7-Zip and libarchive, and
-  native archives against tuned tar, tar+pzstd, and competitive codecs.
+- Compare identical archives against current 7-Zip and libarchive.
 - Match bytes, metadata policy, and durability.
 - Report warm and controlled cold-cache runs separately. If cold state cannot be
   established, label it unknown.

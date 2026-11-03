@@ -5,7 +5,7 @@ The default engine, `--zip-engine auto`, decides from the file's leading bytes a
 
 A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as encryption, another compression method or more than one disk, the error names `--zip-engine backend`. Passing that flag is the user's decision.
 
-`--zip-engine native` and `--zip-engine native-fast` select the reader explicitly. `--zip-engine backend` sends every archive except `.zipper` to 7-Zip. Whenever 7-Zip extracts, under either engine, it anchors an absolute symlink target inside its output directory. Zipper renames that directory into place, so such a link can dangle outside the destination.
+`--zip-engine native` and `--zip-engine native-fast` select the reader explicitly. `--zip-engine backend` sends every archive to 7-Zip. Whenever 7-Zip extracts, under either engine, it anchors an absolute symlink target inside its output directory. Zipper renames that directory into place, so such a link can dangle outside the destination.
 The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 
 ## Supported archives

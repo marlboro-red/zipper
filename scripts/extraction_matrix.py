@@ -17,8 +17,7 @@ import tempfile
 import zipfile
 
 from process_metrics import timed
-from compare_revisions import inventory, verify
-from benchmark import cpu_cores, minimal_extract_flags
+from bench_common import cpu_cores, inventory, minimal_extract_flags, verify
 
 
 def digest(path):
@@ -75,7 +74,6 @@ def main():
     parser.add_argument('--work-dir', type=Path, help='parent for temporary archives and restored trees')
     parser.add_argument('--threads', type=int, nargs='+', default=[1, 2, 4])
     parser.add_argument('--runs', type=int, default=7)
-    parser.add_argument('--native-format', action='store_true', help='also create/extract native level-1, 1 MiB-block archive')
     parser.add_argument('--sevenzip')
     parser.add_argument('--tar', help='libarchive bsdtar executable, not GNU tar')
     parser.add_argument('--save-zip', type=Path, help='copy the ZIP fixture here for runs outside timing')
@@ -117,13 +115,6 @@ def main():
         archives = [archive, plain, compressed]
         if args.save_zip:
             shutil.copyfile(archive, args.save_zip)
-        native = work / 'input.zipper'
-        if args.native_format:
-            create = [str(zipper), '--threads', '4', 'create', str(native), str(source),
-                      '--level', '1', '--block-size-kib', '1024']
-            subprocess.run(create, check=True, stdout=subprocess.DEVNULL)
-            result['native_creation_command'] = create
-            archives.append(native)
         for path in archives:
             result['archives'][path.name] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
         output = work / 'out'
@@ -132,9 +123,6 @@ def main():
         commands['tar-native'] = [str(zipper), 'extract', str(plain), '-o', str(output)]
         commands['tar-gz-native'] = [str(zipper), 'extract', str(compressed), '-o', str(output)]
         for threads in sorted(set(args.threads)):
-            if args.native_format:
-                commands[f'zipper-{threads}'] = [str(zipper), '--threads', str(threads),
-                    'extract', str(native), '-o', str(output)]
             for mode in ['native', 'native-fast']:
                 commands[f'{mode}-{threads}'] = [str(zipper), '--zip-engine', mode,
                     '--threads', str(threads), 'extract', str(archive), '-o', str(output)]

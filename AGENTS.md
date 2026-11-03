@@ -5,7 +5,7 @@
 - Work autonomously. The user wants autonomous development.
 - Make small, verified commits and push them to `origin/main`.
 - Preserve remote history.
-- Aim for competitive compression and extraction at comparable archive sizes. Do not gain throughput by discarding compression or correctness.
+- Aim for the fastest safe extraction of ZIP, tar and 7z. Do not gain throughput by discarding a safety check or correctness.
 
 ## Engineering approach
 
@@ -13,7 +13,7 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 
 - Understand the data shape and bottleneck before adding machinery. Prefer a smaller design that makes ownership and invariants explicit.
 - Build rerunnable tools for verification. A successful build is not evidence of byte recovery. Test public behavior, malformed input, and failure cleanup.
-- Pass direct original-versus-extracted byte checks on every archive change. Preserve v1 read compatibility and validate v2 selected-file extraction.
+- Pass direct original-versus-extracted byte checks on every reader change, including selected-path extraction.
 - Before you accept an optimization, state its hypothesis and metric.
 - Measure release binaries with interleaved repeated runs and retain raw samples. Report median, range, archive size, memory, workload, and limitations.
 - Profile outside timed runs. Treat overlapping timing ranges as inconclusive.
@@ -27,8 +27,8 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 - Treat a change as done only when `cargo xtask gate fast` passes. CI runs `cargo xtask gate full`.
 - Run `cargo xtask install-hooks` once so pre-push runs the fast gate.
 - After pushing, run `cargo xtask ci-wait`. It waits for the CI run on `HEAD` and prints each job's result.
-- Expect the gate to format, lint, test, and build a release binary. On macOS and Linux it also lints the Windows build, which needs `rustup target add x86_64-pc-windows-gnu` once. It also checks a byte-exact round trip of `.zipper` and ZIP extraction, selected-path extraction, and truncated input cleanup.
-- Use `scripts/compare_revisions.py` for direct byte-verified revision comparisons.
+- Expect the gate to format, lint, test, and build a release binary. On macOS and Linux it also lints the Windows build, which needs `rustup target add x86_64-pc-windows-gnu` once. It also checks byte-exact ZIP extraction on both engines, selected-path extraction, and truncated input cleanup.
+- Use `scripts/compare_zip_readers.py` and `scripts/compare_workloads.py` for byte-verified comparisons of two binaries.
 - Prove a check can fail with `scripts/plant.py`. It restores the file and rebuilds the release binary, so a planted break never reaches a measurement.
 - Keep formal checks in step with their code. The gate's `verify` step fails when code listed in `verification/coverage.txt` changed since its check last passed. Follow the named `zipper-verify-*` skill, then run `cargo xtask verify-sync NAME`.
 - Copy every commit hash you cite from `git log --oneline`. The `commit-msg` hook and `cargo xtask lint-commits` in pre-push reject a hash that names no commit.
@@ -45,7 +45,7 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 
 ## Documentation
 
-- Keep format contracts in [`docs/reference/format.md`](docs/reference/format.md).
+- Keep each reader's contract in its page under [`docs/reference/`](docs/reference/zip-reader.md).
 - Make every Markdown page reachable by links from `README.md`.
 - Record each experiment in `benchmarks/` with the fixed headings, and add a row to the [experiment log](benchmarks/README.md).
 - Write docs by the pstack `technical-writing` and `unslop` rules. `cargo xtask lint-docs` runs in the gate and checks dashes, colons, word lists, sentence length, links, record headings and reachability.

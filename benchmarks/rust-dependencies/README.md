@@ -54,7 +54,7 @@ A second session at `40cfbed` ran every Zipper reader at 1 and 4 threads beside 
 - **Four workers.** Native-fast is 2.25× faster than bsdtar in wall time but uses 36% more CPU in total.
 - **7-Zip.** It restores timestamps and attributes that Zipper does not, so its row is not a matched comparison.
 
-A [native level and block-size sweep on this corpus](level-sweep.md) measures the size and speed trade.
+
 
 ## Decision
 

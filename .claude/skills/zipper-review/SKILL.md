@@ -1,6 +1,6 @@
 ---
 name: zipper-review
-description: Independent adversarial review for changes to archive parsing, extraction safety or concurrency. Use before committing any change to src/native_zip.rs, src/zip_reader.rs, src/v2.rs, src/v1.rs, src/pipeline.rs or the extraction publish path, and when evaluating another ZIP implementation.
+description: Independent adversarial review for changes to archive parsing, extraction safety or concurrency. Use before committing any change to src/native_zip.rs, src/zip_reader.rs, src/native_tar.rs, src/native_7z.rs, src/staging.rs or the extraction publish path, and when evaluating another ZIP implementation.
 ---
 
 # Zipper review

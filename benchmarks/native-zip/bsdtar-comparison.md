@@ -39,7 +39,7 @@ All readers extract the same 70,252,453-byte Deflate ZIP. Every extraction passe
 
 Zipper's default ZIP reader delegates to 7-Zip and took 559.38 ms here. Native stream peaked at 4.9 MiB RSS, and native-fast peaked at 174.2 MiB. bsdtar RSS was not measured.
 
-See the [raw samples](../silesia/zip-vs-tar.json).
+See the [raw samples](data/zip-vs-tar.json).
 
 ### Small files
 
@@ -85,7 +85,7 @@ This comparison uses 1 MiB tar record buffers (`-b 2048`), alongside default-buf
 
 The same run measured default-buffer plain tar at 95.11 ms and default-buffer tar+pzstd at 106.52 ms.
 
-See the [raw tuned samples](../silesia/tar-tuned.json) and the [earlier default-buffer samples](../silesia/tar-current.json).
+See the [raw tuned samples](data/tar-tuned.json) and the [earlier default-buffer samples](data/tar-current.json).
 
 ### Small-file bottleneck and worker count
 

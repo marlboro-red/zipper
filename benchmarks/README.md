@@ -4,16 +4,6 @@ Every performance experiment has one record in this directory, with its raw data
 
 All records are local measurements. Each one names its machine, revision, run count and verification.
 
-## Native format
-
-| Date | Experiment | Verdict |
-| --- | --- | --- |
-| 2026-11-01 | [Level and block-size sweep on dependency sources](rust-dependencies/level-sweep.md) | Larger blocks cut archive bytes by up to 48%. Extraction ranges mostly overlap. The default stays. |
-| 2026-10-29 | [Silesia extraction time versus compression ratio](silesia/README.md) | The default stays at level 1 with 1024 KiB blocks. The frontier joins two sessions and two binaries. |
-| 2026-10-29 | [Matched-sync comparison with tar+zstd](v2/zstd-fullsync.md) | Matched sync removed the old 3.5× creation gap. The remaining random-data difference is not established. |
-| 2026-10-29 | [Indexed v2 measurements](v2/README.md) | V2 improves large-file extraction and small-file density. Compression speed is mixed. |
-| 2026-10-29 | [First baseline against 7-Zip](7zip-baseline.md) | Faster than 7-Zip LZMA2 level 1 at unmatched ratios. It set the v2 priorities. |
-
 ## Real-world archives
 
 | Date | Experiment | Verdict |
@@ -78,12 +68,11 @@ All records are local measurements. Each one names its machine, revision, run co
 | 2026-10-29 | [ZIP extraction versus bsdtar](native-zip/bsdtar-comparison.md) | Four Zipper workers against one bsdtar process. One worker narrows small files to about 1.13×. Silesia is 1.99× with native-fast or 1.59× streaming. |
 | 2026-10-29 | [Cross-platform Silesia checks](cross-platform/README.md) | Native ZIP with two workers beat direct 7-Zip on hosted runners. Wall time only. |
 
-Decisions made before these records existed are rows in [v2/decisions.tsv](v2/decisions.tsv). New decisions go in this log, not in that file.
 
 ## Add an experiment
 
 1. Create `benchmarks/<area>/<experiment>/README.md` and put the raw data beside it.
 2. Use exactly six level-2 headings, in this order. They are `## Question`, `## Setup`, `## Results`, `## Decision`, `## Limits` and `## Reproduce`. Put the verdict in one or two sentences under the title.
-3. For a comparison with another tool, report the 1-thread Zipper row and CPU time next to the wall time. `scripts/extraction_matrix.py`, `scripts/compare_formats.py` and `scripts/compare_zstd.py` record both and write a `parity` section. ZIP rows compare the native engines with default bsdtar, because both restore modes, times and links. Native-format rows pass reduced-metadata flags to tar. State in Limits any difference that remains, such as 7-Zip restoring timestamps.
+3. For a comparison with another tool, report the 1-thread Zipper row and CPU time next to the wall time. `scripts/extraction_matrix.py` records both and writes a `parity` section. ZIP rows compare the native engines with default bsdtar, because both restore modes, times and links. State in Limits any difference that remains, such as 7-Zip restoring timestamps.
 4. Add a row to the matching table on this page.
 5. Run `cargo xtask lint-docs`. It checks the headings, the links, and that every page is reachable from `README.md`.

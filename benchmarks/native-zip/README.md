@@ -25,7 +25,7 @@ Timings include process startup and filesystem writes. They exclude verification
 | [random](random.json) | 4398 | 4331 | 58.21 | 41.23–62.23 | 58.21–61.40 | 268,435,748 |
 | [small-files](small-files.json) | 119 | 64 | 131.41 | 130.03–147.39 | 239.27–256.32 | 1,088,044 |
 
-Silesia adds a public mixed corpus, with a [Pareto plot and samples](../silesia/README.md). Its identical ZIP extracts in 168.05 ms median through native ZIP versus 563.32 ms directly through 7-Zip (3.35× throughput).
+Silesia adds a public mixed corpus. Its identical ZIP extracts in 168.05 ms median through native ZIP versus 563.32 ms directly through 7-Zip (3.35× throughput).
 
 ## Decision
 
@@ -45,4 +45,4 @@ Caches are warm. Storage and thermal isolation were not performed, and neither w
 
 ## Reproduce
 
-Run `python3 scripts/compare_formats.py /path/to/corpus --formats zip --native-zip --runs 7 --threads 4`.
+Run `python3 scripts/extraction_matrix.py` on the corpus. The script that produced these rows, `compare_formats.py`, was removed with the native format.

@@ -13,10 +13,9 @@ A number is a claim. Every claim names its workload, its configuration, its run 
 2. Name the baseline a user gets today. Compare with the default path, not with an old or slower path. If a change fixes a regression, say "fixes a regression" and also compare it with the best existing path.
 3. Pick the script:
    - `scripts/extraction_matrix.py` for ZIP extraction against bsdtar and 7-Zip.
-   - `scripts/compare_formats.py` for classic formats through Zipper.
-   - `scripts/compare_zstd.py` for tar+zstd and tar+pzstd round trips.
-   - `scripts/sweep.py` for native level and block-size settings.
-   - `scripts/compare_revisions.py` for one change between two Zipper binaries.
+   - `scripts/compare_zip_readers.py` for one change between two Zipper binaries on one ZIP, tar or 7z archive, with 7-Zip as an optional reader.
+   - `scripts/compare_workloads.py` for the same comparison over every scoreboard workload, on CI runners through `.github/workflows/compare.yml`.
+   - `scripts/realworld_diff.py` for the 248 real-world archives.
 4. Check `uptime`. If the load is high, find out why, and say so in the record. Never run two experiments at once.
 
 ## While measuring

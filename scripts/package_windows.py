@@ -41,11 +41,6 @@ with tempfile.TemporaryDirectory() as tmp:
                 assert original.read_bytes() == restored.read_bytes(), relative
 
     run("--version")
-    archive = root / "test.zipper"
-    run("--threads", "4", "create", archive, source)
-    run("test", archive)
-    run("extract", archive, "--output", root / "native")
-    verify(root / "native" / "input")
     archive = root / "test.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
         for path in source.rglob("*"):

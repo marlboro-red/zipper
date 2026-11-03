@@ -21,16 +21,16 @@ Get-FileHash .\zipper-0.1.0-alpha.1-windows-x86_64.zip -Algorithm SHA256
 
 ```powershell
 .\zipper.exe --version
-.\zipper.exe create backup.zipper .\data
-.\zipper.exe test backup.zipper
-.\zipper.exe extract backup.zipper --output .\restored
+.\zipper.exe test files.zip
+.\zipper.exe extract files.zip --output .\unzipped
+.\zipper.exe extract source.tar.gz --output .\source
 .\zipper.exe --zip-engine native-fast --threads 4 extract files.zip --output .\unzipped
 ```
 
-Put the archive outside the input folder. Extraction needs a new destination
-folder whose parent already exists.
+Extraction needs a new destination folder whose parent already exists, or
+`--overwrite` to merge into an existing one.
 
-The native archive reader and the native ZIP readers work without Rust or 7-Zip.
+The native ZIP, tar and 7z readers work without Rust or 7-Zip.
 The build statically links the MSVC runtime.
 
 ## Use 7-Zip for other formats
@@ -44,6 +44,9 @@ $env:ZIPPER_7Z = 'C:\Program Files\7-Zip\7z.exe'
 ```
 
 ## What this release supports
+
+This list describes the published early release. The current source tree no longer creates or reads `.zipper` archives, and it reads tar and 7z in process.
+
 
 - Native archives preserve regular-file bytes and directories with UTF-8 paths.
   They do not restore permissions, timestamps, links, or extended attributes on Windows.

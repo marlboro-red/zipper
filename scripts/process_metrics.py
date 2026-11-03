@@ -4,7 +4,7 @@ import os
 import subprocess
 import tempfile
 import time
-from benchmark import timed as unix_timed
+from bench_common import timed as unix_timed
 
 
 def timed(command, cwd):

@@ -21,7 +21,7 @@ The test checks all of them on every pair.
 ## What it covers
 
 - The trees use the names `a` and `b` at two levels. A destination path holds nothing, a file, a folder, a symlink to a folder outside, or a symlink to a file outside, which gives 841 destinations. An archive path holds nothing, a file or a folder, which gives 121 archives. That makes 101,761 pairs.
-- The code covered is `crate::staging::stage`, `Staging::publish`, `plan`, `same_filesystem` and `crate::publish` in src/lib.rs, through the native ZIP reader. tar, 7z, `.zipper` and the 7-Zip backend call the same two functions.
+- The code covered is `crate::staging::stage`, `Staging::publish`, `plan`, `same_filesystem` and `crate::publish` in src/lib.rs, through the native ZIP reader. tar, 7z and the 7-Zip backend call the same two functions.
 - `documented_outcome` in the test is the contract written as code. It does not copy `plan`. It states what must be on disk afterwards, and the test compares the whole tree, outside folder included.
 - It runs on Unix, where the test can make symlinks.
 - It leaves out other processes that change the destination during extraction. `plan` checks the tree before the first rename, so a folder swapped for a symlink in between is followed. The [usage page](../../../docs/usage.md) asks for a private destination for that reason. It also leaves out mount points inside the destination, which need root to set up, case-insensitive name clashes, and rename failures such as a full disk.

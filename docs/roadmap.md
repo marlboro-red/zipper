@@ -19,7 +19,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M8. Extraction API for applications](#m8-extraction-api-for-applications) | Done | M7 |
 | [M9. Native 7z reader](#m9-native-7z-reader) | Done | M8 |
 
-M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment. M8 closed on 3 November 2026. Applications can call `zipper::extract_archive` to extract into an existing folder, select ZIP paths, follow progress and cancel. Four adversarial reviews found five issues, each fixed with a test that failed first. `.zipper` archives and the 7-Zip backend report no progress yet. M9 closed the same day. The default engine reads 7z in process with all of these options, and sends BCJ2, PPMd, BZip2, encrypted and split 7z archives to 7-Zip. An early timing on one Mac shows the reader faster than 7-Zip on non-solid archives and 1.85× slower on solid Silesia, where 7-Zip decodes the two LZMA2 blocks at once. Splitting LZMA2 at its dictionary resets is the next experiment.
+M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment. M8 closed on 3 November 2026. Applications can call `zipper::extract_archive` to extract into an existing folder, select ZIP paths, follow progress and cancel. Four adversarial reviews found five issues, each fixed with a test that failed first. The 7-Zip backend reports no progress yet. M9 closed the same day. The default engine reads 7z in process with all of these options, and sends BCJ2, PPMd, BZip2, encrypted and split 7z archives to 7-Zip. An early timing on one Mac shows the reader faster than 7-Zip on non-solid archives and 1.85× slower on solid Silesia, where 7-Zip decodes the two LZMA2 blocks at once. Splitting LZMA2 at its dictionary resets is the next experiment.
 
 ## M0. Verified workflow
 
@@ -70,7 +70,7 @@ Exit checks:
 
 1. The reference comparison also compares permissions and modification times.
 2. `docs/reference/zip-reader.md` lists exactly what is restored and what is not.
-3. Benchmarks compare against default bsdtar, because both sides now do the same metadata work. Done in `scripts/extraction_matrix.py` and `scripts/compare_formats.py`. The [bsdtar comparison](../benchmarks/native-zip/bsdtar-comparison.md) predates metadata restore, so M3 measures it again.
+3. Benchmarks compare against default bsdtar, because both sides now do the same metadata work. Done in `scripts/extraction_matrix.py`. The [bsdtar comparison](../benchmarks/native-zip/bsdtar-comparison.md) predates metadata restore, so M3 measures it again.
 
 ## M3. Fixed scoreboard
 
@@ -165,7 +165,7 @@ An application can call Zipper as a Rust library to update an installed folder, 
 Scope:
 
 - Extraction into an existing folder, where each archive file replaces the file of the same name by rename. Done with `zipper::Existing::Overwrite` and `zipper extract --overwrite`, in every reader.
-- Selected folders and files from a ZIP archive, as `--path` already does for `.zipper` v2. Done with `paths` in `native_zip::ReadOptions` and `zipper extract --path`.
+- Selected folders and files from a ZIP archive. Done with `paths` in `native_zip::ReadOptions` and `zipper extract --path`.
 - A progress callback that reports files and decoded bytes. Done for ZIP and tar with `zipper::Control`.
 - Cancellation from another thread. A cancelled extraction changes nothing in the destination. Done for ZIP and tar, with `tests/control.rs`.
 - One library function that picks the reader for an archive, as `zipper extract` does. Done with `zipper::extract_archive`.
