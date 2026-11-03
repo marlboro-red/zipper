@@ -41,11 +41,14 @@ enum Command {
         #[arg(long, default_value_t = 1024, value_parser = clap::value_parser!(u32).range(64..=16384))]
         block_size_kib: u32,
     },
-    /// Extract into a new directory.
+    /// Extract into a new directory, or into an existing one with --overwrite.
     Extract {
         archive: PathBuf,
         #[arg(short, long)]
         output: PathBuf,
+        /// Extract into an existing directory, replacing files of the same name.
+        #[arg(long)]
+        overwrite: bool,
         /// Extract an exact archive path or directory subtree (v2 only; repeatable).
         #[arg(long = "path")]
         paths: Vec<String>,
@@ -155,10 +158,16 @@ fn main() -> Result<()> {
             archive,
             output,
             paths,
+            overwrite,
             max_extracted_bytes,
         } => {
+            let existing = if overwrite {
+                zipper::Existing::Overwrite
+            } else {
+                zipper::Existing::Refuse
+            };
             if !paths.is_empty() || zipper::compat::is_native(&archive)? {
-                zipper::extract(&archive, &output, &paths, max_extracted_bytes)?;
+                zipper::extract_with(&archive, &output, &paths, max_extracted_bytes, existing)?;
             } else {
                 match choose_reader(cli.zip_engine, &archive)? {
                     Reader::Native { fast } => {
@@ -170,6 +179,7 @@ fn main() -> Result<()> {
                                 threads: cli.threads,
                                 buffer_bytes,
                                 max_output_bytes: max_extracted_bytes,
+                                existing,
                             },
                         )?;
                     }
@@ -180,6 +190,7 @@ fn main() -> Result<()> {
                             zipper::native_tar::ReadOptions {
                                 max_output_bytes: max_extracted_bytes,
                                 writers: cli.threads,
+                                existing,
                             },
                         )?;
                     }
@@ -188,7 +199,13 @@ fn main() -> Result<()> {
                             max_extracted_bytes.is_none(),
                             "--max-extracted-bytes needs a .zipper archive or a ZIP or tar read in process"
                         );
-                        zipper::compat::run("x", &archive, Some(&output), format.as_deref())?;
+                        zipper::compat::run(
+                            "x",
+                            &archive,
+                            Some(&output),
+                            format.as_deref(),
+                            existing,
+                        )?;
                     }
                 }
             }
@@ -214,9 +231,13 @@ fn main() -> Result<()> {
                         None,
                         zipper::native_tar::ReadOptions::default(),
                     )?),
-                    Reader::Backend { format } => {
-                        zipper::compat::run("l", &archive, None, format.as_deref())?
-                    }
+                    Reader::Backend { format } => zipper::compat::run(
+                        "l",
+                        &archive,
+                        None,
+                        format.as_deref(),
+                        zipper::Existing::Refuse,
+                    )?,
                 }
             }
         }
@@ -236,6 +257,7 @@ fn main() -> Result<()> {
                                 threads: cli.threads,
                                 buffer_bytes,
                                 max_output_bytes: None,
+                                ..Default::default()
                             },
                         )?)
                     }
@@ -244,9 +266,13 @@ fn main() -> Result<()> {
                         None,
                         zipper::native_tar::ReadOptions::default(),
                     )?),
-                    Reader::Backend { format } => {
-                        zipper::compat::run("t", &archive, None, format.as_deref())?
-                    }
+                    Reader::Backend { format } => zipper::compat::run(
+                        "t",
+                        &archive,
+                        None,
+                        format.as_deref(),
+                        zipper::Existing::Refuse,
+                    )?,
                 }
             }
         }

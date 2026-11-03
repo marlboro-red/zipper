@@ -4,10 +4,12 @@ pub mod duplicates;
 pub mod native_tar;
 pub mod native_zip;
 mod pipeline;
+mod staging;
 mod v1;
 mod v2;
 mod zip_reader;
 use anyhow::{Context, Result, bail, ensure};
+pub use staging::Existing;
 use std::{
     fs::File,
     io::Read,
@@ -132,6 +134,7 @@ fn later_spellings_of_same_directory<'a>(
 }
 
 #[cfg_attr(not(unix), allow(dead_code))]
+#[derive(Clone, Copy)]
 pub(crate) struct Directory<'a> {
     pub name: &'a str,
     pub mode: Option<u32>,
@@ -159,7 +162,7 @@ pub(crate) fn publish(staging: &Path, destination: &Path, directories: &[Directo
 }
 
 #[cfg(unix)]
-mod unix_modes {
+pub(crate) mod unix_modes {
     use super::Directory;
     use anyhow::Result;
     use rayon::prelude::*;
@@ -171,6 +174,14 @@ mod unix_modes {
 
     pub(super) fn apply(staging: &Path, directories: &[Directory]) -> Result<()> {
         let default = fs::metadata(staging)?.permissions().mode() & 0o777;
+        apply_with_default(staging, directories, default)
+    }
+
+    pub(crate) fn apply_with_default(
+        staging: &Path,
+        directories: &[Directory],
+        default: u32,
+    ) -> Result<()> {
         let mut ordered: Vec<&Directory> = directories.iter().collect();
         ordered.sort_by_key(|directory| std::cmp::Reverse(directory.name.matches('/').count()));
         restore_times(staging, &ordered)?;
@@ -225,7 +236,7 @@ mod unix_modes {
 const ALLOCATION_UNIT: u64 = 4096;
 
 pub(crate) fn check_output_size<'a>(
-    destination: &Path,
+    staging: &Path,
     entries: impl IntoIterator<Item = &'a Entry>,
     limit: Option<u64>,
 ) -> Result<()> {
@@ -246,9 +257,8 @@ pub(crate) fn check_output_size<'a>(
             "archive expands to {declared} bytes, over --max-extracted-bytes {limit}"
         ),
         None => {
-            let parent = parent(destination);
-            let free = available_bytes(parent)
-                .with_context(|| format!("cannot measure free space at {}", parent.display()))?;
+            let free = available_bytes(staging)
+                .with_context(|| format!("cannot measure free space at {}", staging.display()))?;
             ensure!(
                 estimate <= free,
                 "archive needs about {estimate} bytes but {free} are free; \
@@ -335,7 +345,7 @@ fn version(path: &Path) -> Result<u8> {
 /// Validate all payloads, optionally extracting into a new directory.
 pub fn read_archive(archive: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
     match version(archive)? {
-        1 => v1::read_archive(archive, destination),
+        1 => v1::read_archive(archive, destination, Existing::Refuse),
         2 => v2::read_archive(archive, destination, &[]),
         n => bail!("unsupported Zipper version: {n}"),
     }
@@ -343,7 +353,7 @@ pub fn read_archive(archive: &Path, destination: Option<&Path>) -> Result<Vec<En
 /// v2 listing checks the index only. Use read_archive to validate payloads.
 pub fn list_archive(archive: &Path) -> Result<Vec<Entry>> {
     match version(archive)? {
-        1 => v1::read_archive(archive, None),
+        1 => v1::read_archive(archive, None, Existing::Refuse),
         2 => v2::list(archive),
         n => bail!("unsupported Zipper version: {n}"),
     }
@@ -366,15 +376,26 @@ pub fn extract(
     paths: &[String],
     limit: Option<u64>,
 ) -> Result<Vec<Entry>> {
+    extract_with(archive, destination, paths, limit, Existing::Refuse)
+}
+
+/// [`extract`] that can also merge into an existing destination.
+pub fn extract_with(
+    archive: &Path,
+    destination: &Path,
+    paths: &[String],
+    limit: Option<u64>,
+    existing: Existing,
+) -> Result<Vec<Entry>> {
     match version(archive)? {
         1 if paths.is_empty() => {
             ensure!(
                 limit.is_none(),
                 "--max-extracted-bytes requires a v2 archive; v1 has no size index"
             );
-            v1::read_archive(archive, Some(destination))
+            v1::read_archive(archive, Some(destination), existing)
         }
-        2 => v2::read_archive_limited(archive, Some(destination), paths, limit),
+        2 => v2::read_archive_limited(archive, Some(destination), paths, limit, existing),
         1 => bail!("selective extraction requires a v2 archive"),
         n => bail!("unsupported Zipper version: {n}"),
     }

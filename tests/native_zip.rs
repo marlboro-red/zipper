@@ -120,6 +120,7 @@ fn many_tiny_entries_recover_and_failure_never_publishes() -> anyhow::Result<()>
                 threads: Some(threads),
                 buffer_bytes: None,
                 max_output_bytes: None,
+                ..Default::default()
             },
         )
         .unwrap_err();
@@ -469,6 +470,7 @@ fn shared_buffer_budget_streams_and_checks_crc_under_contention() -> anyhow::Res
             threads: Some(4),
             buffer_bytes: Some(buffer_bytes),
             max_output_bytes: None,
+            ..Default::default()
         };
         fs::write(&input, &original)?;
         let output = temp.path().join("out");
@@ -535,6 +537,7 @@ fn streaming_empty_entries_still_validate_crc_and_cleanup() -> anyhow::Result<()
                 threads: Some(1),
                 buffer_bytes: Some(0),
                 max_output_bytes: None,
+                ..Default::default()
             };
             fs::write(&path, &original)?;
             let out = temp.path().join("out");

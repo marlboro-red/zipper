@@ -16,6 +16,8 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M5. Remaining extraction headroom](#m5-remaining-extraction-headroom) | Done | M3 |
 | [M6. Native reader as the default](#m6-native-reader-as-the-default) | Done | M1, M2 |
 | [M7. Native tar family](#m7-native-tar-family) | Done | M5 |
+| [M8. Extraction API for applications](#m8-extraction-api-for-applications) | In progress | M7 |
+| [M9. Native 7z reader](#m9-native-7z-reader) | Planned | M8 |
 
 M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment.
 
@@ -155,6 +157,41 @@ Exit checks:
 1. The default engine extracts every corpus tar format in process on all three operating systems, with the same tree as the reference readers.
 2. Every hostile tar layout has a test that failed before its fix, and the adversarial review finds no escape.
 3. `docs/reference/` documents the tar reader, and the scoreboard shows its tar rows.
+
+## M8. Extraction API for applications
+
+An application can call Zipper as a Rust library to update an installed folder, extract part of an archive, show progress and stop midway.
+
+Scope:
+
+- Extraction into an existing folder, where each archive file replaces the file of the same name by rename. Done with `zipper::Existing::Overwrite` and `zipper extract --overwrite`, in every reader.
+- Selected folders and files from a ZIP archive, as `--path` already does for `.zipper` v2.
+- A progress callback that reports entries and bytes written.
+- Cancellation from another thread. A cancelled extraction changes nothing in the destination.
+- One library function that picks the reader for an archive, as `zipper extract` does.
+
+Exit checks:
+
+1. Tests show that a failed, rejected or cancelled extraction leaves an existing destination unchanged and leaves no staging folder.
+2. The adversarial review finds no write outside the destination, including through links that already exist in it.
+3. `docs/usage.md` and the reader references describe each option.
+
+## M9. Native 7z reader
+
+`zipper extract` reads `.7z` in process, so 7-Zip is no longer needed for the archives applications most often ship.
+
+Scope:
+
+- A 7z container parser with the M1 safety contract, covering the header, packed streams, folders and substreams.
+- LZMA and LZMA2 through liblzma, plus the BCJ x86 and ARM64 filters. Other codecs and encrypted archives are refused with a clear error.
+- The M8 options, including selected folders, progress and cancellation.
+- A reference corpus from 7-Zip and p7zip, and hostile 7z tests.
+
+Exit checks:
+
+1. The default engine extracts every corpus 7z archive in process on all three operating systems, with the same tree as 7-Zip.
+2. Every hostile 7z layout has a test that failed before its fix, and the adversarial review finds no escape.
+3. `docs/reference/` documents the 7z reader.
 
 ## Close a milestone
 

@@ -10,16 +10,14 @@ use std::{
 const MAGIC: &[u8; 8] = b"ZIPPER\0\x01";
 const CHUNK: usize = 1024 * 1024;
 const BATCH: usize = 8;
-pub(super) fn read_archive(archive: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
-    let staging = if let Some(dst) = destination {
-        ensure!(
-            fs::symlink_metadata(dst).is_err(),
-            "extraction destination must not exist"
-        );
-        Some(tempfile::tempdir_in(parent(dst))?)
-    } else {
-        None
-    };
+pub(super) fn read_archive(
+    archive: &Path,
+    destination: Option<&Path>,
+    existing: crate::Existing,
+) -> Result<Vec<Entry>> {
+    let staging = destination
+        .map(|destination| crate::staging::stage(destination, existing))
+        .transpose()?;
     let mut r = BufReader::new(File::open(archive)?);
     ensure!(
         &number::<8>(&mut r)? == MAGIC,
@@ -112,12 +110,8 @@ pub(super) fn read_archive(archive: &Path, destination: Option<&Path>) -> Result
         });
     }
     ensure!(r.read(&mut [0])? == 0, "unexpected trailing data");
-    if let (Some(temp), Some(dst)) = (staging, destination) {
-        ensure!(
-            fs::symlink_metadata(dst).is_err(),
-            "destination appeared during extraction"
-        );
-        fs::rename(temp.path(), dst)?;
+    if let Some(staging) = staging {
+        staging.publish(&[])?;
     }
     Ok(entries)
 }

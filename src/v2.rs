@@ -419,7 +419,7 @@ pub(super) fn read_archive(
     destination: Option<&Path>,
     selected: &[String],
 ) -> Result<Vec<Entry>> {
-    read_archive_limited(path, destination, selected, None)
+    read_archive_limited(path, destination, selected, None, crate::Existing::Refuse)
 }
 
 pub(super) fn read_archive_limited(
@@ -427,6 +427,7 @@ pub(super) fn read_archive_limited(
     destination: Option<&Path>,
     selected: &[String],
     limit: Option<u64>,
+    existing: crate::Existing,
 ) -> Result<Vec<Entry>> {
     let mut file = File::open(path)?;
     let index = read_index(&mut file)?;
@@ -461,15 +462,13 @@ pub(super) fn read_archive_limited(
         let last = (item.offset + item.entry.size - 1) / index.chunk as u64;
         needed[first as usize..=last as usize].fill(true);
     }
-    let staging = if let Some(dst) = destination {
-        ensure!(
-            fs::symlink_metadata(dst).is_err(),
-            "extraction destination must not exist"
-        );
-        crate::check_output_size(dst, items.iter().map(|item| &item.entry), limit)?;
-        Some(tempfile::tempdir_in(parent(dst))?)
-    } else {
-        None
+    let staging = match destination {
+        Some(destination) => {
+            let staging = crate::staging::stage(destination, existing)?;
+            crate::check_output_size(staging.path(), items.iter().map(|item| &item.entry), limit)?;
+            Some(staging)
+        }
+        None => None,
     };
     if let Some(temp) = &staging {
         let mut directories = HashSet::new();
@@ -614,8 +613,8 @@ pub(super) fn read_archive_limited(
     if let Some((_, mut w)) = current {
         w.flush()?;
     }
-    if let (Some(temp), Some(dst)) = (staging, destination) {
-        crate::publish(temp.path(), dst, &[])?;
+    if let Some(staging) = staging {
+        staging.publish(&[])?;
     }
     Ok(items.into_iter().map(|i| i.entry).collect())
 }

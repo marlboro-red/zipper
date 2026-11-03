@@ -81,6 +81,7 @@ pub fn run(
     archive: &Path,
     destination: Option<&Path>,
     format: Option<&str>,
+    existing: crate::Existing,
 ) -> Result<()> {
     ensure!(
         ["x", "l", "t"].contains(&action),
@@ -91,11 +92,7 @@ pub fn run(
     let mut command = Command::new(backend()?);
     command.arg(action).arg("-y").args(format);
     let staging = if let Some(dst) = destination {
-        ensure!(
-            std::fs::symlink_metadata(dst).is_err(),
-            "extraction destination must not exist"
-        );
-        let temp = tempfile::tempdir_in(super::parent(dst))?;
+        let temp = crate::staging::stage(dst, existing)?;
         let staging = temp.path().canonicalize()?;
         ensure_no_wildcards(&staging)?;
         let mut flag = std::ffi::OsString::from("-o");
@@ -111,12 +108,8 @@ pub fn run(
         .status()
         .context("failed to launch 7-Zip backend")?;
     ensure!(status.success(), "7-Zip backend failed: {status}");
-    if let (Some(temp), Some(dst)) = (staging, destination) {
-        ensure!(
-            std::fs::symlink_metadata(dst).is_err(),
-            "destination appeared during extraction"
-        );
-        std::fs::rename(temp.path(), dst)?;
+    if let Some(staging) = staging {
+        staging.publish(&[])?;
     }
     Ok(())
 }

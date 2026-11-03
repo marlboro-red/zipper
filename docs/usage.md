@@ -58,6 +58,18 @@ target/release/zipper extract backup.zipper --output restored --max-extracted-by
 
 The limit applies to `.zipper` v2 archives and to ZIP archives the in-process reader handles, which is the default. Legacy v1 archives have no size index, so they refuse the option. The 7-Zip backend applies its own rules and refuses the option too. On a compressed filesystem the free-space estimate can be too strict, so pass a cap to override it.
 
+### Extract into an existing folder
+
+To update a folder that already exists, pass `--overwrite`:
+
+```sh
+target/release/zipper extract update.zip --output installed --overwrite
+```
+
+Zipper decodes the whole archive into a hidden `.zipper-` folder inside the destination first. If the archive is damaged or rejected, no file is replaced and the hidden folder is removed. Then each archive file replaces the file of the same name by rename, so no file is ever half written. If a rename fails partway, the files before it stay replaced. Files the archive does not name stay as they are. Existing folders keep their permissions. A folder in the destination that is on another disk, such as a mount point, fails the extraction before any file changes. If `--output` is a link to a folder, Zipper extracts into that folder. A killed run can leave its hidden `.zipper-` folder behind, and you can delete it.
+
+Zipper never writes through a link that is already in the destination. A link that the archive names as a file is replaced by that file. A link where the archive needs a folder is an error. Where the destination has a file and the archive has a folder of the same name, or the reverse, the extraction fails before any file changes. Library callers pass `zipper::Existing::Overwrite` in the reader options.
+
 ## Extract selected paths
 
 To extract part of an archive, pass `--path` with an exact path or a directory subtree:

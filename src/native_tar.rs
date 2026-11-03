@@ -4,7 +4,7 @@
 use crate::{
     Entry,
     counters::{self, Counter},
-    parent, safe_path,
+    safe_path,
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::{
@@ -52,6 +52,8 @@ pub struct ReadOptions {
     /// Threads that create and write files while one thread decodes the
     /// stream, 1–64. Default: 4.
     pub writers: Option<usize>,
+    /// What to do when the destination exists.
+    pub existing: crate::Existing,
 }
 
 #[derive(Default)]
@@ -992,19 +994,12 @@ pub fn read_archive(
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
     let compression = sniff(path)?.context("not a tar archive")?;
-    let staging = match destination {
-        Some(destination) => {
-            ensure!(
-                fs::symlink_metadata(destination).is_err(),
-                "extraction destination must not exist"
-            );
-            Some(tempfile::tempdir_in(parent(destination))?)
-        }
-        None => None,
-    };
-    let free = match (destination, options.max_output_bytes) {
-        (Some(destination), None) => {
-            let folder = parent(destination);
+    let staging = destination
+        .map(|destination| crate::staging::stage(destination, options.existing))
+        .transpose()?;
+    let free = match (&staging, options.max_output_bytes) {
+        (Some(staging), None) => {
+            let folder = staging.path();
             crate::available_bytes(folder)
                 .with_context(|| format!("cannot measure free space at {}", folder.display()))?
         }
@@ -1020,7 +1015,7 @@ pub fn read_archive(
         reader: decoder(path, compression)?,
         buffer: vec![0; COPY_BUFFER],
     };
-    let (Some(temp), Some(destination)) = (&staging, destination) else {
+    let Some(staging) = staging else {
         let mut extraction = Extraction::new(None, budget);
         parse(&mut extraction, &mut input)?;
         return Ok(extraction.entries);
@@ -1054,7 +1049,7 @@ pub fn read_archive(
             })
             .collect();
         let output = Output {
-            root: temp.path(),
+            root: staging.path(),
             writers: &writers,
         };
         let mut extraction = Extraction::new(Some(output), budget);
@@ -1064,15 +1059,15 @@ pub fn read_archive(
         parsed?;
         ensure!(joined.iter().all(Result::is_ok), "a tar writer panicked");
         writers.check()?;
-        publish(&extraction, temp.path(), destination)?;
+        publish(&extraction, &staging)?;
         Ok(extraction.entries)
     })
 }
 
-fn publish(extraction: &Extraction, staging: &Path, destination: &Path) -> Result<()> {
+fn publish(extraction: &Extraction, staging: &crate::staging::Staging) -> Result<()> {
     extraction.create_links()?;
     let merged = crate::later_spellings_of_same_directory(
-        staging,
+        staging.path(),
         extraction
             .directories
             .iter()
@@ -1089,7 +1084,7 @@ fn publish(extraction: &Extraction, staging: &Path, destination: &Path) -> Resul
             modified: directory.modified.and_then(Time::system_time),
         })
         .collect();
-    crate::publish(staging, destination, &directories)
+    staging.publish(&directories)
 }
 
 #[cfg(test)]

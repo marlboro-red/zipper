@@ -1034,6 +1034,8 @@ pub struct ReadOptions {
     /// Cap on declared output bytes. Without it, extraction must fit in the
     /// destination filesystem's free space.
     pub max_output_bytes: Option<u64>,
+    /// What to do when the destination exists.
+    pub existing: crate::Existing,
 }
 
 pub fn read_archive_with_options(
@@ -1064,19 +1066,17 @@ pub fn read_archive_with_options(
     )?;
     let items = scan(&archive, Some(&times), &stored_names)?;
     drop(times);
-    let staging = if let Some(dst) = destination {
-        ensure!(
-            fs::symlink_metadata(dst).is_err(),
-            "extraction destination must not exist"
-        );
-        crate::check_output_size(
-            dst,
-            items.iter().map(|item| &item.entry),
-            options.max_output_bytes,
-        )?;
-        Some(tempfile::tempdir_in(parent(dst))?)
-    } else {
-        None
+    let staging = match destination {
+        Some(destination) => {
+            let staging = crate::staging::stage(destination, options.existing)?;
+            crate::check_output_size(
+                staging.path(),
+                items.iter().map(|item| &item.entry),
+                options.max_output_bytes,
+            )?;
+            Some(staging)
+        }
+        None => None,
     };
     if let Some(temp) = &staging {
         create_directories_in_archive_order(temp.path(), &items)?;
@@ -1233,7 +1233,7 @@ pub fn read_archive_with_options(
         &items,
         targets.into_inner().unwrap(),
     )?;
-    if let (Some(temp), Some(dst)) = (staging, destination) {
+    if let Some(staging) = staging {
         let directories: Vec<crate::Directory> = items
             .iter()
             .enumerate()
@@ -1244,7 +1244,7 @@ pub fn read_archive_with_options(
                 modified: item.modified.map(system_time),
             })
             .collect();
-        crate::publish(temp.path(), dst, &directories)?;
+        staging.publish(&directories)?;
     }
     Ok(items.into_iter().map(|item| item.entry).collect())
 }
