@@ -24,6 +24,7 @@ const MAX_CODERS: usize = 4;
 const MAX_HEADER_LAYERS: usize = 4;
 const COPY_BUFFER: usize = 1024 * 1024;
 const DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
+const BZIP2_DECODER_MEMORY: u64 = 4 * 1024 * 1024;
 const SEGMENT_BUDGET: u64 = 512 * 1024 * 1024;
 const PARALLEL_FOLDER_MIN: u64 = 8 * 1024 * 1024;
 const SEGMENT_MIN_OUTPUT: u64 = 8 * 1024 * 1024;
@@ -885,6 +886,8 @@ fn hex(id: &[u8]) -> String {
 enum Method {
     Copy,
     Deflate,
+    Deflate64,
+    Bzip2,
     Lzma,
     Lzma2,
     Filter(fn(&mut liblzma::stream::Filters, &[u8]) -> Result<(), liblzma::stream::Error>),
@@ -895,6 +898,8 @@ fn method(coder: &Coder) -> Result<Method> {
     Ok(match coder.id.as_slice() {
         [0x00] => Method::Copy,
         [0x04, 0x01, 0x08] => Method::Deflate,
+        [0x04, 0x01, 0x09] => Method::Deflate64,
+        [0x04, 0x02, 0x02] => Method::Bzip2,
         [0x03, 0x01, 0x01] => Method::Lzma,
         [0x21] => Method::Lzma2,
         [0x03] => {
@@ -983,7 +988,7 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
         .map(method)
         .collect::<Result<Vec<_>>>()?;
     match methods.as_slice() {
-        [Method::Copy] | [Method::Deflate] => {}
+        [Method::Copy] | [Method::Deflate] | [Method::Deflate64] | [Method::Bzip2] => {}
         [filters @ .., Method::Lzma | Method::Lzma2]
             if filters
                 .iter()
@@ -1008,7 +1013,7 @@ fn lzma_filters(folder: &Folder, methods: &[Method]) -> Result<liblzma::stream::
             Method::Filter(add) => add(&mut filters, &properties),
             Method::Lzma => filters.lzma1_properties(&properties).map(drop),
             Method::Lzma2 => filters.lzma2_properties(&properties).map(drop),
-            Method::Copy | Method::Deflate => {
+            Method::Copy | Method::Deflate | Method::Deflate64 | Method::Bzip2 => {
                 return Err(unsupported(format!(
                     "7z folder combines methods in a way that is not supported; {BACKEND_HINT}"
                 )));
@@ -1076,6 +1081,7 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
         Some((Ok(Method::Lzma2), properties)) if properties.len() == 1 => {
             lzma2_dictionary(properties[0]).min(folder.size)
         }
+        Some((Ok(Method::Bzip2), _)) => BZIP2_DECODER_MEMORY,
         _ => 0,
     }
     .max(64 * 1024)
@@ -1154,6 +1160,10 @@ fn folder_reader(
     Ok(match methods.as_slice() {
         [Method::Copy] => Box::new(packed),
         [Method::Deflate] => Box::new(flate2::read::DeflateDecoder::new(packed)),
+        [Method::Deflate64] => Box::new(deflate64::Deflate64Decoder::with_buffer(packed)),
+        [Method::Bzip2] => {
+            crate::native_tar::decode(packed, crate::native_tar::Compression::Bzip2)?
+        }
         _ => {
             let stream = liblzma::stream::Stream::new_raw_decoder(&lzma_filters(folder, &methods)?)
                 .context("cannot start the 7z decoder")?;

@@ -32,6 +32,7 @@ SEVEN_ZIP_WRITERS = [
     ("lzma", ["-m0=LZMA"]),
     ("copy", ["-mx0"]),
     ("deflate", ["-m0=Deflate"]),
+    ("bzip2", ["-m0=BZip2"]),
     ("nonsolid", ["-ms=off"]),
     ("solid-per-2-files", ["-ms=2f"]),
     ("plain-header", ["-mhc=off"]),
@@ -42,7 +43,6 @@ SEVEN_ZIP_WRITERS = [
 
 # Archives the native reader refuses, with the words its error must contain.
 REFUSED_WRITERS = [
-    ("bzip2", ["-m0=BZip2"], "method 040202"),
     ("ppmd", ["-m0=PPMd"], "method 030401"),
     ("bcj2", ["-m0=BCJ2", "-m1=LZMA", "-m2=LZMA", "-m3=LZMA", "-mb0:1", "-mb0s1:2", "-mb0s2:3"],
      "several streams"),

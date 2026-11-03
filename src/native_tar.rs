@@ -271,7 +271,7 @@ pub(crate) fn decoder(path: &Path, compression: Compression) -> Result<Box<dyn R
     )
 }
 
-fn decode<R: BufRead + Send + 'static>(
+pub(crate) fn decode<R: BufRead + Send + 'static>(
     input: R,
     compression: Compression,
 ) -> Result<Box<dyn Read + Send>> {

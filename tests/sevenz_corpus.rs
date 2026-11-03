@@ -54,3 +54,34 @@ fn unsupported_methods_are_refused_by_name_and_routed_to_7zip() {
         ));
     }
 }
+
+#[test]
+fn a_bzip2_archive_extracts_the_same_files_as_lzma2() {
+    let files = |name: &str| {
+        let work = tempfile::tempdir().unwrap();
+        let out = work.path().join("out");
+        read_archive(&corpus().join(name), Some(&out), ReadOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        let mut found: Vec<(String, Option<Vec<u8>>)> = walkdir::WalkDir::new(&out)
+            .min_depth(1)
+            .into_iter()
+            .map(|entry| entry.unwrap())
+            .map(|entry| {
+                let name = entry
+                    .path()
+                    .strip_prefix(&out)
+                    .unwrap()
+                    .display()
+                    .to_string();
+                let data = entry
+                    .file_type()
+                    .is_file()
+                    .then(|| std::fs::read(entry.path()).unwrap());
+                (name, data)
+            })
+            .collect();
+        found.sort();
+        found
+    };
+    assert_eq!(files("refused-bzip2.7z"), files("7zip-lzma2-short.7z"));
+}

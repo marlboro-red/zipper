@@ -333,7 +333,7 @@ fn sizes_and_crcs_must_agree() {
 #[test]
 fn unsupported_methods_are_refused() {
     for (id, words) in [
-        (vec![0x04, 0x02, 0x02], "method 040202"),
+        (vec![0x02, 0x03, 0x02], "method 020302"),
         (vec![0x06, 0xF1, 0x07, 0x01], "encrypted"),
         (vec![0x03, 0x04, 0x01], "method 030401"),
     ] {

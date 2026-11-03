@@ -220,13 +220,13 @@
       "status": "backend"
     },
     "BZip2": {
-      "status": "backend"
+      "status": "native"
     },
     "Copy": {
       "status": "native"
     },
     "Deflate64": {
-      "status": "backend"
+      "status": "native"
     },
     "Deflate": {
       "status": "native"

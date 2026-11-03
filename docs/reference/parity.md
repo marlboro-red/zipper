@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 41 |
+| `native` | 43 |
 | `partial` | 1 |
-| `backend` | 61 |
+| `backend` | 59 |
 | `missing` | 7 |
 | `dropped` | 2 |
 
@@ -105,9 +105,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `RISCV` | `native` |  | `tests/data/parity/archives/7z-riscv.7z` |
 | `Swap2` | `backend` |  | `tests/data/parity/archives/7z-swap2.7z` |
 | `Swap4` | `backend` |  | `tests/data/parity/archives/7z-swap4.7z` |
-| `BZip2` | `backend` |  | `tests/data/parity/archives/7z-bzip2.7z` |
+| `BZip2` | `native` |  | `tests/data/parity/archives/7z-bzip2.7z` |
 | `Copy` | `native` |  | `tests/data/parity/archives/7z-copy.7z` |
-| `Deflate64` | `backend` |  | `tests/data/parity/archives/7z-deflate64.7z` |
+| `Deflate64` | `native` |  | `tests/data/parity/archives/7z-deflate64.7z` |
 | `Deflate` | `native` |  | `tests/data/parity/archives/7z-deflate.7z` |
 | `Delta` | `native` |  | `tests/data/parity/archives/7z-delta.7z` |
 | `LZMA2` | `native` |  | `tests/data/parity/archives/7z-lzma2.7z` |
