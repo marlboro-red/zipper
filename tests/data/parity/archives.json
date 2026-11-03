@@ -8,6 +8,9 @@
         "codecs",
         "7zAES"
       ],
+      "sha256": {
+        "7z-7zaes.7z": "063c24e072a43fa56218041fa084cb68c90a2839472fc75a57b6a9e8be37f37f"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -23,6 +26,9 @@
         "codecs",
         "ARM"
       ],
+      "sha256": {
+        "7z-arm.7z": "81232d81427a0fedd2702165d5972a28b8baa5f8443cc2f131785cbcb209376a"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -38,6 +44,9 @@
         "codecs",
         "ARM64"
       ],
+      "sha256": {
+        "7z-arm64.7z": "74f763a3856a9f4f8c9625dd703310689b5b2fa8225f425e24149c8752009292"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -53,6 +62,9 @@
         "codecs",
         "ARMT"
       ],
+      "sha256": {
+        "7z-armt.7z": "efe5b9aecc9d7f68a69840e4eaad145451b36b3f1934192d923731a45f6ceea8"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -68,6 +80,9 @@
         "codecs",
         "BCJ"
       ],
+      "sha256": {
+        "7z-bcj.7z": "ac4fae62ace67a878728cab17b803bfba6814a6f66ff72d81be46c32a5d5b1f1"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -83,6 +98,9 @@
         "codecs",
         "BCJ2"
       ],
+      "sha256": {
+        "7z-bcj2.7z": "709929fe3bf1df872a051dd9e8f28d0f61934da1f7965a50b1b421947d4afb78"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -98,6 +116,9 @@
         "codecs",
         "BZip2"
       ],
+      "sha256": {
+        "7z-bzip2.7z": "d633b0f934493511d2d70aef8e0f2b49f742f251c89c5e53b4d8d2fc3223132c"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -113,6 +134,9 @@
         "codecs",
         "Copy"
       ],
+      "sha256": {
+        "7z-copy.7z": "aa361b7f2ee39d8b89322d7b07a1fe7459f43582e8565a190506d3027d0717a1"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -128,6 +152,9 @@
         "codecs",
         "Deflate"
       ],
+      "sha256": {
+        "7z-deflate.7z": "14c755c1c8bed8a7ef6e39b46399f61e34adb8d973e85a977f1507c67ac01803"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -143,6 +170,9 @@
         "codecs",
         "Deflate64"
       ],
+      "sha256": {
+        "7z-deflate64.7z": "4c355c4508fdc3ec3f1811f3b1ccfd91a06f667978a5157209957ed1ff996679"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -158,6 +188,9 @@
         "codecs",
         "Delta"
       ],
+      "sha256": {
+        "7z-delta.7z": "a4abd5e8a700a2cbb816cce404b96410322384e29d0f337b5429adb5fb44c49b"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -173,6 +206,9 @@
         "codecs",
         "IA64"
       ],
+      "sha256": {
+        "7z-ia64.7z": "8c741c2287798724b7fa4a1e42a613c97ff526afed5b0249f1546a65741a30a9"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -188,6 +224,9 @@
         "codecs",
         "LZMA"
       ],
+      "sha256": {
+        "7z-lzma.7z": "7c1aee8a1a35707d0309982162424a0fd529d1124ebb3295dac7b6e10f16266d"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -203,6 +242,9 @@
         "codecs",
         "LZMA2"
       ],
+      "sha256": {
+        "7z-lzma2.7z": "040c2b34eb91525e272bd783abfa1166a1f5e9c5cd84cac4646aad0d6ff260f1"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -218,6 +260,9 @@
         "codecs",
         "PPC"
       ],
+      "sha256": {
+        "7z-ppc.7z": "4c44e20c2d706af09a9316289b8a5915c83a54f35a7d202f9b20965bdf5c842d"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -233,6 +278,9 @@
         "codecs",
         "PPMD"
       ],
+      "sha256": {
+        "7z-ppmd.7z": "1ec91691cd2ac6c298a719eefec3a10b4d4744385b21affe21d3a6fafed5894a"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -248,6 +296,9 @@
         "codecs",
         "RISCV"
       ],
+      "sha256": {
+        "7z-riscv.7z": "c19fca742aa36318ff20797f2439ca6b2dd682f68f538a0b3d2af4cd6d04aa13"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -263,6 +314,9 @@
         "codecs",
         "SPARC"
       ],
+      "sha256": {
+        "7z-sparc.7z": "d43a9c25f86068eafc90b463bf25ad7cf4629073373bcee7bbad8b6d0a03cdf0"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -278,6 +332,9 @@
         "codecs",
         "Swap2"
       ],
+      "sha256": {
+        "7z-swap2.7z": "9915adda2e585b420b6baa95453717d5bf0990eae33ee6fce84287df27933bcc"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -293,6 +350,9 @@
         "codecs",
         "Swap4"
       ],
+      "sha256": {
+        "7z-swap4.7z": "6b0bb1ec43e4b7d10dbadad370ad862abbccc22755b9aec9d11e3a3d8de0d873"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -308,6 +368,9 @@
         "formats",
         "7z"
       ],
+      "sha256": {
+        "7z.7z": "040c2b34eb91525e272bd783abfa1166a1f5e9c5cd84cac4646aad0d6ff260f1"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -323,6 +386,9 @@
         "formats",
         "APFS"
       ],
+      "sha256": {
+        "apfs.img.stored.xz": "1670622866060ff4b01eb83ead10d3619977a64669208e1e8d0510107405d67a"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -341,6 +407,9 @@
         "formats",
         "APM"
       ],
+      "sha256": {
+        "apm.img.stored.xz": "45405cc21b04fb3204403434287da6361c13523c5b54fb6e41701fff19c8cf31"
+      },
       "tree": {
         "parity": "dir",
         "parity/.HFS+ Private Directory Data\r": "dir",
@@ -364,6 +433,9 @@
         "formats",
         "Ar"
       ],
+      "sha256": {
+        "ar.a": "0d38880c12440de84db196e3c34fe69e70689b5f0e51f511b1975dab6a34c2fa"
+      },
       "tree": {
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
@@ -376,6 +448,9 @@
         "formats",
         "Cpio"
       ],
+      "sha256": {
+        "cpio-bin.cpio": "0f0250ffd7133c63b426601bee2a29eacaf45186843a0927fabe66f08f5be766"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -391,6 +466,9 @@
         "formats",
         "Cpio"
       ],
+      "sha256": {
+        "cpio-newc.cpio": "2d9b4bf536c0f7238b6c5fcf201b5801391696074f54bab295f80ca565eb7949"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -406,6 +484,9 @@
         "formats",
         "Cpio"
       ],
+      "sha256": {
+        "cpio-odc.cpio": "cbf61da64fa0692c3791f13c234884497af6879960fa71c9fc28e23be660ae01"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -421,6 +502,9 @@
         "formats",
         "Dmg"
       ],
+      "sha256": {
+        "dmg-bzip2.dmg": "7b3ebcb89a185e9d0bd3d75fa1de3c070d649e10db58e58c94423e06364d8583"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -439,6 +523,9 @@
         "formats",
         "Dmg"
       ],
+      "sha256": {
+        "dmg-lzfse.dmg": "7f5514304929dec0338c6504ccd469fb52815bf222859c71262582b43526c138"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -457,6 +544,9 @@
         "formats",
         "Dmg"
       ],
+      "sha256": {
+        "dmg-lzma.dmg": "3fe198ad99bada7ebea2b7037206d879145403cf25bf430db2fb7e572830943e"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -475,6 +565,9 @@
         "formats",
         "Dmg"
       ],
+      "sha256": {
+        "dmg-zlib.dmg": "3d3e6e8f528a4891864e2592a306487af9690871498b162635e25685cd0d84b7"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -493,6 +586,9 @@
         "formats",
         "FAT"
       ],
+      "sha256": {
+        "fat.img.stored.xz": "9da9736cf9c9641d4a62dffabdbfbe6aeac9769fa253c2e29e8019f3abd69146"
+      },
       "tree": {
         "._folder": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
         "._hello.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
@@ -513,6 +609,9 @@
         "formats",
         "GPT"
       ],
+      "sha256": {
+        "gpt.img.stored.xz": "b95d08e4e7fb7ba064cd721d9847f8c62b5e9a2260512ab1f8fae62a3b6aac02"
+      },
       "tree": {
         "._folder": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
         "._hello.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
@@ -533,6 +632,9 @@
         "formats",
         "Z"
       ],
+      "sha256": {
+        "hello.txt.Z": "229d95d6eeb8ddedde538f0bd619d1108b944bdfc14e34b14662fea609e53d97"
+      },
       "tree": {
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
@@ -545,6 +647,9 @@
         "formats",
         "bzip2"
       ],
+      "sha256": {
+        "hello.txt.bz2": "f79e6cb5e11f9c3140674927187aa5f8c1812a996ac3df65c45263ef1c893c37"
+      },
       "tree": {
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
@@ -557,6 +662,9 @@
         "formats",
         "gzip"
       ],
+      "sha256": {
+        "hello.txt.gz": "3d5468ca1fc7f3742b3c8e081f6c7b46e14d8373ef19e90db9207c21c0873d76"
+      },
       "tree": {
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
@@ -569,6 +677,9 @@
         "formats",
         "lzma"
       ],
+      "sha256": {
+        "hello.txt.lzma": "bcf3559590832889012770898aabb6a0d06faa5b395185c8fe5f57fd2981bc25"
+      },
       "tree": {
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
@@ -581,6 +692,9 @@
         "formats",
         "xz"
       ],
+      "sha256": {
+        "hello.txt.xz": "adf644512ba0a74818c73cf950e6d5e456cace1670685f311705d364eb425a24"
+      },
       "tree": {
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
@@ -593,6 +707,9 @@
         "formats",
         "zstd"
       ],
+      "sha256": {
+        "hello.txt.zst": "3dba2afb11045bff63f5fa6a7925e76675acb55540fa1557852547440bbf1352"
+      },
       "tree": {
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
@@ -605,6 +722,9 @@
         "formats",
         "HFS"
       ],
+      "sha256": {
+        "hfs.img.stored.xz": "c3f66f136aa03b3906463c90aa2e28150f6bc99baa8c55ec819770da88d8438a"
+      },
       "tree": {
         "parity": "dir",
         "parity/.HFS+ Private Directory Data\r": "dir",
@@ -628,6 +748,9 @@
         "formats",
         "Iso"
       ],
+      "sha256": {
+        "iso.iso.stored.xz": "dc684c4b1f08bab51520f757fa9e576650194e4748bab8bc6e1f7939c085cc70"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -643,6 +766,9 @@
         "formats",
         "MBR"
       ],
+      "sha256": {
+        "mbr.img.stored.xz": "82288be5b00cb19b8e7055b667df7fbb65a6cb4057a4e7c89b682c3c01e8e429"
+      },
       "tree": {
         "._folder": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
         "._hello.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
@@ -665,6 +791,11 @@
         "formats",
         "Split"
       ],
+      "sha256": {
+        "split.7z.001": "3be5d1b08961a85bb78505ed531d33d671883cd825ed4b0b6961aa480d438f1f",
+        "split.7z.002": "c273847057451300bf1fe7a7fd520180814d305a3d4b03dd3ec2b584d33d8cae",
+        "split.7z.003": "f9e92473dc19b8f08a04f1badc73630dc734abfc678c0dc63b75791a20ae9d84"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -680,6 +811,9 @@
         "formats",
         "tar"
       ],
+      "sha256": {
+        "tar.tar": "0a8583188991ccc1f4c0966ce7d1b3a289ce3abb188ca5136fdc136da0ee0c05"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -695,6 +829,9 @@
         "formats",
         "Z"
       ],
+      "sha256": {
+        "tar.tar.Z": "3ffde8807f090d4bdc74623389c1c2e4c10bd9ae6aa622b72434e788b5179171"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -710,6 +847,9 @@
         "formats",
         "bzip2"
       ],
+      "sha256": {
+        "tar.tar.bz2": "d09ca0002f32e262748dbcf4c6bd6d0886a25bb967e7fb27a9361f99ef63a40b"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -725,6 +865,9 @@
         "formats",
         "gzip"
       ],
+      "sha256": {
+        "tar.tar.gz": "c26eee01fb40a503e43360b1b5cff60c2f7f3f1641d5c8b731d8ce3f0c893621"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -740,6 +883,9 @@
         "formats",
         "xz"
       ],
+      "sha256": {
+        "tar.tar.xz": "f4c62ae5e2a2bbfd6b4177371eca2bfdf68f99b507d07d46130113da09d8054c"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -755,6 +901,9 @@
         "formats",
         "zstd"
       ],
+      "sha256": {
+        "tar.tar.zst": "e498ba9fa099be3285c704259ca1d0ea08dda4e2b5638a7637b42960f2637195"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -770,6 +919,9 @@
         "formats",
         "Udf"
       ],
+      "sha256": {
+        "udf.iso.stored.xz": "6f28e64ea39d02b9808732dbf569fc39aa174cdbeff44cb711f0d376b9183a1e"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -785,6 +937,9 @@
         "formats",
         "wim"
       ],
+      "sha256": {
+        "wim.wim": "4483970b97e09ed9ef805d28817016a25fea827defdcc2885ba053b52b5368ae"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -800,6 +955,9 @@
         "formats",
         "Xar"
       ],
+      "sha256": {
+        "xar.xar": "09c0d489e90945e1df0fcaacee98f9f9be534b94c441550a3efd5239d31bfb52"
+      },
       "tree": {
         "[TOC].xml": "c3371f54f993459789ab2e1ba37c46ca22bc27b5e4ccce30fe069b407c7380e7",
         "folder": "dir",
@@ -816,6 +974,9 @@
         "zip methods",
         "BZip2"
       ],
+      "sha256": {
+        "zip-bzip2.zip": "c2cb42b195503acf1d352b2347b4212c7b06142d0e23a4a946801e4fda2bf225"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -831,6 +992,9 @@
         "zip methods",
         "Deflate"
       ],
+      "sha256": {
+        "zip-deflate.zip": "633fad82b3441d974cbfd90f4c75ca69e8bafca151d2ae97cd33fea74a89fde1"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -846,6 +1010,9 @@
         "zip methods",
         "Deflate64"
       ],
+      "sha256": {
+        "zip-deflate64.zip": "0dd5798a9da9b3f20a33c44d0116ebc2e260023864df0a5d0eb9644861397d3a"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -861,6 +1028,9 @@
         "zip methods",
         "LZMA"
       ],
+      "sha256": {
+        "zip-lzma.zip": "ed0f85767fcca8004a4a6289505804bd83f036c9045ebd915966c2c9a392d8f4"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -876,6 +1046,9 @@
         "zip methods",
         "PPMd"
       ],
+      "sha256": {
+        "zip-ppmd.zip": "d427e2cf5e7739a40a05656f279320dada75f4d49613562112827652b16fc949"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -891,6 +1064,9 @@
         "zip methods",
         "Store"
       ],
+      "sha256": {
+        "zip-store.zip": "8ab39d30d4bbb12089632270ad125185c043c7cb1ff285b60a3058b5ea5086aa"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -906,6 +1082,9 @@
         "zip methods",
         "WinZip AES"
       ],
+      "sha256": {
+        "zip-winzip-aes.zip": "be9be9478ecd37bdeb1133b6a2b4289ef517b43a00b2a492ec168fc9f32126ff"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -921,6 +1100,9 @@
         "zip methods",
         "XZ"
       ],
+      "sha256": {
+        "zip-xz.zip": "7b3de64002750df54efb554fdad0f6fe332b7cd0e7358ff3d6c545b3b22b2360"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -936,6 +1118,9 @@
         "zip methods",
         "ZipCrypto"
       ],
+      "sha256": {
+        "zip-zipcrypto.zip": "c11e3aca3b0c28c10d855e4381c6bd52e9f0b871ffa29a3c9c19a776c96ab486"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
@@ -951,6 +1136,9 @@
         "formats",
         "zip"
       ],
+      "sha256": {
+        "zip.zip": "633fad82b3441d974cbfd90f4c75ca69e8bafca151d2ae97cd33fea74a89fde1"
+      },
       "tree": {
         "folder": "dir",
         "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",

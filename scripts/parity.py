@@ -229,7 +229,8 @@ def corpus():
                 else:
                     (CORPUS / output.name).write_bytes(data)
                     stored.append(output.name)
-            records[name] = {"row": list(row), "files": stored, "tree": reference}
+            hashes = {file: hashlib.sha256((CORPUS / file).read_bytes()).hexdigest() for file in stored}
+            records[name] = {"row": list(row), "files": stored, "sha256": hashes, "tree": reference}
             print(f"parity: built {name}, {sum((CORPUS / file).stat().st_size for file in stored)} bytes stored")
     version = subprocess.run([binary, "i"], capture_output=True, text=True).stdout.splitlines()
     version = next(line for line in version if line.startswith("7-Zip"))
@@ -271,6 +272,8 @@ def proof_problems(status, archives):
         for file in record["files"]:
             if not (CORPUS / file).is_file():
                 problems.append(f"archive {name} is missing {file}")
+            elif hashlib.sha256((CORPUS / file).read_bytes()).hexdigest() != record["sha256"][file]:
+                problems.append(f"archive {name} has changed bytes in {file}")
     return problems
 
 

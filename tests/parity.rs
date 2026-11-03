@@ -2,7 +2,7 @@
 //! `status.json` says Zipper handles it. A native archive must give the tree
 //! 7-Zip gave when the corpus was built. A backend archive must give the same
 //! tree through `--zip-engine backend` as a direct 7-Zip extraction on this
-//! machine. A missing archive must be refused with nothing published. An
+//! machine, or fail with nothing published where that 7-Zip fails. A missing archive must be refused with nothing published. An
 //! archive on a dropped row is skipped.
 //!
 //! Without 7-Zip the backend archives are skipped, unless
@@ -93,6 +93,14 @@ fn unpack(record: &Value, into: &Path) -> PathBuf {
         .collect();
     for file in &files {
         let stored = fs::read(Path::new(DATA).join("archives").join(file)).unwrap();
+        let digest: String = Sha256::digest(&stored)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(
+            record["sha256"][*file], digest,
+            "{file} changed on checkout; tests/data/parity/archives must stay binary"
+        );
         let (name, bytes) = match file.strip_suffix(STORED_SUFFIX) {
             Some(name) => {
                 let mut bytes = Vec::new();
@@ -175,11 +183,6 @@ fn every_parity_archive_extracts_as_its_row_says() {
             }
             (Expect::Backend, Some(binary)) => {
                 let run = zipper(Some("backend"), &archive, &output);
-                assert!(
-                    run.status.success(),
-                    "{name}: {}",
-                    String::from_utf8_lossy(&run.stderr)
-                );
                 let direct = work.path().join("direct");
                 let mut flag = std::ffi::OsString::from("-o");
                 flag.push(&direct);
@@ -190,8 +193,20 @@ fn every_parity_archive_extracts_as_its_row_says() {
                     .stdin(Stdio::null())
                     .output()
                     .unwrap();
-                assert!(direct_run.status.success(), "{name}: 7-Zip failed");
-                assert_eq!(tree(&output), tree(&direct), "{name}");
+                if direct_run.status.success() {
+                    assert!(
+                        run.status.success(),
+                        "{name}: {}",
+                        String::from_utf8_lossy(&run.stderr)
+                    );
+                    assert_eq!(tree(&output), tree(&direct), "{name}");
+                } else {
+                    assert!(
+                        !run.status.success(),
+                        "{name}: 7-Zip failed and Zipper did not"
+                    );
+                    assert!(!output.exists(), "{name}: published after 7-Zip failed");
+                }
             }
             (Expect::Backend, None) | (Expect::Skipped, _) => {
                 *counts.entry("skipped").or_insert(0) += 1;
