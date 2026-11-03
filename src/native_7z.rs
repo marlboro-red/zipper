@@ -698,13 +698,12 @@ fn read_files(bytes: &mut Bytes, streams: &Streams) -> Result<Vec<Item>> {
         let windows_entry =
             attributes[index].is_some() && attribute & ATTRIBUTE_UNIX_EXTENSION == 0;
         let kind = match name.split_once(':').filter(|_| windows_entry) {
-            Some((base, stream)) => {
+            Some(_) => {
                 ensure!(
                     kind == Kind::File,
                     "7z stream {name:?} is not a file's data"
                 );
-                safe_path(base)?;
-                crate::ntfs_streams::ensure_plain_stream_name(stream)?;
+                split_stream(&name)?;
                 Kind::AltStream
             }
             None => {
@@ -737,6 +736,13 @@ fn read_files(bytes: &mut Bytes, streams: &Streams) -> Result<Vec<Item>> {
         "7z has streams that no file uses"
     );
     Ok(items)
+}
+
+fn split_stream(name: &str) -> Result<(&str, &str)> {
+    let (base, stream) = name.split_once(':').context("7z stream name has no `:`")?;
+    safe_path(base)?;
+    crate::ntfs_streams::ensure_plain_stream_name(stream)?;
+    Ok((base, stream))
 }
 
 fn base_name(item: &Item) -> &str {
@@ -1864,6 +1870,37 @@ pub fn sniff(path: &Path) -> Result<bool> {
     let mut start = [0u8; 6];
     let read = File::open(path)?.read(&mut start)?;
     Ok(read == 6 && &start == SIGNATURE)
+}
+
+#[cfg(test)]
+mod stream_name_tests {
+    use super::*;
+
+    #[test]
+    fn accepted_stream_names_split_into_a_safe_path_and_one_plain_stream() {
+        let alphabet = ['a', ':', '/', '.', '$', ' ', '*', '\\'];
+        let mut names = vec![String::new()];
+        for _ in 0..6 {
+            names = names
+                .iter()
+                .flat_map(|name| alphabet.map(|character| format!("{name}{character}")))
+                .collect();
+            for name in &names {
+                if let Ok((base, stream)) = split_stream(name) {
+                    assert_eq!(format!("{base}:{stream}"), *name);
+                    assert!(safe_path(base).is_ok(), "{name:?}");
+                    assert!(!base.contains(':') && !stream.contains(':'), "{name:?}");
+                    assert!(
+                        !stream.is_empty()
+                            && !stream.starts_with('$')
+                            && !stream.contains(['/', '\\', '*'])
+                            && !stream.ends_with(['.', ' ']),
+                        "{name:?}"
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

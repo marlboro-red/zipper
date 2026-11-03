@@ -1,6 +1,7 @@
 //! NTFS alternate data streams on Windows. 7-Zip stores them with `-sns` as
 //! `file:stream` entries. With `alternate_streams`, Zipper writes each one onto
-//! its file or folder and keeps the file's time and read-only attribute.
+//! its file and keeps the file's time and read-only attribute. 7-Zip stores no
+//! stream on a folder.
 //! Without it, no stream is written.
 #![cfg(windows)]
 use std::{
@@ -38,7 +39,6 @@ fn stored_streams_are_written_only_when_asked() {
     run(Command::new("attrib")
         .arg("+r")
         .arg(source.join("read-only.txt")));
-    fs::write(stream(&source.join("folder"), "extra"), "folder stream").unwrap();
     let archive = root.path().join("streams.7z");
     let sevenzip = std::env::var_os("ZIPPER_7Z").unwrap_or_else(|| "7z".into());
     run(Command::new(sevenzip)
@@ -48,7 +48,7 @@ fn stored_streams_are_written_only_when_asked() {
 
     let plain = root.path().join("plain");
     extract_archive(&archive, &plain, ExtractOptions::default()).unwrap();
-    for name in ["plain.txt", "read-only.txt", "folder"] {
+    for name in ["plain.txt", "read-only.txt"] {
         assert!(
             fs::read(stream(&plain.join(name), "extra")).is_err(),
             "{name}"
@@ -68,7 +68,6 @@ fn stored_streams_are_written_only_when_asked() {
     for (name, data) in [
         ("plain.txt", "plain stream"),
         ("read-only.txt", "read-only stream"),
-        ("folder", "folder stream"),
     ] {
         assert_eq!(
             fs::read_to_string(stream(&with_streams.join(name), "extra")).unwrap(),
