@@ -69,3 +69,12 @@ The rules are proven able to fail. Each of these model changes, which match plau
 | `DecoderDrains` no longer waits for `pending = 0`, as if `write_file` skipped `writers.drain()` | `RemoveAfterDrain` |
 | `DecoderTakesChunk` no longer waits on the budget, as if `InFlight::take` lost its loop | `BudgetHolds` |
 | `WriterDropsJob` keeps `receiving` true, as if a failed writer kept its stream receiver | `NothingLeaks` |
+
+The model also catches the three pool bugs that reviews found before `05233ac` and `10d858e` were committed. Each was back-tested by changing only the actions the old code did differently and running the unchanged rules:
+
+| Old code | Rule that breaks | Path in the code's words |
+| --- | --- | --- |
+| No `InFlight` budget, only the queue sizes, which let 64 writers hold 389 MB | `BudgetHolds` | The decoder sends two files and takes a fourth chunk while three are queued. |
+| `Writers::work` without `catch_unwind`, so a panicking writer never decremented `pending` | `NoDeadlock` | Writers panic mid-file, and the next file with a repeated name waits in `drain()` forever. |
+| `parse` without `catch_unwind` in the scope, so a panicking progress callback skipped `writers.close()` | `NoDeadlock` | The decoder panics at its first step, and the writers wait on open lanes forever. |
+
