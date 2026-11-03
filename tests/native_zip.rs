@@ -612,3 +612,70 @@ fn large_entries_written_behind_decoding_match_and_fail_closed() -> anyhow::Resu
 }
 
 type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<zipper::Entry>>;
+
+fn modified_seconds(path: &Path) -> i64 {
+    fs::metadata(path)
+        .unwrap()
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+fn ntfs_field(seconds: i64) -> Vec<u8> {
+    let ticks = ((seconds + 11_644_473_600) * 10_000_000) as u64;
+    let mut field = vec![0u8; 4];
+    field.extend_from_slice(&1u16.to_le_bytes());
+    field.extend_from_slice(&24u16.to_le_bytes());
+    for _ in 0..3 {
+        field.extend_from_slice(&ticks.to_le_bytes());
+    }
+    field
+}
+
+#[test]
+fn ntfs_and_dos_only_times_are_restored_on_every_platform() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let archive = temp.path().join("windows-made.zip");
+    let ntfs_seconds = 1_262_347_384;
+    let dos = zip::DateTime::from_date_and_time(2015, 6, 15, 12, 0, 0).unwrap();
+    let dos_as_utc = 1_434_369_600;
+    let mut writer = zip::ZipWriter::new(fs::File::create(&archive)?);
+    for (name, ntfs) in [
+        ("ntfs/", true),
+        ("ntfs/file", true),
+        ("dos/", false),
+        ("dos/file", false),
+    ] {
+        let mut options = zip::write::FullFileOptions::default().last_modified_time(dos);
+        if ntfs {
+            options.add_extra_field(0x000A, ntfs_field(ntfs_seconds), false)?;
+        }
+        if name.ends_with('/') {
+            writer.add_directory(name, options)?;
+        } else {
+            writer.start_file(name, options)?;
+            writer.write_all(b"data")?;
+        }
+    }
+    writer.finish()?;
+    let bytes = fs::read(&archive)?;
+    assert!(
+        !bytes.windows(2).any(|window| window == b"UT"),
+        "the fixture must carry no extended timestamp"
+    );
+    let out = temp.path().join("out");
+    zipper::native_zip::read_archive(&archive, Some(&out))?;
+    for path in ["ntfs", "ntfs/file"] {
+        assert_eq!(modified_seconds(&out.join(path)), ntfs_seconds, "{path}");
+    }
+    for path in ["dos", "dos/file"] {
+        let offset = modified_seconds(&out.join(path)) - dos_as_utc;
+        assert!(
+            offset.abs() <= 14 * 3600,
+            "{path} is {offset} s from its DOS time, past any time zone"
+        );
+    }
+    Ok(())
+}

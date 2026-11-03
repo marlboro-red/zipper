@@ -16,7 +16,6 @@ use zipper::{
 type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<Entry>>;
 
 const NATIVE_EXTRACTS_LINKS: bool = cfg!(unix);
-const RESTORES_DIRECTORY_TIMES: bool = cfg!(unix);
 
 #[test]
 fn native_engines_match_the_reference_readers() {
@@ -44,7 +43,6 @@ fn native_engines_match_the_reference_readers() {
             corpus::assert_tree_matches_manifest(
                 work.path(),
                 wanted,
-                RESTORES_DIRECTORY_TIMES,
                 &format!("{name} with {engine}"),
             );
         }
