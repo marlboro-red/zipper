@@ -162,6 +162,7 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         .iter()
         .find(|verification| verification.name == name)
         .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
+    let checked = fingerprint(root, verification)?;
     if let Some(check) = &verification.full_check {
         let mut words = check.split_whitespace();
         let mut command = Command::new(words.next().context("empty full-check")?);
@@ -188,6 +189,10 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         );
     }
     let current = fingerprint(root, verification)?;
+    ensure!(
+        current == checked,
+        "{name}: the covered code changed while the check ran; nothing was synced"
+    );
     let text = fs::read_to_string(root.join(MANIFEST))?;
     let mut in_section = false;
     let mut updated = String::new();

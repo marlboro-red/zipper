@@ -91,7 +91,12 @@ fn output(program: &str, args: &[&str]) -> Result<String> {
 
 fn ci_wait() -> Result<()> {
     let head = output("git", &["rev-parse", "HEAD"])?;
-    let pushed = output("git", &["branch", "-r", "--contains", &head])?;
+    let run = ci_run(&head)?;
+    watch_ci_run(&run, &head)
+}
+
+fn ci_run(head: &str) -> Result<String> {
+    let pushed = output("git", &["branch", "-r", "--contains", head])?;
     ensure!(
         !pushed.is_empty(),
         "HEAD {head} is not on any remote branch; push it first"
@@ -104,7 +109,7 @@ fn ci_wait() -> Result<()> {
                 "run",
                 "list",
                 "--commit",
-                &head,
+                head,
                 "--json",
                 "databaseId",
                 "--jq",
@@ -117,9 +122,13 @@ fn ci_wait() -> Result<()> {
         std::thread::sleep(CI_APPEAR_INTERVAL);
     }
     ensure!(!run.is_empty(), "no CI run appeared for {head}");
+    Ok(run)
+}
+
+fn watch_ci_run(run: &str, head: &str) -> Result<()> {
     let watched = Command::new("gh")
         .current_dir(root())
-        .args(["run", "watch", &run, "--exit-status", "--interval", "15"])
+        .args(["run", "watch", run, "--exit-status", "--interval", "15"])
         .stdout(std::process::Stdio::null())
         .status()?;
     println!(
@@ -129,7 +138,7 @@ fn ci_wait() -> Result<()> {
             &[
                 "run",
                 "view",
-                &run,
+                run,
                 "--json",
                 "conclusion,jobs",
                 "--jq",
@@ -161,7 +170,29 @@ fn ship() -> Result<()> {
         Ok(())
     };
     push(&["push", "origin", &format!("HEAD:refs/heads/{branch}")])?;
-    let checked = ci_wait();
+    let run = ci_run(&head)?;
+    let checked = watch_ci_run(&run, &head).or_else(|failure| {
+        let host = match env::consts::OS {
+            "macos" => "macos",
+            "linux" => "ubuntu",
+            other => other,
+        };
+        let jobs = output(
+            "gh",
+            &["run", "view", &run, "--json", "jobs", "--jq",
+              r#".jobs[] | "\(.name)\t\(.conclusion)\t\(.steps | length)""#],
+        )?;
+        let unstarted_host_job_only = jobs.lines().all(|job| {
+            let fields: Vec<&str> = job.split('\t').collect();
+            fields.get(1) == Some(&"success")
+                || (fields.get(1) == Some(&"cancelled")
+                    && fields.get(2) == Some(&"0")
+                    && fields[0].contains(host))
+        });
+        ensure!(unstarted_host_job_only, failure);
+        println!("xtask: the {host} CI job never got a runner; running the full gate on this {host} host instead");
+        gate(true)
+    });
     push(&["push", "--quiet", "origin", "--delete", &branch])?;
     checked?;
     push(&[
