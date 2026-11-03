@@ -28,6 +28,9 @@ pub enum Reader {
     Tar,
     /// The native 7z reader.
     SevenZip,
+    /// The native reader for one gzip, bzip2, xz, zstd or LZMA stream that
+    /// holds no tar.
+    Stream,
     /// 7-Zip, with the format pinned when Zipper recognized its signature.
     Backend { format: Option<String> },
 }
@@ -53,6 +56,7 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             }
         }
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
+        _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
         Engine::Native => Reader::Zip { fast: false },
         Engine::NativeFast => Reader::Zip { fast: true },
         Engine::Auto => match compat::pinned_format(archive)? {
@@ -212,6 +216,20 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                 native_7z::ReadOptions {
                     max_output_bytes: options.max_output_bytes,
                     threads: options.threads,
+                    existing: options.existing,
+                    paths: options.paths,
+                    include: options.include,
+                    exclude: options.exclude,
+                    control: options.control,
+                },
+            )?;
+        }
+        Reader::Stream => {
+            crate::native_stream::read_archive(
+                archive,
+                Some(destination),
+                crate::native_stream::ReadOptions {
+                    max_output_bytes: options.max_output_bytes,
                     existing: options.existing,
                     paths: options.paths,
                     include: options.include,

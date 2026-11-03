@@ -649,7 +649,14 @@ fn default_engine_reads_tar_family_in_process_and_never_hands_it_to_7zip() -> an
         "note".as_ref(),
     ])?;
     assert!(passed.status.success());
-    assert!(fs::read_to_string(t.path().join("backend.log"))?.contains("-tgzip "));
+    assert_eq!(
+        fs::read(t.path().join("note/note"))?,
+        b"just a compressed file\n"
+    );
+    assert!(
+        !t.path().join("backend.log").exists(),
+        "a plain gzip file reached 7-Zip"
+    );
     Ok(())
 }
 

@@ -154,17 +154,13 @@
       "status": "backend"
     },
     "bzip2": {
-      "status": "backend"
+      "status": "native"
     },
     "gzip": {
-      "status": "partial",
-      "note": "A tar inside reads in process. A single file goes to 7-Zip.",
-      "native archives": [
-        "tar.tar.gz"
-      ]
+      "status": "native"
     },
     "lzma": {
-      "status": "backend"
+      "status": "native"
     },
     "lzma86": {
       "status": "backend"
@@ -176,21 +172,13 @@
       "status": "backend"
     },
     "xz": {
-      "status": "partial",
-      "note": "A tar inside reads in process. A single file goes to 7-Zip.",
-      "native archives": [
-        "tar.tar.xz"
-      ]
+      "status": "native"
     },
     "zip": {
       "status": "native"
     },
     "zstd": {
-      "status": "partial",
-      "note": "A tar inside reads in process. A single file needs `--zip-engine backend`.",
-      "native archives": [
-        "tar.tar.zst"
-      ]
+      "status": "native"
     },
     "Hash": {
       "status": "dropped",

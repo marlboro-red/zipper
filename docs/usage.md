@@ -164,14 +164,14 @@ The [ZIP reader reference](reference/zip-reader.md) lists supported features, li
 
 ## Read tar archives in process
 
-Plain tar, and tar inside gzip, zstd or xz, use the in-process tar reader by default:
+Plain tar, and tar inside gzip, zstd, xz or bzip2, use the in-process tar reader by default:
 
 ```sh
 zipper extract source.tar.gz -o restored
 zipper test source.tar.zst
 ```
 
-The reader recognizes a tar by its first header, not by its file name. A `.gz` or `.xz` file that holds no tar still goes to 7-Zip. If the archive uses sparse files or names that are not UTF-8, the error says so, and `--zip-engine backend` reads it with 7-Zip. The [tar reader reference](reference/tar-reader.md) lists supported formats and checks.
+The reader recognizes a tar by its first header, not by its file name. A compressed file that holds no tar goes to the [single compressed file reader](reference/stream-reader.md), which writes the one decompressed file. If the archive uses sparse files or names that are not UTF-8, the error says so, and `--zip-engine backend` reads it with 7-Zip. The [tar reader reference](reference/tar-reader.md) lists supported formats and checks.
 
 ## Choose the thread count
 

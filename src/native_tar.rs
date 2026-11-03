@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
-    io::{BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     sync::{
         Condvar, Mutex,
@@ -43,6 +43,8 @@ pub enum Compression {
     Gzip,
     Zstd,
     Xz,
+    Bzip2,
+    Lzma,
 }
 
 /// Tar extraction options.
@@ -234,15 +236,9 @@ fn write_job(job: &mut Job) -> Result<()> {
 /// Returns the compression of a tar archive, or `None` when the file does not
 /// start with a tar header, plain or inside gzip, zstd or xz.
 pub fn sniff(path: &Path) -> Result<Option<Compression>> {
-    let mut magic = [0u8; 6];
-    let read = File::open(path)?.read(&mut magic)?;
-    let compression = match &magic[..read] {
-        [0x1f, 0x8b, ..] => Compression::Gzip,
-        [0x28, 0xb5, 0x2f, 0xfd, ..] | [0x50..=0x5f, 0x2a, 0x4d, 0x18, ..] => Compression::Zstd,
-        [0xfd, b'7', b'z', b'X', b'Z', 0x00] => Compression::Xz,
-        _ => Compression::None,
-    };
-    let Ok(mut stream) = decoder(path, compression) else {
+    let compression = compression_by_signature(path)?;
+    let input = BufReader::new(File::open(path)?.take(SNIFF_INPUT));
+    let Ok(mut stream) = decode(input, compression) else {
         return Ok(None);
     };
     let mut first = [0u8; BLOCK];
@@ -253,14 +249,77 @@ pub fn sniff(path: &Path) -> Result<Option<Compression>> {
     Ok(tar.then_some(compression))
 }
 
-fn decoder(path: &Path, compression: Compression) -> Result<Box<dyn Read + Send>> {
-    let file = BufReader::with_capacity(COPY_BUFFER, File::open(path)?);
-    Ok(match compression {
-        Compression::None => Box::new(file),
-        Compression::Gzip => Box::new(flate2::bufread::MultiGzDecoder::new(file)),
-        Compression::Zstd => Box::new(zstd::stream::read::Decoder::with_buffer(file)?),
-        Compression::Xz => Box::new(liblzma::bufread::XzDecoder::new_multi_decoder(file)),
+pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
+    let mut magic = [0u8; 6];
+    let read = File::open(path)?.read(&mut magic)?;
+    Ok(match &magic[..read] {
+        [0x1f, 0x8b, ..] => Compression::Gzip,
+        [0x28, 0xb5, 0x2f, 0xfd, ..] | [0x50..=0x5f, 0x2a, 0x4d, 0x18, ..] => Compression::Zstd,
+        [0xfd, b'7', b'z', b'X', b'Z', 0x00] => Compression::Xz,
+        [b'B', b'Z', b'h', b'1'..=b'9', ..] => Compression::Bzip2,
+        _ => Compression::None,
     })
+}
+
+const SNIFF_INPUT: u64 = 1024 * 1024;
+const BZIP2_OUTPUT_PER_EXTRA_STREAM: u64 = 4096;
+
+pub(crate) fn decoder(path: &Path, compression: Compression) -> Result<Box<dyn Read + Send>> {
+    decode(
+        BufReader::with_capacity(COPY_BUFFER, File::open(path)?),
+        compression,
+    )
+}
+
+fn decode<R: BufRead + Send + 'static>(
+    input: R,
+    compression: Compression,
+) -> Result<Box<dyn Read + Send>> {
+    Ok(match compression {
+        Compression::None => Box::new(input),
+        Compression::Gzip => Box::new(flate2::bufread::MultiGzDecoder::new(input)),
+        Compression::Zstd => Box::new(zstd::stream::read::Decoder::with_buffer(input)?),
+        Compression::Xz => Box::new(liblzma::bufread::XzDecoder::new_multi_decoder(input)),
+        Compression::Bzip2 => Box::new(Bzip2Streams {
+            decoder: Some(bzip2::bufread::BzDecoder::new(input)),
+            streams: 1,
+            decoded: 0,
+        }),
+        Compression::Lzma => Box::new(liblzma::bufread::XzDecoder::new_stream(
+            input,
+            liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
+        )),
+    })
+}
+
+struct Bzip2Streams<R: BufRead> {
+    decoder: Option<bzip2::bufread::BzDecoder<R>>,
+    streams: u64,
+    decoded: u64,
+}
+
+impl<R: BufRead> Read for Bzip2Streams<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        while let Some(decoder) = &mut self.decoder {
+            let read = decoder.read(buffer)?;
+            if read > 0 || buffer.is_empty() {
+                self.decoded += read as u64;
+                return Ok(read);
+            }
+            let mut input = self.decoder.take().expect("a decoder").into_inner();
+            if input.fill_buf()?.is_empty() {
+                return Ok(0);
+            }
+            if self.streams > self.decoded / BZIP2_OUTPUT_PER_EXTRA_STREAM {
+                return Err(std::io::Error::other(format!(
+                    "bzip2 has more streams than {BZIP2_OUTPUT_PER_EXTRA_STREAM} decoded bytes each; {BACKEND_HINT}"
+                )));
+            }
+            self.streams += 1;
+            self.decoder = Some(bzip2::bufread::BzDecoder::new(input));
+        }
+        Ok(0)
+    }
 }
 
 fn checksum_matches(block: &[u8; BLOCK]) -> bool {

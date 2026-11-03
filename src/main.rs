@@ -244,6 +244,11 @@ fn main() -> Result<()> {
                     None,
                     zipper::native_tar::ReadOptions::default(),
                 )?),
+                Reader::Stream => print(zipper::native_stream::read_archive(
+                    &archive,
+                    None,
+                    zipper::native_stream::ReadOptions::default(),
+                )?),
                 Reader::Backend { format } => zipper::compat::run(
                     "l",
                     &archive,
@@ -280,6 +285,11 @@ fn main() -> Result<()> {
                     &archive,
                     None,
                     zipper::native_tar::ReadOptions::default(),
+                )?),
+                Reader::Stream => report(zipper::native_stream::read_archive(
+                    &archive,
+                    None,
+                    zipper::native_stream::ReadOptions::default(),
                 )?),
                 Reader::Backend { format } => zipper::compat::run(
                     "t",

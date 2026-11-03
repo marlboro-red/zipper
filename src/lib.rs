@@ -3,6 +3,7 @@ pub mod counters;
 pub mod duplicates;
 mod extract;
 pub mod native_7z;
+pub mod native_stream;
 pub mod native_tar;
 pub mod native_zip;
 mod ntfs_streams;

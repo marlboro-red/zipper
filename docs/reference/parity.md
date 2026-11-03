@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 31 |
-| `partial` | 4 |
-| `backend` | 68 |
+| `native` | 36 |
+| `partial` | 1 |
+| `backend` | 66 |
 | `missing` | 7 |
 | `dropped` | 2 |
 
@@ -79,15 +79,15 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `VMDK` | `backend` |  | No proof yet. |
 | `Xar` | `backend` |  | `tests/data/parity/archives/xar.xar` |
 | `Z` | `backend` |  | `tests/data/parity/archives/hello.txt.Z`, `tests/data/parity/archives/tar.tar.Z` |
-| `bzip2` | `backend` |  | `tests/data/parity/archives/hello.txt.bz2`, `tests/data/parity/archives/tar.tar.bz2` |
-| `gzip` | `partial` | A tar inside reads in process. A single file goes to 7-Zip. | `tests/data/parity/archives/hello.txt.gz`, `tests/data/parity/archives/tar.tar.gz` |
-| `lzma` | `backend` |  | `tests/data/parity/archives/hello.txt.lzma` |
+| `bzip2` | `native` |  | `tests/data/parity/archives/hello.txt.bz2`, `tests/data/parity/archives/tar.tar.bz2` |
+| `gzip` | `native` |  | `tests/data/parity/archives/hello.txt.gz`, `tests/data/parity/archives/tar.tar.gz` |
+| `lzma` | `native` |  | `tests/data/parity/archives/hello.txt.lzma` |
 | `lzma86` | `backend` |  | No proof yet. |
 | `tar` | `native` |  | `tests/data/parity/archives/tar.tar` |
 | `wim` | `backend` |  | `tests/data/parity/archives/wim.wim` |
-| `xz` | `partial` | A tar inside reads in process. A single file goes to 7-Zip. | `tests/data/parity/archives/hello.txt.xz`, `tests/data/parity/archives/tar.tar.xz` |
+| `xz` | `native` |  | `tests/data/parity/archives/hello.txt.xz`, `tests/data/parity/archives/tar.tar.xz` |
 | `zip` | `native` |  | `tests/data/parity/archives/zip.zip` |
-| `zstd` | `partial` | A tar inside reads in process. A single file needs `--zip-engine backend`. | `tests/data/parity/archives/hello.txt.zst`, `tests/data/parity/archives/tar.tar.zst` |
+| `zstd` | `native` |  | `tests/data/parity/archives/hello.txt.zst`, `tests/data/parity/archives/tar.tar.zst` |
 | `Hash` | `dropped` | It is the `7z h` checksum command, not an archive. | No proof yet. |
 
 ## 7z codecs
