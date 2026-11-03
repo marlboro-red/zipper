@@ -151,6 +151,72 @@ fn build(root: &Path, destination: &Tree) {
     }
 }
 
+fn renamed(name: &str) -> String {
+    format!("{name}_1")
+}
+
+fn documented_keep_or_rename(
+    before: &Snapshot,
+    destination: &Tree,
+    archive: &Tree,
+    mode: Existing,
+) -> Snapshot {
+    let mut after = before.clone();
+    let mut skipped: Vec<&str> = Vec::new();
+    let mut moved: Vec<(&str, String)> = Vec::new();
+    let node = |kind: &Kind, name: &str| match kind {
+        Kind::Directory => Node::Directory,
+        _ => Node::File(contents(name)),
+    };
+    for (name, kind) in archive {
+        if skipped
+            .iter()
+            .any(|skip| name.starts_with(&format!("{skip}/")))
+        {
+            continue;
+        }
+        if let Some((from, to)) = moved
+            .iter()
+            .find(|(from, _)| name.starts_with(&format!("{from}/")))
+        {
+            after.insert(
+                format!("dest/{to}{}", &name[from.len()..]),
+                node(kind, name),
+            );
+            continue;
+        }
+        match (kind, destination.get(name)) {
+            (_, None) => {
+                after.insert(format!("dest/{name}"), node(kind, name));
+            }
+            (Kind::Directory, Some(Kind::Directory)) => {}
+            (_, Some(_)) => match mode {
+                Existing::Skip => skipped.push(name),
+                Existing::RenameNew => {
+                    after.insert(format!("dest/{}", renamed(name)), node(kind, name));
+                    moved.push((name, renamed(name)));
+                }
+                Existing::RenameExisting => {
+                    let old = format!("dest/{name}");
+                    let aside: Vec<(String, Node)> = before
+                        .iter()
+                        .filter(|(path, _)| **path == old || path.starts_with(&format!("{old}/")))
+                        .map(|(path, node)| (path.clone(), node.clone()))
+                        .collect();
+                    for (path, node) in aside {
+                        after.remove(&path);
+                        let rest = &path[old.len()..];
+                        after.insert(format!("dest/{}{rest}", renamed(name)), node);
+                    }
+                    after.insert(old, node(kind, name));
+                }
+                _ => unreachable!("only the keep and rename modes"),
+            },
+        }
+    }
+    after
+}
+
 fn documented_outcome(before: &Snapshot, destination: &Tree, archive: &Tree) -> Option<Snapshot> {
     for (name, kind) in archive {
         let parent_is_new = name
@@ -184,6 +250,17 @@ fn overwrite_matches_the_contract_on_every_small_tree_pair() {
 }
 
 #[test]
+fn skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair() {
+    for mode in [
+        Existing::Skip,
+        Existing::RenameNew,
+        Existing::RenameExisting,
+    ] {
+        check_mode(mode, str::to_owned, Snapshot::from);
+    }
+}
+
+#[test]
 fn overwrite_with_names_in_another_case_matches_the_contract() {
     let probe = tempfile::tempdir().unwrap();
     if !ignores_case(probe.path()) {
@@ -191,9 +268,20 @@ fn overwrite_with_names_in_another_case_matches_the_contract() {
         return;
     }
     check_every_pair(str::to_uppercase, without_case);
+    for mode in [
+        Existing::Skip,
+        Existing::RenameNew,
+        Existing::RenameExisting,
+    ] {
+        check_mode(mode, str::to_uppercase, without_case);
+    }
 }
 
 fn check_every_pair(spell: fn(&str) -> String, compare: fn(Snapshot) -> Snapshot) {
+    check_mode(Existing::Overwrite, spell, compare);
+}
+
+fn check_mode(mode: Existing, spell: fn(&str) -> String, compare: fn(Snapshot) -> Snapshot) {
     let destinations = forest(
         "",
         DEPTH,
@@ -236,13 +324,23 @@ fn check_every_pair(spell: fn(&str) -> String, compare: fn(Snapshot) -> Snapshot
             zip,
             Some(&root.path().join("dest")),
             native_zip::ReadOptions {
-                existing: Existing::Overwrite,
+                existing: mode,
                 ..Default::default()
             },
         );
         let after = snapshot(root.path());
-        let label = format!("case {case}: destination {destination:?}, archive {archive_tree:?}");
-        match documented_outcome(&before, destination, archive_tree) {
+        let label =
+            format!("{mode:?} case {case}: destination {destination:?}, archive {archive_tree:?}");
+        let wanted = match mode {
+            Existing::Overwrite => documented_outcome(&before, destination, archive_tree),
+            _ => Some(documented_keep_or_rename(
+                &before,
+                destination,
+                archive_tree,
+                mode,
+            )),
+        };
+        match wanted {
             Some(wanted) => {
                 result.unwrap_or_else(|error| panic!("{label}: refused with {error:#}"));
                 assert_eq!(compare(after), compare(wanted), "{label}");
@@ -258,5 +356,5 @@ fn check_every_pair(spell: fn(&str) -> String, compare: fn(Snapshot) -> Snapshot
         checked += 1;
         common::make_tree_deletable(root.path());
     }
-    eprintln!("{checked} pairs: {merged} merged, {refused} refused as conflicts");
+    eprintln!("{mode:?}: {checked} pairs, {merged} merged, {refused} refused as conflicts");
 }

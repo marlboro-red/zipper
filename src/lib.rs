@@ -6,6 +6,7 @@ pub mod native_7z;
 pub mod native_tar;
 pub mod native_zip;
 mod ntfs_streams;
+mod pattern;
 mod progress;
 mod staging;
 mod zip_reader;
@@ -223,36 +224,75 @@ fn later_spellings_of_same_directory<'a>(
     Ok(std::collections::HashSet::new())
 }
 
-pub(crate) fn checked_selection(paths: &[String]) -> Result<Vec<&str>> {
-    paths
-        .iter()
-        .map(|path| {
-            let path = path.trim_end_matches('/');
-            safe_path(path)?;
-            Ok(path)
-        })
-        .collect()
+pub(crate) struct Selection<'a> {
+    paths: Vec<&'a str>,
+    include: Vec<pattern::Pattern>,
+    exclude: Vec<pattern::Pattern>,
 }
 
-pub(crate) fn is_selected(name: &str, selection: &[&str]) -> bool {
-    selection.is_empty()
-        || selection.iter().any(|path| {
-            name.strip_prefix(path)
-                .is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
-        })
+fn under(name: &str, path: &str) -> bool {
+    name.strip_prefix(path)
+        .is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
 }
 
-pub(crate) fn ensure_each_selected_path_matches<'a>(
-    selection: &[&str],
-    names: impl Iterator<Item = &'a str> + Clone,
-) -> Result<()> {
-    for path in selection {
-        ensure!(
-            names.clone().any(|name| is_selected(name, &[path])),
-            "selected path not found: {path}"
-        );
+impl<'a> Selection<'a> {
+    pub(crate) fn new(paths: &'a [String], include: &[String], exclude: &[String]) -> Result<Self> {
+        let paths = paths
+            .iter()
+            .map(|path| {
+                let path = path.trim_end_matches('/');
+                safe_path(path)?;
+                Ok(path)
+            })
+            .collect::<Result<_>>()?;
+        let patterns = |texts: &[String]| {
+            texts
+                .iter()
+                .map(|text| pattern::Pattern::new(text))
+                .collect::<Result<Vec<_>>>()
+        };
+        Ok(Self {
+            paths,
+            include: patterns(include)?,
+            exclude: patterns(exclude)?,
+        })
     }
-    Ok(())
+
+    pub(crate) fn selects(&self, name: &str) -> bool {
+        let named = self.paths.is_empty() && self.include.is_empty()
+            || self.paths.iter().any(|path| under(name, path))
+            || self
+                .include
+                .iter()
+                .any(|pattern| pattern.matches_entry_or_folder_above(name));
+        named
+            && !self
+                .exclude
+                .iter()
+                .any(|pattern| pattern.matches_entry_or_folder_above(name))
+    }
+
+    pub(crate) fn ensure_each_path_matches<'n>(
+        &self,
+        names: impl Iterator<Item = &'n str> + Clone,
+    ) -> Result<()> {
+        for path in &self.paths {
+            ensure!(
+                names.clone().any(|name| under(name, path)),
+                "selected path not found: {path}"
+            );
+        }
+        for pattern in &self.include {
+            ensure!(
+                names
+                    .clone()
+                    .any(|name| pattern.matches_entry_or_folder_above(name)),
+                "no archive entry matches --include {}",
+                pattern.text()
+            );
+        }
+        Ok(())
+    }
 }
 
 #[cfg_attr(not(unix), allow(dead_code))]

@@ -56,6 +56,12 @@ pub struct ReadOptions<'a> {
     pub writers: Option<usize>,
     /// What to do when the destination exists.
     pub existing: crate::Existing,
+    /// Exact entry paths or folder subtrees to read. Empty reads every entry.
+    pub paths: &'a [String],
+    /// Wildcard patterns to read, written as for `ExtractOptions::include`.
+    pub include: &'a [String],
+    /// Wildcard patterns to leave out, written as for `ExtractOptions::include`.
+    pub exclude: &'a [String],
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -633,6 +639,7 @@ struct Extraction<'a, 'f> {
     entries: Vec<Entry>,
     budget: Budget,
     tracker: Tracker<'a>,
+    selection: crate::Selection<'a>,
 }
 
 fn entry_name(raw: &str) -> &str {
@@ -644,7 +651,12 @@ fn entry_name(raw: &str) -> &str {
 }
 
 impl<'a, 'f> Extraction<'a, 'f> {
-    fn new(output: Option<Output<'a, 'f>>, budget: Budget, tracker: Tracker<'a>) -> Self {
+    fn new(
+        output: Option<Output<'a, 'f>>,
+        budget: Budget,
+        tracker: Tracker<'a>,
+        selection: crate::Selection<'a>,
+    ) -> Self {
         Extraction {
             output,
             nodes: HashMap::new(),
@@ -657,7 +669,13 @@ impl<'a, 'f> Extraction<'a, 'f> {
             entries: Vec::new(),
             budget,
             tracker,
+            selection,
         }
+    }
+
+    fn ensure_each_selected_path_matches(&self) -> Result<()> {
+        self.selection
+            .ensure_each_path_matches(self.nodes.keys().map(String::as_str))
     }
 
     fn root(&self) -> Option<&'a Path> {
@@ -850,10 +868,14 @@ impl<'a, 'f> Extraction<'a, 'f> {
         }
         safe_path(name)?;
         let name = name.to_owned();
+        let selected = self.selection.selects(&name);
         match kind {
             _ if directory => {
                 ensure!(size == 0, "tar directory {name:?} has data");
                 self.claim(&name, Node::Directory)?;
+                if !selected {
+                    return Ok(());
+                }
                 if self.output.is_some() {
                     self.create_parent(&format!("{name}/"))?;
                 }
@@ -873,6 +895,9 @@ impl<'a, 'f> Extraction<'a, 'f> {
             }
             b'0' | 0 | b'7' => {
                 let replaces = self.claim(&name, Node::File)?;
+                if !selected {
+                    return input.copy(size, |_| Ok(()));
+                }
                 self.write_file(input, &name, size, mode, modified, replaces)?;
                 self.entries.push(Entry {
                     name,
@@ -897,6 +922,13 @@ impl<'a, 'f> Extraction<'a, 'f> {
                     *node = Node::LinkedFile;
                 }
                 self.claim(&name, Node::HardLink)?;
+                if !selected {
+                    return Ok(());
+                }
+                ensure!(
+                    self.selection.selects(&target),
+                    "tar hard link {name:?} needs {target:?}, which the selection leaves out"
+                );
                 self.create_parent(&name)?;
                 self.hard_links.push((name.clone(), target));
             }
@@ -905,6 +937,9 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
                 self.charge_name(raw_target.len())?;
                 self.claim(&name, Node::Symlink)?;
+                if !selected {
+                    return Ok(());
+                }
                 self.create_parent(&name)?;
                 self.symlinks.push((name.clone(), raw_target));
             }
@@ -1007,10 +1042,16 @@ pub fn read_archive(
         reader: decoder(path, compression)?,
         buffer: vec![0; COPY_BUFFER],
     };
+    let selection = || crate::Selection::new(options.paths, options.include, options.exclude);
     let Some(staging) = staging else {
-        let mut extraction =
-            Extraction::new(None, budget, Tracker::new(options.control, None, None));
+        let mut extraction = Extraction::new(
+            None,
+            budget,
+            Tracker::new(options.control, None, None),
+            selection()?,
+        );
         parse(&mut extraction, &mut input)?;
+        extraction.ensure_each_selected_path_matches()?;
         extraction.tracker.finish();
         return Ok(extraction.entries);
     };
@@ -1050,6 +1091,7 @@ pub fn read_archive(
             Some(output),
             budget,
             Tracker::new(options.control, None, None),
+            selection()?,
         );
         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             parse(&mut extraction, &mut input)
@@ -1061,6 +1103,7 @@ pub fn read_archive(
         writers.check()?;
         extraction.tracker.finish();
         extraction.tracker.check()?;
+        extraction.ensure_each_selected_path_matches()?;
         publish(&extraction, &staging)?;
         Ok(extraction.entries)
     })

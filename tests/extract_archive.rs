@@ -70,7 +70,7 @@ fn each_format_goes_to_its_reader_and_merges() {
 }
 
 #[test]
-fn paths_reach_the_zip_reader_and_tar_refuses_them() {
+fn paths_reach_the_zip_and_tar_readers() {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("a.zip");
     zip(&archive);
@@ -85,7 +85,8 @@ fn paths_reach_the_zip_reader_and_tar_refuses_them() {
     assert!(!destination.join("skip").exists());
     let tar_archive = root.path().join("a.tar");
     tar(&tar_archive);
-    assert!(extract_archive(&tar_archive, &root.path().join("tar"), options).is_err());
+    extract_archive(&tar_archive, &root.path().join("tar"), options).unwrap();
+    assert!(root.path().join("tar/keep/a").exists());
 }
 
 fn rar(path: &Path) {

@@ -20,6 +20,7 @@ The test checks all of them on every pair.
 
 ## What it covers
 
+- `overwrite_matches_the_contract_on_every_small_tree_pair` checks `Existing::Overwrite` against `documented_outcome`. `skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair` checks `Skip`, `RenameNew` and `RenameExisting` against `documented_keep_or_rename`, where nothing is refused and a renamed entry gets the name `name_1`.
 - The trees use the names `a` and `b` at two levels. A destination path holds nothing, a file, a folder, a symlink to a folder outside, or a symlink to a file outside, which gives 841 destinations. An archive path holds nothing, a file or a folder, which gives 121 archives. That makes 101,761 pairs.
 - The code covered is `crate::staging::stage`, `Staging::publish`, `plan`, `same_filesystem` and `crate::publish` in src/lib.rs, through the native ZIP reader. tar, 7z and the 7-Zip backend call the same two functions.
 - `documented_outcome` in the test is the contract written as code. It does not copy `plan`. It states what must be on disk afterwards, and the test compares the whole tree, outside folder included.

@@ -151,7 +151,7 @@ fn selection_merges_into_an_existing_folder() {
 }
 
 #[test]
-fn cli_selects_from_zip_and_refuses_tar() {
+fn cli_selects_from_zip_and_tar() {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("a.zip");
     write_zip(&archive);
@@ -180,14 +180,123 @@ fn cli_selects_from_zip_and_refuses_tar() {
     bytes[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
     bytes.extend_from_slice(&[0; 1024]);
     fs::write(&tar, bytes).unwrap();
-    let output = std::process::Command::new(binary)
+    let status = std::process::Command::new(binary)
         .args(["extract", "--path", "f", "-o"])
         .arg(root.path().join("tar-out"))
+        .arg(&tar)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(files(&root.path().join("tar-out")), ["f"]);
+    let output = std::process::Command::new(binary)
+        .args(["extract", "--path", "missing", "-o"])
+        .arg(root.path().join("tar-missing"))
         .arg(&tar)
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("--path needs"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("selected path not found"));
+    assert!(!root.path().join("tar-missing").exists());
+}
+
+fn sevenzip() -> Option<std::path::PathBuf> {
+    std::env::var_os("ZIPPER_7Z")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            ["7zz", "7z"]
+                .into_iter()
+                .find(|binary| {
+                    std::process::Command::new(binary)
+                        .arg("i")
+                        .output()
+                        .is_ok_and(|output| output.status.success())
+                })
+                .map(std::path::PathBuf::from)
+        })
+}
+
+#[test]
+fn include_and_exclude_patterns_select_the_same_files_in_every_format() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/parity/archives");
+    let list = |values: &[&str]| {
+        values
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+    };
+    type Case<'a> = (&'a [&'a str], &'a [&'a str], &'a [&'a str], &'a str);
+    let cases: [Case; 5] = [
+        (
+            &["*.txt"],
+            &[],
+            &["folder/data.txt", "hello.txt"],
+            "-ir!*.txt",
+        ),
+        (&[], &["*.txt"], &["folder/empty"], "-xr!*.txt"),
+        (&[], &["folder"], &["hello.txt"], "-xr!folder"),
+        (&["folder/*"], &["empty"], &["folder/data.txt"], ""),
+        (&["**/data.txt"], &[], &["folder/data.txt"], ""),
+    ];
+    for archive in ["zip.zip", "tar.tar", "tar.tar.gz", "7z.7z"] {
+        for (include, exclude, expected, switch) in cases {
+            let root = tempfile::tempdir().unwrap();
+            let destination = root.path().join("out");
+            let (include, exclude) = (list(include), list(exclude));
+            zipper::extract_archive(
+                &corpus.join(archive),
+                &destination,
+                zipper::ExtractOptions {
+                    include: &include,
+                    exclude: &exclude,
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{archive} {include:?} {exclude:?}: {error:#}"));
+            assert_eq!(
+                files(&destination),
+                expected,
+                "{archive} {include:?} {exclude:?}"
+            );
+            if let (Some(binary), false) =
+                (sevenzip(), switch.is_empty() || archive.ends_with(".gz"))
+            {
+                let by_7zip = root.path().join("7zip");
+                let mut output = std::ffi::OsString::from("-o");
+                output.push(&by_7zip);
+                let status = std::process::Command::new(binary)
+                    .args(["x", "-y", switch])
+                    .arg(output)
+                    .arg(corpus.join(archive))
+                    .stdout(std::process::Stdio::null())
+                    .status()
+                    .unwrap();
+                assert!(status.success(), "7-Zip {switch} on {archive}");
+                assert_eq!(files(&by_7zip), expected, "7-Zip {switch} on {archive}");
+            }
+        }
+    }
+    let partly = list(&["*.txt", "*.bin"]);
+    let error = zipper::extract_archive(
+        &corpus.join("tar.tar"),
+        &tempfile::tempdir().unwrap().path().join("out"),
+        zipper::ExtractOptions {
+            include: &partly,
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("--include *.bin"));
+    let nothing = list(&["*.bin"]);
+    let error = zipper::extract_archive(
+        &corpus.join("zip.zip"),
+        &tempfile::tempdir().unwrap().path().join("out"),
+        zipper::ExtractOptions {
+            include: &nothing,
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("no archive entry matches"));
 }
 
 #[test]

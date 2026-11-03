@@ -1,6 +1,7 @@
 use crate::{Directory, parent};
 use anyhow::{Result, bail, ensure};
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -20,18 +21,56 @@ pub enum Existing {
     /// earlier files replaced. Existing directories keep their mode, and files
     /// the archive does not name are left alone.
     Overwrite,
+    /// Extract into an existing directory, leaving out every archive file
+    /// whose path already exists there, as 7-Zip's `-aos` does. An archive
+    /// folder merges into an existing folder. Where something else is in the
+    /// way, the folder and everything under it is left out.
+    Skip,
+    /// Extract into an existing directory, writing an archive file or folder
+    /// whose path already exists under the first free name `name_1.ext`,
+    /// `name_2.ext` and on, as 7-Zip's `-aou` does. Folders merge.
+    RenameNew,
+    /// Extract into an existing directory, first renaming whatever already
+    /// holds an archive file's path to the first free name `name_1.ext`, as
+    /// 7-Zip's `-aot` does. A link is renamed, never followed. Folders merge.
+    RenameExisting,
+}
+
+enum Step {
+    Create(PathBuf),
+    Replace(PathBuf),
+    CreateAs(PathBuf, PathBuf),
+    SetAside(PathBuf, PathBuf),
+}
+
+impl Step {
+    fn archive_source(&self) -> Option<&Path> {
+        match self {
+            Step::Create(path) | Step::Replace(path) | Step::CreateAs(path, _) => Some(path),
+            Step::SetAside(..) => None,
+        }
+    }
+
+    fn archive_target(&self) -> Option<&Path> {
+        match self {
+            Step::Create(path) | Step::Replace(path) => Some(path),
+            Step::CreateAs(_, name) => Some(name),
+            Step::SetAside(..) => None,
+        }
+    }
 }
 
 pub(crate) struct Staging {
     temp: tempfile::TempDir,
     destination: PathBuf,
     merge: bool,
+    existing: Existing,
     zone: Option<Vec<u8>>,
 }
 
 pub(crate) fn stage(archive: &Path, destination: &Path, existing: Existing) -> Result<Staging> {
     let merge = match fs::metadata(destination) {
-        Ok(metadata) if existing == Existing::Overwrite => {
+        Ok(metadata) if existing != Existing::Refuse => {
             ensure!(
                 metadata.is_dir(),
                 "extraction destination is not a directory"
@@ -59,6 +98,7 @@ pub(crate) fn stage(archive: &Path, destination: &Path, existing: Existing) -> R
         temp,
         destination: destination.to_owned(),
         merge,
+        existing,
         zone: crate::ntfs_streams::archive_mark(archive),
     })
 }
@@ -75,17 +115,23 @@ impl Staging {
         if !self.merge {
             return crate::publish(self.temp.path(), &self.destination, directories);
         }
-        let mut moves = Vec::new();
+        let mut steps = Vec::new();
         plan(
             self.temp.path(),
             &self.destination,
+            self.existing,
             Path::new(""),
-            &mut moves,
+            &mut HashSet::new(),
+            &mut steps,
         )?;
-        let moved = |name: &str| moves.iter().any(|path| Path::new(name).starts_with(path));
+        ensure_links_stay_in_archive_paths(self.temp.path(), &self.destination, &steps)?;
         let created: Vec<Directory> = directories
             .iter()
-            .filter(|directory| moved(directory.name))
+            .filter(|directory| {
+                steps.iter().any(|step| {
+                    matches!(step, Step::Create(path) | Step::Replace(path) if Path::new(directory.name).starts_with(path))
+                })
+            })
             .copied()
             .collect();
         #[cfg(unix)]
@@ -93,10 +139,23 @@ impl Staging {
             use std::os::unix::fs::PermissionsExt;
             fs::metadata(self.temp.path())?.permissions().mode() & 0o777
         };
-        for path in &moves {
-            #[cfg(windows)]
-            allow_replacing(&self.destination.join(path))?;
-            fs::rename(self.temp.path().join(path), self.destination.join(path))?;
+        let staged = |path: &Path| self.temp.path().join(path);
+        let placed = |path: &Path| self.destination.join(path);
+        for step in &steps {
+            match step {
+                Step::Create(path) => rename_without_replacing(&staged(path), &placed(path))?,
+                Step::Replace(path) => {
+                    #[cfg(windows)]
+                    allow_replacing(&placed(path))?;
+                    fs::rename(staged(path), placed(path))?;
+                }
+                Step::CreateAs(path, name) => {
+                    rename_without_replacing(&staged(path), &placed(name))?
+                }
+                Step::SetAside(path, name) => {
+                    rename_without_replacing(&placed(path), &placed(name))?
+                }
+            }
         }
         #[cfg(unix)]
         crate::unix_modes::apply_with_default(&self.destination, &created, default)?;
@@ -104,6 +163,171 @@ impl Staging {
         crate::restore_directory_times(&self.destination, &created);
         Ok(())
     }
+}
+
+fn rename_without_replacing(from: &Path, to: &Path) -> Result<()> {
+    #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
+    let renamed = rustix::fs::renameat_with(
+        rustix::fs::CWD,
+        from,
+        rustix::fs::CWD,
+        to,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(std::io::Error::from);
+    #[cfg(windows)]
+    let renamed = {
+        use std::os::windows::ffi::OsStrExt;
+        let wide = |path: &Path| {
+            path.as_os_str()
+                .encode_wide()
+                .chain([0])
+                .collect::<Vec<u16>>()
+        };
+        let (from, to) = (wide(from), wide(to));
+        // SAFETY: both paths are NUL-terminated UTF-16 buffers that outlive the call.
+        if unsafe {
+            windows_sys::Win32::Storage::FileSystem::MoveFileExW(from.as_ptr(), to.as_ptr(), 0)
+        } != 0
+        {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    };
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_vendor = "apple",
+        windows
+    )))]
+    let renamed = if fs::symlink_metadata(to).is_ok() {
+        Err(std::io::ErrorKind::AlreadyExists.into())
+    } else {
+        fs::rename(from, to)
+    };
+    renamed.map_err(|error| {
+        if fs::symlink_metadata(to).is_ok() {
+            anyhow::anyhow!(
+                "{} appeared in the destination during extraction",
+                to.display()
+            )
+        } else {
+            anyhow::Error::from(error).context(format!("cannot move {} into place", to.display()))
+        }
+    })
+}
+
+fn join_rest(base: &Path, rest: &Path) -> PathBuf {
+    if rest.as_os_str().is_empty() {
+        base.to_path_buf()
+    } else {
+        base.join(rest)
+    }
+}
+
+enum Owner {
+    ArchiveLink(PathBuf),
+    DestinationLink,
+    Other,
+}
+
+fn owner_after_publish(
+    staging: &Path,
+    destination: &Path,
+    steps: &[Step],
+    path: &Path,
+) -> Result<Owner> {
+    let placed = steps.iter().find_map(|step| {
+        let rest = path.strip_prefix(step.archive_target()?).ok()?;
+        Some(staging.join(join_rest(step.archive_source()?, rest)))
+    });
+    let set_aside = || {
+        steps.iter().find_map(|step| match step {
+            Step::SetAside(original, name) => {
+                Some(join_rest(original, path.strip_prefix(name).ok()?))
+            }
+            _ => None,
+        })
+    };
+    let (on_disk, archive) = match placed {
+        Some(staged) => (staged, true),
+        None => (
+            destination.join(set_aside().unwrap_or_else(|| path.to_path_buf())),
+            false,
+        ),
+    };
+    Ok(match fs::symlink_metadata(&on_disk) {
+        Ok(metadata) if metadata.file_type().is_symlink() && archive => {
+            Owner::ArchiveLink(fs::read_link(on_disk)?)
+        }
+        Ok(metadata) if metadata.file_type().is_symlink() => Owner::DestinationLink,
+        _ => Owner::Other,
+    })
+}
+
+const MOST_LINKS_FOLLOWED: usize = 40;
+
+fn ensure_links_stay_in_archive_paths(
+    staging: &Path,
+    destination: &Path,
+    steps: &[Step],
+) -> Result<()> {
+    for entry in walkdir::WalkDir::new(staging).min_depth(1) {
+        let entry = entry?;
+        if !entry.file_type().is_symlink() {
+            continue;
+        }
+        let relative = entry.path().strip_prefix(staging)?;
+        let Some(location) = steps.iter().find_map(|step| {
+            let source = step.archive_source()?;
+            let rest = relative.strip_prefix(source).ok()?;
+            Some(join_rest(step.archive_target()?, rest))
+        }) else {
+            continue;
+        };
+        let mut resolved = location.parent().map(Path::to_path_buf).unwrap_or_default();
+        let mut remaining: Vec<std::ffi::OsString> = Vec::new();
+        let push_target = |target: &Path, remaining: &mut Vec<std::ffi::OsString>| -> Result<()> {
+            for component in target.components().rev() {
+                match component {
+                    std::path::Component::Normal(part) => remaining.push(part.to_owned()),
+                    std::path::Component::ParentDir => remaining.push("..".into()),
+                    std::path::Component::CurDir => {}
+                    _ => bail!("archive link {} has an absolute target", relative.display()),
+                }
+            }
+            Ok(())
+        };
+        push_target(&fs::read_link(entry.path())?, &mut remaining)?;
+        let mut followed = 0;
+        while let Some(part) = remaining.pop() {
+            if part == ".." {
+                resolved.pop();
+                continue;
+            }
+            resolved.push(&part);
+            match owner_after_publish(staging, destination, steps, &resolved)? {
+                Owner::DestinationLink => bail!(
+                    "archive link {} points through {}, a link the destination keeps",
+                    relative.display(),
+                    resolved.display()
+                ),
+                Owner::ArchiveLink(target) => {
+                    followed += 1;
+                    ensure!(
+                        followed <= MOST_LINKS_FOLLOWED,
+                        "archive link {} goes through more than {MOST_LINKS_FOLLOWED} links",
+                        relative.display()
+                    );
+                    resolved.pop();
+                    push_target(&target, &mut remaining)?;
+                }
+                Owner::Other => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -123,11 +347,54 @@ fn allow_replacing(existing: &Path) -> Result<()> {
     Ok(())
 }
 
+const LONGEST_NAME: usize = 255;
+
+fn free_name(
+    staging: &Path,
+    destination: &Path,
+    path: &Path,
+    taken: &mut HashSet<PathBuf>,
+) -> Result<PathBuf> {
+    let stem = path.file_stem().unwrap_or_default();
+    let extension = path.extension();
+    for number in 1.. {
+        let mut name = stem.to_owned();
+        name.push(format!("_{number}"));
+        if let Some(extension) = extension {
+            name.push(".");
+            name.push(extension);
+        }
+        #[cfg(windows)]
+        let length = std::os::windows::ffi::OsStrExt::encode_wide(name.as_os_str()).count();
+        #[cfg(not(windows))]
+        let length = name.len();
+        ensure!(
+            length <= LONGEST_NAME,
+            "cannot rename {}: {} is longer than a file name may be",
+            path.display(),
+            name.display()
+        );
+        let candidate = path.with_file_name(name);
+        let free = |root: &Path| match fs::symlink_metadata(root.join(&candidate)) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+            Err(error) => Err(error),
+            Ok(_) => Ok(false),
+        };
+        if !taken.contains(&candidate) && free(destination)? && free(staging)? {
+            taken.insert(candidate.clone());
+            return Ok(candidate);
+        }
+    }
+    unreachable!("some number is free")
+}
+
 fn plan(
     staging: &Path,
     destination: &Path,
+    existing_mode: Existing,
     relative: &Path,
-    moves: &mut Vec<PathBuf>,
+    taken: &mut HashSet<PathBuf>,
+    steps: &mut Vec<Step>,
 ) -> Result<()> {
     for entry in fs::read_dir(staging.join(relative))? {
         let name = entry?.file_name();
@@ -138,7 +405,9 @@ fn plan(
         let path = relative.join(name);
         let staged = fs::symlink_metadata(staging.join(&path))?;
         match fs::symlink_metadata(destination.join(&path)) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => moves.push(path),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                steps.push(Step::Create(path))
+            }
             Err(error) => return Err(error.into()),
             Ok(existing) if staged.is_dir() && existing.is_dir() => {
                 ensure!(
@@ -146,15 +415,27 @@ fn plan(
                     "{} is on another filesystem than the destination",
                     path.display()
                 );
-                plan(staging, destination, &path, moves)?
+                plan(staging, destination, existing_mode, &path, taken, steps)?
             }
-            Ok(existing) if staged.is_dir() || existing.is_dir() => bail!(
-                "{} is a {} in the destination and a {} in the archive",
-                path.display(),
-                kind(existing.is_dir()),
-                kind(staged.is_dir())
-            ),
-            Ok(_) => moves.push(path),
+            Ok(existing) => match existing_mode {
+                Existing::Skip => {}
+                Existing::RenameNew => {
+                    let name = free_name(staging, destination, &path, taken)?;
+                    steps.push(Step::CreateAs(path, name));
+                }
+                Existing::RenameExisting => {
+                    let name = free_name(staging, destination, &path, taken)?;
+                    steps.push(Step::SetAside(path.clone(), name));
+                    steps.push(Step::Create(path));
+                }
+                _ if staged.is_dir() || existing.is_dir() => bail!(
+                    "{} is a {} in the destination and a {} in the archive",
+                    path.display(),
+                    kind(&existing),
+                    kind(&staged)
+                ),
+                _ => steps.push(Step::Replace(path)),
+            },
         }
     }
     Ok(())
@@ -171,6 +452,32 @@ fn same_filesystem(_: &fs::Metadata, _: &fs::Metadata) -> bool {
     true
 }
 
-fn kind(directory: bool) -> &'static str {
-    if directory { "directory" } else { "file" }
+fn kind(metadata: &fs::Metadata) -> &'static str {
+    if metadata.file_type().is_symlink() {
+        "link"
+    } else if metadata.is_dir() {
+        "directory"
+    } else {
+        "file"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rename_into_place_never_replaces_what_appeared_there() {
+        let root = tempfile::tempdir().unwrap();
+        let (from, to) = (root.path().join("from"), root.path().join("to"));
+        fs::write(&from, b"archive").unwrap();
+        fs::write(&to, b"written by another program").unwrap();
+        let error = rename_without_replacing(&from, &to).unwrap_err();
+        assert!(format!("{error:#}").contains("appeared in the destination"));
+        assert_eq!(fs::read(&to).unwrap(), b"written by another program");
+        assert_eq!(fs::read(&from).unwrap(), b"archive");
+        fs::remove_file(&to).unwrap();
+        rename_without_replacing(&from, &to).unwrap();
+        assert_eq!(fs::read(&to).unwrap(), b"archive");
+    }
 }

@@ -74,6 +74,10 @@ pub struct ReadOptions<'a> {
     pub existing: crate::Existing,
     /// Exact entry paths or folder subtrees to read. Empty reads every entry.
     pub paths: &'a [String],
+    /// Wildcard patterns to read, written as for `ExtractOptions::include`.
+    pub include: &'a [String],
+    /// Wildcard patterns to leave out, written as for `ExtractOptions::include`.
+    pub exclude: &'a [String],
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -1516,15 +1520,12 @@ pub fn read_archive(
     for folder in &archive.folders {
         check_methods(folder)?;
     }
-    let selection = crate::checked_selection(options.paths)?;
-    crate::ensure_each_selected_path_matches(
-        &selection,
-        archive.items.iter().map(|item| item.name.as_str()),
-    )?;
+    let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
+    selection.ensure_each_path_matches(archive.items.iter().map(|item| item.name.as_str()))?;
     let chosen: Vec<bool> = archive
         .items
         .iter()
-        .map(|item| crate::is_selected(&item.name, &selection))
+        .map(|item| selection.selects(&item.name))
         .collect();
     let entries: Vec<Entry> = archive
         .items

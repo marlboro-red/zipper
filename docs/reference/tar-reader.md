@@ -66,7 +66,7 @@ These options work the same way in every reader. [Usage](../usage.md#extract-int
 
 - `Existing::Overwrite`, or `zipper extract --overwrite`, extracts into an existing folder. The whole archive decodes into a hidden staging folder first. Each file then replaces the file of the same name by rename. `tests/overwrite.rs` covers links and conflicts in the destination.
 - `Control` carries a progress callback and a cancel flag. `tests/control.rs` covers cancellation at any point.
-- `paths`, or `--path`, selects entries. Tar refuses it, because a tar stream has no index.
+- `paths`, `include` and `exclude`, or `--path`, `--include` and `--exclude`, select entries. The reader still parses and checks every header, and writes only the selected entries. A selected hard link whose target is left out is refused, and each `--path` must match an entry.
 
 ## Reference corpus
 

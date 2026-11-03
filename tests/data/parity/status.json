@@ -328,16 +328,32 @@
       ]
     },
     "-aos": {
-      "status": "missing"
+      "status": "native",
+      "note": "`--existing skip`.",
+      "tests": [
+        "tests/overwrite_exhaustive.rs::skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair"
+      ]
     },
     "-aot": {
-      "status": "missing"
+      "status": "native",
+      "note": "`--existing rename-existing`.",
+      "tests": [
+        "tests/overwrite_exhaustive.rs::skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair"
+      ]
     },
     "-aou": {
-      "status": "missing"
+      "status": "native",
+      "note": "`--existing rename-new`.",
+      "tests": [
+        "tests/overwrite_exhaustive.rs::skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair"
+      ]
     },
     "-x": {
-      "status": "missing"
+      "status": "native",
+      "note": "`--exclude`, for ZIP, tar and 7z.",
+      "tests": [
+        "tests/selection.rs::include_and_exclude_patterns_select_the_same_files_in_every_format"
+      ]
     },
     "-p": {
       "status": "missing"
@@ -363,10 +379,10 @@
       ]
     },
     "-i": {
-      "status": "partial",
-      "note": "`--path` selects exact paths in ZIP and 7z, with no wildcards.",
+      "status": "native",
+      "note": "`--include` and `--path`, for ZIP, tar and 7z.",
       "tests": [
-        "tests/selection.rs::folders_and_files_select_their_subtrees_only"
+        "tests/selection.rs::include_and_exclude_patterns_select_the_same_files_in_every_format"
       ]
     },
     "-snl": {

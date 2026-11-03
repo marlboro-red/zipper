@@ -69,9 +69,15 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
 pub struct ExtractOptions<'a> {
     /// What to do when the destination exists.
     pub existing: Existing,
-    /// Exact entry paths or folder subtrees to extract, for ZIP and 7z. Empty
-    /// extracts everything.
+    /// Exact entry paths or folder subtrees to extract. Empty extracts
+    /// everything.
     pub paths: &'a [String],
+    /// Wildcard patterns to extract. `*` and `?` stay inside one name, `**`
+    /// crosses folders, and a pattern without `/` matches a name at any depth.
+    /// Matching a folder selects everything under it.
+    pub include: &'a [String],
+    /// Wildcard patterns to leave out, written as for `include`.
+    pub exclude: &'a [String],
     /// Progress reports and cancellation. Every reader checks the cancel flag
     /// before it starts. Only ZIP, tar and 7z report progress and check it
     /// later.
@@ -111,6 +117,8 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     max_output_bytes: options.max_output_bytes,
                     existing: options.existing,
                     paths: options.paths,
+                    include: options.include,
+                    exclude: options.exclude,
                     control: options.control,
                 },
             )?;
@@ -124,12 +132,18 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     threads: options.threads,
                     existing: options.existing,
                     paths: options.paths,
+                    include: options.include,
+                    exclude: options.exclude,
                     control: options.control,
                 },
             )?;
         }
-        Reader::Tar | Reader::Backend { .. } if !options.paths.is_empty() => {
-            bail!("--path needs a ZIP or 7z archive read in process")
+        Reader::Backend { .. }
+            if !(options.paths.is_empty()
+                && options.include.is_empty()
+                && options.exclude.is_empty()) =>
+        {
+            bail!("--path, --include and --exclude need an archive read in process")
         }
         Reader::Tar => {
             native_tar::read_archive(
@@ -139,6 +153,9 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     max_output_bytes: options.max_output_bytes,
                     writers: options.threads,
                     existing: options.existing,
+                    paths: options.paths,
+                    include: options.include,
+                    exclude: options.exclude,
                     control: options.control,
                 },
             )?;

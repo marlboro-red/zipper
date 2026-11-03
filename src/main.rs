@@ -32,6 +32,30 @@ enum ZipEngine {
     /// Native ZIP with a shared entry-buffer budget and streaming fallback.
     NativeFast,
 }
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ExistingArg {
+    /// Refuse an existing destination.
+    Refuse,
+    /// Replace each file of the same name (7-Zip -aoa).
+    Overwrite,
+    /// Keep each existing file and leave the archive's copy out (7-Zip -aos).
+    Skip,
+    /// Write the archive's copy as name_1.ext (7-Zip -aou).
+    RenameNew,
+    /// Rename the existing file to name_1.ext first (7-Zip -aot).
+    RenameExisting,
+}
+impl From<ExistingArg> for zipper::Existing {
+    fn from(existing: ExistingArg) -> Self {
+        match existing {
+            ExistingArg::Refuse => zipper::Existing::Refuse,
+            ExistingArg::Overwrite => zipper::Existing::Overwrite,
+            ExistingArg::Skip => zipper::Existing::Skip,
+            ExistingArg::RenameNew => zipper::Existing::RenameNew,
+            ExistingArg::RenameExisting => zipper::Existing::RenameExisting,
+        }
+    }
+}
 #[derive(Subcommand)]
 enum Command {
     /// Extract into a new directory, or into an existing one with --overwrite.
@@ -40,11 +64,22 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
         /// Extract into an existing directory, replacing files of the same name.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "existing")]
         overwrite: bool,
-        /// Extract an exact archive path or folder subtree (ZIP and 7z; repeatable).
+        /// What to do with paths the existing destination already holds.
+        #[arg(long, value_enum)]
+        existing: Option<ExistingArg>,
+        /// Extract an exact archive path or folder subtree (repeatable).
         #[arg(long = "path")]
         paths: Vec<String>,
+        /// Extract entries matching a wildcard pattern (repeatable). `*` and `?`
+        /// stay in one name, `**` crosses folders, and a pattern without `/`
+        /// matches a name at any depth.
+        #[arg(long)]
+        include: Vec<String>,
+        /// Leave out entries matching a wildcard pattern (repeatable).
+        #[arg(long)]
+        exclude: Vec<String>,
         /// Refuse archives whose declared output exceeds this many bytes. By
         /// default, ZIP, tar and 7z output read in process must fit in free space.
         #[arg(long)]
@@ -119,19 +154,23 @@ fn main() -> Result<()> {
             archive,
             output,
             paths,
+            include,
+            exclude,
             overwrite,
+            existing,
             max_extracted_bytes,
         } => {
             zipper::extract_archive(
                 &archive,
                 &output,
                 zipper::ExtractOptions {
-                    existing: if overwrite {
-                        zipper::Existing::Overwrite
-                    } else {
-                        zipper::Existing::Refuse
+                    existing: match (overwrite, existing) {
+                        (true, _) => zipper::Existing::Overwrite,
+                        (false, existing) => existing.unwrap_or(ExistingArg::Refuse).into(),
                     },
                     paths: &paths,
+                    include: &include,
+                    exclude: &exclude,
                     max_output_bytes: max_extracted_bytes,
                     threads: cli.threads,
                     engine: cli.zip_engine.into(),

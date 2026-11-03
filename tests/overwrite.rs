@@ -427,3 +427,123 @@ fn new_directories_get_archive_modes_and_existing_ones_keep_theirs() {
         common::make_tree_deletable(root.path());
     }
 }
+
+#[test]
+fn a_name_too_long_to_rename_is_refused_before_anything_is_published() {
+    let long = "x".repeat(255);
+    for existing in [Existing::RenameNew, Existing::RenameExisting] {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("out");
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join(&long), b"old").unwrap();
+        let archive = root.path().join("a.zip");
+        let names: Vec<String> = (0..20).map(|index| format!("new{index:02}")).collect();
+        let mut members: Vec<Member> = names
+            .iter()
+            .map(|name| Member::File(name, b"new"))
+            .collect();
+        members.push(Member::File(&long, b"archive"));
+        write_zip(&archive, &members);
+        let before = snapshot(&destination);
+        let error = zip_reader(&archive, &destination, existing).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("longer than a file name"),
+            "{error:#}"
+        );
+        assert_eq!(snapshot(&destination), before, "{existing:?}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn archive_links_never_point_through_a_link_the_destination_keeps() {
+    use std::os::unix::fs::symlink;
+    for (existing, with_folder, refused) in [
+        (Existing::Skip, true, true),
+        (Existing::RenameNew, true, true),
+        (Existing::RenameExisting, true, false),
+        (Existing::Overwrite, false, true),
+        (Existing::Skip, false, true),
+        (Existing::RenameNew, false, true),
+        (Existing::RenameExisting, false, true),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("secret"), b"outside").unwrap();
+        let destination = root.path().join("out");
+        fs::create_dir(&destination).unwrap();
+        symlink("../outside", destination.join("d")).unwrap();
+        let archive = root.path().join("a.zip");
+        let mut members = vec![Member::Symlink("l", "d/secret")];
+        if with_folder {
+            members.push(Member::Directory("d/", 0o755));
+            members.push(Member::File("d/secret", b"archive"));
+        }
+        write_zip(&archive, &members);
+        let before = snapshot(root.path());
+        let result = zip_reader(&archive, &destination, existing);
+        let label = format!("{existing:?} with the folder {with_folder}");
+        if refused {
+            let error = format!("{:#}", result.unwrap_err());
+            assert!(error.contains("points through d"), "{label}: {error}");
+            assert_eq!(snapshot(root.path()), before, "{label}");
+        } else {
+            result.unwrap();
+            let resolved = fs::canonicalize(destination.join("l")).unwrap();
+            assert!(
+                resolved.starts_with(fs::canonicalize(&destination).unwrap()),
+                "{label}"
+            );
+            assert_eq!(fs::read(outside.join("secret")).unwrap(), b"outside");
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn archive_links_never_reach_a_kept_link_through_another_archive_link() {
+    use std::os::unix::fs::symlink;
+    for (existing, layout) in [
+        Existing::Overwrite,
+        Existing::Skip,
+        Existing::RenameNew,
+        Existing::RenameExisting,
+    ]
+    .into_iter()
+    .flat_map(|existing| [(existing, "folder"), (existing, "dot")])
+    {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("secret"), b"outside").unwrap();
+        let destination = root.path().join("out");
+        let kept = if layout == "folder" {
+            fs::create_dir_all(destination.join("d")).unwrap();
+            symlink("../../outside", destination.join("d/kept")).unwrap();
+            "d"
+        } else {
+            fs::create_dir(&destination).unwrap();
+            symlink("../outside", destination.join("kept")).unwrap();
+            "."
+        };
+        let archive = root.path().join("a.zip");
+        write_zip(
+            &archive,
+            &[
+                Member::Symlink("a", kept),
+                Member::Symlink("l", "a/kept/secret"),
+            ],
+        );
+        let before = snapshot(root.path());
+        let error = format!(
+            "{:#}",
+            zip_reader(&archive, &destination, existing).unwrap_err()
+        );
+        assert!(
+            error.contains("points through"),
+            "{existing:?} {layout}: {error}"
+        );
+        assert_eq!(snapshot(root.path()), before, "{existing:?} {layout}");
+    }
+}

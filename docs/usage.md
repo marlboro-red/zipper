@@ -37,11 +37,20 @@ target/release/zipper extract update.zip --output installed --overwrite
 
 Zipper decodes the whole archive into a hidden `.zipper-` folder inside the destination first. If the archive is damaged or rejected, no file is replaced and the hidden folder is removed. Then each archive file replaces the file of the same name by rename, so no file is ever half written. If a rename fails partway, the files before it stay replaced. Files the archive does not name stay as they are. Existing folders keep their permissions. A folder in the destination that is on another disk, such as a mount point, fails the extraction before any file changes. If `--output` is a link to a folder, Zipper extracts into that folder. A killed run can leave its hidden `.zipper-` folder behind, and you can delete it. `tests/overwrite_exhaustive.rs` checks this contract on every pair of small destination and archive trees, including destinations with links that point outside.
 
-Zipper never writes through a link that is already in the destination. A link that the archive names as a file is replaced by that file. A link where the archive needs a folder is an error. Where the destination has a file and the archive has a folder of the same name, or the reverse, the extraction fails before any file changes. Library callers pass `zipper::Existing::Overwrite` in the reader options.
+`--existing` chooses what happens to a path the destination already holds, as 7-Zip's `-ao` switches do:
+
+- `overwrite`, the same as `--overwrite`, replaces each file of the same name.
+- `skip` keeps the existing file and leaves the archive's copy out. Where an archive folder meets anything other than a folder, the folder and everything under it is left out.
+- `rename-new` writes the archive's file or folder as `name_1.ext`, the first free name.
+- `rename-existing` renames what is already there to `name_1.ext`, then writes the archive's file. A link is renamed, never followed.
+
+In every mode a folder merges into an existing folder, and nothing outside the destination changes. Only `overwrite` fails on a file where the archive has a folder, or the reverse. A renamed folder keeps default permissions.
+
+Zipper never writes through a link that is already in the destination. With `overwrite`, a link that the archive names as a file is replaced by that file, and a link where the archive needs a folder is an error. Where the destination has a file and the archive has a folder of the same name, or the reverse, `overwrite` fails before any file changes, and the other modes skip or rename as above. In every mode, an archive link whose target passes through a link the destination keeps is refused before any file changes. A renamed name must fit in 255 bytes, or the extraction fails before any file changes. Each new name is moved into place with a rename that cannot replace a file, so a file another program creates there during extraction stops the extraction instead of being lost. Library callers pass a `zipper::Existing` value in the reader options.
 
 ## Extract selected paths
 
-To extract part of a ZIP or 7z archive read in process, pass `--path` with an exact path or a folder. Repeat it to select more:
+To extract part of a ZIP, tar or 7z archive read in process, pass `--path` with an exact path or a folder. Repeat it to select more:
 
 ```sh
 target/release/zipper extract bundle.zip --output selected --path assets/icons --path readme.txt
@@ -49,7 +58,15 @@ target/release/zipper extract bundle.zip --output selected --path assets/icons -
 
 A folder selects everything under it, even when the archive has no entry for the folder itself. Each path must match at least one entry, or the extraction fails before writing anything. `--path` combines with `--overwrite`. Library callers set `paths` in `native_zip::ReadOptions`.
 
-For ZIP, `extract --path` decodes only the selected entries. For 7z it decodes only the folders that hold selected files. Both validate what they decode, not unrelated payloads. Tar archives refuse `--path`, because a tar stream has no index.
+For ZIP, `extract --path` decodes only the selected entries. For 7z it decodes only the folders that hold selected files. Both validate what they decode, not unrelated payloads. Tar reads the whole stream and checks every header, writing only the selected entries. A selected tar hard link whose target is left out is refused.
+
+To select by wildcard, pass `--include` and `--exclude`, each repeatable. `*` and `?` match within one name, and `**` crosses folders. A pattern without `/`, such as `*.log`, matches a name at any depth, and a pattern with `/`, such as `build/*`, matches the whole path. A pattern that matches a folder covers everything under it. An entry is extracted when it matches `--path` or `--include`, or when neither is given, and matches no `--exclude`. An `--include` that matches nothing is an error:
+
+```sh
+target/release/zipper extract bundle.zip --output selected --include '*.txt' --exclude 'drafts'
+```
+
+The 7-Zip backend refuses `--path`, `--include` and `--exclude`.
 
 ## Extract from Rust
 

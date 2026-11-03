@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 23 |
-| `partial` | 5 |
+| `native` | 28 |
+| `partial` | 4 |
 | `backend` | 68 |
-| `missing` | 14 |
+| `missing` | 10 |
 | `dropped` | 2 |
 
-52 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+48 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -141,11 +141,11 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `e` | `missing` |  | No proof yet. |
 | `-o` | `native` |  | `overwrite_into_a_missing_destination_creates_it` in `tests/overwrite.rs` |
 | `-aoa` | `native` | `--overwrite` replaces each file by rename. | `overwrite_replaces_files_and_keeps_the_rest` in `tests/overwrite.rs` |
-| `-aos` | `missing` |  | No proof yet. |
-| `-aot` | `missing` |  | No proof yet. |
-| `-aou` | `missing` |  | No proof yet. |
-| `-i` | `partial` | `--path` selects exact paths in ZIP and 7z, with no wildcards. | `folders_and_files_select_their_subtrees_only` in `tests/selection.rs` |
-| `-x` | `missing` |  | No proof yet. |
+| `-aos` | `native` | `--existing skip`. | `skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair` in `tests/overwrite_exhaustive.rs` |
+| `-aot` | `native` | `--existing rename-existing`. | `skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair` in `tests/overwrite_exhaustive.rs` |
+| `-aou` | `native` | `--existing rename-new`. | `skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair` in `tests/overwrite_exhaustive.rs` |
+| `-i` | `native` | `--include` and `--path`, for ZIP, tar and 7z. | `include_and_exclude_patterns_select_the_same_files_in_every_format` in `tests/selection.rs` |
+| `-x` | `native` | `--exclude`, for ZIP, tar and 7z. | `include_and_exclude_patterns_select_the_same_files_in_every_format` in `tests/selection.rs` |
 | `-p` | `missing` |  | No proof yet. |
 | `-si` | `missing` |  | No proof yet. |
 | `-so` | `missing` |  | No proof yet. |

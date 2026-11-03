@@ -1128,6 +1128,10 @@ pub struct ReadOptions<'a> {
     /// Exact entry paths or folder subtrees to read. Empty reads every entry.
     /// Each path must name an entry or a folder that holds one.
     pub paths: &'a [String],
+    /// Wildcard patterns to read, written as for `ExtractOptions::include`.
+    pub include: &'a [String],
+    /// Wildcard patterns to leave out, written as for `ExtractOptions::include`.
+    pub exclude: &'a [String],
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -1160,14 +1164,11 @@ pub fn read_archive_with_options(
     )?;
     let items = scan(&archive, Some(&times), &stored_names)?;
     drop(times);
-    let selection = crate::checked_selection(options.paths)?;
-    crate::ensure_each_selected_path_matches(
-        &selection,
-        items.iter().map(|item| item.entry.name.as_str()),
-    )?;
+    let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
+    selection.ensure_each_path_matches(items.iter().map(|item| item.entry.name.as_str()))?;
     let (selected, skipped): (Vec<_>, Vec<_>) = items
         .into_iter()
-        .partition(|item| crate::is_selected(&item.entry.name, &selection));
+        .partition(|item| selection.selects(&item.entry.name));
     let mut headers = archive.clone().into_inner();
     for item in &skipped {
         check_local_header(&mut headers, item)?;
