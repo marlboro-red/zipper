@@ -369,9 +369,10 @@
       ]
     },
     "-snl": {
-      "status": "partial",
-      "note": "Links that stay inside the destination are created on Unix. On Windows the native readers refuse archives that hold links.",
+      "status": "native",
+      "note": "Links that stay inside the destination are created. Windows needs Developer Mode or administrator rights.",
       "tests": [
+        "tests/hostile_zip.rs::symlinks_inside_the_destination_are_created_after_files",
         "tests/hostile_zip.rs::symlinks_must_stay_inside_the_destination"
       ]
     },

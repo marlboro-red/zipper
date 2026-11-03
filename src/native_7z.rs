@@ -1746,27 +1746,12 @@ pub fn read_archive(
     Ok(entries)
 }
 
-#[cfg_attr(not(unix), allow(unused_variables))]
 fn create_links(root: &Path, items: &[Item], targets: Vec<(usize, Vec<u8>)>) -> Result<()> {
-    #[cfg(not(unix))]
-    ensure!(
-        targets.is_empty(),
-        "7z symlinks are not supported on this platform; {BACKEND_HINT}"
-    );
     for (index, target) in targets {
         let name = &items[index].name;
         let target = std::str::from_utf8(&target).context("7z symlink target is not UTF-8")?;
         crate::ensure_link_stays_inside("7z", name, target)?;
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(target, root.join(name)).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                anyhow::anyhow!(
-                    "7z symlink {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-                )
-            } else {
-                anyhow::Error::from(error).context(format!("cannot create 7z symlink {name:?}"))
-            }
-        })?;
+        crate::create_symlink("7z", root, name, target)?;
     }
     Ok(())
 }

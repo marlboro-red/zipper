@@ -21,7 +21,7 @@ The reader supports these features:
 The reader does not support these features:
 
 - Encryption.
-- Symlinks that point outside the destination, and any symlink on Windows.
+- Symlinks that point outside the destination.
 - Codecs other than stored and Deflate.
 - Multi-disk archives.
 - Ambiguous end records.
@@ -73,7 +73,7 @@ The native engines are stricter with symlinks than Info-ZIP `unzip` and bsdtar, 
 
 The `..` rule makes the check independent of how the filesystem compares names. A target such as `a/L/../x` climbs out of a link `a/L`, and a lexical check misses it when the filesystem matches `a/l` to `a/L` by ignoring case or Unicode normalization, as APFS does. A target that only descends after its `..` steps stays below the directory it reached, because every link it passes through obeys the same rule.
 
-Links are created after every file is written, so no file is written through a link. An archive with any other symlink is rejected, and the compatibility backend reads it. On Windows, creating a symlink needs special privileges, so the native engines reject every archive that contains one.
+Links are created after every file is written, so no file is written through a link. An archive with any other symlink is rejected, and the compatibility backend reads it. On Windows, creating a symlink needs Developer Mode or administrator rights. Without them the archive is refused before anything is published, and the error names `--zip-engine backend`. A link to a folder in the destination becomes a folder link, and a target with `\` or `:` is refused, because it could name a drive or a share. A target part that ends in a dot or a space, or names a device such as `CON`, is refused as an entry name is. A link whose target is another link not yet created becomes a file link, so such a chain that ends at a folder does not open as a folder on Windows. Junctions are never created.
 
 ## Integrity checks
 
@@ -102,7 +102,7 @@ Both native ZIP modes run these checks before publishing any output:
 - macOS `ditto`.
 - Python `zipfile`, seekable and streaming, with Deflate, stored and ZIP64.
 
-Four more archives come from Info-ZIP `zip -y`, 7-Zip `-snl`, bsdtar and `ditto`, which store symlinks as links. Only `unzip` and bsdtar create links, so link targets are recorded where those two agree, and the other paths still need three readers. On Windows the test expects these archives to be rejected.
+Four more archives come from Info-ZIP `zip -y`, 7-Zip `-snl`, bsdtar and `ditto`, which store symlinks as links. Only `unzip` and bsdtar create links, so link targets are recorded where those two agree, and the other paths still need three readers.
 
 The manifest also records each path's exact modification time where `unzip` and bsdtar both restore the source's own time under `TZ=UTC` and `TZ=Pacific/Auckland`. That covers the 11 Info-ZIP, bsdtar and `ditto` archives. The other archives carry only DOS times, which depend on the time zone. `tests/cli.rs` checks those under `TZ=UTC` and `TZ=Asia/Tokyo`.
  The source tree has empty files and directories, non-ASCII names, and files at the decoder's 64 KiB and 192 KiB slice boundaries.

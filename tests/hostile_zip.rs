@@ -1123,7 +1123,6 @@ fn symlinks_must_stay_inside_the_destination() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn symlinks_inside_the_destination_are_created_after_files() {
     let entries = [
@@ -1155,8 +1154,19 @@ fn symlinks_inside_the_destination_are_created_after_files() {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 #[test]
-fn symlinks_are_left_to_the_backend_on_this_platform() {
-    assert_rejected_without_leftovers("any symlink", &[symlink("link", "target")]);
+fn windows_link_targets_are_plain_relative_names() {
+    for target in [
+        "C:/Windows",
+        "C:outside",
+        "a\\..\\..\\outside",
+        "\\\\server\\share",
+        ".. ",
+        "x./..",
+        "CON",
+        "a/NUL.txt",
+    ] {
+        assert_rejected_without_leftovers(target, &[symlink("link", target)]);
+    }
 }

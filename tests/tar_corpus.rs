@@ -10,8 +10,6 @@ mod corpus;
 use std::path::Path;
 use zipper::native_tar::{ReadOptions, read_archive};
 
-const EXTRACTS_SYMLINKS: bool = cfg!(unix);
-
 #[test]
 fn native_reader_matches_the_reference_readers() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/tar-corpus");
@@ -37,11 +35,6 @@ fn native_reader_matches_the_reference_readers() {
         let work = tempfile::tempdir().unwrap();
         let destination = work.path().join("out");
         let result = read_archive(archive, Some(&destination), ReadOptions::default());
-        if !EXTRACTS_SYMLINKS && wanted.values().any(|value| value.link_target.is_some()) {
-            assert!(result.is_err(), "{name} extracted symlinks");
-            assert!(!destination.exists());
-            continue;
-        }
         result.unwrap_or_else(|error| panic!("{name}: {error:#}"));
         corpus::assert_tree_matches_manifest(work.path(), wanted, name);
     }

@@ -73,7 +73,6 @@ fn create_directories_in_archive_order(root: &Path, items: &[Item]) -> Result<()
     Ok(())
 }
 
-#[cfg_attr(not(unix), allow(unused_variables))]
 fn create_links_after_files(
     staging: Option<&Path>,
     items: &[Item],
@@ -82,20 +81,8 @@ fn create_links_after_files(
     for (index, target) in targets {
         let name = &items[index].entry.name;
         ensure_link_stays_inside(name, &target)?;
-        #[cfg(unix)]
         if let Some(root) = staging {
-            std::os::unix::fs::symlink(std::str::from_utf8(&target)?, root.join(name))
-                .map_err(|error| {
-                    if error.kind() == std::io::ErrorKind::AlreadyExists {
-                        anyhow::anyhow!(
-                            "ZIP symlink {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-                        )
-                    } else {
-                        anyhow::Error::from(error)
-                            .context(format!("cannot create ZIP symlink {name:?}"))
-                    }
-                })?;
-            counters::add(Counter::SymlinksCreated, 1);
+            crate::create_symlink("ZIP", root, name, std::str::from_utf8(&target)?)?;
         }
     }
     Ok(())
@@ -533,10 +520,6 @@ fn scan(
             "encrypted ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
         let symlink = file.is_symlink();
-        ensure!(
-            !symlink || cfg!(unix),
-            "ZIP symlinks are not supported on this platform; pass --zip-engine backend to read it with 7-Zip"
-        );
         ensure!(
             !symlink || file.size() <= crate::MAX_LINK_TARGET,
             "ZIP symlink target is too long"

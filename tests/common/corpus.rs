@@ -50,9 +50,12 @@ fn tree(root: &Path) -> Tree {
             let metadata = entry.metadata().unwrap();
             if entry.file_type().is_symlink() {
                 let target = fs::read_link(entry.path()).unwrap();
+                let target = target.to_str().unwrap();
+                #[cfg(windows)]
+                let target = target.replace('\\', "/");
                 let value = Expected {
                     size_and_crc: None,
-                    link_target: Some(target.to_str().unwrap().to_string()),
+                    link_target: Some(target.to_string()),
                     mode: None,
                     modified: None,
                 };

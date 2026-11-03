@@ -786,23 +786,8 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 }
             })?;
         }
-        #[cfg(not(unix))]
-        ensure!(
-            self.symlinks.is_empty(),
-            "tar symlinks are not supported on this platform"
-        );
-        #[cfg(unix)]
         for (name, target) in &self.symlinks {
-            std::os::unix::fs::symlink(target, root.join(name)).map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    anyhow::anyhow!(
-                        "tar symlink {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-                    )
-                } else {
-                    anyhow::Error::from(error).context(format!("cannot create tar symlink {name:?}"))
-                }
-            })?;
-            counters::add(Counter::SymlinksCreated, 1);
+            crate::create_symlink("tar", root, name, target)?;
         }
         Ok(())
     }
@@ -917,10 +902,6 @@ impl<'a, 'f> Extraction<'a, 'f> {
             }
             b'2' => {
                 ensure!(size == 0, "tar symlink {name:?} has data");
-                ensure!(
-                    cfg!(unix),
-                    "tar symlinks are not supported on this platform; {BACKEND_HINT}"
-                );
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
                 self.charge_name(raw_target.len())?;
                 self.claim(&name, Node::Symlink)?;

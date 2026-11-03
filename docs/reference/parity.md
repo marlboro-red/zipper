@@ -16,8 +16,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 22 |
-| `partial` | 6 |
+| `native` | 23 |
+| `partial` | 5 |
 | `backend` | 68 |
 | `missing` | 14 |
 | `dropped` | 2 |
@@ -149,7 +149,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `-p` | `missing` |  | No proof yet. |
 | `-si` | `missing` |  | No proof yet. |
 | `-so` | `missing` |  | No proof yet. |
-| `-snl` | `partial` | Links that stay inside the destination are created on Unix. On Windows the native readers refuse archives that hold links. | `symlinks_must_stay_inside_the_destination` in `tests/hostile_zip.rs` |
+| `-snl` | `native` | Links that stay inside the destination are created. Windows needs Developer Mode or administrator rights. | `symlinks_inside_the_destination_are_created_after_files` in `tests/hostile_zip.rs`, `symlinks_must_stay_inside_the_destination` in `tests/hostile_zip.rs` |
 | `-snh` | `partial` | Tar hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs` |
 | `-sni` | `missing` |  | No proof yet. |
 | `-sns` | `missing` |  | No proof yet. |

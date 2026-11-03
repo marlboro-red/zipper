@@ -15,8 +15,6 @@ use zipper::{
 
 type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<Entry>>;
 
-const NATIVE_EXTRACTS_LINKS: bool = cfg!(unix);
-
 #[test]
 fn native_engines_match_the_reference_readers() {
     let corpus: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/zip-corpus");
@@ -34,11 +32,6 @@ fn native_engines_match_the_reference_readers() {
             let work = tempfile::tempdir().unwrap();
             let destination = work.path().join("out");
             let result = read(&corpus.join(format!("{name}.zip")), Some(&destination));
-            if !NATIVE_EXTRACTS_LINKS && wanted.values().any(|value| value.link_target.is_some()) {
-                assert!(result.is_err(), "{name} with {engine} extracted links");
-                assert!(!destination.exists());
-                continue;
-            }
             result.unwrap_or_else(|error| panic!("{name} with {engine}: {error:#}"));
             corpus::assert_tree_matches_manifest(
                 work.path(),

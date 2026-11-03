@@ -52,31 +52,38 @@ fn safe_path(s: &str) -> Result<()> {
     );
     #[cfg(windows)]
     for component in s.split('/') {
-        ensure!(!component.ends_with(['.', ' ']), "ambiguous Windows path");
-        let base = component
-            .split('.')
-            .next()
-            .unwrap()
-            .trim_end_matches(' ')
-            .to_uppercase();
-        let device = matches!(
-            base.as_str(),
-            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-        ) || ["COM", "LPT"].iter().any(|prefix| {
-            base.strip_prefix(prefix).is_some_and(|suffix| {
-                matches!(
-                    suffix,
-                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
-                )
-            })
-        });
-        ensure!(
-            !device,
-            "Windows device path is not a regular archive entry"
-        );
+        ensure_plain_windows_name(component)?;
     }
     Ok(())
 }
+
+#[cfg(windows)]
+fn ensure_plain_windows_name(component: &str) -> Result<()> {
+    ensure!(!component.ends_with(['.', ' ']), "ambiguous Windows path");
+    let base = component
+        .split('.')
+        .next()
+        .unwrap()
+        .trim_end_matches(' ')
+        .to_uppercase();
+    let device = matches!(
+        base.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        base.strip_prefix(prefix).is_some_and(|suffix| {
+            matches!(
+                suffix,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
+    });
+    ensure!(
+        !device,
+        "Windows device path is not a regular archive entry"
+    );
+    Ok(())
+}
+
 fn parent(path: &Path) -> &Path {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -117,12 +124,50 @@ fn set_modified_best_effort(file: &File, time: std::time::SystemTime) {
 
 pub(crate) const MAX_LINK_TARGET: u64 = 4096;
 
+fn create_symlink(format: &str, root: &Path, name: &str, target: &str) -> Result<()> {
+    let link = root.join(name);
+    #[cfg(unix)]
+    let created = std::os::unix::fs::symlink(target, &link);
+    #[cfg(windows)]
+    let created = {
+        let target = target
+            .split('/')
+            .filter(|component| !component.is_empty())
+            .collect::<Vec<_>>()
+            .join("\\");
+        let resolved = parent(&link).join(&target);
+        if std::fs::metadata(resolved).is_ok_and(|metadata| metadata.is_dir()) {
+            std::os::windows::fs::symlink_dir(&target, &link)
+        } else {
+            std::os::windows::fs::symlink_file(&target, &link)
+        }
+    };
+    #[cfg(windows)]
+    const ERROR_PRIVILEGE_NOT_HELD: i32 = 1314;
+    created.map_err(|error| match error.raw_os_error() {
+        _ if error.kind() == std::io::ErrorKind::AlreadyExists => anyhow::anyhow!(
+            "{format} symlink {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
+        ),
+        #[cfg(windows)]
+        Some(ERROR_PRIVILEGE_NOT_HELD) => anyhow::anyhow!(
+            "{format} symlink {name:?} needs Windows Developer Mode or administrator rights; pass --zip-engine backend to read it with 7-Zip"
+        ),
+        _ => anyhow::Error::from(error).context(format!("cannot create {format} symlink {name:?}")),
+    })?;
+    counters::add(counters::Counter::SymlinksCreated, 1);
+    Ok(())
+}
+
 fn ensure_link_stays_inside(format: &str, name: &str, target: &str) -> Result<()> {
     ensure!(
         !target.is_empty()
             && target.len() as u64 <= MAX_LINK_TARGET
             && !target.contains('\0')
             && !target.starts_with('/'),
+        "{format} symlink {name:?} has an unsafe target"
+    );
+    ensure!(
+        !cfg!(windows) || !target.contains(['\\', ':']),
         "{format} symlink {name:?} has an unsafe target"
     );
     let mut depth = name.matches('/').count();
@@ -139,7 +184,13 @@ fn ensure_link_stays_inside(format: &str, name: &str, target: &str) -> Result<()
                     format!("{format} symlink {name:?} points outside the destination")
                 })?;
             }
-            _ => descended = true,
+            _ => {
+                #[cfg(windows)]
+                ensure_plain_windows_name(component).map_err(|_| {
+                    anyhow::anyhow!("{format} symlink {name:?} has an unsafe target")
+                })?;
+                descended = true
+            }
         }
     }
     Ok(())

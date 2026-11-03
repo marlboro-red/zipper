@@ -10,7 +10,7 @@ The reader decodes these methods:
 - Copy and Deflate.
 - The x86 (BCJ), ARM, ARM Thumb, ARM64, RISC-V, PowerPC, SPARC and IA-64 branch filters, and the Delta filter, in front of LZMA or LZMA2.
 
-It reads solid and non-solid archives, solid blocks, compressed and plain headers, and archives that 7-Zip and libarchive write. It extracts files, empty files, folders and symlinks that stay inside the destination on Unix.
+It reads solid and non-solid archives, solid blocks, compressed and plain headers, and archives that 7-Zip and libarchive write. It extracts files, empty files, folders and symlinks that stay inside the destination. On Windows it creates links as the [ZIP reader](zip-reader.md#symlinks) does.
 
 The reader does not support these features:
 
