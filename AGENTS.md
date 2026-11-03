@@ -3,7 +3,7 @@
 ## Goal and workflow
 
 - Work autonomously. The user wants autonomous development.
-- Make small, verified commits and push them to `origin/main`.
+- Make small, verified commits and ship them to `origin/main` with `cargo xtask ship`.
 - Preserve remote history.
 - Aim for the fastest safe extraction of ZIP, tar and 7z. Do not gain throughput by discarding a safety check or correctness.
 
@@ -26,7 +26,8 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 
 - Treat a change as done only when `cargo xtask gate fast` passes. CI runs `cargo xtask gate full`.
 - Run `cargo xtask install-hooks` once so pre-push runs the fast gate.
-- After pushing, run `cargo xtask ci-wait`. It waits for the CI run on `HEAD` and prints each job's result.
+- Ship with `cargo xtask ship`. It pushes `HEAD` to a `ci/` branch, which runs the pre-push gate, waits for CI on that exact commit, and moves `main` only when every job passes. Windows behaviour is first tested there, so `main` never receives a commit that CI failed.
+- `cargo xtask ci-wait` waits for the CI run on a pushed `HEAD` and prints each job's result.
 - Expect the gate to format, lint, test, and build a release binary. On macOS and Linux it also lints the Windows build, which needs `rustup target add x86_64-pc-windows-gnu` once. It also checks byte-exact ZIP extraction on both engines, selected-path extraction, and truncated input cleanup.
 - Use `scripts/compare_zip_readers.py` and `scripts/compare_workloads.py` for byte-verified comparisons of two binaries.
 - Prove a check can fail with `scripts/plant.py`. It restores the file and rebuilds the release binary, so a planted break never reaches a measurement.

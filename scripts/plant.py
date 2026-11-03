@@ -11,10 +11,14 @@ binary built with the break survives to be measured or shipped.
     python3 scripts/plant.py src/native_7z.rs --old 'a' --new 'b' \\
         --caught-when 'test result: FAILED' -- cargo test --release --test hostile_7z
 
-Exit status 0 means caught, 1 missed, 2 a plant that did not apply."""
+Exit status 0 means caught, 1 missed, 2 a plant that did not apply or a
+check that could not start. Pass the check as separate words; zsh does not
+split an unquoted $var, so write ${=var}."""
 import argparse
 from pathlib import Path
 import re
+import shutil
+import signal
 import subprocess
 import sys
 
@@ -36,6 +40,12 @@ def main():
     command = arguments[split + 1:]
     if not command:
         parser.error("give the check to run after --")
+    if len(command) == 1 and " " in command[0] and not shutil.which(command[0]):
+        print(f"plant: NOT RUN, the check {command[0]!r} is one word with spaces; pass separate words",
+              file=sys.stderr)
+        sys.exit(2)
+    if hasattr(signal, "SIGPIPE"):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
     path = args.file.resolve()
     original = path.read_bytes()
     text = original.decode()
@@ -43,12 +53,16 @@ def main():
     if count != 1:
         print(f"plant: NOT APPLIED, the old text occurs {count} times in {args.file}", file=sys.stderr)
         sys.exit(2)
+    not_started = False
     try:
         path.write_text(text.replace(args.old, args.new))
         try:
             run = subprocess.run(command, cwd=Path.cwd(), capture_output=True, text=True, timeout=args.timeout)
             output = run.stdout + run.stderr
             status = f"exit {run.returncode}"
+        except FileNotFoundError as error:
+            output, status = "", f"could not start: {error}"
+            not_started = True
         except subprocess.TimeoutExpired as expired:
             output = (expired.stdout or b"").decode(errors="replace") + (expired.stderr or b"").decode(errors="replace")
             status = f"timed out after {args.timeout:.0f} s"
@@ -59,6 +73,9 @@ def main():
         sys.exit(2)
     if path.is_relative_to(ROOT / "src"):
         subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=ROOT, check=True)
+    if not_started:
+        print(f"plant: NOT RUN, the check {status}", file=sys.stderr)
+        sys.exit(2)
     matches = [line for line in output.splitlines() if re.search(args.caught_when, line)]
     if matches:
         print(f"plant: CAUGHT ({status})")

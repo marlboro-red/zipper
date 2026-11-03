@@ -34,6 +34,7 @@ fn main() -> ExitCode {
         ["lint-comments"] => comments::lint(&root()),
         ["install-hooks"] => install_hooks(),
         ["ci-wait"] => ci_wait(),
+        ["ship"] => ship(),
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
         ["lint-commits"] => commits::lint_unpushed(&root()),
         ["verify-sync", name] => verify::record_checked_fingerprint(&root(), name),
@@ -137,6 +138,34 @@ fn ci_wait() -> Result<()> {
         )?
     );
     ensure!(watched.success(), "CI run {run} for {head} failed");
+    Ok(())
+}
+
+fn ship() -> Result<()> {
+    ensure!(
+        output("git", &["status", "--porcelain"])?.is_empty(),
+        "commit or stash every change before shipping"
+    );
+    let head = output("git", &["rev-parse", "HEAD"])?;
+    let branch = format!("ci/{}", &head[..12]);
+    let push = |args: &[&str]| -> Result<()> {
+        let status = Command::new("git")
+            .current_dir(root())
+            .args(args)
+            .status()?;
+        ensure!(
+            status.success(),
+            "git {} exited with {status}",
+            args.join(" ")
+        );
+        Ok(())
+    };
+    push(&["push", "origin", &format!("HEAD:refs/heads/{branch}")])?;
+    let checked = ci_wait();
+    push(&["push", "--quiet", "origin", "--delete", &branch])?;
+    checked?;
+    push(&["push", "--no-verify", "origin", "HEAD:main"])?;
+    println!("shipped {head} to main after its CI run passed");
     Ok(())
 }
 

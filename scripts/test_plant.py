@@ -35,10 +35,21 @@ def main():
                 failures.append(f"{name}: exit {result.returncode}, wanted {expected}\n{result.stdout}{result.stderr}")
             if target.read_text() != "limit = 3\n":
                 failures.append(f"{name}: the file was not restored")
+        for name, command, words in [
+            ("check passed as one word with spaces", [f"{sys.executable} -c pass"], "one word with spaces"),
+            ("check that cannot start", ["zipper-no-such-check"], "could not start"),
+        ]:
+            result = subprocess.run([sys.executable, str(PLANT), str(target), "--old", "limit = 3", "--new", "limit = 9",
+                                     "--caught-when", "FAILED", "--", *command], capture_output=True, text=True)
+            if result.returncode != 2 or words not in result.stderr:
+                failures.append(f"{name}: exit {result.returncode}, wanted 2 and {words!r}\n{result.stdout}{result.stderr}")
+            if target.read_text() != "limit = 3\n":
+                failures.append(f"{name}: the file was not restored")
     for failure in failures:
         print(failure, file=sys.stderr)
     failed = {failure.split(":")[0] for failure in failures}
-    print(f"plant.py: {len(cases) - len(failed)} of {len(cases)} cases pass")
+    total = len(cases) + 2
+    print(f"plant.py: {total - len(failed)} of {total} cases pass")
     sys.exit(1 if failures else 0)
 
 
