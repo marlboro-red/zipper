@@ -27,6 +27,7 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [ZIP reader reference](docs/reference/zip-reader.md) lists supported ZIP features, limits, and memory budgets.
 - [Tar reader reference](docs/reference/tar-reader.md) lists supported tar formats, compressors, and safety checks.
 - [7z reader reference](docs/reference/7z-reader.md) lists supported 7z methods and safety checks.
+- [7-Zip parity](docs/reference/parity.md) lists every format, method and switch 7-Zip extracts with, and how Zipper handles each.
 - [Duplicate-checking reference](docs/reference/duplicates.md) describes the `duplicates` command.
 - [Windows release notes](docs/reference/windows.md) cover installing and running the Windows early release.
 - [Experiment log](benchmarks/README.md) indexes every benchmark record and its reproduction steps.

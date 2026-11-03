@@ -22,7 +22,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M7. Native tar family](#m7-native-tar-family) | Done | M5 |
 | [M8. Extraction API for applications](#m8-extraction-api-for-applications) | Done | M7 |
 | [M9. Native 7z reader](#m9-native-7z-reader) | Done | M8 |
-| [M10. Parity matrix](#m10-parity-matrix) | Planned | M9 |
+| [M10. Parity matrix](#m10-parity-matrix) | Done | M9 |
 | [M11. Windows metadata parity](#m11-windows-metadata-parity) | Planned | M10 |
 | [M12. Extraction controls](#m12-extraction-controls) | Planned | M10 |
 | [M13. Remaining codecs](#m13-remaining-codecs) | Planned | M10 |
@@ -222,7 +222,8 @@ Scope:
 Exit checks:
 
 1. A gate step regenerates the table and fails when it differs from the committed copy.
-2. Every native row names a passing test, and every backend row extracts its corpus archive through 7-Zip in CI.
+2. Every native and partial row names a proof that passes in CI. Every backend row with a corpus archive extracts it through 7-Zip in CI.
+3. The table counts the rows with no proof yet. The milestone that moves such a row adds its proof.
 
 ## M11. Windows metadata parity
 

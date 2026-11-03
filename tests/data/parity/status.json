@@ -1,0 +1,389 @@
+{
+  "formats": {
+    "7z": {
+      "status": "native"
+    },
+    "APFS": {
+      "status": "backend"
+    },
+    "APM": {
+      "status": "backend"
+    },
+    "Ar": {
+      "status": "backend"
+    },
+    "Arj": {
+      "status": "backend"
+    },
+    "Base64": {
+      "status": "backend"
+    },
+    "COFF": {
+      "status": "backend"
+    },
+    "Cab": {
+      "status": "backend"
+    },
+    "Chm": {
+      "status": "backend"
+    },
+    "Compound": {
+      "status": "backend"
+    },
+    "Cpio": {
+      "status": "backend"
+    },
+    "CramFS": {
+      "status": "backend"
+    },
+    "Dmg": {
+      "status": "backend"
+    },
+    "ELF": {
+      "status": "backend"
+    },
+    "Ext": {
+      "status": "backend"
+    },
+    "FAT": {
+      "status": "backend"
+    },
+    "FLV": {
+      "status": "backend"
+    },
+    "GPT": {
+      "status": "backend"
+    },
+    "HFS": {
+      "status": "backend"
+    },
+    "Hxs": {
+      "status": "backend"
+    },
+    "IHex": {
+      "status": "backend"
+    },
+    "Iso": {
+      "status": "backend"
+    },
+    "LP": {
+      "status": "backend"
+    },
+    "Lzh": {
+      "status": "backend"
+    },
+    "MBR": {
+      "status": "backend"
+    },
+    "MachO": {
+      "status": "backend"
+    },
+    "MsLZ": {
+      "status": "backend"
+    },
+    "Mub": {
+      "status": "backend"
+    },
+    "NTFS": {
+      "status": "backend"
+    },
+    "Nsis": {
+      "status": "backend"
+    },
+    "PE": {
+      "status": "backend"
+    },
+    "Ppmd": {
+      "status": "backend"
+    },
+    "QCOW": {
+      "status": "backend"
+    },
+    "Rar": {
+      "status": "backend"
+    },
+    "Rar5": {
+      "status": "backend"
+    },
+    "Rpm": {
+      "status": "backend"
+    },
+    "SWF": {
+      "status": "backend"
+    },
+    "SWFc": {
+      "status": "backend"
+    },
+    "Sparse": {
+      "status": "backend"
+    },
+    "Split": {
+      "status": "backend"
+    },
+    "SquashFS": {
+      "status": "backend"
+    },
+    "TE": {
+      "status": "backend"
+    },
+    "UEFIc": {
+      "status": "backend"
+    },
+    "UEFIf": {
+      "status": "backend"
+    },
+    "Udf": {
+      "status": "backend"
+    },
+    "VDI": {
+      "status": "backend"
+    },
+    "VHD": {
+      "status": "backend"
+    },
+    "VHDX": {
+      "status": "backend"
+    },
+    "VMDK": {
+      "status": "backend"
+    },
+    "Xar": {
+      "status": "backend"
+    },
+    "Z": {
+      "status": "backend"
+    },
+    "bzip2": {
+      "status": "backend"
+    },
+    "gzip": {
+      "status": "partial",
+      "note": "A tar inside reads in process. A single file goes to 7-Zip.",
+      "native archives": [
+        "tar.tar.gz"
+      ]
+    },
+    "lzma": {
+      "status": "backend"
+    },
+    "lzma86": {
+      "status": "backend"
+    },
+    "tar": {
+      "status": "native"
+    },
+    "wim": {
+      "status": "backend"
+    },
+    "xz": {
+      "status": "partial",
+      "note": "A tar inside reads in process. A single file goes to 7-Zip.",
+      "native archives": [
+        "tar.tar.xz"
+      ]
+    },
+    "zip": {
+      "status": "native"
+    },
+    "zstd": {
+      "status": "partial",
+      "note": "A tar inside reads in process. A single file needs `--zip-engine backend`.",
+      "native archives": [
+        "tar.tar.zst"
+      ]
+    },
+    "Hash": {
+      "status": "dropped",
+      "note": "It is the `7z h` checksum command, not an archive."
+    }
+  },
+  "codecs": {
+    "BCJ2": {
+      "status": "backend"
+    },
+    "BCJ": {
+      "status": "native"
+    },
+    "PPC": {
+      "status": "native"
+    },
+    "IA64": {
+      "status": "native"
+    },
+    "ARM": {
+      "status": "native"
+    },
+    "ARMT": {
+      "status": "native"
+    },
+    "SPARC": {
+      "status": "native"
+    },
+    "ARM64": {
+      "status": "native"
+    },
+    "RISCV": {
+      "status": "native"
+    },
+    "Swap2": {
+      "status": "backend"
+    },
+    "Swap4": {
+      "status": "backend"
+    },
+    "BZip2": {
+      "status": "backend"
+    },
+    "Copy": {
+      "status": "native"
+    },
+    "Deflate64": {
+      "status": "backend"
+    },
+    "Deflate": {
+      "status": "native"
+    },
+    "Delta": {
+      "status": "native"
+    },
+    "LZMA2": {
+      "status": "native"
+    },
+    "LZMA": {
+      "status": "native"
+    },
+    "PPMD": {
+      "status": "backend"
+    },
+    "7zAES": {
+      "status": "missing",
+      "note": "Zipper has no password option, so 7-Zip cannot decrypt it either."
+    },
+    "AES256CBC": {
+      "status": "missing",
+      "note": "Zipper has no password option, so 7-Zip cannot decrypt it either."
+    }
+  },
+  "zip methods": {
+    "Store": {
+      "status": "native"
+    },
+    "Shrink": {
+      "status": "backend"
+    },
+    "Implode": {
+      "status": "backend"
+    },
+    "Deflate": {
+      "status": "native"
+    },
+    "Deflate64": {
+      "status": "backend"
+    },
+    "BZip2": {
+      "status": "backend"
+    },
+    "LZMA": {
+      "status": "backend"
+    },
+    "Zstandard": {
+      "status": "backend"
+    },
+    "XZ": {
+      "status": "backend"
+    },
+    "PPMd": {
+      "status": "backend"
+    },
+    "ZipCrypto": {
+      "status": "missing",
+      "note": "Zipper has no password option, so 7-Zip cannot decrypt it either."
+    },
+    "WinZip AES": {
+      "status": "missing",
+      "note": "Zipper has no password option, so 7-Zip cannot decrypt it either."
+    }
+  },
+  "switches": {
+    "x": {
+      "status": "native",
+      "tests": [
+        "tests/tar_corpus.rs::native_reader_matches_the_reference_readers"
+      ]
+    },
+    "e": {
+      "status": "missing"
+    },
+    "-o": {
+      "status": "native",
+      "tests": [
+        "tests/overwrite.rs::overwrite_into_a_missing_destination_creates_it"
+      ]
+    },
+    "-aoa": {
+      "status": "native",
+      "note": "`--overwrite` replaces each file by rename.",
+      "tests": [
+        "tests/overwrite.rs::overwrite_replaces_files_and_keeps_the_rest"
+      ]
+    },
+    "-aos": {
+      "status": "missing"
+    },
+    "-aot": {
+      "status": "missing"
+    },
+    "-aou": {
+      "status": "missing"
+    },
+    "-x": {
+      "status": "missing"
+    },
+    "-p": {
+      "status": "missing"
+    },
+    "-si": {
+      "status": "missing"
+    },
+    "-so": {
+      "status": "missing"
+    },
+    "-sni": {
+      "status": "missing"
+    },
+    "-sns": {
+      "status": "missing"
+    },
+    "-snz": {
+      "status": "missing"
+    },
+    "-i": {
+      "status": "partial",
+      "note": "`--path` selects exact paths in ZIP and 7z, with no wildcards.",
+      "tests": [
+        "tests/selection.rs::folders_and_files_select_their_subtrees_only"
+      ]
+    },
+    "-snl": {
+      "status": "partial",
+      "note": "Links that stay inside the destination are created on Unix. On Windows the native readers refuse archives that hold links.",
+      "tests": [
+        "tests/hostile_zip.rs::symlinks_must_stay_inside_the_destination"
+      ]
+    },
+    "-snh": {
+      "status": "partial",
+      "note": "Tar hard links are created. The other native readers meet none.",
+      "tests": [
+        "tests/hostile_tar.rs::links_stay_inside_and_never_carry_writes"
+      ]
+    },
+    "-spf": {
+      "status": "dropped",
+      "note": "Absolute paths are refused, because they write outside the destination.",
+      "tests": [
+        "tests/hostile_zip.rs::unsafe_names_never_escape"
+      ]
+    }
+  }
+}

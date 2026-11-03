@@ -43,3 +43,7 @@ codegen-units = 1
 [[example]]
 name = "count_zip"
 required-features = ["counters"]
+
+[dev-dependencies]
+serde_json = "1.0.154"
+sha2 = "0.11.1"

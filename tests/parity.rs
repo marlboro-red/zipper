@@ -1,0 +1,211 @@
+//! Every archive in `tests/data/parity`, extracted the way its row in
+//! `status.json` says Zipper handles it. A native archive must give the tree
+//! 7-Zip gave when the corpus was built. A backend archive must give the same
+//! tree through `--zip-engine backend` as a direct 7-Zip extraction on this
+//! machine. A missing archive must be refused with nothing published. An
+//! archive on a dropped row is skipped.
+//!
+//! Without 7-Zip the backend archives are skipped, unless
+//! `ZIPPER_PARITY_REQUIRE_7Z` is set, as CI sets it.
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
+
+const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/parity");
+const STORED_SUFFIX: &str = ".stored.xz";
+
+#[derive(Debug, PartialEq)]
+enum Expect {
+    Native,
+    Backend,
+    Refused,
+    Skipped,
+}
+
+fn json(name: &str) -> Value {
+    serde_json::from_str(&fs::read_to_string(Path::new(DATA).join(name)).unwrap()).unwrap()
+}
+
+fn expectation(status: &Value, archive: &str, row: &[Value]) -> Expect {
+    let entry = &status[row[0].as_str().unwrap()][row[1].as_str().unwrap()];
+    let native_here = entry["native archives"]
+        .as_array()
+        .is_some_and(|names| names.iter().any(|name| name == archive));
+    match entry["status"].as_str().unwrap() {
+        _ if native_here => Expect::Native,
+        "native" => Expect::Native,
+        "partial" | "backend" => Expect::Backend,
+        "missing" => Expect::Refused,
+        _ => Expect::Skipped,
+    }
+}
+
+fn tree(root: &Path) -> BTreeMap<String, String> {
+    walkdir::WalkDir::new(root)
+        .min_depth(1)
+        .follow_links(false)
+        .sort_by_file_name()
+        .into_iter()
+        .map(|entry| entry.unwrap())
+        .map(|entry| {
+            let name = entry
+                .path()
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let kind = if entry.file_type().is_symlink() {
+                format!("link:{}", fs::read_link(entry.path()).unwrap().display())
+            } else if entry.file_type().is_dir() {
+                "dir".to_owned()
+            } else {
+                Sha256::digest(fs::read(entry.path()).unwrap())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect()
+            };
+            (name, kind)
+        })
+        .collect()
+}
+
+fn reference_tree(record: &Value) -> BTreeMap<String, String> {
+    record["tree"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(name, kind)| (name.clone(), kind.as_str().unwrap().to_owned()))
+        .collect()
+}
+
+fn unpack(record: &Value, into: &Path) -> PathBuf {
+    let files: Vec<&str> = record["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file.as_str().unwrap())
+        .collect();
+    for file in &files {
+        let stored = fs::read(Path::new(DATA).join("archives").join(file)).unwrap();
+        let (name, bytes) = match file.strip_suffix(STORED_SUFFIX) {
+            Some(name) => {
+                let mut bytes = Vec::new();
+                liblzma::read::XzDecoder::new(&stored[..])
+                    .read_to_end(&mut bytes)
+                    .unwrap();
+                (name, bytes)
+            }
+            None => (*file, stored),
+        };
+        fs::write(into.join(name), bytes).unwrap();
+    }
+    into.join(files[0].strip_suffix(STORED_SUFFIX).unwrap_or(files[0]))
+}
+
+fn sevenzip() -> Option<PathBuf> {
+    if let Some(binary) = std::env::var_os("ZIPPER_7Z") {
+        return Some(binary.into());
+    }
+    ["7zz", "7z"]
+        .into_iter()
+        .find(|binary| {
+            Command::new(binary)
+                .arg("i")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
+        .map(PathBuf::from)
+}
+
+fn zipper(engine: Option<&str>, archive: &Path, output: &Path) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_zipper"));
+    if let Some(engine) = engine {
+        command.args(["--zip-engine", engine]);
+    }
+    command
+        .arg("extract")
+        .arg(archive)
+        .arg("-o")
+        .arg(output)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+fn leftovers(folder: &Path) -> Vec<String> {
+    fs::read_dir(folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".zipper-") || name == "out")
+        .collect()
+}
+
+#[test]
+fn every_parity_archive_extracts_as_its_row_says() {
+    let status = json("status.json");
+    let corpus = json("archives.json");
+    let backend = sevenzip();
+    assert!(
+        backend.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
+        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip was found"
+    );
+    let mut counts = BTreeMap::new();
+    for (name, record) in corpus["archives"].as_object().unwrap() {
+        let expect = expectation(&status, name, record["row"].as_array().unwrap());
+        let work = tempfile::tempdir().unwrap();
+        let inputs = work.path().join("in");
+        fs::create_dir(&inputs).unwrap();
+        let archive = unpack(record, &inputs);
+        let output = work.path().join("out");
+        match (&expect, &backend) {
+            (Expect::Native, _) => {
+                let run = zipper(Some("native"), &archive, &output);
+                assert!(
+                    run.status.success(),
+                    "{name}: {}",
+                    String::from_utf8_lossy(&run.stderr)
+                );
+                assert_eq!(tree(&output), reference_tree(record), "{name}");
+            }
+            (Expect::Backend, Some(binary)) => {
+                let run = zipper(Some("backend"), &archive, &output);
+                assert!(
+                    run.status.success(),
+                    "{name}: {}",
+                    String::from_utf8_lossy(&run.stderr)
+                );
+                let direct = work.path().join("direct");
+                let mut flag = std::ffi::OsString::from("-o");
+                flag.push(&direct);
+                let direct_run = Command::new(binary)
+                    .args(["x", "-y"])
+                    .arg(flag)
+                    .arg(&archive)
+                    .stdin(Stdio::null())
+                    .output()
+                    .unwrap();
+                assert!(direct_run.status.success(), "{name}: 7-Zip failed");
+                assert_eq!(tree(&output), tree(&direct), "{name}");
+            }
+            (Expect::Backend, None) | (Expect::Skipped, _) => {
+                *counts.entry("skipped").or_insert(0) += 1;
+                continue;
+            }
+            (Expect::Refused, _) => {
+                let run = zipper(None, &archive, &output);
+                assert!(!run.status.success(), "{name} was extracted");
+                assert_eq!(leftovers(work.path()), Vec::<String>::new(), "{name}");
+            }
+        }
+        *counts
+            .entry(format!("{expect:?}").leak() as &str)
+            .or_insert(0) += 1;
+    }
+    eprintln!("parity archives: {counts:?}");
+}

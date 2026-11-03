@@ -171,6 +171,7 @@ fn gate(full: bool) -> Result<()> {
         ("results", || scoreboard(&["check"])),
         ("hooks", hook_tests),
         ("verify", || verify::fail_on_stale_fingerprints(&root())),
+        ("parity", || python_script("scripts/parity.py", &["check"])),
         ("clippy", || {
             cargo(&[
                 "clippy",
@@ -462,6 +463,20 @@ fn hook_tests() -> Result<()> {
             .status()?;
         ensure!(status.success(), "{script} exited with {status}");
     }
+    Ok(())
+}
+
+fn python_script(script: &str, args: &[&str]) -> Result<()> {
+    let status = Command::new(python()?)
+        .current_dir(root())
+        .arg(script)
+        .args(args)
+        .status()?;
+    ensure!(
+        status.success(),
+        "{script} {} exited with {status}",
+        args.join(" ")
+    );
     Ok(())
 }
 

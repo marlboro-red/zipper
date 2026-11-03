@@ -1,0 +1,964 @@
+{
+  "archives": {
+    "7z-7zaes.7z": {
+      "files": [
+        "7z-7zaes.7z"
+      ],
+      "row": [
+        "codecs",
+        "7zAES"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-arm.7z": {
+      "files": [
+        "7z-arm.7z"
+      ],
+      "row": [
+        "codecs",
+        "ARM"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-arm64.7z": {
+      "files": [
+        "7z-arm64.7z"
+      ],
+      "row": [
+        "codecs",
+        "ARM64"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-armt.7z": {
+      "files": [
+        "7z-armt.7z"
+      ],
+      "row": [
+        "codecs",
+        "ARMT"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-bcj.7z": {
+      "files": [
+        "7z-bcj.7z"
+      ],
+      "row": [
+        "codecs",
+        "BCJ"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-bcj2.7z": {
+      "files": [
+        "7z-bcj2.7z"
+      ],
+      "row": [
+        "codecs",
+        "BCJ2"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-bzip2.7z": {
+      "files": [
+        "7z-bzip2.7z"
+      ],
+      "row": [
+        "codecs",
+        "BZip2"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-copy.7z": {
+      "files": [
+        "7z-copy.7z"
+      ],
+      "row": [
+        "codecs",
+        "Copy"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-deflate.7z": {
+      "files": [
+        "7z-deflate.7z"
+      ],
+      "row": [
+        "codecs",
+        "Deflate"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-deflate64.7z": {
+      "files": [
+        "7z-deflate64.7z"
+      ],
+      "row": [
+        "codecs",
+        "Deflate64"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-delta.7z": {
+      "files": [
+        "7z-delta.7z"
+      ],
+      "row": [
+        "codecs",
+        "Delta"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-ia64.7z": {
+      "files": [
+        "7z-ia64.7z"
+      ],
+      "row": [
+        "codecs",
+        "IA64"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-lzma.7z": {
+      "files": [
+        "7z-lzma.7z"
+      ],
+      "row": [
+        "codecs",
+        "LZMA"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-lzma2.7z": {
+      "files": [
+        "7z-lzma2.7z"
+      ],
+      "row": [
+        "codecs",
+        "LZMA2"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-ppc.7z": {
+      "files": [
+        "7z-ppc.7z"
+      ],
+      "row": [
+        "codecs",
+        "PPC"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-ppmd.7z": {
+      "files": [
+        "7z-ppmd.7z"
+      ],
+      "row": [
+        "codecs",
+        "PPMD"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-riscv.7z": {
+      "files": [
+        "7z-riscv.7z"
+      ],
+      "row": [
+        "codecs",
+        "RISCV"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-sparc.7z": {
+      "files": [
+        "7z-sparc.7z"
+      ],
+      "row": [
+        "codecs",
+        "SPARC"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-swap2.7z": {
+      "files": [
+        "7z-swap2.7z"
+      ],
+      "row": [
+        "codecs",
+        "Swap2"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z-swap4.7z": {
+      "files": [
+        "7z-swap4.7z"
+      ],
+      "row": [
+        "codecs",
+        "Swap4"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "7z.7z": {
+      "files": [
+        "7z.7z"
+      ],
+      "row": [
+        "formats",
+        "7z"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "apfs.img": {
+      "files": [
+        "apfs.img.stored.xz"
+      ],
+      "row": [
+        "formats",
+        "APFS"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/data.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/empty:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f",
+        "hello.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80"
+      }
+    },
+    "apm.img": {
+      "files": [
+        "apm.img.stored.xz"
+      ],
+      "row": [
+        "formats",
+        "APM"
+      ],
+      "tree": {
+        "parity": "dir",
+        "parity/.HFS+ Private Directory Data\r": "dir",
+        "parity/[HFS+ Private Data]": "dir",
+        "parity/folder": "dir",
+        "parity/folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "parity/folder/data.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "parity/folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "parity/folder/empty:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "parity/folder:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "parity/hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f",
+        "parity/hello.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "parity:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80"
+      }
+    },
+    "ar.a": {
+      "files": [
+        "ar.a"
+      ],
+      "row": [
+        "formats",
+        "Ar"
+      ],
+      "tree": {
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "cpio-bin.cpio": {
+      "files": [
+        "cpio-bin.cpio"
+      ],
+      "row": [
+        "formats",
+        "Cpio"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "cpio-newc.cpio": {
+      "files": [
+        "cpio-newc.cpio"
+      ],
+      "row": [
+        "formats",
+        "Cpio"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "cpio-odc.cpio": {
+      "files": [
+        "cpio-odc.cpio"
+      ],
+      "row": [
+        "formats",
+        "Cpio"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "dmg-bzip2.dmg": {
+      "files": [
+        "dmg-bzip2.dmg"
+      ],
+      "row": [
+        "formats",
+        "Dmg"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/data.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/empty:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f",
+        "hello.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80"
+      }
+    },
+    "dmg-lzfse.dmg": {
+      "files": [
+        "dmg-lzfse.dmg"
+      ],
+      "row": [
+        "formats",
+        "Dmg"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/data.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/empty:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f",
+        "hello.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80"
+      }
+    },
+    "dmg-lzma.dmg": {
+      "files": [
+        "dmg-lzma.dmg"
+      ],
+      "row": [
+        "formats",
+        "Dmg"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/data.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/empty:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f",
+        "hello.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80"
+      }
+    },
+    "dmg-zlib.dmg": {
+      "files": [
+        "dmg-zlib.dmg"
+      ],
+      "row": [
+        "formats",
+        "Dmg"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/data.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/empty:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f",
+        "hello.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80"
+      }
+    },
+    "fat.img": {
+      "files": [
+        "fat.img.stored.xz"
+      ],
+      "row": [
+        "formats",
+        "FAT"
+      ],
+      "tree": {
+        "._folder": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "._hello.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "._": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder": "dir",
+        "folder/._data.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder/._empty": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "gpt.img": {
+      "files": [
+        "gpt.img.stored.xz"
+      ],
+      "row": [
+        "formats",
+        "GPT"
+      ],
+      "tree": {
+        "._folder": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "._hello.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "._": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder": "dir",
+        "folder/._data.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder/._empty": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "hello.txt.Z": {
+      "files": [
+        "hello.txt.Z"
+      ],
+      "row": [
+        "formats",
+        "Z"
+      ],
+      "tree": {
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "hello.txt.bz2": {
+      "files": [
+        "hello.txt.bz2"
+      ],
+      "row": [
+        "formats",
+        "bzip2"
+      ],
+      "tree": {
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "hello.txt.gz": {
+      "files": [
+        "hello.txt.gz"
+      ],
+      "row": [
+        "formats",
+        "gzip"
+      ],
+      "tree": {
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "hello.txt.lzma": {
+      "files": [
+        "hello.txt.lzma"
+      ],
+      "row": [
+        "formats",
+        "lzma"
+      ],
+      "tree": {
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "hello.txt.xz": {
+      "files": [
+        "hello.txt.xz"
+      ],
+      "row": [
+        "formats",
+        "xz"
+      ],
+      "tree": {
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "hello.txt.zst": {
+      "files": [
+        "hello.txt.zst"
+      ],
+      "row": [
+        "formats",
+        "zstd"
+      ],
+      "tree": {
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "hfs.img": {
+      "files": [
+        "hfs.img.stored.xz"
+      ],
+      "row": [
+        "formats",
+        "HFS"
+      ],
+      "tree": {
+        "parity": "dir",
+        "parity/.HFS+ Private Directory Data\r": "dir",
+        "parity/[HFS+ Private Data]": "dir",
+        "parity/folder": "dir",
+        "parity/folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "parity/folder/data.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "parity/folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "parity/folder/empty:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "parity/folder:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "parity/hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f",
+        "parity/hello.txt:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80",
+        "parity:com.apple.provenance": "75fb659af9a51e5080ba08e0e75ca4c22a96d06a72e3961137bcd4e66574be80"
+      }
+    },
+    "iso.iso": {
+      "files": [
+        "iso.iso.stored.xz"
+      ],
+      "row": [
+        "formats",
+        "Iso"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "mbr.img": {
+      "files": [
+        "mbr.img.stored.xz"
+      ],
+      "row": [
+        "formats",
+        "MBR"
+      ],
+      "tree": {
+        "._folder": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "._hello.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "._": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder": "dir",
+        "folder/._data.txt": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder/._empty": "f4646fde937b279182df9e0430735b3dd0a0b456737e8c5e424243b730eb911b",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "split.7z.001": {
+      "files": [
+        "split.7z.001",
+        "split.7z.002",
+        "split.7z.003"
+      ],
+      "row": [
+        "formats",
+        "Split"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "tar.tar": {
+      "files": [
+        "tar.tar"
+      ],
+      "row": [
+        "formats",
+        "tar"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "tar.tar.Z": {
+      "files": [
+        "tar.tar.Z"
+      ],
+      "row": [
+        "formats",
+        "Z"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "tar.tar.bz2": {
+      "files": [
+        "tar.tar.bz2"
+      ],
+      "row": [
+        "formats",
+        "bzip2"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "tar.tar.gz": {
+      "files": [
+        "tar.tar.gz"
+      ],
+      "row": [
+        "formats",
+        "gzip"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "tar.tar.xz": {
+      "files": [
+        "tar.tar.xz"
+      ],
+      "row": [
+        "formats",
+        "xz"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "tar.tar.zst": {
+      "files": [
+        "tar.tar.zst"
+      ],
+      "row": [
+        "formats",
+        "zstd"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "udf.iso": {
+      "files": [
+        "udf.iso.stored.xz"
+      ],
+      "row": [
+        "formats",
+        "Udf"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "wim.wim": {
+      "files": [
+        "wim.wim"
+      ],
+      "row": [
+        "formats",
+        "wim"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "xar.xar": {
+      "files": [
+        "xar.xar"
+      ],
+      "row": [
+        "formats",
+        "Xar"
+      ],
+      "tree": {
+        "[TOC].xml": "c3371f54f993459789ab2e1ba37c46ca22bc27b5e4ccce30fe069b407c7380e7",
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-bzip2.zip": {
+      "files": [
+        "zip-bzip2.zip"
+      ],
+      "row": [
+        "zip methods",
+        "BZip2"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-deflate.zip": {
+      "files": [
+        "zip-deflate.zip"
+      ],
+      "row": [
+        "zip methods",
+        "Deflate"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-deflate64.zip": {
+      "files": [
+        "zip-deflate64.zip"
+      ],
+      "row": [
+        "zip methods",
+        "Deflate64"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-lzma.zip": {
+      "files": [
+        "zip-lzma.zip"
+      ],
+      "row": [
+        "zip methods",
+        "LZMA"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-ppmd.zip": {
+      "files": [
+        "zip-ppmd.zip"
+      ],
+      "row": [
+        "zip methods",
+        "PPMd"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-store.zip": {
+      "files": [
+        "zip-store.zip"
+      ],
+      "row": [
+        "zip methods",
+        "Store"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-winzip-aes.zip": {
+      "files": [
+        "zip-winzip-aes.zip"
+      ],
+      "row": [
+        "zip methods",
+        "WinZip AES"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-xz.zip": {
+      "files": [
+        "zip-xz.zip"
+      ],
+      "row": [
+        "zip methods",
+        "XZ"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip-zipcrypto.zip": {
+      "files": [
+        "zip-zipcrypto.zip"
+      ],
+      "row": [
+        "zip methods",
+        "ZipCrypto"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "zip.zip": {
+      "files": [
+        "zip.zip"
+      ],
+      "row": [
+        "formats",
+        "zip"
+      ],
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    }
+  },
+  "password": "zipper",
+  "reference": "7-Zip (z) 26.05 (arm64) : Copyright (c) 1999-2026 Igor Pavlov : 2026-10-21"
+}

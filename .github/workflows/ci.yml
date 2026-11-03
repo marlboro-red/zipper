@@ -19,5 +19,15 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
         run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-gnu
+      - name: Install 7-Zip for the parity archives
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Linux) sudo apt-get update && sudo apt-get install -y 7zip ;;
+            macOS) command -v 7zz || brew install sevenzip ;;
+            Windows) echo 'ZIPPER_7Z=C:/Program Files/7-Zip/7z.exe' >> "$GITHUB_ENV" ;;
+          esac
       - name: Gate (format, lint, tests, release round trip)
+        env:
+          ZIPPER_PARITY_REQUIRE_7Z: "1"
         run: cargo +1.96.0 xtask gate full
