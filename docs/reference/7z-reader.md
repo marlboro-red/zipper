@@ -44,7 +44,7 @@ These options work the same way as in the other readers. [Usage](../usage.md#ext
 - `paths`, or `--path`, selects entries. Only folders that hold a selected file decode, and each decodes completely, because 7z has no way to skip into a folder and its CRC covers all of it.
 - `Control` reports progress with both totals known, and stops on the cancel flag.
 
-Folders decode in parallel on their own worker threads, up to `--threads`, largest first. A solid archive has one folder, so it decodes on one thread.
+Folders decode in parallel on their own worker threads, up to `--threads`, largest first. A solid archive has one folder, so it decodes on one thread. A TLA+ model in `verification/7z-folder-workers/` checks every order of the workers' steps, within a bound, for hangs, budget overruns, folders decoded twice, and a publish after a corrupt folder or a cancel. The `zipper-verify-7z-workers` skill in `.claude/skills/` runs it.
 
 ## Reference corpus
 
