@@ -22,8 +22,8 @@ fn native_cli_and_missing_backend() -> anyhow::Result<()> {
             .success()
     );
     assert_eq!(fs::read(t.path().join("selected/data"))?, b"zipper");
-    fs::write(t.path().join("legacy.7z"), b"7z\xBC\xAF\x27\x1C fake")?;
-    let result = run(&["test", "legacy.7z"])?;
+    fs::write(t.path().join("legacy.rar"), b"Rar!\x1A\x07\x01\x00 fake")?;
+    let result = run(&["test", "legacy.rar"])?;
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("failed to launch 7-Zip"));
     Ok(())
@@ -37,10 +37,10 @@ fn compatibility_backend_failure_does_not_publish() -> anyhow::Result<()> {
     let backend = t.path().join("backend");
     fs::write(&backend, "#!/bin/sh\nexit 2\n")?;
     fs::set_permissions(&backend, fs::Permissions::from_mode(0o700))?;
-    fs::write(t.path().join("legacy.7z"), b"7z\xBC\xAF\x27\x1C fake")?;
+    fs::write(t.path().join("legacy.rar"), b"Rar!\x1A\x07\x01\x00 fake")?;
     let status = Command::new(env!("CARGO_BIN_EXE_zipper"))
         .current_dir(t.path())
-        .args(["extract", "legacy.7z", "-o", "out"])
+        .args(["extract", "legacy.rar", "-o", "out"])
         .env("ZIPPER_7Z", backend)
         .output()?;
     assert!(!status.status.success());
@@ -370,14 +370,17 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
     let mut tar_with_zip = vec![0u8; 512];
     tar_with_zip[257..262].copy_from_slice(b"ustar");
     tar_with_zip.extend(&zip);
+    let mut rar_with_zip = b"Rar!\x1A\x07\x01\x00".to_vec();
+    rar_with_zip.extend(&zip);
     let mut sevenzip_with_zip = b"7z\xBC\xAF\x27\x1C".to_vec();
     sevenzip_with_zip.extend(&zip);
     let mut shebang_with_zip = b"#!/bin/sh\nexit 0\n".to_vec();
     shebang_with_zip.extend(&zip);
     for (name, bytes, switch) in [
         ("a.tar", tar_with_zip, None),
-        ("b.bin", sevenzip_with_zip.clone(), Some("-t7z ")),
-        ("c.7z.001", sevenzip_with_zip, Some("-t7z.split ")),
+        ("b.bin", rar_with_zip.clone(), Some("-trar5 ")),
+        ("c.rar.001", rar_with_zip, Some("-trar5.split ")),
+        ("f.7z", sevenzip_with_zip, None),
         ("d.bin", shebang_with_zip, None),
         ("e.bin", b"Type = zip\n".to_vec(), None),
     ] {
@@ -403,7 +406,8 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
                 assert!(
                     stderr.contains("--zip-engine backend")
                         || stderr.contains("ZIP")
-                        || stderr.contains("tar"),
+                        || stderr.contains("tar")
+                        || stderr.contains("7z"),
                     "{name}: {stderr}"
                 );
             }
@@ -506,11 +510,11 @@ fn wildcards_in_7zip_paths_are_refused_before_7zip_runs() -> anyhow::Result<()> 
     let backend = t.path().join("backend");
     fs::write(&backend, "#!/bin/sh\necho called >> \"$0.log\"\n")?;
     fs::set_permissions(&backend, fs::Permissions::from_mode(0o700))?;
-    let sevenzip = b"7z\xBC\xAF\x27\x1C fake";
-    fs::write(t.path().join("a?.7z"), sevenzip)?;
-    fs::write(t.path().join("plain.7z"), sevenzip)?;
+    let rar = b"Rar!\x1A\x07\x01\x00 fake";
+    fs::write(t.path().join("a?.rar"), rar)?;
+    fs::write(t.path().join("plain.rar"), rar)?;
     fs::create_dir(t.path().join("p*"))?;
-    for (archive, output) in [("a?.7z", "out"), ("plain.7z", "p*/out")] {
+    for (archive, output) in [("a?.rar", "out"), ("plain.rar", "p*/out")] {
         let result = Command::new(env!("CARGO_BIN_EXE_zipper"))
             .current_dir(t.path())
             .args(["extract", archive, "-o", output])

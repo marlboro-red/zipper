@@ -17,7 +17,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M6. Native reader as the default](#m6-native-reader-as-the-default) | Done | M1, M2 |
 | [M7. Native tar family](#m7-native-tar-family) | Done | M5 |
 | [M8. Extraction API for applications](#m8-extraction-api-for-applications) | Done | M7 |
-| [M9. Native 7z reader](#m9-native-7z-reader) | Planned | M8 |
+| [M9. Native 7z reader](#m9-native-7z-reader) | In progress | M8 |
 
 M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment. M8 closed on 3 November 2026. Applications can call `zipper::extract_archive` to extract into an existing folder, select ZIP paths, follow progress and cancel. Four adversarial reviews found five issues, each fixed with a test that failed first. `.zipper` archives and the 7-Zip backend report no progress yet. M9 will add `.7z` in process with all of these options.
 
@@ -182,14 +182,14 @@ Exit checks:
 
 Scope:
 
-- A 7z container parser with the M1 safety contract, covering the header, packed streams, folders and substreams.
-- LZMA and LZMA2 through liblzma, plus the BCJ x86 and ARM64 filters. Other codecs and encrypted archives are refused with a clear error.
-- The M8 options, including selected folders, progress and cancellation.
-- A reference corpus from 7-Zip and p7zip, and hostile 7z tests.
+- A 7z container parser with the M1 safety contract, covering the header, packed streams, folders and substreams. Done in the [7z reader reference](reference/7z-reader.md).
+- LZMA and LZMA2 through liblzma, plus the BCJ x86 and ARM64 filters. Other codecs and encrypted archives are refused with a clear error. Done, with Copy, Deflate, Delta and every liblzma branch filter. The default engine sends the rest to 7-Zip.
+- The M8 options, including selected folders, progress and cancellation. Done.
+- A reference corpus from 7-Zip and libarchive, and hostile 7z tests. Done in `tests/sevenz_corpus.rs`, `tests/hostile_7z.rs` and `tests/sevenz_fuzz.rs`.
 
 Exit checks:
 
-1. The default engine extracts every corpus 7z archive in process on all three operating systems, with the same tree as 7-Zip.
+1. The default engine extracts every corpus 7z archive in process on all three operating systems, with the same tree as 7-Zip and bsdtar.
 2. Every hostile 7z layout has a test that failed before its fix, and the adversarial review finds no escape.
 3. `docs/reference/` documents the 7z reader.
 

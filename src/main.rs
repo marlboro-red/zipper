@@ -21,7 +21,7 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Native for ZIP, tar and unrecognized files, with no fallback; 7-Zip for other recognized formats.
+    /// Native for ZIP, tar, unrecognized files and 7z it decodes; 7-Zip for other recognized formats.
     Auto,
     /// 7-Zip for every archive that is not .zipper.
     Backend,
@@ -50,7 +50,7 @@ enum Command {
         /// Extract into an existing directory, replacing files of the same name.
         #[arg(long)]
         overwrite: bool,
-        /// Extract an exact archive path or folder subtree (.zipper v2 and ZIP; repeatable).
+        /// Extract an exact archive path or folder subtree (.zipper v2, ZIP and 7z; repeatable).
         #[arg(long = "path")]
         paths: Vec<String>,
         /// Refuse archives whose declared output exceeds this many bytes. By
@@ -175,6 +175,7 @@ fn main() -> Result<()> {
             match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
                 Reader::Zipper => print(zipper::list_archive(&archive)?),
                 Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
+                Reader::SevenZip => print(zipper::native_7z::list(&archive)?),
                 Reader::Tar => print(zipper::native_tar::read_archive(
                     &archive,
                     None,
@@ -202,6 +203,14 @@ fn main() -> Result<()> {
                         threads: cli.threads,
                         buffer_bytes,
                         max_output_bytes: None,
+                        ..Default::default()
+                    },
+                )?),
+                Reader::SevenZip => report(zipper::native_7z::read_archive(
+                    &archive,
+                    None,
+                    zipper::native_7z::ReadOptions {
+                        threads: cli.threads,
                         ..Default::default()
                     },
                 )?),

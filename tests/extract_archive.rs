@@ -138,3 +138,66 @@ fn the_name_does_not_pick_the_reader() {
     extract_archive(&archive, &destination, ExtractOptions::default()).unwrap();
     assert!(destination.join("keep/a").exists());
 }
+
+#[test]
+fn seven_zip_goes_to_the_native_reader_with_every_option() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/7z-corpus");
+    let archive = corpus.join("7zip-nonsolid-short.7z");
+    assert_eq!(
+        zipper::choose_reader(Default::default(), &archive).unwrap(),
+        Reader::SevenZip
+    );
+    let root = tempfile::tempdir().unwrap();
+    let destination = root.path().join("out");
+    fs::create_dir_all(destination.join("src/text")).unwrap();
+    fs::write(destination.join("src/text/readme.txt"), "old").unwrap();
+    fs::write(destination.join("other"), "other").unwrap();
+    let paths = ["src/text".to_string()];
+    let reports = std::sync::Mutex::new(Vec::new());
+    let record = |progress: zipper::Progress| reports.lock().unwrap().push(progress);
+    extract_archive(
+        &archive,
+        &destination,
+        ExtractOptions {
+            existing: Existing::Overwrite,
+            paths: &paths,
+            control: Control {
+                progress: Some(&record),
+                cancel: None,
+            },
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(destination.join("src/text/readme.txt")).unwrap(),
+        b"Zipper tar corpus.\n".repeat(40)
+    );
+    assert_eq!(
+        fs::read_to_string(destination.join("other")).unwrap(),
+        "other"
+    );
+    assert!(!destination.join("src/binary").exists());
+    let last = *reports.lock().unwrap().last().unwrap();
+    assert_eq!(last.files_total, Some(2));
+    assert_eq!(last.files_done, 2);
+    assert_eq!(Some(last.bytes_done), last.bytes_total);
+
+    let cancel = AtomicBool::new(false);
+    let stop = |_: zipper::Progress| cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    let fresh = root.path().join("cancelled");
+    let error = extract_archive(
+        &corpus.join("7zip-lzma2-short.7z"),
+        &fresh,
+        ExtractOptions {
+            control: Control {
+                progress: Some(&stop),
+                cancel: Some(&cancel),
+            },
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.is::<Cancelled>(), "{error:#}");
+    assert!(!fresh.exists());
+}

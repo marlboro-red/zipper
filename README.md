@@ -31,6 +31,7 @@ Extraction requires a new destination directory with an existing parent.
 - [Native format reference](docs/reference/format.md) defines the `.zipper` format contract.
 - [ZIP reader reference](docs/reference/zip-reader.md) lists supported ZIP features, limits, and memory budgets.
 - [Tar reader reference](docs/reference/tar-reader.md) lists supported tar formats, compressors, and safety checks.
+- [7z reader reference](docs/reference/7z-reader.md) lists supported 7z methods and safety checks.
 - [Duplicate-checking reference](docs/reference/duplicates.md) describes the `duplicates` command.
 - [Windows release notes](docs/reference/windows.md) cover installing and running the Windows early release.
 - [Experiment log](benchmarks/README.md) indexes every benchmark record and its reproduction steps.
@@ -45,7 +46,7 @@ Inputs must remain unchanged during creation.
 Block-scoped solid packing has no cross-block history.
 Extraction refuses archives that cannot fit in free space, or that exceed `--max-extracted-bytes`. Legacy v1 archives and the 7-Zip backend are not checked.
 Use private destination parents, because publication does not defend against concurrent filesystem changes by other users.
-The [native format reference](docs/reference/format.md) and the [ZIP](docs/reference/zip-reader.md) and [tar](docs/reference/tar-reader.md) reader references give the details.
+The [native format reference](docs/reference/format.md) and the [ZIP](docs/reference/zip-reader.md), [tar](docs/reference/tar-reader.md) and [7z](docs/reference/7z-reader.md) reader references give the details.
 
 ## Development
 

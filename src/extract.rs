@@ -1,4 +1,4 @@
-use crate::{Control, Existing, compat, native_tar, native_zip};
+use crate::{Control, Existing, compat, native_7z, native_tar, native_zip};
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
 
@@ -6,8 +6,9 @@ use std::{io::Read, path::Path};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Engine {
-    /// Native for ZIP, tar and unrecognized files, with no fallback. 7-Zip
-    /// for the other formats whose signature Zipper recognizes.
+    /// Native for ZIP, tar, unrecognized files and 7z whose methods it
+    /// decodes. 7-Zip for other 7z and the other formats whose signature
+    /// Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive that is not `.zipper`.
@@ -27,6 +28,8 @@ pub enum Reader {
     Zip { fast: bool },
     /// The native reader for plain, gzip, zstd and xz tar.
     Tar,
+    /// The native 7z reader.
+    SevenZip,
     /// 7-Zip, with the format pinned when Zipper recognized its signature.
     Backend { format: Option<String> },
 }
@@ -47,6 +50,12 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             fast: engine == Engine::NativeFast,
         },
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
+        Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
+            Reader::Backend {
+                format: compat::pinned_format(archive)?,
+            }
+        }
+        _ if native_7z::sniff(archive)? => Reader::SevenZip,
         Engine::Native => Reader::Zip { fast: false },
         Engine::NativeFast => Reader::Zip { fast: true },
         Engine::Auto => match compat::pinned_format(archive)? {
@@ -63,17 +72,19 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
 pub struct ExtractOptions<'a> {
     /// What to do when the destination exists.
     pub existing: Existing,
-    /// Exact entry paths or folder subtrees to extract, for `.zipper` v2 and
-    /// ZIP. Empty extracts everything.
+    /// Exact entry paths or folder subtrees to extract, for `.zipper` v2, ZIP
+    /// and 7z. Empty extracts everything.
     pub paths: &'a [String],
     /// Progress reports and cancellation. Every reader checks the cancel flag
-    /// before it starts. Only ZIP and tar report progress and check it later.
+    /// before it starts. Only ZIP, tar and 7z report progress and check it
+    /// later.
     pub control: Control<'a>,
-    /// Cap on declared output bytes. Without it, `.zipper` v2, ZIP and tar
-    /// output must fit in free space. The 7-Zip backend and `.zipper` v1
+    /// Cap on declared output bytes. Without it, `.zipper` v2, ZIP, tar and
+    /// 7z output must fit in free space. The 7-Zip backend and `.zipper` v1
     /// refuse a cap and check no free space.
     pub max_output_bytes: Option<u64>,
-    /// Maximum ZIP workers, or tar writer threads, 1–64.
+    /// Maximum ZIP workers, tar writer threads or 7z folders decoded at
+    /// once, 1–64.
     pub threads: Option<usize>,
     pub engine: Engine,
     /// Shared ZIP entry-buffer budget for `Engine::NativeFast`.
@@ -116,8 +127,21 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                 },
             )?;
         }
+        Reader::SevenZip => {
+            native_7z::read_archive(
+                archive,
+                Some(destination),
+                native_7z::ReadOptions {
+                    max_output_bytes: options.max_output_bytes,
+                    threads: options.threads,
+                    existing: options.existing,
+                    paths: options.paths,
+                    control: options.control,
+                },
+            )?;
+        }
         Reader::Tar | Reader::Backend { .. } if !options.paths.is_empty() => {
-            bail!("--path needs a .zipper or ZIP archive")
+            bail!("--path needs a .zipper, ZIP or 7z archive read in process")
         }
         Reader::Tar => {
             native_tar::read_archive(

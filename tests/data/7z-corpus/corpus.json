@@ -1,0 +1,316 @@
+{
+ "readers": [
+  "7zip",
+  "bsdtar"
+ ],
+ "writers": {
+  "7zip-arm64-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-arm64-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-arm64-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-bcj-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-bcj-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-bcj-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-copy-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-copy-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-copy-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-deflate-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-deflate-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-deflate-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-delta-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-delta-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-delta-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-blocks-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-blocks-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-blocks-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-ultra-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-ultra-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-lzma2-ultra-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-nonsolid-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-nonsolid-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-nonsolid-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-plain-header-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-plain-header-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-plain-header-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-solid-per-2-files-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-solid-per-2-files-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-solid-per-2-files-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "bsdtar-deflate-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "bsdtar-deflate-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "bsdtar-lzma1-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "bsdtar-lzma1-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "bsdtar-lzma2-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "bsdtar-lzma2-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "bsdtar-store-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "bsdtar-store-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  }
+ }
+}
