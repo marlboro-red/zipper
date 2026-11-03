@@ -249,7 +249,7 @@ Scope:
 - Include and exclude patterns with wildcards, like 7-Zip's `-i` and `-x`, for every format. Tar selects entries while streaming.
 - Extraction without folders, like `7z e`. Two archive files with one name follow the overwrite mode.
 - Reading the archive from standard input and writing one file to standard output, like `-si` and `-so`.
-- An option that keeps the files that verified from a damaged archive. **Decision before work starts:** it ends the rule that a damaged archive publishes nothing, so it stays off by default and names each file it left out.
+- No option keeps files from a damaged archive. Decided on 4 November 2026, because it would end the rule that a damaged archive publishes nothing.
 
 Exit checks:
 
@@ -347,7 +347,8 @@ Zipper extracts RAR 4 and RAR 5 archives, including encrypted and multi-volume o
 
 Scope:
 
-- **Decision before work starts:** how to decode RAR. RARLAB documents the RAR 5 container, but its `unrar` source licence forbids using it to rebuild the RAR compressor. A decoder written from the format notes, or a licensed library, are the options.
+- Zipper's own decoder, decided on 4 November 2026. The `unrar` licence forbids using its source to build a RAR compatible archiver. 7-Zip's RAR code derives from it and carries the same restriction.
+- Its authors read neither the `unrar` source nor 7-Zip's RAR code. They work from RARLAB's RAR 5 technote, which covers the container, and from libarchive's BSD licensed RAR readers. Code that follows libarchive keeps its BSD notice.
 - RAR 5 and RAR 4 containers, solid archives, and the RAR filters.
 - RAR AES encryption and RAR volumes, with the M14 and M15 contracts.
 
