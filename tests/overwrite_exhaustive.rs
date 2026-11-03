@@ -7,6 +7,10 @@
 //! merge replaces exactly the archive's files. An archive folder needs a real
 //! folder or nothing at its path, and an archive file needs no folder there.
 //!
+//! On a filesystem that ignores case, as macOS and Windows do by default, the
+//! pairs run again with the archive names in capitals, and must give the same
+//! outcome compared without case.
+//!
 //! The gate checks every 37th pair. Set `ZIPPER_MERGE_STRIDE=1` to check all
 //! 101,761 pairs.
 #![cfg(unix)]
@@ -99,18 +103,31 @@ fn snapshot(root: &Path) -> Snapshot {
 }
 
 fn contents(path: &str) -> Vec<u8> {
-    format!("archive {path}").into_bytes()
+    format!("archive {}", path.to_lowercase()).into_bytes()
 }
 
-fn write_zip(path: &Path, tree: &Tree) {
+fn without_case(snapshot: Snapshot) -> Snapshot {
+    snapshot
+        .into_iter()
+        .map(|(path, node)| (path.to_lowercase(), node))
+        .collect()
+}
+
+fn ignores_case(folder: &Path) -> bool {
+    fs::write(folder.join("probe"), b"").unwrap();
+    fs::symlink_metadata(folder.join("PROBE")).is_ok()
+}
+
+fn write_zip(path: &Path, tree: &Tree, spell: fn(&str) -> String) {
     let mut writer = zip::ZipWriter::new(fs::File::create(path).unwrap());
     for (name, kind) in tree {
+        let name = spell(name);
         let options = zip::write::SimpleFileOptions::default();
         if *kind == Kind::Directory {
             writer.add_directory(format!("{name}/"), options).unwrap();
         } else {
-            writer.start_file(name, options).unwrap();
-            writer.write_all(&contents(name)).unwrap();
+            writer.start_file(name.as_str(), options).unwrap();
+            writer.write_all(&contents(&name)).unwrap();
         }
     }
     writer.finish().unwrap();
@@ -163,6 +180,20 @@ fn documented_outcome(before: &Snapshot, destination: &Tree, archive: &Tree) -> 
 
 #[test]
 fn overwrite_matches_the_contract_on_every_small_tree_pair() {
+    check_every_pair(str::to_owned, Snapshot::from);
+}
+
+#[test]
+fn overwrite_with_names_in_another_case_matches_the_contract() {
+    let probe = tempfile::tempdir().unwrap();
+    if !ignores_case(probe.path()) {
+        eprintln!("skipped: this filesystem tells names apart by case");
+        return;
+    }
+    check_every_pair(str::to_uppercase, without_case);
+}
+
+fn check_every_pair(spell: fn(&str) -> String, compare: fn(Snapshot) -> Snapshot) {
     let destinations = forest(
         "",
         DEPTH,
@@ -181,7 +212,7 @@ fn overwrite_matches_the_contract_on_every_small_tree_pair() {
         .enumerate()
         .map(|(index, tree)| {
             let path = fixtures.path().join(format!("{index}.zip"));
-            write_zip(&path, tree);
+            write_zip(&path, tree, spell);
             path
         })
         .collect();
@@ -214,13 +245,13 @@ fn overwrite_matches_the_contract_on_every_small_tree_pair() {
         match documented_outcome(&before, destination, archive_tree) {
             Some(wanted) => {
                 result.unwrap_or_else(|error| panic!("{label}: refused with {error:#}"));
-                assert_eq!(after, wanted, "{label}");
+                assert_eq!(compare(after), compare(wanted), "{label}");
                 merged += 1;
             }
             None => {
                 let error = result.expect_err(&label).to_string();
                 assert!(error.contains("in the destination"), "{label}: {error}");
-                assert_eq!(after, before, "{label}");
+                assert_eq!(compare(after), compare(before), "{label}");
                 refused += 1;
             }
         }

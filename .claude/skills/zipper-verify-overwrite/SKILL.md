@@ -24,7 +24,9 @@ The test checks all of them on every pair.
 - The code covered is `crate::staging::stage`, `Staging::publish`, `plan`, `same_filesystem` and `crate::publish` in src/lib.rs, through the native ZIP reader. tar, 7z and the 7-Zip backend call the same two functions.
 - `documented_outcome` in the test is the contract written as code. It does not copy `plan`. It states what must be on disk afterwards, and the test compares the whole tree, outside folder included.
 - It runs on Unix, where the test can make symlinks.
-- It leaves out other processes that change the destination during extraction. `plan` checks the tree before the first rename, so a folder swapped for a symlink in between is followed. The [usage page](../../../docs/usage.md) asks for a private destination for that reason. It also leaves out mount points inside the destination, which need root to set up, case-insensitive name clashes, and rename failures such as a full disk.
+- On a filesystem that ignores case, as APFS does on macOS by default, `overwrite_with_names_in_another_case_matches_the_contract` runs every pair again with the archive names in capitals. The outcome must be the same, compared without case. It is skipped where case matters, as on most Linux filesystems.
+- `names_in_another_case_meet_the_same_checks_where_case_is_ignored` in `tests/overwrite.rs` covers ZIP and tar on Windows too, with a junction to a folder outside the destination.
+- It leaves out other processes that change the destination during extraction. `plan` checks the tree before the first rename, so a folder swapped for a symlink in between is followed. The [usage page](../../../docs/usage.md) asks for a private destination for that reason. It also leaves out mount points inside the destination, which need root to set up, names that differ only by Unicode normalization, and rename failures such as a full disk.
 - The gate runs every 37th pair, 2,751 pairs in about 4 seconds. All 101,761 pairs take about 160 seconds. At the last sync, 26,569 pairs merge and 75,192 are refused as conflicts.
 - `verification/coverage.txt` lists the covered code under `[overwrite]`, with its fingerprint when this check last passed.
 
@@ -55,5 +57,6 @@ The check is proven able to fail. Each of these changes to the real code fails i
 | Change in `src/staging.rs` | What the check reported, on the gate's sample |
 | --- | --- |
 | `plan` reads the destination with `fs::metadata`, which follows symlinks | Case 259. The destination's `b` is a symlink to a folder outside, and the extraction succeeds by writing `b/a` and `b/b` into that folder. |
+| `plan` reads the destination with `fs::metadata`, with the archive name `LINKED` against a link named `linked` | `names_in_another_case_meet_the_same_checks_where_case_is_ignored` fails. |
 | `plan` no longer refuses an archive folder over a file | Case 148. The OS refuses a rename with "Not a directory", after earlier renames changed the destination. |
 | `plan` no longer refuses an archive file over a folder | Case 518. The OS refuses a rename with "Is a directory", after earlier renames changed the destination. |

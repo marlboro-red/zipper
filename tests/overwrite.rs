@@ -281,6 +281,67 @@ fn a_destination_file_is_not_a_directory_to_merge_into() {
     assert_eq!(fs::read(&destination).unwrap(), b"keep");
 }
 
+fn link_to_folder(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, link).unwrap();
+    #[cfg(windows)]
+    assert!(
+        std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[test]
+fn names_in_another_case_meet_the_same_checks_where_case_is_ignored() {
+    for format in &FORMATS {
+        let root = tempfile::tempdir().unwrap();
+        let destination = existing_destination(root.path());
+        if fs::symlink_metadata(destination.join("TOP")).is_err() {
+            eprintln!("skipped: this filesystem tells names apart by case");
+            return;
+        }
+        let outside = root.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("victim"), b"outside").unwrap();
+        link_to_folder(&outside, &destination.join("linked"));
+        let archive = root.path().join(format!("a.{}", format.name));
+        for members in [
+            [Member::File("LINKED/victim", b"through the link")],
+            [Member::File("DOCS", b"file over directory")],
+        ] {
+            (format.write)(&archive, &members);
+            let before = snapshot(root.path());
+            let error = (format.extract)(&archive, &destination, Existing::Overwrite).unwrap_err();
+            assert!(
+                error.to_string().contains("in the destination"),
+                "{}: {error}",
+                format.name
+            );
+            assert_eq!(snapshot(root.path()), before, "{}", format.name);
+        }
+        (format.write)(&archive, &[Member::File("TOP", b"new top")]);
+        (format.extract)(&archive, &destination, Existing::Overwrite).unwrap();
+        assert_eq!(fs::read(destination.join("top")).unwrap(), b"new top");
+        let tops = fs::read_dir(&destination)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .eq_ignore_ascii_case("top")
+            })
+            .count();
+        assert_eq!(tops, 1, "{}", format.name);
+        assert_eq!(fs::read(outside.join("victim")).unwrap(), b"outside");
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn symlinks_in_the_destination_are_replaced_never_followed() {
