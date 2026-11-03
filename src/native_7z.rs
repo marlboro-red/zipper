@@ -78,6 +78,33 @@ pub struct ReadOptions<'a> {
     pub control: crate::Control<'a>,
 }
 
+// EXTERNAL(Kani 0.68): building an anyhow error reaches catch_unwind, which crashes its
+// compiler, so the readers Kani proves return this type and convert at the boundary.
+#[derive(Debug)]
+struct Malformed {
+    message: &'static str,
+    subject: &'static str,
+}
+
+impl std::fmt::Display for Malformed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(self.message)?;
+        formatter.write_str(self.subject)
+    }
+}
+
+impl std::error::Error for Malformed {}
+
+type Parsed<T> = std::result::Result<T, Malformed>;
+
+fn check(holds: bool, message: &'static str, subject: &'static str) -> Parsed<()> {
+    if holds {
+        Ok(())
+    } else {
+        Err(Malformed { message, subject })
+    }
+}
+
 struct Bytes<'a> {
     data: &'a [u8],
     at: usize,
@@ -88,26 +115,26 @@ impl<'a> Bytes<'a> {
         self.data.len() - self.at
     }
 
-    fn take(&mut self, length: usize) -> Result<&'a [u8]> {
-        ensure!(length <= self.remaining(), "7z header is truncated");
+    fn take(&mut self, length: usize) -> Parsed<&'a [u8]> {
+        check(length <= self.remaining(), "7z header is truncated", "")?;
         let bytes = &self.data[self.at..self.at + length];
         self.at += length;
         Ok(bytes)
     }
 
-    fn byte(&mut self) -> Result<u8> {
+    fn byte(&mut self) -> Parsed<u8> {
         Ok(self.take(1)?[0])
     }
 
-    fn u32(&mut self) -> Result<u32> {
+    fn u32(&mut self) -> Parsed<u32> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
 
-    fn u64(&mut self) -> Result<u64> {
+    fn u64(&mut self) -> Parsed<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
     }
 
-    fn number(&mut self) -> Result<u64> {
+    fn number(&mut self) -> Parsed<u64> {
         let first = self.byte()?;
         let extra = first.leading_ones() as usize;
         let mut bytes = [0u8; 8];
@@ -122,34 +149,39 @@ impl<'a> Bytes<'a> {
         Ok(high | low)
     }
 
-    fn count(&mut self, bytes_per_item: usize, what: &str) -> Result<usize> {
+    fn count(&mut self, bytes_per_item: usize, what: &'static str) -> Parsed<usize> {
         let count = self.number()?;
-        ensure!(
+        check(
             count <= MAX_ENTRIES as u64 && count as usize * bytes_per_item <= self.remaining(),
-            "7z header declares too many {what}"
-        );
+            "7z header declares too many ",
+            what,
+        )?;
         Ok(count as usize)
     }
 
-    fn size(&mut self) -> Result<usize> {
+    fn size(&mut self) -> Parsed<usize> {
         let size = self.number()?;
-        ensure!(size <= self.remaining() as u64, "7z header is truncated");
+        check(
+            size <= self.remaining() as u64,
+            "7z header is truncated",
+            "",
+        )?;
         Ok(size as usize)
     }
 
-    fn expect(&mut self, id: u8, what: &str) -> Result<()> {
-        ensure!(self.byte()? == id, "7z header is missing {what}");
+    fn expect(&mut self, id: u8, what: &'static str) -> Parsed<()> {
+        check(self.byte()? == id, "7z header is missing ", what)?;
         Ok(())
     }
 
-    fn bits(&mut self, count: usize) -> Result<Vec<bool>> {
+    fn bits(&mut self, count: usize) -> Parsed<Vec<bool>> {
         let bytes = self.take(count.div_ceil(8))?;
         Ok((0..count)
             .map(|index| bytes[index / 8] & (0x80 >> (index % 8)) != 0)
             .collect())
     }
 
-    fn defined(&mut self, count: usize) -> Result<Vec<bool>> {
+    fn defined(&mut self, count: usize) -> Parsed<Vec<bool>> {
         if self.byte()? != 0 {
             Ok(vec![true; count])
         } else {
@@ -157,18 +189,19 @@ impl<'a> Bytes<'a> {
         }
     }
 
-    fn digests(&mut self, count: usize) -> Result<Vec<Option<u32>>> {
+    fn digests(&mut self, count: usize) -> Parsed<Vec<Option<u32>>> {
         self.defined(count)?
             .into_iter()
             .map(|defined| defined.then(|| self.u32()).transpose())
             .collect()
     }
 
-    fn not_external(&mut self) -> Result<()> {
-        ensure!(
+    fn not_external(&mut self) -> Parsed<()> {
+        check(
             self.byte()? == 0,
-            "7z header uses external data, which is not supported"
-        );
+            "7z header uses external data, which is not supported",
+            "",
+        )?;
         Ok(())
     }
 }
@@ -265,7 +298,7 @@ fn read_folder(bytes: &mut Bytes) -> Result<FolderShape> {
     } else {
         (0..packed_count)
             .map(|_| bytes.number())
-            .collect::<Result<Vec<_>>>()?
+            .collect::<Parsed<Vec<_>>>()?
     };
     Ok(FolderShape {
         coders,
@@ -313,7 +346,7 @@ fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
         loop {
             match bytes.byte()? {
                 END => break,
-                SIZE => pack_sizes = (0..count).map(|_| bytes.number()).collect::<Result<_>>()?,
+                SIZE => pack_sizes = (0..count).map(|_| bytes.number()).collect::<Parsed<_>>()?,
                 CRC => {
                     bytes.digests(count)?;
                 }
@@ -337,7 +370,7 @@ fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
         for shape in shapes {
             let sizes = (0..shape.outputs)
                 .map(|_| bytes.number())
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Parsed<Vec<_>>>()?;
             let unbound: Vec<usize> = (0..shape.outputs)
                 .filter(|&output| {
                     shape
@@ -1092,7 +1125,8 @@ fn folder_reader(
         && let Some((path, window)) = segment_threads.filter(|&(_, window)| window > 1)
         && folder.size >= PARALLEL_FOLDER_MIN
         && let Some(&properties) = coder.properties.first()
-        && let Some(segments) = independent_lzma2_segments(&mut file, folder, properties)?
+        && let Some(segments) =
+            independent_lzma2_segments(&mut file, folder, properties, SEGMENT_MIN_OUTPUT)?
     {
         return Ok(Box::new(ParallelLzma2 {
             path: path.to_owned(),
@@ -1146,77 +1180,123 @@ impl Segment {
     }
 }
 
+struct Chunk {
+    header: u64,
+    unpacked: u64,
+    payload: u64,
+    resets_dictionary: bool,
+}
+
+fn chunk_header(control: u8, fields: [u8; 4]) -> Option<Chunk> {
+    match control {
+        1 | 2 => {
+            let size = u64::from(u16::from_be_bytes([fields[0], fields[1]])) + 1;
+            Some(Chunk {
+                header: 3,
+                unpacked: size,
+                payload: size,
+                resets_dictionary: control == 1,
+            })
+        }
+        0x80..=0xFF => Some(Chunk {
+            header: 5 + u64::from((control >> 5) & 3 >= 2),
+            unpacked: (u64::from(control & 0x1F) << 16)
+                + u64::from(u16::from_be_bytes([fields[0], fields[1]]))
+                + 1,
+            payload: u64::from(u16::from_be_bytes([fields[2], fields[3]])) + 1,
+            resets_dictionary: control >= 0xE0,
+        }),
+        _ => None,
+    }
+}
+
+fn header_field_length(control: u8) -> usize {
+    match control {
+        1 | 2 => 2,
+        _ => 4,
+    }
+}
+
+struct SegmentPlan {
+    segments: Vec<Segment>,
+    packed: u64,
+    output: u64,
+    min_output: u64,
+}
+
+impl SegmentPlan {
+    fn new(min_output: u64) -> Self {
+        SegmentPlan {
+            segments: Vec::new(),
+            packed: 0,
+            output: 0,
+            min_output,
+        }
+    }
+
+    fn add_or_reject(&mut self, chunk: &Chunk, folder: &Folder) -> bool {
+        let current_is_small = self
+            .segments
+            .last()
+            .is_some_and(|segment| segment.output < self.min_output);
+        if chunk.resets_dictionary && !current_is_small {
+            self.segments.push(Segment {
+                pack_offset: self.packed,
+                pack_length: 0,
+                output: 0,
+            });
+        }
+        let Some(segment) = self.segments.last_mut() else {
+            return false;
+        };
+        segment.pack_length += chunk.header + chunk.payload;
+        segment.output += chunk.unpacked;
+        self.packed += chunk.header + chunk.payload;
+        self.output += chunk.unpacked;
+        self.packed < folder.pack_size && self.output <= folder.size
+    }
+
+    fn finish(self, folder: &Folder, properties: u8) -> Option<Vec<Segment>> {
+        let complete = self.output == folder.size && self.segments.len() >= 2;
+        let fits = self
+            .segments
+            .iter()
+            .all(|segment| segment.held(properties) <= SEGMENT_BUDGET);
+        (complete && fits).then_some(self.segments)
+    }
+}
+
 fn independent_lzma2_segments(
-    file: &mut File,
+    source: &mut (impl Read + Seek),
     folder: &Folder,
     properties: u8,
-) -> Result<Option<Vec<Segment>>> {
-    file.seek(SeekFrom::Start(SIGNATURE_HEADER + folder.pack_offset))?;
-    let mut input = BufReader::new(&mut *file);
-    let (mut packed, mut output) = (0u64, 0u64);
-    let mut segments: Vec<Segment> = Vec::new();
+    min_output: u64,
+) -> std::io::Result<Option<Vec<Segment>>> {
+    source.seek(SeekFrom::Start(SIGNATURE_HEADER + folder.pack_offset))?;
+    let mut input = BufReader::new(&mut *source);
+    let mut plan = SegmentPlan::new(min_output);
     loop {
-        if packed >= folder.pack_size {
+        if plan.packed >= folder.pack_size {
             return Ok(None);
         }
         let mut control = [0u8; 1];
         input.read_exact(&mut control)?;
         let control = control[0];
         if control == 0 {
-            let complete = output == folder.size && segments.len() >= 2;
-            let fits = segments
-                .iter()
-                .all(|segment| segment.held(properties) <= SEGMENT_BUDGET);
-            return Ok((complete && fits).then_some(segments));
+            return Ok(plan.finish(folder, properties));
         }
-        let (header, unpacked, payload, resets) = match control {
-            1 | 2 => {
-                let mut size = [0u8; 2];
-                input.read_exact(&mut size)?;
-                let size = u64::from(u16::from_be_bytes(size)) + 1;
-                (3, size, size, control == 1)
-            }
-            0x80..=0xFF => {
-                let mut fields = [0u8; 4];
-                input.read_exact(&mut fields)?;
-                let unpacked = (u64::from(control & 0x1F) << 16)
-                    + u64::from(u16::from_be_bytes([fields[0], fields[1]]))
-                    + 1;
-                let payload = u64::from(u16::from_be_bytes([fields[2], fields[3]])) + 1;
-                let with_properties = (control >> 5) & 3 >= 2;
-                if with_properties {
-                    input.read_exact(&mut [0u8; 1])?;
-                }
-                (
-                    5 + u64::from(with_properties),
-                    unpacked,
-                    payload,
-                    control >= 0xE0,
-                )
-            }
-            _ => return Ok(None),
-        };
-        let current_is_small = segments
-            .last()
-            .is_some_and(|segment| segment.output < SEGMENT_MIN_OUTPUT);
-        if resets && !current_is_small {
-            segments.push(Segment {
-                pack_offset: packed,
-                pack_length: 0,
-                output: 0,
-            });
-        }
-        let Some(segment) = segments.last_mut() else {
+        let mut fields = [0u8; 4];
+        input.read_exact(&mut fields[..header_field_length(control)])?;
+        let Some(chunk) = chunk_header(control, fields) else {
             return Ok(None);
         };
-        segment.pack_length += header + payload;
-        segment.output += unpacked;
-        packed += header + payload;
-        output += unpacked;
-        if packed >= folder.pack_size || output > folder.size {
+        if chunk.header == 6 {
+            input.read_exact(&mut [0u8; 1])?;
+        }
+        if !plan.add_or_reject(&chunk, folder) {
             return Ok(None);
         }
-        input.seek_relative(payload as i64)?;
+        input.seek_relative(chunk.payload as i64)?;
     }
 }
 
@@ -1749,9 +1829,14 @@ mod tests {
     #[test]
     fn segments_merge_up_to_the_minimum_output() {
         let (file, folder) = uncompressed_lzma2(400, 65_536);
-        let segments = independent_lzma2_segments(&mut file.reopen().unwrap(), &folder, 18)
-            .unwrap()
-            .unwrap();
+        let segments = independent_lzma2_segments(
+            &mut file.reopen().unwrap(),
+            &folder,
+            18,
+            SEGMENT_MIN_OUTPUT,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(segments.len(), 4);
         assert!(
             segments[..3]
@@ -1764,9 +1849,14 @@ mod tests {
         );
         let (file, folder) = uncompressed_lzma2(1_000_000, 1);
         assert!(
-            independent_lzma2_segments(&mut file.reopen().unwrap(), &folder, 18)
-                .unwrap()
-                .is_none()
+            independent_lzma2_segments(
+                &mut file.reopen().unwrap(),
+                &folder,
+                18,
+                SEGMENT_MIN_OUTPUT
+            )
+            .unwrap()
+            .is_none()
         );
     }
 
@@ -1784,6 +1874,70 @@ mod tests {
     }
 
     #[test]
+    fn segment_plans_start_at_resets_and_cover_the_folder_for_every_short_stream() {
+        let kinds: Vec<Chunk> = [1u8, 2, 0x80, 0xA0, 0xC0, 0xE0]
+            .iter()
+            .flat_map(|&control| {
+                [0u8, 2].map(|size| chunk_header(control, [0, size, 0, size]).unwrap())
+            })
+            .collect();
+        let mut checked = 0u64;
+        for length in 1..=4usize {
+            for code in 0..kinds.len().pow(length as u32) {
+                let stream: Vec<&Chunk> = (0..length)
+                    .map(|position| &kinds[code / kinds.len().pow(position as u32) % kinds.len()])
+                    .collect();
+                let packed: u64 = stream
+                    .iter()
+                    .map(|chunk| chunk.header + chunk.payload)
+                    .sum();
+                let output: u64 = stream.iter().map(|chunk| chunk.unpacked).sum();
+                for min_output in [0, 1, 2, 3, 4, 6, 9] {
+                    for (size, pack_size) in [
+                        (output, packed + 1),
+                        (output, packed),
+                        (output + 1, packed + 1),
+                        (output.saturating_sub(1), packed + 1),
+                    ] {
+                        let folder = Folder {
+                            output_to_packed: Vec::new(),
+                            unsupported: None,
+                            size,
+                            crc: None,
+                            pack_offset: 0,
+                            pack_size,
+                        };
+                        let mut plan = SegmentPlan::new(min_output);
+                        let mut starts = Vec::new();
+                        let accepted = stream.iter().all(|chunk| {
+                            starts.push((plan.packed, chunk.resets_dictionary));
+                            plan.add_or_reject(chunk, &folder)
+                        });
+                        checked += 1;
+                        let Some(segments) = accepted.then(|| plan.finish(&folder, 18)).flatten()
+                        else {
+                            continue;
+                        };
+                        assert!(segments.len() >= 2);
+                        let mut end = 0;
+                        for (index, segment) in segments.iter().enumerate() {
+                            assert_eq!(segment.pack_offset, end, "{code} {min_output}");
+                            assert!(starts.contains(&(segment.pack_offset, true)));
+                            if index + 1 < segments.len() {
+                                assert!(segment.output >= min_output);
+                            }
+                            end += segment.pack_length;
+                        }
+                        assert!(end < folder.pack_size);
+                        assert_eq!(segments.iter().map(|s| s.output).sum::<u64>(), folder.size);
+                    }
+                }
+            }
+        }
+        assert!(checked > 500_000, "{checked}");
+    }
+
+    #[test]
     fn dictionaries_shrink_to_the_output() {
         let bounded = dictionary_capped_at_output(&Method::Lzma2, &[40], 100).unwrap();
         assert_eq!(lzma2_dictionary(bounded[0]), 4096);
@@ -1793,5 +1947,62 @@ mod tests {
         lzma.extend_from_slice(&u32::MAX.to_le_bytes());
         let bounded = dictionary_capped_at_output(&Method::Lzma, &lzma, 5).unwrap();
         assert_eq!(bounded[1..], 4096u32.to_le_bytes());
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn number_never_panics_and_fits_its_length() {
+        let data: [u8; 9] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= data.len());
+        let mut bytes = Bytes {
+            data: &data[..length],
+            at: 0,
+        };
+        if let Ok(value) = bytes.number() {
+            let extra = data[0].leading_ones() as usize;
+            assert_eq!(bytes.at, 1 + extra);
+            assert!(extra == 8 || value >> (7 * (extra + 1)) == 0);
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(11)]
+    fn header_readers_never_panic() {
+        let data: [u8; 5] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= data.len());
+        let count: usize = kani::any();
+        kani::assume(count <= 9);
+        let mut bytes = Bytes {
+            data: &data[..length],
+            at: 0,
+        };
+        let _ = match kani::any::<u8>() % 4 {
+            0 => bytes.count(kani::any::<u8>() as usize, "items").map(drop),
+            1 => bytes.size().map(drop),
+            2 => bytes.bits(count).map(drop),
+            _ => bytes.u32().map(drop),
+        };
+        assert!(bytes.at <= length);
+    }
+
+    #[kani::proof]
+    fn chunk_headers_stay_within_lzma2_limits() {
+        let control: u8 = kani::any();
+        if let Some(chunk) = chunk_header(control, kani::any()) {
+            assert!(matches!(chunk.header, 3 | 5 | 6));
+            assert!((1..=1 << 21).contains(&chunk.unpacked));
+            assert!((1..=1 << 16).contains(&chunk.payload));
+            assert_eq!(chunk.resets_dictionary, control == 1 || control >= 0xE0);
+            assert_eq!(chunk.header == 6, control >= 0xC0);
+        } else {
+            assert!(control == 0 || (3..0x80).contains(&control));
+        }
     }
 }

@@ -1436,3 +1436,31 @@ mod descriptor_scan_tests {
         }
     }
 }
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    const EXTRA: usize = 20;
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn time_fields_never_panic_on_any_extra_field() {
+        let extra: [u8; EXTRA] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= EXTRA);
+        let _ = exact_time(&extra[..length]);
+        let _ = ntfs_time(&extra[..length]);
+    }
+
+    #[kani::proof]
+    fn dos_time_arithmetic_never_overflows() {
+        let dos: u32 = kani::any();
+        let [year, month, day, hour, minute, second] = dos_fields(dos);
+        let utc = days_since_unix_epoch(year, month.clamp(1, 12), day.max(1)) * 86_400
+            + hour * 3_600
+            + minute * 60
+            + second;
+        let _ = reading_nearer_dos_time(kani::any(), utc);
+    }
+}
