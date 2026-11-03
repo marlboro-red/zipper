@@ -61,5 +61,6 @@ Use these skills from `.claude/skills/` for the judgment that checks cannot make
 | [`zipper-verify-tar-pool`](.claude/skills/zipper-verify-tar-pool/SKILL.md) | You change the tar writer pool, its budget or its queues in `src/native_tar.rs`. |
 | [`zipper-verify-zip-write-behind`](.claude/skills/zipper-verify-zip-write-behind/SKILL.md) | You change `write_behind` or its buffer sizes in `src/native_zip.rs`. |
 | [`zipper-verify-7z-workers`](.claude/skills/zipper-verify-7z-workers/SKILL.md) | You change the 7z folder workers, the decoder memory budget or the cancel checks in `src/native_7z.rs`. |
+| [`zipper-verify-overwrite`](.claude/skills/zipper-verify-overwrite/SKILL.md) | You change extraction into an existing folder in `src/staging.rs` or the publish path. |
 
 The `zipper-review` skill spawns the read-only [`zipper-adversary`](.claude/agents/zipper-adversary.md) agent.
