@@ -2,15 +2,6 @@
 use anyhow::{Context, Result, bail, ensure};
 use std::{fs::File, io::Read, path::Path, process::Command};
 
-const ANY_NATIVE_VERSION_PREFIX: &[u8; 6] = b"ZIPPER";
-
-pub fn is_native(path: &Path) -> Result<bool> {
-    let mut f = File::open(path)?;
-    let mut prefix = [0; 6];
-    let n = f.read(&mut prefix)?;
-    Ok(n == prefix.len() && &prefix == ANY_NATIVE_VERSION_PREFIX)
-}
-
 fn backend() -> Result<std::ffi::OsString> {
     if let Some(binary) = std::env::var_os("ZIPPER_7Z") {
         return Ok(binary);

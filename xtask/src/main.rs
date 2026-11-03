@@ -339,34 +339,27 @@ fn round_trip() -> Result<()> {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     };
 
+    write_zip(&tree, &dir.join("a.zip"))?;
+    let listing = succeed(&["list", "a.zip"])?;
+    ensure!(listing.contains("tree/many/f299.txt"), "list omits a file");
     for threads in ["1", "4"] {
-        let archive = format!("t{threads}.zipper");
-        let out = format!("native-t{threads}");
         let selected = format!("selected-t{threads}");
         succeed(&[
             "--threads",
             threads,
-            "create",
-            &archive,
-            "tree",
-            "--level",
-            "3",
+            "extract",
+            "a.zip",
+            "-o",
+            &selected,
+            "--path",
+            "tree/many",
         ])?;
-        succeed(&["test", &archive])?;
-        let listing = succeed(&["list", &archive])?;
-        ensure!(listing.contains("tree/many/f299.txt"), "list omits a file");
-        succeed(&["--threads", threads, "extract", &archive, "-o", &out])?;
-        same_tree(&tree, &dir.join(&out).join("tree"))?;
-        ensure!(top_level(&dir.join(&out))? == 1, "extra output beside tree");
-        succeed(&["extract", &archive, "-o", &selected, "--path", "tree/many"])?;
         same_tree(&tree.join("many"), &dir.join(&selected).join("tree/many"))?;
         ensure!(
             top_level(&dir.join(&selected).join("tree"))? == 1,
             "selected extraction wrote files outside tree/many"
         );
     }
-
-    write_zip(&tree, &dir.join("a.zip"))?;
     for engine in ["native", "native-fast"] {
         succeed(&["--zip-engine", engine, "test", "a.zip"])?;
         for threads in ["1", "4"] {
@@ -385,11 +378,11 @@ fn round_trip() -> Result<()> {
         }
     }
 
-    for (archive, engine) in [("t1.zipper", "native"), ("a.zip", "native")] {
+    for (archive, engine) in [("a.zip", "native"), ("a.zip", "native-fast")] {
         let bytes = fs::read(dir.join(archive))?;
-        let truncated = format!("truncated-{archive}");
+        let truncated = format!("truncated-{engine}-{archive}");
         fs::write(dir.join(&truncated), &bytes[..bytes.len() / 2])?;
-        let out = format!("truncated-out-{archive}");
+        let out = format!("truncated-out-{engine}-{archive}");
         let output = run(&["--zip-engine", engine, "extract", &truncated, "-o", &out])?;
         ensure!(!output.status.success(), "truncated {archive} extracted");
         ensure!(

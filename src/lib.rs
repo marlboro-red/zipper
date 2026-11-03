@@ -5,21 +5,14 @@ mod extract;
 pub mod native_7z;
 pub mod native_tar;
 pub mod native_zip;
-mod pipeline;
 mod progress;
 mod staging;
-mod v1;
-mod v2;
 mod zip_reader;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};
 pub use progress::{Cancelled, Control, Progress};
 pub use staging::Existing;
-use std::{
-    fs::File,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::{fs::File, io::Read, path::Path};
 
 fn number<const N: usize>(r: &mut impl Read) -> Result<[u8; N]> {
     let mut b = [0; N];
@@ -356,106 +349,6 @@ pub struct Entry {
     pub name: String,
     pub size: u64,
     pub directory: bool,
-}
-
-pub const MAGIC: &[u8; 8] = b"ZIPPER\0\x02";
-
-/// Native creation settings. Larger blocks can improve compression at the cost
-/// of memory and selective-extraction work. Defaults preserve the v2 layout.
-#[derive(Clone, Copy, Debug)]
-pub struct CreateOptions {
-    pub level: i32,
-    /// Power of two from 64 KiB through 16 MiB.
-    pub block_size: usize,
-}
-impl Default for CreateOptions {
-    fn default() -> Self {
-        Self {
-            level: 1,
-            block_size: 1024 * 1024,
-        }
-    }
-}
-
-pub fn create(output: &Path, inputs: &[PathBuf], level: i32) -> Result<()> {
-    create_with_options(
-        output,
-        inputs,
-        CreateOptions {
-            level,
-            ..CreateOptions::default()
-        },
-    )
-}
-pub fn create_with_options(
-    output: &Path,
-    inputs: &[PathBuf],
-    options: CreateOptions,
-) -> Result<()> {
-    v2::create(output, inputs, options)
-}
-fn version(path: &Path) -> Result<u8> {
-    let magic = number::<8>(&mut File::open(path)?)?;
-    ensure!(&magic[..7] == b"ZIPPER\0", "not a Zipper archive");
-    Ok(magic[7])
-}
-/// Validate all payloads, optionally extracting into a new directory.
-pub fn read_archive(archive: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
-    match version(archive)? {
-        1 => v1::read_archive(archive, destination, Existing::Refuse),
-        2 => v2::read_archive(archive, destination, &[]),
-        n => bail!("unsupported Zipper version: {n}"),
-    }
-}
-/// v2 listing checks the index only. Use read_archive to validate payloads.
-pub fn list_archive(archive: &Path) -> Result<Vec<Entry>> {
-    match version(archive)? {
-        1 => v1::read_archive(archive, None, Existing::Refuse),
-        2 => v2::list(archive),
-        n => bail!("unsupported Zipper version: {n}"),
-    }
-}
-/// Extract selected exact paths or directory subtrees from an indexed v2 archive.
-pub fn extract_selected(
-    archive: &Path,
-    destination: &Path,
-    paths: &[String],
-) -> Result<Vec<Entry>> {
-    extract(archive, destination, paths, None)
-}
-
-/// Extract all entries, or the selected paths of a v2 archive. `limit` caps the
-/// declared output bytes; without it a v2 archive must fit in free space.
-/// v1 archives have no size index and are not checked.
-pub fn extract(
-    archive: &Path,
-    destination: &Path,
-    paths: &[String],
-    limit: Option<u64>,
-) -> Result<Vec<Entry>> {
-    extract_with(archive, destination, paths, limit, Existing::Refuse)
-}
-
-/// [`extract`] that can also merge into an existing destination.
-pub fn extract_with(
-    archive: &Path,
-    destination: &Path,
-    paths: &[String],
-    limit: Option<u64>,
-    existing: Existing,
-) -> Result<Vec<Entry>> {
-    match version(archive)? {
-        1 if paths.is_empty() => {
-            ensure!(
-                limit.is_none(),
-                "--max-extracted-bytes requires a v2 archive; v1 has no size index"
-            );
-            v1::read_archive(archive, Some(destination), existing)
-        }
-        2 => v2::read_archive_limited(archive, Some(destination), paths, limit, existing),
-        1 => bail!("selective extraction requires a v2 archive"),
-        n => bail!("unsupported Zipper version: {n}"),
-    }
 }
 
 #[cfg(all(test, unix))]

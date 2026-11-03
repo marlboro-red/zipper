@@ -366,23 +366,3 @@ fn new_directories_get_archive_modes_and_existing_ones_keep_theirs() {
         common::make_tree_deletable(root.path());
     }
 }
-
-#[test]
-fn native_archives_overwrite_too() {
-    let root = tempfile::tempdir().unwrap();
-    let input = root.path().join("docs");
-    fs::create_dir(&input).unwrap();
-    fs::write(input.join("readme"), b"new readme").unwrap();
-    let archive = root.path().join("a.zipper");
-    zipper::create(&archive, std::slice::from_ref(&input), 1).unwrap();
-    let destination = existing_destination(root.path());
-    zipper::extract_with(&archive, &destination, &[], None, Existing::Overwrite).unwrap();
-    assert_eq!(
-        fs::read(destination.join("docs/readme")).unwrap(),
-        b"new readme"
-    );
-    assert_eq!(
-        fs::read(destination.join("docs/old/keep")).unwrap(),
-        b"unrelated"
-    );
-}

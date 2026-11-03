@@ -4,7 +4,10 @@ use std::path::PathBuf;
 use zipper::Reader;
 
 #[derive(Parser)]
-#[command(version, about = "Zipper — a parallel archive engine")]
+#[command(
+    version,
+    about = "Zipper — fast, safe extraction of ZIP, tar and 7z archives"
+)]
 struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers).
     #[arg(long, global = true)]
@@ -23,7 +26,7 @@ struct Cli {
 enum ZipEngine {
     /// Native for ZIP, tar, unrecognized files and 7z it decodes; 7-Zip for other recognized formats.
     Auto,
-    /// 7-Zip for every archive that is not .zipper.
+    /// 7-Zip for every archive.
     Backend,
     Native,
     /// Native ZIP with a shared entry-buffer budget and streaming fallback.
@@ -31,17 +34,6 @@ enum ZipEngine {
 }
 #[derive(Subcommand)]
 enum Command {
-    /// Create a native .zipper archive.
-    Create {
-        archive: PathBuf,
-        #[arg(required = true)]
-        inputs: Vec<PathBuf>,
-        #[arg(short, long, default_value_t = 1, allow_hyphen_values = true)]
-        level: i32,
-        /// Block size in KiB (power of two, 64–16384); larger uses more memory.
-        #[arg(long, default_value_t = 1024, value_parser = clap::value_parser!(u32).range(64..=16384))]
-        block_size_kib: u32,
-    },
     /// Extract into a new directory, or into an existing one with --overwrite.
     Extract {
         archive: PathBuf,
@@ -50,15 +42,15 @@ enum Command {
         /// Extract into an existing directory, replacing files of the same name.
         #[arg(long)]
         overwrite: bool,
-        /// Extract an exact archive path or folder subtree (.zipper v2, ZIP and 7z; repeatable).
+        /// Extract an exact archive path or folder subtree (ZIP and 7z; repeatable).
         #[arg(long = "path")]
         paths: Vec<String>,
         /// Refuse archives whose declared output exceeds this many bytes. By
-        /// default, ZIP (native engines) and v2 output must fit in free space.
+        /// default, ZIP, tar and 7z output read in process must fit in free space.
         #[arg(long)]
         max_extracted_bytes: Option<u64>,
     },
-    /// List entries (v2 validates the index; use test to verify payloads).
+    /// List entries (checks the index only; use test to verify payloads).
     List { archive: PathBuf },
     /// Verify archive integrity without extracting.
     Test { archive: PathBuf },
@@ -123,19 +115,6 @@ fn main() -> Result<()> {
                 report.skipped_entries
             );
         }
-        Command::Create {
-            archive,
-            inputs,
-            level,
-            block_size_kib,
-        } => zipper::create_with_options(
-            &archive,
-            &inputs,
-            zipper::CreateOptions {
-                level,
-                block_size: block_size_kib as usize * 1024,
-            },
-        )?,
         Command::Extract {
             archive,
             output,
@@ -173,7 +152,6 @@ fn main() -> Result<()> {
                 }
             };
             match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
-                Reader::Zipper => print(zipper::list_archive(&archive)?),
                 Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
                 Reader::SevenZip => print(zipper::native_7z::list(&archive)?),
                 Reader::Tar => print(zipper::native_tar::read_archive(
@@ -194,7 +172,6 @@ fn main() -> Result<()> {
             let report =
                 |entries: Vec<zipper::Entry>| println!("Verified {} entries", entries.len());
             match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
-                Reader::Zipper => report(zipper::read_archive(&archive, None)?),
                 Reader::Zip { fast } => report(zipper::native_zip::read_archive_with_options(
                     &archive,
                     None,

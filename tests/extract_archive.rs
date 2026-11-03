@@ -1,4 +1,4 @@
-//! `zipper::extract_archive` sends ZIP, tar and `.zipper` to their readers
+//! `zipper::extract_archive` sends ZIP, tar and 7z to their readers
 //! whatever the file is named, and passes `existing`, `paths` and `control`.
 use std::{fs, io::Write, path::Path, sync::atomic::AtomicBool};
 use zipper::{Cancelled, Control, Existing, ExtractOptions, Reader, extract_archive};
@@ -31,20 +31,12 @@ fn tar(path: &Path) {
     fs::write(path, header).unwrap();
 }
 
-fn native(path: &Path) {
-    let input = path.with_extension("input");
-    fs::create_dir_all(input.join("keep")).unwrap();
-    fs::write(input.join("keep/a"), "keep/a").unwrap();
-    zipper::create(path, &[input.join("keep")], 1).unwrap();
-}
-
 #[test]
 fn each_format_goes_to_its_reader_and_merges() {
     let root = tempfile::tempdir().unwrap();
     for (name, write, reader) in [
         ("a.zip", zip as fn(&Path), Reader::Zip { fast: false }),
         ("a.tar", tar, Reader::Tar),
-        ("a.zipper", native, Reader::Zipper),
     ] {
         let archive = root.path().join(name);
         write(&archive);
@@ -96,15 +88,15 @@ fn paths_reach_the_zip_reader_and_tar_refuses_them() {
     assert!(extract_archive(&tar_archive, &root.path().join("tar"), options).is_err());
 }
 
+fn rar(path: &Path) {
+    fs::write(path, b"Rar!\x1A\x07\x01\x00 never opened").unwrap();
+}
+
 #[test]
 fn a_set_cancel_flag_stops_every_reader() {
     let root = tempfile::tempdir().unwrap();
     let cancel = AtomicBool::new(true);
-    for (name, write) in [
-        ("a.zip", zip as fn(&Path)),
-        ("a.tar", tar),
-        ("a.zipper", native),
-    ] {
+    for (name, write) in [("a.zip", zip as fn(&Path)), ("a.tar", tar), ("a.rar", rar)] {
         let archive = root.path().join(name);
         write(&archive);
         let destination = root.path().join(format!("{name}.out"));

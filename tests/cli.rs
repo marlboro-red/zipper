@@ -1,7 +1,17 @@
-use std::{fs, process::Command};
+use std::{fs, io::Write, path::Path, process::Command};
+
+fn zip_of(path: &Path, entries: &[(&str, &[u8])]) -> anyhow::Result<()> {
+    let mut writer = zip::ZipWriter::new(fs::File::create(path)?);
+    for (name, data) in entries {
+        writer.start_file(*name, zip::write::SimpleFileOptions::default())?;
+        writer.write_all(data)?;
+    }
+    writer.finish()?;
+    Ok(())
+}
 
 #[test]
-fn native_cli_and_missing_backend() -> anyhow::Result<()> {
+fn cli_reads_zip_and_reports_a_missing_backend() -> anyhow::Result<()> {
     let t = tempfile::tempdir()?;
     fs::write(t.path().join("data"), b"zipper")?;
     let run = |args: &[&str]| {
@@ -11,13 +21,13 @@ fn native_cli_and_missing_backend() -> anyhow::Result<()> {
             .env("ZIPPER_7Z", t.path().join("missing-backend"))
             .output()
     };
-    assert!(run(&["create", "a.zipper", "data"])?.status.success());
-    assert!(run(&["test", "a.zipper"])?.status.success());
-    assert!(run(&["list", "a.zipper"])?.status.success());
-    assert!(run(&["extract", "a.zipper", "-o", "out"])?.status.success());
+    zip_of(&t.path().join("a.zip"), &[("data", b"zipper")])?;
+    assert!(run(&["test", "a.zip"])?.status.success());
+    assert!(run(&["list", "a.zip"])?.status.success());
+    assert!(run(&["extract", "a.zip", "-o", "out"])?.status.success());
     assert_eq!(fs::read(t.path().join("out/data"))?, b"zipper");
     assert!(
-        run(&["extract", "a.zipper", "-o", "selected", "--path", "data"])?
+        run(&["extract", "a.zip", "-o", "selected", "--path", "data"])?
             .status
             .success()
     );
@@ -49,7 +59,7 @@ fn compatibility_backend_failure_does_not_publish() -> anyhow::Result<()> {
 }
 
 #[test]
-fn max_extracted_bytes_caps_native_archives_before_writing() -> anyhow::Result<()> {
+fn max_extracted_bytes_caps_archives_before_writing() -> anyhow::Result<()> {
     let t = tempfile::tempdir()?;
     fs::create_dir(t.path().join("data"))?;
     fs::write(t.path().join("data/file"), vec![7u8; 4096])?;
@@ -60,10 +70,10 @@ fn max_extracted_bytes_caps_native_archives_before_writing() -> anyhow::Result<(
             .env("ZIPPER_7Z", t.path().join("missing-backend"))
             .output()
     };
-    assert!(run(&["create", "a.zipper", "data"])?.status.success());
+    zip_of(&t.path().join("a.zip"), &[("data/file", &[7u8; 4096])])?;
     let refused = run(&[
         "extract",
-        "a.zipper",
+        "a.zip",
         "-o",
         "small",
         "--max-extracted-bytes",
@@ -74,7 +84,7 @@ fn max_extracted_bytes_caps_native_archives_before_writing() -> anyhow::Result<(
     assert!(!t.path().join("small").exists());
     let selected = run(&[
         "extract",
-        "a.zipper",
+        "a.zip",
         "-o",
         "part",
         "--path",
@@ -86,7 +96,7 @@ fn max_extracted_bytes_caps_native_archives_before_writing() -> anyhow::Result<(
     assert!(
         run(&[
             "extract",
-            "a.zipper",
+            "a.zip",
             "-o",
             "fits",
             "--max-extracted-bytes",
@@ -119,7 +129,7 @@ fn max_extracted_bytes_caps_native_archives_before_writing() -> anyhow::Result<(
     ])?;
     assert!(
         String::from_utf8_lossy(&explicit.stderr)
-            .contains("--max-extracted-bytes needs a .zipper archive")
+            .contains("--max-extracted-bytes needs a ZIP, tar or 7z archive")
     );
     Ok(())
 }

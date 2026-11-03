@@ -2,7 +2,7 @@ use crate::{Control, Existing, compat, native_7z, native_tar, native_zip};
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
 
-/// The reader for archives that are not `.zipper`.
+/// The reader for an archive.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Engine {
@@ -11,7 +11,7 @@ pub enum Engine {
     /// Zipper recognizes.
     #[default]
     Auto,
-    /// 7-Zip for every archive that is not `.zipper`.
+    /// 7-Zip for every archive.
     Backend,
     /// Native for ZIP and tar, and native ZIP for unrecognized files.
     Native,
@@ -22,8 +22,6 @@ pub enum Engine {
 /// The reader an archive goes to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reader {
-    /// The `.zipper` reader for v1 and v2.
-    Zipper,
     /// The native ZIP reader, with the shared entry-buffer path when `fast`.
     Zip { fast: bool },
     /// The native reader for plain, gzip, zstd and xz tar.
@@ -44,7 +42,6 @@ fn starts_with_zip_signature(archive: &Path) -> Result<bool> {
 /// marks a recognized 7-Zip format as split.
 pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     Ok(match engine {
-        _ if compat::is_native(archive)? => Reader::Zipper,
         Engine::Backend => Reader::Backend { format: None },
         _ if starts_with_zip_signature(archive)? => Reader::Zip {
             fast: engine == Engine::NativeFast,
@@ -72,16 +69,16 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
 pub struct ExtractOptions<'a> {
     /// What to do when the destination exists.
     pub existing: Existing,
-    /// Exact entry paths or folder subtrees to extract, for `.zipper` v2, ZIP
-    /// and 7z. Empty extracts everything.
+    /// Exact entry paths or folder subtrees to extract, for ZIP and 7z. Empty
+    /// extracts everything.
     pub paths: &'a [String],
     /// Progress reports and cancellation. Every reader checks the cancel flag
     /// before it starts. Only ZIP, tar and 7z report progress and check it
     /// later.
     pub control: Control<'a>,
-    /// Cap on declared output bytes. Without it, `.zipper` v2, ZIP, tar and
-    /// 7z output must fit in free space. The 7-Zip backend and `.zipper` v1
-    /// refuse a cap and check no free space.
+    /// Cap on declared output bytes. Without it, ZIP, tar and 7z output must
+    /// fit in free space. The 7-Zip backend refuses a cap and checks no free
+    /// space.
     pub max_output_bytes: Option<u64>,
     /// Maximum ZIP workers, tar writer threads or 7z folders decoded at
     /// once, 1–64.
@@ -103,15 +100,6 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
     crate::progress::Tracker::new(options.control, None, None).check()?;
     let reader = choose_reader(options.engine, archive)?;
     match reader {
-        Reader::Zipper => {
-            crate::extract_with(
-                archive,
-                destination,
-                options.paths,
-                options.max_output_bytes,
-                options.existing,
-            )?;
-        }
         Reader::Zip { fast } => {
             native_zip::read_archive_with_options(
                 archive,
@@ -141,7 +129,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
             )?;
         }
         Reader::Tar | Reader::Backend { .. } if !options.paths.is_empty() => {
-            bail!("--path needs a .zipper, ZIP or 7z archive read in process")
+            bail!("--path needs a ZIP or 7z archive read in process")
         }
         Reader::Tar => {
             native_tar::read_archive(
@@ -158,7 +146,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
         Reader::Backend { format } => {
             ensure!(
                 options.max_output_bytes.is_none(),
-                "--max-extracted-bytes needs a .zipper archive or a ZIP or tar read in process"
+                "--max-extracted-bytes needs a ZIP, tar or 7z archive read in process"
             );
             compat::run(
                 "x",
