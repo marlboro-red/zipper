@@ -109,12 +109,24 @@ fn reader_accepts_cleanly(bytes: &[u8], read: Reader) -> bool {
             assert_eq!(left, ["out"], "extraction left {left:?}");
             let verified = verified.expect("extraction succeeded but verification failed");
             assert_eq!(entries, verified, "extraction and verification disagree");
-            let declared: u64 = entries.iter().map(|entry| entry.size).sum();
+            let windows_link = |name: &str| {
+                cfg!(windows)
+                    && fs::symlink_metadata(destination.join(name))
+                        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+            };
+            let declared: u64 = entries
+                .iter()
+                .filter(|entry| !windows_link(&entry.name))
+                .map(|entry| entry.size)
+                .sum();
             let written: u64 = walkdir::WalkDir::new(&destination)
                 .into_iter()
                 .map(|entry| entry.unwrap().metadata().unwrap())
-                // EXTERNAL(POSIX lstat): a link's size is its target's length.
-                .filter(|metadata| metadata.is_file() || metadata.file_type().is_symlink())
+                // EXTERNAL(POSIX lstat): a link's size is its target's length. A Windows
+                // link reports 0 and drops empty parts, so Windows counts no links.
+                .filter(|metadata| {
+                    metadata.is_file() || (cfg!(unix) && metadata.file_type().is_symlink())
+                })
                 .map(|metadata| metadata.len())
                 .sum();
             assert_eq!(
