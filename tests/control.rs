@@ -280,3 +280,48 @@ fn zip_symlinks_count_toward_the_byte_total() {
     assert_eq!(last.files_done, 2);
     assert_eq!(Some(last.bytes_done), last.bytes_total);
 }
+
+#[test]
+fn a_callback_that_runs_rayon_work_does_not_deadlock() {
+    use rayon::prelude::*;
+    for (format, write, extract) in FORMATS {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join(format!("a.{format}"));
+        if format == "zip" {
+            let mut writer = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
+            for index in 0..400 {
+                writer
+                    .start_file(
+                        format!("f{index}"),
+                        zip::write::SimpleFileOptions::default(),
+                    )
+                    .unwrap();
+                writer.write_all(&data(index % 7)).unwrap();
+            }
+            writer.finish().unwrap();
+        } else {
+            write(&archive);
+        }
+        let destination = root.path().join("out");
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let busy = |_: Progress| {
+                let _: u64 = (0..200_000u32)
+                    .into_par_iter()
+                    .with_max_len(1)
+                    .map(|value| u64::from(value).wrapping_mul(3))
+                    .sum();
+            };
+            let control = Control {
+                progress: Some(&busy),
+                cancel: None,
+            };
+            let _ =
+                done.send(extract(&archive, Some(&destination), Existing::Refuse, control).is_ok());
+        });
+        let succeeded = finished
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .unwrap_or_else(|_| panic!("{format}: extraction deadlocked in the callback"));
+        assert!(succeeded, "{format}");
+    }
+}

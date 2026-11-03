@@ -1272,6 +1272,7 @@ pub fn read_archive_with_options(
         &items,
         targets.into_inner().unwrap(),
     )?;
+    tracker.finish();
     tracker.check()?;
     if let Some(staging) = staging {
         let directories: Vec<crate::Directory> = items

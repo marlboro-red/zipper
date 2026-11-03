@@ -1029,6 +1029,7 @@ pub fn read_archive(
         let mut extraction =
             Extraction::new(None, budget, Tracker::new(options.control, None, None));
         parse(&mut extraction, &mut input)?;
+        extraction.tracker.finish();
         return Ok(extraction.entries);
     };
     let count = options.writers.unwrap_or(DEFAULT_WRITERS);
@@ -1076,6 +1077,7 @@ pub fn read_archive(
         parsed.unwrap_or_else(|panic| std::panic::resume_unwind(panic))?;
         ensure!(joined.iter().all(Result::is_ok), "a tar writer panicked");
         writers.check()?;
+        extraction.tracker.finish();
         extraction.tracker.check()?;
         publish(&extraction, &staging)?;
         Ok(extraction.entries)
