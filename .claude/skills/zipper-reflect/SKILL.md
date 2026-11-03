@@ -45,5 +45,6 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | Published numbers that their revision cannot reproduce | the `results` gate step rejects scoreboard JSON measured on a dirty tree |
 | A hand-edited results page | the `results` gate step renders `docs/results.md` from the JSON and compares |
 | A formal model that drifts from the code it describes | the `verify` gate step fingerprints the covered code in `verification/coverage.txt` |
+| A planted-break helper that hid the failure or never applied the edit, and a planted break left in the release binary that was then measured | `scripts/plant.py` counts only a stated verdict, restores the file and rebuilds the binary, with its cases in `scripts/test_plant.py` run by the `hooks` gate step |
 | A memory limit that missed an archive-controlled allocation: implied directories, link targets, queued writer chunks | one test per budget in `tests/hostile_tar.rs` and `src/native_tar.rs`, and the Budgets item in the `zipper-review` checklist |
 | Scoreboard runs measured while another program loaded the machine | `scripts/scoreboard.py run` refuses to start while another process uses 25% CPU or more, unless `--allow-busy`, and records the list |

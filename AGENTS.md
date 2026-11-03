@@ -29,6 +29,7 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 - After pushing, run `cargo xtask ci-wait`. It waits for the CI run on `HEAD` and prints each job's result.
 - Expect the gate to format, lint, test, and build a release binary. On macOS and Linux it also lints the Windows build, which needs `rustup target add x86_64-pc-windows-gnu` once. It also checks a byte-exact round trip of `.zipper` and ZIP extraction, selected-path extraction, and truncated input cleanup.
 - Use `scripts/compare_revisions.py` for direct byte-verified revision comparisons.
+- Prove a check can fail with `scripts/plant.py`. It restores the file and rebuilds the release binary, so a planted break never reaches a measurement.
 - Keep formal checks in step with their code. The gate's `verify` step fails when code listed in `verification/coverage.txt` changed since its check last passed. Follow the named `zipper-verify-*` skill, then run `cargo xtask verify-sync NAME`.
 - Copy every commit hash you cite from `git log --oneline`. The `commit-msg` hook and `cargo xtask lint-commits` in pre-push reject a hash that names no commit.
 - Delete only inside the session scratch directory or `target/`. The hook in `.claude/hooks/guard_destructive.py` blocks `rm -r` or `rm -f` anywhere else, an unguarded variable in an `rm` path, `git clean -f` and `git worktree remove --force`. Use a fresh `mktemp -d` folder per run and `${NAME:?}` in any path built from a variable.

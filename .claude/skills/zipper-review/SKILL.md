@@ -13,7 +13,7 @@ The author always finds a reason the code is safe. A reviewer who has not seen t
 2. Each finding comes back CONFIRMED with a crafted archive or a failing run, or PLAUSIBLE with the missing proof named.
 3. Fix every CONFIRMED finding in the same change, with a test that fails before the fix.
 4. Write the test before the fix, and run it to see it fail.
-5. When you plant a break to prove a check, confirm the edit landed (`git diff --stat`) and that the check printed a result. A planted edit that did not apply, or a loop that printed nothing, proves nothing.
+5. Plant breaks with `scripts/plant.py`, never by hand. It applies the edit only if it matches once. It counts a catch only when the output matches `--caught-when`, so a compile error or a timeout reads as missed. It always restores the file, and it rebuilds the release binary after a plant in `src/`.
 
 ## Checklist for a hostile archive
 

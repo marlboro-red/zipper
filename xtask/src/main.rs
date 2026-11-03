@@ -459,14 +459,16 @@ fn hook_tests() -> Result<()> {
     if cfg!(windows) {
         return Ok(());
     }
-    let status = Command::new(python()?)
-        .current_dir(root())
-        .arg(".claude/hooks/test_guard_destructive.py")
-        .status()?;
-    ensure!(
-        status.success(),
-        "test_guard_destructive.py exited with {status}"
-    );
+    for script in [
+        ".claude/hooks/test_guard_destructive.py",
+        "scripts/test_plant.py",
+    ] {
+        let status = Command::new(python()?)
+            .current_dir(root())
+            .arg(script)
+            .status()?;
+        ensure!(status.success(), "{script} exited with {status}");
+    }
     Ok(())
 }
 
