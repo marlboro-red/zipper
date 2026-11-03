@@ -68,6 +68,21 @@ target/release/zipper extract bundle.zip --output selected --include '*.txt' --e
 
 The 7-Zip backend refuses `--path`, `--include` and `--exclude`.
 
+## Extract without folders, or through pipes
+
+`--flat` puts every file in the output folder itself, without its folders, as `7z e` does. Files that share a name follow `--existing` in path order. The default refuses them, `overwrite` keeps the last, `skip` keeps the first, and the rename modes number the others `name_1.ext` and on. An archive with links is refused, because flattening breaks their targets:
+
+```sh
+target/release/zipper extract photos.zip --output all-photos --flat --existing rename-new
+```
+
+An archive named `-` is read from standard input. Zipper first copies it to a hidden file beside the output folder, because ZIP and 7z need to seek, and deletes that file afterwards. `--stdout` writes one selected file to standard output instead of a folder, and refuses a selection of any other number of files:
+
+```sh
+curl -sL https://example.com/release.zip | target/release/zipper extract - --output release
+target/release/zipper extract release.zip --stdout --path docs/LICENSE > LICENSE
+```
+
 ## Extract from Rust
 
 `zipper::extract_archive` reads any archive the CLI reads. It picks the reader from the archive's first bytes, as `zipper extract` does. `ExtractOptions` holds the same choices as the CLI flags, plus a progress callback and a cancel flag in `zipper::Control`:

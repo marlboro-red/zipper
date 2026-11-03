@@ -652,3 +652,41 @@ fn default_engine_reads_tar_family_in_process_and_never_hands_it_to_7zip() -> an
     assert!(fs::read_to_string(t.path().join("backend.log"))?.contains("-tgzip "));
     Ok(())
 }
+
+#[test]
+fn archives_come_from_standard_input_and_one_file_goes_to_standard_output() -> anyhow::Result<()> {
+    use std::io::Write as _;
+    let t = tempfile::tempdir()?;
+    zip_of(
+        &t.path().join("a.zip"),
+        &[("d/one", b"first"), ("two", b"second")],
+    )?;
+    let bytes = fs::read(t.path().join("a.zip"))?;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .current_dir(t.path())
+        .args(["extract", "-", "-o", "out"])
+        .stdin(std::process::Stdio::piped())
+        .spawn()?;
+    child.stdin.take().unwrap().write_all(&bytes)?;
+    assert!(child.wait()?.success());
+    assert_eq!(fs::read(t.path().join("out/d/one"))?, b"first");
+    let mut left: Vec<_> = fs::read_dir(t.path())?
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    left.sort();
+    assert_eq!(left, ["a.zip", "out"]);
+    let one = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .current_dir(t.path())
+        .args(["extract", "a.zip", "--stdout", "--path", "d/one"])
+        .output()?;
+    assert!(one.status.success());
+    assert_eq!(one.stdout, b"first");
+    let both = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .current_dir(t.path())
+        .args(["extract", "a.zip", "--stdout"])
+        .output()?;
+    assert!(!both.status.success());
+    assert!(String::from_utf8_lossy(&both.stderr).contains("exactly one file"));
+    assert!(both.stdout.is_empty());
+    Ok(())
+}

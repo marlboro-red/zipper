@@ -92,11 +92,93 @@ pub struct ExtractOptions<'a> {
     pub engine: Engine,
     /// Shared ZIP entry-buffer budget for `Engine::NativeFast`.
     pub zip_buffer_bytes: Option<usize>,
+    /// Extract every file into the destination itself, without its folders,
+    /// as `7z e` does. Files that share a name follow `existing` in path
+    /// order: `Refuse` fails, `Overwrite` keeps the last, `Skip` keeps the
+    /// first, and the rename modes number the others `name_1.ext` and on.
+    /// An archive with links is refused.
+    pub flat: bool,
+}
+
+fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Result<()> {
+    let mut by_name: std::collections::BTreeMap<std::ffi::OsString, Vec<std::path::PathBuf>> =
+        std::collections::BTreeMap::new();
+    for entry in walkdir::WalkDir::new(tree).min_depth(1).sort_by_file_name() {
+        let entry = entry?;
+        let relative = entry.path().strip_prefix(tree)?;
+        ensure!(
+            !entry.file_type().is_symlink(),
+            "--flat refuses archives with links, such as {}",
+            relative.display()
+        );
+        if entry.file_type().is_file() {
+            by_name
+                .entry(entry.file_name().to_owned())
+                .or_default()
+                .push(entry.path().to_owned());
+        }
+    }
+    let mut taken: std::collections::HashSet<std::ffi::OsString> =
+        by_name.keys().cloned().collect();
+    taken.extend(holder.file_name().map(ToOwned::to_owned));
+    for (name, paths) in &by_name {
+        ensure!(
+            Some(name.as_os_str()) != holder.file_name(),
+            "an archive file has the staging folder's name"
+        );
+        let (kept, others): (&std::path::Path, &[std::path::PathBuf]) = match existing {
+            _ if paths.len() == 1 => (&paths[0], &[]),
+            Existing::Refuse => bail!(
+                "several archive files are named {}; pass --existing to choose",
+                name.display()
+            ),
+            Existing::Overwrite => (paths.last().unwrap(), &[]),
+            Existing::Skip => (&paths[0], &[]),
+            Existing::RenameNew | Existing::RenameExisting => (&paths[0], &paths[1..]),
+        };
+        std::fs::rename(kept, into.join(name))?;
+        let path = std::path::Path::new(name);
+        let (stem, extension) = (path.file_stem().unwrap_or_default(), path.extension());
+        let mut number = 0;
+        for other in others {
+            let renamed = loop {
+                number += 1;
+                let mut candidate = stem.to_owned();
+                candidate.push(format!("_{number}"));
+                if let Some(extension) = extension {
+                    candidate.push(".");
+                    candidate.push(extension);
+                }
+                if taken.insert(candidate.clone()) {
+                    break candidate;
+                }
+            };
+            std::fs::rename(other, into.join(renamed))?;
+        }
+    }
+    Ok(())
 }
 
 /// Extract any archive Zipper reads into `destination`, choosing the reader
 /// as `zipper extract` does.
 pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
+    if options.flat {
+        let staging = crate::staging::stage(archive, destination, options.existing)?;
+        let tree = tempfile::tempdir_in(staging.path())?;
+        let nested = tree.path().join("archive");
+        extract_archive(
+            archive,
+            &nested,
+            ExtractOptions {
+                flat: false,
+                existing: Existing::Refuse,
+                ..options
+            },
+        )?;
+        flatten(&nested, staging.path(), tree.path(), options.existing)?;
+        drop(tree);
+        return staging.publish(&[]);
+    }
     ensure!(
         options
             .threads

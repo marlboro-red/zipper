@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 28 |
+| `native` | 31 |
 | `partial` | 4 |
 | `backend` | 68 |
-| `missing` | 10 |
+| `missing` | 7 |
 | `dropped` | 2 |
 
-48 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+45 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -138,7 +138,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | Row | Status | Note | Proof |
 | --- | --- | --- | --- |
 | `x` | `native` |  | `native_reader_matches_the_reference_readers` in `tests/tar_corpus.rs` |
-| `e` | `missing` |  | No proof yet. |
+| `e` | `native` | `--flat`. | `files_that_share_a_name_follow_the_existing_mode` in `tests/flat.rs` |
 | `-o` | `native` |  | `overwrite_into_a_missing_destination_creates_it` in `tests/overwrite.rs` |
 | `-aoa` | `native` | `--overwrite` replaces each file by rename. | `overwrite_replaces_files_and_keeps_the_rest` in `tests/overwrite.rs` |
 | `-aos` | `native` | `--existing skip`. | `skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair` in `tests/overwrite_exhaustive.rs` |
@@ -147,8 +147,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `-i` | `native` | `--include` and `--path`, for ZIP, tar and 7z. | `include_and_exclude_patterns_select_the_same_files_in_every_format` in `tests/selection.rs` |
 | `-x` | `native` | `--exclude`, for ZIP, tar and 7z. | `include_and_exclude_patterns_select_the_same_files_in_every_format` in `tests/selection.rs` |
 | `-p` | `missing` |  | No proof yet. |
-| `-si` | `missing` |  | No proof yet. |
-| `-so` | `missing` |  | No proof yet. |
+| `-si` | `native` | An archive named `-`. | `archives_come_from_standard_input_and_one_file_goes_to_standard_output` in `tests/cli.rs` |
+| `-so` | `native` | `--stdout`, for one selected file. | `archives_come_from_standard_input_and_one_file_goes_to_standard_output` in `tests/cli.rs` |
 | `-snl` | `native` | Links that stay inside the destination are created. Windows needs Developer Mode or administrator rights. | `symlinks_inside_the_destination_are_created_after_files` in `tests/hostile_zip.rs`, `symlinks_must_stay_inside_the_destination` in `tests/hostile_zip.rs` |
 | `-snh` | `partial` | Tar hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs` |
 | `-sni` | `missing` |  | No proof yet. |

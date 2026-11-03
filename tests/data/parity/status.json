@@ -312,7 +312,11 @@
       ]
     },
     "e": {
-      "status": "missing"
+      "status": "native",
+      "note": "`--flat`.",
+      "tests": [
+        "tests/flat.rs::files_that_share_a_name_follow_the_existing_mode"
+      ]
     },
     "-o": {
       "status": "native",
@@ -359,10 +363,18 @@
       "status": "missing"
     },
     "-si": {
-      "status": "missing"
+      "status": "native",
+      "note": "An archive named `-`.",
+      "tests": [
+        "tests/cli.rs::archives_come_from_standard_input_and_one_file_goes_to_standard_output"
+      ]
     },
     "-so": {
-      "status": "missing"
+      "status": "native",
+      "note": "`--stdout`, for one selected file.",
+      "tests": [
+        "tests/cli.rs::archives_come_from_standard_input_and_one_file_goes_to_standard_output"
+      ]
     },
     "-sni": {
       "status": "missing"

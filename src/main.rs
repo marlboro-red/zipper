@@ -60,9 +60,13 @@ impl From<ExistingArg> for zipper::Existing {
 enum Command {
     /// Extract into a new directory, or into an existing one with --overwrite.
     Extract {
+        /// The archive, or `-` to read it from standard input.
         archive: PathBuf,
-        #[arg(short, long)]
-        output: PathBuf,
+        #[arg(short, long, required_unless_present = "stdout")]
+        output: Option<PathBuf>,
+        /// Write the one selected file to standard output instead of a folder (7-Zip -so).
+        #[arg(long, conflicts_with_all = ["output", "flat", "overwrite", "existing"])]
+        stdout: bool,
         /// Extract into an existing directory, replacing files of the same name.
         #[arg(long, conflicts_with = "existing")]
         overwrite: bool,
@@ -80,6 +84,10 @@ enum Command {
         /// Leave out entries matching a wildcard pattern (repeatable).
         #[arg(long)]
         exclude: Vec<String>,
+        /// Extract every file into the output folder itself, without its
+        /// folders (7-Zip e). Files that share a name follow --existing.
+        #[arg(long)]
+        flat: bool,
         /// Refuse archives whose declared output exceeds this many bytes. By
         /// default, ZIP, tar and 7z output read in process must fit in free space.
         #[arg(long)]
@@ -153,13 +161,35 @@ fn main() -> Result<()> {
         Command::Extract {
             archive,
             output,
+            stdout,
             paths,
             include,
             exclude,
+            flat,
             overwrite,
             existing,
             max_extracted_bytes,
         } => {
+            let to_stdout = stdout.then(tempfile::tempdir).transpose()?;
+            let output = match (&to_stdout, output) {
+                (Some(work), _) => work.path().join("out"),
+                (None, output) => output.expect("clap requires --output without --stdout"),
+            };
+            let spooled = if archive.as_os_str() == "-" {
+                let folder = output
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty());
+                let mut spool = tempfile::Builder::new()
+                    .prefix(".zipper-stdin-")
+                    .tempfile_in(folder.unwrap_or(std::path::Path::new(".")))?;
+                std::io::copy(&mut std::io::stdin().lock(), &mut spool)?;
+                Some(spool)
+            } else {
+                None
+            };
+            let archive = spooled
+                .as_ref()
+                .map_or(archive, |spool| spool.path().to_owned());
             zipper::extract_archive(
                 &archive,
                 &output,
@@ -171,6 +201,7 @@ fn main() -> Result<()> {
                     paths: &paths,
                     include: &include,
                     exclude: &exclude,
+                    flat: flat || stdout,
                     max_output_bytes: max_extracted_bytes,
                     threads: cli.threads,
                     engine: cli.zip_engine.into(),
@@ -178,6 +209,21 @@ fn main() -> Result<()> {
                     ..Default::default()
                 },
             )?;
+            if to_stdout.is_some() {
+                let files: Vec<PathBuf> = std::fs::read_dir(&output)?
+                    .map(|entry| entry.map(|entry| entry.path()))
+                    .collect::<std::io::Result<_>>()?;
+                let [file] = &files[..] else {
+                    anyhow::bail!(
+                        "--stdout needs a selection of exactly one file; it matched {}",
+                        files.len()
+                    );
+                };
+                std::io::copy(
+                    &mut std::fs::File::open(file)?,
+                    &mut std::io::stdout().lock(),
+                )?;
+            }
         }
         Command::List { archive } => {
             let print = |entries: Vec<zipper::Entry>| {
