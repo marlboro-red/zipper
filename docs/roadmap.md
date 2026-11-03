@@ -2,7 +2,9 @@
 
 The first phase ended with M9. Zipper's in-process readers replaced 7-Zip as the default for ZIP, tar and 7z. They are correct on hostile input, restore the metadata users expect, and extract faster with bounded memory. Speed work starts on macOS. Every correctness check runs on macOS, Linux and Windows in CI.
 
-The second phase, M10 to M20, ends when Zipper extracts everything 7-Zip extracts without 7-Zip installed. Each new reader keeps the first phase's contract. It refuses unsafe paths and links, publishes nothing on failure, bounds its memory and passes the `zipper-review` skill. Byte-level parsers get Kani proofs where Kani finishes. A faster reader never drops one of these checks.
+The second phase, M10 to M20, ends when Zipper extracts everything 7-Zip extracts without 7-Zip installed. Each new reader keeps the first phase's contract. It refuses unsafe paths and links, publishes nothing on failure, bounds its memory and passes the `zipper-review` skill. A faster reader never drops one of these checks.
+
+Every milestone from M10 to M20 has one more exit check, beside its own. New parsing code has a Kani proof, or an exhaustive test where Kani does not finish. New concurrency has a TLA+ model with its own `zipper-verify-*` skill. Each proof, test and model is listed in `verification/coverage.txt`, so the `verify` gate step catches drift. A planted break, made with `scripts/plant.py`, shows each one can fail.
 
 Each milestone closes only when its exit checks pass. A check is a gate step, a test or an experiment record, never an opinion. [The design page](design.md#implementation-proceeds-through-five-ordered-gates) describes how extraction experiments proceed.
 
@@ -291,7 +293,8 @@ Exit checks:
 
 1. A corpus of encrypted archives from 7-Zip, WinZip and Info-ZIP extracts the same trees as 7-Zip.
 2. A test for each format shows that a wrong password changes nothing in the destination.
-3. The adversarial review covers the key derivation and the authentication checks.
+3. An exhaustive test fails decryption at every point it can fail, for each format, and finds the destination unchanged and no staging folder left each time.
+4. The adversarial review covers the key derivation and the authentication checks.
 
 ## M15. Split, spanned and self-extracting archives
 
