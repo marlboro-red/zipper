@@ -1,6 +1,8 @@
 # Roadmap
 
-This phase ends when Zipper's in-process reader replaces 7-Zip as the default ZIP engine. It must be correct on hostile input, restore the metadata users expect, and extract faster with bounded memory. Speed work starts on macOS. Every correctness check runs on macOS, Linux and Windows in CI.
+The first phase ended with M9. Zipper's in-process readers replaced 7-Zip as the default for ZIP, tar and 7z. They are correct on hostile input, restore the metadata users expect, and extract faster with bounded memory. Speed work starts on macOS. Every correctness check runs on macOS, Linux and Windows in CI.
+
+The second phase, M10 to M20, ends when Zipper extracts everything 7-Zip extracts without 7-Zip installed. Each new reader keeps the first phase's contract. It refuses unsafe paths and links, publishes nothing on failure, bounds its memory and passes the `zipper-review` skill. Byte-level parsers get Kani proofs where Kani finishes. A faster reader never drops one of these checks.
 
 Each milestone closes only when its exit checks pass. A check is a gate step, a test or an experiment record, never an opinion. [The design page](design.md#implementation-proceeds-through-five-ordered-gates) describes how extraction experiments proceed.
 
@@ -18,6 +20,17 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M7. Native tar family](#m7-native-tar-family) | Done | M5 |
 | [M8. Extraction API for applications](#m8-extraction-api-for-applications) | Done | M7 |
 | [M9. Native 7z reader](#m9-native-7z-reader) | Done | M8 |
+| [M10. Parity matrix](#m10-parity-matrix) | Planned | M9 |
+| [M11. Windows metadata parity](#m11-windows-metadata-parity) | Planned | M10 |
+| [M12. Extraction controls](#m12-extraction-controls) | Planned | M10 |
+| [M13. Remaining codecs](#m13-remaining-codecs) | Planned | M10 |
+| [M14. Encrypted archives](#m14-encrypted-archives) | Planned | M13 |
+| [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | Planned | M13 |
+| [M16. Package formats](#m16-package-formats) | Planned | M13 |
+| [M17. Disc and disk images](#m17-disc-and-disk-images) | Planned | M16 |
+| [M18. RAR](#m18-rar) | Planned | M14, M15 |
+| [M19. Legacy formats](#m19-legacy-formats) | Planned | M13 |
+| [M20. Zipper without 7-Zip](#m20-zipper-without-7-zip) | Planned | M11 to M19 |
 
 M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment. M8 closed on 3 November 2026. Applications can call `zipper::extract_archive` to extract into an existing folder, select ZIP paths, follow progress and cancel. Four adversarial reviews found five issues, each fixed with a test that failed first. The 7-Zip backend reports no progress yet. M9 closed the same day. The default engine reads 7z in process with all of these options, and sends BCJ2, PPMd, BZip2, encrypted and split 7z archives to 7-Zip. An early timing on one Mac shows the reader faster than 7-Zip on non-solid archives and 1.85× slower on solid Silesia, where 7-Zip decodes the two LZMA2 blocks at once. Splitting LZMA2 at its dictionary resets is the next experiment.
 
@@ -192,6 +205,184 @@ Exit checks:
 1. The default engine extracts every corpus 7z archive in process on all three operating systems, with the same tree as 7-Zip and bsdtar.
 2. Every hostile 7z layout has a test that failed before its fix, and the adversarial review finds no escape.
 3. `docs/reference/` documents the 7z reader.
+
+## M10. Parity matrix
+
+One generated table shows what Zipper extracts natively, what it hands to 7-Zip and what it cannot extract. Each of M11 to M20 moves rows in it.
+
+Scope:
+
+- A script lists every format, method and filter that `7z i` reports, and every `7z x` switch that changes extraction.
+- Each row records native, backend or missing, with the test or corpus archive that proves it.
+- A corpus archive for each format, written by 7-Zip or the format's own tool, with its tree as 7-Zip extracts it.
+- The table lives in `docs/reference/` and is generated, like `docs/results.md`.
+
+Exit checks:
+
+1. A gate step regenerates the table and fails when it differs from the committed copy.
+2. Every native row names a passing test, and every backend row extracts its corpus archive through 7-Zip in CI.
+
+## M11. Windows metadata parity
+
+Files extracted on Windows carry the same safety marks and attributes as with 7-Zip.
+
+Scope:
+
+- Mark of the Web. When the archive has a `Zone.Identifier` stream, every extracted file gets one, as 7-Zip's `-snz` does. This comes first, because without it Windows stops warning about downloaded files once they leave the archive.
+- The read-only, hidden, system and archive attributes from ZIP, 7z and tar entries made on Windows.
+- Symlinks on Windows. Zipper creates links that stay inside the destination when the process may create them, and refuses the archive otherwise, with a clear error. Junctions are never created.
+- NTFS alternate data streams stored by 7-Zip's `-sns`, behind an option, with names checked like paths.
+
+Exit checks:
+
+1. A Windows CI test downloads a file through a path that sets `Zone.Identifier`, extracts it, and finds the mark on every output file.
+2. A Windows corpus round-trips attributes and links, and its output matches 7-Zip's.
+3. The adversarial review finds no stream name or link that writes outside the destination.
+
+## M12. Extraction controls
+
+The command line and the library offer the extraction choices 7-Zip offers.
+
+Scope:
+
+- Overwrite modes that skip existing files, rename new files or rename existing files, beside `Refuse` and `Overwrite`. They follow 7-Zip's `-aos`, `-aou` and `-aot`.
+- Include and exclude patterns with wildcards, like 7-Zip's `-i` and `-x`, for every format. Tar selects entries while streaming.
+- Extraction without folders, like `7z e`. Two archive files with one name follow the overwrite mode.
+- Reading the archive from standard input and writing one file to standard output, like `-si` and `-so`.
+- An option that keeps the files that verified from a damaged archive. **Decision before work starts:** it ends the rule that a damaged archive publishes nothing, so it stays off by default and names each file it left out.
+
+Exit checks:
+
+1. The exhaustive overwrite check covers every overwrite mode.
+2. Each control has a test on every native reader, and its output matches 7-Zip's on the M10 corpus.
+3. `docs/usage.md` documents each control.
+
+## M13. Remaining codecs
+
+Every method 7-Zip decodes inside ZIP, 7z and tar decodes in process.
+
+Scope:
+
+- ZIP methods Deflate64, BZip2, LZMA, Zstandard, xz and PPMd.
+- 7z methods BZip2, PPMd and BCJ2, which the default engine now sends to 7-Zip.
+- Tar inside bzip2, lzip, LZ4 and the old `compress` format (`.Z`).
+- A single compressed file outside tar, such as `.gz`, `.bz2`, `.xz`, `.zst` or `.lzma`, which extracts to one file named from the archive.
+- Each decoder stops exactly at its declared size and checks the CRC of every byte. A Rust crate is used only after the `zipper-review` skill checks it on hostile input.
+
+Exit checks:
+
+1. Every method row in the M10 matrix for ZIP, 7z and tar reads native.
+2. Each codec has hostile tests for truncation, a stream longer than declared and a wrong CRC.
+3. The scoreboard gains a row per new codec, compared with 7-Zip at one thread.
+
+## M14. Encrypted archives
+
+Zipper extracts encrypted archives when given the password, and never writes a byte decrypted with a wrong one.
+
+Scope:
+
+- A password option on the command line, a prompt when no password is given, and a password field in the library options.
+- ZipCrypto and WinZip AES in ZIP. ZipCrypto is read only for compatibility, and the docs say it is weak.
+- 7z AES-256, including archives whose header is encrypted.
+- A wrong password fails before publish, from the password check or the CRC, and the error says the password is wrong.
+- The password stays out of errors, logs and progress reports, and its memory is cleared after use.
+
+Exit checks:
+
+1. A corpus of encrypted archives from 7-Zip, WinZip and Info-ZIP extracts the same trees as 7-Zip.
+2. A test for each format shows that a wrong password changes nothing in the destination.
+3. The adversarial review covers the key derivation and the authentication checks.
+
+## M15. Split, spanned and self-extracting archives
+
+Archives split into volumes, or wrapped in an executable, extract in process.
+
+Scope:
+
+- Raw split volumes (`.001`, `.002` and on) for any format the readers support.
+- 7z volumes, and ZIP split and spanned archives (`.z01` with `.zip`).
+- Self-extracting ZIP and 7z executables, read from the archive that follows the executable. The ZIP reader refuses bytes before the first record today. It keeps refusing them when they are not a known executable stub.
+- A missing or truncated volume fails before publish and names the volume.
+
+Exit checks:
+
+1. A corpus of split and self-extracting archives from 7-Zip, WinZip and Info-ZIP extracts the same trees as 7-Zip.
+2. Hostile tests cover volumes that overlap, repeat or come in the wrong order.
+
+## M16. Package formats
+
+Software packages extract in process on every operating system.
+
+Scope:
+
+- cpio in its binary, odc and newc forms.
+- `ar`, Debian `.deb` and RPM, with their compressed payloads.
+- Windows CAB with MSZIP, LZX and Quantum, and MSI through its compound file.
+- `xar` and macOS `.pkg`.
+
+Exit checks:
+
+1. The M10 rows for these formats read native, with corpus archives from each format's own tools.
+2. Each format has hostile tests for traversal, links, duplicate names and truncation.
+
+## M17. Disc and disk images
+
+Disc images and Windows images extract in process.
+
+Scope:
+
+- ISO 9660 with Joliet and Rock Ridge, and UDF, choosing the same tree 7-Zip chooses.
+- WIM with XPRESS, LZX and LZMS.
+- VHD and VHDX disks holding FAT or NTFS.
+- DMG with its UDIF compression. **Decision before work starts:** whether to read the HFS+ and APFS file systems inside, which is the largest single item in this roadmap, or to leave them to 7-Zip.
+
+Exit checks:
+
+1. The M10 rows for these formats read native or are recorded as decided against, with the reason.
+2. Each image reader bounds memory by the image's directory size, not its data size.
+
+## M18. RAR
+
+Zipper extracts RAR 4 and RAR 5 archives, including encrypted and multi-volume ones.
+
+Scope:
+
+- **Decision before work starts:** how to decode RAR. RARLAB documents the RAR 5 container, but its `unrar` source licence forbids using it to rebuild the RAR compressor. A decoder written from the format notes, or a licensed library, are the options.
+- RAR 5 and RAR 4 containers, solid archives, and the RAR filters.
+- RAR AES encryption and RAR volumes, with the M14 and M15 contracts.
+
+Exit checks:
+
+1. A corpus written by WinRAR extracts the same trees as 7-Zip and `unrar`.
+2. Hostile tests and the adversarial review cover the container and each filter.
+
+## M19. Legacy formats
+
+The remaining formats 7-Zip reads extract in process, or are recorded as dropped.
+
+Scope:
+
+- ARJ, LZH, CHM, NSIS installers and the other rows M10 still marks as backend.
+- Usage data decides the order. A format nobody reports using can be dropped instead, with its row recorded in the M10 matrix.
+
+Exit checks:
+
+1. No row in the M10 matrix reads backend.
+
+## M20. Zipper without 7-Zip
+
+The default build extracts every format in the M10 matrix with no 7-Zip installed.
+
+Scope:
+
+- The 7-Zip backend becomes an optional build feature, then is removed when no row needs it.
+- The Windows package ships without 7-Zip.
+- `docs/usage.md`, the reader references and the Windows notes describe the result.
+
+Exit checks:
+
+1. CI runs the full M10 corpus on all three operating systems on machines with no 7-Zip installed.
+2. The scoreboard compares every format with 7-Zip, with CPU time and memory.
 
 ## Close a milestone
 
