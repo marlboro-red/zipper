@@ -1,6 +1,7 @@
 pub mod compat;
 pub mod counters;
 pub mod duplicates;
+mod extract;
 pub mod native_tar;
 pub mod native_zip;
 mod pipeline;
@@ -10,6 +11,7 @@ mod v1;
 mod v2;
 mod zip_reader;
 use anyhow::{Context, Result, bail, ensure};
+pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};
 pub use progress::{Cancelled, Control, Progress};
 pub use staging::Existing;
 use std::{

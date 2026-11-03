@@ -83,23 +83,25 @@ A folder selects everything under it, even when the archive has no entry for the
 
 For `.zipper` archives, `extract --path` decodes only the blocks that intersect the selection. For ZIP it decodes only the selected entries. Both validate what they decode, not unrelated payloads. Tar archives refuse `--path`, because a tar stream has no index.
 
-## Follow and cancel extraction from Rust
+## Extract from Rust
 
-An application can pass a progress callback and a cancel flag in `zipper::Control`. ZIP takes them in `native_zip::ReadOptions` and tar in `native_tar::ReadOptions`:
+`zipper::extract_archive` reads any archive the CLI reads. It picks the reader from the archive's first bytes, as `zipper extract` does. `ExtractOptions` holds the same choices as the CLI flags, plus a progress callback and a cancel flag in `zipper::Control`:
 
 ```rust
 use std::sync::atomic::AtomicBool;
-use zipper::{Cancelled, Control, Existing, Progress, native_zip};
+use zipper::{Cancelled, Control, Existing, ExtractOptions, Progress, extract_archive};
 
 let cancel = AtomicBool::new(false);
 let show = |progress: Progress| {
     println!("{} of {:?} bytes", progress.bytes_done, progress.bytes_total);
 };
-let result = native_zip::read_archive_with_options(
+let paths = ["assets".to_string()];
+let result = extract_archive(
     "update.zip".as_ref(),
-    Some("installed".as_ref()),
-    native_zip::ReadOptions {
+    "installed".as_ref(),
+    ExtractOptions {
         existing: Existing::Overwrite,
+        paths: &paths,
         control: Control { progress: Some(&show), cancel: Some(&cancel) },
         ..Default::default()
     },
@@ -109,7 +111,9 @@ if let Err(error) = &result && error.is::<Cancelled>() {
 }
 ```
 
-The callback runs on worker threads, one call at a time, after each file and each decoded chunk. Its counts only grow, and the bytes are decoded file bytes. If the callback panics, the panic reaches your code and nothing is published. ZIP reports both totals up front. Tar reports `None` for them, because a tar stream has no index. Another thread stops the extraction by storing `true` in the flag. The extraction then returns `Cancelled` and changes nothing in the destination. Once Zipper starts moving files into the destination, it ignores the flag. `.zipper` archives and the 7-Zip backend do not take `Control` yet.
+The callback runs one call at a time, after each file and each decoded chunk. Its counts only grow, and the bytes are decoded file bytes. If the callback panics, the panic reaches your code and nothing is published. ZIP reports both totals up front. Tar reports `None` for them, because a tar stream has no index. Another thread stops the extraction by storing `true` in the flag. The extraction then returns `Cancelled` and changes nothing in the destination. Once Zipper starts moving files into the destination, it ignores the flag. `.zipper` archives and the 7-Zip backend report no progress and check the flag only before they start.
+
+`native_zip::read_archive_with_options` and `native_tar::read_archive` take the same options when you already know the format.
 
 ## Find duplicate files
 

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+use zipper::Reader;
 
 #[derive(Parser)]
 #[command(version, about = "Zipper — a parallel archive engine")]
@@ -20,7 +21,7 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Native for ZIP and tar, with no fallback; 7-Zip for other formats.
+    /// Native for ZIP, tar and unrecognized files, with no fallback; 7-Zip for other recognized formats.
     Auto,
     /// 7-Zip for every archive that is not .zipper.
     Backend,
@@ -70,34 +71,15 @@ enum Command {
         summary: bool,
     },
 }
-fn starts_with_zip_signature(archive: &std::path::Path) -> Result<bool> {
-    let mut signature = [0; 4];
-    let read = std::io::Read::read(&mut std::fs::File::open(archive)?, &mut signature)?;
-    Ok(read == 4 && matches!(&signature, b"PK\x03\x04" | b"PK\x05\x06"))
-}
-
-enum Reader {
-    Native { fast: bool },
-    Tar,
-    Backend { format: Option<String> },
-}
-
-fn choose_reader(engine: ZipEngine, archive: &std::path::Path) -> Result<Reader> {
-    Ok(match engine {
-        ZipEngine::Backend => Reader::Backend { format: None },
-        _ if starts_with_zip_signature(archive)? => Reader::Native {
-            fast: engine == ZipEngine::NativeFast,
-        },
-        _ if zipper::native_tar::sniff(archive)?.is_some() => Reader::Tar,
-        ZipEngine::Native => Reader::Native { fast: false },
-        ZipEngine::NativeFast => Reader::Native { fast: true },
-        ZipEngine::Auto => match zipper::compat::pinned_format(archive)? {
-            Some(format) => Reader::Backend {
-                format: Some(format),
-            },
-            None => Reader::Native { fast: false },
-        },
-    })
+impl From<ZipEngine> for zipper::Engine {
+    fn from(engine: ZipEngine) -> Self {
+        match engine {
+            ZipEngine::Auto => zipper::Engine::Auto,
+            ZipEngine::Backend => zipper::Engine::Backend,
+            ZipEngine::Native => zipper::Engine::Native,
+            ZipEngine::NativeFast => zipper::Engine::NativeFast,
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -161,60 +143,23 @@ fn main() -> Result<()> {
             overwrite,
             max_extracted_bytes,
         } => {
-            let existing = if overwrite {
-                zipper::Existing::Overwrite
-            } else {
-                zipper::Existing::Refuse
-            };
-            if zipper::compat::is_native(&archive)? {
-                zipper::extract_with(&archive, &output, &paths, max_extracted_bytes, existing)?;
-            } else {
-                match choose_reader(cli.zip_engine, &archive)? {
-                    Reader::Native { fast } => {
-                        zipper::native_zip::read_archive_with_options(
-                            &archive,
-                            Some(&output),
-                            zipper::native_zip::ReadOptions {
-                                fast,
-                                threads: cli.threads,
-                                buffer_bytes,
-                                max_output_bytes: max_extracted_bytes,
-                                existing,
-                                paths: &paths,
-                                ..Default::default()
-                            },
-                        )?;
-                    }
-                    Reader::Tar | Reader::Backend { .. } if !paths.is_empty() => {
-                        anyhow::bail!("--path needs a .zipper or ZIP archive")
-                    }
-                    Reader::Tar => {
-                        zipper::native_tar::read_archive(
-                            &archive,
-                            Some(&output),
-                            zipper::native_tar::ReadOptions {
-                                max_output_bytes: max_extracted_bytes,
-                                writers: cli.threads,
-                                existing,
-                                ..Default::default()
-                            },
-                        )?;
-                    }
-                    Reader::Backend { format } => {
-                        anyhow::ensure!(
-                            max_extracted_bytes.is_none(),
-                            "--max-extracted-bytes needs a .zipper archive or a ZIP or tar read in process"
-                        );
-                        zipper::compat::run(
-                            "x",
-                            &archive,
-                            Some(&output),
-                            format.as_deref(),
-                            existing,
-                        )?;
-                    }
-                }
-            }
+            zipper::extract_archive(
+                &archive,
+                &output,
+                zipper::ExtractOptions {
+                    existing: if overwrite {
+                        zipper::Existing::Overwrite
+                    } else {
+                        zipper::Existing::Refuse
+                    },
+                    paths: &paths,
+                    max_output_bytes: max_extracted_bytes,
+                    threads: cli.threads,
+                    engine: cli.zip_engine.into(),
+                    zip_buffer_bytes: buffer_bytes,
+                    ..Default::default()
+                },
+            )?;
         }
         Command::List { archive } => {
             let print = |entries: Vec<zipper::Entry>| {
@@ -227,59 +172,51 @@ fn main() -> Result<()> {
                     );
                 }
             };
-            if zipper::compat::is_native(&archive)? {
-                print(zipper::list_archive(&archive)?);
-            } else {
-                match choose_reader(cli.zip_engine, &archive)? {
-                    Reader::Native { .. } => print(zipper::native_zip::list(&archive)?),
-                    Reader::Tar => print(zipper::native_tar::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_tar::ReadOptions::default(),
-                    )?),
-                    Reader::Backend { format } => zipper::compat::run(
-                        "l",
-                        &archive,
-                        None,
-                        format.as_deref(),
-                        zipper::Existing::Refuse,
-                    )?,
-                }
+            match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
+                Reader::Zipper => print(zipper::list_archive(&archive)?),
+                Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
+                Reader::Tar => print(zipper::native_tar::read_archive(
+                    &archive,
+                    None,
+                    zipper::native_tar::ReadOptions::default(),
+                )?),
+                Reader::Backend { format } => zipper::compat::run(
+                    "l",
+                    &archive,
+                    None,
+                    format.as_deref(),
+                    zipper::Existing::Refuse,
+                )?,
             }
         }
         Command::Test { archive } => {
             let report =
                 |entries: Vec<zipper::Entry>| println!("Verified {} entries", entries.len());
-            if zipper::compat::is_native(&archive)? {
-                report(zipper::read_archive(&archive, None)?);
-            } else {
-                match choose_reader(cli.zip_engine, &archive)? {
-                    Reader::Native { fast } => {
-                        report(zipper::native_zip::read_archive_with_options(
-                            &archive,
-                            None,
-                            zipper::native_zip::ReadOptions {
-                                fast,
-                                threads: cli.threads,
-                                buffer_bytes,
-                                max_output_bytes: None,
-                                ..Default::default()
-                            },
-                        )?)
-                    }
-                    Reader::Tar => report(zipper::native_tar::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_tar::ReadOptions::default(),
-                    )?),
-                    Reader::Backend { format } => zipper::compat::run(
-                        "t",
-                        &archive,
-                        None,
-                        format.as_deref(),
-                        zipper::Existing::Refuse,
-                    )?,
-                }
+            match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
+                Reader::Zipper => report(zipper::read_archive(&archive, None)?),
+                Reader::Zip { fast } => report(zipper::native_zip::read_archive_with_options(
+                    &archive,
+                    None,
+                    zipper::native_zip::ReadOptions {
+                        fast,
+                        threads: cli.threads,
+                        buffer_bytes,
+                        max_output_bytes: None,
+                        ..Default::default()
+                    },
+                )?),
+                Reader::Tar => report(zipper::native_tar::read_archive(
+                    &archive,
+                    None,
+                    zipper::native_tar::ReadOptions::default(),
+                )?),
+                Reader::Backend { format } => zipper::compat::run(
+                    "t",
+                    &archive,
+                    None,
+                    format.as_deref(),
+                    zipper::Existing::Refuse,
+                )?,
             }
         }
     }
