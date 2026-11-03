@@ -1200,7 +1200,7 @@ pub fn read_archive_with_options(
     };
     let staging = match destination {
         Some(destination) => {
-            let staging = crate::staging::stage(destination, options.existing)?;
+            let staging = crate::staging::stage(path, destination, options.existing)?;
             crate::check_output_size(
                 staging.path(),
                 items.iter().map(|item| &item.entry),

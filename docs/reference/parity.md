@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 21 |
+| `native` | 22 |
 | `partial` | 6 |
 | `backend` | 68 |
-| `missing` | 15 |
+| `missing` | 14 |
 | `dropped` | 2 |
 
-53 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+52 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -153,5 +153,5 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `-snh` | `partial` | Tar hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs` |
 | `-sni` | `missing` |  | No proof yet. |
 | `-sns` | `missing` |  | No proof yet. |
-| `-snz` | `missing` |  | No proof yet. |
+| `-snz` | `native` | On Windows, every reader copies the archive's mark onto each extracted file. | `extracted_files_carry_the_archives_mark_of_the_web` in `tests/zone.rs` |
 | `-spf` | `dropped` | Absolute paths are refused, because they write outside the destination. | `unsafe_names_never_escape` in `tests/hostile_zip.rs` |

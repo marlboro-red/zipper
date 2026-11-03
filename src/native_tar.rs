@@ -1006,7 +1006,7 @@ pub fn read_archive(
 ) -> Result<Vec<Entry>> {
     let compression = sniff(path)?.context("not a tar archive")?;
     let staging = destination
-        .map(|destination| crate::staging::stage(destination, options.existing))
+        .map(|destination| crate::staging::stage(path, destination, options.existing))
         .transpose()?;
     let free = match (&staging, options.max_output_bytes) {
         (Some(staging), None) => {

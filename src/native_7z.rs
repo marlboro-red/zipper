@@ -1539,7 +1539,7 @@ pub fn read_archive(
     tracker.check()?;
     let staging = match destination {
         Some(destination) => {
-            let staging = crate::staging::stage(destination, options.existing)?;
+            let staging = crate::staging::stage(path, destination, options.existing)?;
             crate::check_output_size(staging.path(), &entries, options.max_output_bytes)?;
             Some(staging)
         }

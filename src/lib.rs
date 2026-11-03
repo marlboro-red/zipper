@@ -2,6 +2,7 @@ pub mod compat;
 pub mod counters;
 pub mod duplicates;
 mod extract;
+mod mark_of_the_web;
 pub mod native_7z;
 pub mod native_tar;
 pub mod native_zip;

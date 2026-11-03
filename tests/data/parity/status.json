@@ -355,7 +355,11 @@
       "status": "missing"
     },
     "-snz": {
-      "status": "missing"
+      "status": "native",
+      "note": "On Windows, every reader copies the archive's mark onto each extracted file.",
+      "tests": [
+        "tests/zone.rs::extracted_files_carry_the_archives_mark_of_the_web"
+      ]
     },
     "-i": {
       "status": "partial",

@@ -83,7 +83,7 @@ pub fn run(
     let mut command = Command::new(backend()?);
     command.arg(action).arg("-y").args(format);
     let staging = if let Some(dst) = destination {
-        let temp = crate::staging::stage(dst, existing)?;
+        let temp = crate::staging::stage(&archive, dst, existing)?;
         let staging = temp.path().canonicalize()?;
         ensure_no_wildcards(&staging)?;
         let mut flag = std::ffi::OsString::from("-o");

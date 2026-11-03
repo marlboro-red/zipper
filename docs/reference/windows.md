@@ -59,6 +59,10 @@ This list describes the published early release. The current source tree no long
 This release has no GUI, no Explorer integration, no automatic update mechanism,
 and no Windows ARM64 build.
 
+## Mark of the Web
+
+Windows marks a downloaded file with a `Zone.Identifier` stream, and warns before such a file runs. The current source tree copies the archive's stream onto every file it extracts, with every reader and the 7-Zip backend, as 7-Zip's `-snz` does. The mark is written in the hidden staging folder before anything is published, and each file keeps its modification time. Folders get no mark. A destination on a volume without named streams, such as FAT, gets no mark, as Windows itself drops it there. `tests/zone.rs` checks ZIP, tar, gzip tar and 7z.
+
 ## Testing status
 
 This unsigned alpha is tested on Windows Server 2022 in GitHub Actions. It has not

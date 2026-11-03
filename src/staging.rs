@@ -26,9 +26,10 @@ pub(crate) struct Staging {
     temp: tempfile::TempDir,
     destination: PathBuf,
     merge: bool,
+    zone: Option<Vec<u8>>,
 }
 
-pub(crate) fn stage(destination: &Path, existing: Existing) -> Result<Staging> {
+pub(crate) fn stage(archive: &Path, destination: &Path, existing: Existing) -> Result<Staging> {
     let merge = match fs::metadata(destination) {
         Ok(metadata) if existing == Existing::Overwrite => {
             ensure!(
@@ -58,6 +59,7 @@ pub(crate) fn stage(destination: &Path, existing: Existing) -> Result<Staging> {
         temp,
         destination: destination.to_owned(),
         merge,
+        zone: crate::mark_of_the_web::archive_mark(archive),
     })
 }
 
@@ -67,6 +69,9 @@ impl Staging {
     }
 
     pub(crate) fn publish(&self, directories: &[Directory]) -> Result<()> {
+        if let Some(zone) = &self.zone {
+            crate::mark_of_the_web::mark_extracted_files(self.temp.path(), zone)?;
+        }
         if !self.merge {
             return crate::publish(self.temp.path(), &self.destination, directories);
         }
