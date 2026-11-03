@@ -1,0 +1,3 @@
+---- MODULE MCCallback ----
+EXTENDS ProgressCallback
+====
