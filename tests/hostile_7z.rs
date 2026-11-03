@@ -1,5 +1,6 @@
 //! Crafted 7z archives that real writers never produce. Each must be refused
-//! with nothing left behind, or extract only inside the destination.
+//! with nothing left behind, or extract only inside the destination, and a
+//! well-formed one must extract the same bytes at every thread count.
 use std::fs;
 use zipper::native_7z::{ReadOptions, read_archive};
 
@@ -488,4 +489,118 @@ fn a_callback_that_runs_rayon_work_does_not_deadlock() {
         .recv_timeout(std::time::Duration::from_secs(30))
         .expect("7z extraction deadlocked in the callback");
     assert!(succeeded);
+}
+
+fn lzma2_segments(parts: &[Vec<u8>]) -> (Vec<u8>, u8) {
+    let mut stream = Vec::new();
+    for part in parts {
+        let mut filters = liblzma::stream::Filters::new();
+        filters.lzma2(&liblzma::stream::LzmaOptions::new_preset(1).unwrap());
+        let mut encoder = liblzma::stream::Stream::new_raw_encoder(&filters).unwrap();
+        let mut encoded = Vec::with_capacity(part.len() + 1024);
+        encoder
+            .process_vec(part, &mut encoded, liblzma::stream::Action::Finish)
+            .unwrap();
+        assert_eq!(encoded.pop(), Some(0), "a raw LZMA2 stream ends with 0x00");
+        stream.extend_from_slice(&encoded);
+    }
+    stream.push(0);
+    (stream, 18)
+}
+
+fn segmented_archive(parts: &[Vec<u8>], damage: impl FnOnce(&mut Vec<u8>)) -> (Vec<u8>, Vec<u8>) {
+    let data: Vec<u8> = parts.concat();
+    let (mut packed, property) = lzma2_segments(parts);
+    damage(&mut packed);
+    let bytes = copy_folder_archive(
+        &[Member {
+            data: Some(packed.clone()),
+            ..file("big", b"")
+        }],
+        HeaderDamage {
+            coder: Some((vec![0x21], vec![property])),
+            unpack_size_delta: data.len() as i64 - packed.len() as i64,
+            crc: Some(crc32fast::hash(&data)),
+            ..HeaderDamage::default()
+        },
+    );
+    (bytes, data)
+}
+
+fn parts() -> Vec<Vec<u8>> {
+    (0..3u8)
+        .map(|part| {
+            (0..3_500_000u32)
+                .map(|index| (index.wrapping_mul(2_654_435_761) >> 24) as u8 ^ part)
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn solid_lzma2_segments_decode_in_parallel_to_the_same_bytes() {
+    let (bytes, data) = segmented_archive(&parts(), |_| {});
+    for threads in [1, 2, 4] {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("a.7z");
+        fs::write(&archive, &bytes).unwrap();
+        let destination = root.path().join("out");
+        read_archive(
+            &archive,
+            Some(&destination),
+            ReadOptions {
+                threads: Some(threads),
+                ..ReadOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            fs::read(destination.join("big")).unwrap() == data,
+            "{threads} threads"
+        );
+    }
+}
+
+#[test]
+fn a_damaged_lzma2_segment_fails_on_every_thread_count() {
+    for (case, damage) in [
+        ("flipped byte in the second segment", 0usize),
+        ("truncated last segment", 1),
+        ("extra end marker", 2),
+    ] {
+        let (bytes, _) = segmented_archive(&parts(), |packed| match damage {
+            0 => {
+                let at = packed.len() / 2;
+                packed[at] ^= 0x40;
+            }
+            1 => {
+                let length = packed.len();
+                packed.truncate(length - 100);
+                packed.push(0);
+            }
+            _ => packed.insert(packed.len() / 3, 0),
+        });
+        for threads in [1, 4] {
+            let root = tempfile::tempdir().unwrap();
+            let archive = root.path().join("a.7z");
+            fs::write(&archive, &bytes).unwrap();
+            fs::create_dir(root.path().join("parent")).unwrap();
+            let result = read_archive(
+                &archive,
+                Some(&root.path().join("parent/out")),
+                ReadOptions {
+                    threads: Some(threads),
+                    ..ReadOptions::default()
+                },
+            );
+            assert!(result.is_err(), "{case}, {threads} threads");
+            assert!(
+                fs::read_dir(root.path().join("parent"))
+                    .unwrap()
+                    .next()
+                    .is_none(),
+                "{case}, {threads} threads left output"
+            );
+        }
+    }
 }

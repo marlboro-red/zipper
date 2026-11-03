@@ -20,6 +20,12 @@ All records are local measurements. Each one names its machine, revision, run co
 | --- | --- | --- |
 | 2026-11-03 | [Real-world archives against bsdtar](realworld/README.md) | All 248 popular ZIP, wheel, jar and tar archives extract identically with Zipper and default bsdtar, across 189,576 paths. Zipper was faster on all 248, 10.51 s against 18.11 s in total. macOS only. |
 
+## 7z reader
+
+| Date | Experiment | Verdict |
+| --- | --- | --- |
+| 2026-11-03 | [Parallel LZMA2 segments in solid 7z folders](native-7z/lzma2-segments/README.md) | Kept. Solid Silesia extracts 1.59× faster, still 1.24× slower than 7-Zip, with peak memory up from 38 to 338 MiB. Other archives are unchanged. |
+
 ## Tar reader
 
 | Date | Experiment | Verdict |

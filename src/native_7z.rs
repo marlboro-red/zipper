@@ -4,13 +4,14 @@
 use crate::{Entry, counters, progress::Tracker, safe_path};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
-        Condvar, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc::{Receiver, sync_channel},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -23,6 +24,11 @@ const MAX_CODERS: usize = 4;
 const MAX_HEADER_LAYERS: usize = 4;
 const COPY_BUFFER: usize = 1024 * 1024;
 const DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
+const SEGMENT_BUDGET: u64 = 512 * 1024 * 1024;
+const PARALLEL_FOLDER_MIN: u64 = 8 * 1024 * 1024;
+const SEGMENT_MIN_OUTPUT: u64 = 8 * 1024 * 1024;
+const SEGMENT_WINDOW_MAX: usize = 64;
+const SEGMENT_DECODE_STEP: usize = 8 * 1024 * 1024;
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
 const END: u8 = 0;
@@ -708,7 +714,7 @@ fn decode_header(file: &mut File, streams: &Streams) -> Result<Vec<u8>> {
     let folder = &streams.folders[0];
     ensure!(folder.size <= MAX_HEADER, "7z header is larger than 64 MiB");
     let mut decoded = Vec::with_capacity(folder.size as usize);
-    folder_reader(file.try_clone()?, folder)?
+    folder_reader(file.try_clone()?, folder, None)?
         .take(folder.size + 1)
         .read_to_end(&mut decoded)?;
     ensure!(
@@ -1012,7 +1018,14 @@ fn dictionary_capped_at_output(method: &Method, properties: &[u8], output: u64) 
     })
 }
 
-fn decoder_memory(folder: &Folder) -> u64 {
+fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
+    let lzma2_only = matches!(
+        folder.output_to_packed.as_slice(),
+        [coder] if coder.id == [0x21]
+    );
+    if segments_possible && lzma2_only && folder.size >= PARALLEL_FOLDER_MIN {
+        return SEGMENT_BUDGET;
+    }
     match folder
         .output_to_packed
         .last()
@@ -1069,11 +1082,33 @@ impl<R: Read> Read for LzmaReader<R> {
     }
 }
 
-/// The folder's decoded stream. LZMA1 in 7z has no end marker, so its stream
-/// stops at `folder.size`. Other methods may yield more, which the caller must
-/// refuse.
-fn folder_reader(mut file: File, folder: &Folder) -> Result<Box<dyn Read + Send>> {
+fn folder_reader(
+    mut file: File,
+    folder: &Folder,
+    segment_threads: Option<(&Path, usize)>,
+) -> Result<Box<dyn Read + Send>> {
     let methods = check_methods(folder)?;
+    if let ([Method::Lzma2], [coder]) = (methods.as_slice(), folder.output_to_packed.as_slice())
+        && let Some((path, window)) = segment_threads.filter(|&(_, window)| window > 1)
+        && folder.size >= PARALLEL_FOLDER_MIN
+        && let Some(&properties) = coder.properties.first()
+        && let Some(segments) = independent_lzma2_segments(&mut file, folder, properties)?
+    {
+        return Ok(Box::new(ParallelLzma2 {
+            path: path.to_owned(),
+            pack_start: SIGNATURE_HEADER + folder.pack_offset,
+            properties,
+            segments,
+            window: window.min(SEGMENT_WINDOW_MAX),
+            stop: Arc::new(AtomicBool::new(false)),
+            next: 0,
+            queue: VecDeque::new(),
+            held: 0,
+            current_held: 0,
+            current: Vec::new(),
+            position: 0,
+        }));
+    }
     file.seek(SeekFrom::Start(SIGNATURE_HEADER + folder.pack_offset))?;
     let packed = BufReader::with_capacity(COPY_BUFFER, file).take(folder.pack_size);
     Ok(match methods.as_slice() {
@@ -1097,6 +1132,230 @@ fn folder_reader(mut file: File, folder: &Folder) -> Result<Box<dyn Read + Send>
             }
         }
     })
+}
+
+struct Segment {
+    pack_offset: u64,
+    pack_length: u64,
+    output: u64,
+}
+
+impl Segment {
+    fn held(&self, properties: u8) -> u64 {
+        self.pack_length + self.output + lzma2_dictionary(properties).min(self.output)
+    }
+}
+
+fn independent_lzma2_segments(
+    file: &mut File,
+    folder: &Folder,
+    properties: u8,
+) -> Result<Option<Vec<Segment>>> {
+    file.seek(SeekFrom::Start(SIGNATURE_HEADER + folder.pack_offset))?;
+    let mut input = BufReader::new(&mut *file);
+    let (mut packed, mut output) = (0u64, 0u64);
+    let mut segments: Vec<Segment> = Vec::new();
+    loop {
+        if packed >= folder.pack_size {
+            return Ok(None);
+        }
+        let mut control = [0u8; 1];
+        input.read_exact(&mut control)?;
+        let control = control[0];
+        if control == 0 {
+            let complete = output == folder.size && segments.len() >= 2;
+            let fits = segments
+                .iter()
+                .all(|segment| segment.held(properties) <= SEGMENT_BUDGET);
+            return Ok((complete && fits).then_some(segments));
+        }
+        let (header, unpacked, payload, resets) = match control {
+            1 | 2 => {
+                let mut size = [0u8; 2];
+                input.read_exact(&mut size)?;
+                let size = u64::from(u16::from_be_bytes(size)) + 1;
+                (3, size, size, control == 1)
+            }
+            0x80..=0xFF => {
+                let mut fields = [0u8; 4];
+                input.read_exact(&mut fields)?;
+                let unpacked = (u64::from(control & 0x1F) << 16)
+                    + u64::from(u16::from_be_bytes([fields[0], fields[1]]))
+                    + 1;
+                let payload = u64::from(u16::from_be_bytes([fields[2], fields[3]])) + 1;
+                let with_properties = (control >> 5) & 3 >= 2;
+                if with_properties {
+                    input.read_exact(&mut [0u8; 1])?;
+                }
+                (
+                    5 + u64::from(with_properties),
+                    unpacked,
+                    payload,
+                    control >= 0xE0,
+                )
+            }
+            _ => return Ok(None),
+        };
+        let current_is_small = segments
+            .last()
+            .is_some_and(|segment| segment.output < SEGMENT_MIN_OUTPUT);
+        if resets && !current_is_small {
+            segments.push(Segment {
+                pack_offset: packed,
+                pack_length: 0,
+                output: 0,
+            });
+        }
+        let Some(segment) = segments.last_mut() else {
+            return Ok(None);
+        };
+        segment.pack_length += header + payload;
+        segment.output += unpacked;
+        packed += header + payload;
+        output += unpacked;
+        if packed >= folder.pack_size || output > folder.size {
+            return Ok(None);
+        }
+        input.seek_relative(payload as i64)?;
+    }
+}
+
+// RECORD(benchmarks/native-7z/lzma2-segments/README.md): solid folders decode their LZMA2 segments in parallel.
+struct ParallelLzma2 {
+    path: PathBuf,
+    pack_start: u64,
+    properties: u8,
+    segments: Vec<Segment>,
+    window: usize,
+    stop: Arc<AtomicBool>,
+    next: usize,
+    queue: VecDeque<(u64, Receiver<std::io::Result<Vec<u8>>>)>,
+    held: u64,
+    current_held: u64,
+    current: Vec<u8>,
+    position: usize,
+}
+
+impl ParallelLzma2 {
+    fn start_segments(&mut self) -> std::io::Result<()> {
+        while let Some(segment) = self.segments.get(self.next)
+            && self.queue.len() < self.window
+            && self.held + segment.held(self.properties) <= SEGMENT_BUDGET
+        {
+            let (sender, receiver) = sync_channel(1);
+            let path = self.path.clone();
+            let stop = Arc::clone(&self.stop);
+            let start = self.pack_start + segment.pack_offset;
+            let (length, output, properties) =
+                (segment.pack_length, segment.output, self.properties);
+            let spawned = std::thread::Builder::new().spawn(move || {
+                let decoded = decode_segment(&path, start, length, output, properties, &stop);
+                let _ = sender.send(decoded);
+            });
+            if let Err(error) = spawned {
+                if self.queue.is_empty() {
+                    return Err(error);
+                }
+                break;
+            }
+            self.queue
+                .push_back((segment.held(self.properties), receiver));
+            self.held += segment.held(self.properties);
+            self.next += 1;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for ParallelLzma2 {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Read for ParallelLzma2 {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        while self.position == self.current.len() {
+            self.held -= self.current_held;
+            self.current_held = 0;
+            self.current = Vec::new();
+            self.position = 0;
+            self.start_segments()?;
+            let Some((held, receiver)) = self.queue.pop_front() else {
+                return Ok(0);
+            };
+            self.current_held = held;
+            self.current = receiver
+                .recv()
+                .map_err(|_| std::io::Error::other("a 7z segment decoder stopped"))??;
+        }
+        let length = buffer.len().min(self.current.len() - self.position);
+        buffer[..length].copy_from_slice(&self.current[self.position..self.position + length]);
+        self.position += length;
+        Ok(length)
+    }
+}
+
+fn decode_segment(
+    path: &Path,
+    start: u64,
+    length: u64,
+    output: u64,
+    properties: u8,
+    stop: &AtomicBool,
+) -> std::io::Result<Vec<u8>> {
+    let invalid =
+        |message: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, message.to_owned());
+    let too_large = || invalid("7z segment is too large");
+    let mut file = File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut packed = vec![0u8; usize::try_from(length).map_err(|_| too_large())?];
+    file.read_exact(&mut packed)?;
+    packed.push(0);
+    let capped = dictionary_capped_at_output(&Method::Lzma2, &[properties], output)
+        .map_err(|error| invalid(&error.to_string()))?;
+    let mut filters = liblzma::stream::Filters::new();
+    filters
+        .lzma2_properties(&capped)
+        .map_err(std::io::Error::other)?;
+    let mut stream =
+        liblzma::stream::Stream::new_raw_decoder(&filters).map_err(std::io::Error::other)?;
+    let output = usize::try_from(output).map_err(|_| too_large())?;
+    let mut decoded = vec![0u8; output.checked_add(1).ok_or_else(too_large)?];
+    let (mut read, mut written) = (0usize, 0usize);
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return Err(std::io::Error::other("7z segment decoding stopped"));
+        }
+        let end = (written + SEGMENT_DECODE_STEP).min(decoded.len());
+        let (before_in, before_out) = (stream.total_in(), stream.total_out());
+        let status = counters::time(counters::Counter::DecodeNanos, || {
+            stream.process(
+                &packed[read..],
+                &mut decoded[written..end],
+                liblzma::stream::Action::Finish,
+            )
+        })
+        .map_err(std::io::Error::other)?;
+        read += (stream.total_in() - before_in) as usize;
+        written += (stream.total_out() - before_out) as usize;
+        if written > output {
+            return Err(invalid("7z LZMA2 segment decodes past its declared size"));
+        }
+        if status == liblzma::stream::Status::StreamEnd {
+            break;
+        }
+        if stream.total_in() == before_in && stream.total_out() == before_out {
+            return Err(invalid("7z LZMA2 segment is truncated"));
+        }
+    }
+    if written != output || read != packed.len() {
+        return Err(invalid(
+            "7z LZMA2 segment does not decode to its declared size",
+        ));
+    }
+    decoded.truncate(output);
+    Ok(decoded)
 }
 
 struct Memory {
@@ -1239,11 +1498,17 @@ pub fn read_archive(
         released: Condvar::new(),
     };
     let targets = Mutex::new(Vec::new());
+    let threads = options
+        .threads
+        .unwrap_or_else(rayon::current_num_threads)
+        .min(wanted.len());
+    let segment_threads =
+        options.threads.unwrap_or_else(rayon::current_num_threads) / threads.max(1);
     let decode = |folder_index: usize, buffer: &mut [u8]| -> Result<()> {
         tracker.check()?;
         let folder = &archive.folders[folder_index];
-        let _reservation = memory.reserve(decoder_memory(folder));
-        let mut reader = folder_reader(File::open(path)?, folder)?;
+        let _reservation = memory.reserve(decoder_memory(folder, segment_threads > 1));
+        let mut reader = folder_reader(File::open(path)?, folder, Some((path, segment_threads)))?;
         let mut folder_crc = crc32fast::Hasher::new();
         for &index in &by_folder[folder_index] {
             let item = &archive.items[index];
@@ -1321,10 +1586,6 @@ pub fn read_archive(
         }
         Ok(())
     };
-    let threads = options
-        .threads
-        .unwrap_or_else(rayon::current_num_threads)
-        .min(wanted.len());
     let next = AtomicUsize::new(0);
     let failure = Mutex::new(None);
     std::thread::scope(|scope| {
@@ -1458,6 +1719,68 @@ mod tests {
             .number()
             .is_err()
         );
+    }
+
+    fn uncompressed_lzma2(chunks: usize, chunk: usize) -> (tempfile::NamedTempFile, Folder) {
+        let mut bytes = vec![0u8; SIGNATURE_HEADER as usize];
+        for index in 0..chunks {
+            bytes.push(1);
+            bytes.extend_from_slice(&((chunk - 1) as u16).to_be_bytes());
+            bytes.extend(std::iter::repeat_n(index as u8, chunk));
+        }
+        bytes.push(0);
+        let pack_size = bytes.len() as u64 - SIGNATURE_HEADER;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(&bytes).unwrap();
+        let folder = Folder {
+            output_to_packed: vec![Coder {
+                id: vec![0x21],
+                properties: vec![18],
+            }],
+            unsupported: None,
+            size: (chunks * chunk) as u64,
+            crc: None,
+            pack_offset: 0,
+            pack_size: pack_size + 1,
+        };
+        (file, folder)
+    }
+
+    #[test]
+    fn segments_merge_up_to_the_minimum_output() {
+        let (file, folder) = uncompressed_lzma2(400, 65_536);
+        let segments = independent_lzma2_segments(&mut file.reopen().unwrap(), &folder, 18)
+            .unwrap()
+            .unwrap();
+        assert_eq!(segments.len(), 4);
+        assert!(
+            segments[..3]
+                .iter()
+                .all(|segment| segment.output >= SEGMENT_MIN_OUTPUT)
+        );
+        assert_eq!(
+            segments.iter().map(|segment| segment.output).sum::<u64>(),
+            folder.size
+        );
+        let (file, folder) = uncompressed_lzma2(1_000_000, 1);
+        assert!(
+            independent_lzma2_segments(&mut file.reopen().unwrap(), &folder, 18)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn segment_memory_counts_the_dictionary_and_the_shared_budget() {
+        let segment = Segment {
+            pack_offset: 0,
+            pack_length: 10,
+            output: 1 << 20,
+        };
+        assert_eq!(segment.held(40), 10 + (1 << 20) + (1 << 20));
+        let (_, folder) = uncompressed_lzma2(400, 65_536);
+        assert_eq!(decoder_memory(&folder, true), SEGMENT_BUDGET);
+        assert!(decoder_memory(&folder, false) < SEGMENT_BUDGET);
     }
 
     #[test]

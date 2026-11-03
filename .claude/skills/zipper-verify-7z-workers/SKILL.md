@@ -71,3 +71,33 @@ The rules are proven able to fail. Each of these model changes, which match plau
 | `WorkerStoresFailure` drops the error | `SuccessIsComplete`, `FailureIsReported` |
 | `CallerJoins` skips the cancel check before publishing | `CancelPublishesNothing` |
 | `WorkerFetches` reads `next` without incrementing it | `DecodedAtMostOnce` |
+
+## The LZMA2 segment pipeline
+
+`verification/7z-lzma2-segments/` checks the reader that decodes one solid LZMA2 folder in segments, `ParallelLzma2`, listed under `[7z-lzma2-segments]` in `verification/coverage.txt`. Run the pstack `/statechart` skill on `MCSegments.tla` with `segments.cfg`. All six rules must hold.
+
+| Rule | In plain words |
+| --- | --- |
+| `InOrder` | Segment bytes leave in segment order, with none skipped. |
+| `OkIsComplete` | A reader that reports the end passed on every segment. |
+| `FailureIsReported` | A corrupt segment never ends in a complete read. |
+| `MemoryBounded` | Packed and decoded bytes of started segments stay within `SEGMENT_BUDGET`. |
+| `ThreadsBounded` | At most `window` segment decoders run at once. |
+| `NothingLeaks` | After an error or an early drop, every result is freed once the decoders finish. |
+
+| Covered code | Model |
+| --- | --- |
+| `ParallelLzma2::start_segments`, with its window and budget checks | `ReaderStartsSegment` |
+| The spawned thread running `decode_segment` and sending the result | `DecoderFinishes` |
+| `Read for ParallelLzma2`, which receives the front segment and frees its share of the budget when it is used up | `ReaderTakesFront` |
+| The folder worker dropping the reader, and a thread whose send finds no receiver | `ReaderDropped`, `ResultFreed` |
+
+A thread the OS refuses either fails the read, when no segment is running, or stops new starts, so the model covers it as a decoder failure. The stop flag a dropped reader sets ends decoders early, which the model covers as decoders finishing after `ReaderDropped`. The model leaves out `lzma2_segments`, the chunk-header scan, which the hostile tests in `tests/hostile_7z.rs` cover, and the bytes themselves. The bound is five segments of 1, 1, 1, 2 and 2 units, a window of 2 and a budget of 3, so both limits bind. It has 271 states.
+
+Each change below breaks the named rule:
+
+| Change | Rule that breaks |
+| --- | --- |
+| `ReaderStartsSegment` skips the budget check | `MemoryBounded` |
+| The reader may hand out the segment after the front one first | `InOrder` |
+| `ReaderStartsSegment` skips the window check | `ThreadsBounded` |
