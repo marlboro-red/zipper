@@ -10,10 +10,11 @@ use std::{
 mod comments;
 mod commits;
 mod docs;
+mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | lint-commit-msg FILE | lint-commits | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | lint-commit-msg FILE | lint-commits | verify-sync NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -35,6 +36,7 @@ fn main() -> ExitCode {
         ["ci-wait"] => ci_wait(),
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
         ["lint-commits"] => commits::lint_unpushed(&root()),
+        ["verify-sync", name] => verify::record_checked_fingerprint(&root(), name),
         ["bench", ref rest @ ..] => bench(rest),
         _ => Err(anyhow::anyhow!(USAGE)),
     };
@@ -168,6 +170,7 @@ fn gate(full: bool) -> Result<()> {
         ("comments", || comments::lint(&root())),
         ("results", || scoreboard(&["check"])),
         ("hooks", hook_tests),
+        ("verify", || verify::fail_on_stale_fingerprints(&root())),
         ("clippy", || {
             cargo(&[
                 "clippy",

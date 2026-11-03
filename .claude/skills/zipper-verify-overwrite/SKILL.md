@@ -25,12 +25,12 @@ The test checks all of them on every pair.
 - `documented_outcome` in the test is the contract written as code. It does not copy `plan`. It states what must be on disk afterwards, and the test compares the whole tree, outside folder included.
 - It runs on Unix, where the test can make symlinks.
 - It leaves out other processes that change the destination during extraction. `plan` checks the tree before the first rename, so a folder swapped for a symlink in between is followed. The [usage page](../../../docs/usage.md) asks for a private destination for that reason. It also leaves out mount points inside the destination, which need root to set up, case-insensitive name clashes, and rename failures such as a full disk.
-- The gate runs every 37th pair, 2,751 pairs in about 4 seconds. All 101,761 pairs take about 160 seconds. At the sync commit, 26,569 pairs merge and 75,192 are refused as conflicts.
-- The sync commit is `e2c811a`.
+- The gate runs every 37th pair, 2,751 pairs in about 4 seconds. All 101,761 pairs take about 160 seconds. At the last sync, 26,569 pairs merge and 75,192 are refused as conflicts.
+- `verification/coverage.txt` lists the covered code under `[overwrite]`, with its fingerprint when this check last passed.
 
 ## When to run it
 
-Run the full check when a diff touches `src/staging.rs`, `crate::publish` or `unix_modes` in `src/lib.rs`, or how a reader creates and publishes its staging folder. To see what changed since the sync commit, run `git diff e2c811a -- src/staging.rs src/lib.rs`.
+The gate's `verify` step fails when code listed under `[overwrite]` in `verification/coverage.txt` has changed since this check last passed. Run the check then, and also before changing that code on purpose.
 
 ## Run it
 
@@ -48,7 +48,7 @@ It must pass and print the counts of merged and refused pairs.
 
 ## Change the check with the code
 
-When a change to the merge is intended, update `documented_outcome` and `docs/usage.md` in the same commit. After the full run passes, move the sync commit in this file to the commit that holds the change.
+When a change to the merge is intended, update `documented_outcome` and `docs/usage.md` in the same commit. After the full run passes, run `cargo xtask verify-sync overwrite` to record the new fingerprint.
 
 The check is proven able to fail. Each of these changes to the real code fails it:
 

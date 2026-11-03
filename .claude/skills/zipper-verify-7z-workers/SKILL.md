@@ -22,7 +22,7 @@ Each rule is an invariant in `FolderWorkers.tla`. TLC also checks that no state 
 
 ## What the model covers
 
-| Code at the sync commit | Model |
+| Covered code | Model |
 | --- | --- |
 | `while let Some(&folder) = wanted.get(next.fetch_add(1, ..))` | `WorkerFetches` |
 | `tracker.check()?` at the start of `decode` | `WorkerChecksCancel` |
@@ -39,11 +39,11 @@ The model leaves out file creation, symlink targets, progress reports, the memor
 
 - The bound is 4 folders needing 6, 3, 2 and 1 units against a budget of 4, so the first asks for more than the whole budget. There are 3 workers, any folder can be corrupt, and a cancel can come at any moment.
 - The model runs in a few seconds, with 53,095 distinct states.
-- The sync commit is `288ddb5`.
+- `verification/coverage.txt` lists the covered code under `[7z-folder-workers]`, with its fingerprint when this check last passed.
 
 ## When to run it
 
-Run it when a diff touches a row of the coverage table, `DECODER_MEMORY`, `decoder_memory`, or the order of the calls in `decode` and the worker loop. To see what changed since the sync commit, run `git diff 288ddb5 -- src/native_7z.rs`.
+The gate's `verify` step fails when code listed under `[7z-folder-workers]` in `verification/coverage.txt` has changed since this check last passed. Run the check then, and also before changing that code on purpose.
 
 ## Run it
 
@@ -60,7 +60,7 @@ Run it when a diff touches a row of the coverage table, `DECODER_MEMORY`, `decod
 
 ## Change the model with the code
 
-When a change to covered code is intended, change the matching action in the same commit, so that each action still names one step of the code. Then run the model. After it passes and you have checked the model against the new code, move the sync commit in this file to the commit that holds the change.
+When a change to covered code is intended, change the matching action in the same commit, so that each action still names one step of the code. Then run the model. After it passes and you have checked the model against the new code, run `cargo xtask verify-sync 7z-folder-workers` to record the new fingerprint.
 
 The rules are proven able to fail. Each of these model changes, which match plausible regressions, breaks the named rule:
 

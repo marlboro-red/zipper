@@ -133,6 +133,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "ci-wait",
     "lint-commit-msg",
     "lint-commits",
+    "verify-sync",
     "bench",
 ];
 

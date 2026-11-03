@@ -44,5 +44,6 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | A commit message citing a hash typed from memory | `.githooks/commit-msg` and `cargo xtask lint-commits` in pre-push |
 | Published numbers that their revision cannot reproduce | the `results` gate step rejects scoreboard JSON measured on a dirty tree |
 | A hand-edited results page | the `results` gate step renders `docs/results.md` from the JSON and compares |
+| A formal model that drifts from the code it describes | the `verify` gate step fingerprints the covered code in `verification/coverage.txt` |
 | A memory limit that missed an archive-controlled allocation: implied directories, link targets, queued writer chunks | one test per budget in `tests/hostile_tar.rs` and `src/native_tar.rs`, and the Budgets item in the `zipper-review` checklist |
 | Scoreboard runs measured while another program loaded the machine | `scripts/scoreboard.py run` refuses to start while another process uses 25% CPU or more, unless `--allow-busy`, and records the list |

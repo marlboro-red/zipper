@@ -1,0 +1,61 @@
+# Code each formal check covers, and the fingerprint of that code when the
+# check last passed. `cargo xtask gate` fails when a fingerprint is stale.
+# Follow the named skill, then run `cargo xtask verify-sync NAME`.
+# An item is `path | opening line`: the item runs from a line that starts
+# with that text to its closing brace, or to `;` for a const.
+
+[tar-writer-pool]
+skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
+fingerprint = e7ba929ba86b6b41
+item = src/native_tar.rs | const CHUNK:
+item = src/native_tar.rs | const QUEUED_FILES:
+item = src/native_tar.rs | const QUEUED_CHUNKS_PER_FILE:
+item = src/native_tar.rs | const BYTES_IN_FLIGHT:
+item = src/native_tar.rs | const DEFAULT_WRITERS:
+item = src/native_tar.rs | const ONE_WRITER_PER_FOLDER:
+item = src/native_tar.rs | struct InFlight {
+item = src/native_tar.rs | impl InFlight {
+item = src/native_tar.rs | struct Chunk<'f> {
+item = src/native_tar.rs | impl Drop for Chunk<'_> {
+item = src/native_tar.rs | struct Job<'f> {
+item = src/native_tar.rs | struct Writers<'f> {
+item = src/native_tar.rs | impl<'f> Writers<'f> {
+item = src/native_tar.rs | fn write_job(
+item = src/native_tar.rs |     fn write_file(
+item = src/native_tar.rs | pub fn read_archive(
+
+[zip-write-behind]
+skill = .claude/skills/zipper-verify-zip-write-behind/SKILL.md
+fingerprint = 572f641e1df2b53f
+item = src/native_zip.rs | const WRITE_BEHIND_CHUNK:
+item = src/native_zip.rs | const WRITE_BEHIND_DEPTH:
+item = src/native_zip.rs | fn write_behind(
+
+[7z-folder-workers]
+skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
+fingerprint = f41ba2b1683218cb
+item = src/native_7z.rs | const DECODER_MEMORY:
+item = src/native_7z.rs | fn decoder_memory(
+item = src/native_7z.rs | struct Memory {
+item = src/native_7z.rs | impl Memory {
+item = src/native_7z.rs | struct Reservation<'a> {
+item = src/native_7z.rs | impl Drop for Reservation<'_> {
+item = src/native_7z.rs | pub fn read_archive(
+
+[progress-callback]
+skill = .claude/skills/zipper-verify-progress/SKILL.md
+fingerprint = 6367fb22891dad87
+item = src/progress.rs | pub struct Control<'a> {
+item = src/progress.rs | pub(crate) struct Tracker<'a> {
+item = src/progress.rs | impl<'a> Tracker<'a> {
+item = src/native_zip.rs | pub fn read_archive_with_options(
+
+[overwrite]
+skill = .claude/skills/zipper-verify-overwrite/SKILL.md
+fingerprint = 5b6cc12666a4b924
+full-check = cargo test --release --test overwrite_exhaustive ZIPPER_MERGE_STRIDE=1
+item = src/staging.rs | pub(crate) fn stage(
+item = src/staging.rs | impl Staging {
+item = src/staging.rs | fn plan(
+item = src/staging.rs | fn same_filesystem(
+item = src/lib.rs | pub(crate) fn publish(

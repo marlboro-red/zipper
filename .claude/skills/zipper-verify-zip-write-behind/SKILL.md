@@ -22,7 +22,7 @@ Each rule is an invariant in `WriteBehind.tla`. TLC also checks that no state is
 
 ## What the model covers
 
-| Code at the sync commit | Model |
+| Covered code | Model |
 | --- | --- |
 | The two `sync_channel` calls and the depth + 1 buffers sent to `empty` | `Init` |
 | `let mut current = emptied.recv()?` | `ProducerTakesFirstBuffer` |
@@ -41,11 +41,11 @@ The model leaves out the bytes themselves, the 256 KiB slices on Windows, `BufWr
 
 - The bound is 6 buffers with a depth of 4, which is `WRITE_BEHIND_DEPTH`. `MCFull` ends on a full buffer, and `MCPartial` ends on a partial one that `FinalSend` sends.
 - Each model runs in about one second, with 641 and 614 distinct states.
-- The sync commit is `d066d4e`.
+- `verification/coverage.txt` lists the covered code under `[zip-write-behind]`, with its fingerprint when this check last passed.
 
 ## When to run it
 
-Run it when a diff touches a row of the coverage table, `WRITE_BEHIND_DEPTH`, `WRITE_BEHIND_CHUNK`, or the order of the channel calls. To see what changed since the sync commit, run `git diff d066d4e -- src/native_zip.rs` and look at `write_behind`.
+The gate's `verify` step fails when code listed under `[zip-write-behind]` in `verification/coverage.txt` has changed since this check last passed. Run the check then, and also before changing that code on purpose.
 
 ## Run it
 
@@ -61,7 +61,7 @@ Run it when a diff touches a row of the coverage table, `WRITE_BEHIND_DEPTH`, `W
 
 ## Change the model with the code
 
-When a change to covered code is intended, change the matching action in the same commit, so that each action still names one step of the code. Then run both models. After both pass and you have checked the model against the new code, move the sync commit in this file to the commit that holds the change.
+When a change to covered code is intended, change the matching action in the same commit, so that each action still names one step of the code. Then run both models. After both pass and you have checked the model against the new code, run `cargo xtask verify-sync zip-write-behind`.
 
 The rules are proven able to fail. Each of these model changes, which match plausible regressions, breaks the named rule on `MCPartial`:
 

@@ -18,7 +18,7 @@ ZIP extraction runs entry jobs on a Rayon pool, and each finished entry reports 
 
 ## What the model covers
 
-| Code at the sync commit | Model |
+| Covered code | Model |
 | --- | --- |
 | `par_iter().try_for_each_init` in `native_zip::read_archive_with_options`, run by Rayon threads | `ThreadStartsJob`, `JobReturns` |
 | `Tracker::file_done` and `add_bytes`, the atomic `fetch_add` | `JobCountsFile` |
@@ -29,11 +29,11 @@ ZIP extraction runs entry jobs on a Rayon pool, and each finished entry reports 
 Bytes and files count the same way, so the model counts files only. The tar decoder reports from one thread and the 7z workers are plain threads, so neither can run a job inside a callback; this model is about the Rayon case.
 
 - The bound is 4 entries on 2 pool threads, with a callback that runs Rayon work. It has 927 distinct states and runs in about a second.
-- The sync commit is `d4cf971`.
+- `verification/coverage.txt` lists the covered code under `[progress-callback]`, with its fingerprint when this check last passed.
 
 ## When to run it
 
-Run it when a diff touches `src/progress.rs`, or how a reader calls `Tracker` from a Rayon pool. To see what changed since the sync commit, run `git diff d4cf971 -- src/progress.rs src/native_zip.rs`.
+The gate's `verify` step fails when code listed under `[progress-callback]` in `verification/coverage.txt` has changed since this check last passed. Run the check then, and also before changing that code on purpose.
 
 ## Run it
 
@@ -48,7 +48,7 @@ Run it when a diff touches `src/progress.rs`, or how a reader calls `Tracker` fr
 
 ## Change the model with the code
 
-Change the matching action in the same commit as an intended code change, run the model, and move the sync commit after you have checked the model against the new code.
+Change the matching action in the same commit as an intended code change, run the model, and after you have checked the model against the new code, run `cargo xtask verify-sync progress-callback`.
 
 Each change below breaks the named rule. The first is the code as it was at `10d858e`:
 

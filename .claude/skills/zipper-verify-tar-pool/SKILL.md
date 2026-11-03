@@ -23,7 +23,7 @@ Each rule is an invariant in `WriterPool.tla`. TLC also checks that no state is 
 
 ## What the model covers
 
-| Code at the sync commit | Model |
+| Covered code | Model |
 | --- | --- |
 | `InFlight::take`, which waits while other chunks would pass `BYTES_IN_FLIGHT` | `DecoderTakesChunk` |
 | `Drop for Chunk` | the `inflight` decrements in `WriterWritesRest` and `WriterDropsJob` |
@@ -40,11 +40,11 @@ The model leaves out file contents, the `spare` buffer list, the filesystem, pro
 
 - The bound is 4 files of 2, 3, 1 and 2 chunks, the fourth repeating a name, 3 writers, a budget of 3 chunks, 2 jobs per lane queue and 2 chunks per stream. `MCUnix` has one shared lane, and `MCWindows` has one lane per writer.
 - Each model runs in about one second, with 10,848 and 13,049 distinct states.
-- The sync commit is `331ec45`. The covered code last changed in `e3b2b82`.
+- `verification/coverage.txt` lists the covered code under `[tar-writer-pool]`, with its fingerprint when this check last passed.
 
 ## When to run it
 
-Run it when a diff touches a row of the coverage table, the constants `CHUNK`, `QUEUED_FILES`, `QUEUED_CHUNKS_PER_FILE`, `BYTES_IN_FLIGHT` or `ONE_WRITER_PER_FOLDER`, or the order of calls inside them. To see what changed since the sync commit, run `git diff 331ec45 -- src/native_tar.rs`.
+The gate's `verify` step fails when code listed under `[tar-writer-pool]` in `verification/coverage.txt` has changed since this check last passed. Run the check then, and also before changing that code on purpose.
 
 ## Run it
 
@@ -60,7 +60,7 @@ Run it when a diff touches a row of the coverage table, the constants `CHUNK`, `
 
 ## Change the model with the code
 
-When a change to covered code is intended, change the matching action in the same commit, so that each action still names one indivisible step of the code. Then run both models. After both pass and you have checked the model against the new code, move the sync commit in this file to the commit that holds the change.
+When a change to covered code is intended, change the matching action in the same commit, so that each action still names one indivisible step of the code. Then run both models. After both pass and you have checked the model against the new code, run `cargo xtask verify-sync tar-writer-pool`.
 
 The rules are proven able to fail. Each of these model changes, which match plausible regressions, breaks the named rule:
 
