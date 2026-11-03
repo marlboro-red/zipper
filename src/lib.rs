@@ -83,13 +83,30 @@ fn parent(path: &Path) -> &Path {
         .unwrap_or(Path::new("."))
 }
 
-fn create_new_file(path: &Path, mode_masked_by_umask: u32) -> std::io::Result<File> {
+const DOS_READ_ONLY: u32 = 0x01;
+const DOS_HIDDEN: u32 = 0x02;
+const DOS_SYSTEM: u32 = 0x04;
+
+fn windows_attributes(dos: u32, mode: Option<u32>) -> u32 {
+    let unwritable = mode.is_some_and(|mode| mode & 0o777 != 0 && mode & 0o222 == 0);
+    dos & (DOS_READ_ONLY | DOS_HIDDEN | DOS_SYSTEM) | if unwritable { DOS_READ_ONLY } else { 0 }
+}
+
+fn create_new_file(
+    path: &Path,
+    mode_masked_by_umask: u32,
+    windows_attributes: u32,
+) -> std::io::Result<File> {
     let mut options = File::options();
     options.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, mode_masked_by_umask);
     #[cfg(not(unix))]
     let _ = mode_masked_by_umask;
+    #[cfg(windows)]
+    std::os::windows::fs::OpenOptionsExt::attributes(&mut options, windows_attributes);
+    #[cfg(not(windows))]
+    let _ = windows_attributes;
     options.open(path)
 }
 

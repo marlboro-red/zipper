@@ -26,6 +26,7 @@ struct Item {
     header_start: u64,
     next_record_start: u64,
     mode: Option<u32>,
+    windows_attributes: u32,
     modified: Option<i64>,
     symlink: bool,
 }
@@ -603,6 +604,10 @@ fn scan(
             header_start: file.header_start(),
             next_record_start: 0,
             mode: file.unix_mode().map(|mode| mode & 0o777),
+            windows_attributes: crate::windows_attributes(
+                file.external_attributes(),
+                file.unix_mode(),
+            ),
             modified: times.and_then(|times| clock.modified(&times[index])),
             symlink,
         });
@@ -1287,7 +1292,7 @@ pub fn read_archive_with_options(
                 let mut output = if let Some(temp) = &staging {
                     if !item.entry.directory {
                         let path = temp.path().join(&item.entry.name);
-                        let file = crate::create_new_file(&path, item.mode.unwrap_or(0o666))
+                        let file = crate::create_new_file(&path, item.mode.unwrap_or(0o666), item.windows_attributes)
                             .map_err(|error| {
                             if error.kind() == std::io::ErrorKind::AlreadyExists {
                                 anyhow::anyhow!(

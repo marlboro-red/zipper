@@ -19,6 +19,10 @@ pub(crate) fn archive_mark(_: &Path) -> Option<Vec<u8>> {
 }
 
 #[cfg(windows)]
+#[expect(
+    clippy::permissions_set_readonly_false,
+    reason = "Windows only, where it clears FILE_ATTRIBUTE_READONLY"
+)]
 pub(crate) fn mark_extracted_files(root: &Path, zone: &[u8]) -> Result<()> {
     use anyhow::Context;
     if !holds_named_streams(root)? {
@@ -29,13 +33,23 @@ pub(crate) fn mark_extracted_files(root: &Path, zone: &[u8]) -> Result<()> {
         if !entry.file_type().is_file() {
             continue;
         }
-        let modified = entry.metadata()?.modified()?;
+        let metadata = entry.metadata()?;
+        let mut permissions = metadata.permissions();
+        let read_only = permissions.readonly();
+        if read_only {
+            permissions.set_readonly(false);
+            std::fs::set_permissions(entry.path(), permissions.clone())?;
+        }
         std::fs::write(stream(entry.path()), zone)
             .with_context(|| format!("cannot mark {} as downloaded", entry.path().display()))?;
         std::fs::File::options()
             .write(true)
             .open(entry.path())?
-            .set_modified(modified)?;
+            .set_modified(metadata.modified()?)?;
+        if read_only {
+            permissions.set_readonly(true);
+            std::fs::set_permissions(entry.path(), permissions)?;
+        }
     }
     Ok(())
 }

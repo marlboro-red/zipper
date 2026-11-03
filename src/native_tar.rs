@@ -194,7 +194,7 @@ impl<'f> Writers<'f> {
 
 fn write_job(job: &mut Job) -> Result<()> {
     let name = &job.name;
-    let mut file = crate::create_new_file(&job.path, job.mode).map_err(|error| {
+    let mut file = crate::create_new_file(&job.path, job.mode, crate::windows_attributes(0, Some(job.mode))).map_err(|error| {
         if error.kind() == std::io::ErrorKind::AlreadyExists {
             anyhow::anyhow!(
                 "tar entry {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"

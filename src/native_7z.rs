@@ -540,6 +540,7 @@ struct Item {
     name: String,
     kind: Kind,
     mode: Option<u32>,
+    windows_attributes: u32,
     modified: Option<SystemTime>,
     stream: Option<(usize, usize)>,
     size: u64,
@@ -701,6 +702,7 @@ fn read_files(bytes: &mut Bytes, streams: &Streams) -> Result<Vec<Item>> {
             name,
             kind,
             mode,
+            windows_attributes: crate::windows_attributes(attribute, mode),
             modified: modified[index],
             stream,
             size,
@@ -1596,7 +1598,11 @@ pub fn read_archive(
             let mut target = Vec::new();
             let mut output = match (write, item.kind) {
                 (Some(root), Kind::File) => {
-                    let file = crate::create_new_file(&root.join(&item.name), item.mode.unwrap_or(0o666))
+                    let file = crate::create_new_file(
+                        &root.join(&item.name),
+                        item.mode.unwrap_or(0o666),
+                        item.windows_attributes,
+                    )
                             .map_err(|error| {
                                 if error.kind() == std::io::ErrorKind::AlreadyExists {
                                     anyhow::anyhow!(
@@ -1699,6 +1705,7 @@ pub fn read_archive(
             let file = crate::create_new_file(
                 &staging.path().join(&item.name),
                 item.mode.unwrap_or(0o666),
+                item.windows_attributes,
             )?;
             if let Some(time) = item.modified {
                 crate::set_modified_best_effort(&file, time);

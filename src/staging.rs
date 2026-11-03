@@ -94,6 +94,8 @@ impl Staging {
             fs::metadata(self.temp.path())?.permissions().mode() & 0o777
         };
         for path in &moves {
+            #[cfg(windows)]
+            allow_replacing(&self.destination.join(path))?;
             fs::rename(self.temp.path().join(path), self.destination.join(path))?;
         }
         #[cfg(unix)]
@@ -102,6 +104,23 @@ impl Staging {
         crate::restore_directory_times(&self.destination, &created);
         Ok(())
     }
+}
+
+#[cfg(windows)]
+#[expect(
+    clippy::permissions_set_readonly_false,
+    reason = "Windows only, where it clears FILE_ATTRIBUTE_READONLY"
+)]
+fn allow_replacing(existing: &Path) -> Result<()> {
+    if let Ok(metadata) = fs::symlink_metadata(existing)
+        && metadata.is_file()
+        && metadata.permissions().readonly()
+    {
+        let mut permissions = metadata.permissions();
+        permissions.set_readonly(false);
+        fs::set_permissions(existing, permissions)?;
+    }
+    Ok(())
 }
 
 fn plan(
