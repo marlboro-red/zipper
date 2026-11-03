@@ -352,7 +352,12 @@
       "status": "missing"
     },
     "-sns": {
-      "status": "missing"
+      "status": "native",
+      "note": "With `--streams` on Windows, 7z streams are written onto their files. Without it they are checked and skipped.",
+      "tests": [
+        "tests/streams.rs::stored_streams_are_written_only_when_asked",
+        "tests/hostile_7z.rs::unsafe_alternate_stream_names_are_refused"
+      ]
     },
     "-snz": {
       "status": "native",

@@ -49,6 +49,10 @@ enum Command {
         /// default, ZIP, tar and 7z output read in process must fit in free space.
         #[arg(long)]
         max_extracted_bytes: Option<u64>,
+        /// Write the NTFS alternate data streams a 7z archive stores onto
+        /// their files (Windows only). Without it they are checked, not written.
+        #[arg(long)]
+        streams: bool,
     },
     /// List entries (checks the index only; use test to verify payloads).
     List { archive: PathBuf },
@@ -121,6 +125,7 @@ fn main() -> Result<()> {
             paths,
             overwrite,
             max_extracted_bytes,
+            streams,
         } => {
             zipper::extract_archive(
                 &archive,
@@ -136,6 +141,7 @@ fn main() -> Result<()> {
                     threads: cli.threads,
                     engine: cli.zip_engine.into(),
                     zip_buffer_bytes: buffer_bytes,
+                    alternate_streams: streams,
                     ..Default::default()
                 },
             )?;

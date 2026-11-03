@@ -7,6 +7,7 @@ use zipper::native_7z::{ReadOptions, read_archive};
 const UNIX_FILE: u32 = 0o100644 << 16 | 0x8000;
 const UNIX_LINK: u32 = 0o120777 << 16 | 0x8000;
 const DIRECTORY: u32 = 0x10;
+const WINDOWS_ARCHIVE: u32 = 0x20;
 
 #[derive(Clone)]
 struct Member {
@@ -20,6 +21,14 @@ fn file(name: &str, data: &[u8]) -> Member {
         name: name.into(),
         data: Some(data.to_vec()),
         attribute: UNIX_FILE,
+    }
+}
+
+fn windows_file(name: &str, data: &[u8]) -> Member {
+    Member {
+        name: name.into(),
+        data: Some(data.to_vec()),
+        attribute: WINDOWS_ARCHIVE,
     }
 }
 
@@ -603,4 +612,90 @@ fn a_damaged_lzma2_segment_fails_on_every_thread_count() {
             );
         }
     }
+}
+
+#[test]
+fn alternate_streams_are_checked_and_skipped_by_default() {
+    let bytes = copy_folder_archive(
+        &[
+            file("a.txt", b"base"),
+            windows_file("a.txt:Zone.Identifier", b"[ZoneTransfer]\r\nZoneId=3\r\n"),
+            directory("d"),
+            windows_file("d:meta", b""),
+        ],
+        HeaderDamage::default(),
+    );
+    let (root, result) = extract(&bytes);
+    let names: Vec<String> = result
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect();
+    assert!(names.contains(&"a.txt:Zone.Identifier".to_owned()));
+    let out = root.path().join("parent/out");
+    let mut written: Vec<String> = fs::read_dir(&out)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    written.sort();
+    assert_eq!(written, ["a.txt", "d"]);
+    assert_eq!(fs::read(out.join("a.txt")).unwrap(), b"base");
+    if !cfg!(windows) {
+        let archive = root.path().join("streams.7z");
+        fs::write(&archive, &bytes).unwrap();
+        let error = read_archive(
+            &archive,
+            Some(&root.path().join("with-streams")),
+            ReadOptions {
+                alternate_streams: true,
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("only be written on Windows"));
+        assert!(!root.path().join("with-streams").exists());
+    }
+}
+
+#[test]
+fn unsafe_alternate_stream_names_are_refused() {
+    for (name, words) in [
+        ("a.txt:", "stream name"),
+        ("a.txt:s:$DATA", "stream name"),
+        ("a.txt::$DATA", "stream name"),
+        ("a.txt:s.", "stream name"),
+        ("a.txt:s/x", "stream name"),
+        ("a.txt:$DATA", "stream name"),
+        ("a.txt:s*", "stream name"),
+        ("a.txt:S", "only by case"),
+        ("missing:s", "belongs to no file"),
+        ("link:s", "belongs to no file"),
+        (":s", "path length"),
+    ] {
+        assert_refused(
+            name,
+            &copy_folder_archive(
+                &[
+                    file("a.txt", b"base"),
+                    link("link", "a.txt"),
+                    windows_file("a.txt:s", b"first"),
+                    windows_file(name, b"x"),
+                ],
+                HeaderDamage::default(),
+            ),
+            words,
+        );
+    }
+}
+
+#[test]
+fn a_unix_file_with_a_colon_is_still_refused() {
+    assert_refused(
+        "todo:2026 beside todo",
+        &copy_folder_archive(
+            &[file("todo", b"base"), file("todo:2026", b"a real file")],
+            HeaderDamage::default(),
+        ),
+        "unsafe archive path",
+    );
 }

@@ -2,15 +2,10 @@ use anyhow::Result;
 use std::path::Path;
 
 #[cfg(windows)]
-fn stream(path: &Path) -> std::ffi::OsString {
-    let mut name = path.as_os_str().to_owned();
-    name.push(":Zone.Identifier");
-    name
-}
-
-#[cfg(windows)]
 pub(crate) fn archive_mark(archive: &Path) -> Option<Vec<u8>> {
-    std::fs::read(stream(archive)).ok()
+    let mut stream = archive.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    std::fs::read(stream).ok()
 }
 
 #[cfg(not(windows))]
@@ -19,38 +14,66 @@ pub(crate) fn archive_mark(_: &Path) -> Option<Vec<u8>> {
 }
 
 #[cfg(windows)]
-#[expect(
-    clippy::permissions_set_readonly_false,
-    reason = "Windows only, where it clears FILE_ATTRIBUTE_READONLY"
-)]
 pub(crate) fn mark_extracted_files(root: &Path, zone: &[u8]) -> Result<()> {
-    use anyhow::Context;
     if !holds_named_streams(root)? {
         return Ok(());
     }
     for entry in walkdir::WalkDir::new(root).min_depth(1) {
         let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let metadata = entry.metadata()?;
-        let mut permissions = metadata.permissions();
-        let read_only = permissions.readonly();
-        if read_only {
-            permissions.set_readonly(false);
-            std::fs::set_permissions(entry.path(), permissions.clone())?;
-        }
-        std::fs::write(stream(entry.path()), zone)
-            .with_context(|| format!("cannot mark {} as downloaded", entry.path().display()))?;
-        std::fs::File::options()
-            .write(true)
-            .open(entry.path())?
-            .set_modified(metadata.modified()?)?;
-        if read_only {
-            permissions.set_readonly(true);
-            std::fs::set_permissions(entry.path(), permissions)?;
+        if entry.file_type().is_file() {
+            write_stream(entry.path(), "Zone.Identifier", zone)?;
         }
     }
+    Ok(())
+}
+
+#[cfg(windows)]
+#[expect(
+    clippy::permissions_set_readonly_false,
+    reason = "Windows only, where it clears FILE_ATTRIBUTE_READONLY"
+)]
+pub(crate) fn write_stream(base: &Path, name: &str, data: &[u8]) -> Result<()> {
+    use anyhow::Context;
+    let metadata = std::fs::symlink_metadata(base)?;
+    let mut permissions = metadata.permissions();
+    let read_only = permissions.readonly();
+    if read_only {
+        permissions.set_readonly(false);
+        std::fs::set_permissions(base, permissions.clone())?;
+    }
+    let mut stream = base.as_os_str().to_owned();
+    stream.push(":");
+    stream.push(name);
+    std::fs::write(&stream, data)
+        .with_context(|| format!("cannot write stream {name:?} of {}", base.display()))?;
+    if metadata.is_file() {
+        std::fs::File::options()
+            .write(true)
+            .open(base)?
+            .set_modified(metadata.modified()?)?;
+    }
+    if read_only {
+        permissions.set_readonly(true);
+        std::fs::set_permissions(base, permissions)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub(crate) fn write_stream(_: &Path, _: &str, _: &[u8]) -> Result<()> {
+    anyhow::bail!("NTFS alternate data streams can only be written on Windows")
+}
+
+pub(crate) fn ensure_plain_stream_name(name: &str) -> Result<()> {
+    anyhow::ensure!(
+        !name.is_empty()
+            && name.len() <= 255
+            && !name.starts_with('$')
+            && !name.contains(['/', '\\', ':', '<', '>', '"', '|', '?', '*'])
+            && !name.chars().any(char::is_control)
+            && !name.ends_with(['.', ' ']),
+        "unsafe NTFS stream name {name:?}"
+    );
     Ok(())
 }
 

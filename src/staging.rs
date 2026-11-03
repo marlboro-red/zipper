@@ -59,7 +59,7 @@ pub(crate) fn stage(archive: &Path, destination: &Path, existing: Existing) -> R
         temp,
         destination: destination.to_owned(),
         merge,
-        zone: crate::mark_of_the_web::archive_mark(archive),
+        zone: crate::ntfs_streams::archive_mark(archive),
     })
 }
 
@@ -70,7 +70,7 @@ impl Staging {
 
     pub(crate) fn publish(&self, directories: &[Directory]) -> Result<()> {
         if let Some(zone) = &self.zone {
-            crate::mark_of_the_web::mark_extracted_files(self.temp.path(), zone)?;
+            crate::ntfs_streams::mark_extracted_files(self.temp.path(), zone)?;
         }
         if !self.merge {
             return crate::publish(self.temp.path(), &self.destination, directories);

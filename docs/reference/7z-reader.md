@@ -10,7 +10,7 @@ The reader decodes these methods:
 - Copy and Deflate.
 - The x86 (BCJ), ARM, ARM Thumb, ARM64, RISC-V, PowerPC, SPARC and IA-64 branch filters, and the Delta filter, in front of LZMA or LZMA2.
 
-It reads solid and non-solid archives, solid blocks, compressed and plain headers, and archives that 7-Zip and libarchive write. It extracts files, empty files, folders and symlinks that stay inside the destination. On Windows it creates links as the [ZIP reader](zip-reader.md#symlinks) does.
+It reads solid and non-solid archives, solid blocks, compressed and plain headers, and archives that 7-Zip and libarchive write. It extracts files, empty files, folders and symlinks that stay inside the destination. On Windows it creates links as the [ZIP reader](zip-reader.md#symlinks) does. An entry made on Windows and named `file:stream` is an NTFS alternate data stream, as 7-Zip stores with `-sns`. An entry made on Unix with a `:` in its name is refused as an unsafe path. A stream's file or folder must be in the archive. Its name must be plain, with no `$` at the start, no `/`, `\`, `:`, `<`, `>`, `"`, `|`, `?`, `*` or control character, and no trailing dot or space. Two streams of one file that differ only by case are refused, because NTFS ignores case. Zipper checks every stream and writes none by default. On Windows, `--streams` writes them onto their files after every file and link exists, up to 64 MiB in all, and keeps each file's time and read-only attribute. With `--overwrite`, a stream on a folder that already exists in the destination is not written. `--streams` with any other archive is an error.
 
 The reader does not support these features:
 
