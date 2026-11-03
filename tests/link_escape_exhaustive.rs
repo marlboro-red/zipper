@@ -8,20 +8,28 @@
 //! destination. A refused run must leave the destination unchanged and no
 //! staging behind, and nothing outside may ever change.
 //!
-//! The gate checks every 13th run. Set `ZIPPER_LINK_STRIDE=1` to check all
-//! 25,200.
-#![cfg(unix)]
+//! It runs only when `ZIPPER_LINK_ESCAPE=1` is set, before a release or when
+//! `cargo xtask verify-sync link-escape` asks, because it is too slow for
+//! every push. It then checks every 13th run, and `ZIPPER_LINK_STRIDE=1`
+//! checks all 25,200.
 mod common;
 
 use std::{
     collections::BTreeMap,
     fs,
-    os::unix::fs::symlink,
     path::{Path, PathBuf},
 };
 use zipper::{Existing, native_zip};
 
 const STRIDE: &str = "ZIPPER_LINK_STRIDE";
+const OPT_IN: &str = "ZIPPER_LINK_ESCAPE";
+
+fn link_to_folder(target: &str, path: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, path).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(target.replace('/', "\\"), path).unwrap();
+}
 const OUTSIDE_FROM_TOP: &str = "../outside";
 const OUTSIDE_FROM_FOLDER: &str = "../../outside";
 const LINK_TARGETS: [&str; 6] = ["a/k/s", "b/k/s", "a/s", "k/s", "a", "."];
@@ -67,10 +75,10 @@ fn build_destination(destination: &Path, layout: [(&str, Kept); 2]) {
             Kept::Nothing => {}
             Kept::File => fs::write(&path, b"kept").unwrap(),
             Kept::Folder => fs::create_dir(&path).unwrap(),
-            Kept::LinkOut => symlink(OUTSIDE_FROM_TOP, &path).unwrap(),
+            Kept::LinkOut => link_to_folder(OUTSIDE_FROM_TOP, &path),
             Kept::FolderWithLinkOut => {
                 fs::create_dir(&path).unwrap();
-                symlink(OUTSIDE_FROM_FOLDER, path.join("k")).unwrap();
+                link_to_folder(OUTSIDE_FROM_FOLDER, &path.join("k"));
             }
         }
     }
@@ -102,7 +110,8 @@ fn snapshot(root: &Path) -> Snapshot {
         .map(|entry| entry.unwrap())
         .map(|entry| {
             let kind = if entry.file_type().is_symlink() {
-                format!("link {}", fs::read_link(entry.path()).unwrap().display())
+                let target = fs::read_link(entry.path()).unwrap();
+                format!("link {}", target.display().to_string().replace('\\', "/"))
             } else if entry.file_type().is_dir() {
                 "folder".to_owned()
             } else {
@@ -151,6 +160,14 @@ fn lands(path: &Path, hops: usize) -> PathBuf {
 
 #[test]
 fn archive_links_land_inside_the_destination_on_every_small_tree_pair() {
+    if std::env::var_os(OPT_IN).is_none() {
+        assert!(
+            std::env::var_os(STRIDE).is_none(),
+            "{STRIDE} asks for a run, so set {OPT_IN}=1 too; nothing was checked"
+        );
+        eprintln!("skipped: set {OPT_IN}=1 to run the link escape check");
+        return;
+    }
     let stride: usize = std::env::var(STRIDE).map_or(13, |value| value.parse().unwrap());
     let fixtures = tempfile::tempdir().unwrap();
     let mut archives = Vec::new();

@@ -19,15 +19,19 @@ An archive link can escape the destination without any `..` in its target, by pa
 
 - The destination's `a` and `b` each hold nothing, a file, a folder, a link to a folder outside, or a folder holding such a link `k`. That gives 25 destinations.
 - The archive's `a` and `b` each hold nothing, a file, a folder, or a link to `.`, `a` or `b`. A link `l` targets `a/k/s`, `b/k/s`, `a/s`, `k/s`, `a` or `.`, or is absent. That gives 252 archives.
-- Each pair runs in `Overwrite`, `Skip`, `RenameNew` and `RenameExisting`, 25,200 runs in all. The gate runs every 13th, about 1,900 runs in 2 seconds. All of them take about 26 seconds.
+- Each pair runs in `Overwrite`, `Skip`, `RenameNew` and `RenameExisting`, 25,200 runs in all. All of them take about 26 seconds on a Mac.
+- It runs only when invoked, never on a push or in CI. Run it before a release, and when the gate's `verify` step reports that its covered code changed. Without `ZIPPER_LINK_ESCAPE=1` the test prints that it was skipped.
 - The oracle is a property, not a copy of the code. Links the destination already had are told apart by their targets, which no archive can hold.
-- It leaves out other processes that change the destination during extraction, and Windows, where the gate cannot make links.
+- It leaves out other processes that change the destination during extraction.
+- On Windows, run it on a machine with Developer Mode, or as administrator, before a release that changes how links are created there.
 
 ## Run it
 
 ```sh
-ZIPPER_LINK_STRIDE=1 cargo test --release --test link_escape_exhaustive -- --nocapture
+ZIPPER_LINK_ESCAPE=1 ZIPPER_LINK_STRIDE=1 cargo test --release --test link_escape_exhaustive -- --nocapture
 ```
+
+The same command runs it on Windows, where the full run takes several minutes.
 
 Then run `cargo xtask verify-sync link-escape`, which runs it again and records the fingerprint.
 

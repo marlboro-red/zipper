@@ -76,7 +76,7 @@ item = src/memory.rs | impl Drop for Reservation<'_> {
 [link-escape]
 skill = .claude/skills/zipper-verify-links/SKILL.md
 fingerprint = a4e0a4e1b7480923
-full-check = cargo test --release --test link_escape_exhaustive ZIPPER_LINK_STRIDE=1
+full-check = cargo test --release --test link_escape_exhaustive ZIPPER_LINK_STRIDE=1 ZIPPER_LINK_ESCAPE=1 -- --nocapture
 item = src/staging.rs | fn ensure_links_stay_in_archive_paths(
 item = src/staging.rs | fn owner_after_publish(
 item = src/staging.rs | fn join_rest(
