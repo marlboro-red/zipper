@@ -375,3 +375,116 @@ mod publish_tests {
         std::fs::remove_dir_all(staging.path().join("p")).unwrap();
     }
 }
+
+#[cfg(test)]
+mod escape_spec {
+    pub(super) fn is_plain_relative_name(path: &[u8]) -> bool {
+        !path.is_empty()
+            && path.iter().all(|byte| !matches!(byte, b'\\' | b':' | 0))
+            && path
+                .split(|byte| *byte == b'/')
+                .all(|component| !matches!(component, b"" | b"." | b".."))
+    }
+
+    pub(super) fn stays_inside(name: &[u8], target: &[u8]) -> bool {
+        let mut depth = name.iter().filter(|byte| **byte == b'/').count() as i64;
+        if target.first() == Some(&b'/') {
+            return false;
+        }
+        for component in target.split(|byte| *byte == b'/') {
+            match component {
+                b"" | b"." => {}
+                b".." => depth -= 1,
+                _ => depth += 1,
+            }
+            if depth < 0 {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Component;
+
+    fn every_string(alphabet: &[u8], longest: usize) -> Vec<String> {
+        let mut all = vec![String::new()];
+        let mut previous = vec![String::new()];
+        for _ in 0..longest {
+            previous = previous
+                .iter()
+                .flat_map(|text| {
+                    alphabet
+                        .iter()
+                        .map(move |byte| format!("{text}{}", *byte as char))
+                })
+                .collect();
+            all.extend(previous.iter().cloned());
+        }
+        all
+    }
+
+    #[test]
+    fn the_escape_spec_matches_how_the_os_reads_paths() {
+        for path in every_string(b"a/.", 7) {
+            if escape_spec::is_plain_relative_name(path.as_bytes()) {
+                assert!(
+                    Path::new(&path)
+                        .components()
+                        .all(|c| matches!(c, Component::Normal(_))),
+                    "{path:?}"
+                );
+            }
+        }
+        let names: Vec<_> = every_string(b"a/", 4)
+            .into_iter()
+            .filter(|name| escape_spec::is_plain_relative_name(name.as_bytes()))
+            .collect();
+        for name in &names {
+            let link = Path::new(name).parent().unwrap();
+            for target in every_string(b"a/.", 6) {
+                if escape_spec::stays_inside(name.as_bytes(), target.as_bytes()) {
+                    let mut depth = link.components().count() as i64;
+                    for component in Path::new(&target).components() {
+                        depth += match component {
+                            Component::Normal(_) => 1,
+                            Component::ParentDir => -1,
+                            Component::CurDir => 0,
+                            other => panic!("{target:?} has {other:?}"),
+                        };
+                        assert!(depth >= 0, "{name:?} -> {target:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_checks_agree_with_the_escape_spec_on_every_short_string() {
+        let strings = every_string(b"a/.:\\\0", 5);
+        for path in &strings {
+            if safe_path(path).is_ok() {
+                assert!(
+                    escape_spec::is_plain_relative_name(path.as_bytes()),
+                    "{path:?}"
+                );
+            }
+        }
+        for name in every_string(b"a/", 3)
+            .iter()
+            .filter(|name| safe_path(name).is_ok())
+        {
+            for target in &strings {
+                if ensure_link_stays_inside("ZIP", name, target).is_ok() {
+                    assert!(escape_spec::stays_inside(
+                        name.as_bytes(),
+                        target.as_bytes()
+                    ));
+                }
+            }
+        }
+    }
+}
