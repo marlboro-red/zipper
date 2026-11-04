@@ -150,6 +150,47 @@ impl Drop for Reservation<'_> {
     }
 }
 
+struct Recycled<'a, T> {
+    idle: &'a std::sync::Mutex<Vec<T>>,
+    value: Option<T>,
+}
+
+impl<'a, T> Recycled<'a, T> {
+    fn take(idle: &'a std::sync::Mutex<Vec<T>>, create: impl FnOnce() -> T) -> Self {
+        let value = idle
+            .lock()
+            .ok()
+            .and_then(|mut idle| idle.pop())
+            .unwrap_or_else(create);
+        Self {
+            idle,
+            value: Some(value),
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Recycled<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.value.as_ref().unwrap()
+    }
+}
+
+impl<T> std::ops::DerefMut for Recycled<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.value.as_mut().unwrap()
+    }
+}
+
+impl<T> Drop for Recycled<'_, T> {
+    fn drop(&mut self) {
+        if let (Some(value), Ok(mut idle)) = (self.value.take(), self.idle.lock()) {
+            idle.push(value);
+        }
+    }
+}
+
 fn entry_buffer(size: usize) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();
     buffer
@@ -1483,16 +1524,19 @@ pub fn read_archive_with_options(
         pool_threads.saturating_sub(entries_with_payload),
     ));
     let targets = std::sync::Mutex::new(Vec::new());
+    let idle_workspaces = std::sync::Mutex::new(Vec::new());
     let run = || {
-        largest_first.par_iter().try_for_each_init(
+        // RECORD(benchmarks/native-zip/one-entry-per-task/README.md): split to single entries,
+        // and reuse each task's reader and buffer, which tiny entries cannot afford per task.
+        largest_first.par_iter().with_max_len(1).try_for_each_init(
             || {
-                (
-                    archive.clone().into_inner(),
-                    vec![0u8; 1024 * 1024],
-                    fast.then(ExactInflater::new),
-                )
+                let workspace = Recycled::take(&idle_workspaces, || {
+                    (archive.clone().into_inner(), vec![0u8; 1024 * 1024])
+                });
+                (workspace, fast.then(ExactInflater::new))
             },
-            |(raw, buffer, codec), &index| {
+            |(workspace, codec), &index| {
+                let (raw, buffer) = &mut **workspace;
                 tracker.check()?;
                 let item = &items[index];
                 let LocalRecord {
