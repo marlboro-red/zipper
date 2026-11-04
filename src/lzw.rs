@@ -21,6 +21,7 @@ pub(crate) struct Unlzw<R> {
     block_mode: bool,
     max_bits: u32,
     bits: u32,
+    largest: u32,
     group: [u8; LARGEST_MAX_BITS as usize],
     codes_in_group: u32,
     next_in_group: u32,
@@ -42,6 +43,7 @@ impl<R: BufRead> Unlzw<R> {
             block_mode: false,
             max_bits: LARGEST_MAX_BITS,
             bits: INITIAL_BITS,
+            largest: (1 << INITIAL_BITS) - 1,
             group: [0; LARGEST_MAX_BITS as usize],
             codes_in_group: 0,
             next_in_group: 0,
@@ -80,22 +82,25 @@ impl<R: BufRead> Unlzw<R> {
         LITERALS + u32::from(self.block_mode)
     }
 
+    // EXTERNAL(ncompress, BSD zopen, gzip unlzw): the first limit is 511 whatever the largest width, so a 9-bit stream widens to 10 bits.
     fn reset_table(&mut self) {
         self.bits = INITIAL_BITS;
+        self.largest = (1 << INITIAL_BITS) - 1;
         self.free = self.first_free();
     }
 
-    fn largest_code(&self) -> u32 {
-        if self.bits == self.max_bits {
+    fn widen(&mut self) {
+        self.bits += 1;
+        self.largest = if self.bits == self.max_bits {
             1 << self.max_bits
         } else {
             (1 << self.bits) - 1
-        }
+        };
     }
 
     fn next_code(&mut self) -> io::Result<Option<u32>> {
-        if self.free > self.largest_code() {
-            self.bits += 1;
+        if self.free > self.largest {
+            self.widen();
             self.next_in_group = self.codes_in_group;
         }
         if self.next_in_group == self.codes_in_group {
@@ -222,18 +227,17 @@ mod tests {
             let into = position - group_start;
             group_start + into.div_ceil(bits * 8) * bits * 8
         };
-        let largest = |bits: usize| {
-            if bits == max_bits {
-                1 << max_bits
-            } else {
-                (1 << bits) - 1
-            }
-        };
+        let mut limit = 511usize;
         loop {
-            if free > largest(bits) {
+            if free > limit {
                 position = round_up(position, group_start, bits);
                 group_start = position;
                 bits += 1;
+                limit = if bits == max_bits {
+                    1 << max_bits
+                } else {
+                    (1 << bits) - 1
+                };
             }
             if position + bits > total_bits {
                 return Some(out);
@@ -257,6 +261,7 @@ mod tests {
                 position = round_up(position, group_start, bits);
                 group_start = position;
                 bits = 9;
+                limit = 511;
                 free = first - 1;
                 continue;
             }
@@ -422,8 +427,7 @@ mod tests {
                     ^ ((index / 997) as u8 % 3)
             })
             .collect();
-        // EXTERNAL(macOS compress): its -b9 output fails in its own uncompress and in gzip, so 9 bits is left out.
-        for bits in 10..=16 {
+        for bits in 9..=16 {
             let compressed = std::process::Command::new("compress")
                 .args(["-c", "-f", &format!("-b{bits}")])
                 .stdin(std::process::Stdio::piped())

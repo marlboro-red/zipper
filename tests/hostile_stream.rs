@@ -303,3 +303,18 @@ fn a_compress_file_extracts_and_a_code_it_never_defined_is_refused() {
         ReadOptions::default(),
     );
 }
+
+#[test]
+fn a_nine_bit_compress_file_widens_to_ten_bit_codes_as_7zip_reads_it() {
+    let (root, result) = extract(
+        "nine-bits.bin.Z",
+        &fs::read(Path::new(STREAMS).join("nine-bits.bin.Z")).unwrap(),
+        ReadOptions::default(),
+    );
+    result.unwrap();
+    assert!(
+        fs::read(root.path().join("out/nine-bits.bin")).unwrap()
+            == fs::read(Path::new(STREAMS).join("nine-bits.bin")).unwrap(),
+        "the 9-bit file decoded to other bytes"
+    );
+}

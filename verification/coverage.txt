@@ -169,7 +169,7 @@ item = src/lz4.rs | pub(crate) fn decode_block(
 
 [compress]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 3a177e7d3b117116
+fingerprint = 0c183adadfd58e35
 full-check = cargo test --release --lib lzw
 item = src/lzw.rs | impl<R: BufRead> Unlzw<R> {
 item = src/lzw.rs | impl<R: BufRead> Read for Unlzw<R> {
