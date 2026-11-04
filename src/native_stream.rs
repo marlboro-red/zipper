@@ -155,6 +155,7 @@ pub fn read_archive(
     };
     let mut buffer = vec![0u8; COPY_BUFFER];
     let mut size = 0u64;
+    let mut held = 0u64;
     loop {
         let read = input
             .read(&mut buffer)
@@ -167,10 +168,10 @@ pub fn read_archive(
             size <= limit,
             "{name} decodes to more than {limit} bytes; pass --max-extracted-bytes to raise the cap"
         );
-        tracker.add_bytes(read as u64)?;
         if let Some(output) = &mut output {
             output.write_all(&buffer[..read])?;
         }
+        tracker.add_bytes(std::mem::replace(&mut held, read as u64))?;
     }
     drop(input);
     if let Some(decoder) = lzma {
@@ -181,8 +182,9 @@ pub fn read_archive(
         );
     }
     if let Some(output) = output {
-        output.into_inner().map_err(|error| error.into_error())?;
+        drop(output.into_inner().map_err(|error| error.into_error())?);
     }
+    tracker.add_bytes(held)?;
     tracker.file_done()?;
     tracker.finish();
     tracker.check()?;

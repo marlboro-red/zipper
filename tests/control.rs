@@ -1,6 +1,9 @@
 //! Progress counts only grow and reach the totals, ZIP knows its totals and
 //! tar does not, and cancelling at any point returns `Cancelled` and leaves
 //! the destination unchanged.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod common;
+
 use std::{
     fs,
     io::Write,
@@ -431,4 +434,160 @@ fn a_tar_file_cut_short_is_never_counted_as_done() {
     );
     assert!(result.is_err());
     assert!(*files.lock().unwrap() <= 1, "the cut file was counted");
+}
+
+fn every_reader(root: &Path) -> Vec<std::path::PathBuf> {
+    let zip = root.join("a.zip");
+    write_zip(&zip);
+    let tar = root.join("a.tar");
+    write_tar(&tar);
+    let parity = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/parity/archives");
+    let mut archives = vec![zip, tar];
+    for name in ["7z.7z", "hello.txt.gz"] {
+        let copy = root.join(name);
+        fs::copy(parity.join(name), &copy).unwrap();
+        archives.push(copy);
+    }
+    archives
+}
+
+fn reports(
+    archive: &Path,
+    destination: &Path,
+    during: &(dyn Fn(Progress) + Sync),
+) -> Vec<Progress> {
+    let seen = Mutex::new(Vec::new());
+    let watch = |progress: Progress| {
+        during(progress);
+        seen.lock().unwrap().push(progress);
+    };
+    zipper::extract_archive(
+        archive,
+        destination,
+        zipper::ExtractOptions {
+            control: Control {
+                progress: Some(&watch),
+                cancel: None,
+            },
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|error| panic!("{archive:?}: {error:#}"));
+    seen.into_inner().unwrap()
+}
+
+#[test]
+fn the_last_report_says_finishing_with_the_final_counts() {
+    let root = tempfile::tempdir().unwrap();
+    for archive in every_reader(root.path()) {
+        let seen = reports(
+            &archive,
+            &root.path().join(format!(
+                "{}.out",
+                archive.file_name().unwrap().to_str().unwrap()
+            )),
+            &|_| {},
+        );
+        let first = seen
+            .iter()
+            .position(|progress| progress.phase == zipper::Phase::Finishing)
+            .unwrap_or_else(|| panic!("{archive:?} never reported finishing"));
+        assert!(
+            seen[..first]
+                .iter()
+                .all(|progress| progress.phase == zipper::Phase::Extracting)
+        );
+        assert!(
+            seen[first..]
+                .iter()
+                .all(|progress| *progress == seen[first]),
+            "{archive:?}"
+        );
+        let last = seen[first];
+        assert!(
+            last.files_total
+                .is_none_or(|total| last.files_done == total),
+            "{archive:?}"
+        );
+        assert!(
+            last.bytes_total
+                .is_none_or(|total| last.bytes_done == total),
+            "{archive:?}"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn open_paths() -> Vec<std::path::PathBuf> {
+    fs::read_dir("/proc/self/fd")
+        .unwrap()
+        .filter_map(|fd| fs::read_link(fd.ok()?.path()).ok())
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn open_paths() -> Vec<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let fds: Vec<i32> = fs::read_dir("/dev/fd")
+        .unwrap()
+        .filter_map(|fd| fd.ok()?.file_name().to_str()?.parse().ok())
+        .collect();
+    fds.into_iter()
+        .filter_map(|fd| {
+            let mut path = [0u8; libc::PATH_MAX as usize];
+            // SAFETY: F_GETPATH writes at most PATH_MAX bytes, a NUL-terminated path, into `path`.
+            let found = unsafe { libc::fcntl(fd, libc::F_GETPATH, path.as_mut_ptr()) };
+            let end = path.iter().position(|&byte| byte == 0)?;
+            (found == 0).then(|| std::ffi::OsStr::from_bytes(&path[..end]).into())
+        })
+        .collect()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn counts_reach_their_totals_only_after_every_file_is_closed() {
+    let root = tempfile::tempdir().unwrap();
+    let work = root.path().canonicalize().unwrap();
+    for archive in every_reader(&work) {
+        let still_open = Mutex::new(Vec::new());
+        let entries = zipper::extract_archive(
+            &archive,
+            &work.join("listed"),
+            zipper::ExtractOptions::default(),
+        );
+        entries.unwrap();
+        let listed = walkdir::WalkDir::new(work.join("listed"))
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry.file_type().is_file())
+            .count() as u64;
+        let total: u64 = walkdir::WalkDir::new(work.join("listed"))
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry.file_type().is_file())
+            .map(|entry| entry.metadata().unwrap().len())
+            .sum();
+        common::make_tree_deletable(&work.join("listed"));
+        fs::remove_dir_all(work.join("listed")).unwrap();
+        let check = |progress: Progress| {
+            if progress.files_done == listed || progress.bytes_done == total {
+                let staged: Vec<_> = open_paths()
+                    .into_iter()
+                    .filter(|path| {
+                        path.strip_prefix(&work)
+                            .is_ok_and(|rest| rest.to_string_lossy().starts_with(".zipper-"))
+                    })
+                    .collect();
+                still_open.lock().unwrap().extend(staged);
+            }
+        };
+        reports(&archive, &work.join("out"), &check);
+        common::make_tree_deletable(&work.join("out"));
+        fs::remove_dir_all(work.join("out")).unwrap();
+        let still_open = still_open.into_inner().unwrap();
+        assert!(
+            still_open.is_empty(),
+            "{archive:?} reported its totals with {still_open:?} open"
+        );
+    }
 }

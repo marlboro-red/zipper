@@ -208,7 +208,9 @@ impl<'f> Writers<'f> {
             if self.failure.lock().unwrap().is_none() {
                 let report = |bytes: u64| self.report(count, Written::Bytes(bytes));
                 let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    if write_job(&mut job, &report)? == job.size {
+                    let (total, held) = write_job(&mut job, &report)?;
+                    self.report(count, Written::Bytes(held));
+                    if total == job.size {
                         self.report(count, Written::File);
                     }
                     Ok(())
@@ -233,7 +235,7 @@ impl<'f> Writers<'f> {
     }
 }
 
-fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<u64> {
+fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<(u64, u64)> {
     let name = &job.name;
     let mut file = crate::create_new_file(&job.path, job.mode, crate::windows_attributes(0, Some(job.mode))).map_err(|error| {
         if error.kind() == std::io::ErrorKind::AlreadyExists {
@@ -246,12 +248,13 @@ fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<u64> {
     })?;
     counters::add(Counter::FilesCreated, 1);
     let mut total = 0;
+    let mut held = 0;
     let mut write = |bytes: &[u8]| -> Result<()> {
         total += bytes.len() as u64;
         if !bytes.is_empty() {
             file.write_all(bytes)
                 .with_context(|| format!("cannot write tar entry {name:?}"))?;
-            written(bytes.len() as u64);
+            written(std::mem::replace(&mut held, bytes.len() as u64));
             counters::add(Counter::OutputWrites, 1);
             counters::add(Counter::OutputBytesWritten, bytes.len() as u64);
         }
@@ -266,7 +269,8 @@ fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<u64> {
     if let Some(time) = job.modified {
         crate::set_modified_best_effort(&file, time);
     }
-    Ok(total)
+    drop(file);
+    Ok((total, held))
 }
 
 /// Returns the compression of a tar archive, or `None` when the file does not

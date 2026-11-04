@@ -6,7 +6,7 @@
 
 [tar-writer-pool]
 skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
-fingerprint = bde79935b518d5cd
+fingerprint = 7f5a0b3be2f7f7d4
 item = src/native_tar.rs | const CHUNK:
 item = src/native_tar.rs | const QUEUED_FILES:
 item = src/native_tar.rs | const QUEUED_CHUNKS_PER_FILE:
@@ -26,14 +26,14 @@ item = src/native_tar.rs | pub fn read_archive(
 
 [zip-write-behind]
 skill = .claude/skills/zipper-verify-zip-write-behind/SKILL.md
-fingerprint = efb42f4df6c865ae
+fingerprint = 9df612d2d42e1c38
 item = src/native_zip.rs | const WRITE_BEHIND_CHUNK:
 item = src/native_zip.rs | const WRITE_BEHIND_DEPTH:
 item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = e73b3a35cfe6d387
+fingerprint = 6f7fe3fe622d691c
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
 item = src/memory.rs | pub(crate) struct Memory {
@@ -44,7 +44,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = eb4e970e2e321ff0
+fingerprint = d32eae46e35101e5
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
 item = src/progress.rs | impl<'a> Tracker<'a> {
@@ -66,7 +66,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = 5d1c271843376fdd
+fingerprint = 91586ed010477aff
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
 item = src/native_zip.rs | pub fn read_archive_with_options(

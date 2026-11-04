@@ -19,7 +19,7 @@ use anyhow::{Context, Result, ensure};
 pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};
 pub use metadata::Metadata;
 pub use placement::Strip;
-pub use progress::{Cancelled, Control, Progress};
+pub use progress::{Cancelled, Control, Phase, Progress};
 pub use staging::Existing;
 use std::{fs::File, io::Read, path::Path};
 

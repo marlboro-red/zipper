@@ -948,14 +948,15 @@ fn write_behind(
     mut output: BufWriter<OutputFile>,
     written: &(dyn Fn(u64) + Sync),
     produce: impl FnOnce(&mut dyn FnMut(&[u8]) -> Result<()>) -> Result<()>,
-) -> Result<BufWriter<OutputFile>> {
+) -> Result<(BufWriter<OutputFile>, u64)> {
     std::thread::scope(|scope| {
         let (full, filled) = std::sync::mpsc::sync_channel::<Vec<u8>>(WRITE_BEHIND_DEPTH);
         let (empty, emptied) = std::sync::mpsc::sync_channel::<Vec<u8>>(WRITE_BEHIND_DEPTH + 1);
         for _ in 0..WRITE_BEHIND_DEPTH + 1 {
             empty.send(Vec::with_capacity(WRITE_BEHIND_CHUNK))?;
         }
-        let writer = scope.spawn(move || -> std::io::Result<BufWriter<OutputFile>> {
+        let writer = scope.spawn(move || -> std::io::Result<(BufWriter<OutputFile>, u64)> {
+            let mut held = 0;
             for mut chunk in filled {
                 // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
                 if cfg!(windows) {
@@ -965,11 +966,11 @@ fn write_behind(
                 } else {
                     output.write_all(&chunk)?;
                 }
-                written(chunk.len() as u64);
+                written(std::mem::replace(&mut held, chunk.len() as u64));
                 chunk.clear();
                 let _ = empty.send(chunk);
             }
-            Ok(output)
+            Ok((output, held))
         });
         let mut current = emptied.recv()?;
         let mut writer_stopped = false;
@@ -1573,6 +1574,7 @@ pub fn read_archive_with_options(
                         }
                         finish(output, item)?;
                     }
+                    drop(output);
                     tracker.add_bytes(item.entry.size)?;
                     return finished(item);
                 }
@@ -1583,7 +1585,7 @@ pub fn read_archive_with_options(
                     let report_written = |bytes| {
                         let _ = tracker.add_bytes(bytes);
                     };
-                    let mut written = write_behind(unwritten, &report_written, |sink| {
+                    let (mut written, held) = write_behind(unwritten, &report_written, |sink| {
                         stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
                             tracker.check()?;
                             sink(bytes)
@@ -1591,17 +1593,22 @@ pub fn read_archive_with_options(
                     })?;
                     drop(writer_thread);
                     finish(&mut written, item)?;
+                    drop(written);
+                    tracker.add_bytes(held)?;
                     return finished(item);
                 }
+                let mut held = 0;
                 stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
                     if let Some(output) = &mut output {
                         output.write_all(bytes)?;
                     }
-                    tracker.add_bytes(bytes.len() as u64)
+                    tracker.add_bytes(std::mem::replace(&mut held, bytes.len() as u64))
                 })?;
                 if let Some(output) = &mut output {
                     finish(output, item)?;
                 }
+                drop(output);
+                tracker.add_bytes(held)?;
                 finished(item)
             },
         )

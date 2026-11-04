@@ -2174,6 +2174,7 @@ pub fn read_archive(
             };
             let mut crc = crc32fast::Hasher::new();
             let mut remaining = item.size;
+            let mut held = 0u64;
             while remaining > 0 {
                 let want = remaining.min(buffer.len() as u64) as usize;
                 let read = reader.read(&mut buffer[..want])?;
@@ -2193,7 +2194,7 @@ pub fn read_archive(
                     target.extend_from_slice(bytes);
                 }
                 if chosen[index] {
-                    tracker.add_bytes(read as u64)?;
+                    tracker.add_bytes(std::mem::replace(&mut held, read as u64))?;
                 }
             }
             if let Some(expected) = item.crc {
@@ -2214,6 +2215,7 @@ pub fn read_archive(
                 targets.lock().unwrap().push((index, target));
             }
             if chosen[index] {
+                tracker.add_bytes(held)?;
                 tracker.file_done()?;
             }
         }
@@ -2271,6 +2273,7 @@ pub fn read_archive(
             if let Some(time) = item.modified {
                 crate::set_modified_best_effort(&file, time);
             }
+            drop(file);
             tracker.file_done()?;
         }
     }

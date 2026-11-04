@@ -4,15 +4,31 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-/// Extraction progress. Byte counts are file bytes written to disk, so a
-/// writer thread still flushing keeps the count below the total. ZIP knows both
-/// totals before it starts. A tar stream reports `None` for them.
+/// Extraction progress. Byte counts are file bytes written to disk, and each
+/// file's last bytes and the file itself count only once the file is closed,
+/// so 100% waits for every close, including a virus scan Windows runs then.
+/// ZIP knows both totals before it starts. A tar stream reports `None` for
+/// them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Progress {
     pub files_done: u64,
     pub files_total: Option<u64>,
     pub bytes_done: u64,
     pub bytes_total: Option<u64>,
+    pub phase: Phase,
+}
+
+/// What an extraction is doing when it reports.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Phase {
+    /// Decoding and writing files, while the counts grow.
+    #[default]
+    Extracting,
+    /// Every file is written and closed, and the counts are final. Zipper
+    /// now creates links, restores folder times and modes, writes Windows
+    /// zone marks, and moves the result into the destination. The call
+    /// returns when this ends.
+    Finishing,
 }
 
 /// The error an extraction returns after its cancel flag is set. Test for it
@@ -49,6 +65,7 @@ pub(crate) struct Tracker<'a> {
     bytes_total: Option<u64>,
     files_done: AtomicU64,
     bytes_done: AtomicU64,
+    finishing: AtomicBool,
     reporting: Mutex<()>,
 }
 
@@ -64,6 +81,7 @@ impl<'a> Tracker<'a> {
             bytes_total,
             files_done: AtomicU64::new(0),
             bytes_done: AtomicU64::new(0),
+            finishing: AtomicBool::new(false),
             reporting: Mutex::new(()),
         }
     }
@@ -90,6 +108,7 @@ impl<'a> Tracker<'a> {
     /// Report the final counts. Call it from the calling thread once workers
     /// have stopped, because it waits for any report still running.
     pub(crate) fn finish(&self) {
+        self.finishing.store(true, Ordering::Relaxed);
         if let Some(report) = self.control.progress {
             let _turn = self
                 .reporting
@@ -117,6 +136,11 @@ impl<'a> Tracker<'a> {
             files_total: self.files_total,
             bytes_done: self.bytes_done.load(Ordering::Relaxed),
             bytes_total: self.bytes_total,
+            phase: if self.finishing.load(Ordering::Relaxed) {
+                Phase::Finishing
+            } else {
+                Phase::Extracting
+            },
         }
     }
 }
