@@ -4,6 +4,7 @@ pub mod counters;
 pub mod duplicates;
 mod extract;
 mod lz4;
+mod lzw;
 mod memory;
 mod metadata;
 pub mod native_7z;

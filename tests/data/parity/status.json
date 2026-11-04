@@ -151,7 +151,7 @@
       "status": "backend"
     },
     "Z": {
-      "status": "backend"
+      "status": "native"
     },
     "bzip2": {
       "status": "native"

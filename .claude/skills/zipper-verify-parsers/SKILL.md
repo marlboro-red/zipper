@@ -1,6 +1,6 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
@@ -55,7 +55,9 @@ The LZ4 reader in `src/lz4.rs`, under `[lz4-frames]`, has these exhaustive tests
 - `frames_round_trip_and_every_damage_is_refused` cuts frames at every length and flips each byte. A frame with a content checksum must never decode to other bytes.
 - `a_long_match_is_refused_before_the_output_grows_past_its_limit` covers a match that would allocate far past the block limit before the final size check.
 
-Run them with `cargo test --release --lib lz4`, then `cargo xtask verify-sync lz4-frames`. A larger Kani bound for the block decoder ran past 11 minutes and was dropped.
+Run them with `cargo test --release --lib lz4`, then `cargo xtask verify-sync lz4-frames`.
+
+The `compress` (`.Z`) reader in `src/lzw.rs`, under `[compress]`, has three tests. `every_pseudo_random_stream_decodes_as_the_reference_does` compares it with a reference decoder written separately in gzip's style, on 60,000 streams in block mode and without it. `real_compress_output_decodes_at_every_code_size` decodes macOS `compress` output at 10 to 16 bits. `a_stream_without_clear_codes_changes_width_mid_group_as_7zip_reads_it` checks the mode that changes width inside a group of codes against 7-Zip. Run them with `cargo test --release --lib lzw`, then `cargo xtask verify-sync compress`. A larger Kani bound for the block decoder ran past 11 minutes and was dropped.
 
 ## When to run it
 
@@ -106,6 +108,9 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | `decode_block` drops the check that a match offset lies inside the output | the Kani proof fails, and the exhaustive test fails |
 | `decode_block` drops the check that a match stays inside the limit | `a_long_match_is_refused_before_the_output_grows_past_its_limit` fails |
 | An independent LZ4 block keeps the previous block as history | `linked_blocks_reach_back_into_the_previous_block` fails |
+| The `.Z` reader keeps reading a group after the code width grows | the test against 7-Zip fails |
+| The `.Z` reader skips the empty entry a clear code leaves | the reference test and the `compress` test fail |
+| The `.Z` reader drops the case of a code equal to the next free entry | both fail |
 | The stored LZMA2 writer leaves out the end marker | `stored_lzma2_returns_every_length_across_chunk_boundaries_and_flushes_branch_filters` fails |
 | The stored LZMA2 writer writes a chunk's size without subtracting one | the same test fails |
 | The BCJ2 decoder converts a branch with fewer than 4 bytes of output left | `a_conversion_past_the_end_of_the_output_is_refused` fails |

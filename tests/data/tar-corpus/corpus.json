@@ -693,6 +693,24 @@
     "python": "ok"
    }
   },
+  "python-pax-compress": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "gnutar"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "failed: ReadError"
+   }
+  },
   "python-pax-gzip": {
    "agreeing": [
     "7zip",

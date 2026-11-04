@@ -5,8 +5,8 @@ Each archive comes from a real tar writer in one header format, over one of
 three source trees. The short tree fits every format. The links tree holds
 symlinks and hard links. The long tree holds names and link targets past 100
 bytes, which ustar and v7 writers refuse or split.
-Compressed variants wrap one tar from each writer in gzip, zstd, xz, lzip
-and LZ4. Python and GNU tar read lzip and LZ4 through the decoders in
+Compressed variants wrap one tar from each writer in gzip, zstd, xz, lzip,
+LZ4 and compress (.Z). Python and GNU tar read lzip and LZ4 through the decoders in
 make_stream_files.py, since neither has its own.
 
 Every reference reader extracts every archive. The manifest records the tree
@@ -156,6 +156,8 @@ def compressed_writers(have):
             target, cwd, "--lzip")))
         found.append(("python-pax-lz4", "tar.lz4", lambda target, cwd: compress_python_tar(
             target, cwd, "--lz4")))
+        found.append(("python-pax-compress", "tar.Z", lambda target, cwd: compress_python_tar(
+            target, cwd, "-Z")))
     found.append(("python-pax-gzip", "tar.gz", lambda target, cwd: python_tar(
         target, cwd, tarfile.PAX_FORMAT, "w:gz")))
     found.append(("python-pax-xz", "tar.xz", lambda target, cwd: python_tar(

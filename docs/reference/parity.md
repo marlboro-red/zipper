@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 48 |
+| `native` | 49 |
 | `partial` | 1 |
-| `backend` | 54 |
+| `backend` | 53 |
 | `missing` | 7 |
 | `dropped` | 2 |
 
@@ -78,7 +78,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `VHDX` | `backend` |  | No proof yet. |
 | `VMDK` | `backend` |  | No proof yet. |
 | `Xar` | `backend` |  | `tests/data/parity/archives/xar.xar` |
-| `Z` | `backend` |  | `tests/data/parity/archives/hello.txt.Z`, `tests/data/parity/archives/tar.tar.Z` |
+| `Z` | `native` |  | `tests/data/parity/archives/hello.txt.Z`, `tests/data/parity/archives/tar.tar.Z` |
 | `bzip2` | `native` |  | `tests/data/parity/archives/hello.txt.bz2`, `tests/data/parity/archives/tar.tar.bz2` |
 | `gzip` | `native` |  | `tests/data/parity/archives/hello.txt.gz`, `tests/data/parity/archives/tar.tar.gz` |
 | `lzma` | `native` |  | `tests/data/parity/archives/hello.txt.lzma` |

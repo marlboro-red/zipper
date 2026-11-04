@@ -149,6 +149,8 @@ fn the_output_name_drops_only_a_compression_extension() {
         ("z.tlz", "z.tar"),
         ("notes.txt.lz4", "notes.txt"),
         ("w.tlz4", "w.tar"),
+        ("notes.txt.Z", "notes.txt"),
+        ("v.taz", "v.tar"),
         ("data.bin", "data"),
         ("noext", "noext~"),
         (".gz", ".gz~"),
@@ -268,4 +270,36 @@ fn stripping_a_single_file_leaves_nothing_and_is_refused() {
     );
     result.unwrap();
     assert!(root.path().join("out/hello.txt").exists());
+}
+
+#[test]
+fn a_compress_file_extracts_and_a_code_it_never_defined_is_refused() {
+    let name = "hello.txt.Z";
+    let bytes = single_file(name);
+    let (root, result) = extract(name, &bytes, ReadOptions::default());
+    result.unwrap_or_else(|error| panic!("{name}: {error:#}"));
+    assert_eq!(
+        fs::read(root.path().join("out/hello.txt")).unwrap(),
+        b"hello from the parity corpus\n"
+    );
+    let mut undefined = bytes[..3].to_vec();
+    undefined.extend_from_slice(&[0x41, 0xFE, 0x03]);
+    assert_refused(
+        "a code past the next free entry",
+        name,
+        &undefined,
+        ReadOptions::default(),
+    );
+    assert_refused(
+        "a header with reserved bits",
+        name,
+        &[0x1F, 0x9D, 0xF0],
+        ReadOptions::default(),
+    );
+    assert_refused(
+        "a header and nothing else",
+        name,
+        &[0x1F, 0x9D],
+        ReadOptions::default(),
+    );
 }
