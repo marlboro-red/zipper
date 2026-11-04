@@ -3,6 +3,7 @@ pub mod compat;
 pub mod counters;
 pub mod duplicates;
 mod extract;
+mod lz4;
 mod memory;
 mod metadata;
 pub mod native_7z;

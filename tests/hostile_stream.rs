@@ -6,13 +6,14 @@ use zipper::native_stream::{ReadOptions, output_name, read_archive};
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/parity/archives");
 const STREAMS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/stream");
-const SINGLE_FILES: [&str; 6] = [
+const SINGLE_FILES: [&str; 7] = [
     "hello.txt.gz",
     "hello.txt.bz2",
     "hello.txt.xz",
     "hello.txt.zst",
     "hello.txt.lzma",
     "hello.txt.lz",
+    "hello.txt.lz4",
 ];
 
 fn single_file(name: &str) -> Vec<u8> {
@@ -85,6 +86,17 @@ fn trailing_data_and_damaged_checksums_are_refused() {
             &trailing,
             ReadOptions::default(),
         );
+        if name.ends_with(".lz4") {
+            let mut damaged = bytes.clone();
+            let checksum = damaged.len() - 1;
+            damaged[checksum] ^= 0xff;
+            assert_refused(
+                "LZ4 with a damaged content checksum",
+                name,
+                &damaged,
+                ReadOptions::default(),
+            );
+        }
         if name.ends_with(".lz") {
             let mut damaged = bytes.clone();
             let crc = damaged.len() - 20;
@@ -135,6 +147,8 @@ fn the_output_name_drops_only_a_compression_extension() {
         ("y.TBZ2", "y.tar"),
         ("notes.txt.lz", "notes.txt"),
         ("z.tlz", "z.tar"),
+        ("notes.txt.lz4", "notes.txt"),
+        ("w.tlz4", "w.tar"),
         ("data.bin", "data"),
         ("noext", "noext~"),
         (".gz", ".gz~"),

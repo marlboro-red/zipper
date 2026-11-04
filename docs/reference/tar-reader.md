@@ -1,6 +1,6 @@
 # In-process tar reader
 
-Zipper reads tar archives with its own Rust reader by default. The default engine, `--zip-engine auto`, decodes any gzip, zstd, xz, bzip2 or lzip around a file. It sends the file to the tar reader when the first 512 bytes are then a tar header with a valid checksum or the `ustar` marker. A header with the marker and a wrong checksum goes to the reader, which rejects it, so a damaged `.tar.gz` is never handed to 7-Zip. A file that starts with a ZIP record signature goes to the [ZIP reader](zip-reader.md) first. A compressed file that does not hold a tar goes to the [single compressed file reader](stream-reader.md), which writes the decompressed file.
+Zipper reads tar archives with its own Rust reader by default. The default engine, `--zip-engine auto`, decodes any gzip, zstd, xz, bzip2, lzip or LZ4 around a file. It sends the file to the tar reader when the first 512 bytes are then a tar header with a valid checksum or the `ustar` marker. A header with the marker and a wrong checksum goes to the reader, which rejects it, so a damaged `.tar.gz` is never handed to 7-Zip. A file that starts with a ZIP record signature goes to the [ZIP reader](zip-reader.md) first. A compressed file that does not hold a tar goes to the [single compressed file reader](stream-reader.md), which writes the decompressed file.
 
 A tar the reader rejects is never handed to 7-Zip. A compressed empty tar holds only zero blocks, so it goes to 7-Zip, which writes the inner `.tar`. When the reader lacks a feature, such as sparse files or names that are not UTF-8, the error names `--zip-engine backend`, and passing it is the user's decision. `--zip-engine native` also reads tar archives in process.
 
@@ -8,7 +8,7 @@ A tar the reader rejects is never handed to 7-Zip. A compressed empty tar holds 
 
 The reader supports these features:
 
-- Plain tar, and tar inside gzip, including several gzip members, zstd, including the skippable frame `pzstd` writes first, xz, bzip2 and lzip.
+- Plain tar, and tar inside gzip, including several gzip members, zstd, including the skippable frame `pzstd` writes first, xz, bzip2, lzip and LZ4.
 - POSIX ustar with its name prefix, pax extended headers, GNU long names and long link targets, and old tar without the `ustar` marker.
 - Base-256 sizes and times, as GNU tar writes for large values.
 - Files, directories, symlinks that stay inside the destination on Unix, and hard links to an earlier file in the same archive.
@@ -21,7 +21,7 @@ The reader does not support these features:
 - Devices and FIFOs.
 - GNU volume labels, multi-volume parts and dump directories.
 - Names and link targets that are not UTF-8, including a pax `hdrcharset` of `BINARY`.
-- Other compressors, such as LZ4 and `compress`. The default engine sends these files to 7-Zip, which stops at the inner `.tar`, or refuses them.
+- Other compressors, such as `compress` (`.Z`). The default engine sends these files to 7-Zip, which stops at the inner `.tar`.
 
 A pax header may set `path`, `linkpath`, `size` and `mtime`. The reader ignores `atime`, `ctime`, `uid`, `gid`, `uname`, `gname`, `comment`, `charset`, and every key that contains a dot, such as `LIBARCHIVE.xattr.*` and `SCHILY.*`. It rejects any other key, because a new standard key could change how an entry is read.
 
@@ -72,12 +72,12 @@ These options work the same way in every reader. [Usage](../usage.md#extract-int
 
 ## Reference corpus
 
-`tests/data/tar-corpus` holds 43 archives from three writers over three source trees:
+`tests/data/tar-corpus` holds 44 archives from three writers over three source trees:
 
 - GNU tar 1.35 in its `gnu`, `oldgnu`, `pax`, `ustar` and `v7` formats.
 - bsdtar 3.7.4 in its `ustar`, `pax`, `gnutar` and `v7tar` formats.
 - Python 3.14 `tarfile` in its ustar, GNU and pax formats.
-- gzip, multi-member gzip, zstd and xz versions from each writer, and lzip around a Python pax tar. 7-Zip reads no lzip, so Python and GNU tar read it through the lzip decoder in `scripts/make_stream_files.py`.
+- gzip, multi-member gzip, zstd and xz versions from each writer, and lzip and LZ4 around a Python pax tar. 7-Zip reads neither, so Python and GNU tar read them through the decoders in `scripts/make_stream_files.py`.
 
 The short tree has empty files and directories, non-ASCII names, files of 512 and 513 bytes, and a read-only directory. The links tree has symlinks and hard links. The long tree has names and link targets past 100 bytes. GNU tar and Python refuse the long tree in ustar and v7, and `corpus.json` records each refusal.
 

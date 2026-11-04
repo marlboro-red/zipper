@@ -5,9 +5,9 @@ Each archive comes from a real tar writer in one header format, over one of
 three source trees. The short tree fits every format. The links tree holds
 symlinks and hard links. The long tree holds names and link targets past 100
 bytes, which ustar and v7 writers refuse or split.
-Compressed variants wrap one tar from each writer in gzip, zstd, xz and
-lzip. Python and GNU tar read lzip through the decoder in make_stream_files.py,
-since neither has its own.
+Compressed variants wrap one tar from each writer in gzip, zstd, xz, lzip
+and LZ4. Python and GNU tar read lzip and LZ4 through the decoders in
+make_stream_files.py, since neither has its own.
 
 Every reference reader extracts every archive. The manifest records the tree
 that at least three readers produce identically, in the format of
@@ -26,11 +26,11 @@ import sys
 import tarfile
 import tempfile
 
-from make_stream_files import lzip_members
+from make_stream_files import lz4_frame, lzip_members
 from make_zip_corpus import modes, times, tree, unlock
 
 # Compressions only bsdtar reads here; the other readers get the decoded tar.
-DECODERS = {".lz": lzip_members}
+DECODERS = {".lz": lzip_members, ".lz4": lz4_frame}
 
 GNU_TAR = ["gtar", "--owner=0", "--group=0", "--numeric-owner"]
 BSDTAR = ["bsdtar", "--uid", "0", "--gid", "0", "--uname", "", "--gname", ""]
@@ -154,6 +154,8 @@ def compressed_writers(have):
             [*BSDTAR, "--format", "pax", "-cJf", str(target), "src"], cwd)))
         found.append(("python-pax-lzip", "tar.lz", lambda target, cwd: compress_python_tar(
             target, cwd, "--lzip")))
+        found.append(("python-pax-lz4", "tar.lz4", lambda target, cwd: compress_python_tar(
+            target, cwd, "--lz4")))
     found.append(("python-pax-gzip", "tar.gz", lambda target, cwd: python_tar(
         target, cwd, tarfile.PAX_FORMAT, "w:gz")))
     found.append(("python-pax-xz", "tar.xz", lambda target, cwd: python_tar(

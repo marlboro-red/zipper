@@ -46,6 +46,7 @@ pub enum Compression {
     Bzip2,
     Lzma,
     Lzip,
+    Lz4,
 }
 
 /// Tar extraction options.
@@ -298,6 +299,7 @@ pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
         [0xfd, b'7', b'z', b'X', b'Z', 0x00] => Compression::Xz,
         [b'B', b'Z', b'h', b'1'..=b'9', ..] => Compression::Bzip2,
         [b'L', b'Z', b'I', b'P', 0 | 1, ..] => Compression::Lzip,
+        [0x04, 0x22, 0x4D, 0x18, ..] => Compression::Lz4,
         _ => Compression::None,
     })
 }
@@ -333,6 +335,7 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
         Compression::Lzip => Box::new(LzipMembers {
             decoder: Some(lzip_member(input)?),
         }),
+        Compression::Lz4 => Box::new(crate::lz4::Lz4Frames::new(input)),
     })
 }
 

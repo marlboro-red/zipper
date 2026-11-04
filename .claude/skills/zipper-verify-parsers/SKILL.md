@@ -1,6 +1,6 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
@@ -25,6 +25,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need` | `lzma_alone_header` keeps the ZIP LZMA properties byte and the size, and caps the dictionary no lower than the entry or the declared dictionary needs | 3 s |
 | `ppmd_headers_stay_inside_the_decoders_bounds` | every ZIP PPMd header `ppmd8_fields` accepts has an order, model size and restore method the decoder accepts, within its 256 MiB reservation | 1 s |
 | `ppmd_properties_read_only_five_bytes` | `ppmd7_fields` reads exactly five 7z PPMd property bytes and nothing else | 2 s |
+| `decoding_any_short_block_never_panics_or_passes_its_limit` | the LZ4 block decoder never panics on any block of up to 4 bytes after 0 or 1 byte of history, and never writes past its limit | 119 s |
 | `decoding_any_short_streams_never_panics` | the BCJ2 decoder never panics or overflows on any main, call and jump streams of 4 bytes, range coder stream of 6 bytes and output size up to 8 | 46 s |
 
 Some checks are too heavy for Kani, so exhaustive unit tests cover them:
@@ -46,6 +47,15 @@ Run them with `cargo test --release --lib bcj2`, then `cargo xtask verify-sync 7
 `byte_swap_reverses_every_whole_group_under_every_read_split`, under `[7z-byte-swap]`, checks the Swap2 and Swap4 reader on every length up to 13 bytes. The inner reader yields 1 to 6 bytes at a time, the caller reads 1 to 6, and the buffer holds 1, 4, 5, 7 or 64 bytes, 5,040 runs in all. Run it with `cargo test --release --lib byte_swap`, then `cargo xtask verify-sync 7z-byte-swap`.
 
 `stored_lzma2_returns_every_length_across_chunk_boundaries_and_flushes_branch_filters`, under `[7z-stored-lzma2]`, wraps data of 0 to 5 bytes and lengths around the 64 KiB chunk limit in stored LZMA2 chunks, read 1, 3, 65,536 or any number of bytes at a time. liblzma must decode the chunks to the same bytes, and an x86 filter over them must release every byte. Run it with `cargo test --release --lib stored_lzma2`, then `cargo xtask verify-sync 7z-stored-lzma2`.
+
+The LZ4 reader in `src/lz4.rs`, under `[lz4-frames]`, has these exhaustive tests:
+
+- `every_short_block_decodes_as_the_reference_does` compares `decode_block` with a reference decoder written separately. It covers every block of up to 5 bytes over 8 bytes that matter, after 0, 1 or 3 bytes of history and within limits of 3 and 64, over 200,000 cases.
+- `xxh32_matches_known_values_and_every_split` checks xxHash32 against its published values for the empty string and `abc`, and on every length up to 70 bytes fed in every 3-way split.
+- `frames_round_trip_and_every_damage_is_refused` cuts frames at every length and flips each byte. A frame with a content checksum must never decode to other bytes.
+- `a_long_match_is_refused_before_the_output_grows_past_its_limit` covers a match that would allocate far past the block limit before the final size check.
+
+Run them with `cargo test --release --lib lz4`, then `cargo xtask verify-sync lz4-frames`. A larger Kani bound for the block decoder ran past 11 minutes and was dropped.
 
 ## When to run it
 
@@ -93,6 +103,9 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | The byte-swap reader also reverses a tail shorter than its group | `byte_swap_reverses_every_whole_group_under_every_read_split` fails |
 | The byte-swap reader stops at the end of its input without passing on the unswapped tail | the same test fails |
 | The byte-swap reader keeps reading into its buffer without moving the held bytes to the front | the same test fails |
+| `decode_block` drops the check that a match offset lies inside the output | the Kani proof fails, and the exhaustive test fails |
+| `decode_block` drops the check that a match stays inside the limit | `a_long_match_is_refused_before_the_output_grows_past_its_limit` fails |
+| An independent LZ4 block keeps the previous block as history | `linked_blocks_reach_back_into_the_previous_block` fails |
 | The stored LZMA2 writer leaves out the end marker | `stored_lzma2_returns_every_length_across_chunk_boundaries_and_flushes_branch_filters` fails |
 | The stored LZMA2 writer writes a chunk's size without subtracting one | the same test fails |
 | The BCJ2 decoder converts a branch with fewer than 4 bytes of output left | `a_conversion_past_the_end_of_the_output_is_refused` fails |
