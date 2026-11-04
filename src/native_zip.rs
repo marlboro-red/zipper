@@ -150,8 +150,6 @@ impl Drop for Reservation<'_> {
     }
 }
 
-type EntryWorkspace = (crate::zip_reader::Reader, Vec<u8>, Option<ExactInflater>);
-
 std::thread_local! {
     static EXTRACTIONS_IN_ENTRY: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
 }
@@ -176,6 +174,51 @@ impl Drop for EntryOnThisThread {
         EXTRACTIONS_IN_ENTRY.with_borrow_mut(|extractions| extractions.pop());
     }
 }
+
+struct Recycled<'a, T> {
+    idle: &'a std::sync::Mutex<Vec<T>>,
+    value: Option<T>,
+}
+
+impl<'a, T> Recycled<'a, T> {
+    fn take(idle: &'a std::sync::Mutex<Vec<T>>, create: impl FnOnce() -> T) -> Self {
+        let value = idle
+            .lock()
+            .ok()
+            .and_then(|mut idle| idle.pop())
+            .unwrap_or_else(create);
+        Self {
+            idle,
+            value: Some(value),
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Recycled<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.value.as_ref().unwrap()
+    }
+}
+
+impl<T> std::ops::DerefMut for Recycled<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.value.as_mut().unwrap()
+    }
+}
+
+impl<T> Drop for Recycled<'_, T> {
+    fn drop(&mut self) {
+        if let (Some(value), Ok(mut idle)) = (self.value.take(), self.idle.lock()) {
+            idle.push(value);
+        }
+    }
+}
+
+type ExtractEntry<'a> = dyn Fn(&mut crate::zip_reader::Reader, &mut [u8], &mut Option<ExactInflater>, usize) -> Result<()>
+    + Sync
+    + 'a;
 
 fn entry_buffer(size: usize) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();
@@ -1515,61 +1558,61 @@ pub fn read_archive_with_options(
     ));
     let targets = std::sync::Mutex::new(Vec::new());
     let for_the_next_pass = std::sync::Mutex::new(Vec::new());
-    let extract_entry: &(dyn Fn(&mut EntryWorkspace, usize) -> Result<()> + Sync) =
-        &|(raw, buffer, codec): &mut EntryWorkspace, index: usize| -> Result<()> {
-            tracker.check()?;
-            let item = &items[index];
-            let _decoder = match decoder_need(item) {
-                Some(need) => match decoder_memory.reserve_within(need, DECODER_MEMORY_PATIENCE) {
-                    Some(reservation) => Some(reservation),
-                    None => {
-                        for_the_next_pass
-                            .lock()
-                            .unwrap_or_else(|poison| poison.into_inner())
-                            .push(index);
-                        return Ok(());
-                    }
-                },
-                None => None,
-            };
-            let LocalRecord {
-                data_start,
-                has_descriptor: descriptor,
-            } = check_local_header(raw, item)?;
-            // RECORD(benchmarks/native-zip/decoder-selection/README.md): large, compressible entries stream.
-            let prefer_streaming = destination.is_some()
-                && item.entry.size >= 16 * 1024 * 1024
-                && item.compressed <= item.entry.size / 128;
-            let reservation = if fast
-                && !prefer_streaming
-                && !item.symlink
-                && item.method == CompressionMethod::Deflated
-            {
-                item.entry
-                    .size
-                    .checked_add(item.compressed)
-                    .and_then(|bytes| usize::try_from(bytes).ok())
-                    .and_then(|bytes| budget.reserve(bytes))
-            } else {
-                None
-            };
-            let buffered = reservation.is_some();
-            raw.seek(SeekFrom::Start(data_start))?;
-            let mut source = Read::take(&mut *raw, item.compressed);
-            if item.symlink {
-                let mut target = Vec::new();
-                stream_entry(&mut source, item, descriptor, buffer, |bytes| {
-                    target.extend_from_slice(bytes);
-                    Ok(())
-                })?;
-                tracker.add_bytes(target.len() as u64)?;
-                targets.lock().unwrap().push((index, target));
-                return finished(item);
-            }
-            let mut output = if let Some(temp) = &staging {
-                if !item.entry.directory {
-                    let path = temp.path().join(&item.entry.name);
-                    let file = crate::create_new_file(&path, item.mode.unwrap_or(0o666), item.windows_attributes)
+    let idle_workspaces = std::sync::Mutex::new(Vec::new());
+    let extract_entry: &ExtractEntry = &|raw, buffer, codec, index| -> Result<()> {
+        tracker.check()?;
+        let item = &items[index];
+        let _decoder = match decoder_need(item) {
+            Some(need) => match decoder_memory.reserve_within(need, DECODER_MEMORY_PATIENCE) {
+                Some(reservation) => Some(reservation),
+                None => {
+                    for_the_next_pass
+                        .lock()
+                        .unwrap_or_else(|poison| poison.into_inner())
+                        .push(index);
+                    return Ok(());
+                }
+            },
+            None => None,
+        };
+        let LocalRecord {
+            data_start,
+            has_descriptor: descriptor,
+        } = check_local_header(raw, item)?;
+        // RECORD(benchmarks/native-zip/decoder-selection/README.md): large, compressible entries stream.
+        let prefer_streaming = destination.is_some()
+            && item.entry.size >= 16 * 1024 * 1024
+            && item.compressed <= item.entry.size / 128;
+        let reservation = if fast
+            && !prefer_streaming
+            && !item.symlink
+            && item.method == CompressionMethod::Deflated
+        {
+            item.entry
+                .size
+                .checked_add(item.compressed)
+                .and_then(|bytes| usize::try_from(bytes).ok())
+                .and_then(|bytes| budget.reserve(bytes))
+        } else {
+            None
+        };
+        let buffered = reservation.is_some();
+        raw.seek(SeekFrom::Start(data_start))?;
+        let mut source = Read::take(&mut *raw, item.compressed);
+        if item.symlink {
+            let mut target = Vec::new();
+            stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                target.extend_from_slice(bytes);
+                Ok(())
+            })?;
+            tracker.add_bytes(target.len() as u64)?;
+            targets.lock().unwrap().push((index, target));
+            return finished(item);
+        }
+        let mut output = if let Some(temp) = &staging {
+            if !item.entry.directory {
+                let path = temp.path().join(&item.entry.name);
+                let file = crate::create_new_file(&path, item.mode.unwrap_or(0o666), item.windows_attributes)
                             .map_err(|error| {
                             if error.kind() == std::io::ErrorKind::AlreadyExists {
                                 anyhow::anyhow!(
@@ -1580,86 +1623,90 @@ pub fn read_archive_with_options(
                                 error.into()
                             }
                         })?;
-                    counters::add(Counter::FilesCreated, 1);
-                    Some(BufWriter::new(OutputFile(file)))
-                } else {
-                    None
-                }
+                counters::add(Counter::FilesCreated, 1);
+                Some(BufWriter::new(OutputFile(file)))
             } else {
                 None
-            };
-            if buffered {
-                let mut compressed = entry_buffer(item.compressed as usize)?;
-                let mut decoded = entry_buffer(item.entry.size as usize)?;
-                source.read_exact(&mut compressed)?;
-                let length = counters::time(Counter::DecodeNanos, || {
-                    codec.as_mut().unwrap().inflate(&compressed, &mut decoded)
-                })?;
-                ensure!(
-                    length as u64 == item.entry.size,
-                    "ZIP decoded size mismatch"
-                );
-                ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
-                if let Some(output) = &mut output {
-                    // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
-                    if cfg!(windows) {
-                        for chunk in decoded.chunks(256 * 1024) {
-                            output.write_all(chunk)?;
-                        }
-                    } else {
-                        output.write_all(&decoded)?;
-                    }
-                    finish(output, item)?;
-                }
-                drop(output);
-                tracker.add_bytes(item.entry.size)?;
-                return finished(item);
             }
-            if item.entry.size >= WRITE_BEHIND_MIN
-                && let Some(writer_thread) = spare_threads.reserve(1)
-                && let Some(unwritten) = output.take()
-            {
-                let report_written = |bytes| tracker.count_bytes(bytes);
-                let (mut written, held) = write_behind(unwritten, &report_written, |sink| {
-                    stream_entry(&mut source, item, descriptor, buffer, |bytes| {
-                        tracker.report()?;
-                        sink(bytes)
-                    })
-                })?;
-                drop(writer_thread);
-                finish(&mut written, item)?;
-                drop(written);
-                tracker.add_bytes(held)?;
-                return finished(item);
-            }
-            let mut held = 0;
-            stream_entry(&mut source, item, descriptor, buffer, |bytes| {
-                if bytes.is_empty() {
-                    return Ok(());
-                }
-                if let Some(output) = &mut output {
-                    output.write_all(bytes)?;
-                }
-                tracker.add_bytes(std::mem::replace(&mut held, bytes.len() as u64))
+        } else {
+            None
+        };
+        if buffered {
+            let mut compressed = entry_buffer(item.compressed as usize)?;
+            let mut decoded = entry_buffer(item.entry.size as usize)?;
+            source.read_exact(&mut compressed)?;
+            let length = counters::time(Counter::DecodeNanos, || {
+                codec.as_mut().unwrap().inflate(&compressed, &mut decoded)
             })?;
+            ensure!(
+                length as u64 == item.entry.size,
+                "ZIP decoded size mismatch"
+            );
+            ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
             if let Some(output) = &mut output {
+                // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
+                if cfg!(windows) {
+                    for chunk in decoded.chunks(256 * 1024) {
+                        output.write_all(chunk)?;
+                    }
+                } else {
+                    output.write_all(&decoded)?;
+                }
                 finish(output, item)?;
             }
             drop(output);
+            tracker.add_bytes(item.entry.size)?;
+            return finished(item);
+        }
+        if item.entry.size >= WRITE_BEHIND_MIN
+            && let Some(writer_thread) = spare_threads.reserve(1)
+            && let Some(unwritten) = output.take()
+        {
+            let report_written = |bytes| tracker.count_bytes(bytes);
+            let (mut written, held) = write_behind(unwritten, &report_written, |sink| {
+                stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                    tracker.report()?;
+                    sink(bytes)
+                })
+            })?;
+            drop(writer_thread);
+            finish(&mut written, item)?;
+            drop(written);
             tracker.add_bytes(held)?;
-            finished(item)
-        };
+            return finished(item);
+        }
+        let mut held = 0;
+        stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+            if bytes.is_empty() {
+                return Ok(());
+            }
+            if let Some(output) = &mut output {
+                output.write_all(bytes)?;
+            }
+            tracker.add_bytes(std::mem::replace(&mut held, bytes.len() as u64))
+        })?;
+        if let Some(output) = &mut output {
+            finish(output, item)?;
+        }
+        drop(output);
+        tracker.add_bytes(held)?;
+        finished(item)
+    };
     let run_pass = |entries: &[usize]| {
-        entries.par_iter().try_for_each_init(
+        // RECORD(benchmarks/native-zip/one-entry-per-task/README.md): split to single entries,
+        // and reuse each task's reader and buffer, which tiny entries cannot afford per task.
+        entries.par_iter().with_max_len(1).try_for_each_init(
             || {
-                (
-                    archive.clone().into_inner(),
-                    vec![0u8; 1024 * 1024],
-                    fast.then(ExactInflater::new),
-                )
+                let workspace = Recycled::take(&idle_workspaces, || {
+                    (archive.clone().into_inner(), vec![0u8; 1024 * 1024])
+                });
+                (workspace, fast.then(ExactInflater::new))
             },
-            |state, &index| match EntryOnThisThread::enter(&for_the_next_pass) {
-                Some(_entry) => extract_entry(state, index),
+            |(workspace, codec), &index| match EntryOnThisThread::enter(&for_the_next_pass) {
+                Some(_entry) => {
+                    let (raw, buffer) = &mut **workspace;
+                    extract_entry(raw, buffer, codec, index)
+                }
                 None => {
                     for_the_next_pass
                         .lock()
