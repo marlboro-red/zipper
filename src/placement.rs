@@ -31,8 +31,15 @@ impl<'a> Placement<'a> {
                 components: 0,
             },
             Strip::Prefix(prefix) => {
-                let prefix = prefix.trim_end_matches('/');
-                crate::safe_path(prefix)?;
+                let mut prefix = prefix.trim_end_matches('/');
+                while let Some(rest) = prefix.strip_prefix("./") {
+                    prefix = rest;
+                }
+                crate::safe_path(prefix).map_err(|_| {
+                    anyhow::anyhow!(
+                        "the folder to strip, {prefix:?}, is not a relative archive path written with `/`"
+                    )
+                })?;
                 Placement {
                     prefix: Some(prefix),
                     components: 0,
@@ -50,14 +57,33 @@ impl<'a> Placement<'a> {
     }
 
     pub(crate) fn place<'n>(&self, name: &'n str) -> Option<&'n str> {
+        self.place_after_dots(name, 0)
+    }
+
+    pub(crate) fn place_after_dots<'n>(&self, name: &'n str, dots: usize) -> Option<&'n str> {
         let placed = match self.prefix {
             Some(prefix) => name.strip_prefix(prefix)?.strip_prefix('/')?,
-            None => match self.components {
+            None => match self.components.saturating_sub(dots) {
                 0 => name,
-                count => name.splitn(count + 1, '/').nth(count)?,
+                count => {
+                    let (slash, _) = name.match_indices('/').nth(count - 1)?;
+                    &name[slash + 1..]
+                }
             },
         };
         (!placed.is_empty()).then_some(placed)
+    }
+
+    pub(crate) fn is_prefix(&self, name: &str) -> bool {
+        self.prefix == Some(name)
+    }
+
+    pub(crate) fn ensure_something_placed(&self, placed_any: bool) -> Result<()> {
+        ensure!(
+            placed_any || !self.strips(),
+            "the strip leaves nothing to extract"
+        );
+        Ok(())
     }
 
     pub(crate) fn ensure_prefix_is_a_folder<'n>(
@@ -136,17 +162,26 @@ mod tests {
         let mut checked = 0;
         for name in &paths {
             let parts: Vec<&str> = name.split('/').collect();
-            for components in 0..=5 {
-                let placed = Placement::new(Strip::Components(components))
-                    .unwrap()
-                    .place(name);
-                let expected = (parts.len() > components).then(|| parts[components..].join("/"));
-                assert_eq!(
-                    placed.map(str::to_owned),
-                    expected,
-                    "{name} less {components}"
-                );
-                checked += 1;
+            for components in (0..=7).chain([usize::MAX - 1, usize::MAX]) {
+                for dots in 0..=2 {
+                    let placement = Placement::new(Strip::Components(components)).unwrap();
+                    let placed = placement.place_after_dots(name, dots);
+                    let mut with_dots = vec!["."; dots];
+                    with_dots.extend(&parts);
+                    let left: Vec<&str> = with_dots
+                        .iter()
+                        .skip(components)
+                        .skip_while(|part| **part == ".")
+                        .copied()
+                        .collect();
+                    let expected = (!left.is_empty()).then(|| left.join("/"));
+                    assert_eq!(
+                        placed.map(str::to_owned),
+                        expected,
+                        "{name} after {dots} dots less {components}"
+                    );
+                    checked += 1;
+                }
             }
             for prefix in &paths {
                 let placed = Placement::new(Strip::Prefix(prefix)).unwrap().place(name);

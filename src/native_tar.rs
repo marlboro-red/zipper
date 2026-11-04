@@ -745,6 +745,11 @@ struct Extraction<'a, 'f> {
     selection: crate::Selection<'a>,
     placement: crate::placement::Placement<'a>,
     placed: crate::placement::PlacedNames,
+    placed_any: bool,
+}
+
+fn leading_dots(raw: &str) -> usize {
+    (raw.len() - entry_name(raw).len()) / 2
 }
 
 fn entry_name(raw: &str) -> &str {
@@ -778,12 +783,14 @@ impl<'a, 'f> Extraction<'a, 'f> {
             selection,
             placement,
             placed: crate::placement::PlacedNames::default(),
+            placed_any: false,
         }
     }
 
     fn ensure_each_selected_path_matches(&self) -> Result<()> {
         self.selection
             .ensure_each_path_matches(self.nodes.keys().map(String::as_str))?;
+        self.placement.ensure_something_placed(self.placed_any)?;
         self.placement
             .ensure_prefix_is_a_folder(self.nodes.iter().map(|(name, node)| {
                 (
@@ -793,13 +800,21 @@ impl<'a, 'f> Extraction<'a, 'f> {
             }))
     }
 
-    fn place(&mut self, name: &str, directory: bool, replaces: bool) -> Result<Option<String>> {
+    fn place(
+        &mut self,
+        name: &str,
+        dots: usize,
+        directory: bool,
+        replaces: bool,
+    ) -> Result<Option<String>> {
         if !self.selection.selects(name) {
             return Ok(None);
         }
-        let Some(placed) = self.placement.place(name) else {
+        self.placed_any |= self.placement.is_prefix(name);
+        let Some(placed) = self.placement.place_after_dots(name, dots) else {
             return Ok(None);
         };
+        self.placed_any = true;
         if self.placement.strips() && !replaces {
             self.placed.add(placed, directory)?;
         }
@@ -979,6 +994,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             }),
         };
         let mut name = entry_name(&raw_name);
+        let dots = leading_dots(&raw_name);
         let directory = match kind {
             b'5' => true,
             b'0' | 0 | b'7' if name.ends_with('/') => {
@@ -1000,7 +1016,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             _ if directory => {
                 ensure!(size == 0, "tar directory {name:?} has data");
                 let replaces = self.claim(&name, Node::Directory)?;
-                let Some(name) = self.place(&name, true, replaces)? else {
+                let Some(name) = self.place(&name, dots, true, replaces)? else {
                     return Ok(());
                 };
                 if self.output.is_some() {
@@ -1022,7 +1038,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             }
             b'0' | 0 | b'7' => {
                 let replaces = self.claim(&name, Node::File)?;
-                let Some(name) = self.place(&name, false, replaces)? else {
+                let Some(name) = self.place(&name, dots, false, replaces)? else {
                     return input.copy(size, |_| Ok(()));
                 };
                 self.write_file(input, &name, size, mode, modified, replaces)?;
@@ -1036,6 +1052,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             b'1' => {
                 ensure!(size == 0, "tar hard link {name:?} has data");
                 let target = entry_name(&raw_target).to_owned();
+                let target_dots = leading_dots(&raw_target);
                 safe_path(&target)?;
                 ensure!(
                     matches!(
@@ -1051,10 +1068,10 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 self.claim(&name, Node::HardLink)?;
                 let placed_target = self
                     .placement
-                    .place(&target)
+                    .place_after_dots(&target, target_dots)
                     .filter(|_| self.selection.selects(&target))
                     .map(str::to_owned);
-                let Some(name) = self.place(&name, false, false)? else {
+                let Some(name) = self.place(&name, dots, false, false)? else {
                     return Ok(());
                 };
                 let target = placed_target.with_context(|| {
@@ -1068,7 +1085,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
                 self.charge_name(raw_target.len())?;
                 self.claim(&name, Node::Symlink)?;
-                let Some(name) = self.place(&name, false, false)? else {
+                let Some(name) = self.place(&name, dots, false, false)? else {
                     return Ok(());
                 };
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;

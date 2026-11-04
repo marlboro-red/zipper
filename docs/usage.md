@@ -76,11 +76,12 @@ To extract one folder of an archive with its contents at the output root, pass `
 target/release/zipper extract bundle.zip --output icons --strip-prefix assets/icons
 ```
 
-An entry `assets/icons/small/a.png` lands at `icons/small/a.png`, and nothing outside `assets/icons` is extracted. `--strip-components N` instead drops the first `N` folders of every path, as tar does, and skips an entry with no more than `N` segments. Both place each file in one pass, with no rename after extraction.
+An entry `assets/icons/small/a.png` lands at `icons/small/a.png`, and nothing outside `assets/icons` is extracted. `--strip-components N` instead drops the first `N` folders of every path, as tar does, and skips an entry with no more than `N` segments. A tar entry written as `./pkg/a.txt` counts its `.` as a segment, as GNU tar and bsdtar count it. Both place each file in one pass, with no rename after extraction.
 
 - `--path`, `--include` and `--exclude` still match the full archive paths, before the strip.
-- The extraction fails before publishing anything when the prefix is not a folder of the archive.
-- It also fails when the stripped paths would put two entries at one path, or a file where a folder must go.
+- The extraction fails before publishing anything when the prefix is not a folder of the archive, or when the strip and the selection leave nothing to extract.
+- It also fails when the stripped paths would put two files or links at one path, or a file where a folder must go. Folders of the same name merge, as tar merges them.
+- The prefix is an archive path written with `/`, matched letter for letter. A leading `./` is dropped.
 - A symlink is checked at its stripped path, so a link that pointed elsewhere in the archive but would leave the output is refused.
 - A tar hard link whose target the strip leaves out is refused.
 - `--flat` with a strip extracts only the stripped entries, without their folders.

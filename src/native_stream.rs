@@ -117,10 +117,7 @@ pub fn read_archive(
     selection.ensure_each_path_matches(std::iter::once(name.as_str()))?;
     let placement = crate::placement::Placement::new(options.strip)?;
     placement.ensure_prefix_is_a_folder(std::iter::once((name.as_str(), false)))?;
-    ensure!(
-        placement.place(&name).is_some(),
-        "stripping {name:?} leaves nothing to extract"
-    );
+    placement.ensure_something_placed(placement.place(&name).is_some())?;
     let tracker = Tracker::new(options.control, Some(1), None);
     tracker.check()?;
     let staging = destination

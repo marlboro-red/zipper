@@ -764,7 +764,11 @@ fn strip_flags_place_a_subtree_at_the_output_root() -> anyhow::Result<()> {
             &["--strip-prefix", "missing"],
             "not a folder of the archive",
         ),
-        (&["--strip-prefix", "../a"], "unsafe"),
+        (&["--strip-prefix", "../a"], "not a relative archive path"),
+        (
+            &["--path", "top.txt", "--strip-prefix", "a"],
+            "leaves nothing to extract",
+        ),
         (
             &["--strip-prefix", "a", "--strip-components", "1"],
             "cannot be used with",

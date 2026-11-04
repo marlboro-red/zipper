@@ -1379,11 +1379,15 @@ pub fn read_archive_with_options(
         .into_iter()
         .partition(|item| selection.selects(&item.entry.name));
     if placement.strips() {
+        let prefix_selected = selected
+            .iter()
+            .any(|item| placement.is_prefix(&item.entry.name));
         let (placed, unplaced): (Vec<_>, Vec<_>) = selected
             .into_iter()
             .partition(|item| placement.place(&item.entry.name).is_some());
         selected = placed;
         skipped.extend(unplaced);
+        placement.ensure_something_placed(!selected.is_empty() || prefix_selected)?;
         for item in &mut selected {
             let placed = placement
                 .place(&item.entry.name)

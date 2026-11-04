@@ -2045,12 +2045,17 @@ pub fn read_archive(
             .iter()
             .map(|item| (item.name.as_str(), item.kind == Kind::Directory)),
     )?;
+    let prefix_selected = archive
+        .items
+        .iter()
+        .any(|item| placement.is_prefix(&item.name) && selection.selects(&item.name));
     let mut chosen: Vec<bool> = archive
         .items
         .iter()
         .map(|item| selection.selects(&item.name) && placement.place(&item.name).is_some())
         .collect();
     if placement.strips() {
+        placement.ensure_something_placed(chosen.contains(&true) || prefix_selected)?;
         for (item, chosen) in archive.items.iter_mut().zip(&mut chosen) {
             if *chosen {
                 item.name = placement.place(&item.name).expect("placed").to_owned();
