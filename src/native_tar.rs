@@ -65,6 +65,9 @@ pub struct ReadOptions<'a> {
     pub include: &'a [String],
     /// Wildcard patterns to leave out, written as for `ExtractOptions::include`.
     pub exclude: &'a [String],
+    /// Leading path segments to drop before writing, as [`crate::Strip`]
+    /// describes. Selection still matches the full archive paths.
+    pub strip: crate::Strip<'a>,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -740,6 +743,8 @@ struct Extraction<'a, 'f> {
     budget: Budget,
     tracker: Tracker<'a>,
     selection: crate::Selection<'a>,
+    placement: crate::placement::Placement<'a>,
+    placed: crate::placement::PlacedNames,
 }
 
 fn entry_name(raw: &str) -> &str {
@@ -756,6 +761,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
         budget: Budget,
         tracker: Tracker<'a>,
         selection: crate::Selection<'a>,
+        placement: crate::placement::Placement<'a>,
     ) -> Self {
         Extraction {
             output,
@@ -770,12 +776,34 @@ impl<'a, 'f> Extraction<'a, 'f> {
             budget,
             tracker,
             selection,
+            placement,
+            placed: crate::placement::PlacedNames::default(),
         }
     }
 
     fn ensure_each_selected_path_matches(&self) -> Result<()> {
         self.selection
-            .ensure_each_path_matches(self.nodes.keys().map(String::as_str))
+            .ensure_each_path_matches(self.nodes.keys().map(String::as_str))?;
+        self.placement
+            .ensure_prefix_is_a_folder(self.nodes.iter().map(|(name, node)| {
+                (
+                    name.as_str(),
+                    matches!(node, Node::Directory | Node::ImpliedDirectory),
+                )
+            }))
+    }
+
+    fn place(&mut self, name: &str, directory: bool, replaces: bool) -> Result<Option<String>> {
+        if !self.selection.selects(name) {
+            return Ok(None);
+        }
+        let Some(placed) = self.placement.place(name) else {
+            return Ok(None);
+        };
+        if self.placement.strips() && !replaces {
+            self.placed.add(placed, directory)?;
+        }
+        Ok(Some(placed.to_owned()))
     }
 
     fn root(&self) -> Option<&'a Path> {
@@ -968,14 +996,13 @@ impl<'a, 'f> Extraction<'a, 'f> {
         }
         safe_path(name)?;
         let name = name.to_owned();
-        let selected = self.selection.selects(&name);
         match kind {
             _ if directory => {
                 ensure!(size == 0, "tar directory {name:?} has data");
-                self.claim(&name, Node::Directory)?;
-                if !selected {
+                let replaces = self.claim(&name, Node::Directory)?;
+                let Some(name) = self.place(&name, true, replaces)? else {
                     return Ok(());
-                }
+                };
                 if self.output.is_some() {
                     self.create_parent(&format!("{name}/"))?;
                 }
@@ -995,9 +1022,9 @@ impl<'a, 'f> Extraction<'a, 'f> {
             }
             b'0' | 0 | b'7' => {
                 let replaces = self.claim(&name, Node::File)?;
-                if !selected {
+                let Some(name) = self.place(&name, false, replaces)? else {
                     return input.copy(size, |_| Ok(()));
-                }
+                };
                 self.write_file(input, &name, size, mode, modified, replaces)?;
                 self.entries.push(Entry {
                     name,
@@ -1022,13 +1049,17 @@ impl<'a, 'f> Extraction<'a, 'f> {
                     *node = Node::LinkedFile;
                 }
                 self.claim(&name, Node::HardLink)?;
-                if !selected {
+                let placed_target = self
+                    .placement
+                    .place(&target)
+                    .filter(|_| self.selection.selects(&target))
+                    .map(str::to_owned);
+                let Some(name) = self.place(&name, false, false)? else {
                     return Ok(());
-                }
-                ensure!(
-                    self.selection.selects(&target),
-                    "tar hard link {name:?} needs {target:?}, which the selection leaves out"
-                );
+                };
+                let target = placed_target.with_context(|| {
+                    format!("tar hard link {name:?} needs {target:?}, which the selection or strip leaves out")
+                })?;
                 self.create_parent(&name)?;
                 self.hard_links.push((name.clone(), target));
             }
@@ -1037,9 +1068,10 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
                 self.charge_name(raw_target.len())?;
                 self.claim(&name, Node::Symlink)?;
-                if !selected {
+                let Some(name) = self.place(&name, false, false)? else {
                     return Ok(());
-                }
+                };
+                crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
                 self.create_parent(&name)?;
                 self.symlinks.push((name.clone(), raw_target));
             }
@@ -1149,6 +1181,7 @@ pub fn read_archive(
             budget,
             Tracker::new(options.control, None, None),
             selection()?,
+            crate::placement::Placement::new(options.strip)?,
         );
         parse(&mut extraction, &mut input)?;
         extraction.ensure_each_selected_path_matches()?;
@@ -1192,6 +1225,7 @@ pub fn read_archive(
             budget,
             Tracker::new(options.control, None, None),
             selection()?,
+            crate::placement::Placement::new(options.strip)?,
         );
         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             parse(&mut extraction, &mut input)

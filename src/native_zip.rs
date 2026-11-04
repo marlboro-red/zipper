@@ -1331,6 +1331,9 @@ pub struct ReadOptions<'a> {
     pub include: &'a [String],
     /// Wildcard patterns to leave out, written as for `ExtractOptions::include`.
     pub exclude: &'a [String],
+    /// Leading path segments to drop before writing, as [`crate::Strip`]
+    /// describes. Selection still matches the full archive paths.
+    pub strip: crate::Strip<'a>,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -1366,9 +1369,41 @@ pub fn read_archive_with_options(
     drop(times);
     let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
     selection.ensure_each_path_matches(items.iter().map(|item| item.entry.name.as_str()))?;
-    let (selected, skipped): (Vec<_>, Vec<_>) = items
+    let placement = crate::placement::Placement::new(options.strip)?;
+    placement.ensure_prefix_is_a_folder(
+        items
+            .iter()
+            .map(|item| (item.entry.name.as_str(), item.entry.directory)),
+    )?;
+    let (mut selected, mut skipped): (Vec<_>, Vec<_>) = items
         .into_iter()
         .partition(|item| selection.selects(&item.entry.name));
+    if placement.strips() {
+        let (placed, unplaced): (Vec<_>, Vec<_>) = selected
+            .into_iter()
+            .partition(|item| placement.place(&item.entry.name).is_some());
+        selected = placed;
+        skipped.extend(unplaced);
+        for item in &mut selected {
+            let placed = placement
+                .place(&item.entry.name)
+                .expect("placed")
+                .to_owned();
+            if item.stored_name_if_different.is_none() {
+                let mut stored = std::mem::take(&mut item.entry.name).into_bytes();
+                if item.entry.directory {
+                    stored.push(b'/');
+                }
+                item.stored_name_if_different = Some(stored.into_boxed_slice());
+            }
+            item.entry.name = placed;
+        }
+        crate::placement::ensure_placed_names_fit(
+            selected
+                .iter()
+                .map(|item| (item.entry.name.as_str(), item.entry.directory)),
+        )?;
+    }
     let mut headers = archive.clone().into_inner();
     for item in &skipped {
         check_local_header(&mut headers, item)?;

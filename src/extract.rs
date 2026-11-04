@@ -82,6 +82,11 @@ pub struct ExtractOptions<'a> {
     pub include: &'a [String],
     /// Wildcard patterns to leave out, written as for `include`.
     pub exclude: &'a [String],
+    /// Leading path segments to drop before writing: `Strip::Prefix("a")`
+    /// writes `a/b/c.txt` as `<dest>/b/c.txt`, and `Strip::Components(1)`
+    /// does the same for every top folder. `paths`, `include` and `exclude`
+    /// still match the full archive paths. The 7-Zip backend refuses it.
+    pub strip: crate::Strip<'a>,
     /// Progress reports and cancellation. Every reader checks the cancel flag
     /// before it starts. Only ZIP, tar and 7z report progress and check it
     /// later.
@@ -198,6 +203,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     paths: options.paths,
                     include: options.include,
                     exclude: options.exclude,
+                    strip: options.strip,
                     control: options.control,
                 },
             )?;
@@ -213,6 +219,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     paths: options.paths,
                     include: options.include,
                     exclude: options.exclude,
+                    strip: options.strip,
                     control: options.control,
                 },
             )?;
@@ -227,6 +234,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     paths: options.paths,
                     include: options.include,
                     exclude: options.exclude,
+                    strip: options.strip,
                     control: options.control,
                 },
             )?;
@@ -234,9 +242,12 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
         Reader::Backend { .. }
             if !(options.paths.is_empty()
                 && options.include.is_empty()
-                && options.exclude.is_empty()) =>
+                && options.exclude.is_empty()
+                && options.strip == crate::Strip::None) =>
         {
-            bail!("--path, --include and --exclude need an archive read in process")
+            bail!(
+                "--path, --include, --exclude, --strip-prefix and --strip-components need an archive read in process"
+            )
         }
         Reader::Tar => {
             native_tar::read_archive(
@@ -249,6 +260,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     paths: options.paths,
                     include: options.include,
                     exclude: options.exclude,
+                    strip: options.strip,
                     control: options.control,
                 },
             )?;

@@ -67,6 +67,7 @@ These options work the same way in every reader. [Usage](../usage.md#extract-int
 - `Existing::Overwrite`, or `zipper extract --overwrite`, extracts into an existing folder. The whole archive decodes into a hidden staging folder first. Each file then replaces the file of the same name by rename. `tests/overwrite.rs` covers links and conflicts in the destination.
 - `Control` carries a progress callback and a cancel flag. `tests/control.rs` covers cancellation at any point.
 - `paths`, `include` and `exclude`, or `--path`, `--include` and `--exclude`, select entries. The reader still parses and checks every header, and writes only the selected entries. A selected hard link whose target is left out is refused, and each `--path` must match an entry.
+- `strip`, or `--strip-prefix` and `--strip-components`, places a folder's contents at the destination root, as [usage](../usage.md#extract-a-folder-at-the-output-root) describes. The reader checks the prefix after the last header, before it publishes.
 
 ## Reference corpus
 

@@ -68,6 +68,26 @@ target/release/zipper extract bundle.zip --output selected --include '*.txt' --e
 
 The 7-Zip backend refuses `--path`, `--include` and `--exclude`.
 
+## Extract a folder at the output root
+
+To extract one folder of an archive with its contents at the output root, pass `--strip-prefix` with the folder. Its structure below stays as it is:
+
+```sh
+target/release/zipper extract bundle.zip --output icons --strip-prefix assets/icons
+```
+
+An entry `assets/icons/small/a.png` lands at `icons/small/a.png`, and nothing outside `assets/icons` is extracted. `--strip-components N` instead drops the first `N` folders of every path, as tar does, and skips an entry with no more than `N` segments. Both place each file in one pass, with no rename after extraction.
+
+- `--path`, `--include` and `--exclude` still match the full archive paths, before the strip.
+- The extraction fails before publishing anything when the prefix is not a folder of the archive.
+- It also fails when the stripped paths would put two entries at one path, or a file where a folder must go.
+- A symlink is checked at its stripped path, so a link that pointed elsewhere in the archive but would leave the output is refused.
+- A tar hard link whose target the strip leaves out is refused.
+- `--flat` with a strip extracts only the stripped entries, without their folders.
+- A single compressed file has no folders, so any strip leaves nothing and fails.
+- Library callers set `strip` in `ExtractOptions` to `Strip::Prefix` or `Strip::Components`. `tests/strip.rs` strips every archive of the ZIP, tar and 7z corpora by each of their folders and by 1 to 3 segments.
+- The 7-Zip backend refuses both options.
+
 ## Extract without folders, or through pipes
 
 `--flat` puts every file in the output folder itself, without its folders, as `7z e` does. Files that share a name follow `--existing` in path order. The default refuses them, `overwrite` keeps the last, `skip` keeps the first, and the rename modes number the others `name_1.ext` and on. An archive with links is refused, because flattening breaks their targets:

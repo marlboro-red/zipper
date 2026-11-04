@@ -227,3 +227,31 @@ fn a_second_lzip_member_cut_at_any_length_is_refused() {
         );
     }
 }
+
+#[test]
+fn stripping_a_single_file_leaves_nothing_and_is_refused() {
+    for strip in [
+        zipper::Strip::Components(1),
+        zipper::Strip::Prefix("hello.txt"),
+    ] {
+        assert_refused(
+            &format!("{strip:?}"),
+            "hello.txt.gz",
+            &single_file("hello.txt.gz"),
+            ReadOptions {
+                strip,
+                ..ReadOptions::default()
+            },
+        );
+    }
+    let (root, result) = extract(
+        "hello.txt.gz",
+        &single_file("hello.txt.gz"),
+        ReadOptions {
+            strip: zipper::Strip::Components(0),
+            ..ReadOptions::default()
+        },
+    );
+    result.unwrap();
+    assert!(root.path().join("out/hello.txt").exists());
+}

@@ -81,6 +81,9 @@ pub struct ReadOptions<'a> {
     pub include: &'a [String],
     /// Wildcard patterns to leave out, written as for `ExtractOptions::include`.
     pub exclude: &'a [String],
+    /// Leading path segments to drop before writing, as [`crate::Strip`]
+    /// describes. Selection still matches the full archive paths.
+    pub strip: crate::Strip<'a>,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -2010,17 +2013,39 @@ pub fn read_archive(
             .is_none_or(|threads| (1..=64).contains(&threads)),
         "7z threads must be 1..64"
     );
-    let (_, archive) = open(path)?;
+    let (_, mut archive) = open(path)?;
     for folder in &archive.folders {
         check_methods(folder)?;
     }
     let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
     selection.ensure_each_path_matches(archive.items.iter().map(|item| item.name.as_str()))?;
-    let chosen: Vec<bool> = archive
+    let placement = crate::placement::Placement::new(options.strip)?;
+    placement.ensure_prefix_is_a_folder(
+        archive
+            .items
+            .iter()
+            .map(|item| (item.name.as_str(), item.kind == Kind::Directory)),
+    )?;
+    let mut chosen: Vec<bool> = archive
         .items
         .iter()
-        .map(|item| selection.selects(&item.name))
+        .map(|item| selection.selects(&item.name) && placement.place(&item.name).is_some())
         .collect();
+    if placement.strips() {
+        for (item, chosen) in archive.items.iter_mut().zip(&mut chosen) {
+            if *chosen {
+                item.name = placement.place(&item.name).expect("placed").to_owned();
+            }
+        }
+        crate::placement::ensure_placed_names_fit(
+            archive
+                .items
+                .iter()
+                .zip(&chosen)
+                .filter(|(_, chosen)| **chosen)
+                .map(|(item, _)| (item.name.as_str(), item.kind == Kind::Directory)),
+        )?;
+    }
     let entries: Vec<Entry> = archive
         .items
         .iter()

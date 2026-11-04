@@ -6,7 +6,7 @@
 
 [tar-writer-pool]
 skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
-fingerprint = a90799b612e3bf39
+fingerprint = c77d6513bdc0ae51
 item = src/native_tar.rs | const CHUNK:
 item = src/native_tar.rs | const QUEUED_FILES:
 item = src/native_tar.rs | const QUEUED_CHUNKS_PER_FILE:
@@ -33,7 +33,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 4164943917cae95d
+fingerprint = 96f79b85de09652e
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
 item = src/memory.rs | pub(crate) struct Memory {
@@ -44,7 +44,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = befec16a78489652
+fingerprint = aa179b4475150bf8
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
 item = src/progress.rs | impl<'a> Tracker<'a> {
@@ -66,7 +66,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = c41427e187f3e706
+fingerprint = c9e03765a20af8ae
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
 item = src/native_zip.rs | pub fn read_archive_with_options(
@@ -146,3 +146,10 @@ item = src/native_7z.rs | const STORED_CHUNK:
 item = src/native_7z.rs | struct StoredLzma2<R> {
 item = src/native_7z.rs | impl<R: Read> StoredLzma2<R> {
 item = src/native_7z.rs | impl<R: Read> Read for StoredLzma2<R> {
+
+[strip]
+skill = .claude/skills/zipper-verify-strip/SKILL.md
+fingerprint = c02ad411dcfa628b
+full-check = cargo test --release --lib placement
+item = src/placement.rs | impl<'a> Placement<'a> {
+item = src/placement.rs | impl PlacedNames {

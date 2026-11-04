@@ -8,6 +8,13 @@ pub struct Expected {
     modified: Option<i64>,
 }
 
+impl Expected {
+    #[allow(dead_code, reason = "only tests/strip.rs asks")]
+    pub fn is_directory(&self) -> bool {
+        self.size_and_crc.is_none() && self.link_target.is_none()
+    }
+}
+
 pub type Tree = BTreeMap<String, Expected>;
 
 fn optional<T>(field: &str, parse: impl Fn(&str) -> T) -> Option<T> {

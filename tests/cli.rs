@@ -697,3 +697,86 @@ fn archives_come_from_standard_input_and_one_file_goes_to_standard_output() -> a
     assert!(both.stdout.is_empty());
     Ok(())
 }
+
+#[test]
+fn strip_flags_place_a_subtree_at_the_output_root() -> anyhow::Result<()> {
+    let t = tempfile::tempdir()?;
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .current_dir(t.path())
+            .args(args)
+            .output()
+    };
+    zip_of(
+        &t.path().join("a.zip"),
+        &[("a/b/c.txt", b"c"), ("a/d.txt", b"d"), ("top.txt", b"top")],
+    )?;
+    assert!(
+        run(&["extract", "a.zip", "-o", "prefix", "--strip-prefix", "a"])?
+            .status
+            .success()
+    );
+    assert_eq!(fs::read(t.path().join("prefix/b/c.txt"))?, b"c");
+    assert_eq!(fs::read(t.path().join("prefix/d.txt"))?, b"d");
+    assert!(!t.path().join("prefix/top.txt").exists());
+    assert!(!t.path().join("prefix/a").exists());
+    assert!(
+        run(&["extract", "a.zip", "-o", "count", "--strip-components", "1"])?
+            .status
+            .success()
+    );
+    assert_eq!(fs::read(t.path().join("count/b/c.txt"))?, b"c");
+    assert!(!t.path().join("count/top.txt").exists());
+    assert!(
+        run(&[
+            "extract",
+            "a.zip",
+            "-o",
+            "flat",
+            "--flat",
+            "--strip-prefix",
+            "a"
+        ])?
+        .status
+        .success()
+    );
+    assert_eq!(fs::read(t.path().join("flat/c.txt"))?, b"c");
+    assert!(!t.path().join("flat/top.txt").exists());
+    let selected = run(&[
+        "extract",
+        "a.zip",
+        "-o",
+        "sel",
+        "--path",
+        "a/b",
+        "--strip-prefix",
+        "a",
+    ])?;
+    assert!(selected.status.success());
+    assert_eq!(fs::read(t.path().join("sel/b/c.txt"))?, b"c");
+    assert!(!t.path().join("sel/d.txt").exists());
+    for (args, words) in [
+        (
+            &["--strip-prefix", "top.txt"][..],
+            "not a folder of the archive",
+        ),
+        (
+            &["--strip-prefix", "missing"],
+            "not a folder of the archive",
+        ),
+        (&["--strip-prefix", "../a"], "unsafe"),
+        (
+            &["--strip-prefix", "a", "--strip-components", "1"],
+            "cannot be used with",
+        ),
+    ] {
+        let mut all = vec!["extract", "a.zip", "-o", "refused"];
+        all.extend_from_slice(args);
+        let result = run(&all)?;
+        assert!(!result.status.success(), "{args:?}");
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(stderr.contains(words), "{args:?}: {stderr}");
+        assert!(!t.path().join("refused").exists(), "{args:?}");
+    }
+    Ok(())
+}

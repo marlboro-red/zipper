@@ -69,6 +69,7 @@ Use these skills from `.claude/skills/` for the judgment that checks cannot make
 | [`zipper-verify-zip-budget`](.claude/skills/zipper-verify-zip-budget/SKILL.md) | You change how ZIP workers reserve decoder memory, `Memory` in `src/memory.rs`, or the write-behind hand-off. |
 | [`zipper-verify-links`](.claude/skills/zipper-verify-links/SKILL.md) | You change the link check in `src/staging.rs`, or how links are created or checked in `src/lib.rs`. |
 | [`zipper-verify-progress`](.claude/skills/zipper-verify-progress/SKILL.md) | You change `Tracker` in `src/progress.rs` or how a Rayon pool reports progress. |
+| [`zipper-verify-strip`](.claude/skills/zipper-verify-strip/SKILL.md) | You change how leading folders are stripped in `src/placement.rs`, or where a reader renames its entries for a strip. |
 | [`zipper-verify-parsers`](.claude/skills/zipper-verify-parsers/SKILL.md) | You change the 7z header readers, the LZMA2 chunk scan, the ZIP time fields, end record or data descriptor, or the tar numeric fields. |
 
 The `zipper-review` skill spawns the read-only [`zipper-adversary`](.claude/agents/zipper-adversary.md) agent.

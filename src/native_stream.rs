@@ -28,6 +28,9 @@ pub struct ReadOptions<'a> {
     pub include: &'a [String],
     /// Wildcard patterns to leave out, written as for `ExtractOptions::include`.
     pub exclude: &'a [String],
+    /// Leading path segments to drop before writing, as [`crate::Strip`]
+    /// describes. Selection still matches the full archive paths.
+    pub strip: crate::Strip<'a>,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -112,6 +115,12 @@ pub fn read_archive(
     let name = output_name(path)?;
     let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
     selection.ensure_each_path_matches(std::iter::once(name.as_str()))?;
+    let placement = crate::placement::Placement::new(options.strip)?;
+    placement.ensure_prefix_is_a_folder(std::iter::once((name.as_str(), false)))?;
+    ensure!(
+        placement.place(&name).is_some(),
+        "stripping {name:?} leaves nothing to extract"
+    );
     let tracker = Tracker::new(options.control, Some(1), None);
     tracker.check()?;
     let staging = destination

@@ -88,6 +88,14 @@ enum Command {
         /// folders (7-Zip e). Files that share a name follow --existing.
         #[arg(long)]
         flat: bool,
+        /// Extract only this archive folder, with its contents at the output
+        /// root: with `a`, `a/b/c.txt` lands at `<output>/b/c.txt`.
+        #[arg(long, value_name = "PATH", conflicts_with = "strip_components")]
+        strip_prefix: Option<String>,
+        /// Drop this many leading folders from every path, as tar does. An
+        /// entry with no more folders than that is not extracted.
+        #[arg(long, value_name = "N")]
+        strip_components: Option<usize>,
         /// Refuse archives whose declared output exceeds this many bytes. By
         /// default, ZIP, tar and 7z output read in process must fit in free space.
         #[arg(long)]
@@ -166,6 +174,8 @@ fn main() -> Result<()> {
             include,
             exclude,
             flat,
+            strip_prefix,
+            strip_components,
             overwrite,
             existing,
             max_extracted_bytes,
@@ -202,6 +212,11 @@ fn main() -> Result<()> {
                     include: &include,
                     exclude: &exclude,
                     flat: flat || stdout,
+                    strip: match (&strip_prefix, strip_components) {
+                        (Some(prefix), _) => zipper::Strip::Prefix(prefix),
+                        (None, Some(count)) => zipper::Strip::Components(count),
+                        (None, None) => zipper::Strip::None,
+                    },
                     max_output_bytes: max_extracted_bytes,
                     threads: cli.threads,
                     engine: cli.zip_engine.into(),
