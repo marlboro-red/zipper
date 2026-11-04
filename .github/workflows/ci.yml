@@ -19,6 +19,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
         run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-gnu
+      - name: Restore the Cargo registry and build outputs
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          prefix-key: rust-1.96.0
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install 7-Zip for the parity archives
         shell: bash
         run: |

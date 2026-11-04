@@ -63,6 +63,18 @@ fn threads() -> usize {
     0
 }
 
+// EXTERNAL(Linux): a thread pthread_join has returned for can still run its last exit steps for a moment.
+fn settled_threads(baseline: usize) -> usize {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    loop {
+        let now = threads();
+        if now <= baseline || std::time::Instant::now() > deadline {
+            return now;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 fn which(tool: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
         std::env::split_paths(&paths)
@@ -179,7 +191,7 @@ fn nothing_stays_open_after_any_extraction_returns() {
             assert!(ok || !succeeds, "{label} failed");
             assert_eq!(open_handles(), handles, "{label}: a handle stayed open");
             assert_eq!(
-                threads(),
+                settled_threads(threads_before),
                 threads_before,
                 "{label}: a thread outlived the call"
             );
