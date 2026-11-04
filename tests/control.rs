@@ -341,6 +341,7 @@ fn staged_bytes(parent: &Path) -> u64 {
 #[test]
 fn reported_bytes_never_run_ahead_of_bytes_on_disk() {
     const SIZE: usize = 48 << 20;
+    const THREADS: usize = 4;
     const SLACK: u64 = (1 << 20) + (64 << 10);
     let big: Vec<u8> = (0..SIZE).map(|index| (index / 4096) as u8).collect();
     let root = tempfile::tempdir().unwrap();
@@ -356,7 +357,20 @@ fn reported_bytes_never_run_ahead_of_bytes_on_disk() {
     bytes.extend_from_slice(&big);
     bytes.resize(bytes.len().next_multiple_of(512) + 1024, 0);
     fs::write(&tar, bytes).unwrap();
-    for archive in [zip, tar] {
+    let stored = root.path().join("stored.zip");
+    let mut writer = zip::ZipWriter::new(fs::File::create(&stored).unwrap());
+    for index in 0..16 {
+        writer
+            .start_file(
+                format!("{index}"),
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(&big[..15 << 20]).unwrap();
+    }
+    writer.finish().unwrap();
+    for (archive, total) in [(zip, SIZE), (tar, SIZE), (stored, 16 * (15 << 20))] {
         let work = tempfile::tempdir().unwrap();
         let ahead = std::sync::Mutex::new(0u64);
         let last = std::sync::Mutex::new(0u64);
@@ -376,6 +390,7 @@ fn reported_bytes_never_run_ahead_of_bytes_on_disk() {
                     progress: Some(&watch),
                     cancel: None,
                 },
+                threads: Some(THREADS),
                 ..Default::default()
             },
         )
@@ -385,6 +400,35 @@ fn reported_bytes_never_run_ahead_of_bytes_on_disk() {
             ahead <= SLACK,
             "{archive:?} reported {ahead} bytes before they were written"
         );
-        assert_eq!(*last.lock().unwrap(), SIZE as u64, "{archive:?}");
+        assert_eq!(*last.lock().unwrap(), total as u64, "{archive:?}");
     }
+}
+
+#[test]
+fn a_tar_file_cut_short_is_never_counted_as_done() {
+    let root = tempfile::tempdir().unwrap();
+    let tar = root.path().join("cut.tar");
+    let mut bytes = ustar("whole", b'0', 512);
+    bytes.extend_from_slice(&[7; 512]);
+    bytes.extend(ustar("cut", b'0', 8 << 20));
+    bytes.extend(std::iter::repeat_n(9u8, 3 << 20));
+    fs::write(&tar, bytes).unwrap();
+    let files = std::sync::Mutex::new(0u64);
+    let watch = |progress: Progress| {
+        let mut files = files.lock().unwrap();
+        *files = (*files).max(progress.files_done);
+    };
+    let result = zipper::extract_archive(
+        &tar,
+        &root.path().join("out"),
+        zipper::ExtractOptions {
+            control: Control {
+                progress: Some(&watch),
+                cancel: None,
+            },
+            ..Default::default()
+        },
+    );
+    assert!(result.is_err());
+    assert!(*files.lock().unwrap() <= 1, "the cut file was counted");
 }

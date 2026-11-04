@@ -1594,11 +1594,10 @@ pub fn read_archive_with_options(
                     return finished(item);
                 }
                 stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
-                    tracker.add_bytes(bytes.len() as u64)?;
                     if let Some(output) = &mut output {
                         output.write_all(bytes)?;
                     }
-                    Ok(())
+                    tracker.add_bytes(bytes.len() as u64)
                 })?;
                 if let Some(output) = &mut output {
                     finish(output, item)?;
