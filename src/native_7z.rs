@@ -24,6 +24,7 @@ const MAX_CODERS: usize = 5;
 const MAX_HEADER_LAYERS: usize = 4;
 const COPY_BUFFER: usize = 1024 * 1024;
 const SWAP_BUFFER: usize = 64 * 1024;
+const LIBLZMA_CHAIN: usize = 4;
 const DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
 const BZIP2_DECODER_MEMORY: u64 = 4 * 1024 * 1024;
 const SEGMENT_BUDGET: u64 = 512 * 1024 * 1024;
@@ -1156,6 +1157,12 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
                 .iter()
                 .all(|method| matches!(method, Method::Filter(_))) =>
         {
+            if methods.len() > LIBLZMA_CHAIN {
+                return Err(unsupported(format!(
+                    "7z folder chains {} coders, more than liblzma's {LIBLZMA_CHAIN}; {BACKEND_HINT}",
+                    methods.len()
+                )));
+            }
             lzma_filters(folder, &methods)?;
         }
         _ => {
@@ -2692,11 +2699,61 @@ mod tests {
                     .unwrap()
                     .read_to_end(&mut filtered)
                     .unwrap();
-                assert_eq!(filtered.len(), length, "x86 length {length} most {most}");
+                let mut encoder = liblzma::stream::Filters::new();
+                encoder.lzma2(&liblzma::stream::LzmaOptions::new_preset(0).unwrap());
+                let mut compressed = Vec::new();
+                liblzma::read::XzEncoder::new_stream(
+                    &data[..],
+                    liblzma::stream::Stream::new_raw_encoder(&encoder).unwrap(),
+                )
+                .read_to_end(&mut compressed)
+                .unwrap();
+                let mut expected = Vec::new();
+                raw_decoder(&branch, &compressed[..])
+                    .unwrap()
+                    .read_to_end(&mut expected)
+                    .unwrap();
+                assert_eq!(expected.len(), length);
+                assert_eq!(filtered, expected, "x86 length {length} most {most}");
                 checked += 1;
             }
         }
         assert!(checked >= 39, "{checked}");
+    }
+
+    #[test]
+    fn more_coders_than_liblzma_chains_go_to_7zip() {
+        let coder = |id: &[u8], properties: &[u8]| Coder {
+            id: id.to_vec(),
+            properties: properties.to_vec(),
+        };
+        let lzma = coder(&[0x03, 0x01, 0x01], &[0x5D, 0, 0, 1, 0]);
+        let filters = [
+            coder(&[0x03], &[3]),
+            coder(&[0x03, 0x03, 0x01, 0x03], &[]),
+            coder(&[0x0A], &[]),
+            coder(&[0x03, 0x03, 0x08, 0x05], &[]),
+        ];
+        for count in 1..=4 {
+            let mut output_to_packed = filters[..count].to_vec();
+            output_to_packed.push(lzma.clone());
+            let folder = Folder {
+                output_to_packed,
+                bcj2_branches: Vec::new(),
+                unsupported: None,
+                size: 1,
+                crc: None,
+                pack_offset: 0,
+                pack_size: 1,
+            };
+            match check_methods(&folder) {
+                Ok(_) => assert!(count < 4, "{count} filters"),
+                Err(error) => assert!(
+                    count == 4 && error.is::<Unsupported>(),
+                    "{count} filters: {error}"
+                ),
+            }
+        }
     }
 
     #[test]

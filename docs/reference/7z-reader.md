@@ -18,7 +18,8 @@ It reads solid and non-solid archives, solid blocks, compressed and plain header
 
 The reader does not support these features:
 
-- A byte-swap filter after another filter, a coder above BCJ2, other coders with several streams, and a PPMd model larger than the 2 GiB decoder budget. The default engine sends these archives to 7-Zip.
+- More than 3 filters in front of LZMA or LZMA2, which liblzma cannot chain. The default engine sends these archives to 7-Zip.
+- A byte-swap filter after another filter, a coder above BCJ2, other coders with several streams, and a PPMd model larger than the 2 GiB decoder budget. These go to 7-Zip too.
 - Encrypted archives and encrypted headers. These go to 7-Zip too.
 - Anti-items, which delete files during an update, external data and additional header streams.
 - Windows reparse points, devices and FIFOs.
