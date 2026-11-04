@@ -154,13 +154,20 @@ fn nothing_stays_open_after_any_extraction_returns() {
     }
     for (_, archive, engine) in &cases {
         extract(archive, *engine, Some(8));
+        extract(archive, *engine, Some(1));
     }
     let (handles, threads_before) = (open_handles(), threads());
     let mut checked = 0;
     for (label, archive, engine) in &cases {
         let damaged = damaged(archive, work.path());
-        for (archive, succeeds) in [(archive.clone(), true), (damaged, false)] {
-            let (root, ok) = extract(&archive, *engine, Some(8));
+        for (archive, succeeds, workers) in [
+            (archive.clone(), true, 8),
+            (archive.clone(), true, 1),
+            (damaged.clone(), false, 8),
+            (damaged, false, 1),
+        ] {
+            let label = format!("{label} at {workers} threads");
+            let (root, ok) = extract(&archive, *engine, Some(workers));
             assert!(ok || !succeeds, "{label} failed");
             assert_eq!(open_handles(), handles, "{label}: a handle stayed open");
             assert_eq!(
@@ -178,5 +185,5 @@ fn nothing_stays_open_after_any_extraction_returns() {
             checked += 1;
         }
     }
-    assert!(checked >= 12, "{checked}");
+    assert!(checked >= 24, "{checked}");
 }

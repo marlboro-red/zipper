@@ -1591,10 +1591,20 @@ pub fn read_archive_with_options(
     if rayon::current_num_threads() <= worker_limit {
         run()?;
     } else {
-        rayon::ThreadPoolBuilder::new()
+        let mut threads = Vec::new();
+        let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(worker_limit)
-            .build()?
-            .install(run)?;
+            .spawn_handler(|thread| {
+                threads.push(std::thread::Builder::new().spawn(|| thread.run())?);
+                Ok(())
+            })
+            .build()?;
+        let ran = pool.install(run);
+        drop(pool);
+        for thread in threads {
+            let _ = thread.join();
+        }
+        ran?;
     }
     create_links_after_files(
         staging.as_ref().map(|temp| temp.path()),

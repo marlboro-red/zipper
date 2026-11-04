@@ -33,7 +33,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = e4e6b5544e052b4e
+fingerprint = 343a7cfeb4e8b9c1
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
 item = src/memory.rs | pub(crate) struct Memory {
@@ -44,7 +44,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 5569ec037ecfb934
+fingerprint = 395a74d25712bd62
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
 item = src/progress.rs | impl<'a> Tracker<'a> {
@@ -66,7 +66,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = 10dbc08806187ac2
+fingerprint = fe325dbea0fc7d46
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
 item = src/native_zip.rs | pub fn read_archive_with_options(

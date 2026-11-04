@@ -2215,19 +2215,26 @@ pub fn read_archive(
     let next = AtomicUsize::new(0);
     let failure = Mutex::new(None);
     std::thread::scope(|scope| {
-        for _ in 0..threads {
-            scope.spawn(|| {
-                let mut buffer = vec![0u8; COPY_BUFFER];
-                while let Some(&folder) = wanted.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    if let Err(error) = decode(folder, &mut buffer) {
-                        failure
-                            .lock()
-                            .unwrap_or_else(|poison| poison.into_inner())
-                            .get_or_insert(error);
-                        next.store(wanted.len(), Ordering::Relaxed);
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut buffer = vec![0u8; COPY_BUFFER];
+                    while let Some(&folder) = wanted.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        if let Err(error) = decode(folder, &mut buffer) {
+                            failure
+                                .lock()
+                                .unwrap_or_else(|poison| poison.into_inner())
+                                .get_or_insert(error);
+                            next.store(wanted.len(), Ordering::Relaxed);
+                        }
                     }
-                }
-            });
+                })
+            })
+            .collect();
+        for worker in workers {
+            if let Err(panic) = worker.join() {
+                std::panic::resume_unwind(panic);
+            }
         }
     });
     if let Some(error) = failure
