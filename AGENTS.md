@@ -26,7 +26,7 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 
 - Treat a change as done only when `cargo xtask gate fast` passes. CI runs `cargo xtask gate full`.
 - Run `cargo xtask install-hooks` once so pre-push runs the fast gate.
-- Ship with `cargo xtask ship`. It pushes `HEAD` to a `ci/` branch, which runs the pre-push gate, waits for CI on that exact commit, and moves `main` only when every job passes. Windows behaviour is first tested there, so `main` never receives a commit that CI failed.
+- Ship with `cargo xtask ship`. It pushes `HEAD` to a `ci/` branch, which runs the pre-push gate. It then waits for CI on that exact commit and moves `main` only when every job passes, so `main` never receives a commit that CI failed. CI runs on Ubuntu only. The gate lints the Windows build on every push, and the `Windows release candidate` workflow tests Windows when invoked, before a release.
 - `cargo xtask ci-wait` waits for the CI run on a pushed `HEAD` and prints each job's result.
 - Before a release, run `cargo xtask release-checks`. It runs every full check listed in `verification/coverage.txt`, then `cargo xtask gate full`. The long exhaustive checks, such as link escape and overwrite, run only there and in `cargo xtask verify-sync`, never on a push.
 - Expect the gate to format, lint, test, and build a release binary. On macOS and Linux it also lints the Windows build, which needs `rustup target add x86_64-pc-windows-gnu` once. It also checks byte-exact ZIP extraction on both engines, selected-path extraction, and truncated input cleanup.
