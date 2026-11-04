@@ -25,6 +25,7 @@ zstd = "0.14.3"
 
 [features]
 counters = []
+relative-create = []
 
 [target.'cfg(target_os = "macos")'.dependencies]
 flate2 = { version = "1.1.10", default-features = false, features = ["zlib"] }
@@ -34,7 +35,7 @@ libc = "0.2.191"
 rustix = { version = "1.1.6", features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_SystemServices", "Win32_System_Time"] }
+windows-sys = { version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_SystemServices", "Win32_System_Time"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

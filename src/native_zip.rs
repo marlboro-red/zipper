@@ -1499,6 +1499,23 @@ pub fn read_archive_with_options(
     if let Some(temp) = &staging {
         create_directories_in_archive_order(temp.path(), &items)?;
     }
+    #[cfg(all(windows, feature = "relative-create"))]
+    let folders = staging
+        .as_ref()
+        .map(|temp| {
+            crate::relative_create::Folders::open(
+                items
+                    .iter()
+                    .filter(|item| !item.entry.directory)
+                    .filter_map(|item| {
+                        temp.path()
+                            .join(&item.entry.name)
+                            .parent()
+                            .map(Path::to_owned)
+                    }),
+            )
+        })
+        .transpose()?;
     let merged = match &staging {
         Some(temp) => later_spellings_of_same_directory(temp.path(), &items)?,
         None => HashSet::new(),
@@ -1576,7 +1593,16 @@ pub fn read_archive_with_options(
                 let mut output = if let Some(temp) = &staging {
                     if !item.entry.directory {
                         let path = temp.path().join(&item.entry.name);
-                        let file = crate::create_new_file(&path, item.mode.unwrap_or(0o666), item.windows_attributes)
+                        let create_by_path =
+                            || crate::create_new_file(&path, item.mode.unwrap_or(0o666), item.windows_attributes);
+                        #[cfg(all(windows, feature = "relative-create"))]
+                        let created = folders
+                            .as_ref()
+                            .and_then(|folders| folders.create_new(&path, item.windows_attributes))
+                            .unwrap_or_else(create_by_path);
+                        #[cfg(not(all(windows, feature = "relative-create")))]
+                        let created = create_by_path();
+                        let file = created
                             .map_err(|error| {
                             if error.kind() == std::io::ErrorKind::AlreadyExists {
                                 anyhow::anyhow!(
@@ -1678,6 +1704,8 @@ pub fn read_archive_with_options(
         }
         ran?;
     }
+    #[cfg(all(windows, feature = "relative-create"))]
+    drop(folders);
     create_links_after_files(
         staging.as_ref().map(|temp| temp.path()),
         &items,
