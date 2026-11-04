@@ -258,7 +258,7 @@ pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
         [0x28, 0xb5, 0x2f, 0xfd, ..] | [0x50..=0x5f, 0x2a, 0x4d, 0x18, ..] => Compression::Zstd,
         [0xfd, b'7', b'z', b'X', b'Z', 0x00] => Compression::Xz,
         [b'B', b'Z', b'h', b'1'..=b'9', ..] => Compression::Bzip2,
-        [b'L', b'Z', b'I', b'P', 1, ..] => Compression::Lzip,
+        [b'L', b'Z', b'I', b'P', 0 | 1, ..] => Compression::Lzip,
         _ => Compression::None,
     })
 }
@@ -291,37 +291,45 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
             input,
             liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
         )),
-        Compression::Lzip => Box::new(EndsWithItsInput {
-            decoder: Some(liblzma::bufread::XzDecoder::new_stream(
-                input,
-                liblzma::stream::Stream::new_lzip_decoder(u64::MAX, liblzma::stream::CONCATENATED)?,
-            )),
-            what: "lzip has data after its last member",
+        Compression::Lzip => Box::new(LzipMembers {
+            decoder: Some(lzip_member(input)?),
         }),
     })
 }
 
-struct EndsWithItsInput<R: BufRead> {
-    decoder: Option<liblzma::bufread::XzDecoder<R>>,
-    what: &'static str,
+fn lzip_member<R: BufRead>(input: R) -> std::io::Result<liblzma::bufread::XzDecoder<R>> {
+    Ok(liblzma::bufread::XzDecoder::new_stream(
+        input,
+        liblzma::stream::Stream::new_lzip_decoder(u64::MAX, 0)?,
+    ))
 }
 
-impl<R: BufRead> Read for EndsWithItsInput<R> {
+// EXTERNAL(liblzma lzip_decoder.c): with LZMA_CONCATENATED it drops up to 3 bytes of a cut next member, so each member decodes alone.
+struct LzipMembers<R: BufRead> {
+    decoder: Option<liblzma::bufread::XzDecoder<R>>,
+}
+
+impl<R: BufRead> Read for LzipMembers<R> {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        let Some(decoder) = &mut self.decoder else {
-            return Ok(0);
-        };
-        let read = decoder.read(buffer)?;
-        if read == 0 && !buffer.is_empty() {
+        while let Some(decoder) = &mut self.decoder {
+            let read = decoder.read(buffer)?;
+            if read > 0 || buffer.is_empty() {
+                return Ok(read);
+            }
             let mut input = self.decoder.take().expect("a decoder").into_inner();
-            if !input.fill_buf()?.is_empty() {
+            let next = input.fill_buf()?;
+            if next.is_empty() {
+                return Ok(0);
+            }
+            if !b"LZIP".starts_with(&next[..next.len().min(4)]) {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    self.what,
+                    "lzip has data after its last member",
                 ));
             }
+            self.decoder = Some(lzip_member(input)?);
         }
-        Ok(read)
+        Ok(0)
     }
 }
 

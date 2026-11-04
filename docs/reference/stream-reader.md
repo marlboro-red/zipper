@@ -8,7 +8,7 @@ Zipper reads a file that holds one gzip, bzip2, xz, zstd, lzip or LZMA stream, a
 - bzip2, including several bzip2 streams in a row. Each stream after the first must bring at least 4 KiB of output, because each one costs a block of several MiB to start. A file of many tiny streams goes to `--zip-engine backend`.
 - xz, including several xz streams in a row.
 - zstd, including several frames in a row.
-- lzip, including several members in a row, decoded by liblzma. 7-Zip does not read lzip.
+- lzip, versions 0 and 1, including several members in a row, decoded by liblzma one member at a time. 7-Zip does not read lzip. Zero padding after the last member, which bsdtar writes to standard output, is refused as trailing data.
 - LZMA in its old `.lzma` form. It has no signature, so a file counts as LZMA only when its name ends in `.lzma`, its first byte is a valid properties byte, and no ZIP, tar or 7z reader claims it first.
 
 `tests/data/stream` holds the lzip file, which 7-Zip's parity corpus cannot. `scripts/make_stream_files.py` writes it with bsdtar and checks it with a second decoder.

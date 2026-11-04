@@ -207,3 +207,23 @@ fn windows_output_names_avoid_devices_and_trailing_dots() {
         assert_eq!(output_name(Path::new(archive)).unwrap(), name, "{archive}");
     }
 }
+
+#[test]
+fn a_second_lzip_member_cut_at_any_length_is_refused() {
+    let member = single_file("hello.txt.lz");
+    let two = [member.clone(), member.clone()].concat();
+    let (root, result) = extract("hello.txt.lz", &two, ReadOptions::default());
+    result.unwrap();
+    assert_eq!(
+        fs::read(root.path().join("out/hello.txt")).unwrap(),
+        b"hello from the parity corpus\nhello from the parity corpus\n"
+    );
+    for length in member.len() + 1..two.len() {
+        assert_refused(
+            &format!("two lzip members cut to {length}"),
+            "hello.txt.lz",
+            &two[..length],
+            ReadOptions::default(),
+        );
+    }
+}
