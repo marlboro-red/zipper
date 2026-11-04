@@ -442,7 +442,13 @@ fn every_reader(root: &Path) -> Vec<std::path::PathBuf> {
     let tar = root.join("a.tar");
     write_tar(&tar);
     let parity = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/parity/archives");
-    let mut archives = vec![zip, tar];
+    let deflate64 = root.join("deflate64-small.zip");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/progress/deflate64-small.zip"),
+        &deflate64,
+    )
+    .unwrap();
+    let mut archives = vec![zip, tar, deflate64];
     for name in ["7z.7z", "hello.txt.gz"] {
         let copy = root.join(name);
         fs::copy(parity.join(name), &copy).unwrap();

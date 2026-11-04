@@ -1599,6 +1599,9 @@ pub fn read_archive_with_options(
                 }
                 let mut held = 0;
                 stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
+                    if bytes.is_empty() {
+                        return Ok(());
+                    }
                     if let Some(output) = &mut output {
                         output.write_all(bytes)?;
                     }

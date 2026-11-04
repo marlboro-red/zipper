@@ -6,7 +6,9 @@ use std::sync::{
 
 /// Extraction progress. Byte counts are file bytes written to disk, and each
 /// file's last bytes and the file itself count only once the file is closed,
-/// so 100% waits for every close, including a virus scan Windows runs then.
+/// so `files_done` reaches its total only after every close, including a
+/// virus scan Windows runs then. Empty files and links add no bytes, so
+/// `bytes_done` can reach its total while they are still being created.
 /// ZIP knows both totals before it starts. A tar stream reports `None` for
 /// them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -25,9 +27,9 @@ pub enum Phase {
     #[default]
     Extracting,
     /// Every file is written and closed, and the counts are final. Zipper
-    /// now creates links, restores folder times and modes, writes Windows
-    /// zone marks, and moves the result into the destination. The call
-    /// returns when this ends.
+    /// now restores folder times and modes, writes Windows zone marks, and
+    /// moves the result into the destination. Links are created just before
+    /// this phase or during it. The call returns when this ends.
     Finishing,
 }
 
