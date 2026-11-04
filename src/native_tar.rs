@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Condvar, Mutex,
@@ -290,18 +290,46 @@ pub fn sniff(path: &Path) -> Result<Option<Compression>> {
     Ok(tar.then_some(compression))
 }
 
+const SKIPPABLE_FRAMES_SNIFFED: usize = 16;
+
 pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
-    let mut magic = [0u8; 6];
-    let read = File::open(path)?.read(&mut magic)?;
-    Ok(match &magic[..read] {
-        [0x1f, 0x8b, ..] => Compression::Gzip,
-        [0x28, 0xb5, 0x2f, 0xfd, ..] | [0x50..=0x5f, 0x2a, 0x4d, 0x18, ..] => Compression::Zstd,
-        [0xfd, b'7', b'z', b'X', b'Z', 0x00] => Compression::Xz,
-        [b'B', b'Z', b'h', b'1'..=b'9', ..] => Compression::Bzip2,
-        [b'L', b'Z', b'I', b'P', 0 | 1, ..] => Compression::Lzip,
-        [0x04, 0x22, 0x4D, 0x18, ..] => Compression::Lz4,
-        _ => Compression::None,
-    })
+    let mut file = File::open(path)?;
+    for skipped in 0..SKIPPABLE_FRAMES_SNIFFED {
+        let mut magic = [0u8; 8];
+        let read = read_up_to(&mut file, &mut magic)?;
+        let compression = match &magic[..read] {
+            [0x1f, 0x8b, ..] => Compression::Gzip,
+            [0x28, 0xb5, 0x2f, 0xfd, ..] => Compression::Zstd,
+            // SPEC(RFC 8878 3.1.2 and LZ4 Frame Format): zstd and LZ4 share the skippable frame, so the next frame decides.
+            [0x50..=0x5f, 0x2a, 0x4d, 0x18, a, b, c, d] => {
+                let size = u32::from_le_bytes([*a, *b, *c, *d]);
+                if file.seek(SeekFrom::Current(i64::from(size))).is_err() {
+                    return Ok(Compression::Zstd);
+                }
+                continue;
+            }
+            [0x50..=0x5f, 0x2a, 0x4d, 0x18, ..] => Compression::Zstd,
+            [0xfd, b'7', b'z', b'X', b'Z', 0x00, ..] => Compression::Xz,
+            [b'B', b'Z', b'h', b'1'..=b'9', ..] => Compression::Bzip2,
+            [b'L', b'Z', b'I', b'P', 0 | 1, ..] => Compression::Lzip,
+            [0x04, 0x22, 0x4D, 0x18, ..] | [0x02, 0x21, 0x4C, 0x18, ..] => Compression::Lz4,
+            _ if skipped > 0 => Compression::Zstd,
+            _ => Compression::None,
+        };
+        return Ok(compression);
+    }
+    Ok(Compression::Zstd)
+}
+
+fn read_up_to(file: &mut File, buffer: &mut [u8]) -> std::io::Result<usize> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        match file.read(&mut buffer[filled..])? {
+            0 => break,
+            read => filled += read,
+        }
+    }
+    Ok(filled)
 }
 
 const SNIFF_INPUT: u64 = 1024 * 1024;
@@ -1541,6 +1569,44 @@ mod bzip2_stream_tests {
                     assert_eq!(output.len(), first);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+
+    #[test]
+    fn skippable_frames_are_passed_over_to_the_frame_that_names_the_format() {
+        let skippable = |size: u32| {
+            let mut frame = vec![0x5A, 0x2A, 0x4D, 0x18];
+            frame.extend_from_slice(&size.to_le_bytes());
+            frame.extend(std::iter::repeat_n(7, size as usize));
+            frame
+        };
+        let lz4 = [0x04, 0x22, 0x4D, 0x18, 0x60, 0x70];
+        let zstd = [0x28, 0xB5, 0x2F, 0xFD, 0, 0];
+        let work = tempfile::tempdir().unwrap();
+        for (bytes, expected) in [
+            ([skippable(3), lz4.to_vec()].concat(), Compression::Lz4),
+            (
+                [skippable(0), skippable(9), lz4.to_vec()].concat(),
+                Compression::Lz4,
+            ),
+            ([skippable(3), zstd.to_vec()].concat(), Compression::Zstd),
+            (skippable(4), Compression::Zstd),
+            ([skippable(1), b"ab".to_vec()].concat(), Compression::Zstd),
+            (vec![0x02, 0x21, 0x4C, 0x18, 0, 0], Compression::Lz4),
+            (b"plain".to_vec(), Compression::None),
+            (Vec::new(), Compression::None),
+        ] {
+            let path = work.path().join("sample");
+            fs::write(&path, &bytes).unwrap();
+            assert!(
+                compression_by_signature(&path).unwrap() == expected,
+                "{bytes:02x?}"
+            );
         }
     }
 }

@@ -4,6 +4,8 @@ const FRAME_MAGIC: u32 = 0x184D_2204;
 const SKIPPABLE_MAGIC: u32 = 0x184D_2A50;
 const SKIPPABLE_MASK: u32 = 0xFFFF_FFF0;
 const WINDOW: usize = 64 * 1024;
+const HISTORY_HELD: usize = 16 * WINDOW;
+const LEGACY_MAGIC: u32 = 0x184C_2102;
 const MIN_MATCH: usize = 4;
 const UNCOMPRESSED_BLOCK: u32 = 1 << 31;
 const PRIMES: [u32; 5] = [
@@ -225,6 +227,11 @@ impl<R: BufRead> Lz4Frames<R> {
                 }
                 continue;
             }
+            if magic == LEGACY_MAGIC {
+                return Err(data_error(
+                    "LZ4 legacy frames, as `lz4 -l` writes, are not supported",
+                ));
+            }
             if magic != FRAME_MAGIC {
                 return Err(data_error("LZ4 has data after its last frame"));
             }
@@ -300,17 +307,26 @@ impl<R: BufRead> Lz4Frames<R> {
         if frame.block_checksums && self.word()? != xxh32(&data) {
             return Err(data_error("LZ4 block checksum does not match"));
         }
-        let keep = if frame.independent {
-            0
-        } else {
-            self.window.len().min(WINDOW)
-        };
-        self.window.drain(..self.window.len() - keep);
+        if frame.independent {
+            self.window.clear();
+        } else if self.window.len() > HISTORY_HELD {
+            self.window.drain(..self.window.len() - WINDOW);
+        }
+        let keep = self.window.len();
+        let left = frame
+            .content_size
+            .map_or(u64::MAX, |size| size - frame.produced);
+        let limit =
+            usize::try_from(left).map_or(frame.block_limit, |left| left.min(frame.block_limit));
         if size & UNCOMPRESSED_BLOCK != 0 {
+            if data.len() > limit {
+                return Err(data_error("LZ4 frame decodes past its content size"));
+            }
             self.window.extend_from_slice(&data);
         } else {
-            decode_block(&data, &mut self.window, frame.block_limit)
-                .ok_or_else(|| data_error("LZ4 block is malformed"))?;
+            decode_block(&data, &mut self.window, limit).ok_or_else(|| {
+                data_error("LZ4 block is malformed or passes its frame's content size")
+            })?;
         }
         frame.hash.update(&self.window[keep..]);
         frame.produced += (self.window.len() - keep) as u64;
@@ -559,6 +575,67 @@ mod tests {
         }
         let wrong_size = frame(&parts, 0x20, Some(content.len() as u64 + 1));
         assert!(decode(&wrong_size).is_err());
+    }
+
+    fn raw_frame(flags: u8, content_size: Option<u64>, blocks: &[Vec<u8>]) -> Vec<u8> {
+        let mut frame = FRAME_MAGIC.to_le_bytes().to_vec();
+        let mut descriptor = vec![
+            flags | 0x40 | if content_size.is_some() { 0x08 } else { 0 },
+            0x70,
+        ];
+        if let Some(size) = content_size {
+            descriptor.extend_from_slice(&size.to_le_bytes());
+        }
+        frame.extend_from_slice(&descriptor);
+        frame.push((xxh32(&descriptor) >> 8) as u8);
+        for block in blocks {
+            frame.extend_from_slice(&(block.len() as u32).to_le_bytes());
+            frame.extend_from_slice(block);
+        }
+        frame.extend_from_slice(&0u32.to_le_bytes());
+        frame
+    }
+
+    #[test]
+    fn linked_matches_reach_back_a_full_window_across_many_small_blocks() {
+        let mut blocks = Vec::new();
+        let mut expected = Vec::new();
+        for index in 0..300_000u32 {
+            let byte = (index.wrapping_mul(2_654_435_761) >> 24) as u8;
+            blocks.push(vec![0x10, byte]);
+            expected.push(byte);
+        }
+        blocks.push(vec![0x0F, 0xFF, 0xFF, 0xFF, 0xF1, 0x00]);
+        let tail = expected.len() - 0xFFFF;
+        let reached: Vec<u8> = (0..15 + 255 + 241 + 4)
+            .map(|at| expected[tail + at])
+            .collect();
+        expected.extend_from_slice(&reached);
+        assert_eq!(decode(&raw_frame(0, None, &blocks)).unwrap(), expected);
+    }
+
+    #[test]
+    fn a_frame_that_passes_its_content_size_stops_at_the_size() {
+        let mut big = vec![0x1F, b'z', 1, 0];
+        big.extend(std::iter::repeat_n(255, 16_000));
+        big.extend_from_slice(&[0, 0x00]);
+        for (block, flags) in [
+            (big, 0x20),
+            (vec![0x70, b'a', b'b', b'c', b'd', b'e', b'f', b'g'], 0x20),
+        ] {
+            let frame = raw_frame(flags, Some(1), &[block]);
+            let mut reader = Lz4Frames::new(&frame[..]);
+            let mut buffer = [0u8; 4096];
+            let mut produced = 0;
+            let error = loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => panic!("a frame over its content size was accepted"),
+                    Ok(read) => produced += read,
+                    Err(error) => break error,
+                }
+            };
+            assert!(produced <= 1, "{produced} bytes before {error}");
+        }
     }
 
     #[test]

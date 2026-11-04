@@ -160,7 +160,7 @@ item = src/placement.rs | impl PlacedNames {
 
 [lz4-frames]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 6634221bcdfada0f
+fingerprint = c95c7cb3a47e7349
 full-check = cargo test --release --lib lz4
 item = src/lz4.rs | impl Xxh32 {
 item = src/lz4.rs | impl<R: BufRead> Lz4Frames<R> {
