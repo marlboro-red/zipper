@@ -1,3 +1,4 @@
+mod bcj2;
 pub mod compat;
 pub mod counters;
 pub mod duplicates;

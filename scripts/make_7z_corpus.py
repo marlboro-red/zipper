@@ -40,12 +40,15 @@ SEVEN_ZIP_WRITERS = [
     ("bcj", ["-mf=BCJ"]),
     ("arm64", ["-mf=ARM64"]),
     ("delta", ["-mf=Delta:4"]),
+    ("bcj2", ["-mf=BCJ2"]),
+    ("bcj2-bound", ["-m0=BCJ2", "-m1=LZMA", "-m2=LZMA", "-m3=LZMA", "-mb0:1", "-mb0s1:2", "-mb0s2:3"]),
 ]
+
+# Branch filters also run over x86-like code, so their call and jump streams are not empty.
+CODE_WRITERS = ["bcj", "bcj2", "bcj2-bound"]
 
 # Archives the native reader refuses, with the words its error must contain.
 REFUSED_WRITERS = [
-    ("bcj2", ["-m0=BCJ2", "-m1=LZMA", "-m2=LZMA", "-m3=LZMA", "-mb0:1", "-mb0s1:2", "-mb0s2:3"],
-     "several streams"),
     ("encrypted", ["-pzipper", "-mhe=off"], "encrypted"),
     ("lzma-lc8", ["-m0=LZMA:lc=8"], "liblzma does not accept"),
 ]
@@ -69,6 +72,27 @@ def write_links(root):
     os.symlink("text", root / "dir-link")
     os.symlink("file-link", root / "chain")
     os.symlink("readme.txt", root / "text/sibling-link")
+    finish(root)
+
+
+def write_code(root):
+    """Bytes shaped like x86 code: calls, jumps and conditional jumps with
+    near targets among filler, so BCJ and BCJ2 convert many of them."""
+    root.mkdir(parents=True)
+    state, code = 1, bytearray()
+    while len(code) < 300_000:
+        state = (state * 1103515245 + 12345) % 2**31
+        pick, target = state % 7, (state >> 8) % 4096
+        if pick == 0:
+            code += b"\xe8" + target.to_bytes(4, "little")
+        elif pick == 1:
+            code += b"\xe9" + (-target % 2**32).to_bytes(4, "little")
+        elif pick == 2:
+            code += bytes([0x0F, 0x80 | state % 16]) + target.to_bytes(4, "little")
+        else:
+            code += bytes([0x48, 0x89, state % 256, 0xC3][: 1 + pick % 4])
+    (root / "code.bin").write_bytes(bytes(code))
+    (root / "tail-e8.bin").write_bytes(b"\x90\x90\xe8\x01\x02")
     finish(root)
 
 
@@ -109,9 +133,12 @@ def main():
         write_short(work / "short" / "src")
         write_links(work / "links" / "src")
         write_long(work / "long" / "src")
+        write_code(work / "code" / "src")
         try:
             jobs = [(f"7zip-{name}-{shape}", seven_zip_writer(switches), work / shape)
                     for name, switches in SEVEN_ZIP_WRITERS for shape in ["short", "links", "long"]]
+            jobs += [(f"7zip-{name}-code", seven_zip_writer(dict(SEVEN_ZIP_WRITERS)[name]), work / "code")
+                     for name in CODE_WRITERS]
             jobs += [(f"bsdtar-{name}-{shape}", bsdtar_writer(switches), work / shape)
                      for name, switches in BSDTAR_WRITERS for shape in ["short", "long"]]
             for name, write, source in jobs:

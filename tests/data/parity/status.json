@@ -187,7 +187,7 @@
   },
   "codecs": {
     "BCJ2": {
-      "status": "backend"
+      "status": "native"
     },
     "BCJ": {
       "status": "native"

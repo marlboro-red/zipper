@@ -633,3 +633,174 @@ fn a_ppmd_folder_must_end_at_its_packed_size() {
         "packed size",
     );
 }
+
+fn bcj2_archive(streams: [&[u8]; 4], packed_inputs: [u64; 4], output: &[u8]) -> Vec<u8> {
+    let packed: Vec<u8> = streams.concat();
+    let mut header = vec![1u8, 4, 6];
+    header.extend(number(0));
+    header.extend(number(4));
+    header.push(9);
+    for stream in streams {
+        header.extend(number(stream.len() as u64));
+    }
+    header.extend([0, 7, 11]);
+    header.extend(number(1));
+    header.extend([0, 1, 0x14, 0x03, 0x03, 0x01, 0x1B]);
+    header.extend(number(4));
+    header.extend(number(1));
+    for input in packed_inputs {
+        header.extend(number(input));
+    }
+    header.push(12);
+    header.extend(number(output.len() as u64));
+    header.extend([10, 1]);
+    header.extend_from_slice(&crc32fast::hash(output).to_le_bytes());
+    header.extend([0, 0, 5]);
+    header.extend(number(1));
+    let mut names = vec![0u8];
+    for unit in "a".encode_utf16().chain([0]) {
+        names.extend_from_slice(&unit.to_le_bytes());
+    }
+    header.extend(property(17, &names));
+    let mut attributes = vec![1u8, 0];
+    attributes.extend_from_slice(&UNIX_FILE.to_le_bytes());
+    header.extend(property(21, &attributes));
+    header.extend([0, 0]);
+    let mut archive = b"7z\xBC\xAF\x27\x1C\x00\x04".to_vec();
+    let mut start = Vec::new();
+    start.extend_from_slice(&(packed.len() as u64).to_le_bytes());
+    start.extend_from_slice(&(header.len() as u64).to_le_bytes());
+    start.extend_from_slice(&crc32fast::hash(&header).to_le_bytes());
+    archive.extend_from_slice(&crc32fast::hash(&start).to_le_bytes());
+    archive.extend_from_slice(&start);
+    archive.extend_from_slice(&packed);
+    archive.extend_from_slice(&header);
+    archive
+}
+
+#[test]
+fn bcj2_folders_use_every_input_byte_and_nothing_more() {
+    let data = b"plain \xe8 and \xe9 and \x0f\x85 left as they are";
+    let no_conversions = [0u8; 5];
+    let order = [0, 1, 2, 3];
+    let (root, result) = extract(&bcj2_archive(
+        [data, b"", b"", &no_conversions],
+        order,
+        data,
+    ));
+    result.unwrap();
+    assert_eq!(fs::read(root.path().join("parent/out/a")).unwrap(), data);
+    let (root, result) = extract(&bcj2_archive(
+        [&no_conversions, b"", b"", data],
+        [3, 1, 2, 0],
+        data,
+    ));
+    result.unwrap();
+    assert_eq!(fs::read(root.path().join("parent/out/a")).unwrap(), data);
+    let mut longer = data.to_vec();
+    longer.push(b'!');
+    let mut padded = no_conversions.to_vec();
+    padded.push(0);
+    let unused = "hold bytes the output does not use";
+    assert_refused(
+        "a main stream one byte long",
+        &bcj2_archive([&longer, b"", b"", &no_conversions], order, data),
+        unused,
+    );
+    assert_refused(
+        "an unused call target",
+        &bcj2_archive([data, b"\0\0\0\0", b"", &no_conversions], order, data),
+        unused,
+    );
+    assert_refused(
+        "an unused jump target",
+        &bcj2_archive([data, b"", b"\0\0\0\0", &no_conversions], order, data),
+        unused,
+    );
+    assert_refused(
+        "a padded range coder",
+        &bcj2_archive([data, b"", b"", &padded], order, data),
+        unused,
+    );
+    assert_refused(
+        "a short main stream",
+        &bcj2_archive(
+            [&data[..data.len() - 1], b"", b"", &no_conversions],
+            order,
+            data,
+        ),
+        "truncated BCJ2 main stream",
+    );
+    assert_refused(
+        "a short range coder",
+        &bcj2_archive([data, b"", b"", &no_conversions[..4]], order, data),
+        "range coder",
+    );
+    assert_refused(
+        "a packed stream used twice",
+        &bcj2_archive([data, b"", b"", &no_conversions], [0, 1, 2, 2], data),
+        "7z BCJ2",
+    );
+    assert_refused(
+        "a packed input that does not exist",
+        &bcj2_archive([data, b"", b"", &no_conversions], [0, 1, 2, 9], data),
+        "7z BCJ2",
+    );
+}
+
+#[test]
+fn bcj2_folders_that_7zip_refuses_are_refused() {
+    let hostile = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/7z-hostile");
+    for (name, words) in [
+        ("bcj2-main-overrun.7z", "hold bytes the output does not use"),
+        (
+            "bcj2-calls-overrun.7z",
+            "hold bytes the output does not use",
+        ),
+        ("bcj2-tail-converted.7z", "past the end of its output"),
+    ] {
+        assert_refused(name, &fs::read(hostile.join(name)).unwrap(), words);
+    }
+}
+
+#[test]
+fn bcj2_with_every_input_bound_to_its_own_coder_matches_the_source() {
+    let Some(seven_zip) = which("7zz") else {
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("src");
+    fs::create_dir(&source).unwrap();
+    let mut code = Vec::new();
+    for index in 0u32..40_000 {
+        code.extend_from_slice(&[0xE8, 0x10, 0, 0, 0, 0x48, 0x89, 0xE9]);
+        code.extend_from_slice(&(index % 300).to_le_bytes());
+        code.extend_from_slice(&[0x0F, 0x84, 0x20, 0, 0, 0]);
+    }
+    fs::write(source.join("code.bin"), &code).unwrap();
+    let archive = root.path().join("all-bound.7z");
+    let status = std::process::Command::new(seven_zip)
+        .current_dir(&source)
+        .args([
+            "a",
+            "-bd",
+            "-m0=BCJ2",
+            "-m1=LZMA2",
+            "-m2=LZMA",
+            "-m3=LZMA",
+            "-m4=LZMA",
+        ])
+        .args(["-mb0s0:1", "-mb0s1:2", "-mb0s2:3", "-mb0s3:4"])
+        .arg(&archive)
+        .arg("code.bin")
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let (out, result) = extract(&fs::read(&archive).unwrap());
+    result.unwrap();
+    assert_eq!(
+        fs::read(out.path().join("parent/out/code.bin")).unwrap(),
+        code
+    );
+}

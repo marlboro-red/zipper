@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 45 |
+| `native` | 46 |
 | `partial` | 1 |
-| `backend` | 57 |
+| `backend` | 56 |
 | `missing` | 7 |
 | `dropped` | 2 |
 
@@ -94,7 +94,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Row | Status | Note | Proof |
 | --- | --- | --- | --- |
-| `BCJ2` | `backend` |  | `tests/data/parity/archives/7z-bcj2.7z` |
+| `BCJ2` | `native` |  | `tests/data/parity/archives/7z-bcj2.7z` |
 | `BCJ` | `native` |  | `tests/data/parity/archives/7z-bcj.7z` |
 | `PPC` | `native` |  | `tests/data/parity/archives/7z-ppc.7z` |
 | `IA64` | `native` |  | `tests/data/parity/archives/7z-ia64.7z` |

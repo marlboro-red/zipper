@@ -20,7 +20,7 @@ const SIGNATURE: &[u8; 6] = b"7z\xBC\xAF\x27\x1C";
 const SIGNATURE_HEADER: u64 = 32;
 const MAX_HEADER: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 1_000_000;
-const MAX_CODERS: usize = 4;
+const MAX_CODERS: usize = 5;
 const MAX_HEADER_LAYERS: usize = 4;
 const COPY_BUFFER: usize = 1024 * 1024;
 const DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
@@ -220,6 +220,7 @@ struct Coder {
 #[derive(Clone, Debug)]
 struct Folder {
     output_to_packed: Vec<Coder>,
+    bcj2_branches: Vec<Folder>,
     unsupported: Option<String>,
     size: u64,
     crc: Option<u32>,
@@ -235,10 +236,85 @@ struct Streams {
 
 struct FolderShape {
     coders: Vec<Coder>,
+    streams: Vec<(u64, u64)>,
+    input_starts: Vec<u64>,
+    output_starts: Vec<u64>,
     bind_pairs: Vec<(u64, u64)>,
     packed_inputs: Vec<u64>,
     outputs: usize,
     several_streams: Option<Vec<u8>>,
+}
+
+const BCJ2: [u8; 4] = [0x03, 0x03, 0x01, 0x1B];
+const BCJ2_INPUTS: usize = 4;
+const BCJ2_BRANCH_BUFFERS: u64 = 2 * COPY_BUFFER as u64;
+
+#[derive(Debug, PartialEq, Eq)]
+struct Bcj2Branch {
+    coders: Vec<usize>,
+    packed: usize,
+    output: Option<usize>,
+}
+
+fn bcj2_plan(shape: &FolderShape) -> Parsed<Option<Vec<Bcj2Branch>>> {
+    let joins: Vec<usize> = (0..shape.coders.len())
+        .filter(|&index| shape.streams[index] != (1, 1))
+        .collect();
+    let [bcj2] = joins[..] else {
+        return Ok(None);
+    };
+    if shape.coders[bcj2].id != BCJ2 || shape.streams[bcj2] != (BCJ2_INPUTS as u64, 1) {
+        return Ok(None);
+    }
+    let (input_start, output_start) = (&shape.input_starts, &shape.output_starts);
+    let mut used = vec![false; shape.coders.len()];
+    used[bcj2] = true;
+    let mut branches = Vec::with_capacity(BCJ2_INPUTS);
+    for branch_input in 0..BCJ2_INPUTS as u64 {
+        let mut input = input_start[bcj2] + branch_input;
+        let mut branch = Bcj2Branch {
+            coders: Vec::new(),
+            packed: 0,
+            output: None,
+        };
+        loop {
+            if let Some(packed) = shape
+                .packed_inputs
+                .iter()
+                .position(|&packed| packed == input)
+            {
+                branch.packed = packed;
+                break;
+            }
+            let &(_, output) = shape
+                .bind_pairs
+                .iter()
+                .find(|&&(bound, _)| bound == input)
+                .ok_or(Malformed {
+                    message: "7z BCJ2 input is neither bound nor packed",
+                    subject: "",
+                })?;
+            let coder = output_start
+                .iter()
+                .rposition(|&start| start <= output)
+                .ok_or(Malformed {
+                    message: "7z BCJ2 binds a stream it does not have",
+                    subject: "",
+                })?;
+            check(!used[coder], "7z BCJ2 uses a coder twice", "")?;
+            used[coder] = true;
+            branch.output.get_or_insert(output as usize);
+            branch.coders.push(coder);
+            input = input_start[coder];
+        }
+        branches.push(branch);
+    }
+    check(
+        used.iter().all(|&used| used),
+        "7z BCJ2 folder has coders it does not use",
+        "",
+    )?;
+    Ok(Some(branches))
 }
 
 const MAX_CODER_STREAMS: u64 = 32;
@@ -250,6 +326,9 @@ fn read_folder(bytes: &mut Bytes) -> Result<FolderShape> {
         "7z folder has {count} coders; at most {MAX_CODERS} are supported"
     );
     let mut coders = Vec::with_capacity(count);
+    let mut streams = Vec::with_capacity(count);
+    let mut input_starts = Vec::with_capacity(count);
+    let mut output_starts = Vec::with_capacity(count);
     let mut outputs = 0u64;
     let mut inputs = 0u64;
     let mut several_streams = None;
@@ -276,8 +355,12 @@ fn read_folder(bytes: &mut Bytes) -> Result<FolderShape> {
         } else {
             Vec::new()
         };
+        // SPEC(7zFormat.txt Folder): BindPair and PackedStream indices count each coder's streams after those of the coders before it.
+        input_starts.push(inputs);
+        output_starts.push(outputs);
         inputs += coder_inputs;
         outputs += coder_outputs;
+        streams.push((coder_inputs, coder_outputs));
         coders.push(Coder { id, properties });
     }
     let bind_pairs = (0..outputs - 1)
@@ -307,6 +390,9 @@ fn read_folder(bytes: &mut Bytes) -> Result<FolderShape> {
     };
     Ok(FolderShape {
         coders,
+        streams,
+        input_starts,
+        output_starts,
         bind_pairs,
         packed_inputs,
         outputs: outputs as usize,
@@ -388,27 +474,72 @@ fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
             let size = sizes[unbound[0]];
             ensure!(size > 0, "7z folder is empty");
             let mut pack_size = 0u64;
+            let mut packed_sizes = Vec::with_capacity(shape.packed_inputs.len());
             for _ in &shape.packed_inputs {
                 let size = *packs.next().context("7z folder has no packed stream")?;
+                packed_sizes.push(size);
                 pack_size = pack_size
                     .checked_add(size)
                     .context("7z packed streams overflow")?;
             }
-            let (output_to_packed, unsupported) = match shape.several_streams {
-                Some(id) => (
+            let mut bcj2_branches = Vec::new();
+            let (output_to_packed, unsupported) = match (bcj2_plan(&shape)?, &shape.several_streams)
+            {
+                (Some(plan), _) => {
+                    let mut offsets = Vec::with_capacity(packed_sizes.len());
+                    let mut offset = pack_offset;
+                    for size in &packed_sizes {
+                        offsets.push(offset);
+                        offset += size;
+                    }
+                    for branch in plan {
+                        let coders = if branch.coders.is_empty() {
+                            vec![Coder {
+                                id: vec![0x00],
+                                properties: Vec::new(),
+                            }]
+                        } else {
+                            branch
+                                .coders
+                                .iter()
+                                .map(|&index| shape.coders[index].clone())
+                                .collect()
+                        };
+                        bcj2_branches.push(Folder {
+                            output_to_packed: coders,
+                            bcj2_branches: Vec::new(),
+                            unsupported: None,
+                            size: branch
+                                .output
+                                .map_or(packed_sizes[branch.packed], |output| sizes[output]),
+                            crc: None,
+                            pack_offset: offsets[branch.packed],
+                            pack_size: packed_sizes[branch.packed],
+                        });
+                    }
+                    (
+                        vec![Coder {
+                            id: BCJ2.to_vec(),
+                            properties: Vec::new(),
+                        }],
+                        None,
+                    )
+                }
+                (None, Some(id)) => (
                     Vec::new(),
                     Some(format!(
-                        "7z coder {} has several streams, as BCJ2 does, which is not supported; {BACKEND_HINT}",
-                        hex(&id)
+                        "7z coder {} has several streams in a layout that is not supported; {BACKEND_HINT}",
+                        hex(id)
                     )),
                 ),
-                None => (
+                (None, None) => (
                     chain(shape.coders, &shape.bind_pairs, shape.packed_inputs[0])?,
                     None,
                 ),
             };
             streams.folders.push(Folder {
                 output_to_packed,
+                bcj2_branches,
                 unsupported,
                 size,
                 crc: None,
@@ -984,6 +1115,18 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
     if let Some(reason) = &folder.unsupported {
         return Err(unsupported(reason.clone()));
     }
+    if !folder.bcj2_branches.is_empty() {
+        for branch in &folder.bcj2_branches {
+            check_methods(branch)?;
+        }
+        let memory = decoder_memory(folder, false);
+        if memory > DECODER_MEMORY {
+            return Err(unsupported(format!(
+                "7z BCJ2 decoders need {memory} bytes, more than the {DECODER_MEMORY}-byte decoder budget; {BACKEND_HINT}"
+            )));
+        }
+        return Ok(Vec::new());
+    }
     let methods = folder
         .output_to_packed
         .iter()
@@ -1096,6 +1239,13 @@ fn ppmd7_fields(properties: &[u8]) -> Option<(u32, u32)> {
 }
 
 fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
+    if !folder.bcj2_branches.is_empty() {
+        return folder
+            .bcj2_branches
+            .iter()
+            .map(|branch| decoder_memory(branch, false) + BCJ2_BRANCH_BUFFERS)
+            .fold(0, u64::saturating_add);
+    }
     let lzma2_only = matches!(
         folder.output_to_packed.as_slice(),
         [coder] if coder.id == [0x21]
@@ -1188,12 +1338,107 @@ impl<R: Read> Read for LzmaReader<R> {
     }
 }
 
+struct ReadAt {
+    file: File,
+    position: u64,
+}
+
+impl Read for ReadAt {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        #[cfg(unix)]
+        let read = std::os::unix::fs::FileExt::read_at(&self.file, buffer, self.position)?;
+        #[cfg(windows)]
+        let read = std::os::windows::fs::FileExt::seek_read(&self.file, buffer, self.position)?;
+        self.position += read as u64;
+        Ok(read)
+    }
+}
+
+struct Exact<R> {
+    inner: R,
+    remaining: u64,
+}
+
+impl<R: Read> Read for Exact<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self.remaining == 0 {
+            return Ok(0);
+        }
+        let wanted = buffer
+            .len()
+            .min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
+        let read = self.inner.read(&mut buffer[..wanted])?;
+        if read == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "7z BCJ2 input stream ends before its size",
+            ));
+        }
+        self.remaining -= read as u64;
+        Ok(read)
+    }
+}
+
+type Branch = Exact<Box<dyn Read + Send>>;
+
+struct Bcj2Folder {
+    decoder: Option<crate::bcj2::Bcj2<Branch, Branch, Branch, Branch>>,
+}
+
+impl Read for Bcj2Folder {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let Some(decoder) = &mut self.decoder else {
+            return Ok(0);
+        };
+        let read = decoder.read(buffer)?;
+        if read == 0 && !buffer.is_empty() {
+            let (main, calls, jumps, decisions) = self.decoder.take().unwrap().into_streams();
+            let mut used_up = true;
+            for mut stream in [main, calls, jumps, decisions] {
+                used_up &= stream.remaining == 0 && stream.inner.read(&mut [0])? == 0;
+            }
+            if !used_up {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "7z BCJ2 input streams hold bytes the output does not use",
+                ));
+            }
+        }
+        Ok(read)
+    }
+}
+
+fn bcj2_reader(file: &File, folder: &Folder) -> Result<Box<dyn Read + Send>> {
+    let mut branches = Vec::with_capacity(BCJ2_INPUTS);
+    for branch in &folder.bcj2_branches {
+        branches.push(Exact {
+            inner: folder_reader(file.try_clone()?, branch, None)?,
+            remaining: branch.size,
+        });
+    }
+    let [main, calls, jumps, decisions]: [Branch; BCJ2_INPUTS] = branches
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("7z BCJ2 folder does not have four inputs"))?;
+    Ok(Box::new(Bcj2Folder {
+        decoder: Some(crate::bcj2::Bcj2::new(
+            main,
+            calls,
+            jumps,
+            decisions,
+            folder.size,
+        )),
+    }))
+}
+
 fn folder_reader(
     mut file: File,
     folder: &Folder,
     segment_threads: Option<(&Path, usize)>,
 ) -> Result<Box<dyn Read + Send>> {
     let methods = check_methods(folder)?;
+    if !folder.bcj2_branches.is_empty() {
+        return bcj2_reader(&file, folder);
+    }
     if let ([Method::Lzma2], [coder]) = (methods.as_slice(), folder.output_to_packed.as_slice())
         && let Some((path, window)) = segment_threads.filter(|&(_, window)| window > 1)
         && folder.size >= PARALLEL_FOLDER_MIN
@@ -1216,8 +1461,14 @@ fn folder_reader(
             position: 0,
         }));
     }
-    file.seek(SeekFrom::Start(SIGNATURE_HEADER + folder.pack_offset))?;
-    let packed = BufReader::with_capacity(COPY_BUFFER, file).take(folder.pack_size);
+    let packed = BufReader::with_capacity(
+        COPY_BUFFER,
+        ReadAt {
+            file,
+            position: SIGNATURE_HEADER + folder.pack_offset,
+        },
+    )
+    .take(folder.pack_size);
     Ok(match methods.as_slice() {
         [Method::Copy] => Box::new(packed),
         [Method::Deflate] => Box::new(flate2::read::DeflateDecoder::new(packed)),
@@ -1843,6 +2094,7 @@ mod tests {
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(&bytes).unwrap();
         let folder = Folder {
+            bcj2_branches: Vec::new(),
             output_to_packed: vec![Coder {
                 id: vec![0x21],
                 properties: vec![18],
@@ -1931,6 +2183,7 @@ mod tests {
                     ] {
                         let folder = Folder {
                             output_to_packed: Vec::new(),
+                            bcj2_branches: Vec::new(),
                             unsupported: None,
                             size,
                             crc: None,
@@ -1977,6 +2230,236 @@ mod tests {
         lzma.extend_from_slice(&u32::MAX.to_le_bytes());
         let bounded = dictionary_capped_at_output(&Method::Lzma, &lzma, 5).unwrap();
         assert_eq!(bounded[1..], 4096u32.to_le_bytes());
+    }
+
+    fn shape(
+        streams: &[(u64, u64)],
+        bind_pairs: Vec<(u64, u64)>,
+        packed_inputs: Vec<u64>,
+    ) -> FolderShape {
+        FolderShape {
+            coders: streams
+                .iter()
+                .map(|&streams| Coder {
+                    id: if streams == (4, 1) {
+                        BCJ2.to_vec()
+                    } else {
+                        vec![0x21]
+                    },
+                    properties: Vec::new(),
+                })
+                .collect(),
+            streams: streams.to_vec(),
+            input_starts: streams
+                .iter()
+                .scan(0, |next, streams| {
+                    Some(std::mem::replace(next, *next + streams.0))
+                })
+                .collect(),
+            output_starts: streams
+                .iter()
+                .scan(0, |next, streams| {
+                    Some(std::mem::replace(next, *next + streams.1))
+                })
+                .collect(),
+            bind_pairs,
+            packed_inputs,
+            outputs: streams.iter().map(|streams| streams.1 as usize).sum(),
+            several_streams: None,
+        }
+    }
+
+    fn plan_is_sound(shape: &FolderShape, branches: &[Bcj2Branch]) -> bool {
+        let mut input_start = Vec::new();
+        let mut output_start = Vec::new();
+        let (mut inputs, mut outputs) = (0, 0);
+        for &(coder_inputs, coder_outputs) in &shape.streams {
+            input_start.push(inputs);
+            output_start.push(outputs);
+            inputs += coder_inputs;
+            outputs += coder_outputs;
+        }
+        let joins: Vec<usize> = (0..shape.streams.len())
+            .filter(|&coder| shape.streams[coder] != (1, 1))
+            .collect();
+        let [bcj2] = joins[..] else { return false };
+        if shape.streams[bcj2] != (4, 1)
+            || shape
+                .bind_pairs
+                .iter()
+                .any(|&(_, output)| output == output_start[bcj2])
+            || branches.len() != 4
+        {
+            return false;
+        }
+        let mut coders_seen = vec![bcj2];
+        let mut packed_seen = Vec::new();
+        for (index, branch) in branches.iter().enumerate() {
+            let mut input = input_start[bcj2] + index as u64;
+            for &coder in &branch.coders {
+                if !shape.bind_pairs.contains(&(input, output_start[coder])) {
+                    return false;
+                }
+                input = input_start[coder];
+            }
+            if shape.packed_inputs.get(branch.packed) != Some(&input)
+                || branch.output
+                    != branch
+                        .coders
+                        .first()
+                        .map(|&coder| output_start[coder] as usize)
+            {
+                return false;
+            }
+            coders_seen.extend(&branch.coders);
+            packed_seen.push(branch.packed);
+        }
+        coders_seen.sort_unstable();
+        packed_seen.sort_unstable();
+        coders_seen == (0..shape.streams.len()).collect::<Vec<_>>()
+            && packed_seen == (0..shape.packed_inputs.len()).collect::<Vec<_>>()
+    }
+
+    fn sequences(length: usize, values: u64) -> Vec<Vec<u64>> {
+        (0..length).fold(vec![Vec::new()], |sequences, _| {
+            sequences
+                .iter()
+                .flat_map(|sequence| {
+                    (0..values).map(move |value| {
+                        let mut next = sequence.clone();
+                        next.push(value);
+                        next
+                    })
+                })
+                .collect()
+        })
+    }
+
+    #[test]
+    fn every_small_folder_graph_plans_only_sound_bcj2_branches() {
+        let kinds = [(4, 1), (1, 1), (2, 1)];
+        let (mut planned, mut checked) = (0, 0);
+        for count in 1..=3 {
+            for choice in sequences(count, kinds.len() as u64) {
+                let streams: Vec<(u64, u64)> =
+                    choice.iter().map(|&kind| kinds[kind as usize]).collect();
+                let inputs: u64 = streams.iter().map(|streams| streams.0).sum();
+                let outputs: u64 = streams.iter().map(|streams| streams.1).sum();
+                if inputs > 6 {
+                    continue;
+                }
+                let pairs: Vec<(u64, u64)> = (0..inputs)
+                    .flat_map(|input| (0..outputs).map(move |output| (input, output)))
+                    .collect();
+                for bind in sequences(outputs as usize - 1, pairs.len() as u64) {
+                    let bind_pairs: Vec<(u64, u64)> =
+                        bind.iter().map(|&pair| pairs[pair as usize]).collect();
+                    for packed_inputs in sequences((inputs - (outputs - 1)) as usize, inputs + 1) {
+                        let shape = shape(&streams, bind_pairs.clone(), packed_inputs);
+                        if let Ok(Some(branches)) = bcj2_plan(&shape) {
+                            assert!(
+                                plan_is_sound(&shape, &branches),
+                                "{:?} {:?} {:?}",
+                                shape.streams,
+                                shape.bind_pairs,
+                                shape.packed_inputs
+                            );
+                            planned += 1;
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            planned > 1000 && checked > 1_000_000,
+            "{planned} of {checked}"
+        );
+    }
+
+    #[test]
+    fn bcj2_branches_share_one_decoder_budget() {
+        let ppmd = |memory: u32| {
+            let mut properties = vec![6];
+            properties.extend_from_slice(&memory.to_le_bytes());
+            Folder {
+                output_to_packed: vec![Coder {
+                    id: vec![0x03, 0x04, 0x01],
+                    properties,
+                }],
+                bcj2_branches: Vec::new(),
+                unsupported: None,
+                size: 1,
+                crc: None,
+                pack_offset: 0,
+                pack_size: 1,
+            }
+        };
+        let folder = |memory: u32| Folder {
+            output_to_packed: vec![Coder {
+                id: BCJ2.to_vec(),
+                properties: Vec::new(),
+            }],
+            bcj2_branches: vec![ppmd(memory), ppmd(memory), ppmd(1 << 20), ppmd(1 << 20)],
+            unsupported: None,
+            size: 1,
+            crc: None,
+            pack_offset: 0,
+            pack_size: 4,
+        };
+        assert!(check_methods(&folder(1 << 29)).is_ok());
+        let Err(error) = check_methods(&folder(3 << 29)) else {
+            panic!("two 1.5 GiB PPMd branches fit the budget");
+        };
+        assert!(error.is::<Unsupported>(), "{error}");
+    }
+
+    #[test]
+    fn every_bcj2_layout_with_up_to_four_chained_coders_is_planned() {
+        let mut checked = 0;
+        for chained in 0..=4usize {
+            let count = chained + 1;
+            for bcj2 in 0..count {
+                let others: Vec<usize> = (0..count).filter(|&coder| coder != bcj2).collect();
+                for owners in sequences(chained, 4) {
+                    let mut branches: Vec<Vec<usize>> = vec![Vec::new(); 4];
+                    for (&coder, &owner) in others.iter().zip(&owners) {
+                        branches[owner as usize].push(coder);
+                    }
+                    let mut streams = vec![(1, 1); count];
+                    streams[bcj2] = (4, 1);
+                    let input_start =
+                        |coder: usize| -> u64 { (0..coder).map(|before| streams[before].0).sum() };
+                    let output_start =
+                        |coder: usize| -> u64 { (0..coder).map(|before| streams[before].1).sum() };
+                    let mut bind_pairs = Vec::new();
+                    let mut ends = Vec::new();
+                    for (index, branch) in branches.iter().enumerate() {
+                        let mut input = input_start(bcj2) + index as u64;
+                        for &coder in branch {
+                            bind_pairs.push((input, output_start(coder)));
+                            input = input_start(coder);
+                        }
+                        ends.push(input);
+                    }
+                    for rotation in 0..4 {
+                        let mut packed_inputs = ends.clone();
+                        packed_inputs.rotate_left(rotation);
+                        let mut pairs = bind_pairs.clone();
+                        let turn = rotation % pairs.len().max(1);
+                        pairs.rotate_left(turn);
+                        let shape = shape(&streams, pairs, packed_inputs);
+                        let plan = bcj2_plan(&shape).unwrap().unwrap();
+                        assert!(plan_is_sound(&shape, &plan));
+                        let planned: Vec<Vec<usize>> =
+                            plan.into_iter().map(|branch| branch.coders).collect();
+                        assert_eq!(planned, branches);
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 5000, "{checked}");
     }
 }
 

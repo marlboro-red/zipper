@@ -1,11 +1,11 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, or the ZIP LZMA and PPMd headers and 7z PPMd properties, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs or the BCJ2 folder graph (`bcj2_plan`), and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
 
-A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs` and `src/native_tar.rs`.
+A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs`, `src/native_tar.rs` and `src/bcj2.rs`.
 
 ## The proofs
 
@@ -25,6 +25,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need` | `lzma_alone_header` keeps the ZIP LZMA properties byte and the size, and caps the dictionary no lower than the entry or the declared dictionary needs | 3 s |
 | `ppmd_headers_stay_inside_the_decoders_bounds` | every ZIP PPMd header `ppmd8_fields` accepts has an order, model size and restore method the decoder accepts, within its 256 MiB reservation | 1 s |
 | `ppmd_properties_read_only_five_bytes` | `ppmd7_fields` reads exactly five 7z PPMd property bytes and nothing else | 2 s |
+| `decoding_any_short_streams_never_panics` | the BCJ2 decoder never panics or overflows on any main, call and jump streams of 4 bytes, range coder stream of 6 bytes and output size up to 8 | 46 s |
 
 Some checks are too heavy for Kani, so exhaustive unit tests cover them:
 
@@ -33,6 +34,14 @@ Some checks are too heavy for Kani, so exhaustive unit tests cover them:
 - The tar pax readers and the path and symlink escape checks in `src/lib.rs` use std's string search, which ran past 300 s on 2-byte inputs. `pax_times_equal_their_decimal_value_on_every_short_string`, `pax_records_split_back_into_their_exact_bytes_on_every_short_string` and the two escape tests in `src/lib.rs` check every short string instead.
 
 `SegmentPlan`, which splits an LZMA2 stream into segments that decode on their own, is too heavy for Kani. Four attempts ran out of time or memory. `segment_plans_start_at_resets_and_cover_the_folder_for_every_short_stream` in `src/native_7z.rs` checks it instead on every stream of up to four chunks of every kind, every minimum size and every folder boundary, more than 600,000 cases.
+
+The BCJ2 folder graph is checked by exhaustive tests, under `[7z-bcj2-graph]` in `verification/coverage.txt`:
+
+- `every_small_folder_graph_plans_only_sound_bcj2_branches` runs `bcj2_plan` on every folder of up to 3 coders with 4-to-1, 1-to-1 or 2-to-1 streams, every list of bind pairs and every list of packed inputs, over 1,000,000 shapes. Each plan it accepts must give BCJ2's four inputs chains that follow real bind pairs to distinct packed streams, use every coder and packed stream once, and leave BCJ2's output unbound. The oracle recomputes the stream numbering on its own.
+- `every_bcj2_layout_with_up_to_four_chained_coders_is_planned` builds every valid layout of BCJ2 and up to four chained coders, at every position and in rotated orders, and checks that the plan finds exactly those chains.
+- `every_short_input_round_trips_under_every_conversion_choice` in `src/bcj2.rs` encodes every input of up to 5 bytes over the bytes that BCJ2 treats specially, under every choice of conversions. The decoder must return the input and read every stream to its end, in reads of 1, 3 and 64 bytes.
+
+Run them with `cargo test --release --lib bcj2`, then `cargo xtask verify-sync 7z-bcj2-graph`.
 
 ## When to run it
 
@@ -72,3 +81,9 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | `lzma_alone_header` caps every dictionary at 4096 | `lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need` fails |
 | `ppmd8_fields` drops the smallest-order check | `ppmd_headers_stay_inside_the_decoders_bounds` fails |
 | `ppmd7_fields` accepts more than five bytes | `ppmd_properties_read_only_five_bytes` fails |
+| The BCJ2 decoder computes `self.position - self.size` | `decoding_any_short_streams_never_panics` reports an arithmetic overflow |
+| `bcj2_plan` drops the check that a coder is used twice | `every_small_folder_graph_plans_only_sound_bcj2_branches` never ends, because a cycle loops |
+| `bcj2_plan` drops the check that every coder is used | `every_small_folder_graph_plans_only_sound_bcj2_branches` fails |
+| `bcj2_plan` maps an output to the first coder whose start is below it | `every_bcj2_layout_with_up_to_four_chained_coders_is_planned` fails |
+| `bcj2_plan` takes a branch's size from its last coder, not its first | both plan tests fail |
+| The BCJ2 decoder converts a branch with fewer than 4 bytes of output left | `a_conversion_past_the_end_of_the_output_is_refused` fails |

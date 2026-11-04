@@ -33,7 +33,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 41a81c60fb659764
+fingerprint = 95baa361082e5102
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
 item = src/memory.rs | pub(crate) struct Memory {
@@ -94,7 +94,7 @@ item = src/native_7z.rs | impl Read for ParallelLzma2 {
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = c20d331ea34a94aa
+fingerprint = b9114b202f56683b
 full-check = cargo kani
 item = src/native_7z.rs | struct Malformed {
 item = src/native_7z.rs | fn check(
@@ -119,3 +119,13 @@ item = src/native_zip.rs | fn single_zip64_field(
 item = src/native_zip.rs | fn descriptor_layout(
 item = src/native_zip.rs | fn descriptor_values(
 item = src/native_zip.rs | fn days_since_unix_epoch(
+item = src/bcj2.rs | impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
+item = src/bcj2.rs | impl<M: Read, C: Read, J: Read, R: Read> Read for Bcj2<M, C, J, R> {
+
+[7z-bcj2-graph]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 6b6bc91a43158357
+full-check = cargo test --release --lib bcj2
+item = src/native_7z.rs | fn bcj2_plan(
+item = src/native_7z.rs | const BCJ2_INPUTS:
+item = src/bcj2.rs | impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
