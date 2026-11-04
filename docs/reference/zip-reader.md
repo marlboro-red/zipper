@@ -193,6 +193,8 @@ Workers take entries one at a time from the largest-first list, so no worker is 
 
 A streamed entry of at least 16 MiB gets a writer thread when the pool has more threads than entries with a payload. Every entry that is not a directory counts, including symlinks. The worker then decodes while the writer thread writes, so the number of busy threads never exceeds `--threads`. Spare threads are counted once, before extraction starts. `--threads 1` never gets a writer thread. The [write-behind measurements](../../benchmarks/native-zip/write-behind/README.md) record the evidence. A TLA+ model in `verification/zip-write-behind/` checks every order of the two threads' steps, within a bound, for hangs, lost or reordered buffers, a misreported error and unbounded buffers. The `zipper-verify-zip-write-behind` skill in `.claude/skills/` runs it.
 
+On Windows, `native-fast` hands each whole-buffered entry of at least 1 MiB to one writer thread. It writes the entry with `FILE_FLAG_NO_BUFFERING` from a 4 KiB-aligned buffer, then trims the file to size, and falls back to buffered writes if that fails. The entry keeps its share of the entry-buffer budget until the write ends. The [unbuffered-writer measurements](../../benchmarks/native-zip/unbuffered-writer/README.md) record the evidence.
+
 ## Input read-ahead
 
 | Platform | Input buffer |
