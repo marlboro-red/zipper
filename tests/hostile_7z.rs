@@ -336,6 +336,8 @@ fn unsupported_methods_are_refused() {
         (vec![0x04, 0xF7, 0x11, 0x01], "method 04F71101"),
         (vec![0x06, 0xF1, 0x07, 0x01], "encrypted"),
         (vec![0x02, 0x03, 0x03], "method 020303"),
+        (vec![0x02, 0x03, 0x02], "020302 has properties"),
+        (vec![0x02, 0x03, 0x04], "020304 has properties"),
     ] {
         assert_refused(
             &format!("{id:?}"),

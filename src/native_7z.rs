@@ -268,6 +268,13 @@ fn bcj2_plan(shape: &FolderShape) -> Parsed<Option<Vec<Bcj2Branch>>> {
         return Ok(None);
     }
     let (input_start, output_start) = (&shape.input_starts, &shape.output_starts);
+    if shape
+        .bind_pairs
+        .iter()
+        .any(|&(_, output)| output == output_start[bcj2])
+    {
+        return Ok(None);
+    }
     let mut used = vec![false; shape.coders.len()];
     used[bcj2] = true;
     let mut branches = Vec::with_capacity(BCJ2_INPUTS);
@@ -1258,6 +1265,9 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
             .map(|branch| decoder_memory(branch, false) + BCJ2_BRANCH_BUFFERS)
             .fold(0, u64::saturating_add);
     }
+    if let Ok(Some((_, swapped))) = byte_swapped(folder) {
+        return decoder_memory(&swapped, segments_possible);
+    }
     let lzma2_only = matches!(
         folder.output_to_packed.as_slice(),
         [coder] if coder.id == [0x21]
@@ -1373,6 +1383,12 @@ fn byte_swapped(folder: &Folder) -> Result<Option<(usize, Folder)>> {
     let Method::Swap(width) = method(first)? else {
         return Ok(None);
     };
+    if !first.properties.is_empty() {
+        return Err(unsupported(format!(
+            "7z method {} has properties, which 7-Zip does not accept; {BACKEND_HINT}",
+            hex(&first.id)
+        )));
+    }
     let output_to_packed = if rest.is_empty() {
         vec![Coder {
             id: vec![0x00],
@@ -2531,6 +2547,30 @@ mod tests {
             }
         }
         assert_eq!(checked, 2 * 14 * 36 * 5);
+    }
+
+    #[test]
+    fn a_byte_swap_in_front_of_segmented_lzma2_reserves_the_segment_budget() {
+        let coder = |id: &[u8], properties: &[u8]| Coder {
+            id: id.to_vec(),
+            properties: properties.to_vec(),
+        };
+        let folder = Folder {
+            output_to_packed: vec![coder(&[0x02, 0x03, 0x02], &[]), coder(&[0x21], &[16])],
+            bcj2_branches: Vec::new(),
+            unsupported: None,
+            size: PARALLEL_FOLDER_MIN,
+            crc: None,
+            pack_offset: 0,
+            pack_size: 1,
+        };
+        assert_eq!(decoder_memory(&folder, true), SEGMENT_BUDGET);
+    }
+
+    #[test]
+    fn a_coder_above_bcj2_is_left_to_7zip() {
+        let shape = shape(&[(1, 1), (4, 1)], vec![(0, 1)], vec![1, 2, 3, 4]);
+        assert!(matches!(bcj2_plan(&shape), Ok(None)));
     }
 
     #[test]

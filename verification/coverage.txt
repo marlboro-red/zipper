@@ -33,7 +33,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 95baa361082e5102
+fingerprint = 4164943917cae95d
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
 item = src/memory.rs | pub(crate) struct Memory {
@@ -124,7 +124,7 @@ item = src/bcj2.rs | impl<M: Read, C: Read, J: Read, R: Read> Read for Bcj2<M, C
 
 [7z-bcj2-graph]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 6b6bc91a43158357
+fingerprint = e47c62441d3b8611
 full-check = cargo test --release --lib bcj2
 item = src/native_7z.rs | fn bcj2_plan(
 item = src/native_7z.rs | const BCJ2_INPUTS:
