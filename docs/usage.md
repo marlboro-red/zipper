@@ -135,6 +135,8 @@ The callback runs one call at a time, after each file and each decoded chunk. It
 
 `native_zip::read_archive_with_options` and `native_tar::read_archive` take the same options when you already know the format.
 
+When `extract_archive` or a reader returns, after success, failure or a cancel, Zipper holds no handle to the destination or the archive, and every thread it started has exited. You can rename, move or delete the destination at once. The shared Rayon pool keeps its idle threads between calls, and they hold nothing from the extraction. The 7-Zip backend is waited for before it returns. `tests/handles.rs` checks this after every reader on Unix by counting open descriptors and threads, and on Windows by renaming and deleting the destination of archives that carry a zone mark.
+
 ## Find duplicate files
 
 To find identical file contents before archiving, run `duplicates`:

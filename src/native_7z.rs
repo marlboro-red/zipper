@@ -1855,11 +1855,27 @@ struct ParallelLzma2 {
     window: usize,
     stop: Arc<AtomicBool>,
     next: usize,
-    queue: VecDeque<(u64, Receiver<std::io::Result<Vec<u8>>>)>,
+    queue: VecDeque<SegmentThread>,
     held: u64,
     current_held: u64,
     current: Vec<u8>,
     position: usize,
+}
+
+struct SegmentThread {
+    held: u64,
+    decoded: Receiver<std::io::Result<Vec<u8>>>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl SegmentThread {
+    fn finish(self) -> std::io::Result<Vec<u8>> {
+        let decoded = self.decoded.recv();
+        self.thread
+            .join()
+            .map_err(|_| std::io::Error::other("a 7z segment decoder panicked"))?;
+        decoded.map_err(|_| std::io::Error::other("a 7z segment decoder stopped"))?
+    }
 }
 
 impl ParallelLzma2 {
@@ -1878,14 +1894,16 @@ impl ParallelLzma2 {
                 let decoded = decode_segment(&path, start, length, output, properties, &stop);
                 let _ = sender.send(decoded);
             });
-            if let Err(error) = spawned {
-                if self.queue.is_empty() {
-                    return Err(error);
-                }
-                break;
-            }
-            self.queue
-                .push_back((segment.held(self.properties), receiver));
+            let thread = match spawned {
+                Ok(thread) => thread,
+                Err(error) if self.queue.is_empty() => return Err(error),
+                Err(_) => break,
+            };
+            self.queue.push_back(SegmentThread {
+                held: segment.held(self.properties),
+                decoded: receiver,
+                thread,
+            });
             self.held += segment.held(self.properties);
             self.next += 1;
         }
@@ -1896,6 +1914,9 @@ impl ParallelLzma2 {
 impl Drop for ParallelLzma2 {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        for segment in self.queue.drain(..) {
+            let _ = segment.thread.join();
+        }
     }
 }
 
@@ -1907,13 +1928,11 @@ impl Read for ParallelLzma2 {
             self.current = Vec::new();
             self.position = 0;
             self.start_segments()?;
-            let Some((held, receiver)) = self.queue.pop_front() else {
+            let Some(segment) = self.queue.pop_front() else {
                 return Ok(0);
             };
-            self.current_held = held;
-            self.current = receiver
-                .recv()
-                .map_err(|_| std::io::Error::other("a 7z segment decoder stopped"))??;
+            self.current_held = segment.held;
+            self.current = segment.finish()?;
         }
         let length = buffer.len().min(self.current.len() - self.position);
         buffer[..length].copy_from_slice(&self.current[self.position..self.position + length]);

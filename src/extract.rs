@@ -162,7 +162,10 @@ fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Resul
 }
 
 /// Extract any archive Zipper reads into `destination`, choosing the reader
-/// as `zipper extract` does.
+/// as `zipper extract` does. When it returns, after success, failure or a
+/// cancel, no handle to the destination or the archive stays open and every
+/// thread it started has exited, so the destination can be renamed or
+/// deleted at once. Rayon's shared pool keeps its idle threads.
 pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     if options.flat {
         let staging = crate::staging::stage(archive, destination, options.existing)?;

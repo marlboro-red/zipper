@@ -85,12 +85,14 @@ item = src/lib.rs | fn ensure_link_stays_inside(
 
 [7z-lzma2-segments]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 054192618c7ce75d
+fingerprint = bf6d3f88d7ccfd67
 item = src/native_7z.rs | const SEGMENT_BUDGET:
 item = src/native_7z.rs | const PARALLEL_FOLDER_MIN:
 item = src/native_7z.rs | struct ParallelLzma2 {
 item = src/native_7z.rs | impl ParallelLzma2 {
 item = src/native_7z.rs | impl Read for ParallelLzma2 {
+item = src/native_7z.rs | impl Drop for ParallelLzma2 {
+item = src/native_7z.rs | impl SegmentThread {
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md

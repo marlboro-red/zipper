@@ -74,7 +74,7 @@ The rules are proven able to fail. Each of these model changes, which match plau
 
 ## The LZMA2 segment pipeline
 
-`verification/7z-lzma2-segments/` checks the reader that decodes one solid LZMA2 folder in segments, `ParallelLzma2`, listed under `[7z-lzma2-segments]` in `verification/coverage.txt`. Run the pstack `/statechart` skill on `MCSegments.tla` with `segments.cfg`. All six rules must hold.
+`verification/7z-lzma2-segments/` checks the reader that decodes one solid LZMA2 folder in segments, `ParallelLzma2`, listed under `[7z-lzma2-segments]` in `verification/coverage.txt`. Run the pstack `/statechart` skill on `MCSegments.tla` with `segments.cfg`. All seven rules must hold.
 
 | Rule | In plain words |
 | --- | --- |
@@ -84,6 +84,7 @@ The rules are proven able to fail. Each of these model changes, which match plau
 | `MemoryBounded` | Packed and decoded bytes of started segments stay within `SEGMENT_BUDGET`. |
 | `ThreadsBounded` | At most `window` segment decoders run at once. |
 | `NothingLeaks` | After an error or an early drop, every result is freed once the decoders finish. |
+| `NoThreadOutlivesReader` | The folder worker returns only after every decoder thread it started has exited, so no thread holds the archive open after the extraction returns. |
 
 | Covered code | Model |
 | --- | --- |
@@ -91,8 +92,9 @@ The rules are proven able to fail. Each of these model changes, which match plau
 | The spawned thread running `decode_segment` and sending the result | `DecoderFinishes` |
 | `Read for ParallelLzma2`, which receives the front segment and frees its share of the budget when it is used up | `ReaderTakesFront` |
 | The folder worker dropping the reader, and a thread whose send finds no receiver | `ReaderDropped`, `ResultFreed` |
+| `Drop for ParallelLzma2`, which sets the stop flag and joins every started thread, and `SegmentThread::finish`, which joins a thread after its result | `ReaderReturns` |
 
-A thread the OS refuses either fails the read, when no segment is running, or stops new starts, so the model covers it as a decoder failure. The stop flag a dropped reader sets ends decoders early, which the model covers as decoders finishing after `ReaderDropped`. The model leaves out `lzma2_segments`, the chunk-header scan, which the hostile tests in `tests/hostile_7z.rs` cover, and the bytes themselves. The bound is five segments of 1, 1, 1, 2 and 2 units, a window of 2 and a budget of 3, so both limits bind. It has 271 states.
+A thread the OS refuses either fails the read, when no segment is running, or stops new starts, so the model covers it as a decoder failure. The stop flag a dropped reader sets ends decoders early, which the model covers as decoders finishing after `ReaderDropped`. The model leaves out `lzma2_segments`, the chunk-header scan, which the hostile tests in `tests/hostile_7z.rs` cover, and the bytes themselves. The bound is five segments of 1, 1, 1, 2 and 2 units, a window of 2 and a budget of 3, so both limits bind.
 
 Each change below breaks the named rule:
 
@@ -101,3 +103,4 @@ Each change below breaks the named rule:
 | `ReaderStartsSegment` skips the budget check | `MemoryBounded` |
 | The reader may hand out the segment after the front one first | `InOrder` |
 | `ReaderStartsSegment` skips the window check | `ThreadsBounded` |
+| `ReaderReturns` does not wait for the decoders, as before the threads were joined | `NoThreadOutlivesReader`, in 3 steps |

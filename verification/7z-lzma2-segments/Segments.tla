@@ -8,6 +8,8 @@
 (* one segment into memory and sends it, or an error, on its own channel.  *)
 (* The reader can be dropped at any time, after an error elsewhere or a    *)
 (* cancel; a decoder that finishes then finds no receiver and exits.       *)
+(* After an error or a drop, the reader stops its decoders and joins them, *)
+(* so its caller returns only once no decoder thread is left.              *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences
 
@@ -26,7 +28,7 @@ VARIABLES
     state,      \* segment -> "waiting", "decoding", "ready", "failed", "taken" or "abandoned"
     held,       \* output units started and not yet taken or freed
     emitted,    \* segments whose bytes the consumer has passed on, in order
-    rpc,        \* consumer: "reading", "ok", "error" or "dropped"
+    rpc,        \* consumer: "reading", "ok", "error", "dropped" or "returned"
     threads     \* decoder threads alive
 
 vars == <<next, state, held, emitted, rpc, threads>>
@@ -86,20 +88,28 @@ ReaderDropped ==
 
 \* Once the reader is gone, results it never took are freed.
 ResultFreed(s) ==
-    /\ rpc \in {"error", "dropped"}
+    /\ rpc \in {"error", "dropped", "returned"}
     /\ state[s] \in {"ready", "failed"}
     /\ state' = [state EXCEPT ![s] = "abandoned"]
     /\ held' = held - Sizes[s]
     /\ UNCHANGED <<next, emitted, rpc, threads>>
 
+\* Dropping the reader joins every decoder thread it started, and only
+\* then does the folder worker return.
+ReaderReturns ==
+    /\ rpc \in {"error", "dropped"}
+    /\ threads = 0
+    /\ rpc' = "returned"
+    /\ UNCHANGED <<next, state, held, emitted, threads>>
+
 Settled ==
-    /\ rpc /= "reading"
+    /\ rpc \in {"ok", "returned"}
     /\ threads = 0
     /\ \A s \in Segments : state[s] \notin {"ready", "failed", "decoding"}
     /\ UNCHANGED vars
 
 Next ==
-    \/ ReaderStartsSegment \/ ReaderTakesFront \/ ReaderDropped
+    \/ ReaderStartsSegment \/ ReaderTakesFront \/ ReaderDropped \/ ReaderReturns
     \/ \E s \in Segments : DecoderFinishes(s) \/ ResultFreed(s)
     \/ Settled
 
@@ -122,6 +132,10 @@ MemoryBounded == held <= Budget
 
 \* At most `Window` decoder threads run at once.
 ThreadsBounded == threads <= Window
+
+\* The folder worker never returns while a decoder thread it started runs,
+\* so no thread outlives the extraction and holds the archive open.
+NoThreadOutlivesReader == rpc \in {"ok", "returned"} => threads = 0
 
 \* When the reader is done or gone and everything settles, nothing is held.
 NothingLeaks == (rpc /= "reading" /\ threads = 0
