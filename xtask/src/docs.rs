@@ -132,6 +132,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "install-hooks",
     "ci-wait",
     "ship",
+    "release-checks",
     "lint-commit-msg",
     "lint-commits",
     "verify-sync",

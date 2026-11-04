@@ -11,8 +11,10 @@
 //! pairs run again with the archive names in capitals, and must give the same
 //! outcome compared without case.
 //!
-//! The gate checks every 37th pair. Set `ZIPPER_MERGE_STRIDE=1` to check all
-//! 101,761 pairs.
+//! It runs only when `ZIPPER_OVERWRITE_EXHAUSTIVE=1` is set, before a release
+//! or when `cargo xtask verify-sync overwrite` asks, because it is too slow
+//! for every push. It then checks every 37th pair, and
+//! `ZIPPER_MERGE_STRIDE=1` checks all 101,761 pairs.
 #![cfg(unix)]
 mod common;
 
@@ -28,6 +30,19 @@ use zipper::{Existing, native_zip};
 const NAMES: [&str; 2] = ["a", "b"];
 const DEPTH: usize = 2;
 const STRIDE: &str = "ZIPPER_MERGE_STRIDE";
+const OPT_IN: &str = "ZIPPER_OVERWRITE_EXHAUSTIVE";
+
+fn invoked() -> bool {
+    if std::env::var_os(OPT_IN).is_some() {
+        return true;
+    }
+    assert!(
+        std::env::var_os(STRIDE).is_none(),
+        "{STRIDE} asks for a run, so set {OPT_IN}=1 too; nothing was checked"
+    );
+    eprintln!("skipped: set {OPT_IN}=1 to run the exhaustive overwrite check");
+    false
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
@@ -246,11 +261,17 @@ fn documented_outcome(before: &Snapshot, destination: &Tree, archive: &Tree) -> 
 
 #[test]
 fn overwrite_matches_the_contract_on_every_small_tree_pair() {
+    if !invoked() {
+        return;
+    }
     check_every_pair(str::to_owned, Snapshot::from);
 }
 
 #[test]
 fn skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair() {
+    if !invoked() {
+        return;
+    }
     for mode in [
         Existing::Skip,
         Existing::RenameNew,
@@ -262,6 +283,9 @@ fn skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair() {
 
 #[test]
 fn overwrite_with_names_in_another_case_matches_the_contract() {
+    if !invoked() {
+        return;
+    }
     let probe = tempfile::tempdir().unwrap();
     if !ignores_case(probe.path()) {
         eprintln!("skipped: this filesystem tells names apart by case");

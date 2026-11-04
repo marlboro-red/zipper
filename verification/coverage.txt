@@ -53,7 +53,7 @@ item = src/native_zip.rs | pub fn read_archive_with_options(
 [overwrite]
 skill = .claude/skills/zipper-verify-overwrite/SKILL.md
 fingerprint = 9ace3aa24008ef26
-full-check = cargo test --release --test overwrite_exhaustive ZIPPER_MERGE_STRIDE=1
+full-check = cargo test --release --test overwrite_exhaustive ZIPPER_MERGE_STRIDE=1 ZIPPER_OVERWRITE_EXHAUSTIVE=1 -- --nocapture
 item = src/staging.rs | pub(crate) fn stage(
 item = src/staging.rs | impl Staging {
 item = src/staging.rs | fn plan(

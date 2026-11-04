@@ -156,6 +156,46 @@ pub fn fail_on_stale_fingerprints(root: &Path) -> Result<()> {
     Ok(())
 }
 
+fn run_full_check(root: &Path, check: &str) -> Result<bool> {
+    let mut words = check.split_whitespace();
+    let mut command = Command::new(words.next().context("empty full-check")?);
+    for word in words {
+        match word.split_once('=') {
+            Some((key, value)) if key.chars().all(|c| c.is_ascii_uppercase() || c == '_') => {
+                command.env(key, value);
+            }
+            _ => {
+                command.arg(word);
+            }
+        }
+    }
+    Ok(command.current_dir(root).status()?.success())
+}
+
+pub fn run_every_full_check(root: &Path) -> Result<()> {
+    let mut failed = Vec::new();
+    for verification in manifest(root)? {
+        match &verification.full_check {
+            Some(check) => {
+                println!("xtask: release check {}: {check}", verification.name);
+                if !run_full_check(root, check)? {
+                    failed.push(verification.name.clone());
+                }
+            }
+            None => println!(
+                "xtask: release check {}: no full check; the gate's verify step keeps it in step with {}",
+                verification.name, verification.skill
+            ),
+        }
+    }
+    ensure!(
+        failed.is_empty(),
+        "release checks failed: {}",
+        failed.join(", ")
+    );
+    Ok(())
+}
+
 pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
     let all = manifest(root)?;
     let verification = all
@@ -164,21 +204,8 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
     let checked = fingerprint(root, verification)?;
     if let Some(check) = &verification.full_check {
-        let mut words = check.split_whitespace();
-        let mut command = Command::new(words.next().context("empty full-check")?);
-        for word in words {
-            match word.split_once('=') {
-                Some((key, value)) if key.chars().all(|c| c.is_ascii_uppercase() || c == '_') => {
-                    command.env(key, value);
-                }
-                _ => {
-                    command.arg(word);
-                }
-            }
-        }
-        let status = command.current_dir(root).status()?;
         ensure!(
-            status.success(),
+            run_full_check(root, check)?,
             "{name}: the full check failed; nothing was synced"
         );
     }

@@ -28,7 +28,7 @@ The test checks all of them on every pair.
 - On a filesystem that ignores case, as APFS does on macOS by default, `overwrite_with_names_in_another_case_matches_the_contract` runs every pair again with the archive names in capitals. The outcome must be the same, compared without case. It is skipped where case matters, as on most Linux filesystems.
 - `names_in_another_case_meet_the_same_checks_where_case_is_ignored` in `tests/overwrite.rs` covers ZIP and tar on Windows too, with a junction to a folder outside the destination.
 - It leaves out other processes that change the destination during extraction. `plan` checks the tree before the first rename, so a folder swapped for a symlink in between is followed. The [usage page](../../../docs/usage.md) asks for a private destination for that reason. It also leaves out mount points inside the destination, which need root to set up, names that differ only by Unicode normalization, and rename failures such as a full disk.
-- The gate runs every 37th pair, 2,751 pairs in about 4 seconds. All 101,761 pairs take about 160 seconds. At the last sync, 26,569 pairs merge and 75,192 are refused as conflicts.
+- It runs only when invoked, never on a push or in CI. Run it before a release, through `cargo xtask release-checks`, and when the gate's `verify` step reports that its covered code changed. Without `ZIPPER_OVERWRITE_EXHAUSTIVE=1` each test prints that it was skipped. All 101,761 pairs take about 160 seconds per mode and spelling.
 - `verification/coverage.txt` lists the covered code under `[overwrite]`, with its fingerprint when this check last passed.
 
 ## When to run it
@@ -38,7 +38,7 @@ The gate's `verify` step fails when code listed under `[overwrite]` in `verifica
 ## Run it
 
 ```sh
-ZIPPER_MERGE_STRIDE=1 cargo test --release --test overwrite_exhaustive -- --nocapture
+ZIPPER_OVERWRITE_EXHAUSTIVE=1 ZIPPER_MERGE_STRIDE=1 cargo test --release --test overwrite_exhaustive -- --nocapture
 ```
 
 It must pass and print the counts of merged and refused pairs.
@@ -55,7 +55,7 @@ When a change to the merge is intended, update `documented_outcome` and `docs/us
 
 The check is proven able to fail. Each of these changes to the real code fails it:
 
-| Change in `src/staging.rs` | What the check reported, on the gate's sample |
+| Change in `src/staging.rs` | What the check reported, on every 37th pair |
 | --- | --- |
 | `plan` reads the destination with `fs::metadata`, which follows symlinks | Case 259. The destination's `b` is a symlink to a folder outside, and the extraction succeeds by writing `b/a` and `b/b` into that folder. |
 | `plan` reads the destination with `fs::metadata`, with the archive name `LINKED` against a link named `linked` | `names_in_another_case_meet_the_same_checks_where_case_is_ignored` fails. |

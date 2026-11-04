@@ -35,6 +35,7 @@ fn main() -> ExitCode {
         ["install-hooks"] => install_hooks(),
         ["ci-wait"] => ci_wait(),
         ["ship"] => ship(),
+        ["release-checks"] => release_checks(),
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
         ["lint-commits"] => commits::lint_unpushed(&root()),
         ["verify-sync", name] => verify::record_checked_fingerprint(&root(), name),
@@ -148,6 +149,11 @@ fn watch_ci_run(run: &str, head: &str) -> Result<()> {
     );
     ensure!(watched.success(), "CI run {run} for {head} failed");
     Ok(())
+}
+
+fn release_checks() -> Result<()> {
+    verify::run_every_full_check(&root())?;
+    gate(true)
 }
 
 fn ship() -> Result<()> {
