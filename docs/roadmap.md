@@ -1,10 +1,10 @@
 # Roadmap
 
-The first phase ended with M9. Zipper's in-process readers replaced 7-Zip as the default for ZIP, tar and 7z. They are correct on hostile input, restore the metadata users expect, and extract faster with bounded memory. Speed work starts on macOS. Every correctness check runs on macOS, Linux and Windows in CI.
+The first phase ended with M9. Zipper's in-process readers replaced 7-Zip as the default for ZIP, tar and 7z. They are correct on hostile input, restore the metadata users expect, and extract faster with bounded memory. Speed work starts on macOS. CI runs every correctness check on Linux for each push. The Windows workflow runs them on Windows when invoked, before a release.
 
-The second phase, M10 to M20, ends when Zipper extracts everything 7-Zip extracts without 7-Zip installed. Each new reader keeps the first phase's contract. It refuses unsafe paths and links, publishes nothing on failure, bounds its memory and passes the `zipper-review` skill. A faster reader never drops one of these checks.
+The second phase, M10 to M21, ends when Zipper extracts everything 7-Zip extracts without 7-Zip installed, with LZMA decoded by its own code. Each new reader keeps the first phase's contract. It refuses unsafe paths and links, publishes nothing on failure, bounds its memory and passes the `zipper-review` skill. A faster reader never drops one of these checks.
 
-Every milestone from M10 to M20 has one more exit check, beside its own. New parsing code has a Kani proof, or an exhaustive test where Kani does not finish. New concurrency has a TLA+ model with its own `zipper-verify-*` skill. Each proof, test and model is listed in `verification/coverage.txt`, so the `verify` gate step catches drift. A planted break, made with `scripts/plant.py`, shows each one can fail.
+Every milestone from M10 to M21 has one more exit check, beside its own. New parsing code has a Kani proof, or an exhaustive test where Kani does not finish. New concurrency has a TLA+ model with its own `zipper-verify-*` skill. Each proof, test and model is listed in `verification/coverage.txt`, so the `verify` gate step catches drift. A planted break, made with `scripts/plant.py`, shows each one can fail.
 
 Each milestone closes only when its exit checks pass. A check is a gate step, a test or an experiment record, never an opinion. [The design page](design.md#implementation-proceeds-through-five-ordered-gates) describes how extraction experiments proceed.
 
@@ -25,14 +25,15 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M10. Parity matrix](#m10-parity-matrix) | Done | M9 |
 | [M11. Windows metadata parity](#m11-windows-metadata-parity) | Done | M10 |
 | [M12. Extraction controls](#m12-extraction-controls) | Done | M10 |
-| [M13. Remaining codecs](#m13-remaining-codecs) | Planned | M10 |
+| [M13. Remaining codecs](#m13-remaining-codecs) | In progress | M10 |
+| [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | Next | M13 |
 | [M14. Encrypted archives](#m14-encrypted-archives) | Planned | M13 |
 | [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | Planned | M13 |
 | [M16. Package formats](#m16-package-formats) | Planned | M13 |
 | [M17. Disc and disk images](#m17-disc-and-disk-images) | Planned | M16 |
 | [M18. RAR](#m18-rar) | Planned | M14, M15 |
 | [M19. Legacy formats](#m19-legacy-formats) | Planned | M13 |
-| [M20. Zipper without 7-Zip](#m20-zipper-without-7-zip) | Planned | M11 to M19 |
+| [M20. Zipper without 7-Zip](#m20-zipper-without-7-zip) | Planned | M11 to M19, M21 |
 
 M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment. M8 closed on 3 November 2026. Applications can call `zipper::extract_archive` to extract into an existing folder, select ZIP paths, follow progress and cancel. Four adversarial reviews found five issues, each fixed with a test that failed first. The 7-Zip backend reports no progress yet. M9 closed the same day. The default engine reads 7z in process with all of these options, and sends BCJ2, PPMd, BZip2, encrypted and split 7z archives to 7-Zip. An early timing on one Mac shows the reader faster than 7-Zip on non-solid archives and 1.85× slower on solid Silesia, where 7-Zip decodes the two LZMA2 blocks at once. Splitting LZMA2 at its dictionary resets is the next experiment. M10 and M11 closed on 4 November 2026. `docs/reference/parity.md` lists 112 rows of 7-Zip extraction, and the gate fails when a row loses its proof. On Windows every reader now copies the archive's Mark of the Web, restores read-only, hidden and system attributes, and creates links that stay inside. 7-Zip stores NTFS alternate streams only in WIM, so they move to M17. Two adversarial reviews found no escape in the links. M12 closed the same day. `--existing` takes 7-Zip's skip and rename modes, `--include` and `--exclude` select in every native reader, tar included, and `--flat`, `-` and `--stdout` cover `7z e`, `-si` and `-so`. Two adversarial reviews found a race that replaced files written during extraction and two link escapes through links the destination keeps, all fixed with tests. Their shared formal checks were added afterwards, on 4 November 2026. An exhaustive check follows every published link on disk across 25,200 runs. The ZIP decoder budget has a TLA+ model, and the new header parsers have Kani proofs. Every stream end is tested at every truncation and padding.
 
@@ -275,8 +276,37 @@ Scope:
 Exit checks:
 
 1. Every method row in the M10 matrix for ZIP, 7z and tar reads native.
-2. Each codec has hostile tests for truncation, a stream longer than declared and a wrong CRC.
-3. The scoreboard gains a row per new codec, compared with 7-Zip at one thread.
+2. Each codec has hostile tests for truncation, a stream longer than declared and a wrong CRC, where its format carries a length or a CRC. `compress` (`.Z`) carries neither, and the stream reference says so.
+3. The scoreboard gains a row per new codec, compared with 7-Zip at one thread. lzip and LZ4, which 7-Zip does not read, are compared with bsdtar.
+
+Done so far, by 5 November 2026:
+
+- ZIP Deflate64, BZip2, LZMA, Zstandard, xz and PPMd.
+- 7z BZip2, Deflate64, PPMd, BCJ2 with its own decoder, and Swap2 and Swap4.
+- Tar and single files in bzip2, lzip, LZ4 with its own decoder, and `compress` with its own decoder.
+
+ZIP Shrink and Implode and the scoreboard rows are left.
+
+## M21. Zipper's own LZMA decoder
+
+LZMA and LZMA2 decode through Zipper's own Rust code, at least as fast as 7-Zip at one thread.
+
+A comparison on 5 November 2026 showed why. At one thread, Zipper takes 1.25× 7-Zip's time on solid Silesia, and that gap is liblzma against 7-Zip's own decoder. sevenz-rust2, whose decoder is pure Rust, also decodes an LZMA setting (`lc=8`) that liblzma refuses, so Zipper sends that archive to 7-Zip. The parallel LZMA2 segments that put Zipper ahead of sevenz-rust2 cost 347 MiB against 7-Zip's 256 MiB at default threads.
+
+Scope:
+
+- A range decoder, LZMA and LZMA2 in safe Rust, with every `lc`, `lp` and `pb` the format allows, used by 7z, ZIP LZMA, `.lzma`, lzip and the parallel LZMA2 segments.
+- The xz container, with its CRC-32, CRC-64 and SHA-256 checks.
+- The branch filters (x86, ARM, ARM Thumb, ARM64, RISC-V, PowerPC, SPARC, IA-64) and Delta, so liblzma is no longer needed to read.
+- The decoder's dictionary and buffers count against the shared decoder budget, and parallel segments hold no more memory than 7-Zip does at default threads.
+
+Exit checks:
+
+1. A differential test decodes every LZMA, LZMA2 and xz stream in the corpora with Zipper's decoder and with liblzma, and finds the same bytes or the same refusal. It also runs a pseudo-random set of streams built from them.
+2. Kani proves the range decoder, the bit-tree and length decoders and the match copy never panic or read or write out of bounds, up to a bound. An exhaustive test covers what Kani cannot finish.
+3. Each branch filter round-trips every short input under liblzma's encoder, and its hostile tests cover every truncation.
+4. A benchmark record shows Zipper's decoder at least as fast as 7-Zip's at one thread on solid Silesia, with ranges apart, and peak memory at default threads no higher than 7-Zip's.
+5. The 7z corpus archive with `lc=8` reads natively, and its parity row moves from 7-Zip to native.
 
 ## M14. Encrypted archives
 
@@ -386,7 +416,7 @@ Scope:
 
 Exit checks:
 
-1. CI runs the full M10 corpus on all three operating systems on machines with no 7-Zip installed.
+1. The release checks run the full M10 corpus on all three operating systems, on machines with no 7-Zip installed.
 2. The scoreboard compares every format with 7-Zip, with CPU time and memory.
 
 ## Close a milestone
