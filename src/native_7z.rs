@@ -23,6 +23,7 @@ const MAX_ENTRIES: usize = 1_000_000;
 const MAX_CODERS: usize = 5;
 const MAX_HEADER_LAYERS: usize = 4;
 const COPY_BUFFER: usize = 1024 * 1024;
+const SWAP_BUFFER: usize = 64 * 1024;
 const DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
 const BZIP2_DECODER_MEMORY: u64 = 4 * 1024 * 1024;
 const SEGMENT_BUDGET: u64 = 512 * 1024 * 1024;
@@ -1022,6 +1023,7 @@ enum Method {
     Ppmd,
     Lzma,
     Lzma2,
+    Swap(usize),
     Filter(fn(&mut liblzma::stream::Filters, &[u8]) -> Result<(), liblzma::stream::Error>),
 }
 
@@ -1035,6 +1037,8 @@ fn method(coder: &Coder) -> Result<Method> {
         [0x03, 0x04, 0x01] => Method::Ppmd,
         [0x03, 0x01, 0x01] => Method::Lzma,
         [0x21] => Method::Lzma2,
+        [0x02, 0x03, 0x02] => Method::Swap(2),
+        [0x02, 0x03, 0x04] => Method::Swap(4),
         [0x03] => {
             Method::Filter(|filters, properties| filters.delta_properties(properties).map(drop))
         }
@@ -1127,6 +1131,9 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
         }
         return Ok(Vec::new());
     }
+    if let Some((_, swapped)) = byte_swapped(folder)? {
+        return check_methods(&swapped);
+    }
     let methods = folder
         .output_to_packed
         .iter()
@@ -1161,7 +1168,12 @@ fn lzma_filters(folder: &Folder, methods: &[Method]) -> Result<liblzma::stream::
             Method::Filter(add) => add(&mut filters, &properties),
             Method::Lzma => filters.lzma1_properties(&properties).map(drop),
             Method::Lzma2 => filters.lzma2_properties(&properties).map(drop),
-            Method::Copy | Method::Deflate | Method::Deflate64 | Method::Bzip2 | Method::Ppmd => {
+            Method::Copy
+            | Method::Deflate
+            | Method::Deflate64
+            | Method::Bzip2
+            | Method::Ppmd
+            | Method::Swap(_) => {
                 return Err(unsupported(format!(
                     "7z folder combines methods in a way that is not supported; {BACKEND_HINT}"
                 )));
@@ -1354,6 +1366,89 @@ impl Read for ReadAt {
     }
 }
 
+fn byte_swapped(folder: &Folder) -> Result<Option<(usize, Folder)>> {
+    let Some((first, rest)) = folder.output_to_packed.split_first() else {
+        return Ok(None);
+    };
+    let Method::Swap(width) = method(first)? else {
+        return Ok(None);
+    };
+    let output_to_packed = if rest.is_empty() {
+        vec![Coder {
+            id: vec![0x00],
+            properties: Vec::new(),
+        }]
+    } else {
+        rest.to_vec()
+    };
+    Ok(Some((
+        width,
+        Folder {
+            output_to_packed,
+            ..folder.clone()
+        },
+    )))
+}
+
+// SPEC(7-Zip ByteSwap.cpp): each whole group of `width` bytes is reversed, and a shorter tail passes unchanged.
+struct ByteSwap<R> {
+    inner: R,
+    width: usize,
+    buffer: Vec<u8>,
+    start: usize,
+    swapped: usize,
+    end: usize,
+    ended: bool,
+}
+
+impl<R: Read> ByteSwap<R> {
+    fn new(inner: R, width: usize, capacity: usize) -> Self {
+        ByteSwap {
+            inner,
+            width,
+            buffer: vec![0; capacity.max(width)],
+            start: 0,
+            swapped: 0,
+            end: 0,
+            ended: false,
+        }
+    }
+}
+
+impl<R: Read> Read for ByteSwap<R> {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        loop {
+            if self.start < self.swapped {
+                let count = output.len().min(self.swapped - self.start);
+                output[..count].copy_from_slice(&self.buffer[self.start..self.start + count]);
+                self.start += count;
+                return Ok(count);
+            }
+            if self.ended {
+                if self.swapped == self.end {
+                    return Ok(0);
+                }
+                self.swapped = self.end;
+                continue;
+            }
+            self.buffer.copy_within(self.start..self.end, 0);
+            self.end -= self.start;
+            self.start = 0;
+            let read = self.inner.read(&mut self.buffer[self.end..])?;
+            if read == 0 {
+                self.ended = true;
+                self.swapped = 0;
+                continue;
+            }
+            self.end += read;
+            self.swapped = self.end - self.end % self.width;
+            for group in self.buffer[..self.swapped].chunks_exact_mut(self.width) {
+                group.reverse();
+            }
+        }
+    }
+}
+
 struct Exact<R> {
     inner: R,
     remaining: u64,
@@ -1438,6 +1533,13 @@ fn folder_reader(
     let methods = check_methods(folder)?;
     if !folder.bcj2_branches.is_empty() {
         return bcj2_reader(&file, folder);
+    }
+    if let Some((width, swapped)) = byte_swapped(folder)? {
+        return Ok(Box::new(ByteSwap::new(
+            folder_reader(file, &swapped, segment_threads)?,
+            width,
+            SWAP_BUFFER,
+        )));
     }
     if let ([Method::Lzma2], [coder]) = (methods.as_slice(), folder.output_to_packed.as_slice())
         && let Some((path, window)) = segment_threads.filter(|&(_, window)| window > 1)
@@ -2375,6 +2477,60 @@ mod tests {
             planned > 1000 && checked > 1_000_000,
             "{planned} of {checked}"
         );
+    }
+
+    struct Trickle<'a> {
+        data: &'a [u8],
+        most: usize,
+    }
+
+    impl Read for Trickle<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let count = buffer.len().min(self.most).min(self.data.len());
+            buffer[..count].copy_from_slice(&self.data[..count]);
+            self.data = &self.data[count..];
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn byte_swap_reverses_every_whole_group_under_every_read_split() {
+        let mut checked = 0;
+        for width in [2, 4] {
+            for length in 0..=13u8 {
+                let data: Vec<u8> = (0..length).collect();
+                let mut expected = data.clone();
+                for group in expected.chunks_exact_mut(width) {
+                    group.reverse();
+                }
+                for (most, chunk, capacity) in (1..=6).flat_map(|most| {
+                    (1..=6).flat_map(move |chunk| {
+                        [1, 4, 5, 7, 64].map(|capacity| (most, chunk, capacity))
+                    })
+                }) {
+                    {
+                        let mut swap =
+                            ByteSwap::new(Trickle { data: &data, most }, width, capacity);
+                        let mut output = Vec::new();
+                        let mut buffer = vec![0; chunk];
+                        loop {
+                            let read = swap.read(&mut buffer).unwrap();
+                            if read == 0 {
+                                break;
+                            }
+                            output.extend_from_slice(&buffer[..read]);
+                        }
+                        assert_eq!(
+                            output, expected,
+                            "width {width} length {length} most {most} chunk {chunk} capacity {capacity}"
+                        );
+                        assert_eq!(swap.read(&mut buffer).unwrap(), 0);
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 2 * 14 * 36 * 5);
     }
 
     #[test]

@@ -129,3 +129,11 @@ full-check = cargo test --release --lib bcj2
 item = src/native_7z.rs | fn bcj2_plan(
 item = src/native_7z.rs | const BCJ2_INPUTS:
 item = src/bcj2.rs | impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
+
+[7z-byte-swap]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = c02388f92ea5d602
+full-check = cargo test --release --lib byte_swap
+item = src/native_7z.rs | struct ByteSwap<R> {
+item = src/native_7z.rs | impl<R: Read> ByteSwap<R> {
+item = src/native_7z.rs | impl<R: Read> Read for ByteSwap<R> {

@@ -214,10 +214,10 @@
       "status": "native"
     },
     "Swap2": {
-      "status": "backend"
+      "status": "native"
     },
     "Swap4": {
-      "status": "backend"
+      "status": "native"
     },
     "BZip2": {
       "status": "native"

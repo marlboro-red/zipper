@@ -1,6 +1,6 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs or the BCJ2 folder graph (`bcj2_plan`), and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
@@ -42,6 +42,8 @@ The BCJ2 folder graph is checked by exhaustive tests, under `[7z-bcj2-graph]` in
 - `every_short_input_round_trips_under_every_conversion_choice` in `src/bcj2.rs` encodes every input of up to 5 bytes over the bytes that BCJ2 treats specially, under every choice of conversions. The decoder must return the input and read every stream to its end, in reads of 1, 3 and 64 bytes.
 
 Run them with `cargo test --release --lib bcj2`, then `cargo xtask verify-sync 7z-bcj2-graph`.
+
+`byte_swap_reverses_every_whole_group_under_every_read_split`, under `[7z-byte-swap]`, checks the Swap2 and Swap4 reader on every length up to 13 bytes. The inner reader yields 1 to 6 bytes at a time, the caller reads 1 to 6, and the buffer holds 1, 4, 5, 7 or 64 bytes, 5,040 runs in all. Run it with `cargo test --release --lib byte_swap`, then `cargo xtask verify-sync 7z-byte-swap`.
 
 ## When to run it
 
@@ -86,4 +88,7 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | `bcj2_plan` drops the check that every coder is used | `every_small_folder_graph_plans_only_sound_bcj2_branches` fails |
 | `bcj2_plan` maps an output to the first coder whose start is below it | `every_bcj2_layout_with_up_to_four_chained_coders_is_planned` fails |
 | `bcj2_plan` takes a branch's size from its last coder, not its first | both plan tests fail |
+| The byte-swap reader also reverses a tail shorter than its group | `byte_swap_reverses_every_whole_group_under_every_read_split` fails |
+| The byte-swap reader stops at the end of its input without passing on the unswapped tail | the same test fails |
+| The byte-swap reader keeps reading into its buffer without moving the held bytes to the front | the same test fails |
 | The BCJ2 decoder converts a branch with fewer than 4 bytes of output left | `a_conversion_past_the_end_of_the_output_is_refused` fails |

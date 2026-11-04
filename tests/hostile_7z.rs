@@ -333,9 +333,9 @@ fn sizes_and_crcs_must_agree() {
 #[test]
 fn unsupported_methods_are_refused() {
     for (id, words) in [
-        (vec![0x02, 0x03, 0x02], "method 020302"),
+        (vec![0x04, 0xF7, 0x11, 0x01], "method 04F71101"),
         (vec![0x06, 0xF1, 0x07, 0x01], "encrypted"),
-        (vec![0x02, 0x03, 0x04], "method 020304"),
+        (vec![0x02, 0x03, 0x03], "method 020303"),
     ] {
         assert_refused(
             &format!("{id:?}"),
@@ -803,4 +803,54 @@ fn bcj2_with_every_input_bound_to_its_own_coder_matches_the_source() {
         fs::read(out.path().join("parent/out/code.bin")).unwrap(),
         code
     );
+}
+
+#[test]
+fn byte_swap_archives_from_7zip_match_the_source() {
+    let Some(seven_zip) = which("7zz") else {
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("src");
+    fs::create_dir(&source).unwrap();
+    let data: Vec<u8> = (0..300_007u32)
+        .map(|index| (index * 7 % 251) as u8)
+        .collect();
+    fs::write(source.join("odd.bin"), &data).unwrap();
+    fs::write(source.join("three.bin"), &data[..3]).unwrap();
+    for (index, methods) in [
+        &["-mf=Swap2"][..],
+        &["-mf=Swap4"],
+        &["-m0=Swap4"],
+        &["-m0=Swap2", "-m1=Swap4", "-m2=LZMA2"],
+        &["-m0=Swap4", "-m1=Delta:4", "-m2=LZMA2"],
+        &["-m0=Swap2", "-m1=BZip2"],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let archive = root.path().join(format!("{index}.7z"));
+        let status = std::process::Command::new(&seven_zip)
+            .current_dir(&source)
+            .args(["a", "-bd"])
+            .args(methods)
+            .arg(&archive)
+            .args(["odd.bin", "three.bin"])
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "{methods:?}");
+        let (out, result) = extract(&fs::read(&archive).unwrap());
+        result.unwrap_or_else(|error| panic!("{methods:?}: {error:#}"));
+        assert_eq!(
+            fs::read(out.path().join("parent/out/odd.bin")).unwrap(),
+            data,
+            "{methods:?}"
+        );
+        assert_eq!(
+            fs::read(out.path().join("parent/out/three.bin")).unwrap(),
+            &data[..3],
+            "{methods:?}"
+        );
+    }
 }
