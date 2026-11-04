@@ -5,13 +5,22 @@ use std::{fs, path::Path};
 use zipper::native_stream::{ReadOptions, output_name, read_archive};
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/parity/archives");
-const SINGLE_FILES: [&str; 5] = [
+const STREAMS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/stream");
+const SINGLE_FILES: [&str; 6] = [
     "hello.txt.gz",
     "hello.txt.bz2",
     "hello.txt.xz",
     "hello.txt.zst",
     "hello.txt.lzma",
+    "hello.txt.lz",
 ];
+
+fn single_file(name: &str) -> Vec<u8> {
+    [CORPUS, STREAMS]
+        .iter()
+        .find_map(|folder| fs::read(Path::new(folder).join(name)).ok())
+        .unwrap_or_else(|| panic!("{name} is in neither corpus"))
+}
 
 fn extract(
     name: &str,
@@ -39,11 +48,7 @@ fn assert_refused(case: &str, name: &str, bytes: &[u8], options: ReadOptions) {
 #[test]
 fn every_single_file_extracts_to_its_bytes() {
     for name in SINGLE_FILES {
-        let (root, result) = extract(
-            name,
-            &fs::read(Path::new(CORPUS).join(name)).unwrap(),
-            ReadOptions::default(),
-        );
+        let (root, result) = extract(name, &single_file(name), ReadOptions::default());
         result.unwrap_or_else(|error| panic!("{name}: {error:#}"));
         assert_eq!(
             fs::read(root.path().join("out/hello.txt")).unwrap(),
@@ -56,7 +61,7 @@ fn every_single_file_extracts_to_its_bytes() {
 #[test]
 fn every_truncation_is_refused() {
     for name in SINGLE_FILES {
-        let bytes = fs::read(Path::new(CORPUS).join(name)).unwrap();
+        let bytes = single_file(name);
         for length in 0..bytes.len() {
             assert_refused(
                 &format!("{name} cut to {length}"),
@@ -71,7 +76,7 @@ fn every_truncation_is_refused() {
 #[test]
 fn trailing_data_and_damaged_checksums_are_refused() {
     for name in SINGLE_FILES {
-        let mut bytes = fs::read(Path::new(CORPUS).join(name)).unwrap();
+        let mut bytes = single_file(name);
         let mut trailing = bytes.clone();
         trailing.extend_from_slice(b"trailing junk");
         assert_refused(
@@ -80,6 +85,17 @@ fn trailing_data_and_damaged_checksums_are_refused() {
             &trailing,
             ReadOptions::default(),
         );
+        if name.ends_with(".lz") {
+            let mut damaged = bytes.clone();
+            let crc = damaged.len() - 20;
+            damaged[crc] ^= 0xff;
+            assert_refused(
+                "lzip with a damaged CRC",
+                name,
+                &damaged,
+                ReadOptions::default(),
+            );
+        }
         if name.ends_with(".gz") {
             let crc = bytes.len() - 8;
             bytes[crc] ^= 0xff;
@@ -96,7 +112,7 @@ fn trailing_data_and_damaged_checksums_are_refused() {
 #[test]
 fn the_output_cap_is_enforced_while_decoding() {
     for name in SINGLE_FILES {
-        let bytes = fs::read(Path::new(CORPUS).join(name)).unwrap();
+        let bytes = single_file(name);
         assert_refused(
             &format!("{name} over its cap"),
             name,
@@ -117,6 +133,8 @@ fn the_output_name_drops_only_a_compression_extension() {
         ("a.bz2", "a"),
         ("x.tgz", "x.tar"),
         ("y.TBZ2", "y.tar"),
+        ("notes.txt.lz", "notes.txt"),
+        ("z.tlz", "z.tar"),
         ("data.bin", "data"),
         ("noext", "noext~"),
         (".gz", ".gz~"),

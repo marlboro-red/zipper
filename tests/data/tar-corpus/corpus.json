@@ -752,6 +752,25 @@
     "python": "ok"
    }
   },
+  "python-pax-lzip": {
+   "agreeing": [
+    "bsdtar",
+    "gnutar",
+    "python"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [
+    "gnutar",
+    "bsdtar",
+    "python"
+   ],
+   "readers": {
+    "7zip": "failed: RuntimeError",
+    "bsdtar": "ok",
+    "gnutar": "ok",
+    "python": "ok"
+   }
+  },
   "python-pax-short": {
    "agreeing": [
     "7zip",

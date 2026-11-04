@@ -8,10 +8,10 @@ use std::{
     path::Path,
 };
 
-const EXTENSIONS: [&str; 8] = [
-    ".gz", ".gzip", ".bz2", ".bzip2", ".xz", ".zst", ".zstd", ".lzma",
+const EXTENSIONS: [&str; 9] = [
+    ".gz", ".gzip", ".bz2", ".bzip2", ".xz", ".zst", ".zstd", ".lzma", ".lz",
 ];
-const TAR_EXTENSIONS: [&str; 6] = [".tgz", ".tbz", ".tbz2", ".txz", ".tzst", ".tpz"];
+const TAR_EXTENSIONS: [&str; 7] = [".tgz", ".tbz", ".tbz2", ".txz", ".tzst", ".tpz", ".tlz"];
 const LZMA_PROPERTIES_LIMIT: u8 = 9 * 5 * 5;
 const COPY_BUFFER: usize = 1024 * 1024;
 

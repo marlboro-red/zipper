@@ -45,6 +45,7 @@ pub enum Compression {
     Xz,
     Bzip2,
     Lzma,
+    Lzip,
 }
 
 /// Tar extraction options.
@@ -257,6 +258,7 @@ pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
         [0x28, 0xb5, 0x2f, 0xfd, ..] | [0x50..=0x5f, 0x2a, 0x4d, 0x18, ..] => Compression::Zstd,
         [0xfd, b'7', b'z', b'X', b'Z', 0x00] => Compression::Xz,
         [b'B', b'Z', b'h', b'1'..=b'9', ..] => Compression::Bzip2,
+        [b'L', b'Z', b'I', b'P', 1, ..] => Compression::Lzip,
         _ => Compression::None,
     })
 }
@@ -289,7 +291,38 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
             input,
             liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
         )),
+        Compression::Lzip => Box::new(EndsWithItsInput {
+            decoder: Some(liblzma::bufread::XzDecoder::new_stream(
+                input,
+                liblzma::stream::Stream::new_lzip_decoder(u64::MAX, liblzma::stream::CONCATENATED)?,
+            )),
+            what: "lzip has data after its last member",
+        }),
     })
+}
+
+struct EndsWithItsInput<R: BufRead> {
+    decoder: Option<liblzma::bufread::XzDecoder<R>>,
+    what: &'static str,
+}
+
+impl<R: BufRead> Read for EndsWithItsInput<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let Some(decoder) = &mut self.decoder else {
+            return Ok(0);
+        };
+        let read = decoder.read(buffer)?;
+        if read == 0 && !buffer.is_empty() {
+            let mut input = self.decoder.take().expect("a decoder").into_inner();
+            if !input.fill_buf()?.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    self.what,
+                ));
+            }
+        }
+        Ok(read)
+    }
 }
 
 struct Bzip2Streams<R: BufRead> {
