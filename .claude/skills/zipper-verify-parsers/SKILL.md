@@ -45,6 +45,8 @@ Run them with `cargo test --release --lib bcj2`, then `cargo xtask verify-sync 7
 
 `byte_swap_reverses_every_whole_group_under_every_read_split`, under `[7z-byte-swap]`, checks the Swap2 and Swap4 reader on every length up to 13 bytes. The inner reader yields 1 to 6 bytes at a time, the caller reads 1 to 6, and the buffer holds 1, 4, 5, 7 or 64 bytes, 5,040 runs in all. Run it with `cargo test --release --lib byte_swap`, then `cargo xtask verify-sync 7z-byte-swap`.
 
+`stored_lzma2_returns_every_length_across_chunk_boundaries_and_flushes_branch_filters`, under `[7z-stored-lzma2]`, wraps data of 0 to 5 bytes and lengths around the 64 KiB chunk limit in stored LZMA2 chunks, read 1, 3, 65,536 or any number of bytes at a time. liblzma must decode the chunks to the same bytes, and an x86 filter over them must release every byte. Run it with `cargo test --release --lib stored_lzma2`, then `cargo xtask verify-sync 7z-stored-lzma2`.
+
 ## When to run it
 
 The gate's `verify` step fails when code listed under `[parsers]` in `verification/coverage.txt` has changed since the proofs last passed. Run them then, and before changing that code on purpose.
@@ -91,4 +93,6 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | The byte-swap reader also reverses a tail shorter than its group | `byte_swap_reverses_every_whole_group_under_every_read_split` fails |
 | The byte-swap reader stops at the end of its input without passing on the unswapped tail | the same test fails |
 | The byte-swap reader keeps reading into its buffer without moving the held bytes to the front | the same test fails |
+| The stored LZMA2 writer leaves out the end marker | `stored_lzma2_returns_every_length_across_chunk_boundaries_and_flushes_branch_filters` fails |
+| The stored LZMA2 writer writes a chunk's size without subtracting one | the same test fails |
 | The BCJ2 decoder converts a branch with fewer than 4 bytes of output left | `a_conversion_past_the_end_of_the_output_is_refused` fails |

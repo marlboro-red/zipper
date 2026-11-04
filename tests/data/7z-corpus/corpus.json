@@ -46,6 +46,34 @@
     "bsdtar": "ok"
    }
   },
+  "7zip-bcj-lzma-code": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-bcj-lzma-links": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-bcj-lzma-long": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
+  "7zip-bcj-lzma-short": {
+   "agreed": true,
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok"
+   }
+  },
   "7zip-bcj-short": {
    "agreed": true,
    "readers": {

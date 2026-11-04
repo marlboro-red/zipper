@@ -827,6 +827,8 @@ fn byte_swap_archives_from_7zip_match_the_source() {
         &["-m0=Swap2", "-m1=Swap4", "-m2=LZMA2"],
         &["-m0=Swap4", "-m1=Delta:4", "-m2=LZMA2"],
         &["-m0=Swap2", "-m1=BZip2"],
+        &["-m0=Swap2", "-m1=BCJ", "-m2=LZMA"],
+        &["-m0=ARM64", "-m1=LZMA"],
     ]
     .into_iter()
     .enumerate()

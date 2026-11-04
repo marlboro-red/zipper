@@ -1607,24 +1607,101 @@ fn folder_reader(
                 remaining: folder.size,
             })
         }
-        _ => {
-            let stream = liblzma::stream::Stream::new_raw_decoder(&lzma_filters(folder, &methods)?)
-                .context("cannot start the 7z decoder")?;
-            let reader = LzmaReader {
-                stream,
-                input: packed,
-                buffer: vec![0; COPY_BUFFER],
-                start: 0,
-                end: 0,
-                input_done: false,
+        [filters @ .., Method::Lzma] if !filters.is_empty() => {
+            let (filter_coders, lzma) = folder.output_to_packed.split_at(filters.len());
+            let lzma_only = Folder {
+                output_to_packed: lzma.to_vec(),
+                ..folder.clone()
             };
-            if matches!(methods.last(), Some(Method::Lzma)) {
-                Box::new(reader.take(folder.size))
-            } else {
-                Box::new(reader)
+            let decoded =
+                raw_decoder(&lzma_filters(&lzma_only, &[Method::Lzma])?, packed)?.take(folder.size);
+            let mut chain = liblzma::stream::Filters::new();
+            for (coder, method) in filter_coders.iter().zip(filters) {
+                if let Method::Filter(add) = method {
+                    add(&mut chain, &coder.properties).context("liblzma refuses a 7z filter")?;
+                }
             }
+            chain
+                .lzma2_properties(&[0])
+                .context("liblzma refuses stored LZMA2")?;
+            Box::new(raw_decoder(&chain, StoredLzma2::new(decoded))?)
         }
+        [Method::Lzma] => {
+            Box::new(raw_decoder(&lzma_filters(folder, &methods)?, packed)?.take(folder.size))
+        }
+        _ => Box::new(raw_decoder(&lzma_filters(folder, &methods)?, packed)?),
     })
+}
+
+fn raw_decoder<R: Read>(filters: &liblzma::stream::Filters, input: R) -> Result<LzmaReader<R>> {
+    Ok(LzmaReader {
+        stream: liblzma::stream::Stream::new_raw_decoder(filters)
+            .context("cannot start the 7z decoder")?,
+        input,
+        buffer: vec![0; COPY_BUFFER],
+        start: 0,
+        end: 0,
+        input_done: false,
+    })
+}
+
+const STORED_CHUNK: usize = 1 << 16;
+
+// SPEC(xz-file-format LZMA2): control 1 resets the dictionary and stores up to 64 KiB, its size less one big-endian; control 0 ends the stream.
+struct StoredLzma2<R> {
+    inner: R,
+    chunk: Vec<u8>,
+    start: usize,
+    finished: bool,
+}
+
+impl<R: Read> StoredLzma2<R> {
+    fn new(inner: R) -> Self {
+        StoredLzma2 {
+            inner,
+            chunk: Vec::with_capacity(3 + STORED_CHUNK),
+            start: 0,
+            finished: false,
+        }
+    }
+
+    fn fill(&mut self) -> std::io::Result<()> {
+        self.chunk.clear();
+        self.start = 0;
+        self.chunk.extend_from_slice(&[1, 0, 0]);
+        let mut stored = 0;
+        while stored < STORED_CHUNK {
+            self.chunk.resize(3 + STORED_CHUNK, 0);
+            let read = self.inner.read(&mut self.chunk[3 + stored..])?;
+            if read == 0 {
+                break;
+            }
+            stored += read;
+        }
+        self.chunk.truncate(3 + stored);
+        if stored == 0 {
+            self.chunk = vec![0];
+            self.finished = true;
+        } else {
+            self.chunk[1..3].copy_from_slice(&((stored - 1) as u16).to_be_bytes());
+        }
+        Ok(())
+    }
+}
+
+impl<R: Read> Read for StoredLzma2<R> {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        if self.start == self.chunk.len() {
+            if self.finished {
+                return Ok(0);
+            }
+            self.fill()?;
+        }
+        let count = output.len().min(self.chunk.len() - self.start);
+        output[..count].copy_from_slice(&self.chunk[self.start..self.start + count]);
+        self.start += count;
+        Ok(count)
+    }
 }
 
 struct Segment {
@@ -2571,6 +2648,55 @@ mod tests {
     fn a_coder_above_bcj2_is_left_to_7zip() {
         let shape = shape(&[(1, 1), (4, 1)], vec![(0, 1)], vec![1, 2, 3, 4]);
         assert!(matches!(bcj2_plan(&shape), Ok(None)));
+    }
+
+    #[test]
+    fn stored_lzma2_returns_every_length_across_chunk_boundaries_and_flushes_branch_filters() {
+        let mut checked = 0;
+        for length in [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            STORED_CHUNK - 1,
+            STORED_CHUNK,
+            STORED_CHUNK + 1,
+            2 * STORED_CHUNK + 5,
+        ] {
+            let data: Vec<u8> = (0..length)
+                .map(|index| [0xE8, 0x10, 0x00, 0x41][index % 4])
+                .collect();
+            for most in [1, 3, STORED_CHUNK, usize::MAX] {
+                if most == 1 && length > 2 * STORED_CHUNK {
+                    continue;
+                }
+                let mut stored = Vec::new();
+                StoredLzma2::new(Trickle { data: &data, most })
+                    .read_to_end(&mut stored)
+                    .unwrap();
+                let mut plain = liblzma::stream::Filters::new();
+                plain.lzma2_properties(&[0]).unwrap();
+                let mut decoded = Vec::new();
+                raw_decoder(&plain, &stored[..])
+                    .unwrap()
+                    .read_to_end(&mut decoded)
+                    .unwrap();
+                assert_eq!(decoded, data, "length {length} most {most}");
+                let mut branch = liblzma::stream::Filters::new();
+                branch.x86_properties(&[]).unwrap();
+                branch.lzma2_properties(&[0]).unwrap();
+                let mut filtered = Vec::new();
+                raw_decoder(&branch, &stored[..])
+                    .unwrap()
+                    .read_to_end(&mut filtered)
+                    .unwrap();
+                assert_eq!(filtered.len(), length, "x86 length {length} most {most}");
+                checked += 1;
+            }
+        }
+        assert!(checked >= 39, "{checked}");
     }
 
     #[test]

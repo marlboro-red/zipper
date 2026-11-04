@@ -38,6 +38,7 @@ SEVEN_ZIP_WRITERS = [
     ("solid-per-2-files", ["-ms=2f"]),
     ("plain-header", ["-mhc=off"]),
     ("bcj", ["-mf=BCJ"]),
+    ("bcj-lzma", ["-m0=BCJ", "-m1=LZMA"]),
     ("arm64", ["-mf=ARM64"]),
     ("delta", ["-mf=Delta:4"]),
     ("bcj2", ["-mf=BCJ2"]),
@@ -45,7 +46,7 @@ SEVEN_ZIP_WRITERS = [
 ]
 
 # Branch filters also run over x86-like code, so their call and jump streams are not empty.
-CODE_WRITERS = ["bcj", "bcj2", "bcj2-bound"]
+CODE_WRITERS = ["bcj", "bcj-lzma", "bcj2", "bcj2-bound"]
 
 # Archives the native reader refuses, with the words its error must contain.
 REFUSED_WRITERS = [
