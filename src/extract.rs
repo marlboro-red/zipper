@@ -87,6 +87,10 @@ pub struct ExtractOptions<'a> {
     /// does the same for every top folder. `paths`, `include` and `exclude`
     /// still match the full archive paths. The 7-Zip backend refuses it.
     pub strip: crate::Strip<'a>,
+    /// Which metadata to restore beside contents. `Metadata::ContentOnly`
+    /// writes contents and the execute bit only, with no times, Windows
+    /// attributes or Mark of the Web. The 7-Zip backend refuses it.
+    pub metadata: crate::Metadata,
     /// Progress reports and cancellation. Every reader checks the cancel flag
     /// before it starts. Only ZIP, tar and 7z report progress and check it
     /// later.
@@ -168,7 +172,8 @@ fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Resul
 /// deleted at once. Rayon's shared pool keeps its idle threads.
 pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     if options.flat {
-        let staging = crate::staging::stage(archive, destination, options.existing)?;
+        let staging =
+            crate::staging::stage(archive, destination, options.existing, options.metadata)?;
         let tree = tempfile::tempdir_in(staging.path())?;
         let nested = tree.path().join("archive");
         extract_archive(
@@ -207,6 +212,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     include: options.include,
                     exclude: options.exclude,
                     strip: options.strip,
+                    metadata: options.metadata,
                     control: options.control,
                 },
             )?;
@@ -223,6 +229,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     include: options.include,
                     exclude: options.exclude,
                     strip: options.strip,
+                    metadata: options.metadata,
                     control: options.control,
                 },
             )?;
@@ -238,6 +245,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     include: options.include,
                     exclude: options.exclude,
                     strip: options.strip,
+                    metadata: options.metadata,
                     control: options.control,
                 },
             )?;
@@ -246,10 +254,11 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
             if !(options.paths.is_empty()
                 && options.include.is_empty()
                 && options.exclude.is_empty()
-                && options.strip == crate::Strip::None) =>
+                && options.strip == crate::Strip::None
+                && options.metadata.restores()) =>
         {
             bail!(
-                "--path, --include, --exclude, --strip-prefix and --strip-components need an archive read in process"
+                "--path, --include, --exclude, --strip-prefix, --strip-components and --content-only need an archive read in process"
             )
         }
         Reader::Tar => {
@@ -264,6 +273,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     include: options.include,
                     exclude: options.exclude,
                     strip: options.strip,
+                    metadata: options.metadata,
                     control: options.control,
                 },
             )?;

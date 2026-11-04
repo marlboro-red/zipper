@@ -13,6 +13,20 @@ impl Expected {
     pub fn is_directory(&self) -> bool {
         self.size_and_crc.is_none() && self.link_target.is_none()
     }
+
+    #[allow(dead_code, reason = "only tests/content_only.rs asks")]
+    pub fn mode(&self) -> Option<u32> {
+        self.mode
+    }
+
+    #[allow(dead_code, reason = "only tests/content_only.rs asks")]
+    pub fn without_metadata(&self) -> Expected {
+        Expected {
+            mode: None,
+            modified: None,
+            ..self.clone()
+        }
+    }
 }
 
 pub type Tree = BTreeMap<String, Expected>;

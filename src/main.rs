@@ -96,6 +96,11 @@ enum Command {
         /// entry with no more folders than that is not extracted.
         #[arg(long, value_name = "N")]
         strip_components: Option<usize>,
+        /// Write file contents only: no modification times, no Windows
+        /// attributes and no Mark of the Web. Files keep only the execute
+        /// bit, and folders get the default mode.
+        #[arg(long)]
+        content_only: bool,
         /// Refuse archives whose declared output exceeds this many bytes. By
         /// default, ZIP, tar and 7z output read in process must fit in free space.
         #[arg(long)]
@@ -176,6 +181,7 @@ fn main() -> Result<()> {
             flat,
             strip_prefix,
             strip_components,
+            content_only,
             overwrite,
             existing,
             max_extracted_bytes,
@@ -216,6 +222,11 @@ fn main() -> Result<()> {
                         (Some(prefix), _) => zipper::Strip::Prefix(prefix),
                         (None, Some(count)) => zipper::Strip::Components(count),
                         (None, None) => zipper::Strip::None,
+                    },
+                    metadata: if content_only {
+                        zipper::Metadata::ContentOnly
+                    } else {
+                        zipper::Metadata::Restore
                     },
                     max_output_bytes: max_extracted_bytes,
                     threads: cli.threads,

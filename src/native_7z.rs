@@ -84,6 +84,9 @@ pub struct ReadOptions<'a> {
     /// Leading path segments to drop before writing, as [`crate::Strip`]
     /// describes. Selection still matches the full archive paths.
     pub strip: crate::Strip<'a>,
+    /// Which metadata to restore beside contents, as [`crate::Metadata`]
+    /// describes.
+    pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -2070,6 +2073,16 @@ pub fn read_archive(
                 .map(|(item, _)| (item.name.as_str(), item.kind == Kind::Directory)),
         )?;
     }
+    let metadata = options.metadata;
+    for item in &mut archive.items {
+        item.mode = if item.kind == Kind::Directory {
+            metadata.directory_mode(item.mode)
+        } else {
+            metadata.file_mode(item.mode)
+        };
+        item.windows_attributes = metadata.windows_attributes(item.windows_attributes);
+        item.modified = metadata.time(item.modified);
+    }
     let entries: Vec<Entry> = archive
         .items
         .iter()
@@ -2085,7 +2098,8 @@ pub fn read_archive(
     tracker.check()?;
     let staging = match destination {
         Some(destination) => {
-            let staging = crate::staging::stage(path, destination, options.existing)?;
+            let staging =
+                crate::staging::stage(path, destination, options.existing, options.metadata)?;
             crate::check_output_size(staging.path(), &entries, options.max_output_bytes)?;
             Some(staging)
         }

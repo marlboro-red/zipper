@@ -89,6 +89,21 @@ An entry `assets/icons/small/a.png` lands at `icons/small/a.png`, and nothing ou
 - Library callers set `strip` in `ExtractOptions` to `Strip::Prefix` or `Strip::Components`. `tests/strip.rs` strips every archive of the ZIP, tar and 7z corpora by each of their folders and by 1 to 3 segments.
 - The 7-Zip backend refuses both options.
 
+## Extract contents only
+
+When the extracted files feed a build or a runtime, pass `--content-only` to write their contents and skip the archive's other metadata:
+
+```sh
+target/release/zipper extract toolchain.tar.gz --output tools --content-only
+```
+
+- No modification time is restored, so every file and folder carries the time it was written.
+- On Windows, no read-only, hidden or system attribute is set, and no Mark of the Web is copied from the archive.
+- On Unix, a file gets mode 0o666, or 0o777 when the archive marks it executable, less the umask. Folders get the default mode. A read-only entry therefore stays writable, and scripts still run.
+- Links are still created, with the same safety checks.
+- Library callers set `metadata: Metadata::ContentOnly` in `ExtractOptions`. `tests/content_only.rs` extracts every archive of the ZIP, tar and 7z corpora this way and checks contents, modes, times and, on Windows, attributes and zone marks.
+- The 7-Zip backend refuses it, because 7-Zip restores times and attributes itself.
+
 ## Extract without folders, or through pipes
 
 `--flat` puts every file in the output folder itself, without its folders, as `7z e` does. Files that share a name follow `--existing` in path order. The default refuses them, `overwrite` keeps the last, `skip` keeps the first, and the rename modes number the others `name_1.ext` and on. An archive with links is refused, because flattening breaks their targets:
@@ -132,7 +147,7 @@ if let Err(error) = &result && error.is::<Cancelled>() {
 }
 ```
 
-The callback runs one call at a time, after each file and each decoded chunk. Its counts only grow, and the bytes are decoded file bytes. If the callback panics, the panic reaches your code and nothing is published. ZIP and 7z report both totals up front. Tar reports `None` for them, because a tar stream has no index. Another thread stops the extraction by storing `true` in the flag. The extraction then returns `Cancelled` and changes nothing in the destination. Once Zipper starts moving files into the destination, it ignores the flag. The 7-Zip backend reports no progress and checks the flag only before it starts.
+The callback runs one call at a time, after each file and each written chunk. Its counts only grow. `bytes_done` counts file bytes written to disk, not bytes decoded. A ZIP entry whose writer thread is still writing, or a tar file in the writer pool, keeps the count below the total until it lands. `tests/control.rs` checks that the count never runs more than one write buffer ahead of the bytes on disk. If the callback panics, the panic reaches your code and nothing is published. ZIP and 7z report both totals up front. Tar reports `None` for them, because a tar stream has no index. Another thread stops the extraction by storing `true` in the flag. The extraction then returns `Cancelled` and changes nothing in the destination. Once Zipper starts moving files into the destination, it ignores the flag. The 7-Zip backend reports no progress and checks the flag only before it starts.
 
 `native_zip::read_archive_with_options` and `native_tar::read_archive` take the same options when you already know the format.
 

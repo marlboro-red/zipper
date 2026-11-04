@@ -325,3 +325,66 @@ fn a_callback_that_runs_rayon_work_does_not_deadlock() {
         assert!(succeeded, "{format}");
     }
 }
+
+fn staged_bytes(parent: &Path) -> u64 {
+    fs::read_dir(parent)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(".zipper-"))
+        .flat_map(|staging| walkdir::WalkDir::new(staging.path()).into_iter().flatten())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.metadata().map_or(0, |metadata| metadata.len()))
+        .sum()
+}
+
+#[test]
+fn reported_bytes_never_run_ahead_of_bytes_on_disk() {
+    const SIZE: usize = 48 << 20;
+    const SLACK: u64 = (1 << 20) + (64 << 10);
+    let big: Vec<u8> = (0..SIZE).map(|index| (index / 4096) as u8).collect();
+    let root = tempfile::tempdir().unwrap();
+    let zip = root.path().join("big.zip");
+    let mut writer = zip::ZipWriter::new(fs::File::create(&zip).unwrap());
+    writer
+        .start_file("big", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(&big).unwrap();
+    writer.finish().unwrap();
+    let tar = root.path().join("big.tar");
+    let mut bytes = ustar("big", b'0', SIZE);
+    bytes.extend_from_slice(&big);
+    bytes.resize(bytes.len().next_multiple_of(512) + 1024, 0);
+    fs::write(&tar, bytes).unwrap();
+    for archive in [zip, tar] {
+        let work = tempfile::tempdir().unwrap();
+        let ahead = std::sync::Mutex::new(0u64);
+        let last = std::sync::Mutex::new(0u64);
+        let watch = |progress: Progress| {
+            let lead = progress
+                .bytes_done
+                .saturating_sub(staged_bytes(work.path()));
+            let mut ahead = ahead.lock().unwrap();
+            *ahead = (*ahead).max(lead);
+            *last.lock().unwrap() = progress.bytes_done;
+        };
+        zipper::extract_archive(
+            &archive,
+            &work.path().join("out"),
+            zipper::ExtractOptions {
+                control: Control {
+                    progress: Some(&watch),
+                    cancel: None,
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let ahead = *ahead.lock().unwrap();
+        assert!(
+            ahead <= SLACK,
+            "{archive:?} reported {ahead} bytes before they were written"
+        );
+        assert_eq!(*last.lock().unwrap(), SIZE as u64, "{archive:?}");
+    }
+}

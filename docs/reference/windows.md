@@ -61,11 +61,11 @@ and no Windows ARM64 build.
 
 ## Mark of the Web
 
-Windows marks a downloaded file with a `Zone.Identifier` stream, and warns before such a file runs. The current source tree copies the archive's stream onto every file it extracts, with every reader and the 7-Zip backend, as 7-Zip's `-snz` does. The mark is written in the hidden staging folder before anything is published, and each file keeps its modification time. Folders get no mark. A destination on a volume without named streams, such as FAT, gets no mark, as Windows itself drops it there. `tests/zone.rs` checks ZIP, tar, gzip tar and 7z.
+Windows marks a downloaded file with a `Zone.Identifier` stream, and warns before such a file runs. The current source tree copies the archive's stream onto every file it extracts, with every reader and the 7-Zip backend, as 7-Zip's `-snz` does. The mark is written in the hidden staging folder before anything is published, and each file keeps its modification time. Folders get no mark. A destination on a volume without named streams, such as FAT, gets no mark, as Windows itself drops it there. `tests/zone.rs` checks ZIP, tar, gzip tar and 7z. `--content-only` writes no mark, as [usage](../usage.md#extract-contents-only) describes.
 
 ## File attributes
 
-The current source tree restores the read-only, hidden and system attributes of extracted files, as 7-Zip does. ZIP and 7z entries carry them in their attribute byte. An entry with a Unix mode that has no write bit, including every tar entry, becomes read-only. Overwriting replaces a read-only file in the destination. Folders keep default attributes. `tests/attributes.rs` compares each attribute with 7-Zip's own extraction of 7z, ZIP and tar archives.
+The current source tree restores the read-only, hidden and system attributes of extracted files, as 7-Zip does. ZIP and 7z entries carry them in their attribute byte. An entry with a Unix mode that has no write bit, including every tar entry, becomes read-only. Overwriting replaces a read-only file in the destination. Folders keep default attributes. `tests/attributes.rs` compares each attribute with 7-Zip's own extraction of 7z, ZIP and tar archives. `--content-only` sets no attribute.
 
 ## Testing status
 

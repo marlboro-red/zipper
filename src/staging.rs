@@ -68,7 +68,12 @@ pub(crate) struct Staging {
     zone: Option<Vec<u8>>,
 }
 
-pub(crate) fn stage(archive: &Path, destination: &Path, existing: Existing) -> Result<Staging> {
+pub(crate) fn stage(
+    archive: &Path,
+    destination: &Path,
+    existing: Existing,
+    metadata: crate::Metadata,
+) -> Result<Staging> {
     let merge = match fs::metadata(destination) {
         Ok(metadata) if existing != Existing::Refuse => {
             ensure!(
@@ -99,7 +104,7 @@ pub(crate) fn stage(archive: &Path, destination: &Path, existing: Existing) -> R
         destination: destination.to_owned(),
         merge,
         existing,
-        zone: crate::ntfs_streams::archive_mark(archive),
+        zone: crate::ntfs_streams::archive_mark(archive).filter(|_| metadata.restores()),
     })
 }
 

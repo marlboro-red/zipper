@@ -946,6 +946,7 @@ const WRITE_BEHIND_DEPTH: usize = 4;
 
 fn write_behind(
     mut output: BufWriter<OutputFile>,
+    written: &(dyn Fn(u64) + Sync),
     produce: impl FnOnce(&mut dyn FnMut(&[u8]) -> Result<()>) -> Result<()>,
 ) -> Result<BufWriter<OutputFile>> {
     std::thread::scope(|scope| {
@@ -964,6 +965,7 @@ fn write_behind(
                 } else {
                     output.write_all(&chunk)?;
                 }
+                written(chunk.len() as u64);
                 chunk.clear();
                 let _ = empty.send(chunk);
             }
@@ -991,7 +993,7 @@ fn write_behind(
         drop(full);
         let written = writer
             .join()
-            .map_err(|_| anyhow::anyhow!("ZIP output writer panicked"))?;
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
         match (produced, written) {
             (Ok(()), Ok(output)) => Ok(output),
             (Err(_), Err(io)) if writer_stopped => Err(io.into()),
@@ -1334,6 +1336,9 @@ pub struct ReadOptions<'a> {
     /// Leading path segments to drop before writing, as [`crate::Strip`]
     /// describes. Selection still matches the full archive paths.
     pub strip: crate::Strip<'a>,
+    /// Which metadata to restore beside contents, as [`crate::Metadata`]
+    /// describes.
+    pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -1408,6 +1413,16 @@ pub fn read_archive_with_options(
                 .map(|item| (item.entry.name.as_str(), item.entry.directory)),
         )?;
     }
+    let metadata = options.metadata;
+    for item in &mut selected {
+        item.mode = if item.entry.directory {
+            metadata.directory_mode(item.mode)
+        } else {
+            metadata.file_mode(item.mode)
+        };
+        item.windows_attributes = metadata.windows_attributes(item.windows_attributes);
+        item.modified = metadata.time(item.modified);
+    }
     let mut headers = archive.clone().into_inner();
     for item in &skipped {
         check_local_header(&mut headers, item)?;
@@ -1428,7 +1443,8 @@ pub fn read_archive_with_options(
     };
     let staging = match destination {
         Some(destination) => {
-            let staging = crate::staging::stage(path, destination, options.existing)?;
+            let staging =
+                crate::staging::stage(path, destination, options.existing, options.metadata)?;
             crate::check_output_size(
                 staging.path(),
                 items.iter().map(|item| &item.entry),
@@ -1564,9 +1580,12 @@ pub fn read_archive_with_options(
                     && let Some(writer_thread) = spare_threads.reserve(1)
                     && let Some(unwritten) = output.take()
                 {
-                    let mut written = write_behind(unwritten, |sink| {
+                    let report_written = |bytes| {
+                        let _ = tracker.add_bytes(bytes);
+                    };
+                    let mut written = write_behind(unwritten, &report_written, |sink| {
                         stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
-                            tracker.add_bytes(bytes.len() as u64)?;
+                            tracker.check()?;
                             sink(bytes)
                         })
                     })?;

@@ -4,7 +4,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-/// Extraction progress. Byte counts are decoded file bytes. ZIP knows both
+/// Extraction progress. Byte counts are file bytes written to disk, so a
+/// writer thread still flushing keeps the count below the total. ZIP knows both
 /// totals before it starts. A tar stream reports `None` for them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Progress {
@@ -31,7 +32,7 @@ impl std::error::Error for Cancelled {}
 /// Hooks an application passes to follow or stop an extraction.
 #[derive(Clone, Copy, Default)]
 pub struct Control<'a> {
-    /// Called one call at a time, after files and decoded chunks, so every
+    /// Called one call at a time, after files and written chunks, so every
     /// count only grows. A report that would wait for a running call is
     /// skipped, and the last call, from the calling thread, has the final
     /// counts. Keep it fast. If it panics, the panic reaches the caller and

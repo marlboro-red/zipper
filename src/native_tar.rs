@@ -68,6 +68,9 @@ pub struct ReadOptions<'a> {
     /// Leading path segments to drop before writing, as [`crate::Strip`]
     /// describes. Selection still matches the full archive paths.
     pub strip: crate::Strip<'a>,
+    /// Which metadata to restore beside contents, as [`crate::Metadata`]
+    /// describes.
+    pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -129,6 +132,13 @@ struct Writers<'f> {
     pending: Mutex<usize>,
     idle: Condvar,
     failure: Mutex<Option<anyhow::Error>>,
+    callback_panic: Mutex<Option<Box<dyn std::any::Any + Send>>>,
+}
+
+#[derive(Clone, Copy)]
+enum Written {
+    Bytes(u64),
+    File,
 }
 
 impl<'f> Writers<'f> {
@@ -175,21 +185,38 @@ impl<'f> Writers<'f> {
         self.lanes.lock().unwrap().clear();
     }
 
-    fn work(&self, jobs: &Mutex<Receiver<Job<'f>>>) {
+    fn report(&self, count: &dyn Fn(Written) -> Result<()>, written: Written) {
+        let counted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = count(written);
+        }));
+        if let Err(panic) = counted {
+            self.callback_panic.lock().unwrap().get_or_insert(panic);
+            self.failure
+                .lock()
+                .unwrap()
+                .get_or_insert_with(|| anyhow::anyhow!("the progress callback panicked"));
+        }
+    }
+
+    fn work(&self, jobs: &Mutex<Receiver<Job<'f>>>, count: &dyn Fn(Written) -> Result<()>) {
         loop {
             let next = jobs.lock().unwrap().recv();
             let Ok(mut job) = next else {
                 return;
             };
             if self.failure.lock().unwrap().is_none() {
-                let written =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| write_job(&mut job)))
-                        .unwrap_or_else(|_| {
-                            Err(anyhow::anyhow!(
-                                "a tar writer panicked writing {:?}",
-                                job.name
-                            ))
-                        });
+                let report = |bytes: u64| self.report(count, Written::Bytes(bytes));
+                let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    write_job(&mut job, &report)?;
+                    self.report(count, Written::File);
+                    Ok(())
+                }))
+                .unwrap_or_else(|_| {
+                    Err(anyhow::anyhow!(
+                        "a tar writer panicked writing {:?}",
+                        job.name
+                    ))
+                });
                 if let Err(error) = written {
                     self.failure.lock().unwrap().get_or_insert(error);
                 }
@@ -204,7 +231,7 @@ impl<'f> Writers<'f> {
     }
 }
 
-fn write_job(job: &mut Job) -> Result<()> {
+fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<()> {
     let name = &job.name;
     let mut file = crate::create_new_file(&job.path, job.mode, crate::windows_attributes(0, Some(job.mode))).map_err(|error| {
         if error.kind() == std::io::ErrorKind::AlreadyExists {
@@ -220,6 +247,7 @@ fn write_job(job: &mut Job) -> Result<()> {
         if !bytes.is_empty() {
             file.write_all(bytes)
                 .with_context(|| format!("cannot write tar entry {name:?}"))?;
+            written(bytes.len() as u64);
             counters::add(Counter::OutputWrites, 1);
             counters::add(Counter::OutputBytesWritten, bytes.len() as u64);
         }
@@ -741,11 +769,12 @@ struct Extraction<'a, 'f> {
     symlinks: Vec<(String, String)>,
     entries: Vec<Entry>,
     budget: Budget,
-    tracker: Tracker<'a>,
+    tracker: &'a Tracker<'a>,
     selection: crate::Selection<'a>,
     placement: crate::placement::Placement<'a>,
     placed: crate::placement::PlacedNames,
     placed_any: bool,
+    metadata: crate::Metadata,
 }
 
 fn leading_dots(raw: &str) -> usize {
@@ -764,9 +793,10 @@ impl<'a, 'f> Extraction<'a, 'f> {
     fn new(
         output: Option<Output<'a, 'f>>,
         budget: Budget,
-        tracker: Tracker<'a>,
+        tracker: &'a Tracker<'a>,
         selection: crate::Selection<'a>,
         placement: crate::placement::Placement<'a>,
+        metadata: crate::Metadata,
     ) -> Self {
         Extraction {
             output,
@@ -784,6 +814,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             placement,
             placed: crate::placement::PlacedNames::default(),
             placed_any: false,
+            metadata,
         }
     }
 
@@ -905,7 +936,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             let mut chunk = writers.flight.take(remaining.min(CHUNK as u64) as usize);
             input.fill(&mut chunk.data)?;
             remaining -= chunk.data.len() as u64;
-            self.tracker.add_bytes(chunk.data.len() as u64)?;
+            self.tracker.check()?;
             if let Some(chunks) = &stream {
                 chunks.send(chunk).map_err(|_| writers.stopped())?;
             } else {
@@ -993,6 +1024,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 nanos: 0,
             }),
         };
+        let modified = self.metadata.time(modified);
         let mut name = entry_name(&raw_name);
         let dots = leading_dots(&raw_name);
         let directory = match kind {
@@ -1002,6 +1034,11 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 true
             }
             _ => false,
+        };
+        let mode = if directory {
+            mode
+        } else {
+            self.metadata.file_mode(Some(mode)).unwrap_or(mode)
         };
         if directory {
             name = name.trim_end_matches('/');
@@ -1047,7 +1084,10 @@ impl<'a, 'f> Extraction<'a, 'f> {
                     size,
                     directory: false,
                 });
-                return self.tracker.file_done();
+                return match self.output {
+                    Some(_) => self.tracker.check(),
+                    None => self.tracker.file_done(),
+                };
             }
             b'1' => {
                 ensure!(size == 0, "tar hard link {name:?} has data");
@@ -1171,7 +1211,9 @@ pub fn read_archive(
 ) -> Result<Vec<Entry>> {
     let compression = sniff(path)?.context("not a tar archive")?;
     let staging = destination
-        .map(|destination| crate::staging::stage(path, destination, options.existing))
+        .map(|destination| {
+            crate::staging::stage(path, destination, options.existing, options.metadata)
+        })
         .transpose()?;
     let free = match (&staging, options.max_output_bytes) {
         (Some(staging), None) => {
@@ -1192,13 +1234,19 @@ pub fn read_archive(
         buffer: vec![0; COPY_BUFFER],
     };
     let selection = || crate::Selection::new(options.paths, options.include, options.exclude);
+    let tracker = Tracker::new(options.control, None, None);
+    let count_written = |written: Written| match written {
+        Written::Bytes(bytes) => tracker.add_bytes(bytes),
+        Written::File => tracker.file_done(),
+    };
     let Some(staging) = staging else {
         let mut extraction = Extraction::new(
             None,
             budget,
-            Tracker::new(options.control, None, None),
+            &tracker,
             selection()?,
             crate::placement::Placement::new(options.strip)?,
+            options.metadata,
         );
         parse(&mut extraction, &mut input)?;
         extraction.ensure_each_selected_path_matches()?;
@@ -1224,13 +1272,15 @@ pub fn read_archive(
         pending: Mutex::new(0),
         idle: Condvar::new(),
         failure: Mutex::new(None),
+        callback_panic: Mutex::new(None),
     };
     std::thread::scope(|scope| {
         let threads: Vec<_> = (0..count)
             .map(|index| {
                 let queue = &queues[index % lane_count];
                 let writers = &writers;
-                scope.spawn(move || writers.work(queue))
+                let count_written = &count_written;
+                scope.spawn(move || writers.work(queue, count_written))
             })
             .collect();
         let output = Output {
@@ -1240,15 +1290,19 @@ pub fn read_archive(
         let mut extraction = Extraction::new(
             Some(output),
             budget,
-            Tracker::new(options.control, None, None),
+            &tracker,
             selection()?,
             crate::placement::Placement::new(options.strip)?,
+            options.metadata,
         );
         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             parse(&mut extraction, &mut input)
         }));
         writers.close();
         let joined: Vec<_> = threads.into_iter().map(|thread| thread.join()).collect();
+        if let Some(panic) = writers.callback_panic.lock().unwrap().take() {
+            std::panic::resume_unwind(panic);
+        }
         parsed.unwrap_or_else(|panic| std::panic::resume_unwind(panic))?;
         ensure!(joined.iter().all(Result::is_ok), "a tar writer panicked");
         writers.check()?;
@@ -1276,7 +1330,7 @@ fn publish(extraction: &Extraction, staging: &crate::staging::Staging) -> Result
         .filter(|(index, _)| !merged.contains(index))
         .map(|(_, directory)| crate::Directory {
             name: &directory.name,
-            mode: Some(directory.mode),
+            mode: extraction.metadata.directory_mode(Some(directory.mode)),
             modified: directory.modified.and_then(Time::system_time),
         })
         .collect();

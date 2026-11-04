@@ -68,6 +68,7 @@ These options work the same way in every reader. [Usage](../usage.md#extract-int
 - `Control` carries a progress callback and a cancel flag. `tests/control.rs` covers cancellation at any point.
 - `paths`, `include` and `exclude`, or `--path`, `--include` and `--exclude`, select entries. The reader still parses and checks every header, and writes only the selected entries. A selected hard link whose target is left out is refused, and each `--path` must match an entry.
 - `strip`, or `--strip-prefix` and `--strip-components`, places a folder's contents at the destination root, as [usage](../usage.md#extract-a-folder-at-the-output-root) describes. The reader checks the prefix after the last header, before it publishes.
+- `metadata: Metadata::ContentOnly`, or `--content-only`, writes contents and the execute bit only, as [usage](../usage.md#extract-contents-only) describes.
 
 ## Reference corpus
 

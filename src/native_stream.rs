@@ -31,6 +31,9 @@ pub struct ReadOptions<'a> {
     /// Leading path segments to drop before writing, as [`crate::Strip`]
     /// describes. Selection still matches the full archive paths.
     pub strip: crate::Strip<'a>,
+    /// Which metadata to restore beside contents, as [`crate::Metadata`]
+    /// describes.
+    pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
 }
@@ -121,7 +124,9 @@ pub fn read_archive(
     let tracker = Tracker::new(options.control, Some(1), None);
     tracker.check()?;
     let staging = destination
-        .map(|destination| crate::staging::stage(path, destination, options.existing))
+        .map(|destination| {
+            crate::staging::stage(path, destination, options.existing, options.metadata)
+        })
         .transpose()?;
     let limit = match (&staging, options.max_output_bytes) {
         (_, Some(limit)) => limit,

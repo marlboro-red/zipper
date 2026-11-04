@@ -784,3 +784,55 @@ fn strip_flags_place_a_subtree_at_the_output_root() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn content_only_writes_no_times_and_no_read_only_bits() -> anyhow::Result<()> {
+    let t = tempfile::tempdir()?;
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .current_dir(t.path())
+            .args(args)
+            .env("ZIPPER_7Z", t.path().join("missing-backend"))
+            .output()
+    };
+    let mut writer = zip::ZipWriter::new(fs::File::create(t.path().join("a.zip"))?);
+    let old = zip::DateTime::from_date_and_time(2001, 2, 3, 4, 5, 6)?;
+    for (name, mode) in [("locked.txt", 0o444), ("tool.sh", 0o755)] {
+        writer.start_file(
+            name,
+            zip::write::SimpleFileOptions::default()
+                .last_modified_time(old)
+                .unix_permissions(mode),
+        )?;
+        writer.write_all(name.as_bytes())?;
+    }
+    writer.finish()?;
+    assert!(
+        run(&["extract", "a.zip", "-o", "plain", "--content-only"])?
+            .status
+            .success()
+    );
+    let started = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+    for name in ["locked.txt", "tool.sh"] {
+        let metadata = fs::metadata(t.path().join("plain").join(name))?;
+        assert!(metadata.modified()? > started, "{name} kept its time");
+        assert!(!metadata.permissions().readonly(), "{name} is read-only");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |name: &str| {
+            fs::metadata(t.path().join("plain").join(name)).map(|m| m.permissions().mode())
+        };
+        assert_ne!(mode("tool.sh")? & 0o100, 0);
+        assert_eq!(mode("locked.txt")? & 0o111, 0);
+    }
+    fs::write(t.path().join("legacy.rar"), b"Rar!\x1A\x07\x01\x00 fake")?;
+    let refused = run(&["extract", "legacy.rar", "-o", "rar", "--content-only"])?;
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr)
+            .contains("--content-only need an archive read in process")
+    );
+    Ok(())
+}
