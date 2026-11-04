@@ -27,9 +27,17 @@ fn open_handles() -> usize {
     0
 }
 
+// EXTERNAL(Linux procfs): a joined thread can stay listed in /proc/self/task for a moment, in state Z or X.
 #[cfg(target_os = "linux")]
 fn threads() -> usize {
-    fs::read_dir("/proc/self/task").unwrap().count()
+    fs::read_dir("/proc/self/task")
+        .unwrap()
+        .filter_map(|task| fs::read_to_string(task.ok()?.path().join("stat")).ok())
+        .filter(|stat| {
+            let state = stat.rsplit_once(") ").map(|(_, rest)| rest.as_bytes()[0]);
+            !matches!(state, Some(b'Z' | b'X'))
+        })
+        .count()
 }
 
 #[cfg(target_os = "macos")]
