@@ -203,8 +203,10 @@ enum Typed {
 
 #[cfg(unix)]
 fn ask_password() -> Result<Typed> {
+    let mut original = None;
     loop {
-        let mut terminal = hidden_terminal::HiddenTerminal::open()?;
+        let mut terminal = hidden_terminal::HiddenTerminal::open(original)?;
+        original = Some(terminal.original_settings());
         let typed = match terminal.hide()? {
             hidden_terminal::Hidden::Yes => match terminal.prompt(b"Password: ")? {
                 hidden_terminal::Hidden::Yes => read_password(&mut terminal)?,
@@ -214,6 +216,9 @@ fn ask_password() -> Result<Typed> {
         };
         drop(terminal);
         let resumed = hidden_terminal::stopped_and_resumed();
+        if hidden_terminal::signal_deferred() {
+            return Ok(Typed::Interrupt);
+        }
         match typed {
             _ if resumed => continue,
             Some(typed) => return Ok(typed),
@@ -222,8 +227,6 @@ fn ask_password() -> Result<Typed> {
     }
 }
 
-#[cfg(unix)]
-const CONTROL_C: u8 = 0x03;
 #[cfg(unix)]
 const CONTROL_D: u8 = 0x04;
 #[cfg(unix)]
@@ -252,28 +255,30 @@ fn erase_last_character(password: &mut Vec<u8>) {
 #[cfg(unix)]
 fn read_password(terminal: &mut hidden_terminal::HiddenTerminal) -> Result<Option<Typed>> {
     let mut password = Zeroizing::new(Vec::with_capacity(LONGEST_PASSWORD));
+    let mut too_long = false;
     loop {
         let byte = match terminal.next_byte()? {
             hidden_terminal::Read::Byte(byte) => byte,
+            hidden_terminal::Read::End if too_long => break,
             hidden_terminal::Read::End => return Ok(Some(Typed::EndOfInput)),
             hidden_terminal::Read::Interrupted => return Ok(None),
         };
         match byte {
+            b'\n' | b'\r' if too_long => break,
             b'\n' | b'\r' => return Ok(Some(Typed::Password(password))),
-            CONTROL_C => return Ok(Some(Typed::Interrupt)),
+            _ if too_long => {}
             CONTROL_D if password.is_empty() => return Ok(Some(Typed::EndOfInput)),
             CONTROL_D => {}
             BACKSPACE | DELETE => erase_last_character(&mut password),
             CONTROL_U => password.clear(),
-            typed => {
-                anyhow::ensure!(
-                    password.len() < LONGEST_PASSWORD,
-                    "the password is longer than {LONGEST_PASSWORD} bytes"
-                );
-                password.push(typed);
+            _ if password.len() == LONGEST_PASSWORD => {
+                password.clear();
+                too_long = true;
             }
+            typed => password.push(typed),
         }
     }
+    anyhow::bail!("the password is longer than {LONGEST_PASSWORD} bytes")
 }
 
 #[cfg(unix)]
@@ -334,13 +339,49 @@ mod hidden_terminal {
         RESUMED.swap(false, Ordering::SeqCst)
     }
 
-    fn resend_caught_signals() {
+    fn in_the_foreground(terminal: &File) -> bool {
+        // SAFETY: neither call takes a pointer, the descriptor is open for the call, and an error
+        // from tcgetpgrp is -1, which never equals a process group, so it reads as background.
+        unsafe { libc::tcgetpgrp(terminal.as_raw_fd()) == libc::getpgrp() }
+    }
+
+    static DEFERRED: [AtomicBool; SIGNAL_SLOTS] = [const { AtomicBool::new(false) }; SIGNAL_SLOTS];
+
+    fn slot(signal: libc::c_int) -> Option<usize> {
+        usize::try_from(signal)
+            .ok()
+            .filter(|&slot| slot < SIGNAL_SLOTS)
+    }
+
+    fn resend_caught_signals(terminal: &File) {
         RESUMED.store(stop_caught(), Ordering::SeqCst);
         for signal in SIGNALS_CAUGHT_WHILE_HIDDEN {
-            if let Some(slot) = usize::try_from(signal)
-                .ok()
-                .and_then(|slot| CAUGHT.get(slot))
-                && slot.swap(false, Ordering::SeqCst)
+            let Some(slot) = slot(signal) else { continue };
+            if !CAUGHT[slot].swap(false, Ordering::SeqCst) {
+                continue;
+            }
+            if !STOPS.contains(&signal) {
+                DEFERRED[slot].store(true, Ordering::SeqCst);
+                continue;
+            }
+            let background_only = signal == libc::SIGTTIN || signal == libc::SIGTTOU;
+            if !(background_only && in_the_foreground(terminal)) {
+                // SAFETY: kill takes plain integers, and the signal's own action is back in place.
+                unsafe { libc::kill(libc::getpid(), signal) };
+            }
+        }
+    }
+
+    pub(super) fn signal_deferred() -> bool {
+        DEFERRED
+            .iter()
+            .any(|deferred| deferred.load(Ordering::SeqCst))
+    }
+
+    pub(super) fn raise_deferred_signals() {
+        for signal in SIGNALS_CAUGHT_WHILE_HIDDEN {
+            if let Some(slot) = slot(signal)
+                && DEFERRED[slot].swap(false, Ordering::SeqCst)
             {
                 // SAFETY: kill takes plain integers, and the signal's own action is back in place.
                 unsafe { libc::kill(libc::getpid(), signal) };
@@ -363,32 +404,34 @@ mod hidden_terminal {
         terminal: File,
         saved: libc::termios,
         hidden: bool,
+        prompted: bool,
         previous: Vec<(libc::c_int, libc::sigaction)>,
     }
 
     impl HiddenTerminal {
-        pub(super) fn open() -> Result<Self> {
+        pub(super) fn open(original: Option<libc::termios>) -> Result<Self> {
             let terminal = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
                 .open("/dev/tty")
                 .context("cannot open the terminal")?;
-            // SAFETY: termios is plain data, and zeroed is a valid value for every field.
-            let mut saved: libc::termios = unsafe { std::mem::zeroed() };
-            // SAFETY: the descriptor is open for the call and `saved` is a live termios.
-            let read = unsafe { libc::tcgetattr(terminal.as_raw_fd(), &mut saved) };
-            if read != 0 {
-                return Err(std::io::Error::last_os_error())
-                    .context("cannot read the terminal settings");
-            }
+            let saved = match original {
+                Some(saved) => saved,
+                None => current_settings(&terminal)?,
+            };
             let mut opened = Self {
                 terminal,
                 saved,
                 hidden: false,
+                prompted: false,
                 previous: Vec::with_capacity(SIGNALS_CAUGHT_WHILE_HIDDEN.len()),
             };
             opened.catch_signals();
             Ok(opened)
+        }
+
+        pub(super) fn original_settings(&self) -> libc::termios {
+            self.saved
         }
 
         fn catch_signals(&mut self) {
@@ -429,7 +472,7 @@ mod hidden_terminal {
 
         pub(super) fn hide(&mut self) -> Result<Hidden> {
             let mut quiet = self.saved;
-            quiet.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG | libc::IEXTEN);
+            quiet.c_lflag &= !(libc::ECHO | libc::ICANON | libc::IEXTEN);
             quiet.c_iflag &= !libc::IXON;
             quiet.c_cc[libc::VMIN] = 1;
             quiet.c_cc[libc::VTIME] = 0;
@@ -454,6 +497,7 @@ mod hidden_terminal {
                     Err(error) if error.kind() == ErrorKind::Interrupted => {}
                     Err(error) => return Err(error.into()),
                 }
+                self.prompted = true;
             }
             Ok(Hidden::Yes)
         }
@@ -477,15 +521,29 @@ mod hidden_terminal {
     impl Drop for HiddenTerminal {
         fn drop(&mut self) {
             if self.hidden {
-                let _ = self.set(&self.saved, stop_caught);
+                let _ = self.set(&self.saved, || caught(libc::SIGTTOU));
+            }
+            if self.prompted {
                 let _ = self.terminal.write(b"\n");
             }
             for (signal, old) in &self.previous {
                 // SAFETY: `old` is the live action this signal had before `open`.
                 unsafe { libc::sigaction(*signal, old, std::ptr::null_mut()) };
             }
-            resend_caught_signals();
+            resend_caught_signals(&self.terminal);
         }
+    }
+
+    fn current_settings(terminal: &File) -> Result<libc::termios> {
+        // SAFETY: termios is plain data, and zeroed is a valid value for every field.
+        let mut settings: libc::termios = unsafe { std::mem::zeroed() };
+        // SAFETY: the descriptor is open for the call and `settings` is a live termios.
+        let read = unsafe { libc::tcgetattr(terminal.as_raw_fd(), &mut settings) };
+        if read != 0 {
+            return Err(std::io::Error::last_os_error())
+                .context("cannot read the terminal settings");
+        }
+        Ok(settings)
     }
 
     fn no_action() -> libc::sigaction {
@@ -506,6 +564,8 @@ fn main() -> std::process::ExitCode {
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
+            #[cfg(unix)]
+            hidden_terminal::raise_deferred_signals();
             eprintln!("Error: {error:?}");
             if error.is::<PromptInterrupted>() {
                 std::process::ExitCode::from(INTERRUPTED)

@@ -988,6 +988,9 @@ fn selections_that_leave_out_every_encrypted_entry_need_no_password() {
 }
 
 #[cfg(unix)]
+type JobCase = (&'static str, bool, Vec<(&'static str, String)>);
+
+#[cfg(unix)]
 type TerminalCase = (&'static str, Vec<(&'static str, String)>, &'static str);
 
 #[cfg(unix)]
@@ -1018,6 +1021,8 @@ for kind, value in steps:
         os.write(terminal, bytes.fromhex(value))
     elif kind == "file":
         os.write(terminal, open(value, "rb").read())
+    elif kind == "idle":
+        time.sleep(float(value))
     elif kind == "sleep":
         pump(float(value))
     elif kind == "signal":
@@ -1039,8 +1044,9 @@ while os.waitpid(pid, os.WNOHANG)[0] == 0:
 
 #[cfg(unix)]
 fn on_a_terminal(command: &str, steps: &[(&str, String)]) -> String {
-    let script =
-        format!("{command}; echo RC=$?; stty -a; IFS= read -t 2 -r rest; echo \"LEFT=[$rest]\"");
+    let script = format!(
+        "trap : INT QUIT; {command}; echo RC=$?; stty -a; IFS= read -t 2 -r rest; echo \"LEFT=[$rest]\""
+    );
     let steps = serde_json::to_string(steps).unwrap();
     let run = Command::new("python3")
         .arg("-I")
@@ -1141,6 +1147,11 @@ fn the_password_prompt_restores_the_terminal_and_drops_unread_input_on_every_exi
     let long = [vec![b'L'; 1030], b"LEAKEDTAIL\n".to_vec()].concat();
     let cases: Vec<TerminalCase> = vec![
         ("Ctrl-C", vec![wait.clone(), send(b"abc\x03")], "RC=130"),
+        (
+            "Ctrl-backslash",
+            vec![wait.clone(), send(b"abc\x1c")],
+            "RC=131",
+        ),
         (
             "Ctrl-C, then more pasted input",
             vec![wait.clone(), send(b"abc\x03SECRETTAIL\n")],
@@ -1291,7 +1302,7 @@ fn an_interrupted_prompt_leaves_no_temporary_folder_or_spool() {
             fixture("tiny-aes128.zip").to_string_lossy().into_owned(),
         ),
         ("wait", "Password: ".to_owned()),
-        ("send", hex(b"\x03")),
+        ("signal", "SIGINT".to_owned()),
     ];
     let transcript = on_a_terminal(&command, &steps);
     assert!(transcript.contains("RC=130"), "{transcript}");
@@ -1553,10 +1564,10 @@ fn commands_that_decrypt_nothing_refuse_a_password() {
 #[cfg(unix)]
 const SHELL_DRIVER: &str = r#"
 import json, os, pty, select, signal, subprocess, sys, time
-steps = json.loads(sys.argv[1])
+steps, history = json.loads(sys.argv[1]), sys.argv[2]
 pid, terminal = pty.fork()
 if pid == 0:
-    env = dict(os.environ, PS1="PROMPT$ ", HISTFILE="/dev/null")
+    env = dict(os.environ, PS1="PROMPT$ ", HISTFILE=history)
     os.execve("/bin/bash", ["bash", "--norc", "--noprofile", "-i"], env)
 seen = b""
 def pump(seconds, token=None):
@@ -1576,6 +1587,18 @@ pump(1)
 for kind, value in steps:
     if kind == "type":
         os.write(terminal, value.encode() + b"\r")
+    elif kind == "send":
+        os.write(terminal, bytes.fromhex(value))
+    elif kind == "paste":
+        data = value.encode() + b"\r"
+        os.set_blocking(terminal, False)
+        deadline = time.time() + 20
+        while data and time.time() < deadline:
+            try:
+                data = data[os.write(terminal, data):]
+            except BlockingIOError:
+                pump(0.02)
+        os.set_blocking(terminal, True)
     elif kind == "wait":
         pump(15, value.encode())
     elif kind == "sleep":
@@ -1597,11 +1620,13 @@ os.waitpid(pid, 0)
 
 #[cfg(unix)]
 fn in_an_interactive_shell(steps: &[(&str, String)]) -> String {
+    let history = tempfile::tempdir().unwrap();
     let run = Command::new("python3")
         .arg("-I")
         .arg("-c")
         .arg(SHELL_DRIVER)
         .arg(serde_json::to_string(steps).unwrap())
+        .arg(history.path().join("history"))
         .output()
         .expect("python3 drives the shell");
     format!(
@@ -1626,43 +1651,75 @@ fn hunter_archive(work: &Path) -> PathBuf {
 #[test]
 fn a_prompt_stopped_and_resumed_by_job_control_stays_hidden() {
     let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
-    for (case, start) in [
-        ("stopped with SIGTSTP", false),
-        ("started in the background", true),
-    ] {
+    let step = |kind: &'static str, value: &str| (kind, value.to_owned());
+    let cases: Vec<JobCase> = vec![
+        (
+            "stopped with SIGTSTP",
+            false,
+            vec![
+                step("signal", "SIGTSTP"),
+                step("sleep", "1"),
+                step("type", "echo SHELL$((40+2))"),
+                step("wait", "SHELL42"),
+                step("type", "fg"),
+            ],
+        ),
+        (
+            "stopped with Ctrl-Z",
+            false,
+            vec![step("send", "1a"), step("sleep", "1"), step("type", "fg")],
+        ),
+        (
+            "stopped with SIGSTOP",
+            false,
+            vec![
+                step("signal", "SIGSTOP"),
+                step("sleep", "0.5"),
+                step("type", "fg"),
+            ],
+        ),
+        (
+            "stopped with SIGSTOP, resumed in the background, then brought back",
+            false,
+            vec![
+                step("signal", "SIGSTOP"),
+                step("sleep", "0.5"),
+                step("type", "bg"),
+                step("sleep", "1"),
+                step("type", "fg"),
+            ],
+        ),
+        ("started in the background", true, vec![step("type", "fg")]),
+    ];
+    for (case, background, middle) in cases {
         let work = tempfile::tempdir().unwrap();
         let archive = shell_quoted(&hunter_archive(work.path()));
         let output = work.path().join("out");
         let marker = format!("-o {}", output.display());
-        let mut steps = vec![if start {
-            (
-                "type",
-                format!("{zipper} extract {archive} -o {} &", shell_quoted(&output)),
-            )
+        let start = if background {
+            format!("{zipper} extract {archive} -o {} &", shell_quoted(&output))
         } else {
-            (
-                "type",
-                format!(
-                    "{zipper} extract {archive} -o {}; echo EXIT=$?",
-                    shell_quoted(&output)
-                ),
-            )
-        }];
-        if start {
-            steps.push(("sleep", "1.5".to_owned()));
-            steps.push(("type", "fg".to_owned()));
+            format!("{zipper} extract {archive} -o {}", shell_quoted(&output))
+        };
+        let mut steps = vec![("type", start)];
+        steps.push(if background {
+            step("sleep", "1.5")
         } else {
-            steps.push(("wait", "Password: ".to_owned()));
-            steps.push(("signal", format!("SIGTSTP {marker}")));
-            steps.push(("sleep", "1".to_owned()));
-            steps.push(("type", "echo SHELL$((40+2))".to_owned()));
-            steps.push(("wait", "SHELL42".to_owned()));
-            steps.push(("type", "fg".to_owned()));
+            step("wait", "Password: ")
+        });
+        for (kind, value) in middle {
+            let value = if kind == "signal" {
+                format!("{value} {marker}")
+            } else {
+                value
+            };
+            steps.push((kind, value));
         }
-        steps.push(("wait", "Password: ".to_owned()));
-        steps.push(("sleep", "0.5".to_owned()));
-        steps.push(("type", "hunter2".to_owned()));
-        steps.push(("sleep", "2".to_owned()));
+        steps.push(step("sleep", "1"));
+        steps.push(step("type", "hunter2"));
+        steps.push(step("sleep", "2"));
+        steps.push(step("type", "echo AFTER$((40+2))"));
+        steps.push(step("wait", "AFTER42"));
         let transcript = in_an_interactive_shell(&steps);
         assert!(
             !transcript.contains("hunter2"),
@@ -1678,6 +1735,96 @@ fn a_prompt_stopped_and_resumed_by_job_control_stays_hidden() {
             "{case}: {transcript}"
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_paste_longer_than_a_password_never_reaches_the_shell() {
+    let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
+    for length in [3_000, 20_000] {
+        let work = tempfile::tempdir().unwrap();
+        let archive = shell_quoted(&hunter_archive(work.path()));
+        let output = work.path().join("out");
+        let steps = [
+            (
+                "type",
+                format!("{zipper} extract {archive} -o {}", shell_quoted(&output)),
+            ),
+            ("wait", "Password: ".to_owned()),
+            ("paste", "A".repeat(length) + "; echo LEAKED$((40+2))"),
+            ("sleep", "2".to_owned()),
+            ("type", "echo AFTER$((40+2))".to_owned()),
+            ("wait", "AFTER42".to_owned()),
+        ];
+        let transcript = in_an_interactive_shell(&steps);
+        assert!(
+            !transcript.contains("LEAKED"),
+            "{length}: the paste reached the shell: {transcript}"
+        );
+        assert!(
+            transcript.contains("longer than 1024"),
+            "{length}: {transcript}"
+        );
+        assert!(!output.exists());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_stop_without_job_control_still_restores_the_terminal() {
+    let work = tempfile::tempdir().unwrap();
+    let output = work.path().join("out");
+    let command = format!(
+        "{} extract {} -o {}",
+        shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+        shell_quoted(&fixture("aes128-deflate.zip")),
+        shell_quoted(&output)
+    );
+    for signal in ["SIGTSTP", "SIGTTIN", "SIGTTOU"] {
+        let steps = [
+            ("idle", "1.5".to_owned()),
+            ("send", hex(b"zipper\r")),
+            ("idle", "0.5".to_owned()),
+            ("signal", signal.to_owned()),
+            ("sleep", "1".to_owned()),
+            ("send", hex(b"zipper\r")),
+            ("sleep", "1".to_owned()),
+        ];
+        let transcript = on_a_terminal(&command, &steps);
+        assert!(transcript.contains("RC=0"), "{signal}: {transcript}");
+        assert_terminal_restored(signal, &transcript);
+        let words: Vec<&str> = transcript.split_whitespace().collect();
+        assert!(
+            words.contains(&"ixon") && !words.contains(&"-ixon"),
+            "{signal}: {transcript}"
+        );
+        fs::remove_dir_all(&output).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_c_at_the_prompt_stops_the_calling_script() {
+    let work = tempfile::tempdir().unwrap();
+    let command = format!(
+        "bash -c 'for round in 1 2; do {} extract {} -o {}/out$round; echo ROUND$round; done; echo LOOPDONE'",
+        Path::new(env!("CARGO_BIN_EXE_zipper")).display(),
+        fixture("aes128-deflate.zip").display(),
+        work.path().display()
+    );
+    let steps = [
+        ("wait", "Password: ".to_owned()),
+        ("sleep", "0.3".to_owned()),
+        ("send", hex(b"\x03")),
+        ("sleep", "1".to_owned()),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=130"), "{transcript}");
+    assert!(
+        !transcript.contains("ROUND") && !transcript.contains("LOOPDONE"),
+        "{transcript}"
+    );
+    assert_terminal_restored("Ctrl-C in a script", &transcript);
 }
 
 #[cfg(unix)]
