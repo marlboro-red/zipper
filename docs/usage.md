@@ -210,17 +210,19 @@ Zipper decrypts ZipCrypto and WinZip AES entries in process. Run `extract` or `t
 zipper extract secret.zip -o restored
 ```
 
-Zipper turns off echo, line editing and the signal keys before it shows the prompt, and drops anything typed earlier. At the prompt these keys act:
+The prompt follows the design of OpenBSD's `readpassphrase`. Zipper turns off echo, line editing, the signal keys and the Ctrl-S and Ctrl-Q flow keys before it shows the prompt, and drops anything typed earlier. At the prompt these keys act:
 
 - Enter or Return ends the password.
-- Backspace or Delete removes the last character, all the bytes of a UTF-8 character at once.
+- Backspace or Delete removes the last character. When the password ends in a whole UTF-8 character, all its bytes go at once. Otherwise one byte goes.
 - Ctrl-U clears what was typed.
 - Ctrl-C cancels with exit status 130.
 - Ctrl-D cancels on an empty line, and does nothing after text.
 
-Every other byte, such as Tab or Escape, is part of the password, which holds at most 1,024 bytes. When the prompt ends, Zipper restores the terminal and drops anything typed but not read, such as the rest of a paste. It restores the terminal too when SIGINT, SIGTERM, SIGHUP or SIGQUIT arrives during the prompt.
+Every other byte, such as Tab, Escape, Ctrl-S or Ctrl-Q, is part of the password. A password, typed or given, holds at most 1,024 bytes. Typing cannot enter the bytes of the keys above, which are line feed, carriage return, backspace, delete, Ctrl-U, Ctrl-C and Ctrl-D. Pass a password that holds them with `--password`. When the prompt ends, Zipper restores the terminal and drops anything typed but not read, such as the rest of a paste.
 
-To give the password without a prompt, as a script must, pass `--password`. Other users on the machine can read it in the process list:
+During the prompt Zipper catches SIGALRM, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM, SIGTSTP, SIGTTIN and SIGTTOU, unless they are ignored. Rust programs ignore SIGPIPE, so it stays ignored. A caught signal restores the terminal first, then acts as it would have. A stop, such as Ctrl-Z from another terminal or `zipper … &`, hides the terminal again and shows a new prompt when the job resumes. A signal the shell ignores, as `nohup` and `trap ''` arrange, stays ignored. That includes SIGINT and SIGQUIT, which `readpassphrase` takes over even when they are ignored. SIGKILL cannot be caught, so it leaves the terminal hidden. Run `stty sane` to recover. A signal that ends Zipper at the prompt also leaves behind the temporary folder of `--stdout` and the spool of an archive read from `-`.
+
+To give the password without a prompt, as a script must, pass `--password`. It takes any bytes on Unix, including ones that are not UTF-8. Other users on the machine can read it in the process list:
 
 ```sh
 zipper --password 'correct horse' extract secret.zip -o restored

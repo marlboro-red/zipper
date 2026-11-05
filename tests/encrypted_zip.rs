@@ -1173,6 +1173,7 @@ fn the_password_prompt_restores_the_terminal_and_drops_unread_input_on_every_exi
         ("SIGHUP", "RC=129"),
         ("SIGQUIT", "RC=131"),
         ("SIGINT", "RC=130"),
+        ("SIGALRM", "RC=142"),
     ]
     .into_iter()
     .map(|(signal, exit)| {
@@ -1233,6 +1234,8 @@ fn every_typed_byte_but_the_editing_keys_is_part_of_the_password() {
         (b"ax", "a\u{e9}\x7fx\n".as_bytes()),
         ("a\u{e9}".as_bytes(), "ab\x7f\u{e9}\r".as_bytes()),
         (b"kept", b"gone\x15kept\n"),
+        (b"a\x11\x13b", b"a\x11\x13b\n"),
+        (b"ab", b"a\x80\x7fb\n"),
     ] {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join("typed.zip");
@@ -1545,4 +1548,205 @@ fn commands_that_decrypt_nothing_refuse_a_password() {
     }
     let run = zipper_command(&["list", archive.to_str().unwrap()]);
     assert!(run.status.success());
+}
+
+#[cfg(unix)]
+const SHELL_DRIVER: &str = r#"
+import json, os, pty, select, signal, subprocess, sys, time
+steps = json.loads(sys.argv[1])
+pid, terminal = pty.fork()
+if pid == 0:
+    env = dict(os.environ, PS1="PROMPT$ ", HISTFILE="/dev/null")
+    os.execve("/bin/bash", ["bash", "--norc", "--noprofile", "-i"], env)
+seen = b""
+def pump(seconds, token=None):
+    global seen
+    deadline = time.time() + seconds
+    while time.time() < deadline and (token is None or token not in seen):
+        ready, _, _ = select.select([terminal], [], [], 0.05)
+        if ready:
+            try:
+                data = os.read(terminal, 65536)
+            except OSError:
+                return
+            if not data:
+                return
+            seen += data
+pump(1)
+for kind, value in steps:
+    if kind == "type":
+        os.write(terminal, value.encode() + b"\r")
+    elif kind == "wait":
+        pump(15, value.encode())
+    elif kind == "sleep":
+        pump(float(value))
+    elif kind == "signal":
+        name, marker = value.split(" ", 1)
+        found = subprocess.run(["pgrep", "-f", "--", marker], capture_output=True, text=True)
+        for target in found.stdout.split():
+            os.kill(int(target), getattr(signal, name))
+os.write(terminal, b"exit\r")
+pump(1)
+sys.stdout.write(seen.decode("latin1"))
+try:
+    os.killpg(os.getpgid(pid), signal.SIGKILL)
+except OSError:
+    pass
+os.waitpid(pid, 0)
+"#;
+
+#[cfg(unix)]
+fn in_an_interactive_shell(steps: &[(&str, String)]) -> String {
+    let run = Command::new("python3")
+        .arg("-I")
+        .arg("-c")
+        .arg(SHELL_DRIVER)
+        .arg(serde_json::to_string(steps).unwrap())
+        .output()
+        .expect("python3 drives the shell");
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    )
+}
+
+#[cfg(unix)]
+fn hunter_archive(work: &Path) -> PathBuf {
+    let archive = work.join("hunter.zip");
+    fs::write(
+        &archive,
+        zip_crypto_stored("hunter.txt", b"hunter2", b"secret\n"),
+    )
+    .unwrap();
+    archive
+}
+
+#[cfg(unix)]
+#[test]
+fn a_prompt_stopped_and_resumed_by_job_control_stays_hidden() {
+    let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
+    for (case, start) in [
+        ("stopped with SIGTSTP", false),
+        ("started in the background", true),
+    ] {
+        let work = tempfile::tempdir().unwrap();
+        let archive = shell_quoted(&hunter_archive(work.path()));
+        let output = work.path().join("out");
+        let marker = format!("-o {}", output.display());
+        let mut steps = vec![if start {
+            (
+                "type",
+                format!("{zipper} extract {archive} -o {} &", shell_quoted(&output)),
+            )
+        } else {
+            (
+                "type",
+                format!(
+                    "{zipper} extract {archive} -o {}; echo EXIT=$?",
+                    shell_quoted(&output)
+                ),
+            )
+        }];
+        if start {
+            steps.push(("sleep", "1.5".to_owned()));
+            steps.push(("type", "fg".to_owned()));
+        } else {
+            steps.push(("wait", "Password: ".to_owned()));
+            steps.push(("signal", format!("SIGTSTP {marker}")));
+            steps.push(("sleep", "1".to_owned()));
+            steps.push(("type", "echo SHELL$((40+2))".to_owned()));
+            steps.push(("wait", "SHELL42".to_owned()));
+            steps.push(("type", "fg".to_owned()));
+        }
+        steps.push(("wait", "Password: ".to_owned()));
+        steps.push(("sleep", "0.5".to_owned()));
+        steps.push(("type", "hunter2".to_owned()));
+        steps.push(("sleep", "2".to_owned()));
+        let transcript = in_an_interactive_shell(&steps);
+        assert!(
+            !transcript.contains("hunter2"),
+            "{case}: the password was shown: {transcript}"
+        );
+        assert!(
+            !transcript.contains("not found"),
+            "{case}: the password ran as a command: {transcript}"
+        );
+        assert_eq!(
+            fs::read(output.join("hunter.txt")).ok().as_deref(),
+            Some(&b"secret\n"[..]),
+            "{case}: {transcript}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn signals_the_caller_ignores_stay_ignored_at_the_prompt() {
+    let work = tempfile::tempdir().unwrap();
+    let output = work.path().join("out");
+    let command = format!(
+        "trap '' INT HUP TERM; {} extract {} -o {}",
+        shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+        shell_quoted(&fixture("aes128-deflate.zip")),
+        shell_quoted(&output)
+    );
+    let steps = [
+        ("wait", "Password: ".to_owned()),
+        ("signal", "SIGINT".to_owned()),
+        ("signal", "SIGHUP".to_owned()),
+        ("signal", "SIGTERM".to_owned()),
+        ("sleep", "0.5".to_owned()),
+        ("send", hex(b"zipper\n")),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=0"), "{transcript}");
+    assert_terminal_restored("ignored signals", &transcript);
+    assert!(output.join("a.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_password_argument_takes_the_same_bytes_as_typing() {
+    use std::os::unix::ffi::OsStrExt;
+    let work = tempfile::tempdir().unwrap();
+    let password: &[u8] = b"\xff\xfe-not-utf-8\x11";
+    let archive = work.path().join("bytes.zip");
+    fs::write(
+        &archive,
+        zip_crypto_stored("bytes.txt", password, b"bytes\n"),
+    )
+    .unwrap();
+    let output = work.path().join("out");
+    let run = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .arg("--password")
+        .arg(std::ffi::OsStr::from_bytes(password))
+        .arg("extract")
+        .arg(&archive)
+        .arg("-o")
+        .arg(&output)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(fs::read(output.join("bytes.txt")).unwrap(), b"bytes\n");
+    let too_long = "p".repeat(1025);
+    let run = zipper_command(&[
+        "--password",
+        &too_long,
+        "extract",
+        archive.to_str().unwrap(),
+        "-o",
+        work.path().join("long").to_str().unwrap(),
+    ]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(!run.status.success());
+    assert!(
+        stderr.contains("1024 bytes") && !stderr.contains(&too_long),
+        "{stderr}"
+    );
 }
