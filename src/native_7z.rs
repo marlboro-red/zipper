@@ -2711,7 +2711,7 @@ mod tests {
         );
         assert_eq!(
             decoder_memory(&folder, false),
-            narrow + FILTER_CHAIN_BUFFERS
+            narrow + (1 << 20) + (1 << 16)
         );
     }
 
@@ -3048,6 +3048,40 @@ mod tests {
         }
         archives.sort();
         archives
+    }
+
+    #[test]
+    fn a_segment_must_decode_to_its_size_from_all_its_packed_bytes() {
+        let scratch = tempfile::tempdir().unwrap();
+        let stored = |data: &[u8]| {
+            let mut chunk = vec![1];
+            chunk.extend_from_slice(&((data.len() - 1) as u16).to_be_bytes());
+            chunk.extend_from_slice(data);
+            chunk
+        };
+        let stop = AtomicBool::new(false);
+        for (case, packed, output, decodes) in [
+            ("exact", stored(b"abcdef"), 6, true),
+            ("longer than declared", stored(b"abcdef"), 5, false),
+            ("shorter than declared", stored(b"abcdef"), 7, false),
+            (
+                "bytes after the end marker",
+                [stored(b"abcdef"), vec![0, 7]].concat(),
+                6,
+                false,
+            ),
+        ] {
+            let path = scratch.path().join("segment");
+            fs::write(&path, &packed).unwrap();
+            let length = packed.len() as u64;
+            let ours = decode_segment(archive_file(&path), 0, length, output, 18, &stop);
+            let liblzma = liblzma_decode_segment(&path, 0, length, output, 18);
+            assert_eq!(ours.is_ok(), decodes, "{case}: {ours:?}");
+            assert_eq!(liblzma.is_ok(), decodes, "liblzma, {case}");
+            if decodes {
+                assert_eq!(ours.unwrap(), b"abcdef");
+            }
+        }
     }
 
     fn segmented_lzma2(scratch: &Path) -> (PathBuf, Vec<Folder>) {
