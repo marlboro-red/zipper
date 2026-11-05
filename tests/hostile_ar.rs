@@ -379,7 +379,6 @@ fn archives_and_packages_extract_the_tree_7zip_extracts() {
         ),
         ("deb with xz data", deb("data.tar.xz", &xz(&data))),
         ("deb with gzip data", deb("data.tar.gz", &gzip(&data))),
-        ("deb with zstd data", deb("data.tar.zst", &zstd(&data))),
         ("deb with odd data name", deb("data.tar.foo", &data)),
         (
             "deb with two data members",
@@ -421,6 +420,13 @@ fn archives_and_packages_extract_the_tree_7zip_extracts() {
         );
         assert_eq!(tree(&destination), reference, "{case}");
     }
+    let (_gzip_root, gzip, result) =
+        extract_with(&deb("data.tar.gz", &gzip(&data)), ReadOptions::default());
+    result.unwrap();
+    let (_zstd_root, zstd_tree, result) =
+        extract_with(&deb("data.tar.zst", &zstd(&data)), ReadOptions::default());
+    result.unwrap();
+    assert_eq!(tree(&zstd_tree), tree(&gzip), "deb with zstd data");
 }
 
 #[test]
