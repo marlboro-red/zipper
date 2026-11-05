@@ -268,6 +268,33 @@ Tar rows read a TAR of 52,019,200 bytes and its gzip level 6 form of 20,030,534 
 | `tar-gz-native` | 139.70 [138.88–159.86] | 524.85 | 3.76 | 10.4 | 1.93× | none recorded |
 | `bsdtar-tar-gz` | 269.87 [263.35–280.21] | 265.59 | 0.98 | 4.4 | 1.00× | none recorded |
 
+## Codecs
+
+Each row extracts one archive of the Silesia corpus, 211,938,580 bytes in 12 files, with Zipper's
+default engine at one thread and with the named tool at one thread. 7-Zip extracts a compressed tar
+by decoding into a second 7-Zip that reads the tar, so its peak memory is the larger of the two.
+7-Zip reads no lzip or LZ4, so bsdtar is the reference there, and it reads no Zstandard in ZIP.
+Every extraction is compared byte for byte with the source. Revision `00e7a84`, recorded
+2026-11-05, 7 measured rounds after one warmup, on `macOS-26.7.1-arm64-arm-64bit`.
+
+| Codec | Archive MB | Zipper ms, median [range] | Zipper CPU ms | Reference | Reference ms, median [range] | Reference CPU ms | Reference time ÷ Zipper time |
+| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| `zip-deflate64` | 63.8 | 735.30 [728.38–756.65] | 733.33 | `7zz` | 504.86 [503.82–507.28] | 502.70 | 0.69× |
+| `zip-bzip2` | 54.5 | 2,899.45 [2,891.41–2,940.03] | 2,894.34 | `7zz` | 2,092.52 [2,088.40–2,101.48] | 2,088.38 | 0.72× |
+| `zip-lzma` | 49.6 | 1,293.19 [1,291.88–1,296.58] | 1,289.95 | `7zz` | 1,039.84 [1,039.43–1,041.56] | 1,037.11 | 0.80× |
+| `zip-xz` | 49.6 | 1,372.93 [1,371.51–1,375.03] | 1,370.04 | `7zz` | 1,061.06 [1,060.62–1,084.16] | 1,058.39 | 0.77× |
+| `zip-ppmd` | 50.3 | 9,617.72 [9,598.82–9,633.64] | 9,610.83 | `7zz` | 9,670.81 [9,657.72–9,686.35] | 9,663.29 | 1.01× |
+| `zip-zstd` | 66.2 | 142.62 [142.13–146.49] | 140.60 | none reads it | | | |
+| `7z-deflate64` | 63.8 | 384.36 [383.49–390.04] | 382.39 | `7zz` | 502.57 [502.22–510.11] | 500.81 | 1.31× |
+| `7z-bzip2` | 54.6 | 2,895.31 [2,884.22–2,912.31] | 2,886.55 | `7zz` | 2,076.61 [2,072.32–2,087.61] | 2,071.54 | 0.72× |
+| `7z-ppmd` | 50.3 | 8,728.51 [8,720.38–8,744.30] | 8,721.51 | `7zz` | 8,791.98 [8,789.60–8,811.57] | 8,783.39 | 1.01× |
+| `7z-bcj2` | 49.3 | 4,458.79 [4,436.69–4,474.38] | 4,452.91 | `7zz` | 1,004.17 [1,002.39–1,004.92] | 1,117.80 | 0.23× |
+| `7z-swap4` | 56.4 | 1,608.65 [1,606.96–1,611.47] | 1,604.92 | `7zz` | 1,229.59 [1,227.54–1,231.18] | 1,265.93 | 0.76× |
+| `tar-bzip2` | 54.6 | 2,892.41 [2,881.08–2,916.43] | 2,906.24 | `7zz` | 2,065.23 [2,061.61–2,089.02] | 2,068.20 | 0.71× |
+| `tar-compress` | 88.6 | 860.47 [857.33–861.35] | 873.72 | `7zz` | 317.83 [317.04–318.08] | 347.64 | 0.37× |
+| `tar-lzip` | 49.2 | 1,355.01 [1,354.04–1,369.46] | 1,369.34 | `bsdtar` | 1,503.64 [1,501.66–1,775.57] | 1,499.31 | 1.11× |
+| `tar-lz4` | 78.0 | 259.90 [252.95–264.81] | 274.32 | `bsdtar` | 79.61 [79.33–80.14] | 146.04 | 0.31× |
+
 ## Real-world archives
 
 The [real-world comparison](../benchmarks/realworld/README.md) extracts 248 popular archives from package registries, GitHub and release pages with the default engine and with default bsdtar.

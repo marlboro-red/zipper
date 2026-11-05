@@ -25,7 +25,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M10. Parity matrix](#m10-parity-matrix) | Done | M9 |
 | [M11. Windows metadata parity](#m11-windows-metadata-parity) | Done | M10 |
 | [M12. Extraction controls](#m12-extraction-controls) | Done | M10 |
-| [M13. Remaining codecs](#m13-remaining-codecs) | In progress | M10 |
+| [M13. Remaining codecs](#m13-remaining-codecs) | Done | M10 |
 | [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | In progress | M10 |
 | [M14. Encrypted archives](#m14-encrypted-archives) | Planned | M13 |
 | [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | Planned | M13 |
@@ -37,6 +37,8 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M22. Zipper's own ZIP directory reader](#m22-zippers-own-zip-directory-reader) | Planned | M21 |
 
 M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment. M8 closed on 3 November 2026. Applications can call `zipper::extract_archive` to extract into an existing folder, select ZIP paths, follow progress and cancel. Four adversarial reviews found five issues, each fixed with a test that failed first. The 7-Zip backend reports no progress yet. M9 closed the same day. The default engine reads 7z in process with all of these options, and sends BCJ2, PPMd, BZip2, encrypted and split 7z archives to 7-Zip. An early timing on one Mac shows the reader faster than 7-Zip on non-solid archives and 1.85× slower on solid Silesia, where 7-Zip decodes the two LZMA2 blocks at once. Splitting LZMA2 at its dictionary resets is the next experiment. M10 and M11 closed on 4 November 2026. `docs/reference/parity.md` lists 112 rows of 7-Zip extraction, and the gate fails when a row loses its proof. On Windows every reader now copies the archive's Mark of the Web, restores read-only, hidden and system attributes, and creates links that stay inside. 7-Zip stores NTFS alternate streams only in WIM, so they move to M17. Two adversarial reviews found no escape in the links. M12 closed the same day. `--existing` takes 7-Zip's skip and rename modes, `--include` and `--exclude` select in every native reader, tar included, and `--flat`, `-` and `--stdout` cover `7z e`, `-si` and `-so`. Two adversarial reviews found a race that replaced files written during extraction and two link escapes through links the destination keeps, all fixed with tests. Their shared formal checks were added afterwards, on 4 November 2026. An exhaustive check follows every published link on disk across 25,200 runs. The ZIP decoder budget has a TLA+ model, and the new header parsers have Kani proofs. Every stream end is tested at every truncation and padding.
+
+M13 closed on 5 November 2026. Every ZIP method, 7z codec and compressed tar in the M10 matrix reads in process, except ZIP's Shrink and Implode, which moved to M19, and encryption, which is M14. The Codecs section of [Results](results.md) extracts one Silesia archive per codec at one thread. Zipper beats 7-Zip on 7z Deflate64 by 1.31× and bsdtar on lzip by 1.11×, and matches 7-Zip on PPMd. It is slower on the rest. 7z BCJ2 takes 4.44 times 7-Zip's time, LZ4 tar 3.26 times bsdtar's and `compress` tar 2.71 times 7-Zip's. BZip2 takes 1.39 to 1.40 times, ZIP Deflate64 1.46 times, because it runs two decoders to refuse trailing data, and LZMA, xz and Swap4 1.24 to 1.31 times. Those gaps are the next experiments, after M21 replaces liblzma. Building the rows found that a `.tar.lz4` whose first block was over 1 MiB extracted as one file, fixed in `39712da`.
 
 ## M0. Verified workflow
 
@@ -286,7 +288,7 @@ Done so far, by 5 November 2026:
 - 7z BZip2, Deflate64, PPMd, BCJ2 with its own decoder, and Swap2 and Swap4.
 - Tar and single files in bzip2, lzip, LZ4 with its own decoder, and `compress` with its own decoder.
 
-The scoreboard rows are left. ZIP's Shrink and Implode moved to M19 on 5 November 2026. No current tool writes them, and how Shrink's partial clear treats the code read just before it has to be settled by tests against 7-Zip first. A Shrink decoder and its tests are kept as a starting point.
+The scoreboard rows came last, and M13 closed. ZIP's Shrink and Implode moved to M19 on 5 November 2026. No current tool writes them, and how Shrink's partial clear treats the code read just before it has to be settled by tests against 7-Zip first. A Shrink decoder and its tests are kept as a starting point.
 
 ## M21. Zipper's own LZMA decoder
 
@@ -308,6 +310,12 @@ Exit checks:
 3. Each branch filter round-trips every short input under liblzma's encoder, and its hostile tests cover every truncation.
 4. A benchmark record shows Zipper's decoder at least as fast as 7-Zip's at one thread on solid Silesia, with ranges apart, and peak memory at default threads no higher than 7-Zip's.
 5. The 7z corpus archive with `lc=8` reads natively, and its parity row moves from 7-Zip to native.
+
+Done so far, by 5 November 2026:
+
+- A raw LZMA decoder in safe Rust, `src/lzma.rs`, used only by tests so far. It decodes 64 MiB of Silesia in 436.9 ms, against 400.9 ms for liblzma and about 310 ms for 7-Zip, as the [hot-loop record](../benchmarks/lzma/hot-loop/README.md) shows.
+- Differential tests against liblzma for every `lc`, `lp` and `pb`, every cut stream and an end marker before the declared size.
+- An exhaustive test of the match copy in every window state. A Kani proof of it ran out of memory and was dropped for that test.
 
 ## M14. Encrypted archives
 

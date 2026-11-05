@@ -1,0 +1,183 @@
+{
+  "platform": "macOS-26.7.1-arm64-arm-64bit",
+  "cpu_count": 10,
+  "threads": 1,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "archive_format": "tar",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "silesia",
+  "input_bytes": 211938580,
+  "archive_bytes": 78002065,
+  "archive_sha256": "e265c0053a08c89ab46d91d79a6248e97318186e97b9a7d67fdba776789d896b",
+  "readers": {
+    "zipper": {
+      "mode": "native",
+      "binary": "/Users/aleph/Desktop/Projects/marlboro-red/zipper/target/release/zipper",
+      "sha256": "7bb8a802b30b10a859eeac25c77c5ac8a8b67ff07c6a1dad6cfebdf0318fcdaa",
+      "threads": 1
+    },
+    "bsdtar": {
+      "mode": "bsdtar",
+      "binary": "/usr/bin/bsdtar",
+      "sha256": "1d2c90ce52b691db5e4a8b566cb162805de0ddc46d2aadff120009260f3a24a5",
+      "threads": 1
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "load_average_start": [
+    1.22021484375,
+    1.3017578125,
+    1.48876953125
+  ],
+  "order_including_warmup": [
+    [
+      "zipper",
+      "bsdtar"
+    ],
+    [
+      "bsdtar",
+      "zipper"
+    ],
+    [
+      "zipper",
+      "bsdtar"
+    ],
+    [
+      "zipper",
+      "bsdtar"
+    ],
+    [
+      "zipper",
+      "bsdtar"
+    ],
+    [
+      "bsdtar",
+      "zipper"
+    ],
+    [
+      "zipper",
+      "bsdtar"
+    ],
+    [
+      "zipper",
+      "bsdtar"
+    ]
+  ],
+  "results": {
+    "zipper": {
+      "samples": [
+        {
+          "seconds": 0.26150537499999993,
+          "peak_rss_bytes": 27262976,
+          "cpu_seconds": 0.275989,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.25730354199999994,
+          "peak_rss_bytes": 27197440,
+          "cpu_seconds": 0.271981,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.252947083,
+          "peak_rss_bytes": 27230208,
+          "cpu_seconds": 0.26740299999999995,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2553422919999999,
+          "peak_rss_bytes": 27262976,
+          "cpu_seconds": 0.269758,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.26206700000000005,
+          "peak_rss_bytes": 27246592,
+          "cpu_seconds": 0.276796,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2648105409999997,
+          "peak_rss_bytes": 27246592,
+          "cpu_seconds": 0.27946,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.25990379200000024,
+          "peak_rss_bytes": 27246592,
+          "cpu_seconds": 0.27432399999999996,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.25990379200000024,
+      "min_seconds": 0.252947083,
+      "max_seconds": 0.2648105409999997,
+      "mib_s": 777.6738417175966,
+      "peak_rss_bytes": 27262976
+    },
+    "bsdtar": {
+      "samples": [
+        {
+          "seconds": 0.08014266700000006,
+          "peak_rss_bytes": 34930688,
+          "cpu_seconds": 0.14577400000000001,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.07943595799999992,
+          "peak_rss_bytes": 34930688,
+          "cpu_seconds": 0.14622999999999997,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.07957541700000004,
+          "peak_rss_bytes": 34930688,
+          "cpu_seconds": 0.14654299999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.07932787499999994,
+          "peak_rss_bytes": 34930688,
+          "cpu_seconds": 0.14471099999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.07961208300000022,
+          "peak_rss_bytes": 34930688,
+          "cpu_seconds": 0.14579999999999999,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.07962666700000032,
+          "peak_rss_bytes": 34914304,
+          "cpu_seconds": 0.14603699999999997,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.07962345900000001,
+          "peak_rss_bytes": 34930688,
+          "cpu_seconds": 0.146876,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.07961208300000022,
+      "min_seconds": 0.07932787499999994,
+      "max_seconds": 0.08014266700000006,
+      "mib_s": 2538.8153755707003,
+      "peak_rss_bytes": 34930688
+    }
+  },
+  "load_average_end": [
+    1.2021484375,
+    1.29638671875,
+    1.48583984375
+  ],
+  "codec": "tar-lz4",
+  "reference": "bsdtar",
+  "revision": "00e7a84cff5cc0454ef4eaf48f9c24e1f989a77c",
+  "recorded": "2026-11-05",
+  "tree_clean": true
+}
