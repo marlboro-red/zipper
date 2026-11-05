@@ -337,7 +337,7 @@ fn staged_bytes(parent: &Path) -> u64 {
         .filter(|entry| entry.file_name().to_string_lossy().starts_with(".zipper-"))
         .flat_map(|staging| walkdir::WalkDir::new(staging.path()).into_iter().flatten())
         .filter(|entry| entry.file_type().is_file())
-        .map(|entry| entry.metadata().map_or(0, |metadata| metadata.len()))
+        .map(|entry| fs::metadata(entry.path()).map_or(0, |metadata| metadata.len()))
         .sum()
 }
 
