@@ -391,7 +391,6 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
         ("b.bin", rar_with_zip.clone(), Some("-trar5 ")),
         ("c.rar.001", rar_with_zip, Some("-trar5.split ")),
         ("f.7z", sevenzip_with_zip, None),
-        ("d.bin", shebang_with_zip, None),
         ("e.bin", b"Type = zip\n".to_vec(), None),
     ] {
         fs::write(t.path().join(name), bytes)?;
@@ -423,6 +422,21 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
             }
         }
     }
+    fs::write(t.path().join("d.bin"), shebang_with_zip)?;
+    let _ = fs::remove_file(t.path().join("backend.log"));
+    let result = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .current_dir(t.path())
+        .args(["extract", "d.bin", "-o"])
+        .arg(t.path().join("out-d.bin"))
+        .env("ZIPPER_7Z", &backend)
+        .output()?;
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(result.status.success(), "a ZIP after a script: {stderr}");
+    assert!(t.path().join("out-d.bin/f").is_file());
+    assert!(
+        !t.path().join("backend.log").exists(),
+        "d.bin reached 7-Zip"
+    );
     Ok(())
 }
 

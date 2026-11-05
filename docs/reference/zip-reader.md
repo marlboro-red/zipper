@@ -14,6 +14,7 @@ The reader supports these features:
 
 - Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
 - Split sets, `name.z01` and on with `name.zip` last, as [ZIP split sets](#zip-split-sets) describes, and an archive that starts with the spanning signature, as Info-ZIP `zip -s` writes one that fits in one piece.
+- Self-extracting archives, a stub followed by a ZIP, whether `zip -A` adjusted the offsets or not, as [self-extracting ZIP](#self-extracting-zip) describes.
 - Conventional ZIP64. Info-ZIP also writes a ZIP64 end record when its input is piped, even when the regular end record holds every value. The reader then requires both records to agree. With ZIP64, every end record value that is not a sentinel must equal its ZIP64 value.
 - File bytes and directories. A file with the FIFO type, which is how Info-ZIP `zip - -` stores piped input, is written as a regular file, as `unzip`, bsdtar, 7-Zip and Python write it. Device and socket entries are rejected.
 - Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
@@ -27,7 +28,7 @@ The reader does not support these features:
 - The last volume of a split set without the volumes before it.
 - Ambiguous end records.
 - A ZIP64 locator just before the end record that the end record does not use. bsdtar, 7-Zip and Python follow such a locator and can read a different directory.
-- Data before the first record, such as a self-extracting executable from `zip -A`. The default engine reads it in process and rejects it, because no 7-Zip signature matches.
+- Data before the first record that the archive's offsets do not account for, or that holds another archive's records. See [self-extracting ZIP](#self-extracting-zip).
 
 It restores Unix permission bits the way bsdtar does:
 
@@ -96,9 +97,11 @@ Both native ZIP modes run these checks before publishing any output:
 
 ## Reference corpus
 
-`tests/data/zip-corpus` holds 24 archives. Twenty come from these real ZIP writers:
+`tests/data/zip-corpus` holds 26 archives. Twenty-two come from these real ZIP writers:
 
-- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes, with piped input, and with `-s 64k` as a split set of six volumes and as one piece.
+- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes, and with piped input.
+- Info-ZIP `zip -s 64k`, as a split set of six volumes and as one piece.
+- Info-ZIP `zip` after a 4 KiB stub, with and without `zip -A`.
 - 7-Zip, with Deflate, Copy and timestamps.
 - bsdtar, with Deflate and stored entries.
 - macOS `ditto`.
@@ -106,12 +109,12 @@ Both native ZIP modes run these checks before publishing any output:
 
 Four more archives come from Info-ZIP `zip -y`, 7-Zip `-snl`, bsdtar and `ditto`, which store symlinks as links. Only `unzip` and bsdtar create links, so link targets are recorded where those two agree, and the other paths still need three readers.
 
-The manifest also records each path's exact modification time where `unzip` and bsdtar both restore the source's own time under `TZ=UTC` and `TZ=Pacific/Auckland`. That covers the 12 Info-ZIP, bsdtar and `ditto` archives that the two can read. The other archives carry only DOS times, which depend on the time zone. `tests/cli.rs` checks those under `TZ=UTC` and `TZ=Asia/Tokyo`.
+The manifest also records each path's exact modification time where `unzip` and bsdtar both restore the source's own time under `TZ=UTC` and `TZ=Pacific/Auckland`. That covers the 14 Info-ZIP, bsdtar and `ditto` archives that the two can read. The other archives carry only DOS times, which depend on the time zone. `tests/cli.rs` checks those under `TZ=UTC` and `TZ=Asia/Tokyo`.
  The source tree has empty files and directories, non-ASCII names, and files at the decoder's 64 KiB and 192 KiB slice boundaries.
 
-`scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 7 archives. No reference reader but 7-Zip reads a split set, and Info-ZIP's `zip -s 0` join wrote a truncated archive on macOS. So the manifest of the split set records the tree 7-Zip extracts only where it equals the source tree.
+`scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 9 archives. No reference reader but 7-Zip reads a split set, and Info-ZIP's `zip -s 0` join wrote a truncated archive on macOS. So the manifest of the split set records the tree 7-Zip extracts only where it equals the source tree.
 
-`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on 22 of the 24 archives. They disagree on the mode of Info-ZIP's piped input, and neither reads the split set. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Add `--only` and archive names to rebuild those alone and keep the rest. Java `jar` output is missing because no JDK was installed.
+`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on 24 of the 26 archives. They disagree on the mode of Info-ZIP's piped input, and neither reads the split set. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Add `--only` and archive names to rebuild those alone and keep the rest. The stub is generated bytes that start with `MZ` and hold no ZIP or 7z signature, because a real stub such as `unzipsfx` may not be redistributed. The readers open a self-extractor under an `.exe` name, because 7-Zip opens a file named `.zip` only from its first byte. There `unzip` exit status 1, a warning about the stub, counts as success. Java `jar` output is missing because no JDK was installed.
 
 The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 94 ZIP archives from PyPI, Maven, Go and GitHub with Zipper and default bsdtar. All matched, along with the 154 tar archives in the same set.
 
@@ -166,6 +169,20 @@ The line never claims a volume is damaged. For a set, it names the first and las
 A library caller that calls one reader, such as `native_7z::read_archive`, on a `name.001` path gets the same reading, but finds the set again for each file it opens. Wrapping the call in `zipper::read_volumes` finds the set once and adds the volume line to a failure, as `extract_archive` does.
 
 `tests/volumes.rs` splits every native format at sizes from 1 byte up past the whole archive and compares each tree with the whole archive's. It also extracts 7-Zip's own volumes of 7z, ZIP, tar, gzip tar and xz tar, from 1-byte to single volumes, and compares each tree with `7zz x`. Its hostile cases cover each failure above, and check that no staging folder is left. Two Kani proofs in `src/volumes.rs` cover the offset arithmetic. `a_layout_exists_exactly_when_its_total_fits` shows that a set is accepted exactly when its total size fits 64 bits, for any volume size, count and last size. `every_offset_maps_to_the_one_volume_and_position_that_hold_it` shows that every offset maps to the one volume and position that hold it, with no panic or overflow, for volume sizes and counts up to 255 and offsets up to 65,535. A wider bound ran for over 30 minutes without a verdict. `every_layout_locates_every_offset_as_a_linear_scan_does` compares the mapping with a linear scan on every small set.
+
+## Self-extracting ZIP
+
+A self-extracting ZIP is an executable stub followed by a ZIP. Info-ZIP `zip -A` adjusts every offset to count the stub. A plain `cat stub a.zip` leaves them counting from the ZIP. The reader accepts both without knowing the stub, by the rule Python `zipfile` and libarchive use. The central directory must end where the end record or ZIP64 end record starts. When it ends earlier, the gap is the number of bytes before the archive, and every offset moves by it. With ZIP64, the locator must point at the ZIP64 end record after the same move.
+
+The bytes before the first record are then read and refused when the offsets cannot reconcile them, or when another reader may see a different archive:
+
+- The offsets move by some bytes, but the first record starts past that point, so the offsets count only part of the prefix.
+- The archive has no entries.
+- The prefix holds a ZIP local header, central record, end record, ZIP64 end record or ZIP64 locator signature, or a 7z signature, starting anywhere before the first record. 7-Zip searches a prefix for a local header or an end record and opens the first archive it finds there, while Python and bsdtar read the archive the end record names. Info-ZIP's `unzipsfx` stub holds none of these signatures. Executables that hold one, such as Info-ZIP `zip` and 7-Zip themselves, are refused as stubs.
+
+The error names the offset at fault. Encrypted entries stay refused. Stubs are not limited in size, and the prefix is read once, 64 KiB at a time. A split set may hold such a prefix in its first volume, but its offsets may not move. An end record that leaves its values to ZIP64 records with no sentinel, as Info-ZIP's piped output does, is read only without a moved directory.
+
+`tests/self_extracting.rs` puts stubs of 1 byte to 70,000 bytes before seven corpus and parity archives, with offsets adjusted and not, and requires the tree the archive gives alone. Where installed, 7-Zip must extract the same tree and Python `zipfile` must list the same names. It also runs `zip -A` itself. Its hostile cases put a whole ZIP, a stub and a ZIP, an empty ZIP and a 7z before the archive, adjust offsets by part of the stub, and append an empty or encrypted ZIP. Each must fail by offset and publish nothing. `tests/cli.rs` checks that a ZIP after a shell script extracts in process without reaching 7-Zip.
 
 ## ZIP split sets
 

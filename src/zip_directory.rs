@@ -47,9 +47,6 @@ const WRITE_BITS: u32 = 0o222;
 
 const MULTI_DISK: &str = "ZIP is the last volume of a split archive, but its other volumes, named like name.z01 beside name.zip, are not beside it";
 const MULTI_DISK_ZIP64: &str = "ZIP64 is the last volume of a split archive, but its other volumes, named like name.z01 beside name.zip, are not beside it";
-const SPANNING_MARKER: usize = 4;
-// SPEC(APPNOTE 8.5.3, 8.5.4): a split archive may start with the spanning signature, or with PK00 when it fits one piece.
-const SPANNING_MARKERS: [&[u8; SPANNING_MARKER]; 2] = [b"PK\x07\x08", b"PK00"];
 
 pub(crate) struct Directory {
     pub(crate) start: u64,
@@ -145,13 +142,20 @@ pub(crate) fn read_directory<R: Read + Seek>(
             .unwrap_or(extent.start),
         ..extent
     };
+    let mut locator_shift = None;
     if placed.reads_zip64_end() {
         ensure!(end_offset >= ZIP64_LOCATOR as u64, "missing ZIP64 locator");
         file.seek(SeekFrom::Start(end_offset - ZIP64_LOCATOR as u64))?;
         let locator = crate::number(file)?;
+        locator_shift = (end_offset - ZIP64_LOCATOR as u64)
+            .checked_sub(ZIP64_END_RECORD as u64)
+            .and_then(|record| record.checked_sub(le64(&locator, 8)))
+            .filter(|_| disks.is_none());
         let record_start = match disks {
             None => zip64_record_start(&locator, end_offset, |disk, offset, disks| {
-                (disk == 0 && disks == 1).then_some(offset)
+                (disk == 0 && disks == 1)
+                    .then(|| offset.checked_add(locator_shift.unwrap_or(0)))
+                    .flatten()
             })?,
             Some(found) => zip64_record_start(&locator, end_offset, |disk, offset, disks| {
                 (disks == found.count())
@@ -184,20 +188,125 @@ pub(crate) fn read_directory<R: Read + Seek>(
             "ZIP has a ZIP64 locator its end record does not use"
         );
     }
-    if let Some(disks) = disks {
-        extent.start = directory_on_disks(&extent, disks)?;
-    }
+    let shift = match disks {
+        Some(disks) => {
+            extent.start = directory_on_disks(&extent, disks)?;
+            0
+        }
+        None => prefix_shift(&extent, locator_shift)?,
+    };
+    extent.start += shift;
     check_extent(&extent)?;
     file.seek(SeekFrom::Start(extent.start))?;
     let mut entries = central_entries(file, extent).map_err(WalkError::into_anyhow)?;
-    if let Some(disks) = disks {
-        place_entries(&mut entries, disks)?;
+    match disks {
+        Some(disks) => place_entries(&mut entries, disks)?,
+        None => shift_entries(&mut entries, shift)?,
     }
+    let archive_start = archive_start(file, &entries, extent.start, shift)?;
     Ok(Directory {
         start: extent.start,
-        archive_start: spanning_marker(file)?,
+        archive_start,
         entries,
     })
+}
+
+// EXTERNAL(Python zipfile, libarchive): they read a directory that ends before its end record as shifted by the gap.
+fn prefix_shift(extent: &Extent, locator_shift: Option<u64>) -> Result<u64> {
+    let Some(shift) = extent
+        .start
+        .checked_add(extent.bytes)
+        .and_then(|end| extent.end.checked_sub(end))
+    else {
+        return Ok(0);
+    };
+    ensure!(
+        locator_shift.is_none_or(|locator| locator == shift),
+        "ZIP64 locator and central directory count {} and {shift} bytes before the archive",
+        locator_shift.unwrap_or(0)
+    );
+    Ok(shift)
+}
+
+fn shift_entries(entries: &mut [CentralEntry], shift: u64) -> Result<()> {
+    for entry in entries {
+        entry.header_start = entry
+            .header_start
+            .checked_add(shift)
+            .context("ZIP local header offset is too large")?;
+    }
+    Ok(())
+}
+
+const HIDDEN_RECORDS: [(&[u8], &str); 6] = [
+    (b"PK\x03\x04", "a ZIP local header"),
+    (b"PK\x01\x02", "a ZIP central record"),
+    (b"PK\x05\x06", "a ZIP end record"),
+    (b"PK\x06\x06", "a ZIP64 end record"),
+    (b"PK\x06\x07", "a ZIP64 locator"),
+    (b"7z\xBC\xAF\x27\x1C", "a 7z signature"),
+];
+const PREFIX_SCAN_CHUNK: usize = 64 * 1024;
+
+fn archive_start<R: Read + Seek>(
+    file: &mut R,
+    entries: &[CentralEntry],
+    directory_start: u64,
+    shift: u64,
+) -> Result<u64> {
+    let first = entries
+        .iter()
+        .map(|entry| entry.header_start)
+        .min()
+        .unwrap_or(directory_start);
+    if first == 0 {
+        return Ok(0);
+    }
+    ensure!(
+        shift == 0 || first == shift,
+        "ZIP offsets count {shift} bytes before the archive, but its first record starts at offset {first}, so the bytes before it cannot be reconciled"
+    );
+    ensure!(
+        !entries.is_empty(),
+        "ZIP has {first} bytes before an archive with no entries"
+    );
+    if let Some((at, record)) = hidden_record(file, first)? {
+        anyhow::bail!(
+            "ZIP has {first} bytes before its first record, and they hold {record} at offset {at}, so another reader may see a different archive"
+        );
+    }
+    Ok(first)
+}
+
+fn hidden_record<R: Read + Seek>(file: &mut R, prefix: u64) -> Result<Option<(u64, &'static str)>> {
+    let longest = HIDDEN_RECORDS
+        .iter()
+        .map(|(bytes, _)| bytes.len())
+        .max()
+        .unwrap_or(1);
+    file.seek(SeekFrom::Start(0))?;
+    let mut prefix_bytes = file.take(prefix.saturating_add(longest as u64 - 1));
+    let mut window = Vec::with_capacity(PREFIX_SCAN_CHUNK + longest);
+    let mut window_start = 0u64;
+    loop {
+        let kept = window.len();
+        window.resize(kept + PREFIX_SCAN_CHUNK, 0);
+        let read = prefix_bytes.read(&mut window[kept..])?;
+        window.truncate(kept + read);
+        let found = (0..window.len()).find_map(|at| {
+            HIDDEN_RECORDS
+                .iter()
+                .find(|(bytes, _)| window[at..].starts_with(bytes))
+                .map(|&(_, record)| (window_start + at as u64, record))
+                .filter(|&(start, _)| start < prefix)
+        });
+        if found.is_some() || read == 0 {
+            return Ok(found);
+        }
+        let consumed = window.len().saturating_sub(longest - 1);
+        window.drain(..consumed);
+        window_start += consumed as u64;
+    }
 }
 
 fn volumes(count: u64) -> String {
@@ -246,16 +355,6 @@ fn place_entries(entries: &mut [CentralEntry], disks: &ZipDisks) -> Result<()> {
         })?;
     }
     Ok(())
-}
-
-fn spanning_marker<R: Read + Seek>(file: &mut R) -> Result<u64> {
-    file.seek(SeekFrom::Start(0))?;
-    let marker: [u8; SPANNING_MARKER] = crate::number(file)?;
-    Ok(if SPANNING_MARKERS.contains(&&marker) {
-        SPANNING_MARKER as u64
-    } else {
-        0
-    })
 }
 
 struct DirectoryBytes<'r, R> {
@@ -1184,8 +1283,17 @@ mod tests {
     ];
     const REPEATED_NAME_REFUSAL: &str = "duplicate ZIP path";
 
+    const PREFIX_REFUSALS: [&str; 3] = [
+        "ZIP has ",
+        "ZIP offsets count ",
+        "ZIP64 locator and central directory count ",
+    ];
+
     fn refused_before_the_zip_crate(message: &str) -> bool {
         REFUSALS_BEFORE_THE_ZIP_CRATE.contains(&message)
+            || PREFIX_REFUSALS
+                .iter()
+                .any(|refusal| message.starts_with(refusal))
     }
 
     fn native_listing(bytes: &[u8]) -> std::result::Result<(), String> {
@@ -1227,7 +1335,7 @@ mod tests {
                 let raw_count = listed.len();
                 let merged = merged_like_zip_crate(listed);
                 let repeated_names = merged.len() != raw_count;
-                if theirs.offset != 0 {
+                if theirs.offset != 0 && theirs.offset != ours.archive_start {
                     return Err(format!("the zip crate finds offset {}", theirs.offset));
                 }
                 if ours.start != theirs.start {
@@ -2004,7 +2112,7 @@ mod tests {
             Outcome::RefusedBeforeTheZipCrate,
         ),
     ];
-    const MORE_BUILT_REFUSALS: [(&str, Outcome); 7] = [
+    const MORE_BUILT_REFUSALS: [(&str, Outcome); 6] = [
         ("Unicode comments", Outcome::BothRefuse),
         (
             "a comment holding an end signature",
@@ -2016,7 +2124,6 @@ mod tests {
         ),
         ("a ZIP64 locator for two disks", Outcome::BothRefuse),
         ("trailing data", Outcome::RefusedBeforeTheZipCrate),
-        ("a self-extractor prefix", Outcome::RefusedBeforeTheZipCrate),
         (
             "the last volume of a split set read alone",
             Outcome::RefusedBeforeTheZipCrate,

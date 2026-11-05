@@ -88,6 +88,18 @@ def python_zip(target, source, method, seekable, zip64):
                     entry.write(path.read_bytes())
 
 
+STUB_SEED = 20261106
+
+
+def signature_free_exe_stub(length=4096):
+    rng = random.Random(STUB_SEED)
+    data = bytearray(b"MZ")
+    while len(data) < length:
+        byte = rng.getrandbits(8)
+        data.append(ord("Q") if byte in b"P7" else byte)
+    return bytes(data)
+
+
 def run(command, cwd, stdout=None, zone=None):
     env = None if zone is None else {**os.environ, "TZ": zone}
     subprocess.run(command, cwd=cwd, check=True, stdout=stdout or subprocess.DEVNULL,
@@ -116,6 +128,15 @@ def writers(have):
         # with the spanning signature first and every disk number zero.
         found.append(("infozip-split-one-piece", lambda target, cwd: run(
             ["zip", "-q", "-r", "-s", "64k", str(target), "src"], cwd)))
+        def stub_then_archive(target, cwd, run_zip_dash_a):
+            plain = cwd / "self-extractor.zip"
+            run(["zip", "-q", "-r", str(plain), "src"], cwd)
+            target.write_bytes(signature_free_exe_stub() + plain.read_bytes())
+            plain.unlink()
+            if run_zip_dash_a:
+                run(["zip", "-q", "-A", str(target)], cwd)
+        found.append(("infozip-sfx-adjusted", lambda target, cwd: stub_then_archive(target, cwd, True)))
+        found.append(("infozip-sfx-prefixed", lambda target, cwd: stub_then_archive(target, cwd, False)))
     if have("7zz"):
         for name, flags in [("7zip-deflate", ["-mm=Deflate"]), ("7zip-copy", ["-mm=Copy"]),
                             ("7zip-timestamps", ["-mtc=on"])]:
@@ -245,8 +266,15 @@ ZONES = ["UTC", "Pacific/Auckland"]
 def readers(have, zone=None):
     found = [("python", lambda archive, out: zipfile.ZipFile(archive).extractall(out))]
     if have("unzip"):
-        found.append(("unzip", lambda archive, out: run(
-            ["unzip", "-q", str(archive), "-d", str(out)], out.parent, zone=zone)))
+        def unzip(archive, out):
+            env = None if zone is None else {**os.environ, "TZ": zone}
+            done = subprocess.run(["unzip", "-q", str(archive), "-d", str(out)], cwd=out.parent,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+            # EXTERNAL(Info-ZIP unzip): it exits 1, a warning, for bytes before an unadjusted archive.
+            warned = done.returncode == 1 and "sfx-prefixed" in archive.stem
+            if done.returncode != 0 and not warned:
+                raise subprocess.CalledProcessError(done.returncode, "unzip")
+        found.append(("unzip", unzip))
     if have("bsdtar"):
         def bsdtar(archive, out):
             out.mkdir()
@@ -287,6 +315,15 @@ def main():
     write_manifest(args, summary, manifests, all_modes, all_times)
 
 
+# EXTERNAL(7-Zip): it opens a file named .zip from its first byte, so it misses an unadjusted self-extractor's archive.
+def named_exe_for_7zip(archive, work):
+    if "sfx" not in archive.stem:
+        return archive.resolve()
+    copy = work / f"{archive.stem}.exe"
+    shutil.copyfile(archive, copy)
+    return copy
+
+
 def keep_unbuilt(args, rebuilt, summary, manifests, all_modes, all_times):
     """Loads the manifest lines and summary of archives --only leaves alone."""
     old_summary = json.loads((args.output / "corpus.json").read_text())
@@ -321,11 +358,12 @@ def build(args, have, work, summary, manifests, all_modes, all_times):
         source_times = times(source)
         archive = args.output / f"{name}.zip"
         write(archive.resolve(), source)
+        read_as = named_exe_for_7zip(archive, work)
         trees, reader_modes = {}, {}
         for reader, extract in job_readers:
             out = work / f"out-{name}-{reader}"
             try:
-                extract(archive.resolve(), out)
+                extract(read_as, out)
                 trees[reader] = tree(out)
                 reader_modes[reader] = modes(out)
             except Exception as error:
@@ -369,7 +407,7 @@ def build(args, have, work, summary, manifests, all_modes, all_times):
                     continue
                 out = work / f"time-{name}-{reader}"
                 try:
-                    extract(archive.resolve(), out)
+                    extract(read_as, out)
                     zone_times.append(times(out))
                 finally:
                     if out.exists():

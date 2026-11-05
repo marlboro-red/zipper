@@ -571,7 +571,7 @@ fn record_limits(
         .map_or(central_start, |&index| records[index].0);
     field_check(
         first == archive_start,
-        "ZIP has bytes before its first record, as a self-extractor does; pass --zip-engine backend to read it with 7-Zip",
+        "ZIP has bytes before its first record that its directory does not account for",
     )?;
     let ends = order.iter().skip(1).map(|&index| records[index].0);
     let mut limits = vec![0; records.len()];
