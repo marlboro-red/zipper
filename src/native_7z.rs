@@ -1660,7 +1660,7 @@ fn raw_decoder<R: Read>(filters: &liblzma::stream::Filters, input: R) -> Result<
 
 const STORED_CHUNK: usize = 1 << 16;
 
-// SPEC(xz-file-format LZMA2): control 1 resets the dictionary and stores up to 64 KiB, its size less one big-endian; control 0 ends the stream.
+// EXTERNAL(liblzma lzma2_decoder.c): control 1 resets the dictionary and stores up to 64 KiB, its size less one big-endian; control 0 ends the stream.
 struct StoredLzma2<R> {
     inner: R,
     chunk: Vec<u8>,

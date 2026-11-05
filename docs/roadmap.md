@@ -316,6 +316,7 @@ Done so far, by 5 November 2026:
 - A raw LZMA decoder in safe Rust, `src/lzma.rs`, used only by tests so far. It decodes 64 MiB of Silesia in 436.9 ms, against 400.9 ms for liblzma and about 310 ms for 7-Zip, as the [hot-loop record](../benchmarks/lzma/hot-loop/README.md) shows.
 - Differential tests against liblzma for every `lc`, `lp` and `pb`, every cut stream and an end marker before the declared size.
 - An exhaustive test of the match copy in every window state. A Kani proof of it ran out of memory and was dropped for that test.
+- An LZMA2 reader on the same decoder, also used only by tests, with the same bytes or the same refusal as liblzma for every control code, every properties byte and every cut. A builder agent wrote it, and its tests found a read that could return bytes a chunked match copy had just overrun, fixed in `a69a361`.
 
 ## M14. Encrypted archives
 
