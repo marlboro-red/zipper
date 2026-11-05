@@ -26,7 +26,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M11. Windows metadata parity](#m11-windows-metadata-parity) | Done | M10 |
 | [M12. Extraction controls](#m12-extraction-controls) | Done | M10 |
 | [M13. Remaining codecs](#m13-remaining-codecs) | In progress | M10 |
-| [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | Next | M13 |
+| [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | In progress | M10 |
 | [M14. Encrypted archives](#m14-encrypted-archives) | Planned | M13 |
 | [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | Planned | M13 |
 | [M16. Package formats](#m16-package-formats) | Planned | M13 |
@@ -275,7 +275,7 @@ Scope:
 
 Exit checks:
 
-1. Every method row in the M10 matrix for ZIP, 7z and tar reads native.
+1. Every method row in the M10 matrix for ZIP, 7z and tar reads native, except ZIP's Shrink and Implode, which moved to M19.
 2. Each codec has hostile tests for truncation, a stream longer than declared and a wrong CRC, where its format carries a length or a CRC. `compress` (`.Z`) carries neither, and the stream reference says so.
 3. The scoreboard gains a row per new codec, compared with 7-Zip at one thread. lzip and LZ4, which 7-Zip does not read, are compared with bsdtar.
 
@@ -285,7 +285,7 @@ Done so far, by 5 November 2026:
 - 7z BZip2, Deflate64, PPMd, BCJ2 with its own decoder, and Swap2 and Swap4.
 - Tar and single files in bzip2, lzip, LZ4 with its own decoder, and `compress` with its own decoder.
 
-ZIP Shrink and Implode and the scoreboard rows are left.
+The scoreboard rows are left. ZIP's Shrink and Implode moved to M19 on 5 November 2026. No current tool writes them, and how Shrink's partial clear treats the code read just before it has to be settled by tests against 7-Zip first. A Shrink decoder and its tests are kept as a starting point.
 
 ## M21. Zipper's own LZMA decoder
 
@@ -398,6 +398,7 @@ The remaining formats 7-Zip reads extract in process, or are recorded as dropped
 Scope:
 
 - ARJ, LZH, CHM, NSIS installers and the other rows M10 still marks as backend.
+- ZIP's Shrink and Implode methods. Every Shrink decoder needs a guard against an entry whose prefix is itself, which a partial clear can create.
 - Usage data decides the order. A format nobody reports using can be dropped instead, with its row recorded in the M10 matrix.
 
 Exit checks:
