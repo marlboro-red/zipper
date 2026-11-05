@@ -684,7 +684,16 @@ fn implied_directories_and_deferred_links_count_toward_the_name_budget() {
         .map(|index| linked(&format!("{index:05}{}", "n".repeat(4000)), b"", 9, 2))
         .collect();
     let root = tempfile::tempdir().unwrap();
-    for (case, bytes) in [("deep", newc(&deep)), ("deferred", newc(&deferred))] {
+    let without_trailer: Vec<u8> = deferred
+        .iter()
+        .enumerate()
+        .flat_map(|(index, member)| record(Form::Newc, member, index as u64))
+        .collect();
+    for (case, bytes) in [
+        ("deep", newc(&deep)),
+        ("deferred", newc(&deferred)),
+        ("deferred without a trailer", without_trailer),
+    ] {
         let archive = root.path().join("budget.cpio");
         fs::write(&archive, bytes).unwrap();
         let result = read_archive(&archive, None, ReadOptions::default());
@@ -899,8 +908,8 @@ fn files_whose_other_links_are_outside_the_archive_extract() {
 }
 
 #[test]
-fn names_past_a_too_low_link_count_still_link_to_the_data() {
-    for (case, members, data_name, names) in [
+fn a_name_after_its_group_is_complete_waits_for_new_data_or_stays_empty() {
+    for (case, members, linked_names, empty_names) in [
         (
             "low",
             vec![
@@ -908,19 +917,8 @@ fn names_past_a_too_low_link_count_still_link_to_the_data() {
                 linked("b", b"BBBB", 5, 2),
                 linked("c", b"", 5, 2),
             ],
-            "b",
-            &["a", "b", "c"][..],
-        ),
-        (
-            "change",
-            vec![
-                linked("a", b"", 5, 2),
-                linked("b", b"", 5, 3),
-                linked("c", b"CCCC", 5, 3),
-                linked("d", b"", 5, 3),
-            ],
-            "c",
-            &["a", "b", "c", "d"],
+            &["a", "b"][..],
+            &["c"][..],
         ),
         (
             "two after the data",
@@ -929,22 +927,74 @@ fn names_past_a_too_low_link_count_still_link_to_the_data() {
                 linked("b", b"", 5, 2),
                 linked("c", b"", 5, 2),
             ],
-            "a",
-            &["a", "b", "c"],
+            &["a", "b"],
+            &["c"],
+        ),
+        (
+            "new data after the group",
+            vec![
+                linked("a", b"AAAA", 5, 2),
+                linked("b", b"", 5, 2),
+                linked("c", b"", 5, 2),
+                linked("d", b"DDDD", 5, 2),
+            ],
+            &["a", "b"],
+            &[],
         ),
     ] {
         let (_root, destination, result) = extract_with(&newc(&members), ReadOptions::default());
         result.unwrap_or_else(|error| panic!("{case}: {error:#}"));
-        let data = fs::read(destination.join(data_name)).unwrap();
-        assert!(!data.is_empty(), "{case}");
-        for name in names {
+        let data = fs::read(destination.join(linked_names[0])).unwrap();
+        for name in linked_names {
             assert_eq!(
                 fs::read(destination.join(name)).unwrap(),
                 data,
                 "{case} {name}"
             );
         }
+        for name in empty_names {
+            assert_eq!(
+                fs::read(destination.join(name)).unwrap(),
+                b"",
+                "{case} {name}"
+            );
+        }
     }
+}
+
+#[test]
+fn a_data_name_that_links_may_still_wait_on_is_never_replaced() {
+    for (case, members) in [
+        (
+            "replaced after a wait",
+            vec![
+                linked("x", b"GOOD", 5, 2),
+                linked("y", b"GOOD", 5, 2),
+                linked("c", b"", 5, 2),
+                linked("x", b"EVIL", 6, 1),
+            ],
+        ),
+        (
+            "replaced before its link",
+            vec![
+                linked("a", b"AA", 5, 2),
+                linked("a", b"ZZ", 7, 1),
+                linked("b", b"", 5, 2),
+            ],
+        ),
+    ] {
+        assert_rejected_saying(case, &newc(&members), "an earlier hard link names");
+    }
+}
+
+#[test]
+fn a_waiting_name_is_checked_when_it_arrives() {
+    let bytes = record(Form::Newc, &linked("../escape", b"", 5, 2), 0);
+    let error = format!(
+        "{:#}",
+        extract_with(&bytes, ReadOptions::default()).2.unwrap_err()
+    );
+    assert!(error.contains("unsafe archive path"), "{error}");
 }
 
 #[test]

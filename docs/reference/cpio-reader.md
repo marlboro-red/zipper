@@ -12,7 +12,7 @@ The reader supports these features:
 - Files, directories, symlinks that stay inside the destination, and hard links.
 - A leading `./` and the `.` entry that `find . | cpio -o` writes.
 
-GNU cpio and bsdcpio store a newc hard link once. Every name but the last carries no data, and the last carries the file. The reader links each name with the same inode and device to the name that carries the data. It keeps an inode's group until the group has its data and as many names as the link count says, then frees it. So an archive of complete pairs holds no link records. A name without data that comes after its group is freed, because the link count was too low, waits for the next name of that inode that carries data, as bsdcpio does. When none follows, the reader reads the headers a second time at the end, and links the name to the first earlier name of that inode that carried data, as GNU cpio does. A group in which no name ever carries data becomes one empty file and links to it. A file whose other links lie outside the archive, as in a snapshot of a hard-linked backup, keeps one record until the end. In the binary and odc forms each name carries its own copy of the data, so each name becomes its own file, as 7-Zip writes it.
+GNU cpio and bsdcpio store a newc hard link once. Every name but the last carries no data, and the last carries the file. The reader links each name with the same inode and device to the name that carries the data. It keeps an inode's group until the group has its data and as many names as the link count says, then frees it. So an archive of complete pairs holds no link records. A name without data that comes after its group is freed, because the link count was too low, starts a new group. It waits for the next name of that inode that carries data, and without one it becomes an empty file, as bsdcpio writes it. A group in which no name ever carries data becomes one empty file and links to it. While a group still expects names, its data name cannot be replaced by an entry that follows, so a link never reaches another file's data. Each name without data passes the name checks and counts toward the name limit when it arrives. A file whose other links lie outside the archive, as in a snapshot of a hard-linked backup, keeps one record until the end. In the binary and odc forms each name carries its own copy of the data, so each name becomes its own file, as 7-Zip writes it.
 
 The reader does not support these features:
 
@@ -39,7 +39,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 - Every header has the form of the first one. Each newc field holds only hexadecimal digits, and each odc field only octal digits.
 - A name size runs from 1 to 8,192 bytes, including the NUL that must end the name. The reader checks it before it reads the name.
 - Names pass the same checks as tar names after a leading `./` is removed. Absolute names, `..`, drive letters, backslashes and NUL bytes are rejected.
-- No entry sits inside a file or a link, and no entry reuses a name of another kind. A repeated file replaces the earlier one, unless a hard link names it. A repeated directory merges.
+- No entry sits inside a file or a link, and no entry reuses a name of another kind. A repeated file replaces the earlier one, unless a hard link names it or a newc group still waits on it. A repeated directory merges.
 - A symlink target is at most 4,096 bytes, checked before it is read, and follows the [ZIP symlink rule](zip-reader.md#symlinks). Links are created after every file, so no file is written through a link.
 - A directory carries no data.
 - The archive ends with the `TRAILER!!!` entry, which carries no data. Only zero bytes may follow it.
@@ -66,7 +66,7 @@ One thread reads the archive and writes each file in archive order through a 1 M
 - 7-Zip removes a leading `/` and `..` from a name and writes the file. Zipper refuses the archive.
 - 7-Zip skips a symlink that leaves the destination and writes the rest. Zipper refuses the archive. 7-Zip also skips a link whose target starts with `..` but stays inside, and Zipper creates it.
 - 7-Zip ignores anything after the trailer. Zipper refuses it unless it is all zero bytes.
-- A newc name without data that comes after the name carrying the data becomes an empty file in 7-Zip. Zipper links it to the data, by the rule above.
+- A newc name without data that comes after the name carrying the data becomes an empty file in 7-Zip. Zipper links it to the data while the group still expects names, by the rule above.
 
 ## Extraction options
 

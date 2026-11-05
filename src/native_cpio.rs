@@ -4,7 +4,7 @@
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::File,
     io::{BufReader, Read},
     path::Path,
@@ -357,16 +357,16 @@ struct Deferred {
 }
 
 struct Group {
-    first_seen: usize,
-    names_left: u64,
+    first_seen: u32,
+    names_left: u32,
+    written: Option<Box<str>>,
     waiting: Vec<Deferred>,
-    written: Option<String>,
 }
 
 #[derive(Default)]
 struct HardLinks {
     groups: HashMap<Inode, Group>,
-    seen: usize,
+    seen: u32,
     memory: usize,
 }
 
@@ -397,9 +397,9 @@ impl HardLinks {
                 inode,
                 Group {
                     first_seen: self.seen,
-                    names_left: links,
-                    waiting: Vec::new(),
+                    names_left: u32::try_from(links).unwrap_or(u32::MAX),
                     written: None,
+                    waiting: Vec::new(),
                 },
             );
         }
@@ -408,7 +408,7 @@ impl HardLinks {
         Ok(group)
     }
 
-    fn forget_if_complete(&mut self, inode: Inode) {
+    fn forget_if_complete(&mut self, inode: Inode) -> bool {
         let complete = self
             .groups
             .get(&inode)
@@ -416,6 +416,7 @@ impl HardLinks {
         if complete && let Some(group) = self.groups.remove(&inode) {
             self.memory -= GROUP_COST + group.written.as_deref().map_or(0, name_cost);
         }
+        complete
     }
 
     fn defer(
@@ -425,6 +426,8 @@ impl HardLinks {
         links: u64,
         entry: Deferred,
     ) -> Result<()> {
+        tree.check_name(&entry.name)?;
+        tree.charge_name(entry.name.len())?;
         if let Some(target) = self.group(inode, links)?.written.clone() {
             tree.hard_link(&entry.name, &target)?;
         } else {
@@ -454,96 +457,40 @@ impl HardLinks {
         let waiting = std::mem::take(&mut group.waiting);
         let first = group.written.is_none();
         if first {
-            group.written = Some(name.to_owned());
+            group.written = Some(name.into());
             self.charge(name_cost(name))?;
         }
         for entry in waiting {
             self.memory -= deferred_cost(&entry.name);
             tree.hard_link(&entry.name, name)?;
         }
-        self.forget_if_complete(inode);
+        if first && !self.forget_if_complete(inode) {
+            tree.keep_for_links(name)?;
+        }
         Ok(())
     }
 
-    fn earlier_data_names(
-        &mut self,
-        tree: &tree::Tree,
-        archive: &Path,
-        form: Form,
-        wanted: &HashSet<Inode>,
-    ) -> Result<HashMap<Inode, String>> {
-        let mut input = Input {
-            reader: BufReader::with_capacity(COPY_BUFFER, File::open(archive)?),
-        };
-        let mut found = HashMap::new();
-        loop {
-            tree.check()?;
-            let header = input.header(form)?;
-            ensure!(
-                (1..=tree::MAX_NAME).contains(&header.name_size),
-                "cpio changed while it was read"
-            );
-            let mut name = vec![0; header.name_size as usize];
-            input.exact(&mut name, "name")?;
-            input.skip(
-                padding(
-                    form.header_length() as u64 + header.name_size,
-                    form.alignment(),
-                ),
-                "name",
-            )?;
-            ensure!(name.pop() == Some(0), "cpio changed while it was read");
-            if name == TRAILER {
-                return Ok(found);
-            }
-            let carries_linked_data = header.mode & TYPE_MASK == REGULAR
-                && header.links > 1
-                && header.size > 0
-                && wanted.contains(&header.inode)
-                && !found.contains_key(&header.inode);
-            if carries_linked_data {
-                let name = utf8(name, "name")?;
-                self.charge(name_cost(&name))?;
-                found.insert(header.inode, name);
-            }
-            input.skip(
-                header.size + padding(header.size, form.alignment()),
-                "entry",
-            )?;
-        }
-    }
-
-    fn finish(mut self, tree: &mut tree::Tree, archive: &Path, form: Form) -> Result<()> {
-        let mut unwritten: Vec<(Inode, Group)> = std::mem::take(&mut self.groups)
-            .into_iter()
-            .filter(|(_, group)| group.written.is_none() && !group.waiting.is_empty())
+    fn finish(self, tree: &mut tree::Tree) -> Result<()> {
+        let mut unwritten: Vec<Group> = self
+            .groups
+            .into_values()
+            .filter(|group| group.written.is_none() && !group.waiting.is_empty())
             .collect();
-        if unwritten.is_empty() {
-            return Ok(());
-        }
-        unwritten.sort_unstable_by_key(|(_, group)| group.first_seen);
-        let wanted: HashSet<Inode> = unwritten.iter().map(|(inode, _)| *inode).collect();
-        let earlier = self.earlier_data_names(tree, archive, form, &wanted)?;
-        for (inode, group) in unwritten {
+        unwritten.sort_unstable_by_key(|group| group.first_seen);
+        for group in unwritten {
             let mut entries = group.waiting.into_iter();
-            let target = match earlier.get(&inode) {
-                Some(target) => target.clone(),
-                None => {
-                    let Some(first) = entries.next() else {
-                        continue;
-                    };
-                    tree.file(
-                        &first.name,
-                        0,
-                        first.mode,
-                        first.modified,
-                        &mut std::io::empty(),
-                    )?;
-                    first.name
-                }
+            let Some(first) = entries.next() else {
+                continue;
             };
+            tree.file(
+                &first.name,
+                0,
+                first.mode,
+                first.modified,
+                &mut std::io::empty(),
+            )?;
             for entry in entries {
-                tree.hard_link(&entry.name, &target)?;
+                tree.hard_link(&entry.name, &first.name)?;
             }
         }
         Ok(())
@@ -613,7 +560,7 @@ fn entry(
     }
 }
 
-fn parse(tree: &mut tree::Tree, archive: &Path, input: &mut Input, form: Form) -> Result<()> {
+fn parse(tree: &mut tree::Tree, input: &mut Input, form: Form) -> Result<()> {
     let mut links = HardLinks::default();
     let mut headers = 0usize;
     loop {
@@ -643,7 +590,7 @@ fn parse(tree: &mut tree::Tree, archive: &Path, input: &mut Input, form: Form) -
         ensure!(name.pop() == Some(0), "cpio name has no NUL terminator");
         if name == TRAILER {
             ensure!(header.size == 0, "cpio TRAILER!!! entry has data");
-            links.finish(tree, archive, form)?;
+            links.finish(tree)?;
             return input.only_zeros_remain();
         }
         let name = utf8(name, "name")?;
@@ -668,7 +615,7 @@ pub fn read_archive(
     let form = Form::of(&magic).context("not a cpio archive")?;
     input.reader = BufReader::with_capacity(COPY_BUFFER, File::open(path)?);
     tree::extract("cpio", path, destination, options, |tree| {
-        parse(tree, path, &mut input, form)
+        parse(tree, &mut input, form)
     })
 }
 
@@ -840,6 +787,18 @@ pub(crate) mod tree {
     impl<'a> Tree<'a> {
         pub(crate) fn check(&self) -> Result<()> {
             self.tracker.check()
+        }
+
+        pub(crate) fn check_name(&self, raw: &str) -> Result<()> {
+            checked_name(raw).map(|_| ())
+        }
+
+        pub(crate) fn keep_for_links(&mut self, raw: &str) -> Result<()> {
+            let (name, _) = checked_name(raw)?;
+            if let Some((node @ Node::File, _)) = self.nodes.get_mut(&name) {
+                *node = Node::LinkedFile;
+            }
+            Ok(())
         }
 
         pub(crate) fn charge_name(&mut self, bytes: usize) -> Result<()> {
@@ -1313,6 +1272,23 @@ mod link_tests {
     }
 
     #[test]
+    fn a_group_that_only_carries_data_costs_at_most_200_bytes() {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join("unused.cpio");
+        tree::extract("cpio", &archive, None, ReadOptions::default(), |tree| {
+            let mut links = HardLinks::default();
+            for number in 0..1_000u64 {
+                let name = format!("f{number:07}");
+                tree.file(&name, 1, 0o644, None, &mut &b"x"[..])?;
+                links.written(tree, inode(number), 2, &name)?;
+            }
+            assert!(links.memory <= 1_000 * 200, "{}", links.memory);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
     fn complete_pairs_give_their_link_memory_back() {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join("unused.cpio");
@@ -1328,7 +1304,7 @@ mod link_tests {
                 tree.file(&second, 1, 0o644, None, &mut &b"x"[..])?;
                 links.written(tree, inode(number), 2, &second)?;
             }
-            links.finish(tree, &archive, Form::Newc { crc: false })
+            links.finish(tree)
         })
         .unwrap();
     }
