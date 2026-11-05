@@ -27,6 +27,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-05 | [Unbuffered writes for large entries on Windows](native-zip/unbuffered-writer/README.md) | Inconclusive. The Switchboard build folder extracts 1.13× faster with `native-fast` at four threads. ripgrep uses 30% less CPU, but its wall time went 1.09× and 0.94× in two sessions because of an untraced slow mode. |
 | 2026-11-05 | [One entry per Rayon task](native-zip/one-entry-per-task/README.md) | Kept. Two Rust build folders extract 1.40× to 1.76× faster at four threads on Windows. Tiny-file workloads are unchanged. One machine only. |
 | 2026-11-02 | [Larger streaming steps](native-zip/stream-steps/README.md) | Kept. The 256 MiB random entry extracts 1.30× faster at one thread. Other large rows improved in median but overlap their ranges. |
 | 2026-11-02 | [Single-thread extraction on the calling thread](native-zip/inline-single-thread/README.md) | Rejected. Skipping the rayon pool at one thread moved no workload beyond its range. |

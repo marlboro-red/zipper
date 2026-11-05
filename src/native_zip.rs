@@ -1385,6 +1385,64 @@ pub struct ReadOptions<'a> {
     pub control: crate::Control<'a>,
 }
 
+#[cfg(windows)]
+struct UnbufferedJob<'a> {
+    file: File,
+    decoded: crate::unbuffered::AlignedBuffer,
+    item: &'a Item,
+    _reservation: Option<Reservation<'a>>,
+}
+
+#[cfg(windows)]
+struct StopWriterOnDrop<'s, 'a>(&'s std::sync::mpsc::Sender<Option<UnbufferedJob<'a>>>);
+
+#[cfg(windows)]
+impl Drop for StopWriterOnDrop<'_, '_> {
+    fn drop(&mut self) {
+        let _ = self.0.send(None);
+    }
+}
+
+#[cfg(windows)]
+struct FailUnlessFinished<'f> {
+    failed: &'f std::sync::atomic::AtomicBool,
+    finished: bool,
+}
+
+#[cfg(windows)]
+impl Drop for FailUnlessFinished<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.failed.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn write_unbuffered_jobs(
+    queue: std::sync::mpsc::Receiver<Option<UnbufferedJob<'_>>>,
+    tracker: &crate::progress::Tracker,
+    failed: &std::sync::atomic::AtomicBool,
+) -> Result<()> {
+    let mut outcome = FailUnlessFinished {
+        failed,
+        finished: false,
+    };
+    while let Ok(Some(mut job)) = queue.recv() {
+        tracker.check()?;
+        crate::unbuffered::write(&mut job.file, &job.decoded)?;
+        if let Some(seconds) = job.item.modified {
+            crate::set_modified_best_effort(&job.file, system_time(seconds));
+        }
+        let size = job.item.entry.size;
+        drop(job);
+        tracker.add_bytes(size)?;
+        tracker.file_done()?;
+    }
+    outcome.finished = true;
+    Ok(())
+}
+
 pub fn read_archive_with_options(
     path: &Path,
     destination: Option<&Path>,
@@ -1525,6 +1583,18 @@ pub fn read_archive_with_options(
     ));
     let targets = std::sync::Mutex::new(Vec::new());
     let idle_workspaces = std::sync::Mutex::new(Vec::new());
+    #[cfg(windows)]
+    let (unbuffered_jobs, unbuffered_queue) = std::sync::mpsc::channel();
+    #[cfg(windows)]
+    let unbuffered_writer_failed = std::sync::atomic::AtomicBool::new(false);
+    let unbuffered_writer_running = || -> Result<()> {
+        #[cfg(windows)]
+        ensure!(
+            !unbuffered_writer_failed.load(Ordering::Relaxed),
+            "ZIP unbuffered writer stopped"
+        );
+        Ok(())
+    };
     let run = || {
         // RECORD(benchmarks/native-zip/one-entry-per-task/README.md): split to single entries,
         // and reuse each task's reader and buffer, which tiny entries cannot afford per task.
@@ -1538,6 +1608,7 @@ pub fn read_archive_with_options(
             |(workspace, codec), &index| {
                 let (raw, buffer) = &mut **workspace;
                 tracker.check()?;
+                unbuffered_writer_running()?;
                 let item = &items[index];
                 let LocalRecord {
                     data_start,
@@ -1547,6 +1618,10 @@ pub fn read_archive_with_options(
                 let prefer_streaming = destination.is_some()
                     && item.entry.size >= 16 * 1024 * 1024
                     && item.compressed <= item.entry.size / 128;
+                #[cfg(windows)]
+                let alignment_padding = crate::unbuffered::padding(item.entry.size);
+                #[cfg(not(windows))]
+                let alignment_padding = Some(0);
                 let reservation = if fast
                     && !prefer_streaming
                     && !item.symlink
@@ -1555,6 +1630,8 @@ pub fn read_archive_with_options(
                     item.entry
                         .size
                         .checked_add(item.compressed)
+                        .zip(alignment_padding)
+                        .and_then(|(bytes, padding)| bytes.checked_add(padding))
                         .and_then(|bytes| usize::try_from(bytes).ok())
                         .and_then(|bytes| budget.reserve(bytes))
                 } else {
@@ -1597,16 +1674,38 @@ pub fn read_archive_with_options(
                 };
                 if buffered {
                     let mut compressed = entry_buffer(item.compressed as usize)?;
-                    let mut decoded = entry_buffer(item.entry.size as usize)?;
                     source.read_exact(&mut compressed)?;
-                    let length = counters::time(Counter::DecodeNanos, || {
-                        codec.as_mut().unwrap().inflate(&compressed, &mut decoded)
-                    })?;
-                    ensure!(
-                        length as u64 == item.entry.size,
-                        "ZIP decoded size mismatch"
-                    );
-                    ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
+                    let mut decode = |decoded: &mut [u8]| -> Result<()> {
+                        let length = counters::time(Counter::DecodeNanos, || {
+                            codec.as_mut().unwrap().inflate(&compressed, decoded)
+                        })?;
+                        ensure!(
+                            length as u64 == item.entry.size,
+                            "ZIP decoded size mismatch"
+                        );
+                        ensure!(crc32fast::hash(decoded) == item.crc, "ZIP CRC mismatch");
+                        Ok(())
+                    };
+                    // RECORD(benchmarks/native-zip/unbuffered-writer/README.md): one writer, no cache copy.
+                    #[cfg(windows)]
+                    if item.entry.size >= crate::unbuffered::MIN_SIZE
+                        && let Some(unwritten) = output.take()
+                    {
+                        let mut decoded = crate::unbuffered::AlignedBuffer::zeroed(item.entry.size as usize)?;
+                        decode(&mut decoded)?;
+                        drop(compressed);
+                        let file = unwritten.into_inner().map_err(|error| error.into_error())?.0;
+                        return unbuffered_jobs
+                            .send(Some(UnbufferedJob {
+                                file,
+                                decoded,
+                                item,
+                                _reservation: reservation,
+                            }))
+                            .map_err(|_| anyhow::anyhow!("ZIP unbuffered writer stopped"));
+                    }
+                    let mut decoded = entry_buffer(item.entry.size as usize)?;
+                    decode(&mut decoded)?;
                     if let Some(output) = &mut output {
                         // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
                         if cfg!(windows) {
@@ -1632,6 +1731,7 @@ pub fn read_archive_with_options(
                     let (mut written, held) = write_behind(unwritten, &report_written, |sink| {
                         stream_entry(&mut source, item, descriptor, buffer, &decoder_memory, |bytes| {
                             tracker.check()?;
+                            unbuffered_writer_running()?;
                             sink(bytes)
                         })
                     })?;
@@ -1646,6 +1746,7 @@ pub fn read_archive_with_options(
                     if bytes.is_empty() {
                         return Ok(());
                     }
+                    unbuffered_writer_running()?;
                     if let Some(output) = &mut output {
                         output.write_all(bytes)?;
                     }
@@ -1660,24 +1761,48 @@ pub fn read_archive_with_options(
             },
         )
     };
-    if rayon::current_num_threads() <= worker_limit {
-        run()?;
-    } else {
-        let mut threads = Vec::new();
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(worker_limit)
-            .spawn_handler(|thread| {
-                threads.push(std::thread::Builder::new().spawn(|| thread.run())?);
-                Ok(())
-            })
-            .build()?;
-        let ran = pool.install(run);
-        drop(pool);
-        for thread in threads {
-            let _ = thread.join();
+    std::thread::scope(|scope| -> Result<()> {
+        #[cfg(windows)]
+        let writer = {
+            let (tracker, failed) = (&tracker, &unbuffered_writer_failed);
+            scope.spawn(move || write_unbuffered_jobs(unbuffered_queue, tracker, failed))
+        };
+        #[cfg(windows)]
+        let stop_writer = StopWriterOnDrop(&unbuffered_jobs);
+        #[cfg(not(windows))]
+        let _ = scope;
+        let ran = if rayon::current_num_threads() <= worker_limit {
+            run()
+        } else {
+            let mut threads = Vec::new();
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(worker_limit)
+                .spawn_handler(|thread| {
+                    threads.push(std::thread::Builder::new().spawn(|| thread.run())?);
+                    Ok(())
+                })
+                .build()?;
+            let ran = pool.install(run);
+            drop(pool);
+            for thread in threads {
+                let _ = thread.join();
+            }
+            ran
+        };
+        #[cfg(windows)]
+        {
+            drop(stop_writer);
+            let written = writer
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+            written?;
+            ran
         }
-        ran?;
-    }
+        #[cfg(not(windows))]
+        ran
+    })?;
+    #[cfg(windows)]
+    drop(unbuffered_jobs);
     create_links_after_files(
         staging.as_ref().map(|temp| temp.path()),
         &items,

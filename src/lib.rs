@@ -16,6 +16,8 @@ mod pattern;
 mod placement;
 mod progress;
 mod staging;
+#[cfg(windows)]
+mod unbuffered;
 mod zip_reader;
 use anyhow::{Context, Result, ensure};
 pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};
