@@ -268,7 +268,8 @@ fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T
 /// rules in `docs/reference/zip-reader.md`. When `read` fails, other than by
 /// a cancel, a destination problem or a size limit, the error gains a line
 /// that names the volumes read as one archive, or says why a numbered file
-/// was read alone when there is a reason to give.
+/// was read alone when there is a reason to give. A damaged set is neither
+/// joined nor read alone, and its error names the volume at fault instead.
 pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
     with_volumes(archive, read)
 }
