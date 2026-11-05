@@ -239,12 +239,17 @@ fn later_identities(numbered: &Numbered, first: Identity) -> (Identities, Option
         let path = numbered.path(FIRST_VOLUME + identities.count());
         match std::fs::metadata(&path) {
             Ok(metadata) if metadata.is_file() => identities.later.push(Identity::of(&metadata)),
-            Ok(_) => return (identities, Some(format!("{} is not a file", name(&path)))),
+            Ok(_) => {
+                return (
+                    identities,
+                    Some(format!("{} is not a file", path.display())),
+                );
+            }
             Err(error) if error.kind() == io::ErrorKind::NotFound => return (identities, None),
             Err(error) => {
                 return (
                     identities,
-                    Some(format!("{} cannot be read: {error}", name(&path))),
+                    Some(format!("{} cannot be read: {error}", path.display())),
                 );
             }
         }
@@ -262,11 +267,20 @@ fn sizes_disagree(numbered: &Numbered, identities: &Identities) -> Option<String
         if length == 0 {
             return Some(format!("{} is empty", name(&path)));
         }
-        if last && Layout::new(volume, count, length).is_none() {
+        if last
+            && length
+                .checked_sub(volume)
+                .is_some_and(|extra| extra >= count)
+        {
             return Some(format!(
                 "{} holds {length} bytes, more than the {volume} of {} by {count} or more",
                 name(&path),
                 name(&first)
+            ));
+        }
+        if last && Layout::new(volume, count, length).is_none() {
+            return Some(format!(
+                "{count} volumes of {volume} bytes add up to more than the 16 EiB a split archive can hold"
             ));
         }
         if !last && length > volume {
@@ -413,8 +427,8 @@ pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
         Found::Alone { .. } => ArchiveFile::One(open_regular_file(path, None)?),
         Found::Broken { why } => {
             return Err(invalid(format!(
-                "{} has later volumes that do not form a whole split archive, so it is not read alone: {why}",
-                name(path)
+                "{why}, so {} is neither joined with its later volumes nor read alone",
+                path.display()
             )));
         }
         Found::Set(set) => ArchiveFile::Joined(Joined {
@@ -436,15 +450,27 @@ pub(crate) fn ensure_stream_set_ends_short(path: &Path) -> io::Result<()> {
         }
         _ => return Ok(()),
     };
-    if set.layout.last != set.layout.volume {
+    if set.layout.last < set.layout.volume {
         return Ok(());
     }
     let count = set.identities.len() as u64;
     Err(invalid(format!(
-        "{} is as full as {}, so later volumes such as {} may be missing, and a single compressed file has no end of its own to show it is complete; join the volumes into one file to read a set whose last volume is full",
+        "{} is not smaller than {}, so later volumes such as {} may be missing or it may not belong to the set, and a single compressed file has no end of its own to show it is complete; join the volumes into one file with cat to read them",
         name(&set.path(count - 1)),
         name(&set.path(0)),
         name(&set.path(count))
+    )))
+}
+
+pub(crate) fn ensure_not_split(path: &Path, format: &str) -> io::Result<()> {
+    let Found::Set(set) = &discovered(path)?.found else {
+        return Ok(());
+    };
+    let count = set.identities.len() as u64;
+    Err(invalid(format!(
+        "{} to {} would be read as one {format} stream, but {format} has no checksum or end mark to show that no volume is truncated or missing; join the volumes into one file with cat to read them",
+        name(&set.path(0)),
+        name(&set.path(count - 1))
     )))
 }
 
@@ -724,6 +750,32 @@ mod tests {
             std::fs::write(folder.join(format!("{stem}.{:03}", index + 1)), chunk).unwrap();
         }
         folder.join(format!("{stem}.001"))
+    }
+
+    #[test]
+    fn sizes_that_overflow_get_their_own_message() {
+        let identity = |length| Identity {
+            length,
+            modified: None,
+            #[cfg(unix)]
+            device: 0,
+            #[cfg(unix)]
+            inode: 0,
+        };
+        let numbered = Numbered::parse(Path::new("huge.bin.001")).unwrap();
+        let half = u64::MAX / 2;
+        let identities = Identities {
+            first: identity(half),
+            later: vec![identity(half), identity(half)],
+        };
+        let why = sizes_disagree(&numbered, &identities).unwrap();
+        assert!(why.contains("16 EiB"), "{why}");
+        let larger = Identities {
+            first: identity(10),
+            later: vec![identity(10), identity(13)],
+        };
+        let why = sizes_disagree(&numbered, &larger).unwrap();
+        assert!(why.contains("by 3 or more"), "{why}");
     }
 
     #[test]

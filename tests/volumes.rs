@@ -1189,7 +1189,6 @@ fn sets_from_split_by_chunk_count_join_as_7zip_joins_them() {
         (odd_zip.clone(), "o.zip"),
         (parity("zip.zip"), "z.zip"),
         (parity("tar.tar.gz"), "t.tar.gz"),
-        (parity("hello.txt.gz"), "hello.txt.gz"),
     ] {
         for chunks in [2, 3] {
             let folder = tempfile::tempdir().unwrap();
@@ -1204,4 +1203,65 @@ fn sets_from_split_by_chunk_count_join_as_7zip_joins_them() {
             );
         }
     }
+}
+
+#[test]
+fn a_stream_set_whose_last_volume_is_larger_is_refused() {
+    let folder = tempfile::tempdir().unwrap();
+    let first = gzip_member(&noise(30, 21));
+    let larger = (1..200)
+        .map(|length| gzip_member(&noise(length, 24)))
+        .find(|candidate| candidate.len() == first.len() + 1)
+        .unwrap();
+    fs::write(folder.path().join("report.txt.gz.001"), &first).unwrap();
+    fs::write(folder.path().join("report.txt.gz.002"), &larger).unwrap();
+    assert_refused(
+        &folder.path().join("report.txt.gz.001"),
+        &["report.txt.gz.002 is not smaller than report.txt.gz.001"],
+        "a whole gzip beside a gzip one byte larger",
+    );
+}
+
+#[test]
+fn a_split_set_with_no_checksum_or_end_mark_is_refused() {
+    let compressed = fs::read(parity("hello.txt.Z")).unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    let first = split(
+        &compressed,
+        folder.path(),
+        "hello.txt.Z",
+        compressed.len() / 2 + 1,
+    );
+    assert_refused(
+        &first,
+        &["hello.txt.Z.001", "no checksum or end mark"],
+        "compress in two volumes",
+    );
+
+    let mut legacy = vec![0x02, 0x21, 0x4c, 0x18];
+    legacy.extend_from_slice(&7u32.to_le_bytes());
+    legacy.extend_from_slice(&[0x60]);
+    legacy.extend_from_slice(b"hello\n");
+    let folder = tempfile::tempdir().unwrap();
+    let first = split(
+        &legacy,
+        folder.path(),
+        "hello.txt.lz4",
+        legacy.len() / 2 + 1,
+    );
+    assert_refused(
+        &first,
+        &["hello.txt.lz4.001", "no checksum or end mark"],
+        "legacy LZ4 in two volumes",
+    );
+}
+
+#[test]
+fn a_broken_set_leads_with_the_sibling_at_fault() {
+    let set = Set::new("zip.zip", 300);
+    fs::remove_file(set.path(2)).unwrap();
+    fs::create_dir(set.path(2)).unwrap();
+    let error = format!("{:#}", refused_with(&set.path(1), false));
+    let expected = format!("{} is not a file", set.path(2).display());
+    assert!(error.starts_with(&expected), "{error}");
 }

@@ -56,6 +56,14 @@ pub fn sniff(path: &Path) -> Result<Option<Compression>> {
     Ok((compression != Compression::None).then_some(compression))
 }
 
+const LEGACY_LZ4_MAGIC: [u8; 4] = [0x02, 0x21, 0x4c, 0x18];
+
+fn starts_with_legacy_lz4(path: &Path) -> Result<bool> {
+    let mut magic = [0u8; 4];
+    let read = crate::volumes::open(path)?.read(&mut magic)?;
+    Ok(read == magic.len() && magic == LEGACY_LZ4_MAGIC)
+}
+
 fn has_lzma_properties(path: &Path) -> Result<bool> {
     let mut first = [0u8; 1];
     let read = crate::volumes::open(path)?.read(&mut first)?;
@@ -122,6 +130,13 @@ pub fn read_archive(
 ) -> Result<Vec<Entry>> {
     let compression = sniff(path)?.context("not a single compressed stream")?;
     crate::volumes::ensure_stream_set_ends_short(path)?;
+    match compression {
+        Compression::Compress => crate::volumes::ensure_not_split(path, "compress")?,
+        Compression::Lz4 if starts_with_legacy_lz4(path)? => {
+            crate::volumes::ensure_not_split(path, "legacy LZ4")?
+        }
+        _ => {}
+    }
     let name = output_name(&named(path))?;
     let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
     selection.ensure_each_path_matches(std::iter::once(name.as_str()))?;

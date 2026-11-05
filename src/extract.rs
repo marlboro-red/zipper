@@ -41,11 +41,10 @@ fn starts_with_zip_signature(archive: &Path) -> Result<bool> {
     Ok(read == 4 && matches!(&signature, b"PK\x03\x04" | b"PK\x05\x06"))
 }
 
-/// Pick the reader for `archive` from its first bytes. A file named `.001`
-/// is read with `.002` and each next volume as one archive when they form a
-/// consistent set. It is read alone when no `.002` exists or the only `.002`
-/// is larger, and refused when its volumes show damage, such as a gap. Any
-/// other numbered volume is read alone, and a failure says why.
+/// Pick the reader for `archive` from its first bytes. When a file named
+/// `.001` is read with its later volumes as one archive, these are the
+/// joined archive's first bytes. `docs/reference/zip-reader.md` gives the
+/// rules for numbered volumes.
 pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     Ok(match engine {
         Engine::Backend => Reader::Backend { format: None },
@@ -264,11 +263,12 @@ fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T
     }
 }
 
-/// Run `read`, which reads `archive`. A `.001` name is read with `.002` and
-/// each next volume as one archive, and the volumes are found once for every
-/// reader that `read` opens. When `read` fails for a reason that could come
-/// from the volumes' bytes, the error gains a line that names the volumes,
-/// or says why a numbered file was read alone.
+/// Run `read`, which reads `archive`. When `archive` is a numbered volume,
+/// its volumes are found once for every reader that `read` opens, by the
+/// rules in `docs/reference/zip-reader.md`. When `read` fails, other than by
+/// a cancel, a destination problem or a size limit, the error gains a line
+/// that names the volumes read as one archive, or says why a numbered file
+/// was read alone when there is a reason to give.
 pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
     with_volumes(archive, read)
 }
