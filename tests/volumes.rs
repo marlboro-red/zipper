@@ -1161,30 +1161,28 @@ fn a_stream_first_volume_is_never_read_alone() {
     );
 }
 
-fn split_into(source: &Path, chunks: usize, folder: &Path, stem: &str) -> Option<PathBuf> {
-    let prefix = folder.join(format!("{stem}.part."));
-    let status = Command::new("split")
-        .arg("-n")
-        .arg(chunks.to_string())
-        .arg(source)
-        .arg(&prefix)
-        .stderr(Stdio::null())
-        .status()
-        .ok()?;
-    if !status.success() {
-        return None;
+fn write_volumes(source: &Path, sizes: &[usize], folder: &Path, stem: &str) -> PathBuf {
+    let bytes = fs::read(source).unwrap();
+    assert_eq!(sizes.iter().sum::<usize>(), bytes.len());
+    let mut rest = bytes.as_slice();
+    for (index, size) in sizes.iter().enumerate() {
+        let (volume, after) = rest.split_at(*size);
+        fs::write(folder.join(volume_name(stem, index + 1)), volume).unwrap();
+        rest = after;
     }
-    let mut parts: Vec<PathBuf> = fs::read_dir(folder)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.to_string_lossy().contains(".part."))
-        .collect();
-    parts.sort();
-    assert_eq!(parts.len(), chunks);
-    for (index, part) in parts.iter().enumerate() {
-        fs::rename(part, folder.join(volume_name(stem, index + 1))).unwrap();
-    }
-    Some(folder.join(volume_name(stem, 1)))
+    folder.join(volume_name(stem, 1))
+}
+
+fn bsd_chunk_sizes(length: usize, chunks: usize) -> Vec<usize> {
+    let mut sizes = vec![length / chunks; chunks];
+    sizes[chunks - 1] += length % chunks;
+    sizes
+}
+
+fn gnu_chunk_sizes(length: usize, chunks: usize) -> Vec<usize> {
+    (0..chunks)
+        .map(|index| length / chunks + usize::from(index < length % chunks))
+        .collect()
 }
 
 #[test]
@@ -1203,10 +1201,10 @@ fn sets_from_split_by_chunk_count_join_as_7zip_joins_them() {
     ] {
         for chunks in [2, 3] {
             let folder = tempfile::tempdir().unwrap();
-            let Some(first) = split_into(&source, chunks, folder.path(), stem) else {
-                return;
-            };
-            let label = format!("{stem} split into {chunks}");
+            let length = fs::metadata(&source).unwrap().len() as usize;
+            let sizes = bsd_chunk_sizes(length, chunks);
+            let first = write_volumes(&source, &sizes, folder.path(), stem);
+            let label = format!("{stem} split into {sizes:?}");
             assert_eq!(
                 extracted_tree(&first, 4, &label),
                 whole_tree(&source),
@@ -1214,6 +1212,20 @@ fn sets_from_split_by_chunk_count_join_as_7zip_joins_them() {
             );
         }
     }
+}
+
+#[test]
+fn a_set_whose_middle_volume_is_one_byte_short_is_refused() {
+    let folder = tempfile::tempdir().unwrap();
+    let source = parity("zip.zip");
+    let length = fs::metadata(&source).unwrap().len() as usize;
+    let sizes = gnu_chunk_sizes(length, 3);
+    assert!(
+        sizes[0] > sizes[1],
+        "zip.zip must not divide by 3: {sizes:?}"
+    );
+    let first = write_volumes(&source, &sizes, folder.path(), "g.zip");
+    assert_refused(&first, &[&volume_name("g.zip", 2)], "GNU split -n 3");
 }
 
 #[test]
