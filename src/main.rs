@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
-use std::path::PathBuf;
+use std::{io::IsTerminal, path::PathBuf};
+use zeroize::Zeroizing;
 use zipper::Reader;
 
 #[derive(Parser)]
@@ -19,6 +20,11 @@ struct Cli {
     /// Metadata, worker state and verification archive cache are additional.
     #[arg(long, global = true, value_parser = clap::value_parser!(u32).range(0..=4096))]
     zip_buffer_mib: Option<u32>,
+    /// Password for encrypted ZIP entries. Other users can see it in the process list.
+    /// Without it, Zipper asks on Unix when a selected entry is encrypted and standard
+    /// input is a terminal, and fails otherwise.
+    #[arg(long, global = true, value_name = "PASSWORD")]
+    password: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -130,8 +136,87 @@ impl From<ZipEngine> for zipper::Engine {
     }
 }
 
+fn with_password<T>(
+    given: Option<&[u8]>,
+    mut run: impl FnMut(Option<&[u8]>) -> Result<T>,
+) -> Result<T> {
+    let needed = match run(given) {
+        Err(error) if given.is_none() && error.is::<zipper::native_zip::PasswordNeeded>() => error,
+        other => return other,
+    };
+    anyhow::ensure!(
+        std::io::stdin().is_terminal(),
+        "{needed}; standard input is not a terminal, so Zipper cannot ask for it"
+    );
+    let asked = ask_password()?;
+    run(Some(&asked))
+}
+
+const LONGEST_PASSWORD: usize = 1024;
+
+#[cfg(unix)]
+fn ask_password() -> Result<Zeroizing<Vec<u8>>> {
+    use std::io::Write;
+    let mut terminal = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")?;
+    let saved = stty(&terminal, &["-g"])?;
+    terminal.write_all(b"Password: ")?;
+    stty(&terminal, &["-echo"])?;
+    let password = read_line(&mut terminal);
+    let restored = stty(&terminal, &[saved.trim()]);
+    terminal.write_all(b"\n")?;
+    restored?;
+    password
+}
+
+#[cfg(unix)]
+fn stty(terminal: &std::fs::File, arguments: &[&str]) -> Result<String> {
+    let run = std::process::Command::new("stty")
+        .args(arguments)
+        .stdin(terminal.try_clone()?)
+        .output()?;
+    anyhow::ensure!(
+        run.status.success(),
+        "stty failed: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    Ok(String::from_utf8(run.stdout)?)
+}
+
+#[cfg(unix)]
+fn read_line(terminal: &mut std::fs::File) -> Result<Zeroizing<Vec<u8>>> {
+    use std::io::Read;
+    let mut password = Zeroizing::new(Vec::with_capacity(LONGEST_PASSWORD));
+    let mut byte = Zeroizing::new([0u8; 1]);
+    while terminal.read(&mut byte[..])? == 1 && byte[0] != b'\n' {
+        anyhow::ensure!(
+            password.len() < LONGEST_PASSWORD,
+            "the password is longer than {LONGEST_PASSWORD} bytes"
+        );
+        password.push(byte[0]);
+    }
+    if password.last() == Some(&b'\r') {
+        password.pop();
+    }
+    Ok(password)
+}
+
+#[cfg(not(unix))]
+fn ask_password() -> Result<Zeroizing<Vec<u8>>> {
+    anyhow::bail!(
+        "Zipper cannot ask for a password on this system; pass --password (at most {LONGEST_PASSWORD} bytes)"
+    )
+}
+
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    let password = cli
+        .password
+        .take()
+        .map(|given| Zeroizing::new(given.into_bytes()));
+    let password = password.as_ref().map(|given| given.as_slice());
     if let Some(n) = cli.threads {
         anyhow::ensure!((1..=64).contains(&n), "threads must be between 1 and 64");
         rayon::ThreadPoolBuilder::new()
@@ -206,35 +291,38 @@ fn main() -> Result<()> {
             let archive = spooled
                 .as_ref()
                 .map_or(archive, |spool| spool.path().to_owned());
-            zipper::extract_archive(
-                &archive,
-                &output,
-                zipper::ExtractOptions {
-                    existing: match (overwrite, existing) {
-                        (true, _) => zipper::Existing::Overwrite,
-                        (false, existing) => existing.unwrap_or(ExistingArg::Refuse).into(),
+            with_password(password, |password| {
+                zipper::extract_archive(
+                    &archive,
+                    &output,
+                    zipper::ExtractOptions {
+                        password,
+                        existing: match (overwrite, existing) {
+                            (true, _) => zipper::Existing::Overwrite,
+                            (false, existing) => existing.unwrap_or(ExistingArg::Refuse).into(),
+                        },
+                        paths: &paths,
+                        include: &include,
+                        exclude: &exclude,
+                        flat: flat || stdout,
+                        strip: match (&strip_prefix, strip_components) {
+                            (Some(prefix), _) => zipper::Strip::Prefix(prefix),
+                            (None, Some(count)) => zipper::Strip::Components(count),
+                            (None, None) => zipper::Strip::None,
+                        },
+                        metadata: if content_only {
+                            zipper::Metadata::ContentOnly
+                        } else {
+                            zipper::Metadata::Restore
+                        },
+                        max_output_bytes: max_extracted_bytes,
+                        threads: cli.threads,
+                        engine: cli.zip_engine.into(),
+                        zip_buffer_bytes: buffer_bytes,
+                        ..Default::default()
                     },
-                    paths: &paths,
-                    include: &include,
-                    exclude: &exclude,
-                    flat: flat || stdout,
-                    strip: match (&strip_prefix, strip_components) {
-                        (Some(prefix), _) => zipper::Strip::Prefix(prefix),
-                        (None, Some(count)) => zipper::Strip::Components(count),
-                        (None, None) => zipper::Strip::None,
-                    },
-                    metadata: if content_only {
-                        zipper::Metadata::ContentOnly
-                    } else {
-                        zipper::Metadata::Restore
-                    },
-                    max_output_bytes: max_extracted_bytes,
-                    threads: cli.threads,
-                    engine: cli.zip_engine.into(),
-                    zip_buffer_bytes: buffer_bytes,
-                    ..Default::default()
-                },
-            )?;
+                )
+            })?;
             if to_stdout.is_some() {
                 let files: Vec<PathBuf> = std::fs::read_dir(&output)?
                     .map(|entry| entry.map(|entry| entry.path()))
@@ -288,17 +376,20 @@ fn main() -> Result<()> {
             let report =
                 |entries: Vec<zipper::Entry>| println!("Verified {} entries", entries.len());
             match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
-                Reader::Zip { fast } => report(zipper::native_zip::read_archive_with_options(
-                    &archive,
-                    None,
-                    zipper::native_zip::ReadOptions {
-                        fast,
-                        threads: cli.threads,
-                        buffer_bytes,
-                        max_output_bytes: None,
-                        ..Default::default()
-                    },
-                )?),
+                Reader::Zip { fast } => report(with_password(password, |password| {
+                    zipper::native_zip::read_archive_with_options(
+                        &archive,
+                        None,
+                        zipper::native_zip::ReadOptions {
+                            fast,
+                            threads: cli.threads,
+                            buffer_bytes,
+                            max_output_bytes: None,
+                            password,
+                            ..Default::default()
+                        },
+                    )
+                })?),
                 Reader::SevenZip => report(zipper::native_7z::read_archive(
                     &archive,
                     None,

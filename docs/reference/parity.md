@@ -16,10 +16,10 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 49 |
+| `native` | 51 |
 | `partial` | 1 |
 | `backend` | 53 |
-| `missing` | 7 |
+| `missing` | 5 |
 | `dropped` | 2 |
 
 44 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
@@ -130,8 +130,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Zstandard` | `native` | 7-Zip 26.05 cannot write it, so the proof is a built entry. | `other_methods_decode_exactly_and_refuse_damage` in `tests/hostile_zip.rs` |
 | `XZ` | `native` |  | `tests/data/parity/archives/zip-xz.zip` |
 | `PPMd` | `native` |  | `tests/data/parity/archives/zip-ppmd.zip` |
-| `ZipCrypto` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | `tests/data/parity/archives/zip-zipcrypto.zip` |
-| `WinZip AES` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | `tests/data/parity/archives/zip-winzip-aes.zip` |
+| `ZipCrypto` | `native` | Read for compatibility only; ZipCrypto is weak. | `tests/data/parity/archives/zip-zipcrypto.zip`, `every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines` in `tests/encrypted_zip.rs` |
+| `WinZip AES` | `native` |  | `tests/data/parity/archives/zip-winzip-aes.zip`, `every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines` in `tests/encrypted_zip.rs` |
 
 ## Extraction switches
 

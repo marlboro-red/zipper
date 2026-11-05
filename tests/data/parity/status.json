@@ -288,12 +288,17 @@
       "status": "native"
     },
     "ZipCrypto": {
-      "status": "missing",
-      "note": "Zipper has no password option, so 7-Zip cannot decrypt it either."
+      "status": "native",
+      "note": "Read for compatibility only; ZipCrypto is weak.",
+      "tests": [
+        "tests/encrypted_zip.rs::every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines"
+      ]
     },
     "WinZip AES": {
-      "status": "missing",
-      "note": "Zipper has no password option, so 7-Zip cannot decrypt it either."
+      "status": "native",
+      "tests": [
+        "tests/encrypted_zip.rs::every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines"
+      ]
     }
   },
   "switches": {

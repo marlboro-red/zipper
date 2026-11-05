@@ -111,6 +111,10 @@ pub struct ExtractOptions<'a> {
     /// first, and the rename modes number the others `name_1.ext` and on.
     /// An archive with links is refused.
     pub flat: bool,
+    /// Password for ZipCrypto and WinZip AES entries in a ZIP read in
+    /// process. An encrypted entry without it fails with
+    /// [`crate::native_zip::PasswordNeeded`]. The 7-Zip backend refuses it.
+    pub password: Option<&'a [u8]>,
 }
 
 fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Result<()> {
@@ -214,6 +218,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     strip: options.strip,
                     metadata: options.metadata,
                     control: options.control,
+                    password: options.password,
                 },
             )?;
         }
@@ -249,6 +254,9 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                     control: options.control,
                 },
             )?;
+        }
+        Reader::Backend { .. } if options.password.is_some() => {
+            bail!("--password needs a ZIP archive read in process")
         }
         Reader::Backend { .. }
             if !(options.paths.is_empty()

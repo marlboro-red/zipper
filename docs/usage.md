@@ -190,7 +190,23 @@ zipper --threads 4 extract files.zip -o restored
 zipper test files.zip
 ```
 
-If the archive is encrypted, uses another compression method or spans disks, the error says so. To read it with 7-Zip, pass `--zip-engine backend`. Zipper never makes that switch itself, because 7-Zip accepts some archives the in-process reader rejects as unsafe.
+If the archive uses another compression method, PKWARE strong encryption or more than one disk, the error says so. To read it with 7-Zip, pass `--zip-engine backend`. Zipper never makes that switch itself, because 7-Zip accepts some archives the in-process reader rejects as unsafe.
+
+### Extract an encrypted ZIP
+
+Zipper decrypts ZipCrypto and WinZip AES entries in process. Run `extract` or `test` as usual. When a selected entry is encrypted, Zipper asks for the password on the terminal with echo off:
+
+```sh
+zipper extract secret.zip -o restored
+```
+
+To give the password without a prompt, as a script must, pass `--password`. Other users on the machine can read it in the process list:
+
+```sh
+zipper --password 'correct horse' extract secret.zip -o restored
+```
+
+When standard input is not a terminal and no password was given, Zipper refuses. A wrong password fails before anything is published, and the error says the password is wrong. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. The 7-Zip backend refuses `--password`. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
 
 Pick the engine by workload:
 

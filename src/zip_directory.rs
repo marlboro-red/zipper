@@ -1,3 +1,4 @@
+use crate::zip_crypto::{AES_METHOD, AesExtra, aes_field};
 use crate::{BadField, Field, field_check};
 use anyhow::{Result, ensure};
 use std::{
@@ -52,6 +53,15 @@ const MULTI_DISK_ZIP64: &str =
 pub(crate) struct Directory {
     pub(crate) start: u64,
     pub(crate) entries: Vec<CentralEntry>,
+    pub(crate) aes_fields: Vec<(usize, AesExtra)>,
+}
+
+impl Directory {
+    pub(crate) fn aes_extra(&self, entry: usize) -> AesExtra {
+        self.aes_fields
+            .binary_search_by_key(&entry, |&(index, _)| index)
+            .map_or(AesExtra::Absent, |found| self.aes_fields[found].1)
+    }
 }
 
 pub(crate) struct CentralEntry {
@@ -138,10 +148,7 @@ pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> 
     }
     check_extent(&extent)?;
     file.seek(SeekFrom::Start(extent.start))?;
-    Ok(Directory {
-        start: extent.start,
-        entries: central_entries(file, extent).map_err(WalkError::into_anyhow)?,
-    })
+    central_entries(file, extent).map_err(WalkError::into_anyhow)
 }
 
 struct DirectoryBytes<'r, R> {
@@ -216,9 +223,21 @@ impl<R: Read> DirectoryBytes<'_, R> {
     }
 }
 
-fn central_entries<R: Read>(file: &mut R, extent: Extent) -> Walk<Vec<CentralEntry>> {
-    walk_records(file, extent, |record, position| {
-        central_entry(record, position, is_utf8)
+fn central_entries<R: Read>(file: &mut R, extent: Extent) -> Walk<Directory> {
+    let mut aes_fields = Vec::new();
+    let mut index = 0;
+    let entries = walk_records(file, extent, |record, position| {
+        let entry = central_entry(record, position, is_utf8)?;
+        if entry.method == AES_METHOD && entry.encrypted() {
+            aes_fields.push((index, aes_extra(central_record(record)?.extra)));
+        }
+        index += 1;
+        Ok(entry)
+    })?;
+    Ok(Directory {
+        start: extent.start,
+        entries,
+        aes_fields,
     })
 }
 
@@ -505,6 +524,15 @@ fn extra_fields(mut extra: &[u8]) -> impl Iterator<Item = (u16, &[u8])> {
         extra = &extra[4 + length..];
         Some((id, body))
     })
+}
+
+pub(crate) fn aes_extra(extra: &[u8]) -> AesExtra {
+    let mut bodies = extra_fields(extra).filter_map(|(id, body)| (id == AES).then_some(body));
+    match (bodies.next(), bodies.next()) {
+        (None, _) => AesExtra::Absent,
+        (Some(body), None) => aes_field(body).map_or(AesExtra::Malformed, AesExtra::Present),
+        (Some(_), Some(_)) => AesExtra::Malformed,
+    }
 }
 
 fn unicode_name_judged_by(

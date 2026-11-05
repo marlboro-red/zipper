@@ -47,7 +47,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 26e4252d9925c9a7
+fingerprint = 3c76d6a628751c17
 full-check = python3 scripts/check_model.py verification/progress-callback MCCallback.tla:callback.cfg
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
@@ -74,7 +74,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = a51115d41d4124d1
+fingerprint = 4470790ab129bcb4
 full-check = python3 scripts/check_model.py verification/zip-decoder-budget MCZip.tla:zip.cfg
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
@@ -279,3 +279,36 @@ item = src/lzma.rs | fn start_block<
 item = src/lzma.rs | fn read_xz_index<
 item = src/lzma.rs | fn read_xz_stream_footer<
 item = src/lzma.rs | fn finish_stream<
+
+[zip-crypto]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = fcf178691d04b90f
+full-check = cargo kani --harness zip_crypto::proofs::
+full-check = cargo test --release --lib zip_crypto
+full-check = cargo test --release --test encrypted_zip
+item = src/zip_crypto.rs | const ZIP_CRYPTO_HEADER:
+item = src/zip_crypto.rs | const AES_VERIFIER:
+item = src/zip_crypto.rs | const AES_VENDOR:
+item = src/zip_crypto.rs | const AES_FIELD:
+item = src/zip_crypto.rs | const AES_ITERATIONS:
+item = src/zip_crypto.rs | const LONGEST_AES_KEYS:
+item = src/zip_crypto.rs | pub(crate) const LONGEST_HEADER:
+item = src/zip_crypto.rs | pub(crate) const AES_CODE:
+item = src/zip_crypto.rs | impl Strength {
+item = src/zip_crypto.rs | pub(crate) fn aes_field(
+item = src/zip_crypto.rs | impl Encryption {
+item = src/zip_crypto.rs | impl AesStream {
+item = src/zip_crypto.rs | impl Decryptor {
+item = src/zip_crypto.rs | const ZIP_CRYPTO_KEYS:
+item = src/zip_crypto.rs | const ZIP_CRYPTO_MULTIPLIER:
+item = src/zip_crypto.rs | impl Keys {
+item = src/zip_crypto.rs | impl Drop for Keys {
+item = src/zip_crypto.rs | fn crc32_byte(
+item = src/zip_crypto.rs | const CRC32_TABLE:
+item = src/zip_directory.rs | pub(crate) fn aes_extra(
+item = src/zip_directory.rs | fn central_entries<
+item = src/zip_directory.rs | impl Directory {
+item = src/native_zip.rs | fn encryption(
+item = src/native_zip.rs | fn check_local_header(
+item = src/native_zip.rs | impl<R: Read> Read for Payload<R> {
+item = src/native_zip.rs | impl<R: Read> Payload<R> {

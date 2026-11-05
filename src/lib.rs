@@ -20,6 +20,7 @@ mod progress;
 mod staging;
 #[cfg(test)]
 mod xz_filters;
+mod zip_crypto;
 mod zip_directory;
 mod zip_reader;
 use anyhow::{Context, Result, ensure};
