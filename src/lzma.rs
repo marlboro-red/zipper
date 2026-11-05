@@ -73,7 +73,10 @@ impl<R: Read> RangeDecoder<R> {
         self.end -= self.start;
         self.start = 0;
         while self.end < INPUT_CHUNK {
-            let read = self.input.read(&mut self.buffer[self.end..INPUT_CHUNK])?;
+            let read = match self.input.read(&mut self.buffer[self.end..INPUT_CHUNK]) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                read => read?,
+            };
             if read == 0 {
                 self.ended = true;
                 break;
@@ -3584,6 +3587,60 @@ mod tests {
                         decoded.len() <= declared,
                         "declared {declared}, reads of {chunk}: returned {}",
                         decoded.len()
+                    );
+                }
+            }
+        }
+
+        struct Interrupting<'a> {
+            data: &'a [u8],
+            piece: usize,
+            calls: usize,
+            every: usize,
+        }
+
+        impl Read for Interrupting<'_> {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                self.calls += 1;
+                if self.calls.is_multiple_of(self.every) {
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                let count = buffer.len().min(self.piece).min(self.data.len());
+                buffer[..count].copy_from_slice(&self.data[..count]);
+                self.data = &self.data[count..];
+                Ok(count)
+            }
+        }
+
+        #[test]
+        fn an_interrupted_read_is_retried_and_never_fails_the_stream() {
+            let data = mixed();
+            let stream = encode_xz(&data, 6, Check::Crc64, 100_000);
+            let lzma2 = encode_lzma2(&data, 3, 0, 2, 1 << 20, 6);
+            for every in [2, 3, 5, 50] {
+                for piece in [1, 4_096, usize::MAX] {
+                    let input = |data| Interrupting {
+                        data,
+                        piece,
+                        calls: 0,
+                        every,
+                    };
+                    let mut out = Vec::new();
+                    XzReader::new(input(&stream))
+                        .read_to_end(&mut out)
+                        .unwrap_or_else(|error| {
+                            panic!("xz, every {every}, piece {piece}: {error}")
+                        });
+                    assert!(out == data, "xz, every {every}, piece {piece}: other bytes");
+                    out.clear();
+                    Lzma2Reader::new(input(&lzma2), 1 << 20)
+                        .read_to_end(&mut out)
+                        .unwrap_or_else(|error| {
+                            panic!("lzma2, every {every}, piece {piece}: {error}")
+                        });
+                    assert!(
+                        out == data,
+                        "lzma2, every {every}, piece {piece}: other bytes"
                     );
                 }
             }
