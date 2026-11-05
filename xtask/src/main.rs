@@ -254,7 +254,9 @@ fn gate(full: bool) -> Result<()> {
                 "warnings",
             ])
         }),
-        ("test", || cargo(&["test", "--workspace", "--locked"])),
+        ("test", || {
+            cargo(&["test", "--workspace", "--locked", "--profile", "ci"])
+        }),
         ("windows clippy", windows_clippy),
         ("release build", || {
             cargo(&["build", "--release", "--locked", "--package", "zipper"])?;
@@ -263,9 +265,6 @@ fn gate(full: bool) -> Result<()> {
         ("release round trip", round_trip),
     ];
     if full {
-        steps.push(("release test", || {
-            cargo(&["test", "--workspace", "--locked", "--release"])
-        }));
         steps.push(("counters", || {
             cargo(&[
                 "clippy",

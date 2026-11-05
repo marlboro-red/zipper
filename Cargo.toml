@@ -43,6 +43,14 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 lto = "thin"
 codegen-units = 1
 
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = false
+debug-assertions = true
+overflow-checks = true
+
 [[example]]
 name = "count_zip"
 required-features = ["counters"]
