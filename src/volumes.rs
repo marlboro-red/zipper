@@ -3,14 +3,13 @@ use std::{
     fs::{File, Metadata},
     io::{self, BufRead, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 const FIRST_VOLUME: u64 = 1;
-const MIN_NUMBER_DIGITS: usize = 3;
-const MAX_NUMBER_DIGITS: usize = 19;
+const GAP_PROBE: u64 = 16;
 const REPEAT_MIN_BYTES: u64 = 64;
-const REPEAT_SCAN_BYTES: u64 = 1 << 30;
+const REPEAT_SCAN_BYTES: u64 = 256 << 20;
 
 fn invalid(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
@@ -76,95 +75,189 @@ impl Identity {
     }
 }
 
-struct Volume {
-    path: PathBuf,
-    identity: Identity,
-}
-
 fn name(path: &Path) -> std::path::Display<'_> {
     Path::new(path.file_name().unwrap_or(path.as_os_str())).display()
-}
-
-pub(crate) struct VolumeSet {
-    volumes: Vec<Volume>,
-    layout: Layout,
-}
-
-impl VolumeSet {
-    fn open_volume(&self, index: u64) -> io::Result<File> {
-        let volume = &self.volumes[index as usize];
-        let file = File::open(&volume.path)?;
-        if Identity::of(&file.metadata()?) != volume.identity {
-            return Err(invalid(format!(
-                "split volume {} changed while it was read",
-                name(&volume.path)
-            )));
-        }
-        Ok(file)
-    }
 }
 
 struct Numbered {
     folder: PathBuf,
     stem: OsString,
-    digits: usize,
     number: u64,
 }
 
 impl Numbered {
     fn parse(path: &Path) -> Option<Self> {
         let digits = path.extension()?.to_str()?;
-        if !(MIN_NUMBER_DIGITS..=MAX_NUMBER_DIGITS).contains(&digits.len())
-            || !digits.bytes().all(|byte| byte.is_ascii_digit())
-        {
+        if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        let number: u64 = digits.parse().ok()?;
+        let stem = path.file_stem()?;
+        if format!("{number:03}") != digits || matches!(stem.to_str(), Some("" | "." | "..")) {
             return None;
         }
         Some(Self {
             folder: path.parent().unwrap_or(Path::new("")).to_owned(),
-            stem: path.file_stem()?.to_owned(),
-            digits: digits.len(),
-            number: digits.parse().ok()?,
+            stem: stem.to_owned(),
+            number,
         })
     }
 
     fn path(&self, number: u64) -> PathBuf {
         let mut name = self.stem.clone();
-        name.push(format!(".{number:0width$}", width = self.digits));
+        name.push(format!(".{number:03}"));
         self.folder.join(name)
     }
+}
 
-    fn highest_present(&self) -> io::Result<u64> {
-        let folder = if self.folder.as_os_str().is_empty() {
-            Path::new(".")
-        } else {
-            &self.folder
-        };
-        let mut highest = 0;
-        for entry in std::fs::read_dir(folder)? {
-            let file_name = entry?.file_name();
-            if let Some(other) = Numbered::parse(Path::new(&file_name))
-                && other.stem == self.stem
-                && other.digits >= self.digits
-            {
-                highest = highest.max(other.number);
-            }
+pub(crate) struct VolumeSet {
+    numbered: Numbered,
+    identities: Vec<Identity>,
+    layout: Layout,
+}
+
+impl VolumeSet {
+    fn path(&self, index: u64) -> PathBuf {
+        self.numbered.path(FIRST_VOLUME + index)
+    }
+
+    fn open_volume(&self, index: u64) -> io::Result<File> {
+        let path = self.path(index);
+        let file = File::open(&path)?;
+        if Identity::of(&file.metadata()?) != self.identities[index as usize] {
+            return Err(invalid(format!(
+                "split volume {} changed while it was read",
+                name(&path)
+            )));
         }
-        Ok(highest)
+        Ok(file)
     }
 }
 
-#[derive(Clone)]
-pub(crate) enum Source {
-    File(PathBuf),
-    Volumes(Arc<VolumeSet>),
+enum Found {
+    Alone { why: Option<String> },
+    Set(Arc<VolumeSet>),
 }
 
-impl Source {
-    pub(crate) fn new(path: &Path) -> io::Result<Self> {
-        let Some(numbered) = Numbered::parse(path).filter(|numbered| numbered.number > 0) else {
-            return Ok(Self::File(path.to_owned()));
-        };
-        if numbered.number != FIRST_VOLUME {
+struct Discovery {
+    path: PathBuf,
+    found: Found,
+}
+
+static DISCOVERED: Mutex<Vec<Weak<Discovery>>> = Mutex::new(Vec::new());
+
+fn first_present_after(numbered: &Numbered, missing: u64) -> Option<u64> {
+    (missing + 1..=missing + GAP_PROBE).find(|&number| numbered.path(number).exists())
+}
+
+fn volume_identities(numbered: &Numbered) -> (Vec<Identity>, Option<String>) {
+    let mut identities = Vec::new();
+    loop {
+        let path = numbered.path(FIRST_VOLUME + identities.len() as u64);
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_file() => identities.push(Identity::of(&metadata)),
+            Ok(_) => return (identities, Some(format!("{} is not a file", name(&path)))),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return (identities, None),
+            Err(error) => {
+                return (
+                    identities,
+                    Some(format!("{} cannot be read: {error}", name(&path))),
+                );
+            }
+        }
+    }
+}
+
+fn sizes_disagree(numbered: &Numbered, identities: &[Identity]) -> Option<String> {
+    let first = numbered.path(FIRST_VOLUME);
+    let volume = identities[0].length;
+    for (index, identity) in (0..).zip(identities) {
+        let path = numbered.path(FIRST_VOLUME + index);
+        let length = identity.length;
+        if length == 0 {
+            return Some(format!("{} is empty", name(&path)));
+        }
+        if length > volume {
+            return Some(format!(
+                "{} holds {length} bytes, more than the {volume} of {}",
+                name(&path),
+                name(&first)
+            ));
+        }
+        if index + 1 < identities.len() as u64 && length < volume {
+            let next = numbered.path(FIRST_VOLUME + index + 1);
+            return Some(format!(
+                "{} holds {length} bytes, fewer than the {volume} of {}, but {} follows it, so {} is truncated or {} does not belong",
+                name(&path),
+                name(&first),
+                name(&next),
+                name(&path),
+                name(&next)
+            ));
+        }
+    }
+    None
+}
+
+fn find_set(numbered: Numbered) -> Found {
+    let (identities, unreadable) = volume_identities(&numbered);
+    let count = identities.len() as u64;
+    let next = numbered.path(count + 1);
+    let why = unreadable
+        .or_else(|| {
+            first_present_after(&numbered, count + 1).map(|present| {
+                format!(
+                    "{} is missing, but {} is present",
+                    name(&next),
+                    name(&numbered.path(present))
+                )
+            })
+        })
+        .or_else(|| {
+            (count == 1).then(|| {
+                format!(
+                    "no {} is present; if it is the first volume of a split archive, {} is missing",
+                    name(&next),
+                    name(&next)
+                )
+            })
+        })
+        .or_else(|| sizes_disagree(&numbered, &identities));
+    if why.is_some() || count == 0 {
+        return Found::Alone { why };
+    }
+    let (volume, last) = (
+        identities[0].length,
+        identities[identities.len() - 1].length,
+    );
+    match Layout::new(volume, count, last) {
+        Some(layout) => Found::Set(Arc::new(VolumeSet {
+            numbered,
+            identities,
+            layout,
+        })),
+        None => Found::Alone {
+            why: Some("the volumes add up past 16 EiB".to_owned()),
+        },
+    }
+}
+
+fn discover(path: &Path) -> io::Result<Arc<Discovery>> {
+    let mut discovered = DISCOVERED
+        .lock()
+        .map_err(|_| io::Error::other("split volume registry poisoned"))?;
+    discovered.retain(|entry| entry.strong_count() > 0);
+    if let Some(known) = discovered
+        .iter()
+        .filter_map(Weak::upgrade)
+        .find(|known| known.path == path)
+    {
+        return Ok(known);
+    }
+    let found = match Numbered::parse(path) {
+        None => Found::Alone { why: None },
+        Some(numbered) if numbered.number == FIRST_VOLUME => find_set(numbered),
+        Some(numbered) => {
             let first = numbered.path(FIRST_VOLUME);
             if first.is_file() {
                 return Err(invalid(format!(
@@ -173,93 +266,34 @@ impl Source {
                     name(&first)
                 )));
             }
-            return Ok(Self::File(path.to_owned()));
+            Found::Alone { why: None }
         }
-        let mut volumes = Vec::new();
-        loop {
-            let number = FIRST_VOLUME + volumes.len() as u64;
-            let path = numbered.path(number);
-            let metadata = match std::fs::metadata(&path) {
-                Ok(metadata) => metadata,
-                Err(error) if error.kind() == io::ErrorKind::NotFound && number > FIRST_VOLUME => {
-                    break;
-                }
-                Err(error) => return Err(error),
-            };
-            if !metadata.is_file() {
-                return Err(invalid(format!(
-                    "split volume {} is not a file",
-                    name(&path)
-                )));
-            }
-            volumes.push(Volume {
-                path,
-                identity: Identity::of(&metadata),
-            });
-        }
-        let count = volumes.len() as u64;
-        let highest = numbered.highest_present()?;
-        if highest > count {
-            return Err(invalid(format!(
-                "split volume {} is missing, but {} is present",
-                name(&numbered.path(count + 1)),
-                name(&numbered.path(highest))
-            )));
-        }
-        let first = &volumes[0];
-        let volume = first.identity.length;
-        if volume == 0 {
-            return Err(invalid(format!(
-                "split volume {} is empty",
-                name(&first.path)
-            )));
-        }
-        for (index, later) in volumes.iter().enumerate().skip(1) {
-            let length = later.identity.length;
-            let last = index + 1 == volumes.len();
-            if length > volume {
-                return Err(invalid(format!(
-                    "split volume {} holds {length} bytes, more than the {volume} of {}; every volume after the first must match its size, and only the last may be shorter",
-                    name(&later.path),
-                    name(&first.path)
-                )));
-            }
-            if length == 0 {
-                return Err(invalid(format!(
-                    "split volume {} is empty",
-                    name(&later.path)
-                )));
-            }
-            if !last && length < volume {
-                let next = name(&volumes[index + 1].path);
-                return Err(invalid(format!(
-                    "split volume {} holds {length} bytes, fewer than the {volume} of {}, but {next} follows it; only the last volume may be shorter, so {} is truncated or {next} does not belong to the set",
-                    name(&later.path),
-                    name(&first.path),
-                    name(&later.path),
-                )));
-            }
-        }
-        let last = volumes[volumes.len() - 1].identity.length;
-        let layout = Layout::new(volume, count, last)
-            .ok_or_else(|| invalid("split archive is larger than 16 EiB".to_owned()))?;
-        Ok(Self::Volumes(Arc::new(VolumeSet { volumes, layout })))
-    }
+    };
+    let discovery = Arc::new(Discovery {
+        path: path.to_owned(),
+        found,
+    });
+    discovered.push(Arc::downgrade(&discovery));
+    Ok(discovery)
+}
 
-    pub(crate) fn open(&self) -> io::Result<ArchiveFile> {
-        Ok(match self {
-            Self::File(path) => ArchiveFile::One(File::open(path)?),
-            Self::Volumes(set) => ArchiveFile::Joined(Joined {
-                set: Arc::clone(set),
-                position: 0,
-                open: Mutex::new(None),
-            }),
-        })
-    }
+pub(crate) struct Scope(Arc<Discovery>);
+
+pub(crate) fn scope(path: &Path) -> io::Result<Scope> {
+    discover(path).map(Scope)
 }
 
 pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
-    Source::new(path)?.open()
+    let discovery = discover(path)?;
+    Ok(match &discovery.found {
+        Found::Alone { .. } => ArchiveFile::One(File::open(path)?),
+        Found::Set(set) => ArchiveFile::Joined(Joined {
+            set: Arc::clone(set),
+            _discovery: Arc::clone(&discovery),
+            position: 0,
+            open: Mutex::new(None),
+        }),
+    })
 }
 
 pub(crate) fn joined_name(path: &Path) -> Option<PathBuf> {
@@ -287,22 +321,25 @@ fn same_bytes(left: &Path, right: &Path) -> io::Result<bool> {
     }
 }
 
-fn repeated_volume(set: &VolumeSet) -> io::Result<Option<(usize, usize)>> {
+fn repeated_volume(set: &VolumeSet) -> io::Result<Option<(u64, u64)>> {
     if set.layout.total() > REPEAT_SCAN_BYTES {
         return Ok(None);
     }
-    let mut seen: std::collections::HashMap<(u64, u32), Vec<usize>> = Default::default();
-    for (index, volume) in set.volumes.iter().enumerate() {
-        if volume.identity.length < REPEAT_MIN_BYTES {
+    let mut seen: std::collections::HashMap<(u64, u32), Vec<u64>> = Default::default();
+    for (index, identity) in (0..).zip(&set.identities) {
+        if identity.length < REPEAT_MIN_BYTES {
             continue;
         }
         let mut hasher = crc32fast::Hasher::new();
-        io::copy(&mut File::open(&volume.path)?, &mut HashWriter(&mut hasher))?;
+        io::copy(
+            &mut File::open(set.path(index))?,
+            &mut HashWriter(&mut hasher),
+        )?;
         let earlier = seen
-            .entry((volume.identity.length, hasher.finalize()))
+            .entry((identity.length, hasher.finalize()))
             .or_default();
         for &other in earlier.iter() {
-            if same_bytes(&set.volumes[other].path, &volume.path)? {
+            if same_bytes(&set.path(other), &set.path(index))? {
                 return Ok(Some((other, index)));
             }
         }
@@ -324,38 +361,45 @@ impl io::Write for HashWriter<'_> {
     }
 }
 
-pub(crate) fn failure_hint(path: &Path) -> Option<String> {
-    let Ok(Source::Volumes(set)) = Source::new(path) else {
-        return None;
-    };
-    let numbered = Numbered::parse(path)?;
-    let count = set.volumes.len();
-    let first = name(&set.volumes[0].path);
-    let last = name(&set.volumes[count - 1].path);
-    let mut hint = format!("{first} is the first of {count} split volumes, up to {last}");
-    if let Ok(Some((earlier, later))) = repeated_volume(&set) {
-        hint.push_str(&format!(
-            "; {} holds the same bytes as {}",
-            name(&set.volumes[later].path),
-            name(&set.volumes[earlier].path)
-        ));
+impl Scope {
+    pub(crate) fn hint(&self) -> Option<String> {
+        let first = name(&self.0.path);
+        let set = match &self.0.found {
+            Found::Alone { why: None } => return None,
+            Found::Alone { why: Some(why) } => {
+                return Some(format!("{first} was read alone, because {why}"));
+            }
+            Found::Set(set) => set,
+        };
+        let count = set.identities.len() as u64;
+        let last_path = set.path(count - 1);
+        let last = name(&last_path);
+        let mut hint = format!("{first} is the first of {count} split volumes, up to {last}");
+        if let Ok(Some((earlier, later))) = repeated_volume(set) {
+            hint.push_str(&format!(
+                "; {} holds the same bytes as {}",
+                name(&set.path(later)),
+                name(&set.path(earlier))
+            ));
+        }
+        if set.layout.last == set.layout.volume {
+            hint.push_str(&format!(
+                "; if they do not form one archive, {} may be missing",
+                name(&set.path(count))
+            ));
+        } else {
+            hint.push_str(&format!(
+                "; if they do not form one archive, {last} may be truncated or not belong to the set"
+            ));
+        }
+        hint.push_str(", or a volume may be repeated, out of order or damaged");
+        Some(hint)
     }
-    if set.layout.last == set.layout.volume {
-        hint.push_str(&format!(
-            "; if they do not form one archive, {} may be missing",
-            name(&numbered.path(count as u64 + 1))
-        ));
-    } else {
-        hint.push_str(&format!(
-            "; if they do not form one archive, {last} may be truncated or not belong to the set"
-        ));
-    }
-    hint.push_str(", or a volume may be repeated, out of order or damaged");
-    Some(hint)
 }
 
 pub(crate) struct Joined {
     set: Arc<VolumeSet>,
+    _discovery: Arc<Discovery>,
     position: u64,
     open: Mutex<Option<(u64, File)>>,
 }
@@ -394,7 +438,7 @@ impl Joined {
         if read == 0 && wanted > 0 {
             return Err(invalid(format!(
                 "split volume {} ended early while it was read",
-                name(&self.set.volumes[index as usize].path)
+                name(&self.set.path(index))
             )));
         }
         Ok(read)
@@ -432,6 +476,7 @@ impl ArchiveFile {
             Self::One(file) => Self::One(file.try_clone()?),
             Self::Joined(joined) => Self::Joined(Joined {
                 set: Arc::clone(&joined.set),
+                _discovery: Arc::clone(&joined._discovery),
                 position: joined.position,
                 open: Mutex::new(None),
             }),
@@ -446,7 +491,7 @@ impl ArchiveFile {
             None => Ok(()),
             Some((index, _)) => Err(invalid(format!(
                 "split volume {} holds bytes past the archive's end, so it does not belong to the set",
-                name(&joined.set.volumes[index as usize].path)
+                name(&joined.set.path(index))
             ))),
         }
     }
@@ -564,6 +609,22 @@ mod tests {
             assert_eq!(joined.seek(SeekFrom::End(-1))?, 299);
             assert!(joined.seek(SeekFrom::Current(-300)).is_err());
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_set_is_found_once_while_anything_holds_it() -> io::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let first = write_set(folder.path(), "once.bin", &[5; 30], 10);
+        let joined_set = |file: ArchiveFile| match file {
+            ArchiveFile::Joined(joined) => joined.set,
+            ArchiveFile::One(_) => panic!("read alone"),
+        };
+        let scope = scope(&first)?;
+        let held = joined_set(open(&first)?);
+        assert!(Arc::ptr_eq(&held, &joined_set(open(&first)?)));
+        drop(scope);
+        assert!(!Arc::ptr_eq(&held, &joined_set(open(&first)?)));
         Ok(())
     }
 

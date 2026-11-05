@@ -331,21 +331,14 @@ fn a_broken_volume_set_is_refused_and_named_before_publish() {
         fs::remove_file(missing_middle.path(2)).unwrap();
         assert_refused(
             &missing_middle.path(1),
-            &[
-                &missing_middle.name(2),
-                &missing_middle.name(missing_middle.count),
-            ],
+            &[&missing_middle.name(2), &missing_middle.name(3)],
             &label("missing middle"),
         );
 
         let gap = set();
         fs::remove_file(gap.path(3)).unwrap();
         fs::remove_file(gap.path(4)).unwrap();
-        assert_refused(
-            &gap.path(1),
-            &[&gap.name(3), &gap.name(gap.count)],
-            &label("gap"),
-        );
+        assert_refused(&gap.path(1), &[&gap.name(3), &gap.name(5)], &label("gap"));
 
         let missing_last = set();
         fs::remove_file(missing_last.path(missing_last.count)).unwrap();
@@ -432,5 +425,180 @@ fn an_extra_volume_after_a_full_last_volume_is_refused() {
                 ),
             );
         }
+    }
+}
+
+fn whole_tree(archive: &Path) -> BTreeMap<String, String> {
+    extracted_tree(archive, 4, &archive.display().to_string())
+}
+
+#[test]
+fn a_first_volume_whose_neighbours_do_not_form_a_set_is_read_alone() {
+    let folder = tempfile::tempdir().unwrap();
+    let zip = fs::read(parity("zip.zip")).unwrap();
+    let expected = whole_tree(&parity("zip.zip"));
+    fs::write(folder.path().join("backup.001"), &zip).unwrap();
+    fs::write(folder.path().join("backup.002"), vec![7u8; zip.len() * 2]).unwrap();
+    assert_eq!(
+        whole_tree(&folder.path().join("backup.001")),
+        expected,
+        "a larger unrelated .002"
+    );
+
+    let alone = tempfile::tempdir().unwrap();
+    fs::write(alone.path().join("backup.002"), &zip).unwrap();
+    assert_eq!(
+        whole_tree(&alone.path().join("backup.002")),
+        expected,
+        "a .002 with no .001"
+    );
+
+    let trailing = tempfile::tempdir().unwrap();
+    let mut sevenz = fs::read(parity("7z.7z")).unwrap();
+    sevenz.extend_from_slice(b"trailing bytes");
+    fs::write(trailing.path().join("plain.7z"), &sevenz).unwrap();
+    fs::write(trailing.path().join("a.7z.001"), &sevenz).unwrap();
+    assert_eq!(
+        whole_tree(&trailing.path().join("a.7z.001")),
+        whole_tree(&trailing.path().join("plain.7z")),
+        "a single 7z named .001 with trailing bytes"
+    );
+
+    let dots = tempfile::tempdir().unwrap();
+    let gzip = fs::read(parity("hello.txt.gz")).unwrap();
+    for name in ["..001", "...001"] {
+        fs::write(dots.path().join(name), &gzip).unwrap();
+        let names: Vec<_> = whole_tree(&dots.path().join(name)).into_keys().collect();
+        assert_eq!(names, ["_"], "{name}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_set_in_a_folder_that_cannot_be_listed_still_extracts() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("locked");
+    fs::create_dir(&folder).unwrap();
+    let bytes = fs::read(parity("zip.zip")).unwrap();
+    let first = split(&bytes, &folder, "a.zip", 300);
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o311)).unwrap();
+    let listable = fs::read_dir(&folder).is_ok();
+    let tree = extract(&first, 4);
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+    if listable {
+        return;
+    }
+    let (out, result) = tree;
+    result.unwrap();
+    assert_eq!(tree_of(out.path()), whole_tree(&parity("zip.zip")));
+}
+
+#[cfg(unix)]
+fn tree_of(root: &Path) -> BTreeMap<String, String> {
+    tree(&root.join("out"))
+}
+
+fn refused_with(archive: &Path, destination_exists: bool) -> anyhow::Error {
+    let root = tempfile::tempdir().unwrap();
+    let destination = root.path().join("out");
+    if destination_exists {
+        fs::create_dir(&destination).unwrap();
+    }
+    extract_archive(archive, &destination, ExtractOptions::default()).unwrap_err()
+}
+
+#[test]
+fn the_volume_hint_follows_the_real_error_and_only_for_archive_failures() {
+    let set = Set::new("7z.7z", 100);
+    fs::remove_file(set.path(set.count)).unwrap();
+    let error = refused_with(&set.path(1), false);
+    let top = error.to_string();
+    assert!(top.starts_with("7z header lies outside the file"), "{top}");
+    assert!(top.contains(&set.name(set.count)), "{top}");
+
+    let error = refused_with(&set.path(1), true);
+    assert!(!format!("{error:#}").contains("split volumes"), "{error:#}");
+
+    let whole = Set::new("tar.tar", 1000);
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let cancel_on_report = |_: zipper::Progress| {
+        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    };
+    let root = tempfile::tempdir().unwrap();
+    let error = extract_archive(
+        &whole.path(1),
+        &root.path().join("out"),
+        ExtractOptions {
+            threads: Some(1),
+            control: zipper::Control {
+                progress: Some(&cancel_on_report),
+                cancel: Some(&cancel),
+            },
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.is::<zipper::Cancelled>(), "{error:#}");
+    assert!(!format!("{error:#}").contains("split volumes"), "{error:#}");
+
+    for command in ["test", "list"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .arg(command)
+            .arg(set.path(1))
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{command}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(&set.name(set.count)), "{command}: {stderr}");
+    }
+}
+
+#[test]
+fn numbered_names_map_to_their_first_volume_whatever_their_width() {
+    let folder = tempfile::tempdir().unwrap();
+    fs::write(folder.path().join("a.bin.001"), b"first").unwrap();
+    fs::write(folder.path().join("a.bin.1000"), b"later").unwrap();
+    let error = format!(
+        "{:#}",
+        refused_with(&folder.path().join("a.bin.1000"), false)
+    );
+    assert!(error.contains("a.bin.001"), "{error}");
+}
+
+#[test]
+fn a_gap_is_found_through_names_the_filesystem_treats_as_equal() {
+    let probe = tempfile::tempdir().unwrap();
+    fs::write(probe.path().join("A"), b"").unwrap();
+    let folds_case = probe.path().join("a").exists();
+    let nfc = "caf\u{e9}";
+    let nfd = "cafe\u{301}";
+    fs::write(probe.path().join(nfd), b"").unwrap();
+    let folds_unicode = probe.path().join(nfc).exists();
+    for (folds, stem, other_spelling) in [
+        (folds_case, "a.tar", "A.TAR"),
+        (folds_unicode, "caf\u{e9}.tar", "cafe\u{301}.tar"),
+    ] {
+        if !folds {
+            continue;
+        }
+        let set = Set::new("tar.tar", 3328);
+        assert_eq!(set.count, 4);
+        let folder = set._folder.path();
+        for number in 1..=set.count {
+            fs::rename(set.path(number), folder.join(volume_name(stem, number))).unwrap();
+        }
+        fs::remove_file(folder.join(volume_name(stem, 3))).unwrap();
+        fs::rename(
+            folder.join(volume_name(stem, 4)),
+            folder.join(volume_name(other_spelling, 4)),
+        )
+        .unwrap();
+        let error = format!(
+            "{:#}",
+            refused_with(&folder.join(volume_name(stem, 1)), false)
+        );
+        assert!(error.contains(&volume_name(stem, 3)), "{stem}: {error}");
+        assert!(error.contains("is present"), "{stem}: {error}");
     }
 }

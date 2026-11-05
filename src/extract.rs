@@ -197,13 +197,65 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
         "threads must be between 1 and 64"
     );
     crate::progress::Tracker::new(options.control, None, None).check()?;
-    read_into(archive, destination, options).map_err(|error| {
-        let cancelled = error.chain().any(|cause| cause.is::<crate::Cancelled>());
-        match crate::volumes::failure_hint(archive) {
-            Some(hint) if !cancelled => error.context(hint),
-            _ => error,
-        }
+    let destination_refused = std::fs::symlink_metadata(destination)
+        .is_ok_and(|metadata| options.existing == Existing::Refuse || !metadata.is_dir());
+    with_volumes(archive, !destination_refused, || {
+        read_into(archive, destination, options)
     })
+}
+
+#[derive(Debug)]
+struct VolumeHint {
+    error: anyhow::Error,
+    hint: String,
+}
+
+impl std::fmt::Display for VolumeHint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}; {}", self.error, self.hint)
+    }
+}
+
+impl std::error::Error for VolumeHint {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.error.chain().nth(1)
+    }
+}
+
+const DESTINATION_ERRORS: &[std::io::ErrorKind] = &[
+    std::io::ErrorKind::AlreadyExists,
+    std::io::ErrorKind::StorageFull,
+    std::io::ErrorKind::QuotaExceeded,
+    std::io::ErrorKind::ReadOnlyFilesystem,
+];
+
+fn about_the_archive(error: &anyhow::Error) -> bool {
+    !error.chain().any(|cause| {
+        cause.is::<crate::Cancelled>()
+            || cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| DESTINATION_ERRORS.contains(&io.kind()))
+    })
+}
+
+fn with_volumes<T>(archive: &Path, hint: bool, read: impl FnOnce() -> Result<T>) -> Result<T> {
+    let volumes = crate::volumes::scope(archive)?;
+    read().map_err(|error| match volumes.hint() {
+        Some(hint_text) if hint && about_the_archive(&error) => VolumeHint {
+            error,
+            hint: hint_text,
+        }
+        .into(),
+        _ => error,
+    })
+}
+
+/// Run `read`, which reads `archive`, finding the split volumes after a
+/// `.001` name once for every reader that opens it. When `read` fails for a
+/// reason other than a cancel or the destination, the error names the
+/// volumes, or says why a `.001` file was read alone.
+pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
+    with_volumes(archive, true, read)
 }
 
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {

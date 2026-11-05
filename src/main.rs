@@ -262,69 +262,75 @@ fn main() -> Result<()> {
                     );
                 }
             };
-            match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
-                Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
-                Reader::SevenZip => print(zipper::native_7z::list(&archive)?),
-                Reader::Tar => print(zipper::native_tar::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_tar::ReadOptions::default(),
-                )?),
-                Reader::Stream => print(zipper::native_stream::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_stream::ReadOptions::default(),
-                )?),
-                Reader::Backend { format } => zipper::compat::run(
-                    "l",
-                    &archive,
-                    None,
-                    format.as_deref(),
-                    zipper::Existing::Refuse,
-                )?,
-            }
+            zipper::read_volumes(&archive, || {
+                match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
+                    Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
+                    Reader::SevenZip => print(zipper::native_7z::list(&archive)?),
+                    Reader::Tar => print(zipper::native_tar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_tar::ReadOptions::default(),
+                    )?),
+                    Reader::Stream => print(zipper::native_stream::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_stream::ReadOptions::default(),
+                    )?),
+                    Reader::Backend { format } => zipper::compat::run(
+                        "l",
+                        &archive,
+                        None,
+                        format.as_deref(),
+                        zipper::Existing::Refuse,
+                    )?,
+                }
+                Ok::<_, anyhow::Error>(())
+            })?;
         }
         Command::Test { archive } => {
             let report =
                 |entries: Vec<zipper::Entry>| println!("Verified {} entries", entries.len());
-            match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
-                Reader::Zip { fast } => report(zipper::native_zip::read_archive_with_options(
-                    &archive,
-                    None,
-                    zipper::native_zip::ReadOptions {
-                        fast,
-                        threads: cli.threads,
-                        buffer_bytes,
-                        max_output_bytes: None,
-                        ..Default::default()
-                    },
-                )?),
-                Reader::SevenZip => report(zipper::native_7z::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_7z::ReadOptions {
-                        threads: cli.threads,
-                        ..Default::default()
-                    },
-                )?),
-                Reader::Tar => report(zipper::native_tar::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_tar::ReadOptions::default(),
-                )?),
-                Reader::Stream => report(zipper::native_stream::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_stream::ReadOptions::default(),
-                )?),
-                Reader::Backend { format } => zipper::compat::run(
-                    "t",
-                    &archive,
-                    None,
-                    format.as_deref(),
-                    zipper::Existing::Refuse,
-                )?,
-            }
+            zipper::read_volumes(&archive, || {
+                match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
+                    Reader::Zip { fast } => report(zipper::native_zip::read_archive_with_options(
+                        &archive,
+                        None,
+                        zipper::native_zip::ReadOptions {
+                            fast,
+                            threads: cli.threads,
+                            buffer_bytes,
+                            max_output_bytes: None,
+                            ..Default::default()
+                        },
+                    )?),
+                    Reader::SevenZip => report(zipper::native_7z::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_7z::ReadOptions {
+                            threads: cli.threads,
+                            ..Default::default()
+                        },
+                    )?),
+                    Reader::Tar => report(zipper::native_tar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_tar::ReadOptions::default(),
+                    )?),
+                    Reader::Stream => report(zipper::native_stream::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_stream::ReadOptions::default(),
+                    )?),
+                    Reader::Backend { format } => zipper::compat::run(
+                        "t",
+                        &archive,
+                        None,
+                        format.as_deref(),
+                        zipper::Existing::Refuse,
+                    )?,
+                }
+                Ok::<_, anyhow::Error>(())
+            })?;
         }
     }
     Ok(())

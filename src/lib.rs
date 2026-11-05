@@ -24,7 +24,7 @@ mod xz_filters;
 mod zip_directory;
 mod zip_reader;
 use anyhow::{Context, Result, ensure};
-pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};
+pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive, read_volumes};
 pub use metadata::Metadata;
 pub use placement::Strip;
 pub use progress::{Cancelled, Control, Phase, Progress};
