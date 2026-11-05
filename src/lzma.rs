@@ -1,3 +1,4 @@
+use crate::xz_filters::{Filter, read_through, xz_filter};
 use std::io::{self, Read};
 
 const PROBABILITY_BITS: u32 = 11;
@@ -1141,11 +1142,12 @@ fn xz_stream_footer(footer: &[u8; XZ_STREAM_EDGE]) -> io::Result<(u64, [u8; 2])>
     Ok(((u64::from(stored) + 1) * XZ_ALIGN, flags))
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 struct XzBlockHeader {
     compressed: Option<u64>,
     uncompressed: Option<u64>,
     dictionary: u32,
+    filters: Vec<Filter>,
 }
 
 impl XzBlockHeader {
@@ -1156,20 +1158,23 @@ impl XzBlockHeader {
     }
 }
 
-fn unsupported_xz_filter(id: u64) -> io::Error {
-    data_error(match id {
-        0x03 => "xz filter Delta is not supported yet",
-        0x04 => "xz filter x86 BCJ is not supported yet",
-        0x05 => "xz filter PowerPC BCJ is not supported yet",
-        0x06 => "xz filter IA-64 BCJ is not supported yet",
-        0x07 => "xz filter ARM BCJ is not supported yet",
-        0x08 => "xz filter ARM-Thumb BCJ is not supported yet",
-        0x09 => "xz filter SPARC BCJ is not supported yet",
-        0x0A => "xz filter ARM64 BCJ is not supported yet",
-        0x0B => "xz filter RISC-V BCJ is not supported yet",
-        XZ_FILTER_LZMA2 => "xz filter chain has LZMA2 before its last filter",
-        _ => "xz filter is unknown",
-    })
+// SPEC(xz-file-format.txt 5.3.1 to 5.3.3): LZMA2 is allowed only as the last filter, and the
+// branch filters and Delta only before it.
+fn xz_non_last_filter(id: u64, properties: &[u8]) -> io::Result<Filter> {
+    if id == XZ_FILTER_LZMA2 {
+        return Err(data_error(
+            "xz filter chain has LZMA2 before its last filter",
+        ));
+    }
+    xz_filter(id, properties).map_err(data_error)
+}
+
+fn xz_last_filter(id: u64, properties: &[u8]) -> io::Result<u32> {
+    if id == XZ_FILTER_LZMA2 {
+        return xz_lzma2_dictionary(properties);
+    }
+    xz_filter(id, properties).map_err(data_error)?;
+    Err(data_error("xz filter chain does not end with LZMA2"))
 }
 
 // SPEC(xz-file-format.txt 5.3.1 LZMA2): one property byte; 40 means 4 GiB less one, and below
@@ -1227,16 +1232,15 @@ fn xz_block_header(header: &[u8], check: XzCheck) -> io::Result<XzBlockHeader> {
         return Err(data_error("xz block header padding is not zero"));
     }
     let (last, before) = chain[..filters].split_last().unwrap_or((&chain[0], &[]));
-    if let Some(&(id, _)) = before.first() {
-        return Err(unsupported_xz_filter(id));
-    }
-    if last.0 != XZ_FILTER_LZMA2 {
-        return Err(unsupported_xz_filter(last.0));
-    }
+    let filters = before
+        .iter()
+        .map(|&(id, properties)| xz_non_last_filter(id, properties))
+        .collect::<io::Result<_>>()?;
     Ok(XzBlockHeader {
         compressed,
         uncompressed,
-        dictionary: xz_lzma2_dictionary(last.1)?,
+        dictionary: xz_last_filter(last.0, last.1)?,
+        filters,
     })
 }
 
@@ -1350,6 +1354,7 @@ struct XzStream {
 
 struct XzBlock<R> {
     decoder: Lzma2Reader<XzInput<R>>,
+    filters: Vec<Filter>,
     stream: XzStream,
     header_size: u64,
     data_start: u64,
@@ -1360,7 +1365,7 @@ struct XzBlock<R> {
 
 impl<R: Read> XzBlock<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let read = self.decoder.read(buffer)?;
+        let read = read_through(&mut self.filters, &mut self.decoder, buffer)?;
         self.decoded += read as u64;
         if self
             .declared
@@ -1485,13 +1490,14 @@ fn start_block<R: Read>(
     let header_size = (usize::from(size_byte) + 1) * XZ_ALIGN as usize;
     let mut header = vec![size_byte; header_size];
     input.exact(&mut header[1..], "truncated xz block header")?;
-    let declared = xz_block_header(&header, stream.check)?;
+    let mut declared = xz_block_header(&header, stream.check)?;
     let data_start = input.position;
     if let Some(size) = declared.compressed {
         input.limit = data_start + size;
     }
     Ok(XzPart::Block(Box::new(XzBlock {
         decoder: Lzma2Reader::new(input, declared.window_within_uncompressed_size()),
+        filters: std::mem::take(&mut declared.filters),
         check: XzCheckState::new(stream.check),
         stream,
         header_size: header_size as u64,
@@ -3547,29 +3553,265 @@ mod tests {
             assert_both_refuse(&padded.bytes(), "nonzero block padding");
         }
 
-        #[test]
-        fn a_filter_other_than_lzma2_is_refused_by_name() {
-            let base = Block::new(text(2_000, 50), 6);
-            for (filters, count, name) in [
-                (vec![0x03, 1, 0], 2, "Delta"),
-                (vec![0x04, 0], 2, "x86 BCJ"),
-                (vec![0x07, 0], 2, "ARM BCJ"),
-                (vec![0x0A, 0], 2, "ARM64 BCJ"),
-                (vec![0x0B, 0], 2, "RISC-V BCJ"),
-                (vec![0x04, 0, 0x03, 1, 0], 3, "x86 BCJ"),
-            ] {
-                let mut block = base.clone();
-                block.filters = [filters, lzma2_filter(DICTIONARY_1_MIB)].concat();
-                block.filter_count = count;
-                let error = xz_error(&Parts::new(&[block], 0x01).bytes());
-                assert!(
-                    error.contains(name) && error.contains("not supported"),
-                    "{name}: {error}"
-                );
+        const DELTA: u64 = 0x03;
+        const X86: u64 = 0x04;
+        const POWERPC: u64 = 0x05;
+        const IA64: u64 = 0x06;
+        const ARM: u64 = 0x07;
+        const ARM_THUMB: u64 = 0x08;
+        const SPARC: u64 = 0x09;
+        const ARM64: u64 = 0x0A;
+        const RISCV: u64 = 0x0B;
+        const NON_LAST: [u64; 9] = [
+            DELTA, X86, POWERPC, IA64, ARM, ARM_THUMB, SPARC, ARM64, RISCV,
+        ];
+
+        fn machine_code(seed: u32, length: usize) -> Vec<u8> {
+            let units: [&[u8]; 9] = [
+                &[0xE8, 0x10, 0x20, 0x00, 0x00],
+                &[0xE8, 0xF0, 0xFF, 0xFF, 0xFF],
+                &[0x10, 0x00, 0x00, 0xEB],
+                &[0x10, 0x00, 0x00, 0x94],
+                &[0x00, 0xF0, 0x10, 0xF8],
+                &[0x48, 0x00, 0x01, 0x01, 0x40, 0x00, 0x01, 0x00],
+                &[0x97, 0x02, 0x00, 0x00, 0x83, 0xA2, 0x02, 0x00],
+                &[0xEF, 0x00, 0x00, 0x01],
+                b"mov ",
+            ];
+            let mut out = Vec::with_capacity(length + 8);
+            for pick in noise(seed, length) {
+                if out.len() >= length {
+                    break;
+                }
+                match pick % 12 {
+                    9..=11 => out.push(pick),
+                    unit => out.extend_from_slice(units[usize::from(unit)]),
+                }
             }
-            let mut alone = base.clone();
-            alone.filters = vec![0x03, 1, 0];
-            assert!(xz_error(&Parts::new(&[alone], 0x01).bytes()).contains("Delta"));
+            out.truncate(length);
+            out
+        }
+
+        fn chain_filters(chain: &[(u64, Vec<u8>)]) -> liblzma::stream::Filters {
+            let mut filters = liblzma::stream::Filters::new();
+            for (id, properties) in chain {
+                match *id {
+                    DELTA => filters.delta_properties(properties),
+                    X86 => filters.x86_properties(properties),
+                    POWERPC => filters.powerpc_properties(properties),
+                    IA64 => filters.ia64_properties(properties),
+                    ARM => filters.arm_properties(properties),
+                    ARM_THUMB => filters.arm_thumb_properties(properties),
+                    SPARC => filters.sparc_properties(properties),
+                    ARM64 => filters.arm64_properties(properties),
+                    RISCV => filters.riscv_properties(properties),
+                    other => panic!("not a non-last filter: {other:#x}"),
+                }
+                .unwrap();
+            }
+            let mut options = liblzma::stream::LzmaOptions::new_preset(6).unwrap();
+            options.dict_size(1 << 20);
+            filters.lzma2(&options);
+            filters
+        }
+
+        fn encode_chain(chain: &[(u64, Vec<u8>)], data: &[u8], block: usize) -> Vec<u8> {
+            let filters = chain_filters(chain);
+            let mut encoder = Stream::new_stream_encoder(&filters, Check::Crc64).unwrap();
+            let mut out = Vec::new();
+            for piece in data.chunks(block) {
+                let mut rest = piece;
+                while !rest.is_empty() {
+                    out.reserve(1 << 16);
+                    let before = encoder.total_in();
+                    encoder.process_vec(rest, &mut out, Action::Run).unwrap();
+                    rest = &rest[(encoder.total_in() - before) as usize..];
+                }
+                flush(&mut encoder, &mut out, Action::FullFlush);
+            }
+            flush(&mut encoder, &mut out, Action::Finish);
+            out
+        }
+
+        fn chains() -> Vec<Vec<(u64, Vec<u8>)>> {
+            let mut chains: Vec<Vec<(u64, Vec<u8>)>> = NON_LAST
+                .iter()
+                .map(|&id| vec![(id, if id == DELTA { vec![3] } else { Vec::new() })])
+                .collect();
+            let start = |offset: u32| offset.to_le_bytes().to_vec();
+            chains.extend([
+                vec![(X86, start(0x1234_5677))],
+                vec![(IA64, start(0xFFFF_FFF0))],
+                vec![(ARM64, start(0x0040_0000))],
+                vec![(RISCV, start(2))],
+                vec![(DELTA, vec![255])],
+                vec![(X86, Vec::new()), (DELTA, vec![0])],
+                vec![(DELTA, vec![1]), (X86, Vec::new())],
+                vec![(ARM64, Vec::new()), (RISCV, Vec::new()), (DELTA, vec![3])],
+                vec![(X86, Vec::new()), (X86, start(5)), (X86, Vec::new())],
+                vec![
+                    (IA64, Vec::new()),
+                    (SPARC, Vec::new()),
+                    (POWERPC, Vec::new()),
+                ],
+                vec![(ARM_THUMB, Vec::new()), (ARM, Vec::new()), (DELTA, vec![7])],
+            ]);
+            chains
+        }
+
+        #[test]
+        fn every_filter_chain_liblzma_writes_decodes_to_the_same_bytes() {
+            let data = [machine_code(70, 40_000), text(5_000, 71), noise(72, 3_000)].concat();
+            for chain in chains() {
+                for block in [SINGLE_BLOCK, 15_001] {
+                    let stream = encode_chain(&chain, &data, block);
+                    let what = format!("chain {chain:x?}, blocks of {block}");
+                    let decoded = assert_xz_agrees_with_liblzma(&stream, &what);
+                    assert!(decoded.as_ref() == Some(&data), "{what}: liblzma refused");
+                }
+            }
+        }
+
+        fn filter_flags(id: u64, properties: &[u8]) -> Vec<u8> {
+            [vli(id), vli(properties.len() as u64), properties.to_vec()].concat()
+        }
+
+        fn block_with_chain(chain: &[(u64, Vec<u8>)]) -> Block {
+            let mut block = Block::new(machine_code(73, 3_000), 6).sized();
+            block.filters = chain
+                .iter()
+                .flat_map(|(id, properties)| filter_flags(*id, properties))
+                .collect();
+            block.filter_count = chain.len() as u8;
+            block
+        }
+
+        #[test]
+        fn filter_chains_are_accepted_and_refused_as_liblzma_does() {
+            let lzma2 = (XZ_FILTER_LZMA2, vec![DICTIONARY_1_MIB]);
+            let none = Vec::new;
+            let mut accepted = vec![
+                vec![(X86, none()), lzma2.clone()],
+                vec![(DELTA, vec![0]), lzma2.clone()],
+                vec![(DELTA, vec![255]), lzma2.clone()],
+                vec![
+                    (X86, none()),
+                    (DELTA, vec![3]),
+                    (ARM64, none()),
+                    lzma2.clone(),
+                ],
+                vec![
+                    (RISCV, none()),
+                    (RISCV, none()),
+                    (RISCV, none()),
+                    lzma2.clone(),
+                ],
+            ];
+            let mut refused = vec![
+                vec![(X86, none())],
+                vec![(DELTA, vec![0])],
+                vec![lzma2.clone(), (X86, none())],
+                vec![lzma2.clone(), lzma2.clone()],
+                vec![(X86, none()), lzma2.clone(), (DELTA, vec![0])],
+                vec![
+                    (X86, none()),
+                    (ARM, none()),
+                    (DELTA, vec![0]),
+                    (SPARC, none()),
+                ],
+                vec![
+                    (X86, none()),
+                    (DELTA, vec![0]),
+                    (ARM64, none()),
+                    (X86, none()),
+                ],
+                vec![(DELTA, none()), lzma2.clone()],
+                vec![(DELTA, vec![0, 0]), lzma2.clone()],
+                vec![(X86, none()), (DELTA, vec![1, 2]), lzma2.clone()],
+            ];
+            for id in [0x00, 0x01, 0x02, 0x0C, 0x0D, 0x20, 0x22, 0x30, 1 << 40] {
+                refused.push(vec![(id, none()), lzma2.clone()]);
+                refused.push(vec![(X86, none()), (id, vec![0]), lzma2.clone()]);
+            }
+            for id in NON_LAST.into_iter().filter(|&id| id != DELTA) {
+                let alignment = match id {
+                    X86 => 1,
+                    ARM_THUMB | RISCV => 2,
+                    IA64 => 16,
+                    _ => 4,
+                };
+                for length in [1, 2, 3, 5, 8] {
+                    refused.push(vec![(id, vec![0; length]), lzma2.clone()]);
+                }
+                for start in [1u32, 2, 3, 4, 8, 16, 17, 0xFFFF_FFF0, 0xFFFF_FFFF] {
+                    let chain = vec![(id, start.to_le_bytes().to_vec()), lzma2.clone()];
+                    if start % alignment == 0 {
+                        accepted.push(chain);
+                    } else {
+                        refused.push(chain);
+                    }
+                }
+                accepted.push(vec![(id, vec![0; 4]), lzma2.clone()]);
+            }
+            for (chains, outcome) in [(accepted, true), (refused, false)] {
+                for chain in chains {
+                    let stream = Parts::new(&[block_with_chain(&chain)], 0x00).bytes();
+                    let what = format!("chain {chain:x?}");
+                    let decoded = assert_xz_agrees_with_liblzma_in(&stream, &READS[..4], &what);
+                    assert_eq!(decoded.is_some(), outcome, "{what}");
+                }
+            }
+        }
+
+        #[test]
+        fn a_chain_liblzma_refuses_is_refused_by_name() {
+            let lzma2 = (XZ_FILTER_LZMA2, vec![DICTIONARY_1_MIB]);
+            for (chain, name) in [
+                (vec![(X86, vec![])], "does not end with LZMA2"),
+                (vec![lzma2.clone(), lzma2.clone()], "LZMA2 before its last"),
+                (vec![(0x0C, vec![]), lzma2.clone()], "unknown"),
+                (vec![(0x0C, vec![])], "unknown"),
+                (
+                    vec![(DELTA, vec![]), lzma2.clone()],
+                    "Delta filter properties",
+                ),
+                (vec![(ARM, vec![0; 2]), lzma2.clone()], "not 0 or 4 bytes"),
+                (vec![(ARM, vec![2, 0, 0, 0]), lzma2.clone()], "alignment"),
+            ] {
+                let error = xz_error(&Parts::new(&[block_with_chain(&chain)], 0x01).bytes());
+                assert!(error.contains(name), "{chain:x?}: {error}");
+            }
+        }
+
+        #[test]
+        fn every_cut_of_a_filtered_stream_is_refused() {
+            let data = [machine_code(74, 2_500), text(500, 75)].concat();
+            let mut chains: Vec<Vec<(u64, Vec<u8>)>> = NON_LAST
+                .iter()
+                .map(|&id| vec![(id, if id == DELTA { vec![1] } else { Vec::new() })])
+                .collect();
+            chains.push(vec![
+                (X86, Vec::new()),
+                (DELTA, vec![0]),
+                (ARM64, Vec::new()),
+            ]);
+            for chain in chains {
+                let stream = encode_chain(&chain, &data, 1_100);
+                assert!(block_count(&stream) > 2);
+                assert_eq!(liblzma_xz(&stream).as_ref(), Some(&data));
+                for cut in 0..stream.len() {
+                    let reads: &[(usize, usize)] = if cut % 7 == 0 { &READS } else { &READS[3..4] };
+                    for &(piece, chunk) in reads {
+                        let (decoded, result) = decode_xz(&stream[..cut], piece, chunk);
+                        assert!(result.is_err(), "{chain:x?}: cut to {cut} decoded");
+                        assert!(
+                            data.starts_with(&decoded),
+                            "{chain:x?}: cut to {cut} returned other bytes"
+                        );
+                    }
+                    assert!(liblzma_xz(&stream[..cut]).is_none());
+                }
+            }
         }
 
         #[test]

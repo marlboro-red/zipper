@@ -18,6 +18,8 @@ mod pattern;
 mod placement;
 mod progress;
 mod staging;
+#[cfg(test)]
+mod xz_filters;
 #[cfg(any(test, kani))]
 mod zip_directory;
 mod zip_reader;
