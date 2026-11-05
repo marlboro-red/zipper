@@ -1,6 +1,6 @@
 //! Existing archive formats are handled by a separately installed 7-Zip binary.
 use anyhow::{Context, Result, bail, ensure};
-use std::{fs::File, io::Read, path::Path, process::Command};
+use std::{io::Read, path::Path, process::Command};
 
 fn backend() -> Result<std::ffi::OsString> {
     if let Some(binary) = std::env::var_os("ZIPPER_7Z") {
@@ -38,7 +38,7 @@ const SIGNATURE_WINDOW: usize = 8;
 /// archive, named `*.001`, gets the split chain, such as `-t7z.split`.
 pub fn pinned_format(archive: &Path) -> Result<Option<String>> {
     let mut head = Vec::with_capacity(SIGNATURE_WINDOW);
-    File::open(archive)?
+    crate::volumes::open(archive)?
         .take(SIGNATURE_WINDOW as u64)
         .read_to_end(&mut head)?;
     let split = archive

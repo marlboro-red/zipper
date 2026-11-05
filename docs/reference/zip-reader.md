@@ -1,7 +1,7 @@
 # In-process ZIP reader
 
 Zipper reads ZIP archives with its own parallel Rust reader by default.
-The default engine, `--zip-engine auto`, decides from the file's leading bytes and never from 7-Zip's output. A file that starts with a ZIP record signature goes to the in-process reader. A tar, plain or inside gzip, zstd, xz or bzip2, goes to the in-process [tar reader](tar-reader.md), and any other gzip, bzip2, xz or zstd file goes to the in-process [single compressed file reader](stream-reader.md). A file that starts with the signature of 7z, RAR or CAB goes to 7-Zip with that format pinned by `-t`, unless it is a 7z the native reader decodes. A `*.001` volume gets the split chain, such as `-t7z.split`. A pinned 7-Zip cannot reopen the file as a ZIP, even when a ZIP is appended or a wrong password is typed. Every other file goes to the in-process reader, which rejects anything that is not a ZIP it supports. Use `--zip-engine backend` for other formats 7-Zip reads, such as ISO, DMG, WIM and ARJ, and for split ZIP volumes. ISO is not pinned, because `-tiso` makes 7-Zip skip a disc's UDF tree. Zipper refuses `*` and `?` in any path it gives 7-Zip, because 7-Zip expands them as wildcards.
+The default engine, `--zip-engine auto`, decides from the file's leading bytes and never from 7-Zip's output. A file that starts with a ZIP record signature goes to the in-process reader. A tar, plain or inside gzip, zstd, xz or bzip2, goes to the in-process [tar reader](tar-reader.md), and any other gzip, bzip2, xz or zstd file goes to the in-process [single compressed file reader](stream-reader.md). A file that starts with the signature of 7z, RAR or CAB goes to 7-Zip with that format pinned by `-t`, unless it is a 7z the native reader decodes. A file named `*.001` is read with the volumes after it as one archive, as [split volumes](#split-volumes) describes, and a set that goes to 7-Zip gets the split chain, such as `-trar5.split`. A pinned 7-Zip cannot reopen the file as a ZIP, even when a ZIP is appended or a wrong password is typed. Every other file goes to the in-process reader, which rejects anything that is not a ZIP it supports. Use `--zip-engine backend` for other formats 7-Zip reads, such as ISO, DMG, WIM and ARJ, and for spanned ZIP volumes named `.z01`. ISO is not pinned, because `-tiso` makes 7-Zip skip a disc's UDF tree. Zipper refuses `*` and `?` in any path it gives 7-Zip, because 7-Zip expands them as wildcards.
 
 A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as encryption, another compression method or more than one disk, the error names `--zip-engine backend`. Passing that flag is the user's decision.
 
@@ -126,6 +126,21 @@ ZIPPER_FUZZ_SEED=303 ZIPPER_FUZZ_CASES=1 cargo test --release --test zip_fuzz
 ```
 
 A run of 300,000 cases on 2026-11-01 at this revision found no failure. In a 20,000-case sample, 3,588 of 40,000 extractions accepted their mutant, mostly through changed timestamps, attributes or comments. The rest were rejected. This is random mutation, not coverage-guided fuzzing. A coverage-guided `cargo fuzz` target needs a nightly toolchain and is not set up.
+
+## Split volumes
+
+Every reader reads an archive split into raw numbered volumes, such as `7z a -v1m` writes. The file named `name.001` opens with `name.002` and each next number as one stream. The reader picks itself from the joined stream's first bytes, so `a.7z.001`, `a.zip.001`, `a.tar.001`, `a.tar.gz.001` and `a.txt.xz.001` all extract in process. A single compressed file is named from the name without `.001`. `src/volumes.rs` reads the volumes, and keeps at most one of them open per reader handle. Opening any other volume, such as `name.002`, is refused with the name of the first one, because 7-Zip opens a set only from its first volume too.
+
+Each of these fails before anything is published, with an error that names a volume:
+
+- A gap in the numbering, such as `name.003` missing while `name.004` is present.
+- A volume larger than the first, an empty volume, or a volume shorter than the first that another volume follows. 7-Zip writes every volume but the last at the first one's size.
+- A volume that changes size or identity while it is read.
+- A 7z set that holds bytes past the end of its header. That catches an unrelated volume after a full last volume.
+
+The readers' own checks catch the rest, and the error then names the first and last volume. A last volume that is full size may hide a missing next volume, which the error names. A short last volume may be truncated, and a volume that holds the same bytes as an earlier one is named. 7z, ZIP and compressed tar check their data, so a repeated or swapped volume fails. A plain tar has no checksum over file data, so a volume repeated or swapped inside one file's data extracts wrong bytes. 7-Zip reads such a set the same way.
+
+`tests/volumes.rs` splits every native format at sizes from 1 byte up past the whole archive and compares each tree with the whole archive's. It also extracts 7-Zip's own volumes of 7z, ZIP, tar, gzip tar and xz tar, from 1-byte to single volumes, and compares each tree with `7zz x`. Its hostile cases cover each failure above, and check that no staging folder is left. Two Kani proofs in `src/volumes.rs` cover the offset arithmetic. `a_layout_exists_exactly_when_its_total_fits` shows that a set is accepted exactly when its total size fits 64 bits, for any volume size, count and last size. `every_offset_maps_to_the_one_volume_and_position_that_hold_it` shows that every offset maps to the one volume and position that hold it, with no panic or overflow, for volume sizes and counts up to 255 and offsets up to 65,535. A wider bound ran for over 30 minutes without a verdict. `every_layout_locates_every_offset_as_a_linear_scan_does` compares the mapping with a linear scan on every small set.
 
 ## Extraction options
 

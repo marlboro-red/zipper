@@ -110,6 +110,15 @@ fn segmented_7z(work: &Path) -> Option<PathBuf> {
     Some(archive)
 }
 
+fn volumes(source: &Path, work: &Path) -> PathBuf {
+    let bytes = fs::read(source).unwrap();
+    let name = source.file_name().unwrap().to_str().unwrap();
+    for (index, chunk) in bytes.chunks(bytes.len() / 3).enumerate() {
+        fs::write(work.join(format!("{name}.{:03}", index + 1)), chunk).unwrap();
+    }
+    work.join(format!("{name}.001"))
+}
+
 fn damaged(source: &Path, work: &Path) -> PathBuf {
     let mut bytes = fs::read(source).unwrap();
     let early = if bytes.starts_with(b"7z\xBC\xAF") && bytes.len() > 4096 {
@@ -157,7 +166,19 @@ fn nothing_stays_open_after_any_extraction_returns() {
         ("gz", data("parity/archives/hello.txt.gz"), Engine::Native),
     ];
     if let Some(segments) = segmented_7z(work.path()) {
+        cases.push((
+            "7z segment volumes",
+            volumes(&segments, work.path()),
+            Engine::Native,
+        ));
         cases.push(("7z segments", segments, Engine::Native));
+    }
+    for (label, name) in [
+        ("zip volumes", "zip-corpus/7zip-deflate.zip"),
+        ("tar.gz volumes", "parity/archives/tar.tar.gz"),
+        ("7z volumes", "parity/archives/7z.7z"),
+    ] {
+        cases.push((label, volumes(&data(name), work.path()), Engine::Native));
     }
     for (_, archive, _) in &mut cases {
         let copy = work.path().join(archive.file_name().unwrap());
@@ -205,5 +226,5 @@ fn nothing_stays_open_after_any_extraction_returns() {
             checked += 1;
         }
     }
-    assert!(checked >= 24, "{checked}");
+    assert!(checked >= 36, "{checked}");
 }

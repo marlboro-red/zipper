@@ -35,7 +35,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 65a5ffb8fb6b4a43
+fingerprint = 119d151bb05cf7f7
 full-check = python3 scripts/check_model.py verification/7z-folder-workers MCWorkers.tla:workers.cfg
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
@@ -279,3 +279,12 @@ item = src/lzma.rs | fn start_block<
 item = src/lzma.rs | fn read_xz_index<
 item = src/lzma.rs | fn read_xz_stream_footer<
 item = src/lzma.rs | fn finish_stream<
+
+[split-volumes]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = a6c3038deb71aaf9
+full-check = cargo kani --harness volumes::proofs::
+full-check = cargo test --release --lib volumes
+item = src/volumes.rs | struct Layout {
+item = src/volumes.rs | impl Layout {
+item = src/volumes.rs | impl Joined {

@@ -37,12 +37,13 @@ pub enum Reader {
 
 fn starts_with_zip_signature(archive: &Path) -> Result<bool> {
     let mut signature = [0; 4];
-    let read = std::fs::File::open(archive)?.read(&mut signature)?;
+    let read = crate::volumes::open(archive)?.read(&mut signature)?;
     Ok(read == 4 && matches!(&signature, b"PK\x03\x04" | b"PK\x05\x06"))
 }
 
-/// Pick the reader for `archive` from its first bytes. A `.001` name only
-/// marks a recognized 7-Zip format as split.
+/// Pick the reader for `archive` from its first bytes. A file named `.001`
+/// is read with `.002` and each next volume as one archive, and opening any
+/// other volume of such a set is refused.
 pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     Ok(match engine {
         Engine::Backend => Reader::Backend { format: None },
@@ -196,6 +197,16 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
         "threads must be between 1 and 64"
     );
     crate::progress::Tracker::new(options.control, None, None).check()?;
+    read_into(archive, destination, options).map_err(|error| {
+        let cancelled = error.chain().any(|cause| cause.is::<crate::Cancelled>());
+        match crate::volumes::failure_hint(archive) {
+            Some(hint) if !cancelled => error.context(hint),
+            _ => error,
+        }
+    })
+}
+
+fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     let reader = choose_reader(options.engine, archive)?;
     match reader {
         Reader::Zip { fast } => {

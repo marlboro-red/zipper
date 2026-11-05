@@ -27,7 +27,7 @@ The decoded file is named as 7-Zip names it:
 - Any other extension is dropped, and a name without one gains `~`. So the decoded file never takes the archive's own name, even in the archive's own folder.
 - `\` and `:` become `_`, and trailing spaces are dropped, with trailing dots too on Windows. A name left as `.` or `..` becomes `_`, and a name that is still not safe, such as `CON` on Windows, gains a leading `_`.
 
-A name stored inside a gzip header is ignored, because it could hold a path.
+A name stored inside a gzip header is ignored, because it could hold a path. A file split into [volumes](zip-reader.md#split-volumes) is named from its first volume's name without `.001`.
 
 ## Safety checks
 

@@ -419,7 +419,7 @@ struct Opened {
 }
 
 fn open(path: &Path, cache: bool) -> Result<Opened> {
-    let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
+    let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
     let directory = crate::zip_directory::read_directory(&mut file)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
@@ -1186,7 +1186,7 @@ fn stream_entry(
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
+    let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
     let directory = crate::zip_directory::read_directory(&mut file)?;
     Ok(scan(&directory, false)?
         .into_iter()

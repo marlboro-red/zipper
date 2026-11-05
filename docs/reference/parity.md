@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 49 |
+| `native` | 50 |
 | `partial` | 1 |
-| `backend` | 53 |
+| `backend` | 52 |
 | `missing` | 7 |
 | `dropped` | 2 |
 
@@ -67,7 +67,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `SWF` | `backend` |  | No proof yet. |
 | `SWFc` | `backend` |  | No proof yet. |
 | `Sparse` | `backend` |  | No proof yet. |
-| `Split` | `backend` |  | `tests/data/parity/archives/split.7z.001` |
+| `Split` | `native` | Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip. | `tests/data/parity/archives/split.7z.001` |
 | `SquashFS` | `backend` |  | No proof yet. |
 | `TE` | `backend` |  | No proof yet. |
 | `UEFIc` | `backend` |  | No proof yet. |

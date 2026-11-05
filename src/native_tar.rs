@@ -11,7 +11,7 @@ use crate::{
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, HashSet},
-    fs::{self, File},
+    fs,
     io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
@@ -279,7 +279,7 @@ fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<(u64, u64)> {
 /// start with a tar header, plain or inside gzip, zstd or xz.
 pub fn sniff(path: &Path) -> Result<Option<Compression>> {
     let compression = compression_by_signature(path)?;
-    let input = BufReader::new(File::open(path)?.take(SNIFF_INPUT));
+    let input = BufReader::new(crate::volumes::open(path)?.take(SNIFF_INPUT));
     let Ok(mut stream) = decode(input, compression) else {
         return Ok(None);
     };
@@ -294,7 +294,7 @@ pub fn sniff(path: &Path) -> Result<Option<Compression>> {
 const SKIPPABLE_FRAMES_SNIFFED: usize = 16;
 
 pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
-    let mut file = File::open(path)?;
+    let mut file = crate::volumes::open(path)?;
     for skipped in 0..SKIPPABLE_FRAMES_SNIFFED {
         let mut magic = [0u8; 8];
         let read = read_up_to(&mut file, &mut magic)?;
@@ -323,7 +323,7 @@ pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
     Ok(Compression::Zstd)
 }
 
-fn read_up_to(file: &mut File, buffer: &mut [u8]) -> std::io::Result<usize> {
+fn read_up_to(file: &mut impl Read, buffer: &mut [u8]) -> std::io::Result<usize> {
     let mut filled = 0;
     while filled < buffer.len() {
         match file.read(&mut buffer[filled..])? {
@@ -339,7 +339,7 @@ const BZIP2_OUTPUT_PER_EXTRA_STREAM: u64 = 4096;
 
 pub(crate) fn decoder(path: &Path, compression: Compression) -> Result<Box<dyn Read + Send>> {
     decode(
-        BufReader::with_capacity(COPY_BUFFER, File::open(path)?),
+        BufReader::with_capacity(COPY_BUFFER, crate::volumes::open(path)?),
         compression,
     )
 }
