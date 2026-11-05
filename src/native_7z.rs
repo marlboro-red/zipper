@@ -1774,14 +1774,21 @@ fn folder_reader(
             position: 0,
         }));
     }
-    let packed = BufReader::with_capacity(
-        COPY_BUFFER,
-        ReadAt {
-            file,
-            position: SIGNATURE_HEADER + folder.pack_offset,
-        },
-    )
-    .take(folder.pack_size);
+    let packed = ReadAt {
+        file,
+        position: SIGNATURE_HEADER + folder.pack_offset,
+    };
+    if let [filters @ .., Method::Lzma | Method::Lzma2] = methods.as_slice() {
+        let (filter_coders, last) = folder.output_to_packed.split_at(filters.len());
+        let decoded =
+            lzma_coder(&last[0], folder.size)?.reader(packed.take(folder.pack_size), folder.size);
+        if filters.is_empty() {
+            return Ok(decoded);
+        }
+        let chain = filter_chain(filter_coders, filters)?;
+        return Ok(Box::new(raw_decoder(&chain, StoredLzma2::new(decoded))?));
+    }
+    let packed = BufReader::with_capacity(COPY_BUFFER, packed).take(folder.pack_size);
     Ok(match methods.as_slice() {
         [Method::Copy] => Box::new(packed),
         [Method::Deflate] => Box::new(flate2::read::DeflateDecoder::new(packed)),
@@ -1801,15 +1808,6 @@ fn folder_reader(
                 decoder,
                 remaining: folder.size,
             })
-        }
-        [filters @ .., Method::Lzma | Method::Lzma2] => {
-            let (filter_coders, last) = folder.output_to_packed.split_at(filters.len());
-            let decoded = lzma_coder(&last[0], folder.size)?.reader(packed, folder.size);
-            if filters.is_empty() {
-                return Ok(decoded);
-            }
-            let chain = filter_chain(filter_coders, filters)?;
-            Box::new(raw_decoder(&chain, StoredLzma2::new(decoded))?)
         }
         _ => bail!("7z folder combines methods in a way that is not supported"),
     })
