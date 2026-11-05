@@ -961,6 +961,7 @@ const XZ_MAGIC: [u8; 6] = [0xFD, b'7', b'z', b'X', b'Z', 0x00];
 const XZ_FOOTER_MAGIC: [u8; 2] = *b"YZ";
 const XZ_STREAM_EDGE: usize = 12;
 const XZ_INDEX_INDICATOR: u8 = 0x00;
+const XZ_RESERVED_CHECK_BITS: u8 = 0xF0;
 const XZ_BLOCK_RESERVED_FLAGS: u8 = 0x3C;
 const XZ_BLOCK_HAS_COMPRESSED_SIZE: u8 = 0x40;
 const XZ_BLOCK_HAS_UNCOMPRESSED_SIZE: u8 = 0x80;
@@ -1094,12 +1095,16 @@ fn xz_header_integer(fields: &[u8], at: &mut usize) -> io::Result<u64> {
 // SPEC(xz-file-format.txt 2.1.1.2 Stream Flags): the first byte and the high four bits of the
 // second are reserved, and the low four bits name the check.
 fn xz_stream_flags(flags: [u8; 2]) -> io::Result<XzCheck> {
-    if flags[0] != 0 {
+    if flags[0] != 0 || flags[1] & XZ_RESERVED_CHECK_BITS != 0 {
         return Err(data_error("xz stream flags set reserved bits"));
     }
-    // EXTERNAL(liblzma stream_decoder.c): with LZMA_TELL_UNSUPPORTED_CHECK it refuses every
-    // check ID but None, CRC-32, CRC-64 and SHA-256 before the first block.
-    match flags[1] {
+    supported_xz_check(flags[1])
+}
+
+// SPEC(xz-file-format.txt 2.1.1.2 Stream Flags): a decoder that cannot verify a check should
+// warn or refuse; liblzma warns, and this reader refuses.
+fn supported_xz_check(id: u8) -> io::Result<XzCheck> {
+    match id {
         0x00 => Ok(XzCheck::None),
         0x01 => Ok(XzCheck::Crc32),
         0x04 => Ok(XzCheck::Crc64),
@@ -1140,8 +1145,15 @@ struct XzBlockHeader {
     dictionary: u32,
 }
 
+impl XzBlockHeader {
+    fn window_within_uncompressed_size(&self) -> u32 {
+        self.uncompressed.map_or(self.dictionary, |size| {
+            size.min(u64::from(self.dictionary)) as u32
+        })
+    }
+}
+
 fn unsupported_xz_filter(id: u64) -> io::Error {
-    // SPEC(xz-file-format.txt 5.3 Filters): the filter IDs liblzma decodes.
     data_error(match id {
         0x03 => "xz filter Delta is not supported yet",
         0x04 => "xz filter x86 BCJ is not supported yet",
@@ -1169,8 +1181,6 @@ fn xz_lzma2_dictionary(properties: &[u8]) -> io::Result<u32> {
     }
 }
 
-// SPEC(xz-file-format.txt 3.1 Block Header): size byte, flags, optional sizes, filter flags,
-// zero padding and a CRC-32 of everything before it.
 fn xz_block_header(header: &[u8], check: XzCheck) -> io::Result<XzBlockHeader> {
     let (fields, stored) = header.split_at(header.len() - 4);
     if crc32fast::hash(fields).to_le_bytes() != stored {
@@ -1442,7 +1452,7 @@ fn start_stream<R: Read>(mut input: XzInput<R>, first: bool) -> io::Result<XzPar
             input.byte("truncated xz stream padding")?;
             padding += 1;
         }
-        if padding % XZ_ALIGN != 0 {
+        if !padding.is_multiple_of(XZ_ALIGN) {
             return Err(data_error(
                 "xz stream padding is not a multiple of four bytes",
             ));
@@ -1477,13 +1487,8 @@ fn start_block<R: Read>(
     if let Some(size) = declared.compressed {
         input.limit = data_start + size;
     }
-    // EXTERNAL(liblzma lz_decoder.c): no match reaches past the block's start, so a known
-    // uncompressed size bounds the dictionary without changing what decodes.
-    let dictionary = declared.uncompressed.map_or(declared.dictionary, |size| {
-        size.min(u64::from(declared.dictionary)) as u32
-    });
     Ok(XzPart::Block(Box::new(XzBlock {
-        decoder: Lzma2Reader::new(input, dictionary),
+        decoder: Lzma2Reader::new(input, declared.window_within_uncompressed_size()),
         check: XzCheckState::new(stream.check),
         stream,
         header_size: header_size as u64,
@@ -1512,11 +1517,9 @@ impl<R: Read> XzIndex<'_, R> {
     }
 }
 
-// SPEC(xz-file-format.txt 4 Index): indicator, record count, each block's unpadded and
-// uncompressed size, zero padding and a CRC-32; the stream footer follows.
-fn finish_stream<R: Read>(mut input: XzInput<R>, stream: XzStream) -> io::Result<XzPart<R>> {
+fn read_xz_index<R: Read>(input: &mut XzInput<R>) -> io::Result<(XzRecords, u64)> {
     let mut index = XzIndex {
-        input: &mut input,
+        input,
         crc: crc32fast::Hasher::new(),
         size: 1,
     };
@@ -1531,30 +1534,43 @@ fn finish_stream<R: Read>(mut input: XzInput<R>, stream: XzStream) -> io::Result
         }
         records.add(unpadded, uncompressed)?;
     }
-    while index.size % XZ_ALIGN != 0 {
+    while !index.size.is_multiple_of(XZ_ALIGN) {
         if index.byte()? != 0 {
             return Err(data_error("xz index padding is not zero"));
         }
     }
-    let XzIndex { crc, size, .. } = index;
-    let expected = crc.finalize();
+    let XzIndex { input, crc, size } = index;
     let mut stored = [0; 4];
     input.exact(&mut stored, "truncated xz index")?;
-    if u32::from_le_bytes(stored) != expected {
+    if u32::from_le_bytes(stored) != crc.finalize() {
         return Err(data_error("xz index CRC-32 does not match"));
     }
-    if records.summary() != stream.blocks.summary() {
-        return Err(data_error("xz index disagrees with the blocks"));
-    }
+    Ok((records, size + stored.len() as u64))
+}
+
+fn read_xz_stream_footer<R: Read>(
+    input: &mut XzInput<R>,
+    index_size: u64,
+    header_flags: [u8; 2],
+) -> io::Result<()> {
     let mut footer = [0; XZ_STREAM_EDGE];
     input.exact(&mut footer, "truncated xz stream footer")?;
     let (backward_size, flags) = xz_stream_footer(&footer)?;
-    if backward_size != size + stored.len() as u64 {
+    if backward_size != index_size {
         return Err(data_error("xz stream footer gives the wrong index size"));
     }
-    if flags != stream.flags {
+    if flags != header_flags {
         return Err(data_error("xz stream footer flags differ from its header"));
     }
+    Ok(())
+}
+
+fn finish_stream<R: Read>(mut input: XzInput<R>, stream: XzStream) -> io::Result<XzPart<R>> {
+    let (records, index_size) = read_xz_index(&mut input)?;
+    if records.summary() != stream.blocks.summary() {
+        return Err(data_error("xz index disagrees with the blocks"));
+    }
+    read_xz_stream_footer(&mut input, index_size, stream.flags)?;
     Ok(XzPart::BeforeStream {
         input,
         first: false,
@@ -3239,6 +3255,8 @@ mod tests {
             for (what, stream) in cases {
                 assert_both_refuse(&stream, what);
             }
+            let reserved = edit(&|p| p.header = stream_header([0, 0x11]));
+            assert!(xz_error(&reserved).contains("reserved bits"));
         }
 
         #[test]
@@ -3315,9 +3333,9 @@ mod tests {
         #[test]
         fn block_header_damage_is_refused_as_liblzma_refuses_it() {
             let base = Block::new(text(5_000, 48), 6).sized();
-            let stream_of = |block: &Block| Parts::new(&[block.clone()], 0x04).bytes();
+            let stream_of = |block: &Block| Parts::new(std::slice::from_ref(block), 0x04).bytes();
             let with_header = |header: Vec<u8>| {
-                let mut parts = Parts::new(&[base.clone()], 0x04);
+                let mut parts = Parts::new(std::slice::from_ref(&base), 0x04);
                 let old = base.header().len();
                 parts.blocks[0] = [header, parts.blocks[0][old..].to_vec()].concat();
                 parts.bytes()
@@ -3466,7 +3484,7 @@ mod tests {
                 for _ in 0..=flags & 3 {
                     fields.extend(lzma2_filter(DICTIONARY_1_MIB));
                 }
-                let mut parts = Parts::new(&[base.clone()], 0x01);
+                let mut parts = Parts::new(std::slice::from_ref(&base), 0x01);
                 let old = base.header().len();
                 parts.blocks[0] = [
                     block_header(flags, &fields, 0),
