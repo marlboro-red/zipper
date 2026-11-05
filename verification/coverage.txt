@@ -206,3 +206,20 @@ item = src/zip_directory.rs | fn zip64_values(
 item = src/zip_directory.rs | const IDS_THE_ZIP_CRATE_PARSES:
 item = src/zip_directory.rs | const MAX_ENTRIES:
 item = src/zip_directory.rs | const MAX_METADATA:
+
+[xz-filters]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 9810dd79885637f7
+full-check = cargo test --release --lib xz_filters
+item = src/xz_filters.rs | impl BranchDecoder {
+item = src/xz_filters.rs | fn x86(
+item = src/xz_filters.rs | fn powerpc(
+item = src/xz_filters.rs | fn ia64(
+item = src/xz_filters.rs | fn arm(
+item = src/xz_filters.rs | fn arm_thumb(
+item = src/xz_filters.rs | fn sparc(
+item = src/xz_filters.rs | fn arm64(
+item = src/xz_filters.rs | fn riscv(
+item = src/xz_filters.rs | impl DeltaDecoder {
+item = src/xz_filters.rs | impl BranchStage {
+item = src/xz_filters.rs | pub(crate) fn xz_filter(
