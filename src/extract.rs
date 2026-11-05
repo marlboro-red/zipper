@@ -199,102 +199,93 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
     crate::progress::Tracker::new(options.control, None, None).check()?;
     let destination_refused = std::fs::symlink_metadata(destination)
         .is_ok_and(|metadata| options.existing == Existing::Refuse || !metadata.is_dir());
-    let reported = std::sync::atomic::AtomicBool::new(false);
-    let watched = |progress: crate::Progress| {
-        reported.store(true, std::sync::atomic::Ordering::Relaxed);
-        if let Some(report) = options.control.progress {
-            report(progress);
-        }
-    };
-    let options = ExtractOptions {
-        control: Control {
-            progress: options.control.progress.map(|_| &watched as _),
-            ..options.control
-        },
-        ..options
-    };
-    with_volumes(
-        archive,
-        destination_refused,
-        &|| !reported.load(std::sync::atomic::Ordering::Relaxed),
-        || read_into(archive, destination, options),
-    )
+    with_volumes(archive, destination_refused, || {
+        read_into(archive, destination, options)
+    })
 }
 
 #[derive(Debug)]
-struct VolumeHint {
+struct VolumeNote {
     error: anyhow::Error,
-    hint: String,
+    note: String,
 }
 
-impl std::fmt::Display for VolumeHint {
+impl std::fmt::Display for VolumeNote {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}; {}", self.error, self.hint)
+        write!(formatter, "{}\n{}", self.error, self.note)
     }
 }
 
-impl std::error::Error for VolumeHint {
+impl std::error::Error for VolumeNote {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.error.chain().nth(1)
     }
 }
 
-fn about_the_archive_bytes(error: &anyhow::Error) -> bool {
+const NOT_FROM_VOLUME_BYTES: &[std::io::ErrorKind] = &[
+    std::io::ErrorKind::AlreadyExists,
+    std::io::ErrorKind::PermissionDenied,
+    std::io::ErrorKind::StorageFull,
+    std::io::ErrorKind::QuotaExceeded,
+    std::io::ErrorKind::ReadOnlyFilesystem,
+];
+
+fn cannot_come_from_volume_bytes(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {
-        cause.is::<crate::BadField>()
-            || cause.is::<crate::ChecksumMismatch>()
-            || crate::native_7z::is_malformed(cause)
-            || cause.is::<liblzma::stream::Error>()
-            || cause.downcast_ref::<std::io::Error>().is_some_and(|io| {
-                matches!(
-                    io.kind(),
-                    std::io::ErrorKind::InvalidData
-                        | std::io::ErrorKind::InvalidInput
-                        | std::io::ErrorKind::UnexpectedEof
-                ) || io
-                    .get_ref()
-                    .is_some_and(|inner| inner.is::<liblzma::stream::Error>())
-            })
+        cause.is::<crate::Cancelled>()
+            || cause.is::<crate::Refused>()
+            || crate::native_7z::is_unsupported(cause)
+            || cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|io| NOT_FROM_VOLUME_BYTES.contains(&io.kind()))
     })
+}
+
+const BACKEND_ADVICE: &str =
+    "; if the file is another format or a split volume, pass --zip-engine backend";
+
+fn without_backend_advice(error: anyhow::Error) -> anyhow::Error {
+    match error.downcast_ref::<crate::BadField>() {
+        Some(&crate::BadField(message)) if message.contains(BACKEND_ADVICE) => {
+            let kept = message
+                .split_once(BACKEND_ADVICE)
+                .map_or(message, |(kept, _)| kept);
+            crate::BadField(kept).into()
+        }
+        _ => error,
+    }
 }
 
 fn with_volumes<T>(
     archive: &Path,
     destination_refused: bool,
-    may_retry: &dyn Fn() -> bool,
-    read: impl Fn() -> Result<T>,
+    read: impl FnOnce() -> Result<T>,
 ) -> Result<T> {
     let volumes = crate::volumes::scope(archive);
     let error = match read() {
         Ok(value) => return Ok(value),
         Err(error) => error,
     };
-    if destination_refused || error.chain().any(|cause| cause.is::<crate::Cancelled>()) {
+    if destination_refused || cannot_come_from_volume_bytes(&error) {
         return Err(error);
     }
-    if volumes.is_set() && may_retry() {
-        let _alone = crate::volumes::scope_alone(archive);
-        if let Ok(value) = read() {
-            return Ok(value);
+    match volumes.note() {
+        Some(note) => Err(VolumeNote {
+            error: without_backend_advice(error),
+            note,
         }
-    }
-    if !about_the_archive_bytes(&error) {
-        return Err(error);
-    }
-    match volumes.hint() {
-        Some(hint) => Err(VolumeHint { error, hint }.into()),
+        .into()),
         None => Err(error),
     }
 }
 
 /// Run `read`, which reads `archive`. A `.001` name is read with `.002` and
 /// each next volume as one archive, and the volumes are found once for every
-/// reader that `read` opens. When reading the joined volumes fails, `read`
-/// runs again on the `.001` file alone, and its result is kept if that
-/// succeeds, so `read` may run twice. When an error comes from the archive's
-/// bytes, it names the volumes, or says why a `.001` file was read alone.
-pub fn read_volumes<T>(archive: &Path, read: impl Fn() -> Result<T>) -> Result<T> {
-    with_volumes(archive, false, &|| true, read)
+/// reader that `read` opens. When `read` fails for a reason that could come
+/// from the volumes' bytes, the error gains a line that names the volumes,
+/// or says why a numbered file was read alone.
+pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
+    with_volumes(archive, false, read)
 }
 
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {

@@ -61,8 +61,6 @@ struct Identity {
     device: u64,
     #[cfg(unix)]
     inode: u64,
-    #[cfg(unix)]
-    changed: (i64, i64),
 }
 
 impl Identity {
@@ -76,8 +74,6 @@ impl Identity {
             device: metadata.dev(),
             #[cfg(unix)]
             inode: metadata.ino(),
-            #[cfg(unix)]
-            changed: (metadata.ctime(), metadata.ctime_nsec()),
         }
     }
 }
@@ -99,10 +95,16 @@ fn open_without_blocking(path: &Path) -> io::Result<File> {
     File::open(path)
 }
 
-fn open_volume_file(path: &Path, identity: Identity) -> io::Result<File> {
+fn open_regular_file(path: &Path, identity: Option<Identity>) -> io::Result<File> {
     let file = open_without_blocking(path)?;
     let metadata = file.metadata()?;
-    if !metadata.is_file() || Identity::of(&metadata) != identity {
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} is not a regular file", name(path)),
+        ));
+    }
+    if identity.is_some_and(|identity| Identity::of(&metadata) != identity) {
         return Err(invalid(format!(
             "split volume {} changed while it was read",
             name(path)
@@ -162,7 +164,7 @@ impl VolumeSet {
     }
 
     fn open_volume(&self, index: u64) -> io::Result<File> {
-        open_volume_file(&self.path(index), self.identities[index as usize])
+        open_regular_file(&self.path(index), Some(self.identities[index as usize]))
     }
 }
 
@@ -307,10 +309,6 @@ impl Scope {
         IN_USE.with_borrow_mut(|in_use| in_use.push(Arc::clone(&discovery)));
         Self(discovery)
     }
-
-    pub(crate) fn is_set(&self) -> bool {
-        matches!(self.0.found, Found::Set(_))
-    }
 }
 
 impl Drop for Scope {
@@ -327,13 +325,6 @@ pub(crate) fn scope(path: &Path) -> Scope {
     Scope::enter(discover(path))
 }
 
-pub(crate) fn scope_alone(path: &Path) -> Scope {
-    Scope::enter(Discovery {
-        path: path.to_owned(),
-        found: Found::Alone { why: None },
-    })
-}
-
 fn in_use(path: &Path) -> Option<Arc<Discovery>> {
     IN_USE.with_borrow(|in_use| {
         in_use
@@ -347,7 +338,7 @@ fn in_use(path: &Path) -> Option<Arc<Discovery>> {
 pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
     let discovery = in_use(path).unwrap_or_else(|| Arc::new(discover(path)));
     Ok(match &discovery.found {
-        Found::Alone { .. } => ArchiveFile::One(File::open(path)?),
+        Found::Alone { .. } => ArchiveFile::One(open_regular_file(path, None)?),
         Found::Set(set) => ArchiveFile::Joined(Joined {
             set: Arc::clone(set),
             position: 0,
@@ -434,7 +425,7 @@ fn repeated_volume(
 }
 
 impl Scope {
-    pub(crate) fn hint(&self) -> Option<String> {
+    pub(crate) fn note(&self) -> Option<String> {
         let first = name(&self.0.path);
         let set = match &self.0.found {
             Found::Alone { why: None } => return None,
@@ -446,7 +437,9 @@ impl Scope {
         let count = set.identities.len() as u64;
         let last_path = set.path(count - 1);
         let last = name(&last_path);
-        let mut hint = format!("{first} is the first of {count} split volumes, up to {last}");
+        let mut hint = format!(
+            "{first} to {last} were read as one archive split into {count} volumes; if {first} is a whole archive by itself, rename it or open it by another name"
+        );
         if let Ok(RepeatScan {
             found: Some((earlier, later)),
             ..
@@ -460,15 +453,14 @@ impl Scope {
         }
         if set.layout.last == set.layout.volume {
             hint.push_str(&format!(
-                "; if they do not form one archive, {} may be missing",
+                "; if this archive is damaged, {} may be missing, or a volume may be truncated, repeated or out of order",
                 name(&set.path(count))
             ));
         } else {
             hint.push_str(&format!(
-                "; if they do not form one archive, {last} may be truncated or not belong to the set"
+                "; if this archive is damaged, {last} may be truncated or not belong to the set, or a volume may be missing, repeated or out of order"
             ));
         }
-        hint.push_str(", or a volume may be repeated, out of order or damaged");
         Some(hint)
     }
 }
@@ -568,10 +560,6 @@ impl ArchiveFile {
                 name(&joined.set.path(index))
             ))),
         }
-    }
-
-    pub(crate) fn is_joined(&self) -> bool {
-        matches!(self, Self::Joined(_))
     }
 
     pub(crate) fn reopen(&self, path: &Path) -> io::Result<Self> {
@@ -705,9 +693,6 @@ mod tests {
         assert!(!Arc::ptr_eq(&held, &joined_set(open(&first)?)));
         drop(inner);
         assert!(Arc::ptr_eq(&held, &joined_set(open(&first)?)));
-        let alone = scope_alone(&first);
-        assert!(matches!(open(&first)?, ArchiveFile::One(_)));
-        drop(alone);
         drop(outer);
         assert!(!Arc::ptr_eq(&held, &joined_set(open(&first)?)));
         let elsewhere = std::thread::spawn(move || {
@@ -786,6 +771,24 @@ mod tests {
         drop(rewritten);
         let error = joined.read_at(&mut [0; 4], 12).unwrap_err();
         assert!(error.to_string().contains("a.bin.002"), "{error}");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_opened_as_an_archive_fails_instead_of_blocking() -> io::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let fifo = folder.path().join("a.zip");
+        let made = std::process::Command::new("mkfifo").arg(&fifo).status()?;
+        assert!(made.success());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(open(&fifo).map(drop).map_err(|e| e.to_string()));
+        });
+        let result = receiver
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("opening a FIFO blocked");
+        assert!(result.unwrap_err().contains("a.zip"));
         Ok(())
     }
 

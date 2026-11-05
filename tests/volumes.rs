@@ -2,8 +2,7 @@
 //! read in process as one stream. Each split must give the tree its whole
 //! archive gives, and 7-Zip's own volumes the tree 7-Zip extracts. A missing,
 //! truncated, repeated, swapped or extra volume must fail before anything is
-//! published, with an error that names a volume. A plain tar's own errors have
-//! no type that marks them as about the archive's bytes, so they name none.
+//! published, with an error that names a volume.
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -85,12 +84,8 @@ fn assert_refused(archive: &Path, names: &[&str], label: &str) {
         Ok(()) => panic!("{label}: extracted"),
         Err(error) => format!("{error:#}"),
     };
-    let plain_tar_errors_carry_no_volume_names = label.starts_with("tar.tar:");
     for name in names {
-        assert!(
-            plain_tar_errors_carry_no_volume_names || error.contains(name),
-            "{label}: {name} not in: {error}"
-        );
+        assert!(error.contains(name), "{label}: {name} not in: {error}");
     }
     let left: Vec<_> = fs::read_dir(root.path()).unwrap().collect();
     assert!(left.is_empty(), "{label}: left {left:?}");
@@ -526,11 +521,14 @@ fn the_volume_hint_follows_the_real_error_and_only_for_archive_failures() {
     fs::remove_file(set.path(set.count)).unwrap();
     let error = refused_with(&set.path(1), false);
     let top = error.to_string();
-    assert!(!top.starts_with("7z.7z.001 is the first"), "{top}");
+    assert!(!top.starts_with("7z.7z.001 to"), "{top}");
     assert!(top.contains(&set.name(set.count)), "{top}");
 
     let error = refused_with(&set.path(1), true);
-    assert!(!format!("{error:#}").contains("split volumes"), "{error:#}");
+    assert!(
+        !format!("{error:#}").contains("read as one archive split into"),
+        "{error:#}"
+    );
 
     let whole = Set::new("tar.tar", 1000);
     let cancel = std::sync::atomic::AtomicBool::new(false);
@@ -552,7 +550,10 @@ fn the_volume_hint_follows_the_real_error_and_only_for_archive_failures() {
     )
     .unwrap_err();
     assert!(error.is::<zipper::Cancelled>(), "{error:#}");
-    assert!(!format!("{error:#}").contains("split volumes"), "{error:#}");
+    assert!(
+        !format!("{error:#}").contains("read as one archive split into"),
+        "{error:#}"
+    );
 
     for command in ["test", "list"] {
         let output = Command::new(env!("CARGO_BIN_EXE_zipper"))
@@ -632,7 +633,7 @@ fn names_in(archive: &Path) -> Vec<String> {
 }
 
 #[test]
-fn neighbours_that_are_whole_archives_of_their_own_extract_as_main_does() {
+fn neighbours_that_are_whole_archives_of_their_own_are_read_as_7zip_reads_them() {
     let folder = tempfile::tempdir().unwrap();
     let big = zip_of(&[("a.txt", &[b'a'; 400])]);
     let small = zip_of(&[("b.txt", b"b")]);
@@ -640,7 +641,11 @@ fn neighbours_that_are_whole_archives_of_their_own_extract_as_main_does() {
 
     fs::write(folder.path().join("db.001"), &big).unwrap();
     fs::write(folder.path().join("db.002"), &small).unwrap();
-    assert_eq!(names_in(&folder.path().join("db.001")), ["a.txt"]);
+    assert_refused(
+        &folder.path().join("db.001"),
+        &["db.001", "db.002", "rename"],
+        "a whole ZIP beside a smaller ZIP",
+    );
     assert_eq!(names_in(&folder.path().join("db.002")), ["b.txt"]);
 
     let zero = tempfile::tempdir().unwrap();
@@ -652,15 +657,16 @@ fn neighbours_that_are_whole_archives_of_their_own_extract_as_main_does() {
     let whole_tar = fs::read(parity("tar.tar")).unwrap();
     fs::write(tar.path().join("x.tar.001"), &whole_tar).unwrap();
     fs::write(tar.path().join("x.tar.002"), &whole_tar[..2048]).unwrap();
-    assert_eq!(
-        whole_tree(&tar.path().join("x.tar.001")),
-        whole_tree(&parity("tar.tar"))
+    assert_refused(
+        &tar.path().join("x.tar.001"),
+        &["x.tar.001", "x.tar.002", "rename"],
+        "a whole tar beside part of another",
     );
 
     let gzip = tempfile::tempdir().unwrap();
     let hello = fs::read(parity("hello.txt.gz")).unwrap();
     fs::write(gzip.path().join("log.gz.001"), &hello).unwrap();
-    fs::write(gzip.path().join("log.gz.002"), &hello[..hello.len() - 1]).unwrap();
+    fs::write(gzip.path().join("log.gz.002"), &hello).unwrap();
     let joined = whole_tree(&gzip.path().join("log.gz.001"));
     assert_eq!(joined.keys().collect::<Vec<_>>(), ["log"]);
 }
@@ -702,7 +708,10 @@ fn errors_that_are_not_about_the_archive_bytes_name_no_volumes() {
     let escaping = zip_of(&[("../escape.txt", b"x")]);
     let first = split(&escaping, folder.path(), "e.zip", 40);
     let error = format!("{:#}", refused_with(&first, false));
-    assert!(!error.contains("split volumes"), "unsafe path: {error}");
+    assert!(
+        !error.contains("read as one archive split into"),
+        "unsafe path: {error}"
+    );
 
     let set = Set::new("zip.zip", 300);
     for (case, options) in [
@@ -724,13 +733,16 @@ fn errors_that_are_not_about_the_archive_bytes_name_no_volumes() {
         let root = tempfile::tempdir().unwrap();
         let error = extract_archive(&set.path(1), &root.path().join("out"), options).unwrap_err();
         let error = format!("{error:#}");
-        assert!(!error.contains("split volumes"), "{case}: {error}");
+        assert!(
+            !error.contains("read as one archive split into"),
+            "{case}: {error}"
+        );
     }
 
     let missing = Set::new("zip.zip", 300);
     fs::remove_file(missing.path(missing.count)).unwrap();
     let error = format!("{:#}", refused_with(&missing.path(1), false));
-    assert!(error.contains("split volumes"), "{error}");
+    assert!(error.contains("read as one archive split into"), "{error}");
     assert!(!error.contains("--zip-engine backend"), "{error}");
 }
 
@@ -790,4 +802,185 @@ fn a_cancelled_read_runs_once_and_a_zero_numbered_file_is_no_volume() {
     .unwrap();
     let error = format!("{:#}", refused_with(&folder.path().join("x.000"), false));
     assert!(!error.contains("x.001"), "{error}");
+}
+
+fn gzip_member(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    std::io::Write::write_all(&mut encoder, bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn zstd_frame(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = zstd::stream::Encoder::new(Vec::new(), 1).unwrap();
+    encoder.include_checksum(true).unwrap();
+    std::io::Write::write_all(&mut encoder, bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn xz_stream(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = liblzma::write::XzEncoder::new(Vec::new(), 1);
+    std::io::Write::write_all(&mut encoder, bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn noise(length: usize, seed: u32) -> Vec<u8> {
+    let mut state = seed;
+    (0..length)
+        .map(|_| {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (state >> 24) as u8
+        })
+        .collect()
+}
+
+fn member_boundary_set(folder: &Path, stem: &str, member: fn(&[u8]) -> Vec<u8>) -> usize {
+    let first = member(&noise(4000, 1));
+    let mut rest = member(&noise(9000, 2));
+    rest.extend(member(&noise(9000, 3)));
+    fs::write(folder.join(volume_name(stem, 1)), &first).unwrap();
+    for (index, chunk) in rest.chunks(first.len()).enumerate() {
+        fs::write(folder.join(volume_name(stem, index + 2)), chunk).unwrap();
+    }
+    1 + rest.len().div_ceil(first.len())
+}
+
+fn zipper_cli(args: &[&std::ffi::OsStr]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_damaged_set_whose_first_volume_ends_on_a_member_boundary_fails() {
+    for (stem, member) in [
+        ("log.bin.gz", gzip_member as fn(&[u8]) -> Vec<u8>),
+        ("log.bin.zst", zstd_frame),
+        ("log.bin.xz", xz_stream),
+    ] {
+        for damage in ["flip", "drop last"] {
+            let folder = tempfile::tempdir().unwrap();
+            let count = member_boundary_set(folder.path(), stem, member);
+            let first = folder.path().join(volume_name(stem, 1));
+            match damage {
+                "flip" => {
+                    let second = folder.path().join(volume_name(stem, 2));
+                    let mut bytes = fs::read(&second).unwrap();
+                    let middle = bytes.len() / 2;
+                    bytes[middle] ^= 0x40;
+                    fs::write(&second, bytes).unwrap();
+                }
+                _ => fs::remove_file(folder.path().join(volume_name(stem, count))).unwrap(),
+            }
+            let label = format!("{stem}: {damage}");
+            assert_refused(&first, &[&volume_name(stem, 1)], &label);
+            let tested = zipper_cli(&["test".as_ref(), first.as_os_str()]);
+            assert!(!tested.status.success(), "{label}: zipper test passed");
+            let root = tempfile::tempdir().unwrap();
+            let out = root.path().join("out");
+            let extracted = zipper_cli(&[
+                "extract".as_ref(),
+                first.as_os_str(),
+                "-o".as_ref(),
+                out.as_os_str(),
+            ]);
+            assert!(
+                !extracted.status.success(),
+                "{label}: zipper extract passed"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_size_cap_on_an_intact_set_fails_instead_of_reading_the_first_volume_alone() {
+    let folder = tempfile::tempdir().unwrap();
+    member_boundary_set(folder.path(), "log.bin.gz", gzip_member);
+    let first = folder.path().join("log.bin.gz.001");
+    let root = tempfile::tempdir().unwrap();
+    let capped = extract_archive(
+        &first,
+        &root.path().join("out"),
+        ExtractOptions {
+            max_output_bytes: Some(10_000),
+            ..Default::default()
+        },
+    );
+    assert!(capped.is_err(), "the cap was not applied to the whole set");
+    let out = root.path().join("cli");
+    let cli = zipper_cli(&[
+        "extract".as_ref(),
+        "--max-extracted-bytes".as_ref(),
+        "10000".as_ref(),
+        first.as_os_str(),
+        "-o".as_ref(),
+        out.as_os_str(),
+    ]);
+    assert!(!cli.status.success(), "the CLI read the first volume alone");
+    assert!(!out.exists());
+}
+
+#[test]
+fn every_decoder_error_on_a_damaged_set_names_its_volumes() {
+    for (stem, member) in [
+        ("blob.bin.zst", zstd_frame as fn(&[u8]) -> Vec<u8>),
+        ("blob.bin.gz", gzip_member),
+    ] {
+        let folder = tempfile::tempdir().unwrap();
+        let mut whole = member(&noise(30000, 4));
+        whole.extend(member(&noise(30000, 5)));
+        let first = split(&whole, folder.path(), stem, 4000);
+        let third = folder.path().join(volume_name(stem, 3));
+        fs::copy(folder.path().join(volume_name(stem, 2)), &third).unwrap();
+        assert_refused(
+            &first,
+            &[
+                &volume_name(stem, 1),
+                &volume_name(stem, 3),
+                &volume_name(stem, 2),
+            ],
+            &format!("{stem}: repeated"),
+        );
+    }
+}
+
+#[test]
+fn a_volume_opened_by_name_gets_no_backend_advice() {
+    for archive in ["7z.7z", "tar.tar.gz", "tar.tar"] {
+        let set = Set::new(archive, 300);
+        let error = format!("{:#}", refused_with(&set.path(2), false));
+        assert!(error.contains(&set.name(1)), "{archive}: {error}");
+        assert!(
+            !error.contains("--zip-engine backend"),
+            "{archive}: {error}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_metadata_change_that_leaves_the_bytes_alone_does_not_fail_a_set() {
+    use std::os::unix::fs::PermissionsExt;
+    let set = Set::new("7z.7z", 100);
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let (opened, started) = std::sync::mpsc::channel::<()>();
+    let first = set.path(1);
+    let reader = std::thread::spawn(move || {
+        let held = std::cell::RefCell::new(Some(held));
+        zipper::read_volumes(&first, || {
+            if let Some(held) = held.borrow_mut().take() {
+                opened.send(()).ok();
+                held.recv().ok();
+            }
+            zipper::native_7z::list(&first)
+        })
+    });
+    started.recv().unwrap();
+    for number in 1..=set.count {
+        fs::set_permissions(set.path(number), fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    release.send(()).unwrap();
+    let entries = reader.join().unwrap().unwrap();
+    assert!(!entries.is_empty());
 }

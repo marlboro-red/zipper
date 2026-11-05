@@ -120,9 +120,7 @@ pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> 
     let length = file.seek(SeekFrom::End(0))?;
     ensure!(
         length >= END_RECORD as u64,
-        crate::BadField(
-            "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend"
-        )
+        "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend"
     );
     let tail_size = length.min((END_RECORD + LONGEST_COMMENT) as u64);
     file.seek(SeekFrom::Start(length - tail_size))?;

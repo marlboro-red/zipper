@@ -108,10 +108,6 @@ impl std::fmt::Display for Malformed {
 
 impl std::error::Error for Malformed {}
 
-pub(crate) fn is_malformed(error: &(dyn std::error::Error + 'static)) -> bool {
-    error.is::<Malformed>()
-}
-
 type Parsed<T> = std::result::Result<T, Malformed>;
 
 fn check(holds: bool, message: &'static str, subject: &'static str) -> Parsed<()> {
@@ -912,10 +908,7 @@ fn decode_header(file: &mut ArchiveFile, streams: &Streams) -> Result<Vec<u8>> {
         "7z header has the wrong size"
     );
     if let Some(crc) = folder.crc.or(streams.files_by_folder[0][0].1) {
-        ensure!(
-            crc32fast::hash(&decoded) == crc,
-            crate::ChecksumMismatch("7z header CRC mismatch".to_owned())
-        );
+        ensure!(crc32fast::hash(&decoded) == crc, "7z header CRC mismatch");
     }
     Ok(decoded)
 }
@@ -943,7 +936,7 @@ fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
         .checked_add(offset)
         .filter(|&header| header.checked_add(size).is_some_and(|end| end <= length));
     let Some(header_start) = header_start else {
-        bail!(crate::BadField("7z header lies outside the file"))
+        bail!("7z header lies outside the file")
     };
     file.ensure_ends_at(header_start + size)?;
     ensure!(size <= MAX_HEADER, "7z header is larger than 64 MiB");
@@ -951,10 +944,7 @@ fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
     file.seek(SeekFrom::Start(header_start))?;
     let mut header = vec![0; size as usize];
     file.read_exact(&mut header)?;
-    ensure!(
-        crc32fast::hash(&header) == crc,
-        crate::ChecksumMismatch("7z header CRC mismatch".to_owned())
-    );
+    ensure!(crc32fast::hash(&header) == crc, "7z header CRC mismatch");
     for _ in 0..=MAX_HEADER_LAYERS {
         let mut bytes = Bytes {
             data: &header,
@@ -1111,6 +1101,10 @@ impl std::fmt::Display for Unsupported {
 }
 
 impl std::error::Error for Unsupported {}
+
+pub(crate) fn is_unsupported(error: &(dyn std::error::Error + 'static)) -> bool {
+    error.is::<Unsupported>()
+}
 
 fn unsupported(message: String) -> anyhow::Error {
     Unsupported(message).into()
@@ -2162,10 +2156,10 @@ pub fn read_archive(
                     )
                             .map_err(|error| {
                                 if error.kind() == std::io::ErrorKind::AlreadyExists {
-                                    anyhow::anyhow!(
+                                    anyhow::Error::new(crate::Refused(format!(
                                         "7z entry {:?} collides with another entry on this filesystem, which ignores case or Unicode normalization",
                                         item.name
-                                    )
+                                    )))
                                 } else {
                                     error.into()
                                 }
@@ -2203,7 +2197,8 @@ pub fn read_archive(
             if let Some(expected) = item.crc {
                 ensure!(
                     crc.finalize() == expected,
-                    crate::ChecksumMismatch(format!("7z CRC mismatch in {:?}", item.name))
+                    "7z CRC mismatch in {:?}",
+                    item.name
                 );
             }
             if let Some(mut output) = output {
@@ -2226,10 +2221,7 @@ pub fn read_archive(
             "7z folder holds more data than its files"
         );
         if let Some(expected) = folder.crc {
-            ensure!(
-                folder_crc.finalize() == expected,
-                crate::ChecksumMismatch("7z folder CRC mismatch".to_owned())
-            );
+            ensure!(folder_crc.finalize() == expected, "7z folder CRC mismatch");
         }
         Ok(())
     };

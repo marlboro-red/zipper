@@ -241,9 +241,9 @@ fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<(u64, u64)> {
     let name = &job.name;
     let mut file = crate::create_new_file(&job.path, job.mode, crate::windows_attributes(0, Some(job.mode))).map_err(|error| {
         if error.kind() == std::io::ErrorKind::AlreadyExists {
-            anyhow::anyhow!(
+            anyhow::Error::new(crate::Refused(format!(
                 "tar entry {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-            )
+            )))
         } else {
             anyhow::Error::from(error).context(format!("cannot create tar entry {name:?}"))
         }
@@ -782,12 +782,16 @@ impl Budget {
         match self.limit {
             Some(limit) => ensure!(
                 self.declared <= limit,
-                "archive expands to more than --max-extracted-bytes {limit}"
+                crate::Refused(format!(
+                    "archive expands to more than --max-extracted-bytes {limit}"
+                ))
             ),
             None => ensure!(
                 self.estimate <= self.free,
-                "archive needs more than the {} bytes free; pass --max-extracted-bytes to override",
-                self.free
+                crate::Refused(format!(
+                    "archive needs more than the {} bytes free; pass --max-extracted-bytes to override",
+                    self.free
+                ))
             ),
         }
         Ok(())
@@ -1013,9 +1017,9 @@ impl<'a, 'f> Extraction<'a, 'f> {
         for (name, target) in &self.hard_links {
             fs::hard_link(root.join(target), root.join(name)).map_err(|error| {
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    anyhow::anyhow!(
+                    anyhow::Error::new(crate::Refused(format!(
                         "tar hard link {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-                    )
+                    )))
                 } else {
                     anyhow::Error::from(error).context(format!("cannot create tar hard link {name:?}"))
                 }

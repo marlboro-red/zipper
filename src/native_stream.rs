@@ -172,7 +172,9 @@ pub fn read_archive(
         size += read as u64;
         ensure!(
             size <= limit,
-            "{name} decodes to more than {limit} bytes; pass --max-extracted-bytes to raise the cap"
+            crate::Refused(format!(
+                "{name} decodes to more than {limit} bytes; pass --max-extracted-bytes to raise the cap"
+            ))
         );
         if let Some(output) = &mut output {
             output.write_all(&buffer[..read])?;

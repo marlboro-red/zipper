@@ -418,27 +418,9 @@ struct Opened {
     directory: Directory,
 }
 
-const BACKEND_ADVICE: &str =
-    "; if the file is another format or a split volume, pass --zip-engine backend";
-
-fn read_directory(file: &mut BufReader<crate::volumes::ArchiveFile>) -> Result<Directory> {
-    let joined = file.get_ref().is_joined();
-    crate::zip_directory::read_directory(file).map_err(|error| {
-        match error.downcast_ref::<crate::BadField>() {
-            Some(&crate::BadField(message)) if joined => {
-                let without_advice = message
-                    .split_once(BACKEND_ADVICE)
-                    .map_or(message, |(kept, _)| kept);
-                crate::BadField(without_advice).into()
-            }
-            _ => error,
-        }
-    })
-}
-
 fn open(path: &Path, cache: bool) -> Result<Opened> {
     let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
-    let directory = read_directory(&mut file)?;
+    let directory = crate::zip_directory::read_directory(&mut file)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
     } else {
@@ -472,7 +454,10 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
     for file in &directory.entries {
         ensure!(
             !file.encrypted(),
-            "encrypted ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
+            crate::Refused(
+                "encrypted ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
+                    .to_owned()
+            )
         );
         let symlink = file.is_symlink();
         ensure!(
@@ -498,7 +483,10 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
                 file.method,
                 STORED | DEFLATE | DEFLATE64 | BZIP2 | LZMA | ZSTANDARD | XZ | PPMD
             ),
-            "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
+            crate::Refused(
+                "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
+                    .to_owned()
+            )
         );
         let name = file.name().into_owned();
         let name = if directory {
@@ -1106,7 +1094,9 @@ fn method_decoder<'a>(
                 remaining: item.entry.size,
             })
         }
-        other => anyhow::bail!("ZIP compression method {other} is not supported"),
+        other => anyhow::bail!(crate::Refused(format!(
+            "ZIP compression method {other} is not supported"
+        ))),
     })
 }
 
@@ -1198,17 +1188,14 @@ fn stream_entry(
         );
     }
     ensure!(written == item.entry.size, "ZIP decoded size mismatch");
-    ensure!(
-        crc.finalize() == item.crc,
-        crate::ChecksumMismatch("ZIP CRC mismatch".to_owned())
-    );
+    ensure!(crc.finalize() == item.crc, "ZIP CRC mismatch");
     Ok(())
 }
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
     let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
-    let directory = read_directory(&mut file)?;
+    let directory = crate::zip_directory::read_directory(&mut file)?;
     Ok(scan(&directory, false)?
         .into_iter()
         .map(|item| item.entry)
@@ -1461,10 +1448,10 @@ pub fn read_archive_with_options(
                 let file = crate::create_new_file(&path, item.mode.unwrap_or(0o666), item.windows_attributes)
                             .map_err(|error| {
                             if error.kind() == std::io::ErrorKind::AlreadyExists {
-                                anyhow::anyhow!(
+                                anyhow::Error::new(crate::Refused(format!(
                                     "ZIP entry {:?} collides with another entry on this filesystem, which ignores case or Unicode normalization",
                                     item.entry.name
-                                )
+                                )))
                             } else {
                                 error.into()
                             }
@@ -1488,10 +1475,7 @@ pub fn read_archive_with_options(
                 length as u64 == item.entry.size,
                 "ZIP decoded size mismatch"
             );
-            ensure!(
-                crc32fast::hash(&decoded) == item.crc,
-                crate::ChecksumMismatch("ZIP CRC mismatch".to_owned())
-            );
+            ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
             if let Some(output) = &mut output {
                 // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
                 if cfg!(windows) {
