@@ -226,7 +226,7 @@ item = src/xz_filters.rs | pub(crate) fn xz_filter(
 
 [lzma]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 3b0bc945065439ca
+fingerprint = 342081dfa2e9feb9
 full-check = cargo kani --tests --harness lzma::proofs::
 full-check = cargo test --release --lib lzma
 item = src/lzma.rs | const PROBABILITY_BITS:
