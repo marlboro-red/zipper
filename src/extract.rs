@@ -388,7 +388,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         Reader::Backend { format } => {
             ensure!(
                 options.max_output_bytes.is_none(),
-                "--max-extracted-bytes needs a ZIP, tar or 7z archive read in process"
+                "--max-extracted-bytes needs an archive read in process"
             );
             compat::run(
                 "x",

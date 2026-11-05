@@ -51,10 +51,12 @@ The reader checks the whole archive before it publishes anything, and it publish
 | --- | --- |
 | Headers | at most 1,000,000 |
 | Names, implied directories, link targets and hard link names waiting for their data | at most 64 MiB in total |
-| Records of newc inodes, hard links waiting for their data and names that carry data | at most 128 MiB, counted at twice each record's size |
+| Records of newc inodes, hard links waiting for their data and names that carry data | at most 128 MiB, counting each table entry at 3.5 times its size and each waiting record at twice its size plus its heap block |
 | One name | at most 8,192 bytes |
 | One symlink target | at most 4,096 bytes |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
+
+The link budget is charged for the memory a record really takes, including a hash table while it grows. So an archive of about 290,000 newc names that never get their data is refused at 128 MiB, where a looser charge would accept it at about 150 MiB.
 
 One thread reads the archive and writes each file in archive order through a 1 MiB buffer, so memory does not grow with file size. `--threads` has no effect on cpio.
 
@@ -70,14 +72,18 @@ One thread reads the archive and writes each file in archive order through a 1 M
 
 ## Differences from bsdcpio
 
-The newc hard link rule follows bsdcpio 3.7.4, except in these cases:
+The newc hard link rule follows bsdcpio 3.5.3, built on libarchive 3.7.4, except in these cases:
 
 - When two names of one inode both carry data, bsdcpio gives every name the data of the last one. Zipper links the names that wait to the first data name, and writes the second as its own file.
-- When a name without data repeats the name of an earlier file, bsdcpio replaces that file with an empty one. Zipper refuses the archive when it would replace a file a hard link names, or that a group still waits on. Otherwise the reader writes the empty file in place of the earlier one, as bsdcpio does.
+- When a name without data repeats the name of an earlier file, bsdcpio keeps the earlier file and links the names of the inode that follow to it. Zipper writes an empty file in its place and links those names to the empty file. It refuses the archive instead when the earlier file is one a hard link names or a group still waits on.
+- When a name's link count differs from the first header of its inode, bsdcpio starts a new group at the change. Zipper keeps one group, so names that bsdcpio leaves empty get the data.
+- A name without data that shares the inode of a symlink or a folder becomes an empty file. bsdcpio makes it a symlink, or skips it with an error for a folder.
+- When a second file with data takes the name of a data name, bsdcpio keeps the first file and leaves the inode's waiting names empty. Zipper writes the second file and links the waiting names to it, unless a group still waits on the first file, which Zipper refuses.
 - bsdcpio extracts these shapes, which Zipper refuses because a name would change kind or replace a linked file:
   - a waiting name, then a file of the same name with data;
   - a file that a link names, then a waiting name of the same spelling;
-  - a waiting name and its data under the same name, in either order.
+  - a waiting name and its data under the same name, in either order;
+  - a file with data that replaces a data name a group still waits on.
 
 ## Extraction options
 

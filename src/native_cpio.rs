@@ -1,11 +1,10 @@
 //! In-process extraction of cpio archives in the binary, odc and newc forms,
 //! published only after the whole archive reads cleanly. See
 //! `docs/reference/cpio-reader.md` for what it accepts and restores.
-use crate::{BadField, Entry, Field, field_check};
+use crate::{BadField, Entry, Field, field_check, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::HashMap,
-    fs::File,
     io::{BufReader, Read},
     path::Path,
     time::SystemTime,
@@ -274,12 +273,14 @@ fn unix_time(seconds: u64) -> Option<SystemTime> {
 /// or newc form.
 pub fn sniff(path: &Path) -> Result<bool> {
     let mut magic = Vec::with_capacity(6);
-    File::open(path)?.take(6).read_to_end(&mut magic)?;
+    crate::volumes::open(path)?
+        .take(6)
+        .read_to_end(&mut magic)?;
     Ok(Form::of(&magic).is_some())
 }
 
 struct Input {
-    reader: BufReader<File>,
+    reader: BufReader<ArchiveFile>,
 }
 
 impl Input {
@@ -617,12 +618,12 @@ pub fn read_archive(
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
     let mut input = Input {
-        reader: BufReader::with_capacity(COPY_BUFFER, File::open(path)?),
+        reader: BufReader::with_capacity(COPY_BUFFER, crate::volumes::open(path)?),
     };
     let mut magic = [0u8; 6];
     input.exact(&mut magic, "header")?;
     let form = Form::of(&magic).context("not a cpio archive")?;
-    input.reader = BufReader::with_capacity(COPY_BUFFER, File::open(path)?);
+    input.reader = BufReader::with_capacity(COPY_BUFFER, crate::volumes::open(path)?);
     tree::extract("cpio", path, destination, options, |tree| {
         parse(tree, &mut input, form)
     })

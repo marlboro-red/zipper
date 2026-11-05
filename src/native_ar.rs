@@ -3,10 +3,10 @@
 //! `docs/reference/ar-reader.md` for what it accepts and restores.
 pub use crate::native_cpio::ReadOptions;
 use crate::native_cpio::tree::{self, BACKEND_HINT, MAX_ENTRIES, MAX_NAME};
+use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check, progress::Tracker};
 use anyhow::{Context, Result, ensure};
 use std::{
-    fs::File,
     io::{BufReader, Read, Seek},
     path::Path,
 };
@@ -108,7 +108,7 @@ fn short_name(field: &[u8; 16]) -> Field<ShortName<'_>> {
 /// Returns whether the file starts with the `ar` signature, plain or thin.
 pub fn sniff(path: &Path) -> Result<bool> {
     let mut magic = Vec::with_capacity(MAGIC.len());
-    File::open(path)?
+    crate::volumes::open(path)?
         .take(MAGIC.len() as u64)
         .read_to_end(&mut magic)?;
     Ok(magic == MAGIC || magic == THIN_MAGIC)
@@ -124,7 +124,7 @@ struct Member {
 }
 
 struct Members {
-    reader: BufReader<File>,
+    reader: BufReader<ArchiveFile>,
     length: u64,
     next: u64,
     long_names: Option<Vec<u8>>,
@@ -133,8 +133,8 @@ struct Members {
 
 impl Members {
     fn open(path: &Path) -> Result<Self> {
-        let file = File::open(path)?;
-        let length = file.metadata()?.len();
+        let file = crate::volumes::open(path)?;
+        let length = file.len()?;
         let mut reader = BufReader::with_capacity(COPY_BUFFER, file);
         let mut magic = [0u8; 8];
         reader.read_exact(&mut magic).context("not an ar archive")?;
@@ -260,7 +260,7 @@ impl Members {
         Ok(())
     }
 
-    fn data(&mut self, member: &Member) -> Result<std::io::Take<&mut BufReader<File>>> {
+    fn data(&mut self, member: &Member) -> Result<std::io::Take<&mut BufReader<ArchiveFile>>> {
         self.seek_to(member.data)?;
         Ok((&mut self.reader).take(member.size))
     }

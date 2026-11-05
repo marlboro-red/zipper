@@ -129,7 +129,7 @@ fn max_extracted_bytes_caps_archives_before_writing() -> anyhow::Result<()> {
     ])?;
     assert!(
         String::from_utf8_lossy(&explicit.stderr)
-            .contains("--max-extracted-bytes needs a ZIP, tar or 7z archive")
+            .contains("--max-extracted-bytes needs an archive read in process")
     );
     Ok(())
 }

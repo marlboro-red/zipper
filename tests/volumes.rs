@@ -105,6 +105,10 @@ const NATIVE: &[&str] = &[
     "hello.txt.gz",
     "hello.txt.xz",
     "hello.txt.lzma",
+    "cpio-newc.cpio",
+    "cpio-odc.cpio",
+    "cpio-bin.cpio",
+    "ar.a",
 ];
 
 #[test]
