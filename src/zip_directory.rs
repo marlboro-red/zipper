@@ -149,26 +149,48 @@ pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> 
     }
     check_extent(&extent)?;
     file.seek(SeekFrom::Start(extent.start))?;
-    let mut directory = Vec::new();
-    file.by_ref()
-        .take(extent.bytes)
-        .read_to_end(&mut directory)?;
-    ensure!(
-        directory.len() as u64 == extent.bytes,
-        "truncated ZIP central directory"
-    );
     Ok(Directory {
         start: extent.start,
-        entries: central_entries(&directory, extent)?,
+        entries: central_entries(file, extent)?,
     })
 }
 
-fn central_entries(directory: &[u8], extent: Extent) -> Result<Vec<CentralEntry>> {
+struct DirectoryBytes<'r, R> {
+    reader: &'r mut R,
+    remaining: u64,
+}
+
+impl<R: Read> DirectoryBytes<'_, R> {
+    fn append(&mut self, wanted: usize, record: &mut Vec<u8>) -> Result<()> {
+        let wanted = self.remaining.min(wanted as u64);
+        let read = self.reader.by_ref().take(wanted).read_to_end(record)?;
+        ensure!(read as u64 == wanted, "truncated ZIP central directory");
+        self.remaining -= wanted;
+        Ok(())
+    }
+
+    fn next_record(&mut self, record: &mut Vec<u8>) -> Result<()> {
+        record.clear();
+        self.append(CENTRAL_ENTRY, record)?;
+        if record.len() == CENTRAL_ENTRY {
+            let variable = [28, 30, 32].map(|at| usize::from(le16(record, at)));
+            self.append(variable.iter().sum(), record)?;
+        }
+        Ok(())
+    }
+}
+
+fn central_entries<R: Read>(file: &mut R, extent: Extent) -> Result<Vec<CentralEntry>> {
+    let mut directory = DirectoryBytes {
+        reader: file,
+        remaining: extent.bytes,
+    };
     let mut entries = Vec::new();
-    let mut rest = directory;
+    let mut bytes = Vec::new();
     let mut position = extent.start;
     for _ in 0..extent.count {
-        let record = central_record(rest)?;
+        directory.next_record(&mut bytes)?;
+        let record = central_record(&bytes)?;
         // EXTERNAL(Python zipfile, 7-Zip): no CP437 fallback for a flagged name.
         ensure!(
             record.flags & UTF8_NAME == 0 || std::str::from_utf8(record.name).is_ok(),
@@ -195,9 +217,8 @@ fn central_entries(directory: &[u8], extent: Extent) -> Result<Vec<CentralEntry>
             header_start: record.header_start,
         });
         position += record.length as u64;
-        rest = &rest[record.length..];
     }
-    ensure!(rest.is_empty(), "ZIP directory count mismatch");
+    ensure!(directory.remaining == 0, "ZIP directory count mismatch");
     Ok(entries)
 }
 
@@ -443,7 +464,7 @@ fn respells_stored_name_as_zip_crate_decodes(body: &[u8], path: &[u8], stored: &
 
 const CP437_HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
 
-fn decode_name_like_zip_crate(stored: &[u8]) -> Cow<'_, str> {
+pub(crate) fn decode_name_like_zip_crate(stored: &[u8]) -> Cow<'_, str> {
     static HIGH: std::sync::LazyLock<Vec<char>> =
         std::sync::LazyLock::new(|| CP437_HIGH.chars().collect());
     match std::str::from_utf8(stored) {
@@ -648,7 +669,7 @@ mod tests {
         "malformed ZIP Unicode path field",
         "ZIP Unicode path field renames an entry",
     ];
-    const DIRECTORY_DISAGREEMENT: &str = "ZIP parser disagrees with validated directory";
+    const REPEATED_NAME_REFUSAL: &str = "duplicate ZIP path";
 
     fn refused_before_the_zip_crate(message: &str) -> bool {
         REFUSALS_BEFORE_THE_ZIP_CRATE.contains(&message)
@@ -718,18 +739,13 @@ mod tests {
                     ));
                 }
                 match native_listing(bytes) {
-                    Err(native) if repeated_names && native == DIRECTORY_DISAGREEMENT => {
+                    Err(native) if repeated_names && native == REPEATED_NAME_REFUSAL => {
                         Ok(Outcome::RepeatedNameRefusedAfterListing)
                     }
                     _ if repeated_names => Err("a repeated name was not refused".to_owned()),
-                    Err(native)
-                        if refused_before_the_zip_crate(&native)
-                            || native == DIRECTORY_DISAGREEMENT =>
-                    {
-                        Err(format!(
-                            "we accept, native_zip::list refuses with {native:?}"
-                        ))
-                    }
+                    Err(native) if refused_before_the_zip_crate(&native) => Err(format!(
+                        "we accept, native_zip::list refuses with {native:?}"
+                    )),
                     _ => Ok(Outcome::Listed),
                 }
             }

@@ -47,7 +47,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 65f2f71517964697
+fingerprint = 26e4252d9925c9a7
 full-check = python3 scripts/check_model.py verification/progress-callback MCCallback.tla:callback.cfg
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
@@ -74,7 +74,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = 8f7b4aa7b62d5e7e
+fingerprint = a51115d41d4124d1
 full-check = python3 scripts/check_model.py verification/zip-decoder-budget MCZip.tla:zip.cfg
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
@@ -108,7 +108,7 @@ item = src/native_7z.rs | impl SegmentThread {
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = a1414353a5ab3475
+fingerprint = 85aecacf55826008
 full-check = cargo kani
 item = src/native_7z.rs | struct Malformed {
 item = src/native_7z.rs | fn check(
@@ -128,7 +128,6 @@ item = src/lib.rs | pub(crate) fn field_check(
 item = src/native_tar.rs | fn octal(
 item = src/native_tar.rs | fn number(
 item = src/native_tar.rs | fn size_field(
-item = src/native_zip.rs | fn end_record(
 item = src/native_zip.rs | fn single_zip64_field(
 item = src/native_zip.rs | fn descriptor_layout(
 item = src/native_zip.rs | fn descriptor_values(

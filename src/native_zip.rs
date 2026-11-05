@@ -1,5 +1,6 @@
 //! Opt-in ZIP extraction of stored and Deflate entries, published only after
 //! full verification. See `docs/reference/zip-reader.md` for what it restores.
+use crate::zip_directory::{CentralEntry, Directory, decode_name_like_zip_crate};
 use crate::{BadField, Field, field_check};
 use crate::{
     Entry,
@@ -15,13 +16,12 @@ use std::{
     path::Path,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use zip::{CompressionMethod, ZipArchive};
 
 struct Item {
     entry: Entry,
     crc: u32,
     compressed: u64,
-    method: CompressionMethod,
+    method: u16,
     stored_name_if_different: Option<Box<[u8]>>,
     header_start: u64,
     next_record_start: u64,
@@ -119,9 +119,6 @@ impl Item {
         }
     }
 }
-
-const MAX_METADATA: u64 = 64 * 1024 * 1024;
-const MAX_ENTRIES: u64 = 100_000;
 
 struct Budget(AtomicUsize);
 
@@ -227,136 +224,6 @@ fn entry_buffer(size: usize) -> Result<Vec<u8>> {
         .context("cannot allocate ZIP entry buffer")?;
     buffer.resize(size, 0);
     Ok(buffer)
-}
-
-fn preflight(file: &mut BufReader<File>) -> Result<(u64, Vec<EntryTime>, StoredNameByIndex)> {
-    let length = file.get_ref().metadata()?.len();
-    ensure!(
-        length >= 22,
-        "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend"
-    );
-    let tail_size = length.min(22 + 65535) as usize;
-    file.seek(SeekFrom::End(-(tail_size as i64)))?;
-    let mut tail = vec![0; tail_size];
-    file.read_exact(&mut tail)?;
-    let end = end_record(&tail)?;
-    let eocd = length - tail_size as u64 + end as u64;
-    let read16 = |at| u16::from_le_bytes(tail[end + at..end + at + 2].try_into().unwrap());
-    let read32 = |at| u32::from_le_bytes(tail[end + at..end + at + 4].try_into().unwrap());
-    ensure!(
-        read16(4) == 0 && read16(6) == 0 && read16(8) == read16(10),
-        "multi-disk ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
-    );
-    let mut count = read16(10) as u64;
-    let mut bytes = read32(12) as u64;
-    let mut start = read32(16) as u64;
-    let mut directory_end = eocd;
-    if count == u16::MAX as u64 || bytes == u32::MAX as u64 || start == u32::MAX as u64 {
-        ensure!(eocd >= 20, "missing ZIP64 locator");
-        file.seek(SeekFrom::Start(eocd - 20))?;
-        let locator = crate::number::<20>(file)?;
-        ensure!(
-            &locator[..4] == b"PK\x06\x07"
-                && locator[4..8] == [0; 4]
-                && u32::from_le_bytes(locator[16..20].try_into()?) == 1,
-            "invalid ZIP64 locator"
-        );
-        directory_end = u64::from_le_bytes(locator[8..16].try_into()?);
-        ensure!(
-            directory_end.checked_add(56) == Some(eocd - 20),
-            "unsupported ZIP64 extension or offset"
-        );
-        file.seek(SeekFrom::Start(directory_end))?;
-        let record = crate::number::<56>(file)?;
-        ensure!(
-            &record[..4] == b"PK\x06\x06"
-                && u64::from_le_bytes(record[4..12].try_into()?) == 44
-                && record[16..24] == [0; 8],
-            "unsupported ZIP64 record"
-        );
-        count = u64::from_le_bytes(record[32..40].try_into()?);
-        ensure!(
-            u64::from_le_bytes(record[24..32].try_into()?) == count,
-            "multi-disk ZIP64 is not supported; pass --zip-engine backend to read it with 7-Zip"
-        );
-        bytes = u64::from_le_bytes(record[40..48].try_into()?);
-        start = u64::from_le_bytes(record[48..56].try_into()?);
-    }
-    ensure!(
-        count <= MAX_ENTRIES && bytes <= MAX_METADATA,
-        "ZIP metadata limit exceeded"
-    );
-    ensure!(
-        start.checked_add(bytes) == Some(directory_end),
-        "unsupported ZIP central-directory extent"
-    );
-    file.seek(SeekFrom::Start(start))?;
-    let mut position = start;
-    let (mut name_field, mut extra_field) = (Vec::new(), Vec::new());
-    let mut times = Vec::with_capacity(count as usize);
-    let mut stored_names = StoredNameByIndex::new();
-    for index in 0..count as usize {
-        ensure!(
-            directory_end - position >= 46,
-            "truncated ZIP central entry"
-        );
-        let header = crate::number::<46>(file)?;
-        ensure!(&header[..4] == b"PK\x01\x02", "invalid ZIP central entry");
-        let [name, extra, comment] = [28, 30, 32]
-            .map(|at| u16::from_le_bytes(header[at..at + 2].try_into().unwrap()) as u64);
-        position += 46 + name + extra + comment;
-        ensure!(
-            position <= directory_end,
-            "ZIP central entry exceeds directory"
-        );
-        name_field.resize(name as usize, 0);
-        file.read_exact(&mut name_field)?;
-        extra_field.resize(extra as usize, 0);
-        file.read_exact(&mut extra_field)?;
-        single_zip64_field(&extra_field)?;
-        // EXTERNAL(Python zipfile, 7-Zip): no CP437 fallback for a flagged name.
-        ensure!(
-            header[9] & 0x08 == 0 || std::str::from_utf8(&name_field).is_ok(),
-            "ZIP name flagged as UTF-8 is not UTF-8"
-        );
-        if unicode_path_respells_name(&extra_field, &name_field)? {
-            stored_names.insert(index, name_field.as_slice().into());
-        }
-        times.push(EntryTime {
-            exact: exact_time(&extra_field),
-            ntfs: ntfs_time(&extra_field),
-            dos: u32::from_le_bytes(header[12..16].try_into().unwrap()),
-        });
-        file.seek_relative(comment as i64)?;
-    }
-    ensure!(position == directory_end, "ZIP directory count mismatch");
-    file.seek(SeekFrom::Start(0))?;
-    Ok((count, times, stored_names))
-}
-
-const END_RECORD: usize = 22;
-const END_SIGNATURE: &[u8; 4] = b"PK\x05\x06";
-
-fn end_record(tail: &[u8]) -> Field<usize> {
-    let comment = |at: usize| usize::from(u16::from_le_bytes([tail[at + 20], tail[at + 21]]));
-    let end = (0..=tail.len().saturating_sub(END_RECORD))
-        .rev()
-        .find(|&at| {
-            tail.len() >= at + END_RECORD
-                && tail[at..at + 4] == *END_SIGNATURE
-                && at + END_RECORD + comment(at) == tail.len()
-        })
-        .ok_or(BadField(
-            "ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend",
-        ))?;
-    // EXTERNAL(zip crate): it accepts trailing data and may pick an end record inside a comment.
-    field_check(
-        !tail[end + 4..]
-            .windows(4)
-            .any(|bytes| bytes == END_SIGNATURE),
-        "ZIP has ambiguous end records",
-    )?;
-    Ok(end)
 }
 
 struct EntryTime {
@@ -541,61 +408,57 @@ fn system_time(seconds: i64) -> std::time::SystemTime {
     }
 }
 
-type StoredNameByIndex = HashMap<usize, Box<[u8]>>;
-
 struct Opened {
-    archive: ZipArchive<crate::zip_reader::Reader>,
-    times: Vec<EntryTime>,
-    stored_names: StoredNameByIndex,
+    reader: crate::zip_reader::Reader,
+    directory: Directory,
 }
 
 fn open(path: &Path, cache: bool) -> Result<Opened> {
     let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
-    let (count, times, stored_names) = preflight(&mut file)?;
+    let directory = crate::zip_directory::read_directory(&mut file)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
     } else {
         crate::zip_reader::Reader::new(file.into_inner())?
     };
-    let archive = ZipArchive::new(reader)?;
-    ensure!(
-        archive.len() as u64 == count && archive.offset() == 0,
-        "ZIP parser disagrees with validated directory"
-    );
-    Ok(Opened {
-        archive,
-        times,
-        stored_names,
-    })
+    Ok(Opened { reader, directory })
 }
 
-fn scan(
-    archive: &ZipArchive<crate::zip_reader::Reader>,
-    times: Option<&[EntryTime]>,
-    stored_names: &StoredNameByIndex,
-) -> Result<Vec<Item>> {
-    ensure!(archive.len() <= 1_000_000, "ZIP entry limit exceeded");
+fn entry_time(entry: &CentralEntry) -> EntryTime {
+    EntryTime {
+        exact: exact_time(&entry.extra),
+        ntfs: ntfs_time(&entry.extra),
+        dos: entry.dos_time,
+    }
+}
+
+fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
+    let mut raw_names = HashSet::with_capacity(directory.entries.len());
     ensure!(
-        !archive.metadata().has_duplicate_names(),
+        directory
+            .entries
+            .iter()
+            .all(|entry| raw_names.insert(entry.name_raw())),
         "duplicate ZIP path"
     );
-    let mut items = Vec::with_capacity(archive.len());
+    drop(raw_names);
+    let mut items = Vec::with_capacity(directory.entries.len());
     let mut names = HashMap::new();
     let mut metadata_bytes = 0usize;
     let mut clock = Clock::default();
-    for index in 0..archive.len() {
-        let file = archive.by_index_data(index)?;
+    for file in &directory.entries {
         ensure!(
             !file.encrypted(),
             "encrypted ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
         let symlink = file.is_symlink();
         ensure!(
-            !symlink || file.size() <= crate::MAX_LINK_TARGET,
+            !symlink || file.size <= crate::MAX_LINK_TARGET,
             "ZIP symlink target is too long"
         );
         let directory = file.is_dir();
-        if let Some(mode) = file.unix_mode() {
+        let unix_mode = file.unix_mode_like_zip_crate();
+        if let Some(mode) = unix_mode {
             let kind = mode & 0o170000;
             let expected = match (symlink, directory) {
                 (true, _) => 0o120000,
@@ -606,12 +469,12 @@ fn scan(
         }
         ensure!(
             matches!(
-                method_code(file.compression()),
+                file.method,
                 STORED | DEFLATE | DEFLATE64 | BZIP2 | LZMA | ZSTANDARD | XZ | PPMD
             ),
             "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
-        let name = file.name()?.into_owned();
+        let name = file.name().into_owned();
         let name = if directory {
             name.strip_suffix('/').unwrap_or(&name).to_owned()
         } else {
@@ -623,17 +486,7 @@ fn scan(
             "duplicate ZIP path"
         );
         let decoded_len = name.len() + usize::from(directory);
-        let raw = match stored_names.get(&index) {
-            Some(raw) => {
-                let decoded = decode_name_like_zip_crate(raw);
-                ensure!(
-                    decoded.strip_suffix('/').unwrap_or(&decoded) == name,
-                    "ZIP parser disagrees with validated directory"
-                );
-                raw
-            }
-            None => file.name_raw(),
-        };
+        let raw = &*file.stored_name;
         let stored_name_if_different = (raw.len() != decoded_len
             || !raw.starts_with(name.as_bytes()))
         .then(|| Box::<[u8]>::from(raw));
@@ -643,25 +496,24 @@ fn scan(
             metadata_bytes <= 64 * 1024 * 1024,
             "ZIP metadata limit exceeded"
         );
-        ensure!(!directory || file.size() == 0, "ZIP directory has payload");
+        ensure!(!directory || file.size == 0, "ZIP directory has payload");
         items.push(Item {
             entry: Entry {
                 name,
-                size: file.size(),
+                size: file.size,
                 directory,
             },
-            crc: file.crc32(),
-            compressed: file.compressed_size(),
-            method: file.compression(),
+            crc: file.crc32,
+            compressed: file.compressed_size,
+            method: file.method,
             stored_name_if_different,
-            header_start: file.header_start(),
+            header_start: file.header_start,
             next_record_start: 0,
-            mode: file.unix_mode().map(|mode| mode & 0o777),
-            windows_attributes: crate::windows_attributes(
-                file.external_attributes(),
-                file.unix_mode(),
-            ),
-            modified: times.and_then(|times| clock.modified(&times[index])),
+            mode: unix_mode.map(|mode| mode & 0o777),
+            windows_attributes: crate::windows_attributes(file.external_attributes, unix_mode),
+            modified: restore_times
+                .then(|| clock.modified(&entry_time(file)))
+                .flatten(),
             symlink,
         });
     }
@@ -672,7 +524,7 @@ fn scan(
             prefix = p;
         }
     }
-    assign_record_limits(&mut items, archive.central_directory_start())?;
+    assign_record_limits(&mut items, directory.start)?;
     Ok(items)
 }
 
@@ -715,24 +567,6 @@ fn record_limits(records: &[(u64, Option<u64>)], central_start: u64) -> Field<Ve
         limits[index] = limit;
     }
     Ok(limits)
-}
-
-const CP437_HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
-
-fn decode_name_like_zip_crate(stored: &[u8]) -> std::borrow::Cow<'_, str> {
-    static HIGH: std::sync::LazyLock<Vec<char>> =
-        std::sync::LazyLock::new(|| CP437_HIGH.chars().collect());
-    match std::str::from_utf8(stored) {
-        Ok(name) => name.into(),
-        Err(_) => stored
-            .iter()
-            .map(|&byte| match byte {
-                0..0x80 => char::from(byte),
-                _ => HIGH[usize::from(byte - 0x80)],
-            })
-            .collect::<String>()
-            .into(),
-    }
 }
 
 fn unicode_path_respells_name(mut extra: &[u8], stored_name: &[u8]) -> Result<bool> {
@@ -831,7 +665,7 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
         flags & 1 == 0,
         "ZIP local header is encrypted but its central entry is not"
     );
-    let method = method_code(item.method);
+    let method = item.method;
     ensure!(
         item.stored_name_is(&name) && read16(8) == method,
         "ZIP local header disagrees with central directory"
@@ -1087,7 +921,7 @@ const PPMD_LARGEST_MODEL: u64 = 256 << 20;
 const DECODER_MEMORY_PATIENCE: std::time::Duration = std::time::Duration::from_millis(1000);
 
 fn decoder_need(item: &Item) -> Option<u64> {
-    match method_code(item.method) {
+    match item.method {
         XZ | LZMA => Some(item.entry.size),
         PPMD => Some(PPMD_LARGEST_MODEL),
         _ => None,
@@ -1153,14 +987,6 @@ fn inflate64_chunk(
     }
 }
 
-#[expect(
-    deprecated,
-    reason = "the zip crate names other methods only behind features this build leaves off"
-)]
-fn method_code(method: CompressionMethod) -> u16 {
-    method.to_u16()
-}
-
 fn lzma_alone_header(prefix: [u8; 9], size: u64) -> Field<[u8; 13]> {
     // SPEC(APPNOTE 5.8.8): two version bytes, a two-byte properties size of 5, then the properties.
     field_check(
@@ -1223,7 +1049,7 @@ fn method_decoder<'a>(
     item: &Item,
     input: &'a mut std::io::BufReader<&mut dyn Read>,
 ) -> Result<Box<dyn Read + 'a>> {
-    Ok(match method_code(item.method) {
+    Ok(match item.method {
         BZIP2 => Box::new(bzip2::bufread::BzDecoder::new(input)),
         ZSTANDARD => Box::new(zstd::stream::read::Decoder::with_buffer(input)?.single_frame()),
         XZ => Box::new(liblzma::bufread::XzDecoder::new(input)),
@@ -1277,7 +1103,7 @@ fn stream_entry(
         crc.update(bytes);
         sink(bytes)
     };
-    if item.method == CompressionMethod::Stored {
+    if item.method == STORED {
         ensure!(
             item.compressed == item.entry.size,
             "stored ZIP entry sizes differ"
@@ -1296,9 +1122,9 @@ fn stream_entry(
             }
             emit(chunk)?;
         }
-    } else if method_code(item.method) == DEFLATE64 {
+    } else if item.method == DEFLATE64 {
         inflate64(input, item.compressed, buffer, emit)?;
-    } else if method_code(item.method) != DEFLATE {
+    } else if item.method != DEFLATE {
         let input: &mut dyn Read = input;
         let mut input = std::io::BufReader::with_capacity(OTHER_METHOD_INPUT, input);
         let mut decoder = method_decoder(item, &mut input)?;
@@ -1354,8 +1180,9 @@ fn stream_entry(
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    let opened = open(path, false)?;
-    Ok(scan(&opened.archive, None, &opened.stored_names)?
+    let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
+    let directory = crate::zip_directory::read_directory(&mut file)?;
+    Ok(scan(&directory, false)?
         .into_iter()
         .map(|item| item.entry)
         .collect())
@@ -1437,16 +1264,12 @@ pub fn read_archive_with_options(
         },
     )));
     // RECORD(benchmarks/native-zip/linux-cache/README.md): Linux extraction caches archives up to 8 MiB.
-    let Opened {
-        archive,
-        times,
-        stored_names,
-    } = open(
+    let Opened { reader, directory } = open(
         path,
         fast && (destination.is_none() || cfg!(target_os = "linux")),
     )?;
-    let items = scan(&archive, Some(&times), &stored_names)?;
-    drop(times);
+    let items = scan(&directory, true)?;
+    drop(directory);
     let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
     selection.ensure_each_path_matches(items.iter().map(|item| item.entry.name.as_str()))?;
     let placement = crate::placement::Placement::new(options.strip)?;
@@ -1498,7 +1321,7 @@ pub fn read_archive_with_options(
         item.windows_attributes = metadata.windows_attributes(item.windows_attributes);
         item.modified = metadata.time(item.modified);
     }
-    let mut headers = archive.clone().into_inner();
+    let mut headers = reader.clone();
     for item in &skipped {
         check_local_header(&mut headers, item)?;
     }
@@ -1583,11 +1406,7 @@ pub fn read_archive_with_options(
         let prefer_streaming = destination.is_some()
             && item.entry.size >= 16 * 1024 * 1024
             && item.compressed <= item.entry.size / 128;
-        let reservation = if fast
-            && !prefer_streaming
-            && !item.symlink
-            && item.method == CompressionMethod::Deflated
-        {
+        let reservation = if fast && !prefer_streaming && !item.symlink && item.method == DEFLATE {
             item.entry
                 .size
                 .checked_add(item.compressed)
@@ -1698,7 +1517,7 @@ pub fn read_archive_with_options(
         entries.par_iter().with_max_len(1).try_for_each_init(
             || {
                 let workspace = Recycled::take(&idle_workspaces, || {
-                    (archive.clone().into_inner(), vec![0u8; 1024 * 1024])
+                    (reader.clone(), vec![0u8; 1024 * 1024])
                 });
                 (workspace, fast.then(ExactInflater::new))
             },
@@ -1877,25 +1696,6 @@ mod proofs {
             + minute * 60
             + second;
         let _ = reading_nearer_dos_time(kani::any(), utc);
-    }
-
-    const TAIL: usize = 26;
-
-    #[kani::proof]
-    #[kani::unwind(27)]
-    fn the_end_record_is_the_last_signature_and_reaches_the_end() {
-        let bytes: [u8; TAIL] = kani::any();
-        let length: usize = kani::any();
-        kani::assume(length <= TAIL);
-        let tail = &bytes[..length];
-        if let Ok(end) = end_record(tail) {
-            let comment = usize::from(u16::from_le_bytes([tail[end + 20], tail[end + 21]]));
-            assert!(tail[end..end + 4] == *END_SIGNATURE);
-            assert!(end + END_RECORD + comment == tail.len());
-            for later in end + 1..tail.len().saturating_sub(3) {
-                assert!(tail[later..later + 4] != *END_SIGNATURE);
-            }
-        }
     }
 
     #[kani::proof]
