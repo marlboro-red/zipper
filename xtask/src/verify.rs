@@ -8,7 +8,7 @@ struct Verification {
     name: String,
     skill: String,
     fingerprint: String,
-    full_check: Option<String>,
+    full_checks: Vec<String>,
     items: Vec<(String, String)>,
 }
 
@@ -32,7 +32,7 @@ fn manifest(root: &Path) -> Result<Vec<Verification>> {
                 name: name.to_owned(),
                 skill: String::new(),
                 fingerprint: String::new(),
-                full_check: None,
+                full_checks: Vec::new(),
                 items: Vec::new(),
             });
             continue;
@@ -46,7 +46,7 @@ fn manifest(root: &Path) -> Result<Vec<Verification>> {
         match key {
             "skill" => entry.skill = value.to_owned(),
             "fingerprint" => entry.fingerprint = value.to_owned(),
-            "full-check" => entry.full_check = Some(value.to_owned()),
+            "full-check" => entry.full_checks.push(value.to_owned()),
             "item" => {
                 let (path, opening) = value.split_once(" | ").with_context(|| {
                     format!("{MANIFEST}:{number}: expected `path | opening line`")
@@ -194,17 +194,17 @@ fn run_full_check(root: &Path, check: &str) -> Result<bool> {
 pub fn run_every_full_check(root: &Path) -> Result<()> {
     let mut failed = Vec::new();
     for verification in manifest(root)? {
-        match &verification.full_check {
-            Some(check) => {
-                println!("xtask: release check {}: {check}", verification.name);
-                if !run_full_check(root, check)? {
-                    failed.push(verification.name.clone());
-                }
-            }
-            None => println!(
+        if verification.full_checks.is_empty() {
+            println!(
                 "xtask: release check {}: no full check; the gate's verify step keeps it in step with {}",
                 verification.name, verification.skill
-            ),
+            );
+        }
+        for check in &verification.full_checks {
+            println!("xtask: release check {}: {check}", verification.name);
+            if !run_full_check(root, check)? {
+                failed.push(verification.name.clone());
+            }
         }
     }
     ensure!(
@@ -222,13 +222,13 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         .find(|verification| verification.name == name)
         .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
     let checked = fingerprint(root, verification)?;
-    if let Some(check) = &verification.full_check {
+    for check in &verification.full_checks {
         ensure!(
             run_full_check(root, check)?,
-            "{name}: the full check failed; nothing was synced"
+            "{name}: the full check `{check}` failed; nothing was synced"
         );
     }
-    if verification.full_check.is_none() {
+    if verification.full_checks.is_empty() {
         println!(
             "{name}: recording the current code as checked; {} must have passed on it",
             verification.skill
