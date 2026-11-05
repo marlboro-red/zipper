@@ -12,7 +12,7 @@ The reader supports these features:
 - Files, directories, symlinks that stay inside the destination, and hard links.
 - A leading `./` and the `.` entry that `find . | cpio -o` writes.
 
-GNU cpio and bsdcpio store a newc hard link once. Every name but the last carries no data, and the last carries the file. The reader links each name with the same inode and device to the name that carries the data. A group in which no name carries data becomes one empty file and links to it. The reader forgets a group once it has seen as many names as the link count says, so an archive of many hard-linked files keeps only the open groups. In the binary and odc forms each name carries its own copy of the data, so each name becomes its own file, as 7-Zip writes it.
+GNU cpio and bsdcpio store a newc hard link once. Every name but the last carries no data, and the last carries the file. The reader links each name with the same inode and device to the name that carries the data. A group in which no name carries data becomes one empty file and links to it. The reader keeps the name that carries each inode's data until the end, so each name that follows links to it even when the link count is too low. A file whose other links lie outside the archive, as in a snapshot of a hard-linked backup, costs one such record. In the binary and odc forms each name carries its own copy of the data, so each name becomes its own file, as 7-Zip writes it.
 
 The reader does not support these features:
 
@@ -51,7 +51,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 | --- | --- |
 | Headers | at most 1,000,000 |
 | Names, implied directories, link targets and hard link names waiting for their data | at most 64 MiB in total |
-| newc hard links waiting for their data, and linked files still expecting names | at most 100,000 |
+| Records of newc inodes, hard links waiting for their data and names that carry data | at most 128 MiB, counted at twice each record's size |
 | One name | at most 8,192 bytes |
 | One symlink target | at most 4,096 bytes |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |

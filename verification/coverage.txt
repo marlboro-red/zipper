@@ -164,7 +164,7 @@ item = src/native_7z.rs | impl<R: Read> Read for StoredLzma2<R> {
 
 [strip]
 skill = .claude/skills/zipper-verify-strip/SKILL.md
-fingerprint = 4f1c360db6b65220
+fingerprint = 707c3a6dd88f0dbe
 full-check = cargo test --release --lib placement
 item = src/placement.rs | impl<'a> Placement<'a> {
 item = src/placement.rs | impl PlacedNames {

@@ -26,7 +26,11 @@ const BINARY_HEADER: usize = 26;
 const ODC_HEADER: usize = 76;
 const NEWC_HEADER: usize = 110;
 const LONGEST_HEADER: usize = NEWC_HEADER;
-const MAX_LINK_RECORDS: usize = 100_000;
+const LINK_MEMORY: usize = 128 * 1024 * 1024;
+const NAME_COST: usize = 32;
+const GROUP_COST: usize =
+    2 * (size_of::<Inode>() + size_of::<Group>()) + size_of::<(usize, Option<(u32, u32)>)>();
+const DEFERRED_COST: usize = 2 * size_of::<Deferred>() + NAME_COST;
 // SPEC(cpio(5) Portable ASCII Format): device, inode, mode, owner, group, links, rdev, mtime, name size, file size.
 const ODC_FIELDS: [(usize, usize); 10] = [
     (6, 12),
@@ -351,110 +355,113 @@ struct Deferred {
     name: String,
     mode: u32,
     modified: Option<SystemTime>,
+    next: Option<u32>,
 }
 
+#[derive(Default)]
 struct Group {
     first_seen: usize,
-    names_left: u64,
-    waiting: Vec<Deferred>,
+    waiting: Option<(u32, u32)>,
     written: Option<String>,
 }
 
 #[derive(Default)]
 struct HardLinks {
     groups: HashMap<Inode, Group>,
-    records: usize,
-    seen: usize,
+    deferred: Vec<Deferred>,
+    memory: usize,
 }
 
 impl HardLinks {
-    fn group(&mut self, inode: Inode, links: u64) -> Result<&mut Group> {
-        self.seen += 1;
-        if !self.groups.contains_key(&inode) {
-            self.records += 1;
-        }
+    fn charge(&mut self, bytes: usize) -> Result<()> {
+        self.memory += bytes;
         ensure!(
-            self.records <= MAX_LINK_RECORDS,
-            "cpio has more than {MAX_LINK_RECORDS} hard links and linked files to keep track of"
+            self.memory <= LINK_MEMORY,
+            "cpio hard links take more than {} MiB to keep track of",
+            LINK_MEMORY >> 20
         );
-        let first_seen = self.seen;
-        let group = self.groups.entry(inode).or_insert(Group {
-            first_seen,
-            names_left: links,
-            waiting: Vec::new(),
-            written: None,
-        });
-        group.names_left = group.names_left.saturating_sub(1);
-        Ok(group)
-    }
-
-    fn forget_if_complete(&mut self, inode: Inode) {
-        let complete = self
-            .groups
-            .get(&inode)
-            .is_some_and(|group| group.names_left == 0 && group.written.is_some());
-        if complete && let Some(group) = self.groups.remove(&inode) {
-            self.records -= 1 + group.waiting.len();
-        }
-    }
-
-    fn defer(
-        &mut self,
-        tree: &mut tree::Tree,
-        inode: Inode,
-        links: u64,
-        entry: Deferred,
-    ) -> Result<()> {
-        let group = self.group(inode, links)?;
-        if let Some(target) = &group.written {
-            let target = target.clone();
-            tree.hard_link(&entry.name, &target)?;
-        } else {
-            tree.charge_name(entry.name.len())?;
-            group.waiting.push(entry);
-            self.records += 1;
-            ensure!(
-                self.records <= MAX_LINK_RECORDS,
-                "cpio has more than {MAX_LINK_RECORDS} hard links and linked files to keep track of"
-            );
-        }
-        self.forget_if_complete(inode);
         Ok(())
     }
 
-    fn written(
-        &mut self,
-        tree: &mut tree::Tree,
-        inode: Inode,
-        links: u64,
-        name: &str,
-    ) -> Result<()> {
-        let group = self.group(inode, links)?;
-        let waiting = std::mem::take(&mut group.waiting);
+    fn group(&mut self, inode: Inode) -> Result<&mut Group> {
+        if !self.groups.contains_key(&inode) {
+            self.charge(GROUP_COST)?;
+            let first_seen = self.groups.len();
+            self.groups.insert(
+                inode,
+                Group {
+                    first_seen,
+                    ..Group::default()
+                },
+            );
+        }
+        Ok(self.groups.get_mut(&inode).expect("a group just inserted"))
+    }
+
+    fn defer(&mut self, tree: &mut tree::Tree, inode: Inode, entry: Deferred) -> Result<()> {
+        if let Some(target) = self.group(inode)?.written.clone() {
+            return tree.hard_link(&entry.name, &target);
+        }
+        tree.charge_name(entry.name.len())?;
+        self.charge(DEFERRED_COST + entry.name.len())?;
+        ensure!(
+            self.deferred.len() < u32::MAX as usize,
+            "cpio has too many hard links"
+        );
+        let index = self.deferred.len() as u32;
+        self.deferred.push(entry);
+        let group = self.group(inode)?;
+        match group.waiting {
+            None => group.waiting = Some((index, index)),
+            Some((head, tail)) => {
+                group.waiting = Some((head, index));
+                self.deferred[tail as usize].next = Some(index);
+            }
+        }
+        Ok(())
+    }
+
+    fn take_waiting(&mut self, waiting: Option<(u32, u32)>) -> Vec<Deferred> {
+        let mut taken = Vec::new();
+        let mut next = waiting.map(|(head, _)| head);
+        while let Some(index) = next {
+            let entry = &mut self.deferred[index as usize];
+            next = entry.next;
+            taken.push(Deferred {
+                name: std::mem::take(&mut entry.name),
+                mode: entry.mode,
+                modified: entry.modified,
+                next: None,
+            });
+        }
+        taken
+    }
+
+    fn written(&mut self, tree: &mut tree::Tree, inode: Inode, name: &str) -> Result<()> {
+        let group = self.group(inode)?;
+        let waiting = group.waiting.take();
         let first = group.written.is_none();
         if first {
             group.written = Some(name.to_owned());
-        }
-        self.records -= waiting.len();
-        if first {
             tree.charge_name(name.len())?;
+            self.charge(NAME_COST + name.len())?;
         }
-        for entry in waiting {
+        for entry in self.take_waiting(waiting) {
             tree.hard_link(&entry.name, name)?;
         }
-        self.forget_if_complete(inode);
         Ok(())
     }
 
-    fn finish(self, tree: &mut tree::Tree) -> Result<()> {
-        let mut unwritten: Vec<Group> = self
+    fn finish(mut self, tree: &mut tree::Tree) -> Result<()> {
+        let mut unwritten: Vec<(usize, Option<(u32, u32)>)> = self
             .groups
-            .into_values()
+            .values()
             .filter(|group| group.written.is_none())
+            .map(|group| (group.first_seen, group.waiting))
             .collect();
-        unwritten.sort_by_key(|group| group.first_seen);
-        for group in unwritten {
-            let mut entries = group.waiting.into_iter();
+        unwritten.sort_unstable_by_key(|(first_seen, _)| *first_seen);
+        for (_, waiting) in unwritten {
+            let mut entries = self.take_waiting(waiting).into_iter();
             let Some(first) = entries.next() else {
                 continue;
             };
@@ -499,8 +506,9 @@ fn entry(
                 name: name.to_owned(),
                 mode,
                 modified,
+                next: None,
             };
-            links.defer(tree, header.inode, header.links, deferred)
+            links.defer(tree, header.inode, deferred)
         }
         REGULAR => {
             let mut data = Summed {
@@ -515,7 +523,7 @@ fn entry(
                 );
             }
             if matches!(form, Form::Newc { .. }) && header.links > 1 {
-                links.written(tree, header.inode, header.links, name)?;
+                links.written(tree, header.inode, name)?;
             }
             Ok(())
         }
@@ -663,7 +671,7 @@ pub(crate) mod tree {
     pub(crate) struct Tree<'a> {
         format: &'static str,
         root: Option<&'a Path>,
-        nodes: HashMap<String, Node>,
+        nodes: HashMap<String, (Node, u32)>,
         metadata_bytes: usize,
         created_directories: HashSet<String>,
         directories: Vec<DirectoryMetadata>,
@@ -779,7 +787,7 @@ pub(crate) mod tree {
                 .ensure_each_path_matches(self.nodes.keys().map(String::as_str))?;
             self.placement.ensure_something_placed(self.placed_any)?;
             self.placement
-                .ensure_prefix_is_a_folder(self.nodes.iter().map(|(name, node)| {
+                .ensure_prefix_is_a_folder(self.nodes.iter().map(|(name, (node, _))| {
                     (
                         name.as_str(),
                         matches!(node, Node::Directory | Node::ImpliedDirectory),
@@ -803,7 +811,8 @@ pub(crate) mod tree {
             };
             self.placed_any = true;
             let replaces = if self.placement.strips() {
-                self.placed.add_entry(placed, directory, name)?
+                self.placed
+                    .add_entry(placed, directory, self.nodes[name].1)?
             } else {
                 replaces
             };
@@ -817,7 +826,14 @@ pub(crate) mod tree {
                 self.format
             );
             self.charge_name(name.len())?;
-            Ok(self.nodes.insert(name.to_owned(), node))
+            let id = self.nodes.len() as u32;
+            Ok(match self.nodes.get_mut(name) {
+                Some((earlier, _)) => Some(std::mem::replace(earlier, node)),
+                None => {
+                    self.nodes.insert(name.to_owned(), (node, id));
+                    None
+                }
+            })
         }
 
         fn claim(&mut self, name: &str, node: Node) -> Result<bool> {
@@ -825,7 +841,7 @@ pub(crate) mod tree {
             let mut ancestor = name;
             while let Some(slash) = ancestor.rfind('/') {
                 ancestor = &ancestor[..slash];
-                match self.nodes.get(ancestor) {
+                match self.nodes.get(ancestor).map(|(node, _)| node) {
                     Some(Node::ImpliedDirectory | Node::Directory) => break,
                     Some(_) => bail!("{format} entry {name:?} is inside a file or link"),
                     None => {
@@ -1002,13 +1018,13 @@ pub(crate) mod tree {
             let (target, target_dots) = checked_name(raw_target)?;
             ensure!(
                 matches!(
-                    self.nodes.get(&target),
+                    self.nodes.get(&target).map(|(node, _)| node),
                     Some(Node::File | Node::LinkedFile | Node::HardLink)
                 ),
                 "{format} hard link {name:?} does not name an earlier file"
             );
             self.charge_name(target.len())?;
-            if let Some(node @ Node::File) = self.nodes.get_mut(&target) {
+            if let Some((node @ Node::File, _)) = self.nodes.get_mut(&target) {
                 *node = Node::LinkedFile;
             }
             self.claim(&name, Node::HardLink)?;

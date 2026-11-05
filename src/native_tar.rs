@@ -877,7 +877,7 @@ struct Output<'a, 'f> {
 
 struct Extraction<'a, 'f> {
     output: Option<Output<'a, 'f>>,
-    nodes: HashMap<String, Node>,
+    nodes: HashMap<String, (Node, u32)>,
     metadata_bytes: usize,
     created_directories: HashSet<String>,
     directories: Vec<DirectoryMetadata>,
@@ -940,7 +940,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             .ensure_each_path_matches(self.nodes.keys().map(String::as_str))?;
         self.placement.ensure_something_placed(self.placed_any)?;
         self.placement
-            .ensure_prefix_is_a_folder(self.nodes.iter().map(|(name, node)| {
+            .ensure_prefix_is_a_folder(self.nodes.iter().map(|(name, (node, _))| {
                 (
                     name.as_str(),
                     matches!(node, Node::Directory | Node::ImpliedDirectory),
@@ -964,7 +964,8 @@ impl<'a, 'f> Extraction<'a, 'f> {
         };
         self.placed_any = true;
         let replaces = if self.placement.strips() {
-            self.placed.add_entry(placed, directory, name)?
+            self.placed
+                .add_entry(placed, directory, self.nodes[name].1)?
         } else {
             replaces
         };
@@ -990,14 +991,21 @@ impl<'a, 'f> Extraction<'a, 'f> {
             "tar has more than {MAX_ENTRIES} entries"
         );
         self.charge_name(name.len())?;
-        Ok(self.nodes.insert(name.to_owned(), node))
+        let id = self.nodes.len() as u32;
+        Ok(match self.nodes.get_mut(name) {
+            Some((earlier, _)) => Some(std::mem::replace(earlier, node)),
+            None => {
+                self.nodes.insert(name.to_owned(), (node, id));
+                None
+            }
+        })
     }
 
     fn claim(&mut self, name: &str, node: Node) -> Result<bool> {
         let mut ancestor = name;
         while let Some(slash) = ancestor.rfind('/') {
             ancestor = &ancestor[..slash];
-            match self.nodes.get(ancestor) {
+            match self.nodes.get(ancestor).map(|(node, _)| node) {
                 Some(Node::ImpliedDirectory | Node::Directory) => break,
                 Some(_) => bail!("tar entry {name:?} is inside a file or link"),
                 None => {
@@ -1216,13 +1224,13 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 safe_path(&target)?;
                 ensure!(
                     matches!(
-                        self.nodes.get(&target),
+                        self.nodes.get(&target).map(|(node, _)| node),
                         Some(Node::File | Node::LinkedFile | Node::HardLink)
                     ),
                     "tar hard link {name:?} does not name an earlier file"
                 );
                 self.charge_name(target.len())?;
-                if let Some(node @ Node::File) = self.nodes.get_mut(&target) {
+                if let Some((node @ Node::File, _)) = self.nodes.get_mut(&target) {
                     *node = Node::LinkedFile;
                 }
                 self.claim(&name, Node::HardLink)?;

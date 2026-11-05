@@ -881,8 +881,8 @@ fn the_default_engine_routes_cpio_to_this_reader() {
 }
 
 #[test]
-fn hard_links_waiting_for_their_data_have_a_count_limit() {
-    let waiting: Vec<Member> = (0..100_001u64)
+fn hard_links_waiting_for_their_data_are_charged_to_a_memory_budget() {
+    let waiting: Vec<Member> = (0..600_000u64)
         .map(|index| linked(&format!("{index:06}"), b"", index + 10, 2))
         .collect();
     let root = tempfile::tempdir().unwrap();
@@ -893,15 +893,65 @@ fn hard_links_waiting_for_their_data_have_a_count_limit() {
         read_archive(&archive, None, ReadOptions::default()).unwrap_err()
     );
     assert!(error.contains("hard links"), "{error}");
-    let resolved: Vec<Member> = (0..100_001u64)
-        .flat_map(|index| {
-            [
-                linked(&format!("{index:06}a"), b"", index + 10, 2),
-                linked(&format!("{index:06}b"), b"x", index + 10, 2),
-            ]
-        })
+}
+
+#[test]
+fn files_whose_other_links_are_outside_the_archive_extract() {
+    let snapshot: Vec<Member> = (0..100_001u64)
+        .map(|index| linked(&format!("{index:06}"), b"content", index + 10, 2))
         .collect();
-    fs::write(&archive, newc(&resolved)).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("snapshot.cpio");
+    fs::write(&archive, newc(&snapshot)).unwrap();
     let entries = read_archive(&archive, None, ReadOptions::default()).unwrap();
-    assert_eq!(entries.len(), 200_002);
+    assert_eq!(entries.len(), 100_001);
+}
+
+#[test]
+fn names_past_a_too_low_link_count_still_link_to_the_data() {
+    for (case, members, data_name, names) in [
+        (
+            "low",
+            vec![
+                linked("a", b"", 5, 2),
+                linked("b", b"BBBB", 5, 2),
+                linked("c", b"", 5, 2),
+            ],
+            "b",
+            &["a", "b", "c"][..],
+        ),
+        (
+            "change",
+            vec![
+                linked("a", b"", 5, 2),
+                linked("b", b"", 5, 3),
+                linked("c", b"CCCC", 5, 3),
+                linked("d", b"", 5, 3),
+            ],
+            "c",
+            &["a", "b", "c", "d"],
+        ),
+        (
+            "two after the data",
+            vec![
+                linked("a", b"AAAA", 5, 2),
+                linked("b", b"", 5, 2),
+                linked("c", b"", 5, 2),
+            ],
+            "a",
+            &["a", "b", "c"],
+        ),
+    ] {
+        let (_root, destination, result) = extract_with(&newc(&members), ReadOptions::default());
+        result.unwrap_or_else(|error| panic!("{case}: {error:#}"));
+        let data = fs::read(destination.join(data_name)).unwrap();
+        assert!(!data.is_empty(), "{case}");
+        for name in names {
+            assert_eq!(
+                fs::read(destination.join(name)).unwrap(),
+                data,
+                "{case} {name}"
+            );
+        }
+    }
 }
