@@ -45,6 +45,7 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | Published numbers that their revision cannot reproduce | the `results` gate step rejects scoreboard JSON measured on a dirty tree |
 | A hand-edited results page | the `results` gate step renders `docs/results.md` from the JSON and compares |
 | A formal model that drifts from the code it describes | the `verify` gate step fingerprints the covered code in `verification/coverage.txt` |
+| A TLA+ check recorded as passed when TLC never ran, after a shell left its arguments unsplit | each TLA+ section's `full-check` runs `scripts/check_model.py`, so `cargo xtask verify-sync` runs TLC itself and syncs nothing when a rule breaks |
 | A planted-break helper that hid the failure or never applied the edit, and a planted break left in the release binary that was then measured | `scripts/plant.py` counts only a stated verdict, restores the file and rebuilds the binary, with its cases in `scripts/test_plant.py` run by the `hooks` gate step |
 | A memory limit that missed an archive-controlled allocation: implied directories, link targets, queued writer chunks | one test per budget in `tests/hostile_tar.rs` and `src/native_tar.rs`, and the Budgets item in the `zipper-review` checklist |
 | Windows behaviour first exercised by CI after a push, leaving `main` red until a fix commit: CRLF in a test archive, an older 7-Zip on Linux, a POSIX-only link size, a 7-Zip refusal | `cargo xtask ship` moves `main` only after CI passes on the exact commit |

@@ -7,6 +7,7 @@
 [tar-writer-pool]
 skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
 fingerprint = 7f5a0b3be2f7f7d4
+full-check = python3 scripts/check_model.py verification/tar-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/native_tar.rs | const CHUNK:
 item = src/native_tar.rs | const QUEUED_FILES:
 item = src/native_tar.rs | const QUEUED_CHUNKS_PER_FILE:
@@ -27,6 +28,7 @@ item = src/native_tar.rs | pub fn read_archive(
 [zip-write-behind]
 skill = .claude/skills/zipper-verify-zip-write-behind/SKILL.md
 fingerprint = 9df612d2d42e1c38
+full-check = python3 scripts/check_model.py verification/zip-write-behind MCFull.tla:full.cfg MCPartial.tla:partial.cfg
 item = src/native_zip.rs | const WRITE_BEHIND_CHUNK:
 item = src/native_zip.rs | const WRITE_BEHIND_DEPTH:
 item = src/native_zip.rs | fn write_behind(
@@ -34,6 +36,7 @@ item = src/native_zip.rs | fn write_behind(
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
 fingerprint = 65a5ffb8fb6b4a43
+full-check = python3 scripts/check_model.py verification/7z-folder-workers MCWorkers.tla:workers.cfg
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
 item = src/memory.rs | pub(crate) struct Memory {
@@ -45,6 +48,7 @@ item = src/native_7z.rs | pub fn read_archive(
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
 fingerprint = 65f2f71517964697
+full-check = python3 scripts/check_model.py verification/progress-callback MCCallback.tla:callback.cfg
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
 item = src/progress.rs | impl<'a> Tracker<'a> {
@@ -71,6 +75,7 @@ item = src/lib.rs | pub(crate) fn publish(
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
 fingerprint = 8f7b4aa7b62d5e7e
+full-check = python3 scripts/check_model.py verification/zip-decoder-budget MCZip.tla:zip.cfg
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
 item = src/native_zip.rs | pub fn read_archive_with_options(
@@ -92,6 +97,7 @@ item = src/lib.rs | fn ensure_link_stays_inside(
 [7z-lzma2-segments]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
 fingerprint = bf6d3f88d7ccfd67
+full-check = python3 scripts/check_model.py verification/7z-lzma2-segments MCSegments.tla:segments.cfg
 item = src/native_7z.rs | const SEGMENT_BUDGET:
 item = src/native_7z.rs | const PARALLEL_FOLDER_MIN:
 item = src/native_7z.rs | struct ParallelLzma2 {
