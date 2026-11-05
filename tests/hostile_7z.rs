@@ -858,3 +858,224 @@ fn byte_swap_archives_from_7zip_match_the_source() {
         );
     }
 }
+
+fn seven_zip_accepts(seven_zip: &Path, bytes: &[u8]) -> bool {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.7z");
+    fs::write(&archive, bytes).unwrap();
+    std::process::Command::new(seven_zip)
+        .args(["t", "-bd"])
+        .arg(&archive)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+#[test]
+fn a_branch_opcode_that_ends_the_output_still_takes_a_range_coder_bit() {
+    let data = b"\xe8\x00\xe8\x00\x41\xe8\xe8\x41\x0f\xe9\xe8\x41\x00\x41\xe8\xe9\xe9\x00\x41\xe8\xe9\xe9\xe9\xe8";
+    let main: &[u8] = b"\xe8\xe8\xe8\xe9\xe9\xe9\xe9\xe8";
+    let calls: &[u8] = b"\x41\x00\xe8\x05\xe9\x0f\x41\xf2\xe8\x41\x00\x50";
+    let jumps: &[u8] = b"\xe8\x41\x00\xfd";
+    let decisions: &[u8] = b"\x00\xef\xff\xfc\x00\x00";
+    let order = [0, 1, 2, 3];
+    let accepted = bcj2_archive([main, calls, jumps, decisions], order, data);
+    let refused = [
+        ("no bit for the last opcode", &decisions[..5], "range coder"),
+        (
+            "a padded range coder",
+            b"\x00\xef\xff\xfc\x00\x00\x00".as_slice(),
+            "hold bytes the output does not use",
+        ),
+        (
+            "the last opcode converted",
+            b"\x00\xf0\xf7\xf8\x20".as_slice(),
+            "past the end of its output",
+        ),
+        (
+            "a range coder that does not end at zero",
+            b"\x00\xef\xff\xfc\x00\x01".as_slice(),
+            "does not end at zero",
+        ),
+        (
+            "a range coder that does not start at zero",
+            b"\x01\xef\xff\xfc\x00\x00".as_slice(),
+            "does not start at zero",
+        ),
+    ]
+    .map(|(case, decisions, words)| {
+        (
+            case,
+            bcj2_archive([main, calls, jumps, decisions], order, data),
+            words,
+        )
+    });
+    if let Some(seven_zip) = which("7zz") {
+        assert!(seven_zip_accepts(&seven_zip, &accepted));
+        for (case, bytes, _) in &refused {
+            assert!(
+                !seven_zip_accepts(&seven_zip, bytes),
+                "7-Zip accepts {case}"
+            );
+        }
+    }
+    let (root, result) = extract(&accepted);
+    result.unwrap();
+    assert_eq!(fs::read(root.path().join("parent/out/a")).unwrap(), data);
+    for (case, bytes, words) in &refused {
+        assert_refused(case, bytes, words);
+    }
+}
+
+#[test]
+fn a_range_coder_that_starts_with_its_code_at_the_range_is_refused() {
+    let jumps = 326;
+    let data: Vec<u8> = (0..jumps)
+        .flat_map(|index: u32| {
+            [0xE9]
+                .into_iter()
+                .chain(0u32.wrapping_sub(index * 5 + 5).to_le_bytes())
+        })
+        .collect();
+    let main = vec![0xE9; jumps as usize];
+    let targets = vec![0; 4 * jumps as usize];
+    let honest = b"\x00\xff\xff\xff\xfe\x02\xff\x8f\x00";
+    let at_the_range = b"\x00\xff\xff\xff\xff\x02\xff\x8f\x00";
+    let order = [0, 1, 2, 3];
+    let accepted = bcj2_archive([&main, b"", &targets, honest], order, &data);
+    let refused = bcj2_archive([&main, b"", &targets, at_the_range], order, &data);
+    if let Some(seven_zip) = which("7zz") {
+        assert!(seven_zip_accepts(&seven_zip, &accepted));
+        assert!(!seven_zip_accepts(&seven_zip, &refused));
+    }
+    let (root, result) = extract(&accepted);
+    result.unwrap();
+    assert_eq!(fs::read(root.path().join("parent/out/a")).unwrap(), data);
+    assert_refused("a code equal to the range", &refused, "range coder");
+}
+
+fn files(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut found = std::collections::BTreeMap::new();
+    let mut folders = vec![root.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for entry in fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            if path.is_dir() {
+                found.insert(name + "/", Vec::new());
+                folders.push(path);
+            } else {
+                found.insert(name, fs::read(&path).unwrap());
+            }
+        }
+    }
+    found
+}
+
+fn x86_like_code(length: usize, last: &[u8]) -> Vec<u8> {
+    let mut state = 1u32;
+    let mut code = Vec::new();
+    while code.len() < length {
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345) & 0x7FFF_FFFF;
+        let target = (state >> 8) % 4096;
+        match state % 7 {
+            0 => code.extend([0xE8].into_iter().chain(target.to_le_bytes())),
+            1 => code.extend(
+                [0xE9]
+                    .into_iter()
+                    .chain(target.wrapping_neg().to_le_bytes()),
+            ),
+            2 => code.extend(
+                [0x0F, 0x80 | (state % 16) as u8]
+                    .into_iter()
+                    .chain(target.to_le_bytes()),
+            ),
+            pick => code.extend(&[0x48, 0x89, state as u8, 0xC3][..1 + pick as usize % 4]),
+        }
+    }
+    code.extend_from_slice(last);
+    code
+}
+
+#[test]
+fn bcj2_archives_from_7zip_extract_as_7zip_extracts_them() {
+    let Some(seven_zip) = which("7zz") else {
+        return;
+    };
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("src");
+    fs::create_dir_all(source.join("ends")).unwrap();
+    fs::write(source.join("code.bin"), x86_like_code(200_000, b"\xe8")).unwrap();
+    fs::write(
+        source.join("plain.txt"),
+        "no branch opcodes here\n".repeat(500),
+    )
+    .unwrap();
+    fs::write(source.join("empty"), b"").unwrap();
+    for (name, data) in [
+        ("e8", &b"\xe8"[..]),
+        ("e9", b"\xe9"),
+        ("jcc", b"\x0f\x85"),
+        ("a", b"a"),
+    ] {
+        fs::write(source.join(format!("tiny-{name}")), data).unwrap();
+    }
+    let endings: [&[u8]; 5] = [b"\xe8", b"\xe9", b"\x0f\x84", b"\xe8\x00\x00", b"\xe9\x01"];
+    for index in 0..48usize {
+        fs::write(
+            source.join(format!("ends/{index}.bin")),
+            x86_like_code(index * 37, endings[index % endings.len()]),
+        )
+        .unwrap();
+    }
+    let layouts: &[&[&str]] = &[
+        &["-m0=BCJ2", "-m1=LZMA2"],
+        &["-m0=BCJ2", "-m1=LZMA2:d=64k"],
+        &["-m0=BCJ2", "-m1=LZMA2:d=1m"],
+        &["-m0=BCJ2", "-m1=LZMA2:d=32m"],
+        &["-m0=BCJ2", "-m1=LZMA"],
+        &["-m0=BCJ2", "-m1=Copy"],
+        &["-mf=BCJ2"],
+        &[
+            "-m0=BCJ2", "-m1=Copy", "-m2=Copy", "-m3=Copy", "-m4=Copy", "-mb0s0:1", "-mb0s1:2",
+            "-mb0s2:3", "-mb0s3:4",
+        ],
+    ];
+    for (index, methods) in layouts.iter().enumerate() {
+        for solid in ["-ms=on", "-ms=off"] {
+            let archive = root.path().join(format!("{index}{solid}.7z"));
+            let status = std::process::Command::new(&seven_zip)
+                .current_dir(&source)
+                .args(["a", "-bd", solid])
+                .args(*methods)
+                .arg(&archive)
+                .arg(".")
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "{methods:?} {solid}");
+            let expected = root.path().join(format!("7zip-{index}{solid}"));
+            let status = std::process::Command::new(&seven_zip)
+                .args(["x", "-bd", "-y"])
+                .arg(format!("-o{}", expected.display()))
+                .arg(&archive)
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "7-Zip refuses {methods:?} {solid}");
+            let (out, result) = extract(&fs::read(&archive).unwrap());
+            result.unwrap_or_else(|error| panic!("{methods:?} {solid}: {error:#}"));
+            assert_eq!(
+                files(&out.path().join("parent/out")),
+                files(&expected),
+                "{methods:?} {solid}"
+            );
+        }
+    }
+}

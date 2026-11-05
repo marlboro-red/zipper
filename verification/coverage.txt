@@ -139,7 +139,7 @@ item = src/lz4.rs | fn length(
 
 [7z-bcj2-graph]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = e47c62441d3b8611
+fingerprint = 0f96fa8c6326bc6d
 full-check = cargo test --release --lib bcj2
 item = src/native_7z.rs | fn bcj2_plan(
 item = src/native_7z.rs | const BCJ2_INPUTS:
