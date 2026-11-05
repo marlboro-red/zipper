@@ -593,9 +593,7 @@ fn decode<R: Read>(
     pending: &mut usize,
 ) -> io::Result<Stop> {
     loop {
-        let mut bits = range.bits();
-        let stop = decode_symbols(state, &mut bits, window, limit, pending);
-        let kept = bits.parts();
+        let (stop, kept) = decode_symbols(state, range.bits(), window, limit, pending);
         range.keep(kept);
         match stop? {
             Some(stop) => return Ok(stop),
@@ -606,6 +604,19 @@ fn decode<R: Read>(
 }
 
 fn decode_symbols(
+    state: &mut ChunkState,
+    start: Bits,
+    window: &mut Window,
+    limit: u64,
+    pending: &mut usize,
+) -> (io::Result<Option<Stop>>, (usize, u32, u32)) {
+    let mut bits = start;
+    let stop = decode_symbols_from(state, &mut bits, window, limit, pending);
+    (stop, bits.parts())
+}
+
+#[inline(always)]
+fn decode_symbols_from(
     state: &mut ChunkState,
     range: &mut Bits,
     window: &mut Window,
