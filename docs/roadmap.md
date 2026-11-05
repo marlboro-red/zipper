@@ -27,9 +27,9 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M12. Extraction controls](#m12-extraction-controls) | Done | M10 |
 | [M13. Remaining codecs](#m13-remaining-codecs) | Done | M10 |
 | [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | In progress | M10 |
-| [M14. Encrypted archives](#m14-encrypted-archives) | Planned | M13 |
-| [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | Planned | M13 |
-| [M16. Package formats](#m16-package-formats) | Planned | M13 |
+| [M14. Encrypted archives](#m14-encrypted-archives) | In progress | M13 |
+| [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | In progress | M13 |
+| [M16. Package formats](#m16-package-formats) | In progress | M13 |
 | [M17. Disc and disk images](#m17-disc-and-disk-images) | Planned | M16 |
 | [M18. RAR](#m18-rar) | Planned | M14, M15 |
 | [M19. Legacy formats](#m19-legacy-formats) | Planned | M13 |
@@ -317,6 +317,7 @@ Done so far, by 5 November 2026:
 - Differential tests against liblzma for every `lc`, `lp` and `pb`, every cut stream and an end marker before the declared size.
 - An exhaustive test of the match copy in every window state. A Kani proof of it ran out of memory and was dropped for that test.
 - An LZMA2 reader on the same decoder, also used only by tests, with the same bytes or the same refusal as liblzma for every control code, every properties byte and every cut. A builder agent wrote it, and its tests found a read that could return bytes a chunked match copy had just overrun, fixed in `a69a361`.
+- An xz container reader on the same LZMA2 decoder, with the branch filters and Delta, also used only by tests so far. Kani proves the range coder and symbol decoders, and a reader fails every read after its first error.
 
 ## M14. Encrypted archives
 
@@ -353,6 +354,10 @@ Exit checks:
 1. A corpus of split and self-extracting archives from 7-Zip, WinZip and Info-ZIP extracts the same trees as 7-Zip.
 2. Hostile tests cover volumes that overlap, repeat or come in the wrong order.
 
+Done so far, by 6 November 2026:
+
+- Raw numbered volumes (`.001`, `.002` and on) read in process for every native format, as the split volumes section of `docs/reference/zip-reader.md` describes. Seven adversarial reviews shaped the rules for damaged sets. A damaged set is refused and names the volume at fault. A single compressed file whose last volume is full is refused, because a missing volume cannot be told apart.
+
 ## M16. Package formats
 
 Software packages extract in process on every operating system.
@@ -368,6 +373,10 @@ Exit checks:
 
 1. The M10 rows for these formats read native, with corpus archives from each format's own tools.
 2. Each format has hostile tests for traversal, links, duplicate names and truncation.
+
+Done so far, by 6 November 2026:
+
+- cpio in its binary, odc and newc forms, `ar` in its System V, GNU and BSD forms, and Debian packages read in process, as `docs/reference/cpio-reader.md` and `docs/reference/ar-reader.md` describe. Six adversarial reviews found wrong-inode hard links, memory charges below real use and a second header pass that a rewritten archive could fool, each fixed with a test that failed first.
 
 ## M17. Disc and disk images
 
