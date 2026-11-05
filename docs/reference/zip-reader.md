@@ -193,6 +193,10 @@ Workers take entries one at a time from the largest-first list, so no worker is 
 
 A streamed entry of at least 16 MiB gets a writer thread when the pool has more threads than entries with a payload. Every entry that is not a directory counts, including symlinks. The worker then decodes while the writer thread writes, so the number of busy threads never exceeds `--threads`. Spare threads are counted once, before extraction starts. `--threads 1` never gets a writer thread. The [write-behind measurements](../../benchmarks/native-zip/write-behind/README.md) record the evidence. A TLA+ model in `verification/zip-write-behind/` checks every order of the two threads' steps, within a bound, for hangs, lost or reordered buffers, a misreported error and unbounded buffers. The `zipper-verify-zip-write-behind` skill in `.claude/skills/` runs it.
 
+## File creation on Windows
+
+A build with the `relative-create` Cargo feature creates each extracted file with `NtCreateFile`, relative to an open handle on its folder. It is off by default. It was reported to cut Defender's name normalization on one machine and measured no gain on another. The [relative-create measurements](../../benchmarks/native-zip/relative-create/README.md) record the evidence.
+
 ## Input read-ahead
 
 | Platform | Input buffer |

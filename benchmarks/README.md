@@ -27,6 +27,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-05 | [Relative file creation on Windows](native-zip/relative-create/README.md) | Opt-in feature. No gain on this machine in three Defender settings, and 6% to 9% slower on one workload with protection off. The gain was reported on another machine. |
 | 2026-11-05 | [One entry per Rayon task](native-zip/one-entry-per-task/README.md) | Kept. Two Rust build folders extract 1.40× to 1.76× faster at four threads on Windows. Tiny-file workloads are unchanged. One machine only. |
 | 2026-11-02 | [Larger streaming steps](native-zip/stream-steps/README.md) | Kept. The 256 MiB random entry extracts 1.30× faster at one thread. Other large rows improved in median but overlap their ranges. |
 | 2026-11-02 | [Single-thread extraction on the calling thread](native-zip/inline-single-thread/README.md) | Rejected. Skipping the rayon pool at one thread moved no workload beyond its range. |

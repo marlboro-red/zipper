@@ -15,6 +15,8 @@ mod ntfs_streams;
 mod pattern;
 mod placement;
 mod progress;
+#[cfg(all(windows, feature = "relative-create"))]
+mod relative_create;
 mod staging;
 mod zip_reader;
 use anyhow::{Context, Result, ensure};

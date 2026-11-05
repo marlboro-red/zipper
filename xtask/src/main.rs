@@ -341,6 +341,7 @@ fn windows_clippy() -> Result<()> {
             "clippy",
             "--workspace",
             "--all-targets",
+            "--all-features",
             "--locked",
             "--target",
             WINDOWS_TARGET,
