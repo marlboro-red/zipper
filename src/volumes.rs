@@ -1,9 +1,10 @@
 use std::{
+    cell::RefCell,
     ffi::OsString,
     fs::{File, Metadata},
     io::{self, BufRead, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex},
 };
 
 const FIRST_VOLUME: u64 = 1;
@@ -55,10 +56,13 @@ impl Layout {
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Identity {
     length: u64,
+    modified: Option<std::time::SystemTime>,
     #[cfg(unix)]
     device: u64,
     #[cfg(unix)]
     inode: u64,
+    #[cfg(unix)]
+    changed: (i64, i64),
 }
 
 impl Identity {
@@ -67,16 +71,49 @@ impl Identity {
         use std::os::unix::fs::MetadataExt;
         Self {
             length: metadata.len(),
+            modified: metadata.modified().ok(),
             #[cfg(unix)]
             device: metadata.dev(),
             #[cfg(unix)]
             inode: metadata.ino(),
+            #[cfg(unix)]
+            changed: (metadata.ctime(), metadata.ctime_nsec()),
         }
     }
 }
 
 fn name(path: &Path) -> std::path::Display<'_> {
     Path::new(path.file_name().unwrap_or(path.as_os_str())).display()
+}
+
+fn open_without_blocking(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    File::open(path)
+}
+
+fn open_volume_file(path: &Path, identity: Identity) -> io::Result<File> {
+    let file = open_without_blocking(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || Identity::of(&metadata) != identity {
+        return Err(invalid(format!(
+            "split volume {} changed while it was read",
+            name(path)
+        )));
+    }
+    #[cfg(unix)]
+    {
+        let flags = rustix::fs::fcntl_getfl(&file)?;
+        rustix::fs::fcntl_setfl(&file, flags - rustix::fs::OFlags::NONBLOCK)?;
+    }
+    Ok(file)
 }
 
 struct Numbered {
@@ -93,7 +130,10 @@ impl Numbered {
         }
         let number: u64 = digits.parse().ok()?;
         let stem = path.file_stem()?;
-        if format!("{number:03}") != digits || matches!(stem.to_str(), Some("" | "." | "..")) {
+        if number < FIRST_VOLUME
+            || format!("{number:03}") != digits
+            || matches!(stem.to_str(), Some("" | "." | ".."))
+        {
             return None;
         }
         Some(Self {
@@ -122,15 +162,7 @@ impl VolumeSet {
     }
 
     fn open_volume(&self, index: u64) -> io::Result<File> {
-        let path = self.path(index);
-        let file = File::open(&path)?;
-        if Identity::of(&file.metadata()?) != self.identities[index as usize] {
-            return Err(invalid(format!(
-                "split volume {} changed while it was read",
-                name(&path)
-            )));
-        }
-        Ok(file)
+        open_volume_file(&self.path(index), self.identities[index as usize])
     }
 }
 
@@ -143,8 +175,6 @@ struct Discovery {
     path: PathBuf,
     found: Found,
 }
-
-static DISCOVERED: Mutex<Vec<Weak<Discovery>>> = Mutex::new(Vec::new());
 
 fn first_present_after(numbered: &Numbered, missing: u64) -> Option<u64> {
     (missing + 1..=missing + GAP_PROBE).find(|&number| numbered.path(number).exists())
@@ -242,54 +272,84 @@ fn find_set(numbered: Numbered) -> Found {
     }
 }
 
-fn discover(path: &Path) -> io::Result<Arc<Discovery>> {
-    let mut discovered = DISCOVERED
-        .lock()
-        .map_err(|_| io::Error::other("split volume registry poisoned"))?;
-    discovered.retain(|entry| entry.strong_count() > 0);
-    if let Some(known) = discovered
-        .iter()
-        .filter_map(Weak::upgrade)
-        .find(|known| known.path == path)
-    {
-        return Ok(known);
-    }
+fn discover(path: &Path) -> Discovery {
     let found = match Numbered::parse(path) {
         None => Found::Alone { why: None },
         Some(numbered) if numbered.number == FIRST_VOLUME => find_set(numbered),
         Some(numbered) => {
             let first = numbered.path(FIRST_VOLUME);
-            if first.is_file() {
-                return Err(invalid(format!(
-                    "{} is a later volume of a split archive; open its first volume, {}",
-                    name(path),
-                    name(&first)
-                )));
+            Found::Alone {
+                why: first.is_file().then(|| {
+                    format!(
+                        "it is volume {} of a split archive; open its first volume, {}, to read the set",
+                        numbered.number,
+                        name(&first)
+                    )
+                }),
             }
-            Found::Alone { why: None }
         }
     };
-    let discovery = Arc::new(Discovery {
+    Discovery {
         path: path.to_owned(),
         found,
-    });
-    discovered.push(Arc::downgrade(&discovery));
-    Ok(discovery)
+    }
+}
+
+thread_local! {
+    static IN_USE: RefCell<Vec<Arc<Discovery>>> = const { RefCell::new(Vec::new()) };
 }
 
 pub(crate) struct Scope(Arc<Discovery>);
 
-pub(crate) fn scope(path: &Path) -> io::Result<Scope> {
-    discover(path).map(Scope)
+impl Scope {
+    fn enter(discovery: Discovery) -> Self {
+        let discovery = Arc::new(discovery);
+        IN_USE.with_borrow_mut(|in_use| in_use.push(Arc::clone(&discovery)));
+        Self(discovery)
+    }
+
+    pub(crate) fn is_set(&self) -> bool {
+        matches!(self.0.found, Found::Set(_))
+    }
+}
+
+impl Drop for Scope {
+    fn drop(&mut self) {
+        IN_USE.with_borrow_mut(|in_use| {
+            if let Some(at) = in_use.iter().rposition(|held| Arc::ptr_eq(held, &self.0)) {
+                in_use.remove(at);
+            }
+        });
+    }
+}
+
+pub(crate) fn scope(path: &Path) -> Scope {
+    Scope::enter(discover(path))
+}
+
+pub(crate) fn scope_alone(path: &Path) -> Scope {
+    Scope::enter(Discovery {
+        path: path.to_owned(),
+        found: Found::Alone { why: None },
+    })
+}
+
+fn in_use(path: &Path) -> Option<Arc<Discovery>> {
+    IN_USE.with_borrow(|in_use| {
+        in_use
+            .iter()
+            .rev()
+            .find(|held| held.path == path)
+            .map(Arc::clone)
+    })
 }
 
 pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
-    let discovery = discover(path)?;
+    let discovery = in_use(path).unwrap_or_else(|| Arc::new(discover(path)));
     Ok(match &discovery.found {
         Found::Alone { .. } => ArchiveFile::One(File::open(path)?),
         Found::Set(set) => ArchiveFile::Joined(Joined {
             set: Arc::clone(set),
-            _discovery: Arc::clone(&discovery),
             position: 0,
             open: Mutex::new(None),
         }),
@@ -302,11 +362,8 @@ pub(crate) fn joined_name(path: &Path) -> Option<PathBuf> {
         .map(|numbered| numbered.folder.join(numbered.stem))
 }
 
-fn same_bytes(left: &Path, right: &Path) -> io::Result<bool> {
-    let (mut left, mut right) = (
-        io::BufReader::new(File::open(left)?),
-        io::BufReader::new(File::open(right)?),
-    );
+fn same_bytes(left: File, right: File) -> io::Result<bool> {
+    let (mut left, mut right) = (io::BufReader::new(left), io::BufReader::new(right));
     loop {
         let (left_bytes, right_bytes) = (left.fill_buf()?, right.fill_buf()?);
         let length = left_bytes.len().min(right_bytes.len());
@@ -321,44 +378,59 @@ fn same_bytes(left: &Path, right: &Path) -> io::Result<bool> {
     }
 }
 
-fn repeated_volume(set: &VolumeSet) -> io::Result<Option<(u64, u64)>> {
-    if set.layout.total() > REPEAT_SCAN_BYTES {
-        return Ok(None);
-    }
-    let mut seen: std::collections::HashMap<(u64, u32), Vec<u64>> = Default::default();
-    for (index, identity) in (0..).zip(&set.identities) {
-        if identity.length < REPEAT_MIN_BYTES {
-            continue;
+fn crc32_of(file: File) -> io::Result<u32> {
+    let mut hasher = crc32fast::Hasher::new();
+    let mut reader = io::BufReader::new(file);
+    loop {
+        let bytes = reader.fill_buf()?;
+        if bytes.is_empty() {
+            return Ok(hasher.finalize());
         }
-        let mut hasher = crc32fast::Hasher::new();
-        io::copy(
-            &mut File::open(set.path(index))?,
-            &mut HashWriter(&mut hasher),
-        )?;
-        let earlier = seen
-            .entry((identity.length, hasher.finalize()))
-            .or_default();
-        for &other in earlier.iter() {
-            if same_bytes(&set.path(other), &set.path(index))? {
-                return Ok(Some((other, index)));
-            }
-        }
-        earlier.push(index);
+        hasher.update(bytes);
+        let length = bytes.len();
+        reader.consume(length);
     }
-    Ok(None)
 }
 
-struct HashWriter<'a>(&'a mut crc32fast::Hasher);
+struct RepeatScan {
+    found: Option<(u64, u64)>,
+    bytes_read: u64,
+}
 
-impl io::Write for HashWriter<'_> {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
+fn repeated_volume(
+    set: &VolumeSet,
+    fingerprint: fn(File) -> io::Result<u32>,
+    budget: u64,
+) -> io::Result<RepeatScan> {
+    let mut first_of_group = std::collections::HashMap::new();
+    let mut scan = RepeatScan {
+        found: None,
+        bytes_read: 0,
+    };
+    for (index, identity) in (0..).zip(&set.identities) {
+        let length = identity.length;
+        if length < REPEAT_MIN_BYTES {
+            continue;
+        }
+        if scan.bytes_read + length > budget {
+            break;
+        }
+        scan.bytes_read += length;
+        let key = (length, fingerprint(set.open_volume(index)?)?);
+        let Some(&earlier) = first_of_group.get(&key) else {
+            first_of_group.insert(key, index);
+            continue;
+        };
+        if scan.bytes_read + 2 * length > budget {
+            break;
+        }
+        scan.bytes_read += 2 * length;
+        if same_bytes(set.open_volume(earlier)?, set.open_volume(index)?)? {
+            scan.found = Some((earlier, index));
+            break;
+        }
     }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
+    Ok(scan)
 }
 
 impl Scope {
@@ -375,7 +447,11 @@ impl Scope {
         let last_path = set.path(count - 1);
         let last = name(&last_path);
         let mut hint = format!("{first} is the first of {count} split volumes, up to {last}");
-        if let Ok(Some((earlier, later))) = repeated_volume(set) {
+        if let Ok(RepeatScan {
+            found: Some((earlier, later)),
+            ..
+        }) = repeated_volume(set, crc32_of, REPEAT_SCAN_BYTES)
+        {
             hint.push_str(&format!(
                 "; {} holds the same bytes as {}",
                 name(&set.path(later)),
@@ -399,7 +475,6 @@ impl Scope {
 
 pub(crate) struct Joined {
     set: Arc<VolumeSet>,
-    _discovery: Arc<Discovery>,
     position: u64,
     open: Mutex<Option<(u64, File)>>,
 }
@@ -476,7 +551,6 @@ impl ArchiveFile {
             Self::One(file) => Self::One(file.try_clone()?),
             Self::Joined(joined) => Self::Joined(Joined {
                 set: Arc::clone(&joined.set),
-                _discovery: Arc::clone(&joined._discovery),
                 position: joined.position,
                 open: Mutex::new(None),
             }),
@@ -494,6 +568,10 @@ impl ArchiveFile {
                 name(&joined.set.path(index))
             ))),
         }
+    }
+
+    pub(crate) fn is_joined(&self) -> bool {
+        matches!(self, Self::Joined(_))
     }
 
     pub(crate) fn reopen(&self, path: &Path) -> io::Result<Self> {
@@ -613,18 +691,65 @@ mod tests {
     }
 
     #[test]
-    fn a_set_is_found_once_while_anything_holds_it() -> io::Result<()> {
+    fn a_set_is_found_once_per_scope_and_never_shared_across_scopes() -> io::Result<()> {
         let folder = tempfile::tempdir()?;
         let first = write_set(folder.path(), "once.bin", &[5; 30], 10);
         let joined_set = |file: ArchiveFile| match file {
             ArchiveFile::Joined(joined) => joined.set,
             ArchiveFile::One(_) => panic!("read alone"),
         };
-        let scope = scope(&first)?;
+        let outer = scope(&first);
         let held = joined_set(open(&first)?);
         assert!(Arc::ptr_eq(&held, &joined_set(open(&first)?)));
-        drop(scope);
+        let inner = scope(&first);
         assert!(!Arc::ptr_eq(&held, &joined_set(open(&first)?)));
+        drop(inner);
+        assert!(Arc::ptr_eq(&held, &joined_set(open(&first)?)));
+        let alone = scope_alone(&first);
+        assert!(matches!(open(&first)?, ArchiveFile::One(_)));
+        drop(alone);
+        drop(outer);
+        assert!(!Arc::ptr_eq(&held, &joined_set(open(&first)?)));
+        let elsewhere = std::thread::spawn(move || {
+            let _scope = scope(&first);
+            joined_set(open(&first).unwrap())
+        })
+        .join()
+        .unwrap();
+        assert!(!Arc::ptr_eq(&held, &elsewhere));
+        Ok(())
+    }
+
+    #[test]
+    fn the_repeat_scan_reads_each_volume_at_most_three_times_whatever_collides() -> io::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let volumes = 300u64;
+        let data: Vec<u8> = (0..volumes * 64)
+            .map(|i| ((i * 2_654_435_761) >> 7) as u8 ^ (i / 64) as u8)
+            .collect();
+        let first = write_set(folder.path(), "c.bin", &data, 64);
+        let Found::Set(set) = discover(&first).found else {
+            panic!("not a set")
+        };
+        let everything_collides: fn(File) -> io::Result<u32> = |_| Ok(0);
+        let scan = repeated_volume(&set, everything_collides, u64::MAX)?;
+        assert_eq!(scan.found, None);
+        assert!(
+            scan.bytes_read <= 3 * data.len() as u64,
+            "{}",
+            scan.bytes_read
+        );
+        let capped = repeated_volume(&set, everything_collides, 1000)?;
+        assert!(capped.bytes_read <= 1000, "{}", capped.bytes_read);
+        std::fs::copy(
+            folder.path().join("c.bin.002"),
+            folder.path().join("c.bin.007"),
+        )?;
+        let Found::Set(set) = discover(&first).found else {
+            panic!("not a set")
+        };
+        let repeat = repeated_volume(&set, crc32_of, u64::MAX)?;
+        assert_eq!(repeat.found, Some((1, 6)));
         Ok(())
     }
 
@@ -645,6 +770,44 @@ mod tests {
             let error = joined.read_at(&mut [0; 4], 12).unwrap_err();
             assert!(error.to_string().contains("a.bin.002"), "{error}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_volume_rewritten_in_place_at_the_same_length_is_refused() -> io::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let first = write_set(folder.path(), "a.bin", &[7u8; 30], 10);
+        let joined = open(&first)?;
+        let second = folder.path().join("a.bin.002");
+        let rewritten = std::fs::OpenOptions::new().write(true).open(&second)?;
+        std::io::Write::write_all(&mut &rewritten, &[1; 10])?;
+        rewritten
+            .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(10))?;
+        drop(rewritten);
+        let error = joined.read_at(&mut [0; 4], 12).unwrap_err();
+        assert!(error.to_string().contains("a.bin.002"), "{error}");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_volume_swapped_for_a_fifo_fails_instead_of_blocking() -> io::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let first = write_set(folder.path(), "a.bin", &[7u8; 30], 10);
+        let joined = open(&first)?;
+        let second = folder.path().join("a.bin.002");
+        std::fs::remove_file(&second)?;
+        let made = std::process::Command::new("mkfifo").arg(&second).status()?;
+        assert!(made.success());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(joined.read_at(&mut [0; 4], 12).map_err(|e| e.to_string()));
+        });
+        let result = receiver
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("reading a FIFO volume blocked");
+        let error = result.unwrap_err();
+        assert!(error.contains("a.bin.002"), "{error}");
         Ok(())
     }
 }

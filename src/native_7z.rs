@@ -108,6 +108,10 @@ impl std::fmt::Display for Malformed {
 
 impl std::error::Error for Malformed {}
 
+pub(crate) fn is_malformed(error: &(dyn std::error::Error + 'static)) -> bool {
+    error.is::<Malformed>()
+}
+
 type Parsed<T> = std::result::Result<T, Malformed>;
 
 fn check(holds: bool, message: &'static str, subject: &'static str) -> Parsed<()> {
@@ -908,7 +912,10 @@ fn decode_header(file: &mut ArchiveFile, streams: &Streams) -> Result<Vec<u8>> {
         "7z header has the wrong size"
     );
     if let Some(crc) = folder.crc.or(streams.files_by_folder[0][0].1) {
-        ensure!(crc32fast::hash(&decoded) == crc, "7z header CRC mismatch");
+        ensure!(
+            crc32fast::hash(&decoded) == crc,
+            crate::ChecksumMismatch("7z header CRC mismatch".to_owned())
+        );
     }
     Ok(decoded)
 }
@@ -936,7 +943,7 @@ fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
         .checked_add(offset)
         .filter(|&header| header.checked_add(size).is_some_and(|end| end <= length));
     let Some(header_start) = header_start else {
-        bail!("7z header lies outside the file")
+        bail!(crate::BadField("7z header lies outside the file"))
     };
     file.ensure_ends_at(header_start + size)?;
     ensure!(size <= MAX_HEADER, "7z header is larger than 64 MiB");
@@ -944,7 +951,10 @@ fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
     file.seek(SeekFrom::Start(header_start))?;
     let mut header = vec![0; size as usize];
     file.read_exact(&mut header)?;
-    ensure!(crc32fast::hash(&header) == crc, "7z header CRC mismatch");
+    ensure!(
+        crc32fast::hash(&header) == crc,
+        crate::ChecksumMismatch("7z header CRC mismatch".to_owned())
+    );
     for _ in 0..=MAX_HEADER_LAYERS {
         let mut bytes = Bytes {
             data: &header,
@@ -1571,6 +1581,7 @@ fn folder_reader(
     {
         return Ok(Box::new(ParallelLzma2 {
             path: path.to_owned(),
+            input: file,
             pack_start: SIGNATURE_HEADER + folder.pack_offset,
             properties,
             segments,
@@ -1844,6 +1855,7 @@ fn independent_lzma2_segments(
 // RECORD(benchmarks/native-7z/lzma2-segments/README.md): solid folders decode their LZMA2 segments in parallel.
 struct ParallelLzma2 {
     path: PathBuf,
+    input: ArchiveFile,
     pack_start: u64,
     properties: u8,
     segments: Vec<Segment>,
@@ -1880,13 +1892,13 @@ impl ParallelLzma2 {
             && self.held + segment.held(self.properties) <= SEGMENT_BUDGET
         {
             let (sender, receiver) = sync_channel(1);
-            let path = self.path.clone();
+            let input = self.input.reopen(&self.path)?;
             let stop = Arc::clone(&self.stop);
             let start = self.pack_start + segment.pack_offset;
             let (length, output, properties) =
                 (segment.pack_length, segment.output, self.properties);
             let spawned = std::thread::Builder::new().spawn(move || {
-                let decoded = decode_segment(&path, start, length, output, properties, &stop);
+                let decoded = decode_segment(input, start, length, output, properties, &stop);
                 let _ = sender.send(decoded);
             });
             let thread = match spawned {
@@ -1937,7 +1949,7 @@ impl Read for ParallelLzma2 {
 }
 
 fn decode_segment(
-    path: &Path,
+    mut file: ArchiveFile,
     start: u64,
     length: u64,
     output: u64,
@@ -1947,7 +1959,6 @@ fn decode_segment(
     let invalid =
         |message: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, message.to_owned());
     let too_large = || invalid("7z segment is too large");
-    let mut file = crate::volumes::open(path)?;
     file.seek(SeekFrom::Start(start))?;
     let mut packed = vec![0u8; usize::try_from(length).map_err(|_| too_large())?];
     file.read_exact(&mut packed)?;
@@ -2192,8 +2203,7 @@ pub fn read_archive(
             if let Some(expected) = item.crc {
                 ensure!(
                     crc.finalize() == expected,
-                    "7z CRC mismatch in {:?}",
-                    item.name
+                    crate::ChecksumMismatch(format!("7z CRC mismatch in {:?}", item.name))
                 );
             }
             if let Some(mut output) = output {
@@ -2216,7 +2226,10 @@ pub fn read_archive(
             "7z folder holds more data than its files"
         );
         if let Some(expected) = folder.crc {
-            ensure!(folder_crc.finalize() == expected, "7z folder CRC mismatch");
+            ensure!(
+                folder_crc.finalize() == expected,
+                crate::ChecksumMismatch("7z folder CRC mismatch".to_owned())
+            );
         }
         Ok(())
     };

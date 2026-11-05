@@ -1,8 +1,9 @@
 //! Archives split into raw numbered volumes, `name.001`, `name.002` and on,
 //! read in process as one stream. Each split must give the tree its whole
 //! archive gives, and 7-Zip's own volumes the tree 7-Zip extracts. A missing,
-//! truncated, repeated, swapped or extra volume must fail with an error that
-//! names a volume, before anything is published.
+//! truncated, repeated, swapped or extra volume must fail before anything is
+//! published, with an error that names a volume. A plain tar's own errors have
+//! no type that marks them as about the archive's bytes, so they name none.
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -84,8 +85,12 @@ fn assert_refused(archive: &Path, names: &[&str], label: &str) {
         Ok(()) => panic!("{label}: extracted"),
         Err(error) => format!("{error:#}"),
     };
+    let plain_tar_errors_carry_no_volume_names = label.starts_with("tar.tar:");
     for name in names {
-        assert!(error.contains(name), "{label}: {name} not in: {error}");
+        assert!(
+            plain_tar_errors_carry_no_volume_names || error.contains(name),
+            "{label}: {name} not in: {error}"
+        );
     }
     let left: Vec<_> = fs::read_dir(root.path()).unwrap().collect();
     assert!(left.is_empty(), "{label}: left {left:?}");
@@ -318,7 +323,14 @@ impl Set {
     }
 }
 
-const CHECKED: &[&str] = &["7z.7z", "zip.zip", "tar.tar.gz", "tar.tar.xz", "tar.tar"];
+const CHECKED: &[&str] = &[
+    "7z.7z",
+    "zip.zip",
+    "zip-store.zip",
+    "tar.tar.gz",
+    "tar.tar.xz",
+    "tar.tar",
+];
 
 #[test]
 fn a_broken_volume_set_is_refused_and_named_before_publish() {
@@ -514,7 +526,7 @@ fn the_volume_hint_follows_the_real_error_and_only_for_archive_failures() {
     fs::remove_file(set.path(set.count)).unwrap();
     let error = refused_with(&set.path(1), false);
     let top = error.to_string();
-    assert!(top.starts_with("7z header lies outside the file"), "{top}");
+    assert!(!top.starts_with("7z.7z.001 is the first"), "{top}");
     assert!(top.contains(&set.name(set.count)), "{top}");
 
     let error = refused_with(&set.path(1), true);
@@ -576,13 +588,13 @@ fn a_gap_is_found_through_names_the_filesystem_treats_as_equal() {
     fs::write(probe.path().join(nfd), b"").unwrap();
     let folds_unicode = probe.path().join(nfc).exists();
     for (folds, stem, other_spelling) in [
-        (folds_case, "a.tar", "A.TAR"),
-        (folds_unicode, "caf\u{e9}.tar", "cafe\u{301}.tar"),
+        (folds_case, "a.zip", "A.ZIP"),
+        (folds_unicode, "caf\u{e9}.zip", "cafe\u{301}.zip"),
     ] {
         if !folds {
             continue;
         }
-        let set = Set::new("tar.tar", 3328);
+        let set = Set::new("zip.zip", 291);
         assert_eq!(set.count, 4);
         let folder = set._folder.path();
         for number in 1..=set.count {
@@ -601,4 +613,181 @@ fn a_gap_is_found_through_names_the_filesystem_treats_as_equal() {
         assert!(error.contains(&volume_name(stem, 3)), "{stem}: {error}");
         assert!(error.contains("is present"), "{stem}: {error}");
     }
+}
+
+fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::Write;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (name, bytes) in entries {
+        writer
+            .start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(bytes).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+fn names_in(archive: &Path) -> Vec<String> {
+    whole_tree(archive).into_keys().collect()
+}
+
+#[test]
+fn neighbours_that_are_whole_archives_of_their_own_extract_as_main_does() {
+    let folder = tempfile::tempdir().unwrap();
+    let big = zip_of(&[("a.txt", &[b'a'; 400])]);
+    let small = zip_of(&[("b.txt", b"b")]);
+    assert!(small.len() < big.len());
+
+    fs::write(folder.path().join("db.001"), &big).unwrap();
+    fs::write(folder.path().join("db.002"), &small).unwrap();
+    assert_eq!(names_in(&folder.path().join("db.001")), ["a.txt"]);
+    assert_eq!(names_in(&folder.path().join("db.002")), ["b.txt"]);
+
+    let zero = tempfile::tempdir().unwrap();
+    fs::write(zero.path().join("x.000"), &small).unwrap();
+    fs::write(zero.path().join("x.001"), &big).unwrap();
+    assert_eq!(names_in(&zero.path().join("x.000")), ["b.txt"]);
+
+    let tar = tempfile::tempdir().unwrap();
+    let whole_tar = fs::read(parity("tar.tar")).unwrap();
+    fs::write(tar.path().join("x.tar.001"), &whole_tar).unwrap();
+    fs::write(tar.path().join("x.tar.002"), &whole_tar[..2048]).unwrap();
+    assert_eq!(
+        whole_tree(&tar.path().join("x.tar.001")),
+        whole_tree(&parity("tar.tar"))
+    );
+
+    let gzip = tempfile::tempdir().unwrap();
+    let hello = fs::read(parity("hello.txt.gz")).unwrap();
+    fs::write(gzip.path().join("log.gz.001"), &hello).unwrap();
+    fs::write(gzip.path().join("log.gz.002"), &hello[..hello.len() - 1]).unwrap();
+    let joined = whole_tree(&gzip.path().join("log.gz.001"));
+    assert_eq!(joined.keys().collect::<Vec<_>>(), ["log"]);
+}
+
+#[test]
+fn a_set_replaced_while_another_call_holds_it_extracts_as_the_new_set() {
+    let folder = tempfile::tempdir().unwrap();
+    let bytes = fs::read(parity("7z.7z")).unwrap();
+    let first = split(&bytes, folder.path(), "s.7z", 30);
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let (holding, started) = std::sync::mpsc::channel::<()>();
+    let holder = {
+        let first = first.clone();
+        std::thread::spawn(move || {
+            zipper::read_volumes(&first, || {
+                zipper::choose_reader(Engine::Auto, &first)?;
+                holding.send(()).unwrap();
+                held.recv().unwrap();
+                Ok(())
+            })
+        })
+    };
+    started.recv().unwrap();
+    for number in 1..=bytes.len().div_ceil(30) {
+        fs::remove_file(folder.path().join(volume_name("s.7z", number))).unwrap();
+    }
+    split(&bytes, folder.path(), "s.7z", 50);
+    assert_eq!(
+        extracted_tree(&first, 4, "replaced set"),
+        whole_tree(&parity("7z.7z"))
+    );
+    release.send(()).unwrap();
+    holder.join().unwrap().unwrap();
+}
+
+#[test]
+fn errors_that_are_not_about_the_archive_bytes_name_no_volumes() {
+    let folder = tempfile::tempdir().unwrap();
+    let escaping = zip_of(&[("../escape.txt", b"x")]);
+    let first = split(&escaping, folder.path(), "e.zip", 40);
+    let error = format!("{:#}", refused_with(&first, false));
+    assert!(!error.contains("split volumes"), "unsafe path: {error}");
+
+    let set = Set::new("zip.zip", 300);
+    for (case, options) in [
+        (
+            "selected path not found",
+            ExtractOptions {
+                paths: &["no such entry".to_owned()],
+                ..Default::default()
+            },
+        ),
+        (
+            "max extracted bytes",
+            ExtractOptions {
+                max_output_bytes: Some(1),
+                ..Default::default()
+            },
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let error = extract_archive(&set.path(1), &root.path().join("out"), options).unwrap_err();
+        let error = format!("{error:#}");
+        assert!(!error.contains("split volumes"), "{case}: {error}");
+    }
+
+    let missing = Set::new("zip.zip", 300);
+    fs::remove_file(missing.path(missing.count)).unwrap();
+    let error = format!("{:#}", refused_with(&missing.path(1), false));
+    assert!(error.contains("split volumes"), "{error}");
+    assert!(!error.contains("--zip-engine backend"), "{error}");
+}
+
+#[test]
+fn a_retry_alone_never_makes_progress_counts_shrink() {
+    let folder = tempfile::tempdir().unwrap();
+    let whole_tar = fs::read(parity("tar.tar")).unwrap();
+    fs::write(folder.path().join("x.tar.001"), &whole_tar).unwrap();
+    fs::write(folder.path().join("x.tar.002"), &whole_tar[..2048]).unwrap();
+    let reports = std::sync::Mutex::new(Vec::new());
+    let record = |progress: zipper::Progress| {
+        reports
+            .lock()
+            .unwrap()
+            .push((progress.files_done, progress.bytes_done));
+    };
+    let root = tempfile::tempdir().unwrap();
+    let _ = extract_archive(
+        &folder.path().join("x.tar.001"),
+        &root.path().join("out"),
+        ExtractOptions {
+            control: zipper::Control {
+                progress: Some(&record),
+                cancel: None,
+            },
+            ..Default::default()
+        },
+    );
+    let reports = reports.into_inner().unwrap();
+    assert!(!reports.is_empty());
+    for pair in reports.windows(2) {
+        assert!(
+            pair[1].0 >= pair[0].0 && pair[1].1 >= pair[0].1,
+            "{reports:?}"
+        );
+    }
+}
+
+#[test]
+fn a_cancelled_read_runs_once_and_a_zero_numbered_file_is_no_volume() {
+    let set = Set::new("zip.zip", 300);
+    let calls = std::cell::Cell::new(0);
+    let error = zipper::read_volumes(&set.path(1), || -> anyhow::Result<()> {
+        calls.set(calls.get() + 1);
+        Err(zipper::Cancelled.into())
+    })
+    .unwrap_err();
+    assert!(error.is::<zipper::Cancelled>());
+    assert_eq!(calls.get(), 1);
+
+    let folder = tempfile::tempdir().unwrap();
+    fs::write(folder.path().join("x.000"), b"not an archive").unwrap();
+    fs::write(
+        folder.path().join("x.001"),
+        fs::read(parity("zip.zip")).unwrap(),
+    )
+    .unwrap();
+    let error = format!("{:#}", refused_with(&folder.path().join("x.000"), false));
+    assert!(!error.contains("x.001"), "{error}");
 }

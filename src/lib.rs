@@ -49,6 +49,17 @@ impl std::fmt::Display for BadField {
 
 impl std::error::Error for BadField {}
 
+#[derive(Debug)]
+pub(crate) struct ChecksumMismatch(pub(crate) String);
+
+impl std::fmt::Display for ChecksumMismatch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ChecksumMismatch {}
+
 pub(crate) type Field<T> = std::result::Result<T, BadField>;
 
 pub(crate) fn field_check(holds: bool, message: &'static str) -> Field<()> {

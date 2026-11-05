@@ -418,9 +418,27 @@ struct Opened {
     directory: Directory,
 }
 
+const BACKEND_ADVICE: &str =
+    "; if the file is another format or a split volume, pass --zip-engine backend";
+
+fn read_directory(file: &mut BufReader<crate::volumes::ArchiveFile>) -> Result<Directory> {
+    let joined = file.get_ref().is_joined();
+    crate::zip_directory::read_directory(file).map_err(|error| {
+        match error.downcast_ref::<crate::BadField>() {
+            Some(&crate::BadField(message)) if joined => {
+                let without_advice = message
+                    .split_once(BACKEND_ADVICE)
+                    .map_or(message, |(kept, _)| kept);
+                crate::BadField(without_advice).into()
+            }
+            _ => error,
+        }
+    })
+}
+
 fn open(path: &Path, cache: bool) -> Result<Opened> {
     let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
-    let directory = crate::zip_directory::read_directory(&mut file)?;
+    let directory = read_directory(&mut file)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
     } else {
@@ -1180,14 +1198,17 @@ fn stream_entry(
         );
     }
     ensure!(written == item.entry.size, "ZIP decoded size mismatch");
-    ensure!(crc.finalize() == item.crc, "ZIP CRC mismatch");
+    ensure!(
+        crc.finalize() == item.crc,
+        crate::ChecksumMismatch("ZIP CRC mismatch".to_owned())
+    );
     Ok(())
 }
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
     let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
-    let directory = crate::zip_directory::read_directory(&mut file)?;
+    let directory = read_directory(&mut file)?;
     Ok(scan(&directory, false)?
         .into_iter()
         .map(|item| item.entry)
@@ -1467,7 +1488,10 @@ pub fn read_archive_with_options(
                 length as u64 == item.entry.size,
                 "ZIP decoded size mismatch"
             );
-            ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
+            ensure!(
+                crc32fast::hash(&decoded) == item.crc,
+                crate::ChecksumMismatch("ZIP CRC mismatch".to_owned())
+            );
             if let Some(output) = &mut output {
                 // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
                 if cfg!(windows) {
