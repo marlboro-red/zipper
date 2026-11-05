@@ -634,6 +634,18 @@ fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
+fn stored_zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::Write;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, bytes) in entries {
+        writer.start_file(*name, options).unwrap();
+        writer.write_all(bytes).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
 fn names_in(archive: &Path) -> Vec<String> {
     whole_tree(archive).into_keys().collect()
 }
@@ -1179,11 +1191,10 @@ fn split_into(source: &Path, chunks: usize, folder: &Path, stem: &str) -> Option
 fn sets_from_split_by_chunk_count_join_as_7zip_joins_them() {
     let work = tempfile::tempdir().unwrap();
     let odd_zip = work.path().join("odd.zip");
-    let mut zip = fs::read(parity("zip.zip")).unwrap();
-    if zip.len().is_multiple_of(2) {
-        zip = zip_of(&[("a.txt", &[b'a'; 401]), ("b.txt", b"odd")]);
-    }
-    assert_eq!(zip.len() % 2, 1);
+    let zip = (400..402)
+        .map(|length| stored_zip_of(&[("a.txt", &vec![b'a'; length]), ("b.txt", b"odd")]))
+        .find(|zip| !zip.len().is_multiple_of(2))
+        .unwrap();
     fs::write(&odd_zip, &zip).unwrap();
     for (source, stem) in [
         (odd_zip.clone(), "o.zip"),
