@@ -2,6 +2,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::{fs, path::Path, process::Command};
 
 const MANIFEST: &str = "verification/coverage.txt";
+const UNCOVERED: &str = "verification/uncovered.txt";
 
 struct Verification {
     name: String,
@@ -138,6 +139,7 @@ fn fingerprint(root: &Path, verification: &Verification) -> Result<String> {
 }
 
 pub fn fail_on_stale_fingerprints(root: &Path) -> Result<()> {
+    fail_on_unclassified_sources(root)?;
     let mut stale = Vec::new();
     for verification in manifest(root)? {
         let current = fingerprint(root, &verification)?;
@@ -239,9 +241,119 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+fn uncovered(root: &Path) -> Result<Vec<String>> {
+    let text = fs::read_to_string(root.join(UNCOVERED))
+        .with_context(|| format!("cannot read {UNCOVERED}"))?;
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim().is_empty() && !line.starts_with('#'))
+        .map(|(index, line)| {
+            let (path, reason) = line
+                .split_once(" | ")
+                .with_context(|| format!("{UNCOVERED}:{}: expected `path | reason`", index + 1))?;
+            ensure!(
+                !reason.trim().is_empty(),
+                "{UNCOVERED}:{}: {path} needs a reason",
+                index + 1
+            );
+            Ok(path.to_owned())
+        })
+        .collect()
+}
+
+fn sources(root: &Path) -> Result<Vec<String>> {
+    let mut found = Vec::new();
+    let mut folders = vec![root.join("src")];
+    while let Some(folder) = folders.pop() {
+        for entry in fs::read_dir(&folder)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                folders.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let relative = path
+                    .strip_prefix(root)?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                found.push(relative);
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+fn unclassified(sources: &[String], covered: &[String], uncovered: &[String]) -> Vec<String> {
+    let mut problems = Vec::new();
+    for source in sources {
+        match (covered.contains(source), uncovered.contains(source)) {
+            (false, false) => problems.push(format!(
+                "{source} has no formal check in {MANIFEST} and no reason in {UNCOVERED}"
+            )),
+            (true, true) => problems.push(format!(
+                "{source} is covered in {MANIFEST}, so remove its line from {UNCOVERED}"
+            )),
+            _ => {}
+        }
+    }
+    for path in uncovered {
+        if !sources.contains(path) {
+            problems.push(format!("{UNCOVERED} lists {path}, which does not exist"));
+        }
+    }
+    problems
+}
+
+fn fail_on_unclassified_sources(root: &Path) -> Result<()> {
+    let covered: Vec<String> = manifest(root)?
+        .into_iter()
+        .flat_map(|verification| verification.items.into_iter().map(|(path, _)| path))
+        .collect();
+    let problems = unclassified(&sources(root)?, &covered, &uncovered(root)?);
+    ensure!(problems.is_empty(), "{}", problems.join("\n"));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_source_needs_a_formal_check_or_a_reason_and_never_both() {
+        let owned = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect::<Vec<_>>()
+        };
+        let sources = owned(&["src/a.rs", "src/b.rs", "src/c.rs"]);
+        assert!(
+            unclassified(
+                &sources,
+                &owned(&["src/a.rs"]),
+                &owned(&["src/b.rs", "src/c.rs"])
+            )
+            .is_empty()
+        );
+        let missing = unclassified(&sources, &owned(&["src/a.rs"]), &owned(&["src/b.rs"]));
+        assert_eq!(missing.len(), 1);
+        assert!(missing[0].starts_with("src/c.rs has no formal check"));
+        let both = unclassified(
+            &sources,
+            &owned(&["src/a.rs", "src/b.rs"]),
+            &owned(&["src/b.rs", "src/c.rs"]),
+        );
+        assert_eq!(both.len(), 1);
+        assert!(both[0].starts_with("src/b.rs is covered"));
+        let gone = unclassified(
+            &sources,
+            &owned(&["src/a.rs"]),
+            &owned(&["src/b.rs", "src/c.rs", "src/d.rs"]),
+        );
+        assert_eq!(
+            gone,
+            ["verification/uncovered.txt lists src/d.rs, which does not exist"]
+        );
+    }
 
     #[test]
     fn line_endings_do_not_change_a_fingerprint() {

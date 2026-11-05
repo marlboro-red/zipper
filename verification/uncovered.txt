@@ -1,0 +1,16 @@
+# Source files that no formal check in coverage.txt covers, and why.
+# `cargo xtask gate` fails when a file in src/ is in neither list, so a new
+# module needs a formal check or a line here. A line is `path | reason`.
+# A reason that starts with `candidate:` names a formal check still owed.
+
+src/compat.rs | routes formats to 7-Zip by a fixed signature allowlist and parses none of 7-Zip's output; tests/cli.rs covers each bypass
+src/counters.rs | profiling counters that compile to nothing without the `counters` feature
+src/duplicates.rs | read-only duplicate scan that writes nothing; tests/duplicates.rs covers it
+src/extract.rs | dispatch from the public API to a reader; every reader it calls has its own checks
+src/lzma.rs | candidate: Kani proofs and an [lzma] section are being added for M21; the module is test-only until then
+src/main.rs | the command-line front end over the library; tests/cli.rs covers it
+src/metadata.rs | maps archive modes and times to the platform; tests/content_only.rs and tests/native_zip.rs cover it
+src/native_stream.rs | wraps the decoders other sections cover and names one output file; its unit test checks every short name, and tests/hostile_stream.rs covers each format
+src/ntfs_streams.rs | writes Windows zone marks and alternate streams from data the archive reader already checked; tests/cli.rs covers it on Windows
+src/pattern.rs | wildcard matching of the caller's patterns, not of archive bytes; tests/selection.rs covers it
+src/zip_reader.rs | candidate: the archive handle every ZIP worker clones and reads from; tests/handles.rs and the ZIP suites cover it, and no model checks its sharing
