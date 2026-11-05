@@ -380,7 +380,6 @@ fn archives_and_packages_extract_the_tree_7zip_extracts() {
         ("deb with xz data", deb("data.tar.xz", &xz(&data))),
         ("deb with gzip data", deb("data.tar.gz", &gzip(&data))),
         ("deb with zstd data", deb("data.tar.zst", &zstd(&data))),
-        ("deb with plain data.tar", deb("data.tar", &data)),
         ("deb with odd data name", deb("data.tar.foo", &data)),
         (
             "deb with two data members",
@@ -822,4 +821,54 @@ fn the_default_engine_routes_ar_and_packages_to_this_reader() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn a_long_name_past_the_name_limit_is_refused_before_it_is_copied() {
+    let (table, _) = long_names(&[&"n".repeat(9000)]);
+    let members: Vec<Vec<u8>> = std::iter::once(table)
+        .chain((0..3).map(|_| raw(b"/0", b"")))
+        .collect();
+    let bytes = ar(&members);
+    assert_rejected_without_leftovers("over-long GNU name", &bytes);
+    let error = format!(
+        "{:#}",
+        extract_with(&bytes, ReadOptions::default()).2.unwrap_err()
+    );
+    assert!(error.contains("longer than"), "{error}");
+}
+
+#[test]
+fn a_plain_data_tar_member_is_extracted_as_dpkg_reads_it() {
+    let (_root, destination, result) =
+        extract_with(&deb("data.tar", &package_tar()), ReadOptions::default());
+    result.unwrap();
+    assert_eq!(
+        fs::read(destination.join("usr/bin/hello")).unwrap(),
+        b"#!/bin/sh\necho hi\n"
+    );
+    assert!(!destination.join("control.tar.gz").exists());
+}
+
+#[test]
+fn a_debian_package_is_read_in_place_without_a_temporary_copy() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("hello.deb");
+    fs::write(&archive, deb("data.tar.xz", &xz(&package_tar()))).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .env("TMPDIR", root.path().join("no-such-folder"))
+        .env("TMP", root.path().join("no-such-folder"))
+        .env("TEMP", root.path().join("no-such-folder"))
+        .arg("extract")
+        .arg(&archive)
+        .arg("-o")
+        .arg(root.path().join("out"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(root.path().join("out/usr/bin/hello").is_file());
 }

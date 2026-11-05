@@ -6,7 +6,7 @@ use zipper::Reader;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Zipper — fast, safe extraction of ZIP, tar and 7z archives"
+    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio and ar archives"
 )]
 struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers).
@@ -24,7 +24,7 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Native for ZIP, tar, unrecognized files and 7z it decodes; 7-Zip for other recognized formats.
+    /// Native for ZIP, tar, cpio, ar, single compressed files, unrecognized files and 7z it decodes; 7-Zip for other recognized formats.
     Auto,
     /// 7-Zip for every archive.
     Backend,
@@ -102,7 +102,8 @@ enum Command {
         #[arg(long)]
         content_only: bool,
         /// Refuse archives whose declared output exceeds this many bytes. By
-        /// default, ZIP, tar and 7z output read in process must fit in free space.
+        /// default, ZIP, tar, 7z, cpio and ar output read in process must fit
+        /// in free space.
         #[arg(long)]
         max_extracted_bytes: Option<u64>,
     },

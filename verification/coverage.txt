@@ -6,7 +6,7 @@
 
 [tar-writer-pool]
 skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
-fingerprint = 7f5a0b3be2f7f7d4
+fingerprint = 2a7c3cc21f1e7db5
 full-check = python3 scripts/check_model.py verification/tar-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/native_tar.rs | const CHUNK:
 item = src/native_tar.rs | const QUEUED_FILES:
@@ -23,7 +23,7 @@ item = src/native_tar.rs | struct Writers<'f> {
 item = src/native_tar.rs | impl<'f> Writers<'f> {
 item = src/native_tar.rs | fn write_job(
 item = src/native_tar.rs |     fn write_file(
-item = src/native_tar.rs | pub fn read_archive(
+item = src/native_tar.rs | pub(crate) fn read_part(
 
 [zip-write-behind]
 skill = .claude/skills/zipper-verify-zip-write-behind/SKILL.md
@@ -164,7 +164,7 @@ item = src/native_7z.rs | impl<R: Read> Read for StoredLzma2<R> {
 
 [strip]
 skill = .claude/skills/zipper-verify-strip/SKILL.md
-fingerprint = 3210da04e8cee3ac
+fingerprint = 4f1c360db6b65220
 full-check = cargo test --release --lib placement
 item = src/placement.rs | impl<'a> Placement<'a> {
 item = src/placement.rs | impl PlacedNames {

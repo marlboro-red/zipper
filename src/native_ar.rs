@@ -3,11 +3,11 @@
 //! `docs/reference/ar-reader.md` for what it accepts and restores.
 pub use crate::native_cpio::ReadOptions;
 use crate::native_cpio::tree::{self, BACKEND_HINT, MAX_ENTRIES, MAX_NAME};
-use crate::{BadField, Entry, Field, field_check};
+use crate::{BadField, Entry, Field, field_check, progress::Tracker};
 use anyhow::{Context, Result, ensure};
 use std::{
     fs::File,
-    io::{BufReader, Read, Seek, SeekFrom},
+    io::{BufReader, Read, Seek},
     path::Path,
 };
 
@@ -19,6 +19,7 @@ const COPY_BUFFER: usize = 1024 * 1024;
 const MAX_LONG_NAMES: u64 = 16 * 1024 * 1024;
 const DEBIAN_BINARY: &str = "debian-binary";
 const DEBIAN_DATA: &str = "data.tar.";
+const DEBIAN_PLAIN_DATA: &str = "data.tar";
 const SPECIAL_MEMBERS: [&[u8]; 3] = [b"/", b"/SYM64/", b"/<ECSYMBOLS>/"];
 const BSD_SYMBOL_TABLES: [&str; 4] = [
     "__.SYMDEF",
@@ -166,10 +167,17 @@ impl Members {
             .ok()
             .filter(|&start| start < table.len())
             .context("ar long name lies outside the long name table")?;
-        let end = table[start..]
+        let window = &table[start..table.len().min(start + MAX_NAME as usize + 2)];
+        let end = window
             .iter()
             .position(|&byte| byte == b'\n' || byte == 0)
-            .context("ar long name has no terminator")?;
+            .with_context(|| {
+                if window.len() < table.len() - start {
+                    format!("ar long name is longer than {MAX_NAME} bytes")
+                } else {
+                    "ar long name has no terminator".to_owned()
+                }
+            })?;
         let name = &table[start..start + end];
         Ok(name.strip_suffix(b"/").unwrap_or(name).to_vec())
     }
@@ -188,7 +196,7 @@ impl Members {
                 self.count <= MAX_ENTRIES,
                 "ar has more than {MAX_ENTRIES} members"
             );
-            self.reader.seek(SeekFrom::Start(self.next))?;
+            self.seek_to(self.next)?;
             let mut bytes = [0u8; HEADER];
             self.exact(&mut bytes, "header")?;
             let header = header(&bytes)?;
@@ -244,8 +252,16 @@ impl Members {
         }
     }
 
+    fn seek_to(&mut self, offset: u64) -> Result<()> {
+        let here = self.reader.stream_position()?;
+        let step = i64::try_from(i128::from(offset) - i128::from(here))
+            .context("ar member offset overflows")?;
+        self.reader.seek_relative(step)?;
+        Ok(())
+    }
+
     fn data(&mut self, member: &Member) -> Result<std::io::Take<&mut BufReader<File>>> {
-        self.reader.seek(SeekFrom::Start(member.data))?;
+        self.seek_to(member.data)?;
         Ok((&mut self.reader).take(member.size))
     }
 }
@@ -257,15 +273,17 @@ struct Package {
 
 // EXTERNAL(7-Zip ArHandler): a first member named `debian-binary`, without GNU's slash, makes a
 // Debian package. 7-Zip hides that member, and opens the one `data.tar.*` member when there is one.
-fn package(path: &Path) -> Result<Package> {
+fn package(path: &Path, tracker: &Tracker) -> Result<Package> {
     let mut members = Members::open(path)?;
     let mut debian = false;
     let mut data = Vec::new();
     let mut first = true;
     while let Some(member) = members.next()? {
+        tracker.check()?;
         debian |= first && member.name == DEBIAN_BINARY && !member.slashed;
         first = false;
-        if member.name.starts_with(DEBIAN_DATA) && data.len() < 2 {
+        let holds_data = member.name == DEBIAN_PLAIN_DATA || member.name.starts_with(DEBIAN_DATA);
+        if holds_data && data.len() < 2 {
             data.push(member);
         }
     }
@@ -281,25 +299,15 @@ fn extract_debian_data(
     destination: Option<&Path>,
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
-    crate::progress::Tracker::new(options.control, None, None).check()?;
-    let mut members = Members::open(path)?;
-    let mut copy = tempfile::Builder::new().prefix(".zipper-deb-").tempfile()?;
-    let copied = std::io::copy(&mut members.data(member)?, copy.as_file_mut())?;
-    ensure!(copied == member.size, "truncated ar member");
-    drop(members);
-    #[cfg(windows)]
-    if options.metadata.restores()
-        && let Some(mark) = crate::ntfs_streams::archive_mark(path)
-    {
-        crate::ntfs_streams::write_stream(copy.path(), "Zone.Identifier", &mark)?;
-    }
+    let data = crate::native_tar::Part::new(path, member.data, member.size);
     ensure!(
-        crate::native_tar::sniff(copy.path())?.is_some(),
+        crate::native_tar::sniff_part(&data)?.is_some(),
         "Debian package member {:?} holds no tar Zipper reads; {BACKEND_HINT}",
         member.name
     );
-    crate::native_tar::read_archive(
-        copy.path(),
+    crate::native_tar::read_part(
+        path,
+        &data,
         destination,
         crate::native_tar::ReadOptions {
             max_output_bytes: options.max_output_bytes,
@@ -344,7 +352,7 @@ pub fn read_archive(
     destination: Option<&Path>,
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
-    let package = package(path)?;
+    let package = package(path, &Tracker::new(options.control, None, None))?;
     if let Some(data) = &package.data {
         return extract_debian_data(path, data, destination, options);
     }

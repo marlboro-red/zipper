@@ -278,8 +278,76 @@ fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<(u64, u64)> {
 /// Returns the compression of a tar archive, or `None` when the file does not
 /// start with a tar header, plain or inside gzip, zstd or xz.
 pub fn sniff(path: &Path) -> Result<Option<Compression>> {
-    let compression = compression_by_signature(path)?;
-    let input = BufReader::new(crate::volumes::open(path)?.take(SNIFF_INPUT));
+    sniff_part(&Part::whole(path)?)
+}
+
+pub(crate) struct Part {
+    path: PathBuf,
+    start: u64,
+    length: u64,
+}
+
+impl Part {
+    pub(crate) fn new(path: &Path, start: u64, length: u64) -> Self {
+        Part {
+            path: path.to_owned(),
+            start,
+            length,
+        }
+    }
+
+    fn whole(path: &Path) -> Result<Self> {
+        Ok(Part::new(path, 0, crate::volumes::open(path)?.len()?))
+    }
+
+    fn open(&self) -> Result<PartReader> {
+        let mut file = crate::volumes::open(&self.path)?;
+        file.seek(SeekFrom::Start(self.start))?;
+        Ok(PartReader {
+            file,
+            start: self.start,
+            end: self.start.saturating_add(self.length),
+            position: self.start,
+        })
+    }
+}
+
+struct PartReader {
+    file: crate::volumes::ArchiveFile,
+    start: u64,
+    end: u64,
+    position: u64,
+}
+
+impl Read for PartReader {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.end.saturating_sub(self.position);
+        let want = buffer
+            .len()
+            .min(usize::try_from(left).unwrap_or(usize::MAX));
+        let read = self.file.read(&mut buffer[..want])?;
+        self.position += read as u64;
+        Ok(read)
+    }
+}
+
+impl Seek for PartReader {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        let target = match to {
+            SeekFrom::Start(offset) => self.start.checked_add(offset),
+            SeekFrom::Current(offset) => self.position.checked_add_signed(offset),
+            SeekFrom::End(offset) => self.end.checked_add_signed(offset),
+        }
+        .filter(|&target| target >= self.start)
+        .ok_or_else(|| std::io::Error::other("seek outside the tar"))?;
+        self.position = self.file.seek(SeekFrom::Start(target))?;
+        Ok(self.position - self.start)
+    }
+}
+
+pub(crate) fn sniff_part(part: &Part) -> Result<Option<Compression>> {
+    let compression = compression_of(&mut part.open()?)?;
+    let input = BufReader::new(part.open()?.take(SNIFF_INPUT));
     let Ok(mut stream) = decode(input, compression) else {
         return Ok(None);
     };
@@ -294,10 +362,13 @@ pub fn sniff(path: &Path) -> Result<Option<Compression>> {
 const SKIPPABLE_FRAMES_SNIFFED: usize = 16;
 
 pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
-    let mut file = crate::volumes::open(path)?;
+    compression_of(&mut crate::volumes::open(path)?)
+}
+
+fn compression_of(file: &mut (impl Read + Seek)) -> Result<Compression> {
     for skipped in 0..SKIPPABLE_FRAMES_SNIFFED {
         let mut magic = [0u8; 8];
-        let read = read_up_to(&mut file, &mut magic)?;
+        let read = read_up_to(file, &mut magic)?;
         let compression = match &magic[..read] {
             [0x1f, 0x8b, ..] => Compression::Gzip,
             [0x28, 0xb5, 0x2f, 0xfd, ..] => Compression::Zstd,
@@ -883,7 +954,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
         dots: usize,
         directory: bool,
         replaces: bool,
-    ) -> Result<Option<String>> {
+    ) -> Result<Option<(String, bool)>> {
         if !self.selection.selects(name) {
             return Ok(None);
         }
@@ -892,10 +963,12 @@ impl<'a, 'f> Extraction<'a, 'f> {
             return Ok(None);
         };
         self.placed_any = true;
-        if self.placement.strips() && !replaces {
-            self.placed.add(placed, directory)?;
-        }
-        Ok(Some(placed.to_owned()))
+        let replaces = if self.placement.strips() {
+            self.placed.add_entry(placed, directory, name)?
+        } else {
+            replaces
+        };
+        Ok(Some((placed.to_owned(), replaces)))
     }
 
     fn root(&self) -> Option<&'a Path> {
@@ -1100,7 +1173,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             _ if directory => {
                 ensure!(size == 0, "tar directory {name:?} has data");
                 let replaces = self.claim(&name, Node::Directory)?;
-                let Some(name) = self.place(&name, dots, true, replaces)? else {
+                let Some((name, _)) = self.place(&name, dots, true, replaces)? else {
                     return Ok(());
                 };
                 if self.output.is_some() {
@@ -1122,7 +1195,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             }
             b'0' | 0 | b'7' => {
                 let replaces = self.claim(&name, Node::File)?;
-                let Some(name) = self.place(&name, dots, false, replaces)? else {
+                let Some((name, replaces)) = self.place(&name, dots, false, replaces)? else {
                     return input.copy(size, |_| Ok(()));
                 };
                 self.write_file(input, &name, size, mode, modified, replaces)?;
@@ -1158,7 +1231,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
                     .place_after_dots(&target, target_dots)
                     .filter(|_| self.selection.selects(&target))
                     .map(str::to_owned);
-                let Some(name) = self.place(&name, dots, false, false)? else {
+                let Some((name, _)) = self.place(&name, dots, false, false)? else {
                     return Ok(());
                 };
                 let target = placed_target.with_context(|| {
@@ -1172,7 +1245,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
                 self.charge_name(raw_target.len())?;
                 self.claim(&name, Node::Symlink)?;
-                let Some(name) = self.place(&name, dots, false, false)? else {
+                let Some((name, _)) = self.place(&name, dots, false, false)? else {
                     return Ok(());
                 };
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
@@ -1256,7 +1329,16 @@ pub fn read_archive(
     destination: Option<&Path>,
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
-    let compression = sniff(path)?.context("not a tar archive")?;
+    read_part(path, &Part::whole(path)?, destination, options)
+}
+
+pub(crate) fn read_part(
+    path: &Path,
+    part: &Part,
+    destination: Option<&Path>,
+    options: ReadOptions,
+) -> Result<Vec<Entry>> {
+    let compression = sniff_part(part)?.context("not a tar archive")?;
     let staging = destination
         .map(|destination| {
             crate::staging::stage(path, destination, options.existing, options.metadata)
@@ -1277,7 +1359,10 @@ pub fn read_archive(
         estimate: 0,
     };
     let mut input = Input {
-        reader: decoder(path, compression)?,
+        reader: decode(
+            BufReader::with_capacity(COPY_BUFFER, part.open()?),
+            compression,
+        )?,
         buffer: vec![0; COPY_BUFFER],
     };
     let selection = || crate::Selection::new(options.paths, options.include, options.exclude);

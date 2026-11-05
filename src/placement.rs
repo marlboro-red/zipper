@@ -102,22 +102,50 @@ impl<'a> Placement<'a> {
     }
 }
 
+enum Placed {
+    Folder,
+    File { entry: Option<String> },
+}
+
 #[derive(Default)]
 pub(crate) struct PlacedNames {
-    kinds: HashMap<String, bool>,
+    kinds: HashMap<String, Placed>,
 }
 
 impl PlacedNames {
     pub(crate) fn add(&mut self, name: &str, directory: bool) -> Result<()> {
+        self.add_for(name, directory, None).map(|_| ())
+    }
+
+    pub(crate) fn add_entry(&mut self, name: &str, directory: bool, entry: &str) -> Result<bool> {
+        self.add_for(name, directory, Some(entry))
+    }
+
+    fn add_for(&mut self, name: &str, directory: bool, entry: Option<&str>) -> Result<bool> {
         for (slash, _) in name.match_indices('/') {
-            if self.kinds.insert(name[..slash].to_owned(), true) == Some(false) {
+            if let Some(Placed::File { .. }) =
+                self.kinds.insert(name[..slash].to_owned(), Placed::Folder)
+            {
                 bail!("stripping the path leaves a file where {name:?} needs a folder");
             }
         }
-        match self.kinds.insert(name.to_owned(), directory) {
-            Some(true) if directory => Ok(()),
+        match self.kinds.get(name) {
+            None => {
+                let placed = if directory {
+                    Placed::Folder
+                } else {
+                    Placed::File {
+                        entry: entry.map(str::to_owned),
+                    }
+                };
+                self.kinds.insert(name.to_owned(), placed);
+                Ok(false)
+            }
+            Some(Placed::Folder) if directory => Ok(true),
+            Some(Placed::File {
+                entry: Some(earlier),
+            }) if !directory && entry == Some(earlier.as_str()) => Ok(true),
             Some(_) => bail!("stripping the path leaves two entries at {name:?}"),
-            None => Ok(()),
         }
     }
 }
@@ -212,6 +240,39 @@ mod tests {
         assert_eq!(placement.place("a/b"), Some("b"));
         assert_eq!(placement.place("a"), None);
         assert_eq!(placement.place("ab/c"), None);
+    }
+
+    #[test]
+    fn a_file_lands_twice_at_one_path_only_when_one_archive_entry_repeats_there() {
+        let paths = names(2);
+        let mut checked = 0;
+        for first in &paths {
+            for second in &paths {
+                for (place_first, place_second) in [(first, first), (first, second)] {
+                    let mut placed = PlacedNames::default();
+                    assert!(!placed.add_entry(place_first, false, first).unwrap());
+                    let again = placed.add_entry(place_second, false, second);
+                    let same_spot = place_first == place_second;
+                    let under = place_second
+                        .strip_prefix(place_first.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+                        || place_first
+                            .strip_prefix(place_second.as_str())
+                            .is_some_and(|rest| rest.starts_with('/'));
+                    match (same_spot, first == second) {
+                        (true, true) => assert!(again.unwrap(), "{first} twice"),
+                        (true, false) => assert!(again.is_err(), "{first} then {second}"),
+                        _ if under => assert!(again.is_err(), "{first} then {second}"),
+                        _ => assert!(!again.unwrap(), "{first} then {second}"),
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        let mut anonymous = PlacedNames::default();
+        anonymous.add("a", false).unwrap();
+        assert!(anonymous.add("a", false).is_err());
+        assert!(checked > 100, "{checked}");
     }
 
     #[test]

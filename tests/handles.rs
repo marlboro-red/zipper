@@ -119,6 +119,36 @@ fn volumes(source: &Path, work: &Path) -> PathBuf {
     work.join(format!("{name}.001"))
 }
 
+fn debian_package(work: &Path) -> PathBuf {
+    let mut bytes = b"!<arch>\n".to_vec();
+    for (name, data) in [
+        ("debian-binary", b"2.0\n".to_vec()),
+        (
+            "data.tar.gz",
+            fs::read(data("parity/archives/tar.tar.gz")).unwrap(),
+        ),
+    ] {
+        bytes.extend_from_slice(
+            format!(
+                "{name:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`\n",
+                0,
+                0,
+                0,
+                100644,
+                data.len()
+            )
+            .as_bytes(),
+        );
+        bytes.extend_from_slice(&data);
+        if data.len() % 2 == 1 {
+            bytes.push(b'\n');
+        }
+    }
+    let path = work.join("package.deb");
+    fs::write(&path, bytes).unwrap();
+    path
+}
+
 fn damaged(source: &Path, work: &Path) -> PathBuf {
     let mut bytes = fs::read(source).unwrap();
     let early = if bytes.starts_with(b"7z\xBC\xAF") && bytes.len() > 4096 {
@@ -164,6 +194,13 @@ fn nothing_stays_open_after_any_extraction_returns() {
         ("tar.gz", data("parity/archives/tar.tar.gz"), Engine::Native),
         ("7z", data("parity/archives/7z.7z"), Engine::Native),
         ("gz", data("parity/archives/hello.txt.gz"), Engine::Native),
+        (
+            "cpio",
+            data("parity/archives/cpio-newc.cpio"),
+            Engine::Native,
+        ),
+        ("ar", data("parity/archives/ar.a"), Engine::Native),
+        ("deb", debian_package(work.path()), Engine::Native),
     ];
     if let Some(segments) = segmented_7z(work.path()) {
         cases.push((

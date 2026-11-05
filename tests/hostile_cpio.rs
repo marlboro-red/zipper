@@ -879,3 +879,29 @@ fn the_default_engine_routes_cpio_to_this_reader() {
         );
     }
 }
+
+#[test]
+fn hard_links_waiting_for_their_data_have_a_count_limit() {
+    let waiting: Vec<Member> = (0..100_001u64)
+        .map(|index| linked(&format!("{index:06}"), b"", index + 10, 2))
+        .collect();
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("waiting.cpio");
+    fs::write(&archive, newc(&waiting)).unwrap();
+    let error = format!(
+        "{:#}",
+        read_archive(&archive, None, ReadOptions::default()).unwrap_err()
+    );
+    assert!(error.contains("hard links"), "{error}");
+    let resolved: Vec<Member> = (0..100_001u64)
+        .flat_map(|index| {
+            [
+                linked(&format!("{index:06}a"), b"", index + 10, 2),
+                linked(&format!("{index:06}b"), b"x", index + 10, 2),
+            ]
+        })
+        .collect();
+    fs::write(&archive, newc(&resolved)).unwrap();
+    let entries = read_archive(&archive, None, ReadOptions::default()).unwrap();
+    assert_eq!(entries.len(), 200_002);
+}

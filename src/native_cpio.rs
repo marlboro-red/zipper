@@ -26,6 +26,7 @@ const BINARY_HEADER: usize = 26;
 const ODC_HEADER: usize = 76;
 const NEWC_HEADER: usize = 110;
 const LONGEST_HEADER: usize = NEWC_HEADER;
+const MAX_LINK_RECORDS: usize = 100_000;
 // SPEC(cpio(5) Portable ASCII Format): device, inode, mode, owner, group, links, rdev, mtime, name size, file size.
 const ODC_FIELDS: [(usize, usize); 10] = [
     (6, 12),
@@ -352,41 +353,108 @@ struct Deferred {
     modified: Option<SystemTime>,
 }
 
+struct Group {
+    first_seen: usize,
+    names_left: u64,
+    waiting: Vec<Deferred>,
+    written: Option<String>,
+}
+
 #[derive(Default)]
 struct HardLinks {
-    order: Vec<Inode>,
-    waiting: HashMap<Inode, Vec<Deferred>>,
-    written: HashMap<Inode, String>,
+    groups: HashMap<Inode, Group>,
+    records: usize,
+    seen: usize,
 }
 
 impl HardLinks {
-    fn defer(&mut self, tree: &mut tree::Tree, inode: Inode, entry: Deferred) -> Result<()> {
-        if let Some(target) = self.written.get(&inode) {
-            return tree.hard_link(&entry.name, target);
+    fn group(&mut self, inode: Inode, links: u64) -> Result<&mut Group> {
+        self.seen += 1;
+        if !self.groups.contains_key(&inode) {
+            self.records += 1;
         }
-        tree.charge_name(entry.name.len())?;
-        let waiting = self.waiting.entry(inode).or_default();
-        if waiting.is_empty() {
-            self.order.push(inode);
+        ensure!(
+            self.records <= MAX_LINK_RECORDS,
+            "cpio has more than {MAX_LINK_RECORDS} hard links and linked files to keep track of"
+        );
+        let first_seen = self.seen;
+        let group = self.groups.entry(inode).or_insert(Group {
+            first_seen,
+            names_left: links,
+            waiting: Vec::new(),
+            written: None,
+        });
+        group.names_left = group.names_left.saturating_sub(1);
+        Ok(group)
+    }
+
+    fn forget_if_complete(&mut self, inode: Inode) {
+        let complete = self
+            .groups
+            .get(&inode)
+            .is_some_and(|group| group.names_left == 0 && group.written.is_some());
+        if complete && let Some(group) = self.groups.remove(&inode) {
+            self.records -= 1 + group.waiting.len();
         }
-        waiting.push(entry);
+    }
+
+    fn defer(
+        &mut self,
+        tree: &mut tree::Tree,
+        inode: Inode,
+        links: u64,
+        entry: Deferred,
+    ) -> Result<()> {
+        let group = self.group(inode, links)?;
+        if let Some(target) = &group.written {
+            let target = target.clone();
+            tree.hard_link(&entry.name, &target)?;
+        } else {
+            tree.charge_name(entry.name.len())?;
+            group.waiting.push(entry);
+            self.records += 1;
+            ensure!(
+                self.records <= MAX_LINK_RECORDS,
+                "cpio has more than {MAX_LINK_RECORDS} hard links and linked files to keep track of"
+            );
+        }
+        self.forget_if_complete(inode);
         Ok(())
     }
 
-    fn written(&mut self, tree: &mut tree::Tree, inode: Inode, name: &str) -> Result<()> {
-        for entry in self.waiting.remove(&inode).unwrap_or_default() {
+    fn written(
+        &mut self,
+        tree: &mut tree::Tree,
+        inode: Inode,
+        links: u64,
+        name: &str,
+    ) -> Result<()> {
+        let group = self.group(inode, links)?;
+        let waiting = std::mem::take(&mut group.waiting);
+        let first = group.written.is_none();
+        if first {
+            group.written = Some(name.to_owned());
+        }
+        self.records -= waiting.len();
+        if first {
+            tree.charge_name(name.len())?;
+        }
+        for entry in waiting {
             tree.hard_link(&entry.name, name)?;
         }
-        if let std::collections::hash_map::Entry::Vacant(slot) = self.written.entry(inode) {
-            tree.charge_name(name.len())?;
-            slot.insert(name.to_owned());
-        }
+        self.forget_if_complete(inode);
         Ok(())
     }
 
-    fn finish(mut self, tree: &mut tree::Tree) -> Result<()> {
-        for inode in std::mem::take(&mut self.order) {
-            let mut entries = self.waiting.remove(&inode).unwrap_or_default().into_iter();
+    fn finish(self, tree: &mut tree::Tree) -> Result<()> {
+        let mut unwritten: Vec<Group> = self
+            .groups
+            .into_values()
+            .filter(|group| group.written.is_none())
+            .collect();
+        unwritten.sort_by_key(|group| group.first_seen);
+        for group in unwritten {
+            let mut entries = group.waiting.into_iter();
             let Some(first) = entries.next() else {
                 continue;
             };
@@ -432,7 +500,7 @@ fn entry(
                 mode,
                 modified,
             };
-            links.defer(tree, header.inode, deferred)
+            links.defer(tree, header.inode, header.links, deferred)
         }
         REGULAR => {
             let mut data = Summed {
@@ -447,7 +515,7 @@ fn entry(
                 );
             }
             if matches!(form, Form::Newc { .. }) && header.links > 1 {
-                links.written(tree, header.inode, name)?;
+                links.written(tree, header.inode, header.links, name)?;
             }
             Ok(())
         }
@@ -725,7 +793,7 @@ pub(crate) mod tree {
             dots: usize,
             directory: bool,
             replaces: bool,
-        ) -> Result<Option<String>> {
+        ) -> Result<Option<(String, bool)>> {
             if !self.selection.selects(name) {
                 return Ok(None);
             }
@@ -734,10 +802,12 @@ pub(crate) mod tree {
                 return Ok(None);
             };
             self.placed_any = true;
-            if self.placement.strips() && !replaces {
-                self.placed.add(placed, directory)?;
-            }
-            Ok(Some(placed.to_owned()))
+            let replaces = if self.placement.strips() {
+                self.placed.add_entry(placed, directory, name)?
+            } else {
+                replaces
+            };
+            Ok(Some((placed.to_owned(), replaces)))
         }
 
         fn insert_node(&mut self, name: &str, node: Node) -> Result<Option<Node>> {
@@ -828,7 +898,7 @@ pub(crate) mod tree {
             safe_path(name)?;
             let name = name.to_owned();
             let replaces = self.claim(&name, Node::Directory)?;
-            let Some(placed) = self.place(&name, dots, true, replaces)? else {
+            let Some((placed, _)) = self.place(&name, dots, true, replaces)? else {
                 return Ok(());
             };
             if self.root.is_some() {
@@ -866,7 +936,7 @@ pub(crate) mod tree {
             let (name, dots) = checked_name(raw)?;
             let mode = self.metadata.file_mode(Some(mode)).unwrap_or(mode);
             let replaces = self.claim(&name, Node::File)?;
-            let Some(placed) = self.place(&name, dots, false, replaces)? else {
+            let Some((placed, replaces)) = self.place(&name, dots, false, replaces)? else {
                 return self.copy(data, size, false, |_| Ok(()));
             };
             self.budget.charge(size)?;
@@ -912,7 +982,7 @@ pub(crate) mod tree {
             crate::ensure_link_stays_inside(self.format, &name, &target)?;
             self.charge_name(target.len())?;
             self.claim(&name, Node::Symlink)?;
-            let Some(placed) = self.place(&name, dots, false, false)? else {
+            let Some((placed, _)) = self.place(&name, dots, false, false)? else {
                 return Ok(());
             };
             crate::ensure_link_stays_inside(self.format, &placed, &target)?;
@@ -947,7 +1017,7 @@ pub(crate) mod tree {
                 .place_after_dots(&target, target_dots)
                 .filter(|_| self.selection.selects(&target))
                 .map(str::to_owned);
-            let Some(placed) = self.place(&name, dots, false, false)? else {
+            let Some((placed, _)) = self.place(&name, dots, false, false)? else {
                 return Ok(());
             };
             let target = placed_target.with_context(|| {
