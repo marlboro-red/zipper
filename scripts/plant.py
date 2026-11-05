@@ -13,8 +13,17 @@ binary built with the break survives to be measured or shipped.
 
 Exit status 0 means caught, 1 missed, 2 a plant that did not apply or a
 check that could not start. Pass the check as separate words; zsh does not
-split an unquoted $var, so write ${=var}."""
+split an unquoted $var, so write ${=var}.
+
+A termination signal restores the file before the script exits. For a kill
+that cannot be caught, the original bytes wait in target/plant-journal/
+until the file is restored, the gate's verify step fails while any are there,
+and `plant.py --restore` writes them back."""
 import argparse
+import base64
+import hashlib
+import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -23,10 +32,30 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
+JOURNAL = Path(os.environ.get("PLANT_JOURNAL", ROOT / "target" / "plant-journal"))
+
+
+def journal_entries():
+    return sorted(JOURNAL.glob("*.json")) if JOURNAL.is_dir() else []
+
+
+def restore_interrupted():
+    for entry in journal_entries():
+        record = json.loads(entry.read_text())
+        Path(record["path"]).write_bytes(base64.b64decode(record["original"]))
+        entry.unlink()
+        print(f"plant: restored {record['path']}")
+
+
+def unwind_on_signal(number, _frame):
+    raise SystemExit(f"plant: stopped by signal {number}")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    if sys.argv[1:] == ["--restore"]:
+        restore_interrupted()
+        return
     parser.add_argument("file", type=Path)
     parser.add_argument("--old", required=True)
     parser.add_argument("--new", required=True)
@@ -46,6 +75,15 @@ def main():
         sys.exit(2)
     if hasattr(signal, "SIGPIPE"):
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), unwind_on_signal)
+    interrupted = journal_entries()
+    if interrupted:
+        names = ", ".join(json.loads(entry.read_text())["path"] for entry in interrupted)
+        print(f"plant: an interrupted plant left {names} planted; run `python3 scripts/plant.py --restore`",
+              file=sys.stderr)
+        sys.exit(2)
     path = args.file.resolve()
     original = path.read_bytes()
     text = original.decode()
@@ -54,6 +92,9 @@ def main():
         print(f"plant: NOT APPLIED, the old text occurs {count} times in {args.file}", file=sys.stderr)
         sys.exit(2)
     not_started = False
+    JOURNAL.mkdir(parents=True, exist_ok=True)
+    entry = JOURNAL / f"{hashlib.sha256(str(path).encode()).hexdigest()[:16]}.json"
+    entry.write_text(json.dumps({"path": str(path), "original": base64.b64encode(original).decode()}))
     try:
         path.write_text(text.replace(args.old, args.new))
         try:
@@ -68,6 +109,8 @@ def main():
             status = f"timed out after {args.timeout:.0f} s"
     finally:
         path.write_bytes(original)
+        if path.read_bytes() == original:
+            entry.unlink(missing_ok=True)
     if path.read_bytes() != original:
         print(f"plant: {args.file} was not restored", file=sys.stderr)
         sys.exit(2)

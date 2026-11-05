@@ -138,7 +138,24 @@ fn fingerprint(root: &Path, verification: &Verification) -> Result<String> {
     Ok(format!("{hash:016x}"))
 }
 
+fn fail_on_interrupted_plants(root: &Path) -> Result<()> {
+    let journal = root.join("target/plant-journal");
+    let mut left = Vec::new();
+    if journal.is_dir() {
+        for entry in fs::read_dir(&journal)? {
+            left.push(entry?.path().display().to_string());
+        }
+    }
+    ensure!(
+        left.is_empty(),
+        "an interrupted scripts/plant.py may have left a break in the code ({}); run `python3 scripts/plant.py --restore`",
+        left.join(", ")
+    );
+    Ok(())
+}
+
 pub fn fail_on_stale_fingerprints(root: &Path) -> Result<()> {
+    fail_on_interrupted_plants(root)?;
     fail_on_unclassified_sources(root)?;
     let mut stale = Vec::new();
     for verification in manifest(root)? {
