@@ -21,7 +21,7 @@ It has these fields. A missing field means none.
 ## Rules
 
 1. Work only in your worktree, on your branch. Commit there with messages that follow `AGENTS.md`. Never push, never run `cargo xtask ship`, and never touch `main`, other branches or GitHub.
-2. Never run a benchmark or a timed comparison, and never state a speed. Other agents share this machine, so every timing is noise. Name the measurement the coordinator should run instead.
+2. Never run a benchmark or a timed comparison, and never state a speed. Other agents share this machine, so every timing is noise. Name the measurement the coordinator should run instead. Peak memory is not a timing: when your change reads archive metadata, compare it with the old code's peak on archives whose metadata fills the documented limits, using `/usr/bin/time -l`, and report both.
 3. Write each test before its fix and run it to see it fail. Prefer an oracle over hand-written expectations: liblzma, the `zip` crate, 7-Zip or a byte-at-a-time reference.
 4. Prove each new check can fail with `scripts/plant.py`, and confirm the planted edit applied. If it reports an interrupted plant, run `python3 scripts/plant.py --restore` and check `git diff` before anything else.
 5. When you change code listed in `verification/coverage.txt`, follow its skill and run its model or proof before `cargo xtask verify-sync`. Never sync a check you did not run on the exact code you commit.

@@ -101,3 +101,31 @@ def verify(source, restored, expected):
                 if not original:
                     break
     return verified
+
+
+BUSY_PERCENT = 25
+# The measured tools and this harness itself; builds, Kani and TLC from other sessions count as load.
+MEASURING = ('claude', 'python', 'zipper', 'bsdtar', 'tar', '7zz', '7z', 'sh', 'ps')
+
+
+def busy_processes():
+    """Other processes whose recent CPU share would slow the measured runs."""
+    if platform.system() == "Windows":
+        return []
+    listing = subprocess.run(["ps", "-Ao", "pcpu=,comm="], capture_output=True, text=True, check=True).stdout
+    busy = []
+    for line in listing.splitlines():
+        share, _, command = line.strip().partition(" ")
+        name = os.path.basename(command.strip()).lower()
+        if float(share) >= BUSY_PERCENT and not name.startswith(MEASURING):
+            busy.append(f"{share}% {command.strip()}")
+    return busy
+
+
+def refuse_when_busy(allowed):
+    """Stop before timing anything while another process loads the machine."""
+    busy = busy_processes()
+    if busy and not allowed:
+        raise SystemExit(f"other processes use {BUSY_PERCENT}% CPU or more; stop them or pass --allow-busy:\n"
+                         + "\n".join(busy))
+    return busy

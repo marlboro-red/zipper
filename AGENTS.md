@@ -35,7 +35,8 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 - Keep formal checks in step with their code. The gate's `verify` step fails when code listed in `verification/coverage.txt` changed since its check last passed. Follow the named `zipper-verify-*` skill, then run `cargo xtask verify-sync NAME`.
 - Copy every commit hash you cite from `git log --oneline`. The `commit-msg` hook and `cargo xtask lint-commits` in pre-push reject a hash that names no commit.
 - Delete only inside the session scratch directory or `target/`. The hook in `.claude/hooks/guard_destructive.py` blocks `rm -r` or `rm -f` anywhere else, an unguarded variable in an `rm` path, `git clean -f` and `git worktree remove --force`. Use a fresh `mktemp -d` folder per run and `${NAME:?}` in any path built from a variable.
-- Run benchmarks on Unix. The benchmarks are Unix-oriented.
+- Run benchmarks on Unix. The benchmarks are Unix-oriented. `scripts/compare_zip_readers.py`, `scripts/codec_scoreboard.py` and `scripts/scoreboard.py` refuse to time while another process, such as a build, Kani or TLC, uses 25% CPU or more.
+- The shell is zsh. It does not split an unquoted `$var` into words, so write `${=var}`, and it expands an unquoted `*` itself, so quote globs such as `--include='*.rs'`. macOS has no `timeout` command. A loop over a variable that fails this way runs nothing and can look like it passed.
 - Never edit `docs/results.md`. `cargo xtask bench` measures the fixed workloads and regenerates it, and the gate fails when it differs from `benchmarks/scoreboard/`.
 
 ## Comments

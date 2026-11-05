@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 from process_metrics import timed
-from bench_common import inventory, verify
+from bench_common import inventory, refuse_when_busy, verify
 
 
 def main():
@@ -36,7 +36,9 @@ def main():
     parser.add_argument("--operation", choices=["extract", "list", "test"], default="extract")
     parser.add_argument("--cooldown", type=float, default=0, help="untimed seconds after cleanup, 0..10")
     parser.add_argument("--work-dir", type=Path, help="parent for restored trees; the system temp folder by default")
+    parser.add_argument("--allow-busy", action="store_true", help="for trials; the JSON lists the busy processes")
     args = parser.parse_args()
+    busy = refuse_when_busy(args.allow_busy)
     if args.runs < 1 or not 1 <= args.threads <= 64 or not 0 <= args.cooldown <= 10:
         parser.error("positive runs and threads 1..64 required")
     readers = {}
@@ -73,6 +75,7 @@ def main():
         "source": source.name, "input_bytes": total,
         "archive_bytes": archive.stat().st_size, "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "readers": readers, "verification": "direct bytes, file sizes and tree membership", "errors": 0,
+        "busy_processes": busy,
         "load_average_start": (os.getloadavg() if hasattr(os, "getloadavg") else None)}
     samples = {label: [] for label in readers}
     order = []

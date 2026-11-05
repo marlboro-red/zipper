@@ -17,6 +17,7 @@ The author always finds a reason the code is safe. A reviewer who has not seen t
 
 ## Checklist for a hostile archive
 
+- **Memory against the old code.** On archives whose names, extra fields, comments or entry counts fill the documented limits, peak memory with `/usr/bin/time -l` is no higher than the code it replaces. Two parser changes in M22 regressed here, and only a review caught each.
 - **Sizes.** Decoded length is checked against the declared size during decoding, not after. A declared size of zero still gets a CRC check. Allocation sizes never come straight from the archive.
 - **Counts.** Entry counts and central-directory size stay under the documented limits before allocation.
 - **Budgets.** Every allocation the archive controls is charged to a documented limit, including derived ones such as implied parent directories, link targets and work queued for other threads. Ask the reviewer for peak memory at 1 and 64 threads on a slow destination.

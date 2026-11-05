@@ -14,6 +14,8 @@ import sys
 
 from extraction_matrix import write_zip
 
+from bench_common import refuse_when_busy
+
 ROOT = Path(__file__).resolve().parent.parent
 SCOREBOARD = ROOT / 'benchmarks' / 'scoreboard'
 RESULTS = ROOT / 'docs' / 'results.md'
@@ -119,32 +121,11 @@ def dirty_paths():
             if not line[3:].startswith(('benchmarks/scoreboard/', 'docs/results.md'))]
 
 
-BUSY_PERCENT = 25
-OWN_PROCESSES = ('claude', 'python', 'cargo', 'rustc', 'zipper', 'bsdtar', 'tar', '7zz', '7z', 'ps')
-
-
-def busy_processes():
-    """Other processes whose recent CPU share would slow the measured runs."""
-    if platform.system() == 'Windows':
-        return []
-    listing = subprocess.run(['ps', '-Ao', 'pcpu=,comm='], capture_output=True, text=True, check=True).stdout
-    busy = []
-    for line in listing.splitlines():
-        share, _, command = line.strip().partition(' ')
-        name = os.path.basename(command.strip()).lower()
-        if float(share) >= BUSY_PERCENT and not name.startswith(OWN_PROCESSES):
-            busy.append(f'{share}% {command.strip()}')
-    return busy
-
-
 def run(args):
     dirty = dirty_paths()
     if dirty and not args.allow_dirty:
         sys.exit('commit first; the scoreboard names the measured revision:\n' + '\n'.join(dirty))
-    busy = busy_processes()
-    if busy and not args.allow_busy:
-        sys.exit(f'other processes use {BUSY_PERCENT}% CPU or more; stop them or pass --allow-busy:\n'
-                 + '\n'.join(busy))
+    busy = refuse_when_busy(args.allow_busy)
     zipper = ROOT / 'target' / 'release' / ('zipper.exe' if platform.system() == 'Windows' else 'zipper')
     names = args.only or list(WORKLOADS)
     if args.counters_only:

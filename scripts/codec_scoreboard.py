@@ -121,8 +121,10 @@ def run(args):
         readers = ["--reader", "zipper", "native", str(args.zipper)]
         if mode:
             readers += ["--reader", tool, mode, str(Path(subprocess.check_output(["which", tool], text=True).strip()))]
+        busy = ["--allow-busy"] if args.allow_busy else []
         result = subprocess.run([sys.executable, "scripts/compare_zip_readers.py", str(archive), str(source),
-                                 "--archive-format", container, "--runs", str(args.runs), "--threads", "1", *readers],
+                                 "--archive-format", container, "--runs", str(args.runs), "--threads", "1", *readers,
+                                 *busy],
                                 capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
         data["codec"] = name
@@ -148,6 +150,7 @@ def main():
     ran.add_argument("--out", type=Path, default=Path("benchmarks/scoreboard/codecs"))
     ran.add_argument("--only", nargs="*")
     ran.add_argument("--allow-dirty", action="store_true", help="for trials; the JSON records tree_clean false")
+    ran.add_argument("--allow-busy", action="store_true", help="for trials; each JSON lists the busy processes")
     args = parser.parse_args()
     if args.command == "build":
         build(args.out)
