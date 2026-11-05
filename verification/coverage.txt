@@ -47,7 +47,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 3c76d6a628751c17
+fingerprint = 141783358afa9ce3
 full-check = python3 scripts/check_model.py verification/progress-callback MCCallback.tla:callback.cfg
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
@@ -74,7 +74,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = 4470790ab129bcb4
+fingerprint = 9355fe56ca7f5df0
 full-check = python3 scripts/check_model.py verification/zip-decoder-budget MCZip.tla:zip.cfg
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
@@ -282,7 +282,7 @@ item = src/lzma.rs | fn finish_stream<
 
 [zip-crypto]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = fcf178691d04b90f
+fingerprint = d885f551d731e9c3
 full-check = cargo kani --harness zip_crypto::proofs::
 full-check = cargo test --release --lib zip_crypto
 full-check = cargo test --release --test encrypted_zip
@@ -299,6 +299,8 @@ item = src/zip_crypto.rs | pub(crate) fn aes_field(
 item = src/zip_crypto.rs | impl Encryption {
 item = src/zip_crypto.rs | impl AesStream {
 item = src/zip_crypto.rs | impl Decryptor {
+item = src/zip_crypto.rs | const SCRUBBED_STACK:
+item = src/zip_crypto.rs | pub(crate) fn scrub_stack(
 item = src/zip_crypto.rs | const ZIP_CRYPTO_KEYS:
 item = src/zip_crypto.rs | const ZIP_CRYPTO_MULTIPLIER:
 item = src/zip_crypto.rs | impl Keys {

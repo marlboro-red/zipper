@@ -183,7 +183,9 @@ fn every_parity_archive_extracts_as_its_row_says() {
             (Expect::Native, _) => {
                 let run = zipper(
                     Some("native"),
-                    corpus["password"].as_str(),
+                    corpus["password"]
+                        .as_str()
+                        .filter(|_| name.ends_with(".zip")),
                     &archive,
                     &output,
                 );

@@ -129,7 +129,7 @@ pub(crate) struct WrongPassword;
 pub(crate) struct Decryptor(Cipher);
 
 enum Cipher {
-    ZipCrypto(Keys),
+    ZipCrypto(Box<Keys>),
     Aes(Box<AesCipher>),
 }
 
@@ -168,6 +168,7 @@ impl AesStream {
 }
 
 impl Decryptor {
+    #[inline(never)]
     pub(crate) fn start(
         encryption: Encryption,
         password: &[u8],
@@ -219,12 +220,21 @@ impl Decryptor {
         }
     }
 
-    pub(crate) fn authenticates(self, stored: &[u8; AES_CODE]) -> bool {
-        match self.0 {
+    pub(crate) fn authenticates(&self, stored: &[u8; AES_CODE]) -> bool {
+        match &self.0 {
             Cipher::ZipCrypto(_) => true,
-            Cipher::Aes(aes) => aes.code.verify_truncated_left(stored).is_ok(),
+            Cipher::Aes(aes) => aes.code.clone().verify_truncated_left(stored).is_ok(),
         }
     }
+}
+
+const SCRUBBED_STACK: usize = 64 * 1024;
+
+#[inline(never)]
+pub(crate) fn scrub_stack() {
+    let mut area = [0u8; SCRUBBED_STACK];
+    area.zeroize();
+    std::hint::black_box(&area);
 }
 
 type KeyState = [u32; 3];
@@ -236,8 +246,8 @@ struct Keys(KeyState);
 
 // SPEC(APPNOTE 6.1.4): the keys start fixed and take in the password, then each plain byte.
 impl Keys {
-    fn new(password: &[u8]) -> Self {
-        let mut keys = Self(ZIP_CRYPTO_KEYS);
+    fn new(password: &[u8]) -> Box<Self> {
+        let mut keys = Box::new(Self(ZIP_CRYPTO_KEYS));
         for &byte in password {
             keys.update(byte);
         }

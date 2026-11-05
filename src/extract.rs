@@ -112,8 +112,9 @@ pub struct ExtractOptions<'a> {
     /// An archive with links is refused.
     pub flat: bool,
     /// Password for ZipCrypto and WinZip AES entries in a ZIP read in
-    /// process. An encrypted entry without it fails with
-    /// [`crate::native_zip::PasswordNeeded`]. The 7-Zip backend refuses it.
+    /// process. A selected encrypted entry without it fails with
+    /// [`crate::native_zip::PasswordNeeded`]. The tar, 7z and single-file
+    /// readers and the 7-Zip backend refuse it.
     pub password: Option<&'a [u8]>,
 }
 
@@ -201,6 +202,11 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
     );
     crate::progress::Tracker::new(options.control, None, None).check()?;
     let reader = choose_reader(options.engine, archive)?;
+    ensure!(
+        options.password.is_none() || matches!(reader, Reader::Zip { .. } | Reader::Backend { .. }),
+        "--password applies only to ZIP archives, and Zipper does not decrypt {}",
+        archive.display()
+    );
     match reader {
         Reader::Zip { fast } => {
             native_zip::read_archive_with_options(

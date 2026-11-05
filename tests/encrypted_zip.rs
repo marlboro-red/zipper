@@ -290,7 +290,7 @@ fn assert_fails_cleanly(zip: &[u8], password: Option<&[u8]>, case: &str) -> Vec<
 fn assert_says_wrong_password(errors: &[String], case: &str) {
     for error in errors {
         assert!(
-            error.contains("wrong password"),
+            error.contains("password is wrong"),
             "{case}: the error does not say the password is wrong: {error}"
         );
     }
@@ -380,7 +380,7 @@ fn integrity_checks_need_and_use_the_password() {
         };
         assert!(read(Some(PASSWORD)).is_ok(), "{name}");
         let error = read(Some(WRONG)).unwrap_err();
-        assert!(format!("{error:?}").contains("wrong password"), "{name}");
+        assert!(format!("{error:?}").contains("password is wrong"), "{name}");
         assert!(read(None).unwrap_err().is::<PasswordNeeded>(), "{name}");
         let listed = zipper::native_zip::list(&archive).unwrap();
         assert!(listed.iter().any(|entry| entry.name == "sub/text.txt"));
@@ -399,6 +399,81 @@ fn a_wrong_password_changes_nothing_for_every_scheme() {
                 "{name}: the error shows the password"
             );
         }
+    }
+}
+
+#[test]
+fn a_destination_that_cannot_be_used_fails_before_the_password_is_asked_for() {
+    let work = tempfile::tempdir().unwrap();
+    let taken = work.path().join("taken");
+    fs::create_dir(&taken).unwrap();
+    fs::write(taken.join("keep.txt"), b"kept").unwrap();
+    for engine in ENGINES {
+        let error = extract(
+            &fixture("tiny-aes128.zip"),
+            &taken,
+            engine,
+            None,
+            Existing::Refuse,
+            &[],
+        )
+        .unwrap_err();
+        assert!(!error.is::<PasswordNeeded>(), "{engine:?}: {error:?}");
+        assert_eq!(listing(&taken), ["keep.txt"]);
+    }
+    let run = zipper_command(&[
+        "extract",
+        fixture("tiny-aes128.zip").to_str().unwrap(),
+        "-o",
+        taken.to_str().unwrap(),
+    ]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(!run.status.success());
+    assert!(!stderr.contains("encrypted"), "{stderr}");
+}
+
+#[test]
+fn a_password_for_an_archive_zipper_does_not_decrypt_is_refused() {
+    let work = tempfile::tempdir().unwrap();
+    let source = work.path().join("source");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("a.txt"), b"a").unwrap();
+    let tar = work.path().join("plain.tar");
+    let made = Command::new("tar")
+        .arg("-cf")
+        .arg(&tar)
+        .arg("-C")
+        .arg(&source)
+        .arg("a.txt")
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let output = work.path().join("out");
+    let error = zipper::extract_archive(
+        &tar,
+        &output,
+        ExtractOptions {
+            password: Some(PASSWORD),
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(format!("{error}").contains("--password"), "{error:?}");
+    assert!(!output.exists());
+    for command in [
+        vec![
+            "--password",
+            "zipper",
+            "extract",
+            tar.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ],
+        vec!["--password", "zipper", "test", tar.to_str().unwrap()],
+    ] {
+        let run = zipper_command(&command);
+        assert!(!run.status.success(), "{command:?}");
+        assert!(String::from_utf8_lossy(&run.stderr).contains("--password"));
     }
 }
 
@@ -497,7 +572,7 @@ fn a_wrong_zip_crypto_password_that_passes_the_check_byte_is_stopped_by_the_crc(
             )
             .unwrap_err();
             let error = format!("{error:?}");
-            assert!(error.contains("wrong password"), "{name}: {error}");
+            assert!(error.contains("password is wrong"), "{name}: {error}");
             assert!(
                 error.contains("CRC") || error.contains("invalid") || error.contains("size"),
                 "{name}: the check byte passed, so the data check must refuse it: {error}"
@@ -525,7 +600,10 @@ fn a_wrong_aes_password_that_passes_the_verifier_is_stopped_by_the_authenticatio
         let errors = assert_fails_cleanly(&zip, Some(WRONG), name);
         assert_says_wrong_password(&errors, name);
         for error in &errors {
-            assert!(error.contains("authentication code"), "{name}: {error}");
+            assert!(
+                error.contains("authentication code") && error.contains("is damaged"),
+                "{name}: {error}"
+            );
         }
     }
 }
@@ -798,7 +876,7 @@ fn aes_fields_that_lie_are_refused() {
         if authentic_but_misread.contains(&case) {
             for error in errors {
                 assert!(
-                    !error.contains("wrong password"),
+                    !error.contains("password is wrong"),
                     "{case}: the authentication code holds, so the password is right: {error}"
                 );
             }
@@ -909,6 +987,80 @@ fn selections_that_leave_out_every_encrypted_entry_need_no_password() {
     }
 }
 
+#[cfg(unix)]
+const PTY_DRIVER: &str = r#"
+import os, pty, select, sys, time
+zipper, archive, output, typed = sys.argv[1], sys.argv[2], sys.argv[3], bytes.fromhex(sys.argv[4])
+pid, terminal = pty.fork()
+if pid == 0:
+    os.execv("/bin/sh", ["sh", "-c",
+        f"trap 'echo TRAPPED' INT; '{zipper}' extract '{archive}' -o '{output}'; echo RC=$?; stty -a"])
+seen = b""
+def read_until(token, seconds):
+    global seen
+    deadline = time.time() + seconds
+    while token not in seen and time.time() < deadline:
+        ready, _, _ = select.select([terminal], [], [], 0.2)
+        if ready:
+            try:
+                seen += os.read(terminal, 4096)
+            except OSError:
+                break
+read_until(b"Password: ", 20)
+time.sleep(0.3)
+os.write(terminal, typed)
+read_until(b"speed", 20)
+read_until(b"\x00never", 1)
+sys.stdout.write(seen.decode(errors="replace"))
+"#;
+
+#[cfg(unix)]
+fn at_the_prompt(typed: &[u8], output: &Path) -> String {
+    let hex: String = typed.iter().map(|byte| format!("{byte:02x}")).collect();
+    let run = Command::new("python3")
+        .arg("-I")
+        .arg("-c")
+        .arg(PTY_DRIVER)
+        .arg(env!("CARGO_BIN_EXE_zipper"))
+        .arg(fixture("aes128-deflate.zip"))
+        .arg(output)
+        .arg(hex)
+        .output()
+        .expect("python3 drives the terminal");
+    String::from_utf8_lossy(&run.stdout).into_owned()
+}
+
+#[cfg(unix)]
+#[test]
+fn the_password_prompt_restores_the_terminal_on_every_exit() {
+    let cases: [(&str, &[u8], &str); 5] = [
+        ("Ctrl-C", b"abc\x03", "RC=130"),
+        ("Ctrl-D", b"\x04", "RC=1"),
+        ("a wrong password", b"nope\r", "RC=1"),
+        ("a corrected password", b"zipz\x7fper\n", "RC=0"),
+        ("Ctrl-Z", b"zip\x1aper\r", "RC=0"),
+    ];
+    for (case, typed, exit) in cases {
+        let work = tempfile::tempdir().unwrap();
+        let output = work.path().join("out");
+        let transcript = at_the_prompt(typed, &output);
+        let words: Vec<&str> = transcript.split_whitespace().collect();
+        assert!(words.contains(&exit), "{case}: {transcript}");
+        for setting in ["echo", "icanon", "isig"] {
+            assert!(
+                words.contains(&setting) && !words.contains(&format!("-{setting}").as_str()),
+                "{case}: the terminal kept {setting} off: {transcript}"
+            );
+        }
+        assert!(!transcript.contains("TRAPPED"), "{case}: {transcript}");
+        assert!(
+            !transcript.contains("nope") && !transcript.contains("zipper\r"),
+            "{case}: echoed"
+        );
+        assert_eq!(output.exists(), exit == "RC=0", "{case}");
+    }
+}
+
 fn zipper_command(arguments: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_zipper"))
         .args(arguments)
@@ -947,9 +1099,13 @@ fn the_command_line_takes_a_password_and_refuses_to_ask_without_a_terminal() {
         "{stderr}"
     );
     let secret = "Never-Show-This-Password";
+    let hyphenated = "--Never-Show-This-Password";
     for command in [
         vec!["--password", secret, "extract", archive, "-o", missing],
         vec!["--password", secret, "test", archive],
+        vec!["--password", hyphenated, "extract", archive, "-o", missing],
+        vec!["extract", archive, "-o", missing, "--password", hyphenated],
+        vec!["test", "--password", "-x", archive],
     ] {
         let run = zipper_command(&command);
         let output = format!(
@@ -958,7 +1114,7 @@ fn the_command_line_takes_a_password_and_refuses_to_ask_without_a_terminal() {
             String::from_utf8_lossy(&run.stderr)
         );
         assert!(!run.status.success());
-        assert!(output.contains("wrong password"), "{output}");
+        assert!(output.contains("password is wrong"), "{output}");
         assert!(
             !output.contains(secret),
             "the password appears in the output"

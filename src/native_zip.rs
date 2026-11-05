@@ -1257,7 +1257,7 @@ impl<R: Read> Read for Payload<R> {
 
 fn wrong_password(item: &Item) -> anyhow::Error {
     anyhow::anyhow!(
-        "wrong password for encrypted ZIP entry {:?}",
+        "the password is wrong for encrypted ZIP entry {:?}",
         item.entry.name
     )
 }
@@ -1283,8 +1283,9 @@ impl<R: Read> Payload<R> {
         record
             .read_exact(header)
             .context("truncated ZIP encryption header")?;
-        let decryptor = Decryptor::start(encryption, password, header, local.zip_crypto_check)
-            .map_err(|_| wrong_password(item))?;
+        let started = Decryptor::start(encryption, password, header, local.zip_crypto_check);
+        crate::zip_crypto::scrub_stack();
+        let decryptor = started.map_err(|_| wrong_password(item))?;
         Ok(Self {
             data: record.take(item.packed()),
             decryptor: Some(decryptor),
@@ -1292,6 +1293,22 @@ impl<R: Read> Payload<R> {
     }
 
     fn stream(
+        self,
+        item: &Item,
+        descriptor: bool,
+        buffer: &mut [u8],
+        sink: impl FnMut(&[u8]) -> Result<()>,
+    ) -> Result<()> {
+        let encrypted = self.decryptor.is_some();
+        let streamed = self.decrypt_and_check(item, descriptor, buffer, sink);
+        if encrypted {
+            crate::zip_crypto::scrub_stack();
+        }
+        streamed
+    }
+
+    #[inline(never)]
+    fn decrypt_and_check(
         mut self,
         item: &Item,
         descriptor: bool,
@@ -1317,15 +1334,16 @@ impl<R: Read> Payload<R> {
                 .take()
                 .expect("an encrypted entry has a decryptor");
             if !decryptor.authenticates(&code) {
-                return Err(
-                    wrong_password(item).context("the AES authentication code does not match")
-                );
+                return Err(anyhow::anyhow!(
+                    "the password is wrong or ZIP entry {:?} is damaged: its AES authentication code does not match",
+                    item.entry.name
+                ));
             }
             return streamed;
         }
         streamed.map_err(|error| {
             error.context(format!(
-                "wrong password for encrypted ZIP entry {:?}, or the entry is damaged",
+                "the password is wrong or ZIP entry {:?} is damaged",
                 item.entry.name
             ))
         })
@@ -1503,14 +1521,6 @@ pub fn read_archive_with_options(
         check_local_header(&mut headers, item)?;
     }
     let items = selected;
-    if options.password.is_none()
-        && let Some(item) = items.iter().find(|item| item.encryption.is_some())
-    {
-        return Err(PasswordNeeded {
-            entry: item.entry.name.clone(),
-        }
-        .into());
-    }
     let tracker = crate::progress::Tracker::new(
         options.control,
         Some(items.iter().filter(|item| !item.entry.directory).count() as u64),
@@ -1537,6 +1547,14 @@ pub fn read_archive_with_options(
         }
         None => None,
     };
+    if options.password.is_none()
+        && let Some(item) = items.iter().find(|item| item.encryption.is_some())
+    {
+        return Err(PasswordNeeded {
+            entry: item.entry.name.clone(),
+        }
+        .into());
+    }
     if let Some(temp) = &staging {
         create_directories_in_archive_order(temp.path(), &items)?;
     }

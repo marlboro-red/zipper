@@ -192,22 +192,6 @@ zipper test files.zip
 
 If the archive uses another compression method, PKWARE strong encryption or more than one disk, the error says so. To read it with 7-Zip, pass `--zip-engine backend`. Zipper never makes that switch itself, because 7-Zip accepts some archives the in-process reader rejects as unsafe.
 
-### Extract an encrypted ZIP
-
-Zipper decrypts ZipCrypto and WinZip AES entries in process. Run `extract` or `test` as usual. When a selected entry is encrypted, Zipper asks for the password on the terminal with echo off:
-
-```sh
-zipper extract secret.zip -o restored
-```
-
-To give the password without a prompt, as a script must, pass `--password`. Other users on the machine can read it in the process list:
-
-```sh
-zipper --password 'correct horse' extract secret.zip -o restored
-```
-
-When standard input is not a terminal and no password was given, Zipper refuses. A wrong password fails before anything is published, and the error says the password is wrong. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. The 7-Zip backend refuses `--password`. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
-
 Pick the engine by workload:
 
 - For many tiny files, prefer the streaming `native` reader. Buffered Deflate often adds no benefit when file creation dominates.
@@ -217,6 +201,24 @@ Pick the engine by workload:
 
 The default is `native` because it uses little memory. On the [scoreboard](results.md), its peak stays under 9 MiB, while `native-fast` reaches 187 MiB on Silesia. `native-fast` is at most 1.10× faster on every other workload, and 1.32× faster on Silesia at one thread.
 The [ZIP reader reference](reference/zip-reader.md) lists supported features, limits, budgets, and caching rules.
+
+### Extract an encrypted ZIP
+
+Zipper decrypts ZipCrypto and WinZip AES entries in process. Run `extract` or `test` as usual. When a selected entry is encrypted and the destination can be used, Zipper asks for the password on the terminal with echo off:
+
+```sh
+zipper extract secret.zip -o restored
+```
+
+At the prompt, Backspace deletes a character and Ctrl-U clears the line. Ctrl-C cancels with exit status 130, and Ctrl-D on an empty line cancels too. Either way the terminal is restored.
+
+To give the password without a prompt, as a script must, pass `--password`. Other users on the machine can read it in the process list:
+
+```sh
+zipper --password 'correct horse' extract secret.zip -o restored
+```
+
+When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so pass `--password` there. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper refuses `--password` for archives it does not decrypt, such as tar and 7z, and the 7-Zip backend refuses it too. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
 
 ## Read tar archives in process
 

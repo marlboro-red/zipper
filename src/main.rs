@@ -23,7 +23,12 @@ struct Cli {
     /// Password for encrypted ZIP entries. Other users can see it in the process list.
     /// Without it, Zipper asks on Unix when a selected entry is encrypted and standard
     /// input is a terminal, and fails otherwise.
-    #[arg(long, global = true, value_name = "PASSWORD")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "PASSWORD",
+        allow_hyphen_values = true
+    )]
     password: Option<String>,
     #[command(subcommand)]
     command: Command,
@@ -148,14 +153,32 @@ fn with_password<T>(
         std::io::stdin().is_terminal(),
         "{needed}; standard input is not a terminal, so Zipper cannot ask for it"
     );
-    let asked = ask_password()?;
+    let asked = match ask_password()? {
+        Typed::Password(password) => password,
+        Typed::Interrupt => {
+            eprintln!("Error: the password prompt was interrupted");
+            std::process::exit(INTERRUPTED);
+        }
+        Typed::EndOfInput => anyhow::bail!("{needed}; no password was typed"),
+    };
     run(Some(&asked))
 }
 
 const LONGEST_PASSWORD: usize = 1024;
+const INTERRUPTED: i32 = 130;
+
+#[cfg_attr(
+    not(unix),
+    expect(dead_code, reason = "only Unix asks for a password on a terminal")
+)]
+enum Typed {
+    Password(Zeroizing<Vec<u8>>),
+    Interrupt,
+    EndOfInput,
+}
 
 #[cfg(unix)]
-fn ask_password() -> Result<Zeroizing<Vec<u8>>> {
+fn ask_password() -> Result<Typed> {
     use std::io::Write;
     let mut terminal = std::fs::OpenOptions::new()
         .read(true)
@@ -163,12 +186,15 @@ fn ask_password() -> Result<Zeroizing<Vec<u8>>> {
         .open("/dev/tty")?;
     let saved = stty(&terminal, &["-g"])?;
     terminal.write_all(b"Password: ")?;
-    stty(&terminal, &["-echo"])?;
-    let password = read_line(&mut terminal);
+    let typed = stty(
+        &terminal,
+        &["-echo", "-icanon", "-isig", "min", "1", "time", "0"],
+    )
+    .and_then(|_| read_password(&mut terminal));
     let restored = stty(&terminal, &[saved.trim()]);
     terminal.write_all(b"\n")?;
     restored?;
-    password
+    typed
 }
 
 #[cfg(unix)]
@@ -186,25 +212,47 @@ fn stty(terminal: &std::fs::File, arguments: &[&str]) -> Result<String> {
 }
 
 #[cfg(unix)]
-fn read_line(terminal: &mut std::fs::File) -> Result<Zeroizing<Vec<u8>>> {
+const CONTROL_C: u8 = 0x03;
+#[cfg(unix)]
+const CONTROL_D: u8 = 0x04;
+#[cfg(unix)]
+const BACKSPACE: u8 = 0x08;
+#[cfg(unix)]
+const CONTROL_U: u8 = 0x15;
+#[cfg(unix)]
+const DELETE: u8 = 0x7f;
+
+#[cfg(unix)]
+fn read_password(terminal: &mut std::fs::File) -> Result<Typed> {
     use std::io::Read;
     let mut password = Zeroizing::new(Vec::with_capacity(LONGEST_PASSWORD));
     let mut byte = Zeroizing::new([0u8; 1]);
-    while terminal.read(&mut byte[..])? == 1 && byte[0] != b'\n' {
-        anyhow::ensure!(
-            password.len() < LONGEST_PASSWORD,
-            "the password is longer than {LONGEST_PASSWORD} bytes"
-        );
-        password.push(byte[0]);
+    loop {
+        if terminal.read(&mut byte[..])? == 0 {
+            return Ok(Typed::EndOfInput);
+        }
+        match byte[0] {
+            b'\n' | b'\r' => return Ok(Typed::Password(password)),
+            CONTROL_C => return Ok(Typed::Interrupt),
+            CONTROL_D if password.is_empty() => return Ok(Typed::EndOfInput),
+            BACKSPACE | DELETE => {
+                password.pop();
+            }
+            CONTROL_U => password.clear(),
+            control if control < b' ' => {}
+            typed => {
+                anyhow::ensure!(
+                    password.len() < LONGEST_PASSWORD,
+                    "the password is longer than {LONGEST_PASSWORD} bytes"
+                );
+                password.push(typed);
+            }
+        }
     }
-    if password.last() == Some(&b'\r') {
-        password.pop();
-    }
-    Ok(password)
 }
 
 #[cfg(not(unix))]
-fn ask_password() -> Result<Zeroizing<Vec<u8>>> {
+fn ask_password() -> Result<Typed> {
     anyhow::bail!(
         "Zipper cannot ask for a password on this system; pass --password (at most {LONGEST_PASSWORD} bytes)"
     )
@@ -375,7 +423,13 @@ fn main() -> Result<()> {
         Command::Test { archive } => {
             let report =
                 |entries: Vec<zipper::Entry>| println!("Verified {} entries", entries.len());
-            match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
+            let reader = zipper::choose_reader(cli.zip_engine.into(), &archive)?;
+            anyhow::ensure!(
+                password.is_none() || matches!(reader, Reader::Zip { .. }),
+                "--password applies only to ZIP archives, and Zipper does not decrypt {}",
+                archive.display()
+            );
+            match reader {
                 Reader::Zip { fast } => report(with_password(password, |password| {
                     zipper::native_zip::read_archive_with_options(
                         &archive,

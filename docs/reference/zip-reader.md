@@ -78,7 +78,7 @@ Links are created after every file is written, so no file is written through a l
 
 ## Encrypted entries
 
-The reader decrypts ZipCrypto and WinZip AES entries in process when it has the password. Pass `--password`, or set `password` in `ExtractOptions` or `native_zip::ReadOptions`. When a selected entry is encrypted and no password was given, the reader fails with `native_zip::PasswordNeeded` before it creates anything. On a terminal the command line then asks for the password with echo off and tries again. When standard input is not a terminal, it refuses. `list` needs no password.
+The reader decrypts ZipCrypto and WinZip AES entries in process when it has the password. Pass `--password`, or set `password` in `ExtractOptions` or `native_zip::ReadOptions`. When a selected entry is encrypted and no password was given, the reader fails with `native_zip::PasswordNeeded`. It checks the destination first, so a destination it cannot use fails with that error instead, and it writes no entry before it fails. On Unix, when standard input is a terminal, the command line then asks for the password and tries again. Otherwise it refuses. `list` needs no password. `--password` with an archive Zipper does not decrypt, such as a tar or 7z archive, fails instead of being ignored.
 
 ZipCrypto is the traditional PKWARE cipher from APPNOTE section 6.1. It is weak. A known-plaintext attack recovers its keys, so it protects nothing against a determined attacker. Zipper reads it only so that old archives open. Each entry starts with a 12-byte header whose last byte, once decrypted, must match a check byte. Without a data descriptor the check byte is the high byte of the CRC. With one it is the high byte of the DOS time, as Info-ZIP writes. A wrong password passes the check byte 1 time in 256, so the CRC of the decoded data is the real test.
 
@@ -95,9 +95,17 @@ The reader refuses these encrypted entries:
 
 7-Zip 26.05 extracts an entry whose AES field is longer than 7 bytes, has vendor version 3, appears twice, or is missing or different in the local header. Zipper refuses these, because readers that trust different copies of the field can decrypt one entry in different ways.
 
-A wrong password fails the extraction before anything is published, and the error says the password is wrong. When the ZipCrypto check byte passes but the data does not decode or its CRC differs, the error says the password is wrong or the entry is damaged. Decrypted bytes can reach the private staging folder before the CRC or the authentication code is checked, but the staging folder is removed and the destination keeps its contents.
+A wrong password fails the extraction before anything is published. When the ZipCrypto check byte or the AES verifier fails, the error says the password is wrong. When either passes but the data does not decode, its CRC differs or the AES code does not match, the error says the password is wrong or the entry is damaged. Decrypted bytes can reach the private staging folder before the CRC or the authentication code is checked, but the staging folder is removed and the destination keeps its contents.
 
-Zipper keeps no copy of the password. The ZipCrypto keys, the PBKDF2 output, the AES key schedule and the HMAC state are zeroed when each entry ends. The command line reads a typed password from the terminal one byte at a time into a buffer that is zeroed on exit. A password given with `--password` stays visible to other users in the process list, and its copy in the process arguments cannot be cleared. Errors and progress reports never contain the password.
+The library keeps no copy of the password. The keys live in one heap allocation per entry, and these are zeroed when the entry ends:
+
+- The ZipCrypto keys.
+- The PBKDF2 output.
+- The AES key schedule and the HMAC-SHA1 state.
+
+Building and using them leaves copies on the worker's stack, so after key setup and again after each encrypted entry the reader overwrites 64 KiB of the stack below its own frame. Core dumps were taken while the rest of the archive was still extracting, on both engines and at 1 to 8 threads. They held none of the AES-256 round keys, the HMAC inner and outer states, the HMAC key or the PBKDF2 output. That is a check of this build on macOS, not a guarantee. A compiler that inlines differently or spills to another place could leave a copy the overwrite misses.
+
+The command line holds the password in a buffer that is zeroed on exit. A typed password is read from the terminal one byte at a time. A password given with `--password` stays in the process arguments, where other users can see it and Zipper cannot clear it, and argument parsing may leave copies in freed memory. Errors and progress reports never contain the password, and `--password` takes values that start with a hyphen, so they never reach a usage error.
 
 The header fields of an entry are not covered by the AES code. Suppose someone changes the method of an AE-2 entry to one whose output has the same size, such as stored instead of Deflate when the two sizes match. The entry then decodes without error to the wrong bytes, as in 7-Zip. AE-1 and ZipCrypto entries catch it with the CRC.
 
