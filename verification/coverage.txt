@@ -108,7 +108,7 @@ item = src/native_7z.rs | impl SegmentThread {
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 85aecacf55826008
+fingerprint = 7326861c0e89df17
 full-check = cargo kani
 item = src/native_7z.rs | struct Malformed {
 item = src/native_7z.rs | fn check(
