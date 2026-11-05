@@ -16,6 +16,7 @@ const INPUT_CHUNK: usize = 64 * 1024;
 const SYMBOL_INPUT_MAX: usize = 64;
 const DICTIONARY_MIN: usize = 4096;
 const OUTPUT_CHUNK: usize = 64 * 1024;
+const COPY_CHUNK: usize = 16;
 
 fn data_error(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
@@ -275,6 +276,7 @@ impl LengthDecoder {
 
 struct Window {
     buffer: Vec<u8>,
+    size: usize,
     position: usize,
     full: bool,
     total: u64,
@@ -284,7 +286,8 @@ struct Window {
 impl Window {
     fn new(size: usize) -> Self {
         Window {
-            buffer: vec![0; size.max(1)],
+            buffer: vec![0; size.max(1) + 2 * COPY_CHUNK],
+            size: size.max(1) + COPY_CHUNK,
             position: 0,
             full: false,
             total: 0,
@@ -298,7 +301,7 @@ impl Window {
         self.last = byte;
         self.position += 1;
         self.total += 1;
-        if self.position == self.buffer.len() {
+        if self.position == self.size {
             self.position = 0;
             self.full = true;
         }
@@ -309,17 +312,29 @@ impl Window {
         let index = if distance <= self.position {
             self.position - distance
         } else {
-            self.buffer.len() + self.position - distance
+            self.size + self.position - distance
         };
         self.buffer[index]
     }
 
     fn reaches(&self, distance: usize) -> bool {
-        distance <= self.position || (self.full && distance <= self.buffer.len())
+        distance <= self.position || (self.full && distance <= self.size - COPY_CHUNK)
+    }
+
+    #[inline(always)]
+    fn copy_in_chunks(&mut self, source: usize, run: usize) {
+        let mut done = 0;
+        while done < run {
+            let from = source + done;
+            let to = self.position + done;
+            let chunk: [u8; COPY_CHUNK] = self.buffer[from..from + COPY_CHUNK].try_into().unwrap();
+            self.buffer[to..to + COPY_CHUNK].copy_from_slice(&chunk);
+            done += COPY_CHUNK;
+        }
     }
 
     fn copy(&mut self, distance: usize, length: usize) {
-        let size = self.buffer.len();
+        let size = self.size;
         let mut left = length;
         while left > 0 {
             let source = if distance <= self.position {
@@ -327,11 +342,15 @@ impl Window {
             } else {
                 size + self.position - distance
             };
-            let run = left
-                .min(distance)
-                .min(size - self.position)
-                .min(size - source);
-            self.buffer.copy_within(source..source + run, self.position);
+            let run = left.min(size - self.position).min(size - source);
+            let run = if distance >= COPY_CHUNK {
+                self.copy_in_chunks(source, run);
+                run
+            } else {
+                let run = run.min(distance);
+                self.buffer.copy_within(source..source + run, self.position);
+                run
+            };
             self.position += run;
             self.last = self.buffer[self.position - 1];
             self.total += run as u64;
@@ -626,7 +645,7 @@ impl<R: Read> Read for RawLzmaReader<R> {
             self.started = true;
         }
         if self.output_start == self.window.total {
-            let step = OUTPUT_CHUNK.min(buffer.len()).min(self.window.buffer.len()) as u64;
+            let step = OUTPUT_CHUNK.min(buffer.len()).min(self.window.size) as u64;
             let limit = self
                 .window
                 .total
@@ -648,7 +667,7 @@ impl<R: Read> Read for RawLzmaReader<R> {
         }
         let available = (self.window.total - self.output_start) as usize;
         let count = available.min(buffer.len());
-        let length = self.window.buffer.len();
+        let length = self.window.size;
         let first = (self.window.position + length - available) % length;
         let before_wrap = count.min(length - first);
         buffer[..before_wrap].copy_from_slice(&self.window.buffer[first..first + before_wrap]);
@@ -753,6 +772,61 @@ mod tests {
             }
         }
         assert!(checked > 2000, "{checked}");
+    }
+
+    #[test]
+    fn chunked_match_copy_matches_a_byte_at_a_time_copy_in_every_window_state() {
+        let mut checked = 0u64;
+        for history in [16, 17, 31, 33] {
+            let mut start = Window::new(history);
+            for (index, byte) in start.buffer.iter_mut().enumerate() {
+                *byte = index as u8;
+            }
+            for position in 0..start.size {
+                for full in [false, true] {
+                    let window = Window {
+                        buffer: start.buffer.clone(),
+                        position,
+                        full,
+                        ..start
+                    };
+                    assert_eq!(window.reaches(history), full || history <= position);
+                    for distance in (1..=history).filter(|&distance| window.reaches(distance)) {
+                        for length in 0..=2 * history + COPY_CHUNK {
+                            let mut chunked = Window {
+                                buffer: window.buffer.clone(),
+                                ..window
+                            };
+                            let mut reference = Window {
+                                buffer: window.buffer.clone(),
+                                ..window
+                            };
+                            chunked.copy(distance, length);
+                            for _ in 0..length {
+                                let byte = reference.back(distance);
+                                reference.put(byte);
+                            }
+                            assert_eq!(
+                                (chunked.position, chunked.total, chunked.full),
+                                (reference.position, reference.total, reference.full)
+                            );
+                            if length > 0 {
+                                assert_eq!(chunked.last, reference.last);
+                            }
+                            for back in (1..=history).filter(|&back| reference.reaches(back)) {
+                                assert_eq!(
+                                    chunked.back(back),
+                                    reference.back(back),
+                                    "history {history} position {position} full {full} distance {distance} length {length} back {back}"
+                                );
+                            }
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 100_000, "{checked}");
     }
 
     #[test]
