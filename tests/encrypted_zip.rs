@@ -988,77 +988,315 @@ fn selections_that_leave_out_every_encrypted_entry_need_no_password() {
 }
 
 #[cfg(unix)]
+type TerminalCase = (&'static str, Vec<(&'static str, String)>, &'static str);
+
+#[cfg(unix)]
 const PTY_DRIVER: &str = r#"
-import os, pty, select, sys, time
-zipper, archive, output, typed = sys.argv[1], sys.argv[2], sys.argv[3], bytes.fromhex(sys.argv[4])
+import json, os, pty, select, signal, subprocess, sys, time
+script, steps = sys.argv[1], json.loads(sys.argv[2])
 pid, terminal = pty.fork()
 if pid == 0:
-    os.execv("/bin/sh", ["sh", "-c",
-        f"trap 'echo TRAPPED' INT; '{zipper}' extract '{archive}' -o '{output}'; echo RC=$?; stty -a"])
+    os.execv("/bin/bash", ["bash", "-c", script])
 seen = b""
-def read_until(token, seconds):
+def pump(seconds, token=None):
     global seen
     deadline = time.time() + seconds
-    while token not in seen and time.time() < deadline:
-        ready, _, _ = select.select([terminal], [], [], 0.2)
+    while time.time() < deadline and (token is None or token not in seen):
+        ready, _, _ = select.select([terminal], [], [], 0.05)
         if ready:
             try:
-                seen += os.read(terminal, 4096)
+                data = os.read(terminal, 65536)
             except OSError:
-                break
-read_until(b"Password: ", 20)
-time.sleep(0.3)
-os.write(terminal, typed)
-read_until(b"speed", 20)
-read_until(b"\x00never", 1)
-sys.stdout.write(seen.decode(errors="replace"))
+                return
+            if not data:
+                return
+            seen += data
+for kind, value in steps:
+    if kind == "wait":
+        pump(20, value.encode())
+    elif kind == "send":
+        os.write(terminal, bytes.fromhex(value))
+    elif kind == "file":
+        os.write(terminal, open(value, "rb").read())
+    elif kind == "sleep":
+        pump(float(value))
+    elif kind == "signal":
+        children = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True)
+        for child in children.stdout.split():
+            os.kill(int(child), getattr(signal, value))
+pump(20, b"LEFT=")
+pump(0.3)
+sys.stdout.write(seen.decode("latin1"))
+deadline = time.time() + 10
+while os.waitpid(pid, os.WNOHANG)[0] == 0:
+    if time.time() > deadline:
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+        os.waitpid(pid, 0)
+        sys.stdout.write("STILL RUNNING")
+        break
+    time.sleep(0.05)
 "#;
 
 #[cfg(unix)]
-fn at_the_prompt(typed: &[u8], output: &Path) -> String {
-    let hex: String = typed.iter().map(|byte| format!("{byte:02x}")).collect();
+fn on_a_terminal(command: &str, steps: &[(&str, String)]) -> String {
+    let script =
+        format!("{command}; echo RC=$?; stty -a; IFS= read -t 2 -r rest; echo \"LEFT=[$rest]\"");
+    let steps = serde_json::to_string(steps).unwrap();
     let run = Command::new("python3")
         .arg("-I")
         .arg("-c")
         .arg(PTY_DRIVER)
-        .arg(env!("CARGO_BIN_EXE_zipper"))
-        .arg(fixture("aes128-deflate.zip"))
-        .arg(output)
-        .arg(hex)
+        .arg(script)
+        .arg(steps)
         .output()
         .expect("python3 drives the terminal");
-    String::from_utf8_lossy(&run.stdout).into_owned()
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    )
+}
+
+#[cfg(unix)]
+fn shell_quoted(path: &Path) -> String {
+    format!("'{}'", path.display())
+}
+
+#[cfg(unix)]
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(unix)]
+fn assert_terminal_restored(case: &str, transcript: &str) {
+    let words: Vec<&str> = transcript.split_whitespace().collect();
+    for setting in ["echo", "icanon", "isig"] {
+        assert!(
+            words.contains(&setting) && !words.contains(&format!("-{setting}").as_str()),
+            "{case}: the terminal kept {setting} off: {transcript}"
+        );
+    }
+    assert!(
+        transcript.contains("LEFT=[]"),
+        "{case}: typed input reached the shell: {transcript}"
+    );
+}
+
+#[cfg(unix)]
+fn zip_crypto_stored(name: &'static str, password: &[u8], data: &[u8]) -> Vec<u8> {
+    let crc = crc32fast::hash(data);
+    let mut plain = vec![0x5a; 11];
+    plain.push((crc >> 24) as u8);
+    plain.extend_from_slice(data);
+    let mut keys = [0x1234_5678u32, 0x2345_6789, 0x3456_7890];
+    let step = |crc: u32, byte: u8| {
+        let mut crc = crc ^ u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+        crc
+    };
+    let update = |keys: &mut [u32; 3], byte: u8| {
+        keys[0] = step(keys[0], byte);
+        keys[1] = keys[1]
+            .wrapping_add(keys[0] & 0xff)
+            .wrapping_mul(134_775_813)
+            .wrapping_add(1);
+        keys[2] = step(keys[2], (keys[1] >> 24) as u8);
+    };
+    for &byte in password {
+        update(&mut keys, byte);
+    }
+    let payload = plain
+        .iter()
+        .map(|&byte| {
+            let temp = (keys[2] | 2) & 0xffff;
+            let cipher = byte ^ ((temp * (temp ^ 1)) >> 8) as u8;
+            update(&mut keys, byte);
+            cipher
+        })
+        .collect();
+    build(&[Built {
+        name,
+        flags: 1,
+        method: 0,
+        crc,
+        size: data.len() as u32,
+        payload,
+        local_extra: Vec::new(),
+        central_extra: Vec::new(),
+    }])
 }
 
 #[cfg(unix)]
 #[test]
-fn the_password_prompt_restores_the_terminal_on_every_exit() {
-    let cases: [(&str, &[u8], &str); 5] = [
-        ("Ctrl-C", b"abc\x03", "RC=130"),
-        ("Ctrl-D", b"\x04", "RC=1"),
-        ("a wrong password", b"nope\r", "RC=1"),
-        ("a corrected password", b"zipz\x7fper\n", "RC=0"),
-        ("Ctrl-Z", b"zip\x1aper\r", "RC=0"),
+fn the_password_prompt_restores_the_terminal_and_drops_unread_input_on_every_exit() {
+    let send = |bytes: &[u8]| ("send", hex(bytes));
+    let wait = ("wait", "Password: ".to_owned());
+    let pause = |_: ()| ("sleep", "0.4".to_owned());
+    let long = [vec![b'L'; 1030], b"LEAKEDTAIL\n".to_vec()].concat();
+    let cases: Vec<TerminalCase> = vec![
+        ("Ctrl-C", vec![wait.clone(), send(b"abc\x03")], "RC=130"),
+        (
+            "Ctrl-C, then more pasted input",
+            vec![wait.clone(), send(b"abc\x03SECRETTAIL\n")],
+            "RC=130",
+        ),
+        ("Ctrl-D", vec![wait.clone(), send(b"\x04")], "RC=1"),
+        (
+            "a password that is too long",
+            vec![wait.clone(), send(&long)],
+            "RC=1",
+        ),
+        (
+            "a wrong password",
+            vec![wait.clone(), send(b"nope\r")],
+            "RC=1",
+        ),
+        (
+            "a corrected password",
+            vec![wait.clone(), send(b"zipz\x7fper\n")],
+            "RC=0",
+        ),
+        (
+            "a password typed the moment the prompt shows",
+            vec![wait.clone(), send(b"zipper"), pause(()), send(b"\n")],
+            "RC=0",
+        ),
     ];
-    for (case, typed, exit) in cases {
+    let signals: Vec<TerminalCase> = [
+        ("SIGTERM", "RC=143"),
+        ("SIGHUP", "RC=129"),
+        ("SIGQUIT", "RC=131"),
+        ("SIGINT", "RC=130"),
+    ]
+    .into_iter()
+    .map(|(signal, exit)| {
+        (
+            signal,
+            vec![
+                wait.clone(),
+                send(b"abc"),
+                pause(()),
+                ("signal", signal.to_owned()),
+                pause(()),
+            ],
+            exit,
+        )
+    })
+    .collect();
+    for (case, steps, exit) in cases.into_iter().chain(signals) {
         let work = tempfile::tempdir().unwrap();
         let output = work.path().join("out");
-        let transcript = at_the_prompt(typed, &output);
-        let words: Vec<&str> = transcript.split_whitespace().collect();
-        assert!(words.contains(&exit), "{case}: {transcript}");
-        for setting in ["echo", "icanon", "isig"] {
+        let command = format!(
+            "{} extract {} -o {}",
+            shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+            shell_quoted(&fixture("aes128-deflate.zip")),
+            shell_quoted(&output)
+        );
+        let transcript = on_a_terminal(&command, &steps);
+        assert!(transcript.contains(exit), "{case}: {transcript}");
+        assert_terminal_restored(case, &transcript);
+        for hidden in [
+            "abc",
+            "nope",
+            "zipper\r",
+            "SECRETTAIL",
+            "LEAKEDTAIL",
+            "zipz",
+        ] {
             assert!(
-                words.contains(&setting) && !words.contains(&format!("-{setting}").as_str()),
-                "{case}: the terminal kept {setting} off: {transcript}"
+                !transcript.contains(hidden),
+                "{case}: {hidden} was shown: {transcript}"
             );
         }
-        assert!(!transcript.contains("TRAPPED"), "{case}: {transcript}");
-        assert!(
-            !transcript.contains("nope") && !transcript.contains("zipper\r"),
-            "{case}: echoed"
-        );
         assert_eq!(output.exists(), exit == "RC=0", "{case}");
+        assert_eq!(
+            listing(work.path()).len(),
+            usize::from(exit == "RC=0"),
+            "{case}"
+        );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn every_typed_byte_but_the_editing_keys_is_part_of_the_password() {
+    let wait = ("wait", "Password: ".to_owned());
+    for (password, typed) in [
+        (&b"a\tb"[..], &b"a\tb\n"[..]),
+        (b"a\x1b[x", b"a\x1b[x\n"),
+        (b"ax", "a\u{e9}\x7fx\n".as_bytes()),
+        ("a\u{e9}".as_bytes(), "ab\x7f\u{e9}\r".as_bytes()),
+        (b"kept", b"gone\x15kept\n"),
+    ] {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join("typed.zip");
+        fs::write(
+            &archive,
+            zip_crypto_stored("typed.txt", password, b"typed\n"),
+        )
+        .unwrap();
+        let output = work.path().join("out");
+        let command = format!(
+            "{} extract {} -o {}",
+            shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+            shell_quoted(&archive),
+            shell_quoted(&output)
+        );
+        let transcript = on_a_terminal(&command, &[wait.clone(), ("send", hex(typed))]);
+        assert!(transcript.contains("RC=0"), "{typed:?}: {transcript}");
+        assert_eq!(fs::read(output.join("typed.txt")).unwrap(), b"typed\n");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_interrupted_prompt_leaves_no_temporary_folder_or_spool() {
+    let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
+    let work = tempfile::tempdir().unwrap();
+    let temporary = work.path().join("tmp");
+    fs::create_dir(&temporary).unwrap();
+    let command = format!(
+        "TMPDIR={} {zipper} extract {} --stdout",
+        shell_quoted(&temporary),
+        shell_quoted(&fixture("tiny-aes128.zip"))
+    );
+    let steps = [("wait", "Password: ".to_owned()), ("send", hex(b"\x03"))];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=130"), "{transcript}");
+    assert_eq!(
+        listing(&temporary),
+        Vec::<String>::new(),
+        "--stdout: {transcript}"
+    );
+
+    let spooled = work.path().join("spooled");
+    fs::create_dir(&spooled).unwrap();
+    let command = format!(
+        "stty raw -echo min 0 time 20; {zipper} extract -o {} -",
+        shell_quoted(&spooled.join("out"))
+    );
+    let steps = [
+        ("sleep", "0.5".to_owned()),
+        (
+            "file",
+            fixture("tiny-aes128.zip").to_string_lossy().into_owned(),
+        ),
+        ("wait", "Password: ".to_owned()),
+        ("send", hex(b"\x03")),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=130"), "{transcript}");
+    assert_eq!(
+        listing(&spooled),
+        Vec::<String>::new(),
+        "archive -: {transcript}"
+    );
 }
 
 fn zipper_command(arguments: &[&str]) -> std::process::Output {
@@ -1292,4 +1530,19 @@ fn write_fixtures() {
         serde_json::to_string_pretty(&trees).unwrap() + "\n",
     )
     .unwrap();
+}
+
+#[test]
+fn commands_that_decrypt_nothing_refuse_a_password() {
+    let archive = fixture("tiny-aes128.zip");
+    for command in [
+        vec!["--password", "zipper", "list", archive.to_str().unwrap()],
+        vec!["--password", "zipper", "duplicates", DATA],
+    ] {
+        let run = zipper_command(&command);
+        assert!(!run.status.success(), "{command:?}");
+        assert!(String::from_utf8_lossy(&run.stderr).contains("--password"));
+    }
+    let run = zipper_command(&["list", archive.to_str().unwrap()]);
+    assert!(run.status.success());
 }

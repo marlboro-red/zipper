@@ -210,7 +210,15 @@ Zipper decrypts ZipCrypto and WinZip AES entries in process. Run `extract` or `t
 zipper extract secret.zip -o restored
 ```
 
-At the prompt, Backspace deletes a character and Ctrl-U clears the line. Ctrl-C cancels with exit status 130, and Ctrl-D on an empty line cancels too. Either way the terminal is restored.
+Zipper turns off echo, line editing and the signal keys before it shows the prompt, and drops anything typed earlier. At the prompt these keys act:
+
+- Enter or Return ends the password.
+- Backspace or Delete removes the last character, all the bytes of a UTF-8 character at once.
+- Ctrl-U clears what was typed.
+- Ctrl-C cancels with exit status 130.
+- Ctrl-D cancels on an empty line, and does nothing after text.
+
+Every other byte, such as Tab or Escape, is part of the password, which holds at most 1,024 bytes. When the prompt ends, Zipper restores the terminal and drops anything typed but not read, such as the rest of a paste. It restores the terminal too when SIGINT, SIGTERM, SIGHUP or SIGQUIT arrives during the prompt.
 
 To give the password without a prompt, as a script must, pass `--password`. Other users on the machine can read it in the process list:
 
@@ -218,7 +226,7 @@ To give the password without a prompt, as a script must, pass `--password`. Othe
 zipper --password 'correct horse' extract secret.zip -o restored
 ```
 
-When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so pass `--password` there. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper refuses `--password` for archives it does not decrypt, such as tar and 7z, and the 7-Zip backend refuses it too. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
+When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so `extract` and `test` fail there when a selected entry is encrypted and no `--password` was given. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper refuses `--password` for archives it does not decrypt, such as tar and 7z, and the 7-Zip backend refuses it too. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
 
 ## Read tar archives in process
 

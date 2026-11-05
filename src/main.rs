@@ -20,7 +20,7 @@ struct Cli {
     /// Metadata, worker state and verification archive cache are additional.
     #[arg(long, global = true, value_parser = clap::value_parser!(u32).range(0..=4096))]
     zip_buffer_mib: Option<u32>,
-    /// Password for encrypted ZIP entries. Other users can see it in the process list.
+    /// Password for encrypted ZIP entries in extract and test. Other users can see it in the process list.
     /// Without it, Zipper asks on Unix when a selected entry is encrypted and standard
     /// input is a terminal, and fails otherwise.
     #[arg(
@@ -155,17 +155,25 @@ fn with_password<T>(
     );
     let asked = match ask_password()? {
         Typed::Password(password) => password,
-        Typed::Interrupt => {
-            eprintln!("Error: the password prompt was interrupted");
-            std::process::exit(INTERRUPTED);
-        }
+        Typed::Interrupt => return Err(PromptInterrupted.into()),
         Typed::EndOfInput => anyhow::bail!("{needed}; no password was typed"),
     };
     run(Some(&asked))
 }
 
 const LONGEST_PASSWORD: usize = 1024;
-const INTERRUPTED: i32 = 130;
+const INTERRUPTED: u8 = 130;
+
+#[derive(Debug)]
+struct PromptInterrupted;
+
+impl std::fmt::Display for PromptInterrupted {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("the password prompt was interrupted")
+    }
+}
+
+impl std::error::Error for PromptInterrupted {}
 
 #[cfg_attr(
     not(unix),
@@ -179,36 +187,9 @@ enum Typed {
 
 #[cfg(unix)]
 fn ask_password() -> Result<Typed> {
-    use std::io::Write;
-    let mut terminal = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")?;
-    let saved = stty(&terminal, &["-g"])?;
-    terminal.write_all(b"Password: ")?;
-    let typed = stty(
-        &terminal,
-        &["-echo", "-icanon", "-isig", "min", "1", "time", "0"],
-    )
-    .and_then(|_| read_password(&mut terminal));
-    let restored = stty(&terminal, &[saved.trim()]);
-    terminal.write_all(b"\n")?;
-    restored?;
-    typed
-}
-
-#[cfg(unix)]
-fn stty(terminal: &std::fs::File, arguments: &[&str]) -> Result<String> {
-    let run = std::process::Command::new("stty")
-        .args(arguments)
-        .stdin(terminal.try_clone()?)
-        .output()?;
-    anyhow::ensure!(
-        run.status.success(),
-        "stty failed: {}",
-        String::from_utf8_lossy(&run.stderr)
-    );
-    Ok(String::from_utf8(run.stdout)?)
+    let mut hidden = hidden_terminal::HiddenTerminal::open()?;
+    hidden.prompt(b"Password: ")?;
+    read_password(&mut hidden)
 }
 
 #[cfg(unix)]
@@ -221,25 +202,31 @@ const BACKSPACE: u8 = 0x08;
 const CONTROL_U: u8 = 0x15;
 #[cfg(unix)]
 const DELETE: u8 = 0x7f;
+#[cfg(unix)]
+const UTF8_CONTINUATION_MASK: u8 = 0xc0;
+#[cfg(unix)]
+const UTF8_CONTINUATION: u8 = 0x80;
 
 #[cfg(unix)]
-fn read_password(terminal: &mut std::fs::File) -> Result<Typed> {
-    use std::io::Read;
+fn read_password(terminal: &mut hidden_terminal::HiddenTerminal) -> Result<Typed> {
     let mut password = Zeroizing::new(Vec::with_capacity(LONGEST_PASSWORD));
-    let mut byte = Zeroizing::new([0u8; 1]);
     loop {
-        if terminal.read(&mut byte[..])? == 0 {
+        let Some(byte) = terminal.next_byte()? else {
             return Ok(Typed::EndOfInput);
-        }
-        match byte[0] {
+        };
+        match byte {
             b'\n' | b'\r' => return Ok(Typed::Password(password)),
             CONTROL_C => return Ok(Typed::Interrupt),
             CONTROL_D if password.is_empty() => return Ok(Typed::EndOfInput),
+            CONTROL_D => {}
             BACKSPACE | DELETE => {
-                password.pop();
+                while let Some(last) = password.pop() {
+                    if last & UTF8_CONTINUATION_MASK != UTF8_CONTINUATION {
+                        break;
+                    }
+                }
             }
             CONTROL_U => password.clear(),
-            control if control < b' ' => {}
             typed => {
                 anyhow::ensure!(
                     password.len() < LONGEST_PASSWORD,
@@ -251,6 +238,138 @@ fn read_password(terminal: &mut std::fs::File) -> Result<Typed> {
     }
 }
 
+#[cfg(unix)]
+mod hidden_terminal {
+    use anyhow::{Result, ensure};
+    use std::{
+        cell::UnsafeCell,
+        fs::File,
+        io::{ErrorKind, Read, Write},
+        os::fd::AsRawFd,
+        sync::atomic::{AtomicBool, AtomicI32, Ordering},
+    };
+
+    const RESTORED_ON: [libc::c_int; 4] =
+        [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT];
+    const NO_TERMINAL: i32 = -1;
+
+    struct SavedSettings(UnsafeCell<libc::termios>);
+
+    // SAFETY: only the one HiddenTerminal that CLAIMED admits writes the settings, before it installs
+    // the handlers that read them, and its `Drop` removes them, so no handler reads during a write.
+    unsafe impl Sync for SavedSettings {}
+
+    static CLAIMED: AtomicBool = AtomicBool::new(false);
+
+    struct Claim;
+
+    impl Claim {
+        fn take() -> Result<Self> {
+            let free = CLAIMED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
+            ensure!(free.is_ok(), "the password prompt is already open");
+            Ok(Self)
+        }
+    }
+
+    impl Drop for Claim {
+        fn drop(&mut self) {
+            CLAIMED.store(false, Ordering::SeqCst);
+        }
+    }
+
+    // SAFETY: termios is plain data, and zeroed is a valid value for every field.
+    static SAVED: SavedSettings = SavedSettings(UnsafeCell::new(unsafe { std::mem::zeroed() }));
+    static TERMINAL: AtomicI32 = AtomicI32::new(NO_TERMINAL);
+
+    extern "C" fn restore_then_die(signal: libc::c_int) {
+        let terminal = TERMINAL.load(Ordering::SeqCst);
+        // SAFETY: tcsetattr and raise are async-signal-safe. SAVED holds the settings `open`
+        // read before it installed this handler, and SA_RESETHAND made the action default again.
+        unsafe {
+            libc::tcsetattr(terminal, libc::TCSAFLUSH, SAVED.0.get());
+            libc::raise(signal);
+        }
+    }
+
+    pub(super) struct HiddenTerminal {
+        terminal: File,
+        previous: [libc::sigaction; RESTORED_ON.len()],
+        _claim: Claim,
+    }
+
+    impl HiddenTerminal {
+        pub(super) fn open() -> Result<Self> {
+            let claim = Claim::take()?;
+            let terminal = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("/dev/tty")?;
+            let descriptor = terminal.as_raw_fd();
+            // SAFETY: termios is plain data, and zeroed is a valid value for every field.
+            let mut saved: libc::termios = unsafe { std::mem::zeroed() };
+            // SAFETY: the descriptor is open for the call and `saved` is a live termios.
+            let read = unsafe { libc::tcgetattr(descriptor, &mut saved) };
+            ensure!(read == 0, "cannot read the terminal settings");
+            // SAFETY: no handler that reads SAVED is installed yet, as SavedSettings requires.
+            unsafe { *SAVED.0.get() = saved };
+            TERMINAL.store(descriptor, Ordering::SeqCst);
+            // SAFETY: sigaction is plain data, and zeroed is a valid value for every field.
+            let mut previous: [libc::sigaction; RESTORED_ON.len()] = unsafe { std::mem::zeroed() };
+            // SAFETY: as above.
+            let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+            action.sa_sigaction = restore_then_die as extern "C" fn(libc::c_int) as usize;
+            action.sa_flags = libc::SA_RESETHAND;
+            for (signal, old) in RESTORED_ON.iter().zip(&mut previous) {
+                // SAFETY: both pointers refer to live sigaction values for the call.
+                unsafe { libc::sigaction(*signal, &action, old) };
+            }
+            let hidden = Self {
+                terminal,
+                previous,
+                _claim: claim,
+            };
+            let mut quiet = saved;
+            quiet.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG | libc::IEXTEN);
+            quiet.c_cc[libc::VMIN] = 1;
+            quiet.c_cc[libc::VTIME] = 0;
+            // SAFETY: the descriptor is open for the call and `quiet` is a live termios.
+            let set = unsafe { libc::tcsetattr(descriptor, libc::TCSAFLUSH, &quiet) };
+            ensure!(set == 0, "cannot turn off echo on the terminal");
+            Ok(hidden)
+        }
+
+        pub(super) fn prompt(&mut self, text: &[u8]) -> Result<()> {
+            self.terminal.write_all(text)?;
+            Ok(())
+        }
+
+        pub(super) fn next_byte(&mut self) -> Result<Option<u8>> {
+            let mut byte = zeroize::Zeroizing::new([0u8; 1]);
+            loop {
+                match self.terminal.read(&mut byte[..]) {
+                    Ok(0) => return Ok(None),
+                    Ok(_) => return Ok(Some(byte[0])),
+                    Err(error) if error.kind() == ErrorKind::Interrupted => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+    }
+
+    impl Drop for HiddenTerminal {
+        fn drop(&mut self) {
+            // SAFETY: the descriptor is still open, and SAVED holds the settings `open` read.
+            unsafe { libc::tcsetattr(self.terminal.as_raw_fd(), libc::TCSAFLUSH, SAVED.0.get()) };
+            for (signal, old) in RESTORED_ON.iter().zip(&self.previous) {
+                // SAFETY: `old` is the live action this signal had before `open`.
+                unsafe { libc::sigaction(*signal, old, std::ptr::null_mut()) };
+            }
+            TERMINAL.store(NO_TERMINAL, Ordering::SeqCst);
+            let _ = self.terminal.write_all(b"\n");
+        }
+    }
+}
+
 #[cfg(not(unix))]
 fn ask_password() -> Result<Typed> {
     anyhow::bail!(
@@ -258,7 +377,21 @@ fn ask_password() -> Result<Typed> {
     )
 }
 
-fn main() -> Result<()> {
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error:?}");
+            if error.is::<PromptInterrupted>() {
+                std::process::ExitCode::from(INTERRUPTED)
+            } else {
+                std::process::ExitCode::FAILURE
+            }
+        }
+    }
+}
+
+fn run() -> Result<()> {
     let mut cli = Cli::parse();
     let password = cli
         .password
@@ -284,6 +417,10 @@ fn main() -> Result<()> {
         .transpose()?;
     match cli.command {
         Command::Duplicates { inputs, summary } => {
+            anyhow::ensure!(
+                password.is_none(),
+                "duplicates reads no archives, so it takes no --password"
+            );
             let report = zipper::duplicates::find(&inputs)?;
             for (index, group) in report.groups.iter().enumerate().filter(|_| !summary) {
                 println!(
@@ -388,6 +525,10 @@ fn main() -> Result<()> {
             }
         }
         Command::List { archive } => {
+            anyhow::ensure!(
+                password.is_none(),
+                "list reads no encrypted data, so it takes no --password"
+            );
             let print = |entries: Vec<zipper::Entry>| {
                 for e in entries {
                     println!(
