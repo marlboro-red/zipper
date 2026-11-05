@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 51 |
+| `native` | 52 |
 | `partial` | 1 |
-| `backend` | 51 |
+| `backend` | 50 |
 | `missing` | 7 |
 | `dropped` | 2 |
 
