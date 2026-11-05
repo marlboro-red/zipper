@@ -454,10 +454,7 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
     for file in &directory.entries {
         ensure!(
             !file.encrypted(),
-            crate::Refused(
-                "encrypted ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
-                    .to_owned()
-            )
+            "encrypted ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
         let symlink = file.is_symlink();
         ensure!(
@@ -483,10 +480,7 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
                 file.method,
                 STORED | DEFLATE | DEFLATE64 | BZIP2 | LZMA | ZSTANDARD | XZ | PPMD
             ),
-            crate::Refused(
-                "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
-                    .to_owned()
-            )
+            "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
         let name = file.name().into_owned();
         let name = if directory {
@@ -1094,9 +1088,7 @@ fn method_decoder<'a>(
                 remaining: item.entry.size,
             })
         }
-        other => anyhow::bail!(crate::Refused(format!(
-            "ZIP compression method {other} is not supported"
-        ))),
+        other => anyhow::bail!("ZIP compression method {other} is not supported"),
     })
 }
 
@@ -1448,10 +1440,10 @@ pub fn read_archive_with_options(
                 let file = crate::create_new_file(&path, item.mode.unwrap_or(0o666), item.windows_attributes)
                             .map_err(|error| {
                             if error.kind() == std::io::ErrorKind::AlreadyExists {
-                                anyhow::Error::new(crate::Refused(format!(
+                                anyhow::anyhow!(
                                     "ZIP entry {:?} collides with another entry on this filesystem, which ignores case or Unicode normalization",
                                     item.entry.name
-                                )))
+                                )
                             } else {
                                 error.into()
                             }

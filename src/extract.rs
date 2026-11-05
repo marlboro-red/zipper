@@ -197,11 +197,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
         "threads must be between 1 and 64"
     );
     crate::progress::Tracker::new(options.control, None, None).check()?;
-    let destination_refused = std::fs::symlink_metadata(destination)
-        .is_ok_and(|metadata| options.existing == Existing::Refuse || !metadata.is_dir());
-    with_volumes(archive, destination_refused, || {
-        read_into(archive, destination, options)
-    })
+    with_volumes(archive, || read_into(archive, destination, options))
 }
 
 #[derive(Debug)]
@@ -222,22 +218,11 @@ impl std::error::Error for VolumeNote {
     }
 }
 
-const NOT_FROM_VOLUME_BYTES: &[std::io::ErrorKind] = &[
-    std::io::ErrorKind::AlreadyExists,
-    std::io::ErrorKind::PermissionDenied,
-    std::io::ErrorKind::StorageFull,
-    std::io::ErrorKind::QuotaExceeded,
-    std::io::ErrorKind::ReadOnlyFilesystem,
-];
-
-fn cannot_come_from_volume_bytes(error: &anyhow::Error) -> bool {
+fn says_nothing_about_the_volumes(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {
         cause.is::<crate::Cancelled>()
-            || cause.is::<crate::Refused>()
-            || crate::native_7z::is_unsupported(cause)
-            || cause
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|io| NOT_FROM_VOLUME_BYTES.contains(&io.kind()))
+            || cause.is::<crate::DestinationRefused>()
+            || cause.is::<crate::OverLimit>()
     })
 }
 
@@ -245,28 +230,26 @@ const BACKEND_ADVICE: &str =
     "; if the file is another format or a split volume, pass --zip-engine backend";
 
 fn without_backend_advice(error: anyhow::Error) -> anyhow::Error {
-    match error.downcast_ref::<crate::BadField>() {
-        Some(&crate::BadField(message)) if message.contains(BACKEND_ADVICE) => {
-            let kept = message
-                .split_once(BACKEND_ADVICE)
-                .map_or(message, |(kept, _)| kept);
-            crate::BadField(kept).into()
-        }
+    if let Some(&crate::BadField(message)) = error.downcast_ref::<crate::BadField>() {
+        return match message.split_once(BACKEND_ADVICE) {
+            Some((kept, _)) => crate::BadField(kept).into(),
+            None => error,
+        };
+    }
+    let message = error.to_string();
+    match message.split_once(BACKEND_ADVICE) {
+        Some((kept, _)) if error.source().is_none() => anyhow::anyhow!("{kept}"),
         _ => error,
     }
 }
 
-fn with_volumes<T>(
-    archive: &Path,
-    destination_refused: bool,
-    read: impl FnOnce() -> Result<T>,
-) -> Result<T> {
+fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
     let volumes = crate::volumes::scope(archive);
     let error = match read() {
         Ok(value) => return Ok(value),
         Err(error) => error,
     };
-    if destination_refused || cannot_come_from_volume_bytes(&error) {
+    if says_nothing_about_the_volumes(&error) {
         return Err(error);
     }
     match volumes.note() {
@@ -285,7 +268,7 @@ fn with_volumes<T>(
 /// from the volumes' bytes, the error gains a line that names the volumes,
 /// or says why a numbered file was read alone.
 pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
-    with_volumes(archive, false, read)
+    with_volumes(archive, read)
 }
 
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {

@@ -96,7 +96,12 @@ fn open_without_blocking(path: &Path) -> io::Result<File> {
 }
 
 fn open_regular_file(path: &Path, identity: Option<Identity>) -> io::Result<File> {
-    let file = open_without_blocking(path)?;
+    let file = open_without_blocking(path).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("cannot open {}: {error}", path.display()),
+        )
+    })?;
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(io::Error::new(
@@ -170,6 +175,7 @@ impl VolumeSet {
 
 enum Found {
     Alone { why: Option<String> },
+    Broken { why: String },
     Set(Arc<VolumeSet>),
 }
 
@@ -235,28 +241,34 @@ fn find_set(numbered: Numbered) -> Found {
     let (identities, unreadable) = volume_identities(&numbered);
     let count = identities.len() as u64;
     let next = numbered.path(count + 1);
-    let why = unreadable
-        .or_else(|| {
-            first_present_after(&numbered, count + 1).map(|present| {
-                format!(
-                    "{} is missing, but {} is present",
-                    name(&next),
-                    name(&numbered.path(present))
-                )
-            })
+    let broken = unreadable.or_else(|| {
+        first_present_after(&numbered, count + 1).map(|present| {
+            format!(
+                "{} is missing, but {} is present",
+                name(&next),
+                name(&numbered.path(present))
+            )
         })
-        .or_else(|| {
-            (count == 1).then(|| {
-                format!(
-                    "no {} is present; if it is the first volume of a split archive, {} is missing",
-                    name(&next),
-                    name(&next)
-                )
-            })
-        })
-        .or_else(|| sizes_disagree(&numbered, &identities));
-    if why.is_some() || count == 0 {
-        return Found::Alone { why };
+    });
+    if let Some(why) = broken {
+        return Found::Broken { why };
+    }
+    if count == 1 {
+        return Found::Alone {
+            why: Some(format!(
+                "no {} is present; if it is the first volume of a split archive, {} is missing",
+                name(&next),
+                name(&next)
+            )),
+        };
+    }
+    if let Some(why) = sizes_disagree(&numbered, &identities) {
+        let only_a_larger_sibling = count == 2 && identities[1].length > identities[0].length;
+        return if only_a_larger_sibling {
+            Found::Alone { why: Some(why) }
+        } else {
+            Found::Broken { why }
+        };
     }
     let (volume, last) = (
         identities[0].length,
@@ -268,8 +280,8 @@ fn find_set(numbered: Numbered) -> Found {
             identities,
             layout,
         })),
-        None => Found::Alone {
-            why: Some("the volumes add up past 16 EiB".to_owned()),
+        None => Found::Broken {
+            why: "the volumes add up past 16 EiB".to_owned(),
         },
     }
 }
@@ -335,16 +347,42 @@ fn in_use(path: &Path) -> Option<Arc<Discovery>> {
     })
 }
 
+fn discovered(path: &Path) -> Arc<Discovery> {
+    in_use(path).unwrap_or_else(|| Arc::new(discover(path)))
+}
+
 pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
-    let discovery = in_use(path).unwrap_or_else(|| Arc::new(discover(path)));
+    let discovery = discovered(path);
     Ok(match &discovery.found {
         Found::Alone { .. } => ArchiveFile::One(open_regular_file(path, None)?),
+        Found::Broken { why } => {
+            return Err(invalid(format!(
+                "{} has later volumes that do not form a whole split archive, so it is not read alone: {why}",
+                name(path)
+            )));
+        }
         Found::Set(set) => ArchiveFile::Joined(Joined {
             set: Arc::clone(set),
             position: 0,
             open: Mutex::new(None),
         }),
     })
+}
+
+pub(crate) fn ensure_stream_set_ends_short(path: &Path) -> io::Result<()> {
+    let Found::Set(set) = &discovered(path).found else {
+        return Ok(());
+    };
+    if set.layout.last < set.layout.volume {
+        return Ok(());
+    }
+    let count = set.identities.len() as u64;
+    Err(invalid(format!(
+        "{} is as full as {}, so later volumes such as {} may be missing, and a single compressed file has no end of its own to show it is complete; join the volumes into one file to read a set whose last volume is full",
+        name(&set.path(count - 1)),
+        name(&set.path(0)),
+        name(&set.path(count))
+    )))
 }
 
 pub(crate) fn joined_name(path: &Path) -> Option<PathBuf> {
@@ -428,7 +466,7 @@ impl Scope {
     pub(crate) fn note(&self) -> Option<String> {
         let first = name(&self.0.path);
         let set = match &self.0.found {
-            Found::Alone { why: None } => return None,
+            Found::Alone { why: None } | Found::Broken { .. } => return None,
             Found::Alone { why: Some(why) } => {
                 return Some(format!("{first} was read alone, because {why}"));
             }
@@ -438,7 +476,7 @@ impl Scope {
         let last_path = set.path(count - 1);
         let last = name(&last_path);
         let mut hint = format!(
-            "{first} to {last} were read as one archive split into {count} volumes; if {first} is a whole archive by itself, rename it or open it by another name"
+            "read as split volumes {first} to {last}; if {first} is a whole archive by itself, rename it or open it by another name"
         );
         if let Ok(RepeatScan {
             found: Some((earlier, later)),
@@ -564,7 +602,10 @@ impl ArchiveFile {
 
     pub(crate) fn reopen(&self, path: &Path) -> io::Result<Self> {
         match self {
-            Self::One(_) => Ok(Self::One(File::open(path)?)),
+            Self::One(file) => Ok(Self::One(open_regular_file(
+                path,
+                Some(Identity::of(&file.metadata()?)),
+            )?)),
             Self::Joined(_) => self.try_clone(),
         }
     }
@@ -771,6 +812,27 @@ mod tests {
         drop(rewritten);
         let error = joined.read_at(&mut [0; 4], 12).unwrap_err();
         assert!(error.to_string().contains("a.bin.002"), "{error}");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reopening_a_file_swapped_for_a_fifo_fails_instead_of_blocking() -> io::Result<()> {
+        let folder = tempfile::tempdir()?;
+        let path = folder.path().join("a.7z");
+        std::fs::write(&path, [7u8; 30])?;
+        let opened = open(&path)?;
+        std::fs::remove_file(&path)?;
+        let made = std::process::Command::new("mkfifo").arg(&path).status()?;
+        assert!(made.success());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(opened.reopen(&path).map(drop).map_err(|e| e.to_string()));
+        });
+        let result = receiver
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("reopening a FIFO blocked");
+        assert!(result.unwrap_err().contains("a.7z"));
         Ok(())
     }
 

@@ -130,6 +130,11 @@ fn every_native_format_reads_through_volumes_of_every_awkward_size() {
             let folder = tempfile::tempdir().unwrap();
             let first = split(&bytes, folder.path(), name, volume);
             let label = format!("{name} in {volume}-byte volumes");
+            let stream = name.starts_with("hello.txt.");
+            if stream && volume < length && length.is_multiple_of(volume) {
+                assert_refused(&first, &[&volume_name(name, length / volume + 1)], &label);
+                continue;
+            }
             assert_eq!(
                 choose_reader(Engine::Auto, &first).unwrap(),
                 whole_reader,
@@ -521,12 +526,13 @@ fn the_volume_hint_follows_the_real_error_and_only_for_archive_failures() {
     fs::remove_file(set.path(set.count)).unwrap();
     let error = refused_with(&set.path(1), false);
     let top = error.to_string();
-    assert!(!top.starts_with("7z.7z.001 to"), "{top}");
+    assert!(!top.starts_with("read as split volumes"), "{top}");
     assert!(top.contains(&set.name(set.count)), "{top}");
 
-    let error = refused_with(&set.path(1), true);
+    let intact = Set::new("7z.7z", 100);
+    let error = refused_with(&intact.path(1), true);
     assert!(
-        !format!("{error:#}").contains("read as one archive split into"),
+        !format!("{error:#}").contains("read as split volumes"),
         "{error:#}"
     );
 
@@ -551,7 +557,7 @@ fn the_volume_hint_follows_the_real_error_and_only_for_archive_failures() {
     .unwrap_err();
     assert!(error.is::<zipper::Cancelled>(), "{error:#}");
     assert!(
-        !format!("{error:#}").contains("read as one archive split into"),
+        !format!("{error:#}").contains("read as split volumes"),
         "{error:#}"
     );
 
@@ -666,7 +672,7 @@ fn neighbours_that_are_whole_archives_of_their_own_are_read_as_7zip_reads_them()
     let gzip = tempfile::tempdir().unwrap();
     let hello = fs::read(parity("hello.txt.gz")).unwrap();
     fs::write(gzip.path().join("log.gz.001"), &hello).unwrap();
-    fs::write(gzip.path().join("log.gz.002"), &hello).unwrap();
+    fs::write(gzip.path().join("log.gz.002"), gzip_member(b"hi")).unwrap();
     let joined = whole_tree(&gzip.path().join("log.gz.001"));
     assert_eq!(joined.keys().collect::<Vec<_>>(), ["log"]);
 }
@@ -703,20 +709,19 @@ fn a_set_replaced_while_another_call_holds_it_extracts_as_the_new_set() {
 }
 
 #[test]
-fn errors_that_are_not_about_the_archive_bytes_name_no_volumes() {
+fn every_failure_but_cancel_destination_and_size_notes_the_volumes() {
+    const NOTE: &str = "read as split volumes";
     let folder = tempfile::tempdir().unwrap();
     let escaping = zip_of(&[("../escape.txt", b"x")]);
     let first = split(&escaping, folder.path(), "e.zip", 40);
     let error = format!("{:#}", refused_with(&first, false));
-    assert!(
-        !error.contains("read as one archive split into"),
-        "unsafe path: {error}"
-    );
+    assert!(error.contains(NOTE), "unsafe path: {error}");
 
     let set = Set::new("zip.zip", 300);
-    for (case, options) in [
+    for (case, noted, options) in [
         (
             "selected path not found",
+            true,
             ExtractOptions {
                 paths: &["no such entry".to_owned()],
                 ..Default::default()
@@ -724,6 +729,7 @@ fn errors_that_are_not_about_the_archive_bytes_name_no_volumes() {
         ),
         (
             "max extracted bytes",
+            false,
             ExtractOptions {
                 max_output_bytes: Some(1),
                 ..Default::default()
@@ -733,17 +739,98 @@ fn errors_that_are_not_about_the_archive_bytes_name_no_volumes() {
         let root = tempfile::tempdir().unwrap();
         let error = extract_archive(&set.path(1), &root.path().join("out"), options).unwrap_err();
         let error = format!("{error:#}");
-        assert!(
-            !error.contains("read as one archive split into"),
-            "{case}: {error}"
-        );
+        assert_eq!(error.contains(NOTE), noted, "{case}: {error}");
     }
+
+    let root = tempfile::tempdir().unwrap();
+    let error = extract_archive(
+        &set.path(1),
+        &root.path().join("no such folder").join("out"),
+        ExtractOptions::default(),
+    )
+    .unwrap_err();
+    let error = format!("{error:#}");
+    assert!(!error.contains(NOTE), "staging cannot be created: {error}");
 
     let missing = Set::new("zip.zip", 300);
     fs::remove_file(missing.path(missing.count)).unwrap();
     let error = format!("{:#}", refused_with(&missing.path(1), false));
-    assert!(error.contains("read as one archive split into"), "{error}");
+    assert!(error.contains(NOTE), "{error}");
     assert!(!error.contains("--zip-engine backend"), "{error}");
+
+    let tiny = tempfile::tempdir().unwrap();
+    let first = split(b"PK\x05\x06tiny", tiny.path(), "t.zip", 4);
+    let error = format!("{:#}", refused_with(&first, false));
+    assert!(error.contains(NOTE), "{error}");
+    assert!(!error.contains("--zip-engine backend"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_volume_that_cannot_be_opened_is_named_by_its_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let set = Set::new("zip.zip", 300);
+    let locked = set.path(2);
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::File::open(&locked).is_ok() {
+        return;
+    }
+    let error = format!("{:#}", refused_with(&set.path(1), false));
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(error.contains(&locked.display().to_string()), "{error}");
+}
+
+#[test]
+fn a_damaged_set_is_never_read_as_its_first_volume_alone() {
+    for damage in ["missing middle", "short middle"] {
+        let folder = tempfile::tempdir().unwrap();
+        let stem = "log.bin.gz";
+        let count = member_boundary_set(folder.path(), stem, gzip_member);
+        assert!(count >= 4);
+        let second = folder.path().join(volume_name(stem, 2));
+        match damage {
+            "missing middle" => fs::remove_file(&second).unwrap(),
+            _ => {
+                let bytes = fs::read(&second).unwrap();
+                fs::write(&second, &bytes[..bytes.len() - 1]).unwrap();
+            }
+        }
+        let first = folder.path().join(volume_name(stem, 1));
+        assert_refused(&first, &[&volume_name(stem, 2)], damage);
+        let tested = zipper_cli(&["test".as_ref(), first.as_os_str()]);
+        assert!(!tested.status.success(), "{damage}: zipper test passed");
+    }
+}
+
+fn stored_gzip_member(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+    std::io::Write::write_all(&mut encoder, bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+#[test]
+fn a_stream_set_whose_last_volume_is_full_is_refused() {
+    let folder = tempfile::tempdir().unwrap();
+    let members: Vec<Vec<u8>> = (0..3)
+        .map(|seed| stored_gzip_member(&noise(5000, seed + 10)))
+        .collect();
+    assert!(
+        members
+            .iter()
+            .all(|member| member.len() == members[0].len())
+    );
+    for (index, member) in members.iter().enumerate() {
+        fs::write(
+            folder.path().join(volume_name("m.bin.gz", index + 1)),
+            member,
+        )
+        .unwrap();
+    }
+    fs::remove_file(folder.path().join(volume_name("m.bin.gz", 3))).unwrap();
+    let first = folder.path().join(volume_name("m.bin.gz", 1));
+    assert_refused(&first, &["m.bin.gz.003"], "trailing volume dropped");
+    let tested = zipper_cli(&["test".as_ref(), first.as_os_str()]);
+    assert!(!tested.status.success(), "zipper test passed");
 }
 
 #[test]

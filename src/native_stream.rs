@@ -121,6 +121,7 @@ pub fn read_archive(
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
     let compression = sniff(path)?.context("not a single compressed stream")?;
+    crate::volumes::ensure_stream_set_ends_short(path)?;
     let name = output_name(&named(path))?;
     let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
     selection.ensure_each_path_matches(std::iter::once(name.as_str()))?;
@@ -172,7 +173,7 @@ pub fn read_archive(
         size += read as u64;
         ensure!(
             size <= limit,
-            crate::Refused(format!(
+            crate::OverLimit(format!(
                 "{name} decodes to more than {limit} bytes; pass --max-extracted-bytes to raise the cap"
             ))
         );

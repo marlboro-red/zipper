@@ -1102,10 +1102,6 @@ impl std::fmt::Display for Unsupported {
 
 impl std::error::Error for Unsupported {}
 
-pub(crate) fn is_unsupported(error: &(dyn std::error::Error + 'static)) -> bool {
-    error.is::<Unsupported>()
-}
-
 fn unsupported(message: String) -> anyhow::Error {
     Unsupported(message).into()
 }
@@ -2156,10 +2152,10 @@ pub fn read_archive(
                     )
                             .map_err(|error| {
                                 if error.kind() == std::io::ErrorKind::AlreadyExists {
-                                    anyhow::Error::new(crate::Refused(format!(
+                                    anyhow::anyhow!(
                                         "7z entry {:?} collides with another entry on this filesystem, which ignores case or Unicode normalization",
                                         item.name
-                                    )))
+                                    )
                                 } else {
                                     error.into()
                                 }

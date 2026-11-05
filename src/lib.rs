@@ -50,15 +50,26 @@ impl std::fmt::Display for BadField {
 impl std::error::Error for BadField {}
 
 #[derive(Debug)]
-pub(crate) struct Refused(pub(crate) String);
+pub(crate) struct OverLimit(pub(crate) String);
 
-impl std::fmt::Display for Refused {
+impl std::fmt::Display for OverLimit {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str(&self.0)
     }
 }
 
-impl std::error::Error for Refused {}
+impl std::error::Error for OverLimit {}
+
+#[derive(Debug)]
+pub(crate) struct DestinationRefused(pub(crate) String);
+
+impl std::fmt::Display for DestinationRefused {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DestinationRefused {}
 
 pub(crate) type Field<T> = std::result::Result<T, BadField>;
 
@@ -71,21 +82,15 @@ pub(crate) fn field_check(holds: bool, message: &'static str) -> Field<()> {
 }
 
 fn safe_path(s: &str) -> Result<()> {
-    ensure!(
-        !s.is_empty() && s.len() <= 4096,
-        Refused("invalid path length".to_owned())
-    );
-    ensure!(
-        !s.contains(['\\', ':', '\0']),
-        Refused(format!("unsafe archive path: {s:?}"))
-    );
+    ensure!(!s.is_empty() && s.len() <= 4096, "invalid path length");
+    ensure!(!s.contains(['\\', ':', '\0']), "unsafe archive path: {s:?}");
     ensure!(
         s.split('/').all(|c| !c.is_empty() && c != "." && c != ".."),
-        Refused(format!("unsafe archive path: {s:?}"))
+        "unsafe archive path: {s:?}"
     );
     #[cfg(windows)]
     for component in s.split('/') {
-        ensure_plain_windows_name(component).map_err(|error| Refused(error.to_string()))?;
+        ensure_plain_windows_name(component)?;
     }
     Ok(())
 }
@@ -198,9 +203,9 @@ fn create_symlink(format: &str, root: &Path, name: &str, target: &str) -> Result
     #[cfg(windows)]
     const ERROR_PRIVILEGE_NOT_HELD: i32 = 1314;
     created.map_err(|error| match error.raw_os_error() {
-        _ if error.kind() == std::io::ErrorKind::AlreadyExists => anyhow::Error::new(Refused(format!(
+        _ if error.kind() == std::io::ErrorKind::AlreadyExists => anyhow::anyhow!(
             "{format} symlink {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-        ))),
+        ),
         #[cfg(windows)]
         Some(ERROR_PRIVILEGE_NOT_HELD) => anyhow::anyhow!(
             "{format} symlink {name:?} needs Windows Developer Mode or administrator rights; pass --zip-engine backend to read it with 7-Zip"
@@ -217,11 +222,11 @@ fn ensure_link_stays_inside(format: &str, name: &str, target: &str) -> Result<()
             && target.len() as u64 <= MAX_LINK_TARGET
             && !target.contains('\0')
             && !target.starts_with('/'),
-        Refused(format!("{format} symlink {name:?} has an unsafe target"))
+        "{format} symlink {name:?} has an unsafe target"
     );
     ensure!(
         !cfg!(windows) || !target.contains(['\\', ':']),
-        Refused(format!("{format} symlink {name:?} has an unsafe target"))
+        "{format} symlink {name:?} has an unsafe target"
     );
     let mut depth = name.matches('/').count();
     let mut descended = false;
@@ -231,18 +236,16 @@ fn ensure_link_stays_inside(format: &str, name: &str, target: &str) -> Result<()
             ".." => {
                 ensure!(
                     !descended,
-                    Refused(format!("{format} symlink {name:?} has `..` after a name"))
+                    "{format} symlink {name:?} has `..` after a name"
                 );
-                depth = depth.checked_sub(1).ok_or_else(|| {
-                    Refused(format!(
-                        "{format} symlink {name:?} points outside the destination"
-                    ))
+                depth = depth.checked_sub(1).with_context(|| {
+                    format!("{format} symlink {name:?} points outside the destination")
                 })?;
             }
             _ => {
                 #[cfg(windows)]
                 ensure_plain_windows_name(component).map_err(|_| {
-                    Refused(format!("{format} symlink {name:?} has an unsafe target"))
+                    anyhow::anyhow!("{format} symlink {name:?} has an unsafe target")
                 })?;
                 descended = true
             }
@@ -333,7 +336,7 @@ impl<'a> Selection<'a> {
         for path in &self.paths {
             ensure!(
                 names.clone().any(|name| under(name, path)),
-                Refused(format!("selected path not found: {path}"))
+                "selected path not found: {path}"
             );
         }
         for pattern in &self.include {
@@ -341,10 +344,8 @@ impl<'a> Selection<'a> {
                 names
                     .clone()
                     .any(|name| pattern.matches_entry_or_folder_above(name)),
-                Refused(format!(
-                    "no archive entry matches --include {}",
-                    pattern.text()
-                ))
+                "no archive entry matches --include {}",
+                pattern.text()
             );
         }
         Ok(())
@@ -492,7 +493,7 @@ pub(crate) fn check_output_size<'a>(
     match limit {
         Some(limit) => ensure!(
             declared <= limit,
-            Refused(format!(
+            OverLimit(format!(
                 "archive expands to {declared} bytes, over --max-extracted-bytes {limit}"
             ))
         ),
@@ -501,7 +502,7 @@ pub(crate) fn check_output_size<'a>(
                 .with_context(|| format!("cannot measure free space at {}", staging.display()))?;
             ensure!(
                 estimate <= free,
-                Refused(format!(
+                OverLimit(format!(
                     "archive needs about {estimate} bytes but {free} are free; \
                      pass --max-extracted-bytes to override"
                 ))

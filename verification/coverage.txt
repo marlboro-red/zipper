@@ -6,7 +6,7 @@
 
 [tar-writer-pool]
 skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
-fingerprint = 7aaad9fc4dc2a5c6
+fingerprint = 7f5a0b3be2f7f7d4
 full-check = python3 scripts/check_model.py verification/tar-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/native_tar.rs | const CHUNK:
 item = src/native_tar.rs | const QUEUED_FILES:
@@ -35,7 +35,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 32c19f6754ea2695
+fingerprint = 119d151bb05cf7f7
 full-check = python3 scripts/check_model.py verification/7z-folder-workers MCWorkers.tla:workers.cfg
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
@@ -47,7 +47,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 675a8305a6a62a31
+fingerprint = 26e4252d9925c9a7
 full-check = python3 scripts/check_model.py verification/progress-callback MCCallback.tla:callback.cfg
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
@@ -60,7 +60,7 @@ item = src/memory.rs | impl Memory {
 
 [overwrite]
 skill = .claude/skills/zipper-verify-overwrite/SKILL.md
-fingerprint = c39f4930497b6664
+fingerprint = 69782451e8e51dcd
 full-check = cargo test --release --test overwrite_exhaustive ZIPPER_MERGE_STRIDE=1 ZIPPER_OVERWRITE_EXHAUSTIVE=1 -- --nocapture
 item = src/staging.rs | pub(crate) fn stage(
 item = src/staging.rs | impl Staging {
@@ -74,7 +74,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = b11906f404ce542f
+fingerprint = a51115d41d4124d1
 full-check = python3 scripts/check_model.py verification/zip-decoder-budget MCZip.tla:zip.cfg
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
@@ -86,7 +86,7 @@ item = src/memory.rs | impl Drop for Reservation<'_> {
 
 [link-escape]
 skill = .claude/skills/zipper-verify-links/SKILL.md
-fingerprint = e7d0ace857b98f6b
+fingerprint = a4e0a4e1b7480923
 full-check = cargo test --release --test link_escape_exhaustive ZIPPER_LINK_STRIDE=1 ZIPPER_LINK_ESCAPE=1 -- --nocapture
 item = src/staging.rs | fn ensure_links_stay_in_archive_paths(
 item = src/staging.rs | fn owner_after_publish(
