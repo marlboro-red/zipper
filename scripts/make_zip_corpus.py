@@ -107,6 +107,11 @@ def writers(have):
                                   capture_output=True).stdout
             target.write_bytes(data)
         found.append(("infozip-piped", piped))
+        def stdin_data(target, cwd):
+            # EXTERNAL(Info-ZIP): it adds a ZIP64 end record only when its output is a seekable file.
+            data = (cwd / "src/binary/pattern-192k-plus-1.bin").read_bytes()
+            subprocess.run(["zip", "-q", str(target), "-"], cwd=cwd, input=data, check=True)
+        found.append(("infozip-stdin", stdin_data))
     if have("7zz"):
         for name, flags in [("7zip-deflate", ["-mm=Deflate"]), ("7zip-copy", ["-mm=Copy"]),
                             ("7zip-timestamps", ["-mtc=on"])]:

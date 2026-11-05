@@ -94,6 +94,10 @@ fn ensure_link_stays_inside(name: &str, target: &[u8]) -> Result<()> {
 }
 
 const LOCAL_HEADER: u64 = 30;
+const REGULAR: u32 = 0o100000;
+// EXTERNAL(Info-ZIP): `zip - -` stores its piped input with the FIFO type.
+// unzip, bsdtar, 7-Zip and Python each write that entry as a regular file.
+const PIPED_INPUT: u32 = 0o010000;
 
 impl Item {
     fn stored_name_len(&self) -> usize {
@@ -464,9 +468,12 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
             let expected = match (symlink, directory) {
                 (true, _) => 0o120000,
                 (false, true) => 0o040000,
-                (false, false) => 0o100000,
+                (false, false) => REGULAR,
             };
-            ensure!(kind == 0 || kind == expected, "unsupported ZIP file type");
+            ensure!(
+                kind == 0 || kind == expected || (expected == REGULAR && kind == PIPED_INPUT),
+                "unsupported ZIP file type"
+            );
         }
         ensure!(
             matches!(

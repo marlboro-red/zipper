@@ -13,8 +13,8 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 The reader supports these features:
 
 - Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
-- Conventional ZIP64.
-- File bytes and directories.
+- Conventional ZIP64. Info-ZIP also writes a ZIP64 end record when its input is piped, even when the regular end record holds every value. The reader then requires both records to agree. With ZIP64, every end record value that is not a sentinel must equal its ZIP64 value.
+- File bytes and directories. A file with the FIFO type, which is how Info-ZIP `zip - -` stores piped input, is written as a regular file, as `unzip`, bsdtar, 7-Zip and Python write it. Device and socket entries are rejected.
 - Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
 - Names stored as UTF-8, and other names decoded as code page 437. A name that is valid UTF-8 is read as UTF-8 even without the UTF-8 flag, because Info-ZIP and `ditto` store UTF-8 names without it. A name with the UTF-8 flag that is not valid UTF-8 is rejected, because Python and 7-Zip do not decode it as CP437.
 
@@ -25,6 +25,7 @@ The reader does not support these features:
 - Shrink, Implode and other legacy methods.
 - Multi-disk archives.
 - Ambiguous end records.
+- A ZIP64 locator just before the end record that the end record does not use. bsdtar, 7-Zip and Python follow such a locator and can read a different directory.
 - Data before the first record, such as a self-extracting executable from `zip -A`. The default engine reads it in process and rejects it, because no 7-Zip signature matches.
 
 It restores Unix permission bits the way bsdtar does:
@@ -94,9 +95,9 @@ Both native ZIP modes run these checks before publishing any output:
 
 ## Reference corpus
 
-`tests/data/zip-corpus` holds 21 archives. Seventeen come from these real ZIP writers:
+`tests/data/zip-corpus` holds 22 archives. Eighteen come from these real ZIP writers:
 
-- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes.
+- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes, and with piped input.
 - 7-Zip, with Deflate, Copy and timestamps.
 - bsdtar, with Deflate and stored entries.
 - macOS `ditto`.
@@ -109,7 +110,7 @@ The manifest also records each path's exact modification time where `unzip` and 
 
 `scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 6 archives.
 
-`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on all 21 archives. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
+`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on 21 of the 22 archives. They disagree on the mode of Info-ZIP's piped input. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
 
 The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 94 ZIP archives from PyPI, Maven, Go and GitHub with Zipper and default bsdtar. All matched, along with the 154 tar archives in the same set.
 

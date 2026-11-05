@@ -187,7 +187,7 @@ item = src/lzw.rs | impl<R: BufRead> Read for Unlzw<R> {
 
 [zip-directory]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 317012ab44cf06e2
+fingerprint = 9032a667aa7c045e
 full-check = cargo kani --harness zip_directory::proofs::
 item = src/zip_directory.rs | fn fixed<
 item = src/zip_directory.rs | fn le16(

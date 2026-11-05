@@ -129,12 +129,19 @@ pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> 
     let end = end_record(&tail)?;
     let end_offset = length - tail_size + end as u64;
     let mut extent = end_extent(fixed(&tail, end), end_offset)?;
-    if extent.needs_zip64() {
+    if extent.reads_zip64_end() {
         ensure!(end_offset >= ZIP64_LOCATOR as u64, "missing ZIP64 locator");
         file.seek(SeekFrom::Start(end_offset - ZIP64_LOCATOR as u64))?;
         let record_start = zip64_record_start(&crate::number(file)?, end_offset)?;
         file.seek(SeekFrom::Start(record_start))?;
-        extent = zip64_extent(&crate::number(file)?, record_start)?;
+        extent = extent.replaced_by(zip64_extent(&crate::number(file)?, record_start)?)?;
+    } else if end_offset >= ZIP64_LOCATOR as u64 {
+        file.seek(SeekFrom::Start(end_offset - ZIP64_LOCATOR as u64))?;
+        let signature: [u8; 4] = crate::number(file)?;
+        ensure!(
+            signature != *ZIP64_LOCATOR_SIGNATURE,
+            "ZIP has a ZIP64 locator its end record does not use"
+        );
     }
     check_extent(&extent)?;
     file.seek(SeekFrom::Start(extent.start))?;
@@ -330,6 +337,28 @@ impl Extent {
         self.count == ZIP64_COUNT_SENTINEL
             || self.bytes == u64::from(ZIP64_SENTINEL)
             || self.start == u64::from(ZIP64_SENTINEL)
+    }
+
+    fn ends_before_zip64_records(&self) -> bool {
+        let records = (ZIP64_END_RECORD + ZIP64_LOCATOR) as u64;
+        self.end
+            .checked_sub(records)
+            .is_some_and(|records_start| self.start.checked_add(self.bytes) == Some(records_start))
+    }
+
+    fn reads_zip64_end(&self) -> bool {
+        self.needs_zip64() || self.ends_before_zip64_records()
+    }
+
+    fn replaced_by(self, zip64: Extent) -> Field<Extent> {
+        let agrees = |value: u64, sentinel: u64, wide: u64| value == sentinel || value == wide;
+        field_check(
+            agrees(self.count, ZIP64_COUNT_SENTINEL, zip64.count)
+                && agrees(self.bytes, ZIP64_SENTINEL.into(), zip64.bytes)
+                && agrees(self.start, ZIP64_SENTINEL.into(), zip64.start),
+            "ZIP64 end record disagrees with the end record",
+        )?;
+        Ok(zip64)
     }
 }
 
@@ -669,6 +698,32 @@ mod proofs {
         }
     }
 
+    fn any_extent() -> Extent {
+        Extent {
+            count: kani::any(),
+            bytes: kani::any(),
+            start: kani::any(),
+            end: kani::any(),
+        }
+    }
+
+    #[kani::proof]
+    fn a_zip64_end_replaces_only_the_values_an_end_record_leaves_to_it() {
+        let plain = any_extent();
+        let zip64 = any_extent();
+        if plain.ends_before_zip64_records() {
+            assert!(
+                plain.start + plain.bytes + (ZIP64_END_RECORD + ZIP64_LOCATOR) as u64 == plain.end
+            );
+        }
+        if let Ok(chosen) = plain.replaced_by(zip64) {
+            assert!(chosen.end == zip64.end);
+            assert!(plain.count == ZIP64_COUNT_SENTINEL || plain.count == chosen.count);
+            assert!(plain.bytes == u64::from(ZIP64_SENTINEL) || plain.bytes == chosen.bytes);
+            assert!(plain.start == u64::from(ZIP64_SENTINEL) || plain.start == chosen.start);
+        }
+    }
+
     struct ShortReads<'a> {
         bytes: &'a [u8],
         served: usize,
@@ -956,7 +1011,7 @@ mod tests {
         merged
     }
 
-    const REFUSALS_BEFORE_THE_ZIP_CRATE: [&str; 20] = [
+    const REFUSALS_BEFORE_THE_ZIP_CRATE: [&str; 22] = [
         "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend",
         "ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend",
         "ZIP has ambiguous end records",
@@ -977,6 +1032,8 @@ mod tests {
         "ZIP name flagged as UTF-8 is not UTF-8",
         "malformed ZIP Unicode path field",
         "ZIP Unicode path field renames an entry",
+        "ZIP64 end record disagrees with the end record",
+        "ZIP has a ZIP64 locator its end record does not use",
     ];
     const REPEATED_NAME_REFUSAL: &str = "duplicate ZIP path";
 
@@ -1597,8 +1654,47 @@ mod tests {
         let mut prefixed = b"#!/bin/sh\n".to_vec();
         prefixed.extend_from_slice(&build(&[file("a")], &plain));
         archives.push(("a self-extractor prefix".to_owned(), prefixed));
+        archives.push((
+            "a ZIP64 end that disagrees with its end record".to_owned(),
+            disagreeing_zip64_end(),
+        ));
+        archives.push((
+            "a ZIP64 end whose end record names another offset".to_owned(),
+            zip64_end_with_another_offset(),
+        ));
+        archives.push((
+            "a comment ending in a ZIP64 locator".to_owned(),
+            build(&[file("a"), comment_ending_in_a_zip64_locator()], &plain),
+        ));
         archives.extend(written_by_zip_crate());
         archives
+    }
+
+    fn disagreeing_zip64_end() -> Vec<u8> {
+        let mut archive = build(&[file("a"), file("b")], &zip64_end([false, false, false]));
+        let count = archive.len() - END_RECORD + 8;
+        archive[count..count + 4].copy_from_slice(&[1, 0, 1, 0]);
+        archive
+    }
+
+    fn zip64_end_with_another_offset() -> Vec<u8> {
+        let mut archive = build(&[file("a"), file("b")], &zip64_end([true, false, false]));
+        let offset = archive.len() - END_RECORD + 16;
+        archive[offset..offset + 4].copy_from_slice(&0u32.to_le_bytes());
+        archive
+    }
+
+    fn comment_ending_in_a_zip64_locator() -> Spec {
+        let mut comment = ZIP64_END_SIGNATURE.to_vec();
+        comment.resize(ZIP64_END_RECORD, 0);
+        comment.extend_from_slice(ZIP64_LOCATOR_SIGNATURE);
+        comment.extend_from_slice(&values(&[0]));
+        comment.extend_from_slice(&1u32.to_le_bytes());
+        comment.extend_from_slice(&1u32.to_le_bytes());
+        Spec {
+            comment,
+            ..file("b")
+        }
     }
 
     fn written_by_zip_crate() -> Vec<(String, Vec<u8>)> {
@@ -1715,7 +1811,7 @@ mod tests {
         archives
     }
 
-    const BUILT_REFUSALS: [(&str, Outcome); 14] = [
+    const BUILT_REFUSALS: [(&str, Outcome); 16] = [
         (
             "a flagged name that is not UTF-8",
             Outcome::RefusedBeforeTheZipCrate,
@@ -1742,7 +1838,15 @@ mod tests {
         ("an offset that overflows", Outcome::BothRefuse),
         ("repeated names", Outcome::RepeatedNameRefusedAfterListing),
         (
-            "a ZIP64 end without sentinels",
+            "a ZIP64 end that disagrees with its end record",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+        (
+            "a ZIP64 end whose end record names another offset",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+        (
+            "a comment ending in a ZIP64 locator",
             Outcome::RefusedBeforeTheZipCrate,
         ),
     ];

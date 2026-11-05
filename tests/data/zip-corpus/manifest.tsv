@@ -242,6 +242,7 @@ infozip-piped	src/nested/inner.zip	228	e9eb60cf	644	1578021354
 infozip-piped	src/text	dir	-	755	1578108463
 infozip-piped	src/text/empty.txt	0	00000000	644	1578029273
 infozip-piped	src/text/readme.txt	1000	55261fc2	644	1578037192
+infozip-stdin	-	196609	65e7ed19	-	-
 infozip-stored	src	dir	-	755	1578116382
 infozip-stored	src/binary	dir	-	755	1578068868
 infozip-stored	src/binary/pattern-192k-plus-1.bin	196609	65e7ed19	644	1577950083
