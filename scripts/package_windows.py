@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory() as tmp:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(path, target)
     archive = dist / f"zipper-{version}-windows-x86_64.zip"
-    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as output:
         for path in sorted(package.rglob("*")):
             if path.is_file():
                 output.write(path, path.relative_to(package).as_posix())
