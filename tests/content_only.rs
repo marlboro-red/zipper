@@ -21,16 +21,27 @@ fn data(folder: &str) -> PathBuf {
         .join(folder)
 }
 
-fn archive_file(corpus: &Path, name: &str) -> PathBuf {
-    fs::read_dir(corpus)
+fn earlier_volume(rest: &str) -> bool {
+    rest.strip_prefix(".z")
+        .is_some_and(|digits| digits.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+fn archive_files(corpus: &Path, name: &str) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .find(|path| {
+        .filter(|path| {
             let file = path.file_name().unwrap().to_str().unwrap();
             file.strip_prefix(name)
                 .is_some_and(|rest| rest.starts_with('.') && rest != ".tsv" && rest != ".json")
         })
-        .unwrap_or_else(|| panic!("{name} has no archive file"))
+        .collect();
+    files.sort_by_key(|path| {
+        let file = path.file_name().unwrap().to_str().unwrap();
+        !earlier_volume(&file[name.len()..])
+    });
+    assert!(!files.is_empty(), "{name} has no archive file");
+    files
 }
 
 #[cfg(unix)]
@@ -77,10 +88,11 @@ fn content_only_extraction_writes_contents_and_the_execute_bit_alone() {
         let corpus = data(folder);
         for (name, tree) in corpus::expected(&corpus) {
             let work = tempfile::tempdir().unwrap();
-            let archive = work
-                .path()
-                .join(archive_file(&corpus, &name).file_name().unwrap());
-            fs::copy(archive_file(&corpus, &name), &archive).unwrap();
+            let mut archive = PathBuf::new();
+            for file in archive_files(&corpus, &name) {
+                archive = work.path().join(file.file_name().unwrap());
+                fs::copy(&file, &archive).unwrap();
+            }
             #[cfg(windows)]
             {
                 let mut stream = archive.as_os_str().to_owned();

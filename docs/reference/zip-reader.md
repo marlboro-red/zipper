@@ -1,9 +1,9 @@
 # In-process ZIP reader
 
 Zipper reads ZIP archives with its own parallel Rust reader by default.
-The default engine, `--zip-engine auto`, decides from the file's leading bytes and never from 7-Zip's output. A file that starts with a ZIP record signature goes to the in-process reader. A tar, plain or inside gzip, zstd, xz or bzip2, goes to the in-process [tar reader](tar-reader.md), and any other gzip, bzip2, xz or zstd file goes to the in-process [single compressed file reader](stream-reader.md). A file that starts with the signature of 7z, RAR or CAB goes to 7-Zip with that format pinned by `-t`, unless it is a 7z the native reader decodes. A file named `*.001` is read with the volumes after it as one archive, as [split volumes](#split-volumes) describes, and a set that goes to 7-Zip gets the split chain, such as `-trar5.split`. A pinned 7-Zip cannot reopen the file as a ZIP, even when a ZIP is appended or a wrong password is typed. Every other file goes to the in-process reader, which rejects anything that is not a ZIP it supports. Use `--zip-engine backend` for other formats 7-Zip reads, such as ISO, DMG, WIM and ARJ, and for spanned ZIP volumes named `.z01`. ISO is not pinned, because `-tiso` makes 7-Zip skip a disc's UDF tree. Zipper refuses `*` and `?` in any path it gives 7-Zip, because 7-Zip expands them as wildcards.
+The default engine, `--zip-engine auto`, decides from the file's leading bytes and never from 7-Zip's output. A file that starts with a ZIP record signature goes to the in-process reader. A tar, plain or inside gzip, zstd, xz or bzip2, goes to the in-process [tar reader](tar-reader.md), and any other gzip, bzip2, xz or zstd file goes to the in-process [single compressed file reader](stream-reader.md). A file that starts with the signature of 7z, RAR or CAB goes to 7-Zip with that format pinned by `-t`, unless it is a 7z the native reader decodes. A file named `*.001` is read with the volumes after it as one archive, as [split volumes](#split-volumes) describes, and a set that goes to 7-Zip gets the split chain, such as `-trar5.split`. A `name.zip` with `name.z01` beside it is read in process as a [ZIP split set](#zip-split-sets). A pinned 7-Zip cannot reopen the file as a ZIP, even when a ZIP is appended or a wrong password is typed. Every other file goes to the in-process reader, which rejects anything that is not a ZIP it supports. Use `--zip-engine backend` for other formats 7-Zip reads, such as ISO, DMG, WIM and ARJ. ISO is not pinned, because `-tiso` makes 7-Zip skip a disc's UDF tree. Zipper refuses `*` and `?` in any path it gives 7-Zip, because 7-Zip expands them as wildcards.
 
-A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as encryption, another compression method or more than one disk, the error names `--zip-engine backend`. Passing that flag is the user's decision.
+A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as encryption or another compression method, the error names `--zip-engine backend`. Passing that flag is the user's decision.
 
 `--zip-engine native` and `--zip-engine native-fast` select the reader explicitly. `--zip-engine backend` sends every archive to 7-Zip. Whenever 7-Zip extracts, under either engine, it anchors an absolute symlink target inside its output directory. Zipper renames that directory into place, so such a link can dangle outside the destination.
 The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
@@ -13,6 +13,7 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 The reader supports these features:
 
 - Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
+- Split sets, `name.z01` and on with `name.zip` last, as [ZIP split sets](#zip-split-sets) describes, and an archive that starts with the spanning signature, as Info-ZIP `zip -s` writes one that fits in one piece.
 - Conventional ZIP64. Info-ZIP also writes a ZIP64 end record when its input is piped, even when the regular end record holds every value. The reader then requires both records to agree. With ZIP64, every end record value that is not a sentinel must equal its ZIP64 value.
 - File bytes and directories. A file with the FIFO type, which is how Info-ZIP `zip - -` stores piped input, is written as a regular file, as `unzip`, bsdtar, 7-Zip and Python write it. Device and socket entries are rejected.
 - Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
@@ -23,7 +24,7 @@ The reader does not support these features:
 - Encryption.
 - Symlinks that point outside the destination.
 - Shrink, Implode and other legacy methods.
-- Multi-disk archives.
+- The last volume of a split set without the volumes before it.
 - Ambiguous end records.
 - A ZIP64 locator just before the end record that the end record does not use. bsdtar, 7-Zip and Python follow such a locator and can read a different directory.
 - Data before the first record, such as a self-extracting executable from `zip -A`. The default engine reads it in process and rejects it, because no 7-Zip signature matches.
@@ -95,9 +96,9 @@ Both native ZIP modes run these checks before publishing any output:
 
 ## Reference corpus
 
-`tests/data/zip-corpus` holds 22 archives. Eighteen come from these real ZIP writers:
+`tests/data/zip-corpus` holds 24 archives. Twenty come from these real ZIP writers:
 
-- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes, and with piped input.
+- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes, with piped input, and with `-s 64k` as a split set of six volumes and as one piece.
 - 7-Zip, with Deflate, Copy and timestamps.
 - bsdtar, with Deflate and stored entries.
 - macOS `ditto`.
@@ -105,12 +106,12 @@ Both native ZIP modes run these checks before publishing any output:
 
 Four more archives come from Info-ZIP `zip -y`, 7-Zip `-snl`, bsdtar and `ditto`, which store symlinks as links. Only `unzip` and bsdtar create links, so link targets are recorded where those two agree, and the other paths still need three readers.
 
-The manifest also records each path's exact modification time where `unzip` and bsdtar both restore the source's own time under `TZ=UTC` and `TZ=Pacific/Auckland`. That covers the 11 Info-ZIP, bsdtar and `ditto` archives. The other archives carry only DOS times, which depend on the time zone. `tests/cli.rs` checks those under `TZ=UTC` and `TZ=Asia/Tokyo`.
+The manifest also records each path's exact modification time where `unzip` and bsdtar both restore the source's own time under `TZ=UTC` and `TZ=Pacific/Auckland`. That covers the 12 Info-ZIP, bsdtar and `ditto` archives that the two can read. The other archives carry only DOS times, which depend on the time zone. `tests/cli.rs` checks those under `TZ=UTC` and `TZ=Asia/Tokyo`.
  The source tree has empty files and directories, non-ASCII names, and files at the decoder's 64 KiB and 192 KiB slice boundaries.
 
-`scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 6 archives.
+`scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 7 archives. No reference reader but 7-Zip reads a split set, and Info-ZIP's `zip -s 0` join wrote a truncated archive on macOS. So the manifest of the split set records the tree 7-Zip extracts only where it equals the source tree.
 
-`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on 21 of the 22 archives. They disagree on the mode of Info-ZIP's piped input. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
+`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on 22 of the 24 archives. They disagree on the mode of Info-ZIP's piped input, and neither reads the split set. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Add `--only` and archive names to rebuild those alone and keep the rest. Java `jar` output is missing because no JDK was installed.
 
 The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 94 ZIP archives from PyPI, Maven, Go and GitHub with Zipper and default bsdtar. All matched, along with the 154 tar archives in the same set.
 
@@ -165,6 +166,32 @@ The line never claims a volume is damaged. For a set, it names the first and las
 A library caller that calls one reader, such as `native_7z::read_archive`, on a `name.001` path gets the same reading, but finds the set again for each file it opens. Wrapping the call in `zipper::read_volumes` finds the set once and adds the volume line to a failure, as `extract_archive` does.
 
 `tests/volumes.rs` splits every native format at sizes from 1 byte up past the whole archive and compares each tree with the whole archive's. It also extracts 7-Zip's own volumes of 7z, ZIP, tar, gzip tar and xz tar, from 1-byte to single volumes, and compares each tree with `7zz x`. Its hostile cases cover each failure above, and check that no staging folder is left. Two Kani proofs in `src/volumes.rs` cover the offset arithmetic. `a_layout_exists_exactly_when_its_total_fits` shows that a set is accepted exactly when its total size fits 64 bits, for any volume size, count and last size. `every_offset_maps_to_the_one_volume_and_position_that_hold_it` shows that every offset maps to the one volume and position that hold it, with no panic or overflow, for volume sizes and counts up to 255 and offsets up to 65,535. A wider bound ran for over 30 minutes without a verdict. `every_layout_locates_every_offset_as_a_linear_scan_does` compares the mapping with a linear scan on every small set.
+
+## ZIP split sets
+
+Info-ZIP `zip -s` and WinZip split an archive into `name.z01`, `name.z02` and on, with `name.zip` last. The end record in `name.zip` names its own disk, and every offset counts from the start of the volume that holds it. Open `name.zip` to read the set in process.
+
+`src/volumes.rs` finds the set when `name.zip`, in any letter case, has `name.z01` beside it. A `name.ZIP` looks for `name.Z01`. Numbers have two digits and grow past 99, so `name.z100` follows `name.z99`. The set is found once per run and read through the same non-blocking, identity-checked opens as [split volumes](#split-volumes), and `name.zip` must be a regular file. Volumes may differ in size, since removable media hold what fits. The set is damaged, and nothing is read, when any of these holds. The error names the volume at fault:
+
+- A gap in the numbering. Zipper looks for the 16 numbers after the first missing one.
+- A volume that is empty, is not a file, or whose metadata cannot be read.
+- The volumes add up past 16 EiB.
+
+Any `.z01`, `.z02` or other numbered volume opened by itself is refused. The error names `name.zip` and says to open it, or says that it is missing.
+
+The reader then checks the set against the end record:
+
+- The end record, or the ZIP64 end record, must name `name.zip` as the last disk. So the number of volumes must equal its disk count, and a stray `name.z01` beside a whole `name.zip` is refused.
+- The ZIP64 locator must count the same disks and point inside a volume.
+- The central directory must start inside the volume its disk number names, and end at the end record. It may run across volumes.
+- Every entry's disk number must name a volume, and its offset must lie inside that volume. An offset is never read against the joined length.
+- A disk number of `0xFFFF`, which defers to a ZIP64 field, is refused.
+
+Each of these errors names the volume or disk and the offset. A disk number past the set is named by its number, such as `disk 10`. A `name.zip` whose end record names other disks, read without its earlier volumes, is refused with the advice to put them beside it.
+
+Inside the joined volumes the reader applies every check a single ZIP gets. Records must follow each other without gaps or overlaps, and every local header must match its central entry. So a volume that is repeated, swapped, shifted or cut fails. The error gains the volume line, such as "read as split ZIP volumes `a.z01` to `a.zip`". It names a volume that holds the same bytes as an earlier one. The same repeat scan as for numbered volumes runs. A failure in an entry's data names the set, not the volume that holds the fault. Encrypted entries stay refused. An archive in one piece that starts with the spanning signature `PK\x07\x08` or `PK00` has its first record right after it, and every disk number zero.
+
+`tests/zip_spanned.rs` extracts Info-ZIP split sets from the corpus and from `zip -s` at 64 KiB, 65 KiB and 100 KiB, stored, deflated and with ZIP64 records, with 1 and 4 threads. Each must match the unsplit archive's tree, and 7-Zip's tree when 7-Zip is installed. Its hostile cases cover a gap, a repeated, swapped or overlapping volume, and an extra or missing last volume. They also cover an empty or non-file volume, a volume opened alone, a stray `name.z01`, disk numbers and offsets outside their volume, and an encrypted set. Each must fail, name a volume, and publish nothing. 7-Zip writes no `.z01` sets, so Info-ZIP is the only writer covered. `every_offset_in_uneven_volumes_maps_to_the_volume_that_holds_it` in `src/volumes.rs` proves with Kani that every offset of three volumes of any sizes maps to the volume and position that hold it. `uneven_volumes_locate_every_offset_as_a_linear_scan_does` checks every set of up to four volumes of 1 to 4 bytes.
 
 ## Extraction options
 

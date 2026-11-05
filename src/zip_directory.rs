@@ -1,5 +1,5 @@
-use crate::{BadField, Field, field_check};
-use anyhow::{Result, ensure};
+use crate::{BadField, Field, field_check, volumes::ZipDisks};
+use anyhow::{Context, Result, ensure};
 use std::{
     borrow::Cow,
     io::{Read, Seek, SeekFrom},
@@ -19,6 +19,7 @@ const MAX_ENTRIES: u64 = 100_000;
 const MAX_METADATA: u64 = 64 * 1024 * 1024;
 const ZIP64_SENTINEL: u32 = u32::MAX;
 const ZIP64_COUNT_SENTINEL: u64 = u16::MAX as u64;
+const ZIP64_DISK_SENTINEL: u64 = u16::MAX as u64;
 const ZIP64_VALUE: usize = 8;
 
 const ENCRYPTED: u16 = 0x0001;
@@ -44,13 +45,15 @@ const S_IFLNK: u32 = 0o120000;
 const SPECIAL_BITS: u32 = 0o7000;
 const WRITE_BITS: u32 = 0o222;
 
-const MULTI_DISK: &str =
-    "multi-disk ZIP is not supported; pass --zip-engine backend to read it with 7-Zip";
-const MULTI_DISK_ZIP64: &str =
-    "multi-disk ZIP64 is not supported; pass --zip-engine backend to read it with 7-Zip";
+const MULTI_DISK: &str = "ZIP is the last volume of a split archive, but its other volumes, named like name.z01 beside name.zip, are not beside it";
+const MULTI_DISK_ZIP64: &str = "ZIP64 is the last volume of a split archive, but its other volumes, named like name.z01 beside name.zip, are not beside it";
+const SPANNING_MARKER: usize = 4;
+// SPEC(APPNOTE 8.5.3, 8.5.4): a split archive may start with the spanning signature, or with PK00 when it fits one piece.
+const SPANNING_MARKERS: [&[u8; SPANNING_MARKER]; 2] = [b"PK\x07\x08", b"PK00"];
 
 pub(crate) struct Directory {
     pub(crate) start: u64,
+    pub(crate) archive_start: u64,
     pub(crate) entries: Vec<CentralEntry>,
 }
 
@@ -66,6 +69,7 @@ pub(crate) struct CentralEntry {
     pub(crate) size: u64,
     pub(crate) external_attributes: u32,
     pub(crate) header_start: u64,
+    pub(crate) disk: u16,
 }
 
 impl CentralEntry {
@@ -116,7 +120,10 @@ impl CentralEntry {
     }
 }
 
-pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> {
+pub(crate) fn read_directory<R: Read + Seek>(
+    file: &mut R,
+    disks: Option<&ZipDisks>,
+) -> Result<Directory> {
     let length = file.seek(SeekFrom::End(0))?;
     ensure!(
         length >= END_RECORD as u64,
@@ -129,12 +136,46 @@ pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> 
     let end = end_record(&tail)?;
     let end_offset = length - tail_size + end as u64;
     let mut extent = end_extent(fixed(&tail, end), end_offset)?;
-    if extent.reads_zip64_end() {
+    if disks.is_none() {
+        field_check(extent.on_one_disk(), MULTI_DISK)?;
+    }
+    let placed = Extent {
+        start: disks
+            .and_then(|disks| disks.place(extent.start_disk, extent.start))
+            .unwrap_or(extent.start),
+        ..extent
+    };
+    if placed.reads_zip64_end() {
         ensure!(end_offset >= ZIP64_LOCATOR as u64, "missing ZIP64 locator");
         file.seek(SeekFrom::Start(end_offset - ZIP64_LOCATOR as u64))?;
-        let record_start = zip64_record_start(&crate::number(file)?, end_offset)?;
+        let locator = crate::number(file)?;
+        let record_start = match disks {
+            None => zip64_record_start(&locator, end_offset, |disk, offset, disks| {
+                (disk == 0 && disks == 1).then_some(offset)
+            })?,
+            Some(found) => zip64_record_start(&locator, end_offset, |disk, offset, disks| {
+                (disks == found.count())
+                    .then(|| found.place(disk, offset))
+                    .flatten()
+            })
+            .with_context(|| {
+                let [disk, disks] = [4, 16].map(|at| u64::from(le32(&locator, at)));
+                format!(
+                    "the ZIP64 locator in {} counts {} and points at offset {} of {}; the set is {}",
+                    found.name(found.count() - 1),
+                    volumes(disks),
+                    le64(&locator, 8),
+                    found.name(disk),
+                    found.names()
+                )
+            })?,
+        };
         file.seek(SeekFrom::Start(record_start))?;
-        extent = extent.replaced_by(zip64_extent(&crate::number(file)?, record_start)?)?;
+        let zip64 = zip64_extent(&crate::number(file)?, record_start)?;
+        if disks.is_none() {
+            field_check(zip64.on_one_disk(), MULTI_DISK_ZIP64)?;
+        }
+        extent = extent.replaced_by(zip64)?;
     } else if end_offset >= ZIP64_LOCATOR as u64 {
         file.seek(SeekFrom::Start(end_offset - ZIP64_LOCATOR as u64))?;
         let signature: [u8; 4] = crate::number(file)?;
@@ -143,11 +184,77 @@ pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> 
             "ZIP has a ZIP64 locator its end record does not use"
         );
     }
+    if let Some(disks) = disks {
+        extent.start = directory_on_disks(&extent, disks)?;
+    }
     check_extent(&extent)?;
     file.seek(SeekFrom::Start(extent.start))?;
+    let mut entries = central_entries(file, extent).map_err(WalkError::into_anyhow)?;
+    if let Some(disks) = disks {
+        place_entries(&mut entries, disks)?;
+    }
     Ok(Directory {
         start: extent.start,
-        entries: central_entries(file, extent).map_err(WalkError::into_anyhow)?,
+        archive_start: spanning_marker(file)?,
+        entries,
+    })
+}
+
+fn volumes(count: u64) -> String {
+    match count {
+        1 => "1 volume".to_owned(),
+        _ => format!("{count} volumes"),
+    }
+}
+
+fn directory_on_disks(extent: &Extent, disks: &ZipDisks) -> Result<u64> {
+    let last = disks.name(disks.count() - 1);
+    ensure!(
+        extent.disk.checked_add(1) == Some(disks.count()),
+        "the end record of {last} says the archive has {}, but {} were found, {}",
+        volumes(extent.disk.saturating_add(1)),
+        disks.count(),
+        disks.names()
+    );
+    ensure!(
+        extent.count_here <= extent.count,
+        "the end record of {last} counts more entries on its last volume than in the archive"
+    );
+    disks
+        .place(extent.start_disk, extent.start)
+        .with_context(|| {
+            format!(
+                "the ZIP central directory starts at offset {} of {}, outside that volume; the set is {}",
+                extent.start,
+                disks.name(extent.start_disk),
+                disks.names()
+            )
+        })
+}
+
+fn place_entries(entries: &mut [CentralEntry], disks: &ZipDisks) -> Result<()> {
+    for entry in entries {
+        let disk = u64::from(entry.disk);
+        entry.header_start = disks.place(disk, entry.header_start).with_context(|| {
+            format!(
+                "ZIP entry {} has its local header at offset {} of {}, outside that volume; the set is {}",
+                entry.name(),
+                entry.header_start,
+                disks.name(disk),
+                disks.names()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn spanning_marker<R: Read + Seek>(file: &mut R) -> Result<u64> {
+    file.seek(SeekFrom::Start(0))?;
+    let marker: [u8; SPANNING_MARKER] = crate::number(file)?;
+    Ok(if SPANNING_MARKERS.contains(&&marker) {
+        SPANNING_MARKER as u64
+    } else {
+        0
     })
 }
 
@@ -283,6 +390,7 @@ fn central_entry(
         size: record.size,
         external_attributes: record.external_attributes,
         header_start: record.header_start,
+        disk: record.disk,
     })
 }
 
@@ -330,6 +438,9 @@ struct Extent {
     bytes: u64,
     start: u64,
     end: u64,
+    disk: u64,
+    start_disk: u64,
+    count_here: u64,
 }
 
 impl Extent {
@@ -337,6 +448,13 @@ impl Extent {
         self.count == ZIP64_COUNT_SENTINEL
             || self.bytes == u64::from(ZIP64_SENTINEL)
             || self.start == u64::from(ZIP64_SENTINEL)
+            || self.disk == ZIP64_DISK_SENTINEL
+            || self.start_disk == ZIP64_DISK_SENTINEL
+            || self.count_here == ZIP64_COUNT_SENTINEL
+    }
+
+    fn on_one_disk(&self) -> bool {
+        self.disk == 0 && self.start_disk == 0 && self.count_here == self.count
     }
 
     fn ends_before_zip64_records(&self) -> bool {
@@ -355,7 +473,10 @@ impl Extent {
         field_check(
             agrees(self.count, ZIP64_COUNT_SENTINEL, zip64.count)
                 && agrees(self.bytes, ZIP64_SENTINEL.into(), zip64.bytes)
-                && agrees(self.start, ZIP64_SENTINEL.into(), zip64.start),
+                && agrees(self.start, ZIP64_SENTINEL.into(), zip64.start)
+                && agrees(self.disk, ZIP64_DISK_SENTINEL, zip64.disk)
+                && agrees(self.start_disk, ZIP64_DISK_SENTINEL, zip64.start_disk)
+                && agrees(self.count_here, ZIP64_COUNT_SENTINEL, zip64.count_here),
             "ZIP64 end record disagrees with the end record",
         )?;
         Ok(zip64)
@@ -363,24 +484,32 @@ impl Extent {
 }
 
 fn end_extent(record: &[u8; END_RECORD], end: u64) -> Field<Extent> {
-    field_check(
-        le16(record, 4) == 0 && le16(record, 6) == 0 && le16(record, 8) == le16(record, 10),
-        MULTI_DISK,
-    )?;
     Ok(Extent {
         count: le16(record, 10).into(),
         bytes: le32(record, 12).into(),
         start: le32(record, 16).into(),
         end,
+        disk: le16(record, 4).into(),
+        start_disk: le16(record, 6).into(),
+        count_here: le16(record, 8).into(),
     })
 }
 
-fn zip64_record_start(locator: &[u8; ZIP64_LOCATOR], end_offset: u64) -> Field<u64> {
+fn zip64_record_start(
+    locator: &[u8; ZIP64_LOCATOR],
+    end_offset: u64,
+    place: impl Fn(u64, u64, u64) -> Option<u64>,
+) -> Field<u64> {
     field_check(
-        locator[..4] == *ZIP64_LOCATOR_SIGNATURE && le32(locator, 4) == 0 && le32(locator, 16) == 1,
+        locator[..4] == *ZIP64_LOCATOR_SIGNATURE,
         "invalid ZIP64 locator",
     )?;
-    let start = le64(locator, 8);
+    let start = place(
+        le32(locator, 4).into(),
+        le64(locator, 8),
+        le32(locator, 16).into(),
+    )
+    .ok_or(BadField("invalid ZIP64 locator"))?;
     field_check(
         start.checked_add((ZIP64_END_RECORD + ZIP64_LOCATOR) as u64) == Some(end_offset),
         "unsupported ZIP64 extension or offset",
@@ -390,18 +519,17 @@ fn zip64_record_start(locator: &[u8; ZIP64_LOCATOR], end_offset: u64) -> Field<u
 
 fn zip64_extent(record: &[u8; ZIP64_END_RECORD], end: u64) -> Field<Extent> {
     field_check(
-        record[..4] == *ZIP64_END_SIGNATURE
-            && le64(record, 4) == ZIP64_END_RECORD_SIZE_FIELD
-            && le64(record, 16) == 0,
+        record[..4] == *ZIP64_END_SIGNATURE && le64(record, 4) == ZIP64_END_RECORD_SIZE_FIELD,
         "unsupported ZIP64 record",
     )?;
-    let count = le64(record, 32);
-    field_check(le64(record, 24) == count, MULTI_DISK_ZIP64)?;
     Ok(Extent {
-        count,
+        count: le64(record, 32),
         bytes: le64(record, 40),
         start: le64(record, 48),
         end,
+        disk: le32(record, 16).into(),
+        start_disk: le32(record, 20).into(),
+        count_here: le64(record, 24),
     })
 }
 
@@ -426,6 +554,7 @@ struct Record<'a> {
     size: u64,
     external_attributes: u32,
     header_start: u64,
+    disk: u16,
     name: &'a [u8],
     extra: &'a [u8],
 }
@@ -452,6 +581,7 @@ fn central_record(rest: &[u8]) -> Field<Record<'_>> {
         size,
         external_attributes: le32(rest, 38),
         header_start,
+        disk: le16(rest, 34),
         name: &rest[CENTRAL_ENTRY..extra_start],
         extra: extra_field,
     })
@@ -686,8 +816,11 @@ mod proofs {
         let end: u64 = kani::any();
         if let Ok(extent) = end_extent(&kani::any(), end) {
             assert!(extent.end == end && extent.count <= ZIP64_COUNT_SENTINEL);
+            assert!(extent.disk <= ZIP64_DISK_SENTINEL && extent.start_disk <= ZIP64_DISK_SENTINEL);
+            assert!(extent.count_here <= ZIP64_COUNT_SENTINEL);
         }
-        if let Ok(start) = zip64_record_start(&kani::any(), end) {
+        let placed: Option<u64> = kani::any();
+        if let Ok(start) = zip64_record_start(&kani::any(), end, |_, _, _| placed) {
             assert!(start + (ZIP64_END_RECORD + ZIP64_LOCATOR) as u64 == end);
         }
         if let Ok(extent) = zip64_extent(&kani::any(), end) {
@@ -704,6 +837,9 @@ mod proofs {
             bytes: kani::any(),
             start: kani::any(),
             end: kani::any(),
+            disk: kani::any(),
+            start_disk: kani::any(),
+            count_here: kani::any(),
         }
     }
 
@@ -721,6 +857,13 @@ mod proofs {
             assert!(plain.count == ZIP64_COUNT_SENTINEL || plain.count == chosen.count);
             assert!(plain.bytes == u64::from(ZIP64_SENTINEL) || plain.bytes == chosen.bytes);
             assert!(plain.start == u64::from(ZIP64_SENTINEL) || plain.start == chosen.start);
+            assert!(plain.disk == ZIP64_DISK_SENTINEL || plain.disk == chosen.disk);
+            assert!(
+                plain.start_disk == ZIP64_DISK_SENTINEL || plain.start_disk == chosen.start_disk
+            );
+            assert!(
+                plain.count_here == ZIP64_COUNT_SENTINEL || plain.count_here == chosen.count_here
+            );
         }
     }
 
@@ -827,6 +970,7 @@ mod proofs {
             size: 0,
             external_attributes: kani::any(),
             header_start: 0,
+            disk: 0,
         };
         let mode = entry.unix_mode_like_zip_crate();
         assert!(mode.is_none_or(|mode| mode & SPECIAL_BITS == 0 && mode >> 16 == 0));
@@ -862,6 +1006,9 @@ mod proofs {
             bytes: directory_length as u64,
             start,
             end: start.wrapping_add(directory_length as u64),
+            disk: 0,
+            start_disk: 0,
+            count_here: 0,
         };
         kani::assume(check_extent(&extent).is_ok());
         let mut reader = &file[..file_length];
@@ -1059,7 +1206,7 @@ mod tests {
     }
 
     fn compare(bytes: &[u8]) -> std::result::Result<Outcome, String> {
-        let ours = read_directory(&mut Cursor::new(bytes));
+        let ours = read_directory(&mut Cursor::new(bytes), None);
         let theirs = listed_by_zip_crate(bytes);
         match (ours, theirs) {
             (Err(_), Err(_)) => Ok(Outcome::BothRefuse),
@@ -1776,7 +1923,8 @@ mod tests {
             },
             with_extra(named(&cp437), &[(UNICODE_PATH, &cp437_path(&cp437))]),
         ];
-        let directory = read_directory(&mut Cursor::new(build(&specs, &End::default()))).unwrap();
+        let directory =
+            read_directory(&mut Cursor::new(build(&specs, &End::default())), None).unwrap();
         assert_eq!(directory.entries.len(), specs.len());
         for (entry, spec) in directory.entries.iter().zip(&specs) {
             assert_eq!(*entry.stored_name, *spec.name);
@@ -1804,7 +1952,13 @@ mod tests {
                 .collect();
             paths.sort();
             for path in paths {
-                archives.push((path.display().to_string(), std::fs::read(&path).unwrap()));
+                let bytes = std::fs::read(&path).unwrap();
+                let name = if path.with_extension("z01").exists() {
+                    "the last volume of a split set read alone".to_owned()
+                } else {
+                    path.display().to_string()
+                };
+                archives.push((name, bytes));
             }
         }
         assert!(archives.len() >= 30, "the ZIP corpora are missing");
@@ -1850,7 +2004,7 @@ mod tests {
             Outcome::RefusedBeforeTheZipCrate,
         ),
     ];
-    const MORE_BUILT_REFUSALS: [(&str, Outcome); 6] = [
+    const MORE_BUILT_REFUSALS: [(&str, Outcome); 7] = [
         ("Unicode comments", Outcome::BothRefuse),
         (
             "a comment holding an end signature",
@@ -1863,6 +2017,10 @@ mod tests {
         ("a ZIP64 locator for two disks", Outcome::BothRefuse),
         ("trailing data", Outcome::RefusedBeforeTheZipCrate),
         ("a self-extractor prefix", Outcome::RefusedBeforeTheZipCrate),
+        (
+            "the last volume of a split set read alone",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
     ];
 
     #[test]

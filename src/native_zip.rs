@@ -418,9 +418,16 @@ struct Opened {
     directory: Directory,
 }
 
+fn open_directory(path: &Path) -> Result<(BufReader<crate::volumes::ArchiveFile>, Directory)> {
+    let archive = crate::volumes::open(path)?;
+    let disks = archive.zip_disks();
+    let mut file = BufReader::with_capacity(64 * 1024, archive);
+    let directory = crate::zip_directory::read_directory(&mut file, disks.as_ref())?;
+    Ok((file, directory))
+}
+
 fn open(path: &Path, cache: bool) -> Result<Opened> {
-    let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
-    let directory = crate::zip_directory::read_directory(&mut file)?;
+    let (file, directory) = open_directory(path)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
     } else {
@@ -530,11 +537,11 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
             prefix = p;
         }
     }
-    assign_record_limits(&mut items, directory.start)?;
+    assign_record_limits(&mut items, directory.archive_start, directory.start)?;
     Ok(items)
 }
 
-fn assign_record_limits(items: &mut [Item], central_start: u64) -> Result<()> {
+fn assign_record_limits(items: &mut [Item], archive_start: u64, central_start: u64) -> Result<()> {
     let records: Vec<_> = items
         .iter()
         .map(|item| {
@@ -542,23 +549,28 @@ fn assign_record_limits(items: &mut [Item], central_start: u64) -> Result<()> {
             (item.header_start, span)
         })
         .collect();
-    for (item, limit) in items
-        .iter_mut()
-        .zip(record_limits(&records, central_start)?)
+    for (item, limit) in
+        items
+            .iter_mut()
+            .zip(record_limits(&records, archive_start, central_start)?)
     {
         item.next_record_start = limit;
     }
     Ok(())
 }
 
-fn record_limits(records: &[(u64, Option<u64>)], central_start: u64) -> Field<Vec<u64>> {
+fn record_limits(
+    records: &[(u64, Option<u64>)],
+    archive_start: u64,
+    central_start: u64,
+) -> Field<Vec<u64>> {
     let mut order: Vec<usize> = (0..records.len()).collect();
     order.sort_unstable_by_key(|&index| records[index].0);
     let first = order
         .first()
         .map_or(central_start, |&index| records[index].0);
     field_check(
-        first == 0,
+        first == archive_start,
         "ZIP has bytes before its first record, as a self-extractor does; pass --zip-engine backend to read it with 7-Zip",
     )?;
     let ends = order.iter().skip(1).map(|&index| records[index].0);
@@ -1186,8 +1198,7 @@ fn stream_entry(
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
-    let directory = crate::zip_directory::read_directory(&mut file)?;
+    let (_, directory) = open_directory(path)?;
     Ok(scan(&directory, false)?
         .into_iter()
         .map(|item| item.entry)
@@ -1802,7 +1813,7 @@ mod record_limit_tests {
             for records in layouts(count) {
                 for central_start in 0..9 {
                     assert_eq!(
-                        record_limits(&records, central_start).ok(),
+                        record_limits(&records, 0, central_start).ok(),
                         expected_limits(&records, central_start),
                         "{records:?} with the directory at {central_start}"
                     );
@@ -1818,7 +1829,7 @@ mod record_limit_tests {
             vec![(0, Some(1)), (2, Some(u64::MAX - 1))],
             vec![(0, None)],
         ] {
-            assert!(record_limits(&records, u64::MAX).is_err(), "{records:?}");
+            assert!(record_limits(&records, 0, u64::MAX).is_err(), "{records:?}");
         }
     }
 }

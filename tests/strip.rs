@@ -23,8 +23,13 @@ fn archive_file(corpus: &Path, name: &str) -> PathBuf {
         .map(|entry| entry.unwrap().path())
         .find(|path| {
             let file = path.file_name().unwrap().to_str().unwrap();
-            file.strip_prefix(name)
-                .is_some_and(|rest| rest.starts_with('.') && rest != ".tsv" && rest != ".json")
+            let earlier_volume = |rest: &str| {
+                rest.strip_prefix(".z")
+                    .is_some_and(|digits| digits.bytes().all(|byte| byte.is_ascii_digit()))
+            };
+            file.strip_prefix(name).is_some_and(|rest| {
+                rest.starts_with('.') && rest != ".tsv" && rest != ".json" && !earlier_volume(rest)
+            })
         })
         .unwrap_or_else(|| panic!("{name} has no archive file"))
 }

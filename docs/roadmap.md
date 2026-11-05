@@ -353,6 +353,11 @@ Exit checks:
 1. A corpus of split and self-extracting archives from 7-Zip, WinZip and Info-ZIP extracts the same trees as 7-Zip.
 2. Hostile tests cover volumes that overlap, repeat or come in the wrong order.
 
+Done so far, by 6 November 2026:
+
+- Raw numbered volumes for every native format, as [split volumes](reference/zip-reader.md#split-volumes) describes.
+- ZIP split sets from Info-ZIP `zip -s`, read in process with every disk number and offset placed inside its own volume, as [ZIP split sets](reference/zip-reader.md#zip-split-sets) describes. 7-Zip writes no `.z01` sets and WinZip was not available, so Info-ZIP is the only writer in the corpus.
+
 ## M16. Package formats
 
 Software packages extract in process on every operating system.

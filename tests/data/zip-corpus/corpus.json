@@ -254,6 +254,38 @@
     "unzip": "ok"
    }
   },
+  "infozip-split": {
+   "agreeing": [
+    "7zip",
+    "source"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [],
+   "readers": {
+    "7zip": "ok",
+    "source": "ok"
+   }
+  },
+  "infozip-split-one-piece": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "unzip"
+   ],
+   "dissenting": [
+    "python"
+   ],
+   "modes_agreed_by": [
+    "unzip",
+    "bsdtar"
+   ],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
   "infozip-stdin": {
    "agreeing": [
     "7zip",

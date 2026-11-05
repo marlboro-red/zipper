@@ -112,6 +112,10 @@ def writers(have):
             data = (cwd / "src/binary/pattern-192k-plus-1.bin").read_bytes()
             subprocess.run(["zip", "-q", str(target), "-"], cwd=cwd, input=data, check=True)
         found.append(("infozip-stdin", stdin_data))
+        # Deflated, the tree fits one 64 KiB piece, which Info-ZIP writes
+        # with the spanning signature first and every disk number zero.
+        found.append(("infozip-split-one-piece", lambda target, cwd: run(
+            ["zip", "-q", "-r", "-s", "64k", str(target), "src"], cwd)))
     if have("7zz"):
         for name, flags in [("7zip-deflate", ["-mm=Deflate"]), ("7zip-copy", ["-mm=Copy"]),
                             ("7zip-timestamps", ["-mtc=on"])]:
@@ -134,6 +138,28 @@ def writers(have):
         found.append((name, lambda target, cwd, a=(method, seekable, zip64): python_zip(
             target, cwd / "src", *a)))
     return found
+
+
+def split_writers(have):
+    """Writers of split sets, name.z01 and on with name.zip last. Python,
+    unzip and bsdtar cannot read them, and Info-ZIP's `zip -s 0` join is
+    unreliable, so 7-Zip's tree must match the source tree instead."""
+    found = []
+    if have("zip"):
+        found.append(("infozip-split", lambda target, cwd: run(
+            ["zip", "-q", "-r", "-0", "-s", "64k", str(target), "src"], cwd)))
+    return found
+
+
+def split_readers(have, source):
+    found = [("source", lambda archive, out: shutil.copytree(source / "src", out / "src", symlinks=True))]
+    if have("7zz"):
+        found.append(("7zip", lambda archive, out: run(["7zz", "x", "-y", "-bd", f"-o{out}", str(archive)], out.parent)))
+    return found
+
+
+def volumes_of(archive):
+    return sorted(archive.parent.glob(f"{archive.stem}.z[0-9][0-9]*"))
 
 
 def walk(root):
@@ -234,14 +260,22 @@ def readers(have, zone=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("tests/data/zip-corpus"))
+    parser.add_argument("--only", nargs="+", metavar="NAME",
+                        help="rebuild only these archives and keep the rest of the corpus")
     args = parser.parse_args()
     have = lambda tool: shutil.which(tool) is not None
     args.output.mkdir(parents=True, exist_ok=True)
+    rebuilt = lambda name: args.only is None or name in args.only
     for old in args.output.glob("*.zip"):
-        old.unlink()
+        if rebuilt(old.stem):
+            for volume in volumes_of(old):
+                volume.unlink()
+            old.unlink()
     summary = {"writers": {}, "readers": [name for name, _ in readers(have)],
                "missing_tools": [t for t in ["zip", "unzip", "7zz", "bsdtar", "ditto", "jar"] if not have(t)]}
     manifests, all_modes, all_times = {}, {}, {}
+    if args.only is not None:
+        keep_unbuilt(args, rebuilt, summary, manifests, all_modes, all_times)
     with tempfile.TemporaryDirectory(prefix="zipper-corpus-") as work:
         work = Path(work)
         write_source(work / "src")
@@ -253,16 +287,42 @@ def main():
     write_manifest(args, summary, manifests, all_modes, all_times)
 
 
+def keep_unbuilt(args, rebuilt, summary, manifests, all_modes, all_times):
+    """Loads the manifest lines and summary of archives --only leaves alone."""
+    old_summary = json.loads((args.output / "corpus.json").read_text())
+    for line in (args.output / "manifest.tsv").read_text(encoding="utf-8").splitlines():
+        archive, path, size, crc, mode, time = line.split("\t")
+        if rebuilt(archive):
+            continue
+        if size == "dir":
+            value = None
+        elif size == "link":
+            value = ["link", crc]
+        else:
+            value = [int(size), int(crc, 16)]
+        manifests.setdefault(archive, {})[path] = value
+        all_modes.setdefault(archive, {})
+        all_times.setdefault(archive, {})
+        if mode != "-":
+            all_modes[archive][path] = int(mode, 8)
+        if time != "-":
+            all_times[archive][path] = int(time)
+    summary["writers"] = {name: value for name, value in old_summary["writers"].items() if not rebuilt(name)}
+
+
 def build(args, have, work, summary, manifests, all_modes, all_times):
     """Writes each archive and records what the reference readers agree on."""
-    jobs = [(name, write, work) for name, write in writers(have)]
-    jobs += [(name, write, work / "links") for name, write in link_writers(have)]
-    for name, write, source in jobs:
+    jobs = [(name, write, work, readers(have), 3) for name, write in writers(have)]
+    jobs += [(name, write, work / "links", readers(have), 3) for name, write in link_writers(have)]
+    jobs += [(name, write, work, split_readers(have, work), 2) for name, write in split_writers(have)]
+    for name, write, source, job_readers, quorum in jobs:
+        if args.only is not None and name not in args.only:
+            continue
         source_times = times(source)
         archive = args.output / f"{name}.zip"
         write(archive.resolve(), source)
         trees, reader_modes = {}, {}
-        for reader, extract in readers(have):
+        for reader, extract in job_readers:
             out = work / f"out-{name}-{reader}"
             try:
                 extract(archive.resolve(), out)
@@ -291,11 +351,17 @@ def build(args, have, work, summary, manifests, all_modes, all_times):
             "agreeing": sorted(agreeing),
             "dissenting": sorted(r for r in opened if r not in agreeing),
         }
-        if len(agreeing) < 3:
+        if len(agreeing) < quorum:
+            for volume in volumes_of(archive):
+                volume.unlink()
             archive.unlink()
-            print(f"{name}: fewer than three readers agree; excluded", file=sys.stderr)
+            print(f"{name}: fewer than {quorum} readers agree; excluded", file=sys.stderr)
             continue
         manifests[name] = {**json.loads(winner), **links}
+        if quorum < 3:
+            all_times[name], all_modes[name] = {}, {}
+            summary["writers"][name]["modes_agreed_by"] = []
+            continue
         zone_times = []
         for zone in ZONES:
             for reader, extract in readers(have, zone):

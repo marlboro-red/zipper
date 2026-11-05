@@ -164,15 +164,154 @@ impl Numbered {
     }
 }
 
+struct ZipNames {
+    folder: PathBuf,
+    stem: OsString,
+    upper: bool,
+}
+
+impl ZipNames {
+    fn of_last(path: &Path) -> Option<Self> {
+        let extension = path.extension()?.to_str()?;
+        if !extension.eq_ignore_ascii_case("zip") {
+            return None;
+        }
+        Self::new(path, extension.starts_with('Z'))
+    }
+
+    fn of_volume(path: &Path) -> Option<(Self, u64)> {
+        let extension = path.extension()?.to_str()?;
+        let digits = extension.strip_prefix(['z', 'Z'])?;
+        if digits.len() < 2 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        let number: u64 = digits.parse().ok()?;
+        if number < FIRST_VOLUME || format!("{number:02}") != digits {
+            return None;
+        }
+        Some((Self::new(path, extension.starts_with('Z'))?, number))
+    }
+
+    fn new(path: &Path, upper: bool) -> Option<Self> {
+        let stem = path.file_stem()?;
+        if matches!(stem.to_str(), Some("" | "." | "..")) {
+            return None;
+        }
+        Some(Self {
+            folder: path.parent().unwrap_or(Path::new("")).to_owned(),
+            stem: stem.to_owned(),
+            upper,
+        })
+    }
+
+    fn named(&self, extension: &str) -> PathBuf {
+        let mut name = self.stem.clone();
+        name.push(".");
+        name.push(if self.upper {
+            extension.to_ascii_uppercase()
+        } else {
+            extension.to_owned()
+        });
+        self.folder.join(name)
+    }
+
+    fn volume(&self, number: u64) -> PathBuf {
+        self.named(&format!("z{number:02}"))
+    }
+
+    fn last(&self) -> PathBuf {
+        self.named("zip")
+    }
+}
+
+enum Names {
+    Numbered(Numbered),
+    Zip(ZipNames),
+}
+
+struct Uneven {
+    starts: Vec<u64>,
+}
+
+impl Uneven {
+    fn new(lengths: impl Iterator<Item = u64>) -> Option<Self> {
+        let mut starts = vec![0u64];
+        for length in lengths {
+            let end = starts.last()?.checked_add(length)?;
+            starts.push(end);
+        }
+        Some(Self { starts })
+    }
+
+    fn total(&self) -> u64 {
+        self.starts.last().copied().unwrap_or(0)
+    }
+
+    fn size(&self, index: u64) -> u64 {
+        let index = index as usize;
+        self.starts[index + 1] - self.starts[index]
+    }
+
+    fn locate(&self, offset: u64) -> Option<(u64, u64)> {
+        (offset < self.total()).then(|| {
+            let index = self.starts.partition_point(|&start| start <= offset) - 1;
+            (index as u64, offset - self.starts[index])
+        })
+    }
+}
+
+enum Spans {
+    Even(Layout),
+    Uneven(Uneven),
+}
+
+impl Spans {
+    fn total(&self) -> u64 {
+        match self {
+            Self::Even(layout) => layout.total(),
+            Self::Uneven(uneven) => uneven.total(),
+        }
+    }
+
+    fn size(&self, index: u64) -> u64 {
+        match self {
+            Self::Even(layout) => layout.size(index),
+            Self::Uneven(uneven) => uneven.size(index),
+        }
+    }
+
+    fn locate(&self, offset: u64) -> Option<(u64, u64)> {
+        match self {
+            Self::Even(layout) => layout.locate(offset),
+            Self::Uneven(uneven) => uneven.locate(offset),
+        }
+    }
+}
+
 pub(crate) struct VolumeSet {
-    numbered: Numbered,
+    names: Names,
     identities: Vec<Identity>,
-    layout: Layout,
+    spans: Spans,
 }
 
 impl VolumeSet {
+    fn count(&self) -> u64 {
+        self.identities.len() as u64
+    }
+
     fn path(&self, index: u64) -> PathBuf {
-        self.numbered.path(FIRST_VOLUME + index)
+        match &self.names {
+            Names::Numbered(numbered) => numbered.path(FIRST_VOLUME + index),
+            Names::Zip(zip) if index + 1 == self.count() => zip.last(),
+            Names::Zip(zip) => zip.volume(FIRST_VOLUME + index),
+        }
+    }
+
+    fn even(&self) -> Option<&Layout> {
+        match &self.spans {
+            Spans::Even(layout) => Some(layout),
+            Spans::Uneven(_) => None,
+        }
     }
 
     fn open_volume(&self, index: u64) -> io::Result<File> {
@@ -183,6 +322,7 @@ impl VolumeSet {
 enum Found {
     Alone { why: Option<String> },
     Broken { why: String },
+    Refused { why: String },
     Set(Arc<VolumeSet>),
 }
 
@@ -340,9 +480,9 @@ fn find_set(numbered: Numbered, first: Identity) -> Found {
     }
     match Layout::new(first.length, count, identities.last().length) {
         Some(layout) => Found::Set(Arc::new(VolumeSet {
-            numbered,
+            names: Names::Numbered(numbered),
             identities: identities.iter().copied().collect(),
-            layout,
+            spans: Spans::Even(layout),
         })),
         None => Found::Broken {
             why: "the volumes add up past 16 EiB".to_owned(),
@@ -350,8 +490,91 @@ fn find_set(numbered: Numbered, first: Identity) -> Found {
     }
 }
 
+fn zip_volume_identities(names: &ZipNames) -> Result<Vec<Identity>, String> {
+    let mut identities = Vec::new();
+    loop {
+        let path = names.volume(FIRST_VOLUME + identities.len() as u64);
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_file() => identities.push(Identity::of(&metadata)),
+            Ok(_) => return Err(format!("{} is not a file", path.display())),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(identities),
+            Err(error) => return Err(format!("{} cannot be read: {error}", path.display())),
+        }
+    }
+}
+
+fn find_zip_set(names: ZipNames, last: &Path) -> io::Result<Found> {
+    let mut identities = match zip_volume_identities(&names) {
+        Ok(identities) => identities,
+        Err(why) => return Ok(Found::Broken { why }),
+    };
+    if identities.is_empty() {
+        return Ok(Found::Alone { why: None });
+    }
+    let last_identity = regular_file_identity(last)?;
+    let missing = FIRST_VOLUME + identities.len() as u64;
+    let present = (missing + 1..=missing + GAP_PROBE).find(|&number| names.volume(number).exists());
+    if let Some(present) = present {
+        let why = format!(
+            "{} is missing, but {} is present",
+            name(&names.volume(missing)),
+            name(&names.volume(present))
+        );
+        return Ok(Found::Broken { why });
+    }
+    identities.push(last_identity);
+    let Some(uneven) = Uneven::new(identities.iter().map(|identity| identity.length)) else {
+        return Ok(Found::Broken {
+            why: "the volumes add up past 16 EiB".to_owned(),
+        });
+    };
+    let set = VolumeSet {
+        names: Names::Zip(names),
+        identities,
+        spans: Spans::Uneven(uneven),
+    };
+    if let Some(empty) = (0..set.count()).find(|&index| set.spans.size(index) == 0) {
+        return Ok(Found::Broken {
+            why: format!("{} is empty", name(&set.path(empty))),
+        });
+    }
+    Ok(Found::Set(Arc::new(set)))
+}
+
+fn zip_volume_alone(names: &ZipNames, number: u64, path: &Path) -> Found {
+    let last = names.last();
+    let why = if last.exists() {
+        format!(
+            "{} is volume {number} of a split ZIP; open its last volume, {}, to read the set",
+            path.display(),
+            name(&last)
+        )
+    } else {
+        format!(
+            "{} is volume {number} of a split ZIP whose last volume, {}, is missing",
+            path.display(),
+            last.display()
+        )
+    };
+    Found::Refused { why }
+}
+
 fn discover(path: &Path) -> io::Result<Discovery> {
-    let found = match Numbered::parse(path) {
+    let found = if let Some(names) = ZipNames::of_last(path) {
+        find_zip_set(names, path)?
+    } else if let Some((names, number)) = ZipNames::of_volume(path) {
+        zip_volume_alone(&names, number, path)
+    } else {
+        discover_numbered(path)?
+    };
+    Ok(Discovery {
+        path: path.to_owned(),
+        found,
+    })
+}
+
+fn discover_numbered(path: &Path) -> io::Result<Found> {
+    Ok(match Numbered::parse(path) {
         None => Found::Alone { why: None },
         Some(numbered) if numbered.number == FIRST_VOLUME => {
             let first = regular_file_identity(path)?;
@@ -369,10 +592,6 @@ fn discover(path: &Path) -> io::Result<Discovery> {
                 }),
             }
         }
-    };
-    Ok(Discovery {
-        path: path.to_owned(),
-        found,
     })
 }
 
@@ -431,6 +650,7 @@ pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
                 path.display()
             )));
         }
+        Found::Refused { why } => return Err(invalid(why.clone())),
         Found::Set(set) => ArchiveFile::Joined(Joined {
             set: Arc::clone(set),
             position: 0,
@@ -441,6 +661,13 @@ pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
 
 pub(crate) fn ensure_stream_set_ends_short(path: &Path) -> io::Result<()> {
     let set = match &discovered(path)?.found {
+        Found::Set(set) if set.even().is_none() => {
+            return Err(invalid(format!(
+                "{} to {} are the volumes of a split ZIP, not of a single compressed file",
+                name(&set.path(0)),
+                name(&set.path(set.count() - 1))
+            )));
+        }
         Found::Set(set) => Arc::clone(set),
         Found::Alone { .. } if joined_name(path).is_some() => {
             return Err(invalid(format!(
@@ -450,10 +677,10 @@ pub(crate) fn ensure_stream_set_ends_short(path: &Path) -> io::Result<()> {
         }
         _ => return Ok(()),
     };
-    if set.layout.last < set.layout.volume {
+    if set.even().is_some_and(|layout| layout.last < layout.volume) {
         return Ok(());
     }
-    let count = set.identities.len() as u64;
+    let count = set.count();
     Err(invalid(format!(
         "{} is not smaller than {}, so later volumes such as {} may be missing or it may not belong to the set, and a single compressed file has no end of its own to show it is complete; join the volumes into one file with cat to read them",
         name(&set.path(count - 1)),
@@ -555,18 +782,25 @@ impl Scope {
     pub(crate) fn note(&self) -> Option<String> {
         let first = name(&self.0.path);
         let set = match &self.0.found {
-            Found::Alone { why: None } | Found::Broken { .. } => return None,
+            Found::Alone { why: None } | Found::Broken { .. } | Found::Refused { .. } => {
+                return None;
+            }
             Found::Alone { why: Some(why) } => {
                 return Some(format!("{first} was read alone, because {why}"));
             }
             Found::Set(set) => set,
         };
-        let count = set.identities.len() as u64;
+        let count = set.count();
+        let first_path = set.path(0);
+        let first = name(&first_path);
         let last_path = set.path(count - 1);
         let last = name(&last_path);
-        let mut hint = format!(
-            "read as split volumes {first} to {last}; if {first} is a whole archive by itself, rename it or open it by another name"
-        );
+        let mut hint = match set.names {
+            Names::Numbered(_) => format!(
+                "read as split volumes {first} to {last}; if {first} is a whole archive by itself, rename it or open it by another name"
+            ),
+            Names::Zip(_) => format!("read as split ZIP volumes {first} to {last}"),
+        };
         if let Ok(RepeatScan {
             found: Some((earlier, later)),
             ..
@@ -578,7 +812,14 @@ impl Scope {
                 name(&set.path(earlier))
             ));
         }
-        if set.layout.last >= set.layout.volume {
+        if set.even().is_none() {
+            hint.push_str(
+                "; if this archive is damaged, a volume may be missing, truncated, repeated or out of order",
+            );
+        } else if set
+            .even()
+            .is_some_and(|layout| layout.last >= layout.volume)
+        {
             hint.push_str(&format!(
                 "; if this archive is damaged, {} may be missing, or a volume may be truncated, repeated or out of order",
                 name(&set.path(count))
@@ -612,11 +853,11 @@ impl Joined {
     }
 
     fn read_in_one_volume(&self, buffer: &mut [u8], offset: u64) -> io::Result<usize> {
-        let layout = &self.set.layout;
-        let Some((index, within)) = layout.locate(offset) else {
+        let spans = &self.set.spans;
+        let Some((index, within)) = spans.locate(offset) else {
             return Ok(0);
         };
-        let room = layout.size(index) - within;
+        let room = spans.size(index) - within;
         let wanted = buffer
             .len()
             .min(usize::try_from(room).unwrap_or(usize::MAX));
@@ -651,6 +892,34 @@ pub(crate) enum ArchiveFile {
     Joined(Joined),
 }
 
+pub(crate) struct ZipDisks(Arc<VolumeSet>);
+
+impl ZipDisks {
+    pub(crate) fn count(&self) -> u64 {
+        self.0.count()
+    }
+
+    pub(crate) fn place(&self, disk: u64, offset: u64) -> Option<u64> {
+        let Spans::Uneven(uneven) = &self.0.spans else {
+            return None;
+        };
+        (disk < self.count() && offset < uneven.size(disk))
+            .then(|| uneven.starts[disk as usize] + offset)
+    }
+
+    pub(crate) fn name(&self, disk: u64) -> String {
+        if disk < self.count() {
+            name(&self.0.path(disk)).to_string()
+        } else {
+            format!("disk {}", disk + 1)
+        }
+    }
+
+    pub(crate) fn names(&self) -> String {
+        format!("{} to {}", self.name(0), self.name(self.count() - 1))
+    }
+}
+
 impl From<File> for ArchiveFile {
     fn from(file: File) -> Self {
         Self::One(file)
@@ -661,7 +930,16 @@ impl ArchiveFile {
     pub(crate) fn len(&self) -> io::Result<u64> {
         match self {
             Self::One(file) => Ok(file.metadata()?.len()),
-            Self::Joined(joined) => Ok(joined.set.layout.total()),
+            Self::Joined(joined) => Ok(joined.set.spans.total()),
+        }
+    }
+
+    pub(crate) fn zip_disks(&self) -> Option<ZipDisks> {
+        match self {
+            Self::Joined(joined) if matches!(joined.set.names, Names::Zip(_)) => {
+                Some(ZipDisks(Arc::clone(&joined.set)))
+            }
+            _ => None,
         }
     }
 
@@ -680,7 +958,7 @@ impl ArchiveFile {
         let Self::Joined(joined) = self else {
             return Ok(());
         };
-        match joined.set.layout.locate(end) {
+        match joined.set.spans.locate(end) {
             None => Ok(()),
             Some((index, _)) => Err(invalid(format!(
                 "split volume {} holds bytes past the archive's end, so it does not belong to the set",
@@ -729,7 +1007,7 @@ impl Seek for ArchiveFile {
                     SeekFrom::Start(position) => i128::from(position),
                     SeekFrom::Current(delta) => i128::from(joined.position) + i128::from(delta),
                     SeekFrom::End(delta) => {
-                        i128::from(joined.set.layout.total()) + i128::from(delta)
+                        i128::from(joined.set.spans.total()) + i128::from(delta)
                     }
                 };
                 joined.position = u64::try_from(target).map_err(|_| {
@@ -804,6 +1082,37 @@ mod tests {
         assert_eq!(Layout::new(2, 1, 3), None);
         assert_eq!(Layout::new(2, 3, 5), None);
         assert_eq!(Layout::new(u64::MAX, 3, 1), None);
+    }
+
+    #[test]
+    fn uneven_volumes_locate_every_offset_as_a_linear_scan_does() {
+        let mut layouts = vec![vec![]];
+        for _ in 0..4 {
+            layouts = layouts
+                .into_iter()
+                .flat_map(|sizes: Vec<u64>| {
+                    (1..=4).map(move |size| [sizes.clone(), vec![size]].concat())
+                })
+                .collect();
+            for sizes in &layouts {
+                let uneven = Uneven::new(sizes.iter().copied()).unwrap();
+                let mut expected = Vec::new();
+                for (index, &size) in sizes.iter().enumerate() {
+                    assert_eq!(uneven.size(index as u64), size);
+                    for within in 0..size {
+                        expected.push((index as u64, within));
+                    }
+                }
+                assert_eq!(uneven.total(), expected.len() as u64);
+                for offset in 0..expected.len() as u64 + 3 {
+                    assert_eq!(
+                        uneven.locate(offset),
+                        expected.get(offset as usize).copied()
+                    );
+                }
+            }
+        }
+        assert!(Uneven::new([u64::MAX, 1].into_iter()).is_none());
     }
 
     #[test]
@@ -1014,6 +1323,24 @@ mod proofs {
                 );
             }
             None => assert!(!fits),
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn every_offset_in_uneven_volumes_maps_to_the_volume_that_holds_it() {
+        let sizes: [u64; 3] = kani::any();
+        let Some(uneven) = Uneven::new(sizes.into_iter()) else {
+            return;
+        };
+        let offset: u64 = kani::any();
+        match uneven.locate(offset) {
+            None => assert!(offset >= uneven.total()),
+            Some((index, within)) => {
+                assert!(index < 3);
+                assert!(within < uneven.size(index));
+                assert!(uneven.starts[index as usize] + within == offset);
+            }
         }
     }
 
