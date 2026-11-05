@@ -1,11 +1,11 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
 
-A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs`, `src/native_tar.rs` and `src/bcj2.rs`.
+A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs`, `src/native_tar.rs`, `src/bcj2.rs`, `src/zip_directory.rs` and `src/lzma.rs`.
 
 ## The proofs
 
@@ -63,9 +63,28 @@ Zipper's own ZIP central-directory reader in `src/zip_directory.rs`, under `[zip
 
 The xz filters in `src/xz_filters.rs`, under `[xz-filters]`, have exhaustive tests against liblzma instead of Kani proofs. Each of the eight branch filters and Delta round-trips every short input under liblzma's encoder and decodes as liblzma does at every split and several start offsets, and `every_ia64_template_and_slot_mix_decodes_as_liblzma_does` covers all 32 IA-64 templates. Chains and their refusals are compared with liblzma in `src/lzma.rs`. Run `cargo xtask verify-sync xz-filters`, which runs `cargo test --release --lib xz_filters` itself.
 
+Zipper's own LZMA decoder in `src/lzma.rs`, under `[lzma]`, has ten Kani proofs. The module is built only for tests, and its xz reader needs the `sha2` dev-dependency, so these proofs run with `cargo kani --tests`. Each proof gives the range coder a symbolic range of at least 2^24, a symbolic code and as many symbolic input bytes as it may read, so a read past them fails the proof. Probability tables start at one symbolic value from 31 to 2017, the values a probability can reach from 1024. The window contents are never symbolic, because a proof of the match copy ran out of memory.
+
+| Proof | It proves, for every input in its bound | Time |
+| --- | --- | ---: |
+| `both_bit_decoders_agree_and_keep_the_coder_in_range` | on any range, code and probability up to 2048, the branchless and branching bit decoders return the same bit, range, code, probability and position, and read at most one byte. From a range of at least 2^24 and a probability from 31 to 2017, both stay in those bounds, and a code below the range stays below it | 9 s |
+| `direct_bits_fit_their_count_and_keep_the_range_normalized` | `direct_bits` of up to 26 bits returns a value below 2^count, reads at most one byte a bit and keeps the range at least 2^24 | 1 s |
+| `every_bit_tree_size_stays_inside_its_table` | the 3, 6 and 8-bit trees and the 4-bit reverse tree index only their own table, read at most one byte a bit and return a value below 2^bits | 44 s |
+| `lengths_stay_below_the_longest_match_at_every_position_state` | the length decoder, at each of the 16 position states, reads at most 10 bytes and returns less than 272, so no match is longer than 273 bytes | 99 s |
+| `literal_contexts_stay_inside_the_literal_table_for_every_property_byte` | every properties byte `Properties::from_byte` accepts has `lc` up to 8 and `lp` and `pb` up to 4, and for any position and previous byte the literal context is below 2^(lc+lp), so it selects a coder inside the table `reset` allocates. The position state is below 16 | 0.1 s |
+| `plain_literals_stay_inside_the_first_quarter_of_their_coder` | a literal without a match byte reads only the first 256 probabilities and 8 bytes, and gives a symbol from 0x100 to 0x1FF | 15 s |
+| `matched_literals_stay_inside_their_coder_for_every_match_byte` | a literal after a match, for any match byte, reads only its 768 probabilities and 8 bytes, and gives a symbol from 0x100 to 0x1FF | 146 s |
+| `short_distances_stay_inside_the_special_probabilities` | for slots 4 to 13, `distance_from_slot` reads inside the 115 special probabilities and at most 5 bytes | 43 s |
+| `long_distances_fit_32_bits` | for slots 14 to 63, `distance_from_slot` reads at most 30 bytes, stays inside the align table and returns a distance that fits 32 bits | 139 s |
+| `input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk` | for any input buffer state and LZMA2 input limit, the room `bits` gives fits the buffer, a symbol of up to 64 bytes started when `needs_input` is false stays in it, and a decode that passes `ran_past_input` keeps the start before the end and the consumed input within the limit. `finished_cleanly` is exactly a zero code | 3 s |
+
+Times are from the `verify-sync` run on an Apple M5 shared with other jobs. Together the proofs bound one symbol's input. A match reads at most 1 + 1 + 10 + 6 + 26 + 4 = 48 bytes, a repeated match 15 and a literal 9. All fit the 64 bytes `needs_input` keeps in hand. That sum is argued here, not proved, because `decode_symbols` as one proof would need a symbolic window. The slot tree is the 6-bit tree, and `decode_distance` adds only the `length_state` clamp to the two distance proofs.
+
+Exhaustive and differential tests cover the rest. `chunked_match_copy_matches_a_byte_at_a_time_copy_in_every_window_state` checks `Window::copy` against a byte-at-a-time copy in every window state of four sizes. The liblzma differential tests cover every `lc`, `lp` and `pb`, every cut stream, LZMA2 control codes and properties, and the xz reader's fields, cuts and damage. Kani does not cover `RangeDecoder::start`, `refill`, `Window`, `decode_symbols`, the LZMA2 chunk reader or the xz reader. `cargo xtask verify-sync lzma` runs the proofs, then `cargo test --release --lib lzma`, and records the fingerprint only if both pass.
+
 ## When to run it
 
-The gate's `verify` step fails when code listed under `[parsers]` in `verification/coverage.txt` has changed since the proofs last passed. Run them then, and before changing that code on purpose.
+The gate's `verify` step fails when code listed under `[parsers]`, `[lzma]` or another section that names this skill in `verification/coverage.txt` has changed since the proofs last passed. Run them then, and before changing that code on purpose.
 
 ## Run it
 
@@ -119,3 +138,14 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | The stored LZMA2 writer leaves out the end marker | `stored_lzma2_returns_every_length_across_chunk_boundaries_and_flushes_branch_filters` fails |
 | The stored LZMA2 writer writes a chunk's size without subtracting one | the same test fails |
 | The BCJ2 decoder converts a branch with fewer than 4 bytes of output left | `a_conversion_past_the_end_of_the_output_is_refused` fails |
+| The LZMA range coder normalizes only below 2^23 | `both_bit_decoders_agree_and_keep_the_coder_in_range` fails |
+| `direct_bits` shifts its value by two bits a step | `direct_bits_fit_their_count_and_keep_the_range_normalized` fails |
+| `tree` subtracts `1 << (bits - 1)` from its index | `every_bit_tree_size_stays_inside_its_table` fails |
+| The length decoder adds 17 to a high length | `lengths_stay_below_the_longest_match_at_every_position_state` fails |
+| The literal context shifts the position by `lc + 1` | `literal_contexts_stay_inside_the_literal_table_for_every_property_byte` fails |
+| `Properties::from_byte` accepts the byte 225 | the same proof fails |
+| A plain literal decodes until its symbol reaches 0x200 | `plain_literals_stay_inside_the_first_quarter_of_their_coder` fails |
+| A matched literal ORs its offset mask instead of ANDing it | `matched_literals_stay_inside_their_coder_for_every_match_byte` fails |
+| A short distance starts its special probabilities one entry too far on | `short_distances_stay_inside_the_special_probabilities` fails |
+| A long distance shifts its direct bits two places too far | `long_distances_fit_32_bits` fails |
+| `bits` gives one byte more room than the padding past the end | `input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk` fails |

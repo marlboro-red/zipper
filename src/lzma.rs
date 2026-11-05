@@ -282,6 +282,30 @@ impl Bits<'_> {
         value
     }
 
+    #[inline(always)]
+    fn literal(&mut self, probabilities: &mut [u16]) -> usize {
+        let mut symbol = 1usize;
+        while symbol < 0x100 {
+            symbol = symbol << 1 | self.bit(&mut probabilities[symbol]) as usize;
+        }
+        symbol
+    }
+
+    #[inline(always)]
+    fn matched_literal(&mut self, probabilities: &mut [u16], match_byte: u8) -> usize {
+        let mut symbol = 1usize;
+        let mut matched = usize::from(match_byte);
+        let mut offset = 0x100usize;
+        while symbol < 0x100 {
+            matched <<= 1;
+            let match_bit = matched & offset;
+            let bit = self.bit(&mut probabilities[offset + match_bit + symbol]) as usize;
+            symbol = symbol << 1 | bit;
+            offset &= match_bit ^ bit.wrapping_sub(1);
+        }
+        symbol
+    }
+
     fn finished_cleanly(&self) -> bool {
         self.code == 0
     }
@@ -514,28 +538,19 @@ impl ChunkState {
         }
     }
 
+    fn literal_context(properties: Properties, position: u64, previous: u8) -> usize {
+        let Properties { lc, lp, .. } = properties;
+        ((position as usize & ((1 << lp) - 1)) << lc) + (usize::from(previous) >> (8 - lc))
+    }
+
     fn decode_literal(&mut self, range: &mut Bits, window: &mut Window) {
-        let Properties { lc, lp, .. } = self.properties;
-        let previous = window.last;
-        let position = window.total as usize;
-        let context = ((position & ((1 << lp) - 1)) << lc) + (usize::from(previous) >> (8 - lc));
+        let context = Self::literal_context(self.properties, window.total, window.last);
         let probabilities = &mut self.literal[0x300 * context..0x300 * (context + 1)];
-        let mut symbol = 1usize;
-        if self.state >= 7 {
-            let mut matched = usize::from(window.back(self.reps[0] + 1));
-            let mut offset = 0x100usize;
-            while symbol < 0x100 {
-                matched <<= 1;
-                let match_bit = matched & offset;
-                let bit = range.bit(&mut probabilities[offset + match_bit + symbol]) as usize;
-                symbol = symbol << 1 | bit;
-                offset &= match_bit ^ bit.wrapping_sub(1);
-            }
+        let symbol = if self.state >= 7 {
+            range.matched_literal(probabilities, window.back(self.reps[0] + 1))
         } else {
-            while symbol < 0x100 {
-                symbol = symbol << 1 | range.bit(&mut probabilities[symbol]) as usize;
-            }
-        }
+            range.literal(probabilities)
+        };
         window.put(symbol as u8);
         self.state = Self::literal_state_after(self.state);
     }
@@ -546,6 +561,11 @@ impl ChunkState {
         if slot < 4 {
             return slot;
         }
+        self.distance_from_slot(range, slot)
+    }
+
+    #[inline(always)]
+    fn distance_from_slot(&mut self, range: &mut Bits, slot: usize) -> usize {
         let direct = (slot >> 1) as u32 - 1;
         let mut distance = (2 | (slot & 1)) << direct;
         if slot < END_POSITION_MODEL {
@@ -4041,6 +4061,255 @@ mod speed {
             )
             .read_to_end(&mut ours)
             .unwrap();
+        }
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    const PROBABILITY_LOWEST: u16 = 31;
+    const PROBABILITY_HIGHEST: u16 = 2017;
+    const LENGTH_SYMBOLS: usize = 16 + 256;
+    const DIRECT_BITS_MAX: u32 = 26;
+
+    fn reachable(probability: u16) -> bool {
+        (PROBABILITY_LOWEST..=PROBABILITY_HIGHEST).contains(&probability)
+    }
+
+    fn uniform_table<const N: usize>() -> [u16; N] {
+        let probability: u16 = kani::any();
+        kani::assume(reachable(probability));
+        [probability; N]
+    }
+
+    fn normalized(input: &[u8]) -> Bits<'_> {
+        let range: u32 = kani::any();
+        kani::assume(range >= TOP);
+        Bits {
+            input,
+            position: 0,
+            end: input.len(),
+            room: input.len(),
+            range,
+            code: kani::any(),
+        }
+    }
+
+    #[kani::proof]
+    fn both_bit_decoders_agree_and_keep_the_coder_in_range() {
+        let input: [u8; 1] = kani::any();
+        let range: u32 = kani::any();
+        let code: u32 = kani::any();
+        let probability: u16 = kani::any();
+        kani::assume(probability <= PROBABILITY_ONE);
+        let start = |input| Bits {
+            input,
+            position: 0,
+            end: 1,
+            room: 1,
+            range,
+            code,
+        };
+        let (mut branchless, mut branching) = (start(&input), start(&input));
+        let (mut kept, mut moved) = (probability, probability);
+        let bit = branchless.bit(&mut kept);
+        assert_eq!(bit, branching.branching_bit(&mut moved));
+        assert_eq!(kept, moved);
+        assert_eq!(branchless.parts(), branching.parts());
+        assert!(bit <= 1);
+        if range >= TOP && reachable(probability) {
+            assert!(branchless.range >= TOP);
+            assert!(reachable(kept));
+            if code < range {
+                assert!(branchless.code < branchless.range);
+            }
+        }
+        assert!(reachable(PROBABILITY_ONE / 2));
+    }
+
+    #[kani::proof]
+    #[kani::unwind(28)]
+    fn direct_bits_fit_their_count_and_keep_the_range_normalized() {
+        let input: [u8; DIRECT_BITS_MAX as usize] = kani::any();
+        let count: u32 = kani::any();
+        kani::assume(count <= DIRECT_BITS_MAX);
+        let mut bits = Bits {
+            position: 0,
+            end: count as usize,
+            ..normalized(&input)
+        };
+        let value = bits.direct_bits(count);
+        assert!(value < 1 << count);
+        assert!(bits.position <= count as usize);
+        assert!(bits.range >= TOP);
+    }
+
+    fn tree_stays_inside<const N: usize>(bits: u32, reverse: bool) {
+        let input: [u8; 8] = kani::any();
+        let mut probabilities: [u16; N] = uniform_table();
+        let mut range = normalized(&input[..bits as usize]);
+        let value = if reverse {
+            range.reverse_tree(&mut probabilities, bits)
+        } else {
+            range.tree(&mut probabilities, bits)
+        };
+        assert!(value < 1 << bits);
+        assert!(range.position <= bits as usize);
+        assert!(range.range >= TOP);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn every_bit_tree_size_stays_inside_its_table() {
+        tree_stays_inside::<8>(3, false);
+        tree_stays_inside::<64>(6, false);
+        tree_stays_inside::<256>(8, false);
+        tree_stays_inside::<{ 1 << ALIGN_BITS }>(ALIGN_BITS, true);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn lengths_stay_below_the_longest_match_at_every_position_state() {
+        let input: [u8; 10] = kani::any();
+        let mut decoder = LengthDecoder {
+            choice: kani::any(),
+            choice2: kani::any(),
+            low: [uniform_table(); POSITION_STATES_MAX],
+            middle: [uniform_table(); POSITION_STATES_MAX],
+            high: uniform_table(),
+        };
+        kani::assume(reachable(decoder.choice) && reachable(decoder.choice2));
+        let position_state: usize = kani::any();
+        kani::assume(position_state < POSITION_STATES_MAX);
+        let mut range = normalized(&input);
+        let length = decoder.decode(&mut range, position_state);
+        assert!(length < LENGTH_SYMBOLS);
+        assert!(range.range >= TOP);
+    }
+
+    #[kani::proof]
+    fn literal_contexts_stay_inside_the_literal_table_for_every_property_byte() {
+        let Some(properties) = Properties::from_byte(kani::any()) else {
+            return;
+        };
+        let Properties { lc, lp, pb } = properties;
+        assert!(lc <= 8 && lp <= 4 && pb <= 4);
+        let position: u64 = kani::any();
+        let context = ChunkState::literal_context(properties, position, kani::any());
+        assert!(context < 1 << (lc + lp));
+        assert!(position as usize & ((1usize << pb) - 1) < POSITION_STATES_MAX);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn plain_literals_stay_inside_the_first_quarter_of_their_coder() {
+        let input: [u8; 8] = kani::any();
+        let mut probabilities: [u16; 0x100] = uniform_table();
+        let mut range = normalized(&input);
+        let symbol = range.literal(&mut probabilities);
+        assert!((0x100..0x200).contains(&symbol));
+        assert!(range.range >= TOP);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn matched_literals_stay_inside_their_coder_for_every_match_byte() {
+        let input: [u8; 8] = kani::any();
+        let mut probabilities: [u16; 0x300] = uniform_table();
+        let mut range = normalized(&input);
+        let symbol = range.matched_literal(&mut probabilities, kani::any());
+        assert!((0x100..0x200).contains(&symbol));
+        assert!(range.range >= TOP);
+    }
+
+    fn distance_tables() -> ChunkState {
+        ChunkState {
+            properties: Properties {
+                lc: 0,
+                lp: 0,
+                pb: 0,
+            },
+            literal: Vec::new(),
+            is_match: [[0; POSITION_STATES_MAX]; STATES],
+            is_rep: [0; STATES],
+            is_rep0: [0; STATES],
+            is_rep1: [0; STATES],
+            is_rep2: [0; STATES],
+            is_rep0_long: [[0; POSITION_STATES_MAX]; STATES],
+            distance_slot: [[0; DISTANCE_SLOTS]; LENGTH_STATES],
+            distance_special: uniform_table(),
+            align: uniform_table(),
+            length: LengthDecoder::new(),
+            rep_length: LengthDecoder::new(),
+            state: 0,
+            reps: [0; 4],
+            dictionary: DICTIONARY_MIN,
+        }
+    }
+
+    fn distance_fits_32_bits<const INPUT: usize>(slots: std::ops::Range<usize>) {
+        let input: [u8; INPUT] = kani::any();
+        let slot: usize = kani::any();
+        kani::assume(slots.contains(&slot));
+        let mut state = distance_tables();
+        let mut range = normalized(&input);
+        let distance = state.distance_from_slot(&mut range, slot);
+        assert!(distance <= u32::MAX as usize);
+        assert!(range.range >= TOP);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn short_distances_stay_inside_the_special_probabilities() {
+        distance_fits_32_bits::<5>(4..END_POSITION_MODEL);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(28)]
+    fn long_distances_fit_32_bits() {
+        distance_fits_32_bits::<{ DIRECT_BITS_MAX as usize + ALIGN_BITS as usize }>(
+            END_POSITION_MODEL..DISTANCE_SLOTS,
+        );
+    }
+
+    #[kani::proof]
+    fn input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk() {
+        let mut decoder = RangeDecoder {
+            input: &[][..],
+            buffer: vec![0; INPUT_CHUNK + SYMBOL_INPUT_MAX],
+            start: kani::any(),
+            end: kani::any(),
+            ended: kani::any(),
+            taken: kani::any(),
+            input_limit: kani::any(),
+            range: kani::any(),
+            code: kani::any(),
+        };
+        kani::assume(decoder.start <= decoder.end && decoder.end <= INPUT_CHUNK);
+        kani::assume(decoder.taken >= decoder.end as u64);
+        kani::assume(decoder.input_limit >= decoder.consumed());
+        let mut bits = decoder.bits();
+        assert!(bits.end <= decoder.end && bits.room <= decoder.buffer.len());
+        if bits.needs_input() {
+            return;
+        }
+        let symbol_input: usize = kani::any();
+        kani::assume(symbol_input <= SYMBOL_INPUT_MAX);
+        bits.position += symbol_input;
+        assert!(bits.position <= bits.room);
+        let complete = decoder.complete();
+        let finished = bits.finished_cleanly();
+        let past_input = bits.ran_past_input().is_err();
+        let kept = bits.parts();
+        decoder.keep(kept);
+        assert_eq!(finished, decoder.code == 0);
+        if !complete || !past_input {
+            assert!(decoder.start <= decoder.end);
+        }
+        if !past_input {
+            assert!(decoder.consumed() <= decoder.input_limit);
         }
     }
 }
