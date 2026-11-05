@@ -73,3 +73,5 @@ Use these skills from `.claude/skills/` for the judgment that checks cannot make
 | [`zipper-verify-parsers`](.claude/skills/zipper-verify-parsers/SKILL.md) | You change the 7z header readers, the LZMA2 chunk scan, the ZIP time fields, end record or data descriptor, or the tar numeric fields. |
 
 The `zipper-review` skill spawns the read-only [`zipper-adversary`](.claude/agents/zipper-adversary.md) agent.
+
+To run work in parallel, spawn the [`zipper-builder`](.claude/agents/zipper-builder.md) agent once per unit, each in its own worktree, with a brief in the fields that file names. Builders never benchmark, push or ship. The coordinator reviews each branch, runs the measurements on a quiet machine and ships one branch at a time.
