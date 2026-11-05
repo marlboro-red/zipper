@@ -8,7 +8,10 @@ Blocks:
 - such an `rm` whose target uses a variable without a `${NAME:?}` guard, or a
   variable whose value is not assigned literally earlier in the same command;
 - such an `rm` with a relative target after a `cd` whose destination is unknown;
-- `git worktree remove --force` and `git clean -f`.
+- `git worktree remove --force` and `git clean -f`;
+- `killall`, and `pkill` unless it is `-f` with a pattern that names a path,
+  because a name such as `cbmc` or `cargo` also kills other sessions' builds,
+  Kani and TLC runs.
 """
 import json
 import os
@@ -137,6 +140,11 @@ def check(command, cwd, depth=0):
         elif program == "git" and "worktree" in arguments and "remove" in arguments and (
                 "--force" in arguments or "-f" in arguments):
             deny("`git worktree remove --force` discards uncommitted work in the worktree. Remove it without --force.")
+        elif program == "killall" or program == "pkill" and not (
+                "-f" in arguments and "/" in (arguments[-1] if arguments else "")):
+            deny(f"`{program}` by name also stops other sessions' builds, Kani and TLC runs. "
+                 "Kill only what you started: `kill <pid>`, or `pkill -f` with a path inside your own worktree "
+                 "or scratch folder.")
         elif program in SHELLS and "-c" in arguments and depth < 3:
             index = arguments.index("-c")
             if index + 1 < len(arguments):

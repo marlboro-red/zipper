@@ -30,6 +30,10 @@ class Guard(unittest.TestCase):
             "find . -delete",
             "git clean -fd",
             "git worktree remove --force wt",
+            "pkill -f cbmc",
+            "pkill kani-driver",
+            "killall cargo",
+            "sh -c 'pkill -f cargo-kani'",
         ]:
             with self.subTest(command=command):
                 self.assertTrue(denied(command, cwd=os.path.dirname(REPO_TARGET)))
@@ -51,6 +55,9 @@ class Guard(unittest.TestCase):
             'cd "$P" && ls',
             "rm notes.txt",
             "git clean -n",
+            "kill 4242",
+            "pkill -f /private/tmp/claude-501/m22-kani/target/kani",
+            "pkill -f /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-x/target/kani",
         ]:
             with self.subTest(command=command):
                 self.assertFalse(denied(command))
