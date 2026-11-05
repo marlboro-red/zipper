@@ -33,6 +33,7 @@ const BYTES_IN_FLIGHT: usize = 16 * 1024 * 1024;
 const DEFAULT_WRITERS: usize = 4;
 // RECORD(benchmarks/cross-platform/tar-folder-lanes/README.md): one writer per folder is faster on Windows.
 const ONE_WRITER_PER_FOLDER: bool = cfg!(windows);
+const LINKS_PER_REPORT: usize = 1024;
 const READ_ERROR: &str = "cannot read the tar stream";
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
@@ -1095,7 +1096,10 @@ impl<'a, 'f> Extraction<'a, 'f> {
         let Some(root) = self.root() else {
             return Ok(());
         };
-        for (name, target) in &self.hard_links {
+        for (index, (name, target)) in self.hard_links.iter().enumerate() {
+            if index % LINKS_PER_REPORT == 0 {
+                self.tracker.report()?;
+            }
             fs::hard_link(root.join(target), root.join(name)).map_err(|error| {
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
                     anyhow::anyhow!(
@@ -1106,7 +1110,10 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 }
             })?;
         }
-        for (name, target) in &self.symlinks {
+        for (index, (name, target)) in self.symlinks.iter().enumerate() {
+            if index % LINKS_PER_REPORT == 0 {
+                self.tracker.report()?;
+            }
             crate::create_symlink("tar", root, name, target)?;
         }
         Ok(())

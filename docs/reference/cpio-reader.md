@@ -12,7 +12,7 @@ The reader supports these features:
 - Files, directories, symlinks that stay inside the destination, and hard links.
 - A leading `./` and the `.` entry that `find . | cpio -o` writes.
 
-GNU cpio and bsdcpio store a newc hard link once. Every name but the last carries no data, and the last carries the file. The reader links each name with the same inode and device to the name that carries the data. A group in which no name carries data becomes one empty file and links to it. The reader keeps the name that carries each inode's data until the end, so each name that follows links to it even when the link count is too low. A file whose other links lie outside the archive, as in a snapshot of a hard-linked backup, costs one such record. In the binary and odc forms each name carries its own copy of the data, so each name becomes its own file, as 7-Zip writes it.
+GNU cpio and bsdcpio store a newc hard link once. Every name but the last carries no data, and the last carries the file. The reader links each name with the same inode and device to the name that carries the data. It keeps an inode's group until the group has its data and as many names as the link count says, then frees it. So an archive of complete pairs holds no link records. A name without data that comes after its group is freed, because the link count was too low, waits for the next name of that inode that carries data, as bsdcpio does. When none follows, the reader reads the headers a second time at the end, and links the name to the first earlier name of that inode that carried data, as GNU cpio does. A group in which no name ever carries data becomes one empty file and links to it. A file whose other links lie outside the archive, as in a snapshot of a hard-linked backup, keeps one record until the end. In the binary and odc forms each name carries its own copy of the data, so each name becomes its own file, as 7-Zip writes it.
 
 The reader does not support these features:
 
@@ -66,11 +66,11 @@ One thread reads the archive and writes each file in archive order through a 1 M
 - 7-Zip removes a leading `/` and `..` from a name and writes the file. Zipper refuses the archive.
 - 7-Zip skips a symlink that leaves the destination and writes the rest. Zipper refuses the archive. 7-Zip also skips a link whose target starts with `..` but stays inside, and Zipper creates it.
 - 7-Zip ignores anything after the trailer. Zipper refuses it unless it is all zero bytes.
-- A newc name without data that comes after the name carrying the data becomes an empty file in 7-Zip. Zipper links it to that file, as GNU cpio does.
+- A newc name without data that comes after the name carrying the data becomes an empty file in 7-Zip. Zipper links it to the data, by the rule above.
 
 ## Extraction options
 
-`Existing`, `Control`, `paths`, `include`, `exclude`, `strip` and `metadata` work as in the [tar reader](tar-reader.md#extraction-options). A selected hard link whose data the selection or strip leaves out is refused. Progress counts each file and its bytes as they are written. The cancel flag is checked between entries and while data is copied.
+`Existing`, `Control`, `paths`, `include`, `exclude`, `strip` and `metadata` work as in the [tar reader](tar-reader.md#extraction-options). A selected hard link whose data the selection or strip leaves out is refused. Progress counts each file and its bytes as they are written. The cancel flag is checked between entries, while data is copied, and every 1,024 links while links are created at the end.
 
 ## Formal checks
 

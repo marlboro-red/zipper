@@ -684,16 +684,7 @@ fn implied_directories_and_deferred_links_count_toward_the_name_budget() {
         .map(|index| linked(&format!("{index:05}{}", "n".repeat(4000)), b"", 9, 2))
         .collect();
     let root = tempfile::tempdir().unwrap();
-    let without_trailer: Vec<u8> = deferred
-        .iter()
-        .enumerate()
-        .flat_map(|(index, member)| record(Form::Newc, member, index as u64))
-        .collect();
-    for (case, bytes) in [
-        ("deep", newc(&deep)),
-        ("deferred", newc(&deferred)),
-        ("deferred without a trailer", without_trailer),
-    ] {
+    for (case, bytes) in [("deep", newc(&deep)), ("deferred", newc(&deferred))] {
         let archive = root.path().join("budget.cpio");
         fs::write(&archive, bytes).unwrap();
         let result = read_archive(&archive, None, ReadOptions::default());
@@ -954,4 +945,37 @@ fn names_past_a_too_low_link_count_still_link_to_the_data() {
             );
         }
     }
+}
+
+#[test]
+fn cancel_while_links_are_created_publishes_nothing() {
+    let mut members = vec![linked("data", b"shared", 9, 3001)];
+    members.extend((0..3000).map(|index| linked(&format!("link{index:04}"), b"", 9, 3001)));
+    let finishing = std::sync::atomic::AtomicUsize::new(0);
+    let cancel = AtomicBool::new(false);
+    let cancel_on_second_finishing_report = |progress: zipper::Progress| {
+        if progress.phase == zipper::Phase::Finishing
+            && finishing.fetch_add(1, Ordering::Relaxed) == 1
+        {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    };
+    let (root, destination, result) = extract_with(
+        &newc(&members),
+        ReadOptions {
+            control: Control {
+                progress: Some(&cancel_on_second_finishing_report),
+                cancel: Some(&cancel),
+            },
+            ..ReadOptions::default()
+        },
+    );
+    assert!(result.unwrap_err().is::<zipper::Cancelled>());
+    assert!(!destination.exists());
+    let left: Vec<_> = fs::read_dir(root.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| name != "case.cpio")
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
 }

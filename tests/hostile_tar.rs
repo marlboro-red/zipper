@@ -617,3 +617,42 @@ fn implied_directories_and_link_targets_count_toward_the_name_budget() {
         );
     }
 }
+
+#[test]
+fn cancel_while_links_are_created_publishes_nothing() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let mut members = vec![file("data", b"shared")];
+    members.extend((0..3000).map(|index| link(&format!("link{index:04}"), b'1', "data")));
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.tar");
+    fs::write(&archive, tar(&members)).unwrap();
+    let finishing = AtomicUsize::new(0);
+    let cancel = AtomicBool::new(false);
+    let cancel_on_second_finishing_report = |progress: zipper::Progress| {
+        if progress.phase == zipper::Phase::Finishing
+            && finishing.fetch_add(1, Ordering::Relaxed) == 1
+        {
+            cancel.store(true, Ordering::Relaxed);
+        }
+    };
+    let destination = root.path().join("out");
+    let result = read_archive(
+        &archive,
+        Some(&destination),
+        ReadOptions {
+            control: zipper::Control {
+                progress: Some(&cancel_on_second_finishing_report),
+                cancel: Some(&cancel),
+            },
+            ..ReadOptions::default()
+        },
+    );
+    assert!(result.unwrap_err().is::<zipper::Cancelled>());
+    assert!(!destination.exists());
+    let left: Vec<_> = fs::read_dir(root.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| name != "case.tar")
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
