@@ -42,8 +42,10 @@ fn starts_with_zip_signature(archive: &Path) -> Result<bool> {
 }
 
 /// Pick the reader for `archive` from its first bytes. A file named `.001`
-/// is read with `.002` and each next volume as one archive, and opening any
-/// other volume of such a set is refused.
+/// is read with `.002` and each next volume as one archive when they form a
+/// consistent set. It is read alone when no `.002` exists or the only `.002`
+/// is larger, and refused when its volumes show damage, such as a gap. Any
+/// other numbered volume is read alone, and a failure says why.
 pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     Ok(match engine {
         Engine::Backend => Reader::Backend { format: None },
