@@ -131,8 +131,8 @@ fn every_native_format_reads_through_volumes_of_every_awkward_size() {
             let first = split(&bytes, folder.path(), name, volume);
             let label = format!("{name} in {volume}-byte volumes");
             let stream = name.starts_with("hello.txt.");
-            if stream && volume < length && length.is_multiple_of(volume) {
-                assert_refused(&first, &[&volume_name(name, length / volume + 1)], &label);
+            if stream && (volume >= length || length.is_multiple_of(volume)) {
+                assert_refused(&first, &[&volume_name(name, 1)], &label);
                 continue;
             }
             assert_eq!(
@@ -1070,4 +1070,138 @@ fn a_metadata_change_that_leaves_the_bytes_alone_does_not_fail_a_set() {
     release.send(()).unwrap();
     let entries = reader.join().unwrap().unwrap();
     assert!(!entries.is_empty());
+}
+
+#[test]
+fn a_missing_or_dangling_first_volume_is_a_clean_error_naming_its_path() {
+    let folder = tempfile::tempdir().unwrap();
+    let missing = folder.path().join("nothere.zip.001");
+    let dangling = folder.path().join("dangling.zip.001");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(folder.path().join("gone"), &dangling).unwrap();
+    for first in [&missing, &dangling] {
+        if !cfg!(unix) && first == &dangling {
+            continue;
+        }
+        let error = format!("{:#}", refused_with(first, false));
+        assert!(error.contains(&first.display().to_string()), "{error}");
+        for command in ["extract", "list", "test"] {
+            let root = tempfile::tempdir().unwrap();
+            let out = root.path().join("out");
+            let mut args: Vec<&std::ffi::OsStr> = vec![command.as_ref(), first.as_os_str()];
+            if command == "extract" {
+                args.extend(["-o".as_ref(), out.as_os_str()]);
+            }
+            let run = zipper_cli(&args);
+            assert_eq!(run.status.code(), Some(1), "{command} {}", first.display());
+            let stderr = String::from_utf8_lossy(&run.stderr);
+            assert!(
+                stderr.contains(&first.display().to_string()),
+                "{command}: {stderr}"
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_first_volume_that_is_not_a_regular_file_is_named_by_its_full_path() {
+    let folder = tempfile::tempdir().unwrap();
+    let fifo = folder.path().join("pipe.zip.001");
+    assert!(
+        Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let error = format!("{:#}", refused_with(&fifo, false));
+    assert!(
+        error.contains(&format!("{} is not a regular file", fifo.display())),
+        "{error}"
+    );
+    assert!(!error.contains("later volumes"), "{error}");
+}
+
+#[test]
+fn a_stream_first_volume_is_never_read_alone() {
+    let folder = tempfile::tempdir().unwrap();
+    let stem = "log.bin.gz";
+    member_boundary_set(folder.path(), stem, gzip_member);
+    let mut index = 2;
+    while folder.path().join(volume_name(stem, index)).exists() {
+        fs::remove_file(folder.path().join(volume_name(stem, index))).unwrap();
+        index += 1;
+    }
+    let first = folder.path().join(volume_name(stem, 1));
+    assert_refused(&first, &[&volume_name(stem, 1)], "lone stream .001");
+
+    let larger = folder.path().join(volume_name(stem, 2));
+    fs::write(
+        &larger,
+        vec![9u8; fs::metadata(&first).unwrap().len() as usize * 2],
+    )
+    .unwrap();
+    assert_refused(
+        &first,
+        &[&volume_name(stem, 1)],
+        "stream .001 beside a larger .002",
+    );
+}
+
+fn split_into(source: &Path, chunks: usize, folder: &Path, stem: &str) -> Option<PathBuf> {
+    let prefix = folder.join(format!("{stem}.part."));
+    let status = Command::new("split")
+        .arg("-n")
+        .arg(chunks.to_string())
+        .arg(source)
+        .arg(&prefix)
+        .stderr(Stdio::null())
+        .status()
+        .ok()?;
+    if !status.success() {
+        return None;
+    }
+    let mut parts: Vec<PathBuf> = fs::read_dir(folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.to_string_lossy().contains(".part."))
+        .collect();
+    parts.sort();
+    assert_eq!(parts.len(), chunks);
+    for (index, part) in parts.iter().enumerate() {
+        fs::rename(part, folder.join(volume_name(stem, index + 1))).unwrap();
+    }
+    Some(folder.join(volume_name(stem, 1)))
+}
+
+#[test]
+fn sets_from_split_by_chunk_count_join_as_7zip_joins_them() {
+    let work = tempfile::tempdir().unwrap();
+    let odd_zip = work.path().join("odd.zip");
+    let mut zip = fs::read(parity("zip.zip")).unwrap();
+    if zip.len().is_multiple_of(2) {
+        zip = zip_of(&[("a.txt", &[b'a'; 401]), ("b.txt", b"odd")]);
+    }
+    assert_eq!(zip.len() % 2, 1);
+    fs::write(&odd_zip, &zip).unwrap();
+    for (source, stem) in [
+        (odd_zip.clone(), "o.zip"),
+        (parity("zip.zip"), "z.zip"),
+        (parity("tar.tar.gz"), "t.tar.gz"),
+        (parity("hello.txt.gz"), "hello.txt.gz"),
+    ] {
+        for chunks in [2, 3] {
+            let folder = tempfile::tempdir().unwrap();
+            let Some(first) = split_into(&source, chunks, folder.path(), stem) else {
+                return;
+            };
+            let label = format!("{stem} split into {chunks}");
+            assert_eq!(
+                extracted_tree(&first, 4, &label),
+                whole_tree(&source),
+                "{label}"
+            );
+        }
+    }
 }

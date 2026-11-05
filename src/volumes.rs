@@ -25,7 +25,11 @@ struct Layout {
 
 impl Layout {
     fn new(volume: u64, count: u64, last: u64) -> Option<Self> {
-        if volume == 0 || count == 0 || last == 0 || last > volume {
+        if volume == 0
+            || count == 0
+            || last == 0
+            || last.checked_sub(volume).is_some_and(|extra| extra >= count)
+        {
             return None;
         }
         volume.checked_mul(count - 1)?.checked_add(last)?;
@@ -49,7 +53,10 @@ impl Layout {
     }
 
     fn locate(&self, offset: u64) -> Option<(u64, u64)> {
-        (offset < self.total()).then(|| (offset / self.volume, offset % self.volume))
+        (offset < self.total()).then(|| {
+            let index = (offset / self.volume).min(self.count - 1);
+            (index, offset - index * self.volume)
+        })
     }
 }
 
@@ -106,7 +113,7 @@ fn open_regular_file(path: &Path, identity: Option<Identity>) -> io::Result<File
     if !metadata.is_file() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("{} is not a regular file", name(path)),
+            format!("{} is not a regular file", path.display()),
         ));
     }
     if identity.is_some_and(|identity| Identity::of(&metadata) != identity) {
@@ -188,12 +195,50 @@ fn first_present_after(numbered: &Numbered, missing: u64) -> Option<u64> {
     (missing + 1..=missing + GAP_PROBE).find(|&number| numbered.path(number).exists())
 }
 
-fn volume_identities(numbered: &Numbered) -> (Vec<Identity>, Option<String>) {
-    let mut identities = Vec::new();
+struct Identities {
+    first: Identity,
+    later: Vec<Identity>,
+}
+
+impl Identities {
+    fn count(&self) -> u64 {
+        1 + self.later.len() as u64
+    }
+
+    fn last(&self) -> Identity {
+        *self.later.last().unwrap_or(&self.first)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Identity> {
+        std::iter::once(&self.first).chain(&self.later)
+    }
+}
+
+fn regular_file_identity(path: &Path) -> io::Result<Identity> {
+    let metadata = std::fs::metadata(path).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("cannot open {}: {error}", path.display()),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} is not a regular file", path.display()),
+        ));
+    }
+    Ok(Identity::of(&metadata))
+}
+
+fn later_identities(numbered: &Numbered, first: Identity) -> (Identities, Option<String>) {
+    let mut identities = Identities {
+        first,
+        later: Vec::new(),
+    };
     loop {
-        let path = numbered.path(FIRST_VOLUME + identities.len() as u64);
+        let path = numbered.path(FIRST_VOLUME + identities.count());
         match std::fs::metadata(&path) {
-            Ok(metadata) if metadata.is_file() => identities.push(Identity::of(&metadata)),
+            Ok(metadata) if metadata.is_file() => identities.later.push(Identity::of(&metadata)),
             Ok(_) => return (identities, Some(format!("{} is not a file", name(&path)))),
             Err(error) if error.kind() == io::ErrorKind::NotFound => return (identities, None),
             Err(error) => {
@@ -206,23 +251,32 @@ fn volume_identities(numbered: &Numbered) -> (Vec<Identity>, Option<String>) {
     }
 }
 
-fn sizes_disagree(numbered: &Numbered, identities: &[Identity]) -> Option<String> {
+fn sizes_disagree(numbered: &Numbered, identities: &Identities) -> Option<String> {
     let first = numbered.path(FIRST_VOLUME);
-    let volume = identities[0].length;
-    for (index, identity) in (0..).zip(identities) {
+    let volume = identities.first.length;
+    let count = identities.count();
+    for (index, identity) in (0..).zip(identities.iter()) {
         let path = numbered.path(FIRST_VOLUME + index);
         let length = identity.length;
+        let last = index + 1 == count;
         if length == 0 {
             return Some(format!("{} is empty", name(&path)));
         }
-        if length > volume {
+        if last && Layout::new(volume, count, length).is_none() {
             return Some(format!(
-                "{} holds {length} bytes, more than the {volume} of {}",
+                "{} holds {length} bytes, more than the {volume} of {} by {count} or more",
                 name(&path),
                 name(&first)
             ));
         }
-        if index + 1 < identities.len() as u64 && length < volume {
+        if !last && length > volume {
+            return Some(format!(
+                "{} holds {length} bytes, more than the {volume} of {}, but more volumes follow it",
+                name(&path),
+                name(&first)
+            ));
+        }
+        if !last && length < volume {
             let next = numbered.path(FIRST_VOLUME + index + 1);
             return Some(format!(
                 "{} holds {length} bytes, fewer than the {volume} of {}, but {} follows it, so {} is truncated or {} does not belong",
@@ -237,9 +291,9 @@ fn sizes_disagree(numbered: &Numbered, identities: &[Identity]) -> Option<String
     None
 }
 
-fn find_set(numbered: Numbered) -> Found {
-    let (identities, unreadable) = volume_identities(&numbered);
-    let count = identities.len() as u64;
+fn find_set(numbered: Numbered, first: Identity) -> Found {
+    let (identities, unreadable) = later_identities(&numbered, first);
+    let count = identities.count();
     let next = numbered.path(count + 1);
     let broken = unreadable.or_else(|| {
         first_present_after(&numbered, count + 1).map(|present| {
@@ -263,21 +317,17 @@ fn find_set(numbered: Numbered) -> Found {
         };
     }
     if let Some(why) = sizes_disagree(&numbered, &identities) {
-        let only_a_larger_sibling = count == 2 && identities[1].length > identities[0].length;
+        let only_a_larger_sibling = count == 2 && identities.last().length > first.length;
         return if only_a_larger_sibling {
             Found::Alone { why: Some(why) }
         } else {
             Found::Broken { why }
         };
     }
-    let (volume, last) = (
-        identities[0].length,
-        identities[identities.len() - 1].length,
-    );
-    match Layout::new(volume, count, last) {
+    match Layout::new(first.length, count, identities.last().length) {
         Some(layout) => Found::Set(Arc::new(VolumeSet {
             numbered,
-            identities,
+            identities: identities.iter().copied().collect(),
             layout,
         })),
         None => Found::Broken {
@@ -286,10 +336,13 @@ fn find_set(numbered: Numbered) -> Found {
     }
 }
 
-fn discover(path: &Path) -> Discovery {
+fn discover(path: &Path) -> io::Result<Discovery> {
     let found = match Numbered::parse(path) {
         None => Found::Alone { why: None },
-        Some(numbered) if numbered.number == FIRST_VOLUME => find_set(numbered),
+        Some(numbered) if numbered.number == FIRST_VOLUME => {
+            let first = regular_file_identity(path)?;
+            find_set(numbered, first)
+        }
         Some(numbered) => {
             let first = numbered.path(FIRST_VOLUME);
             Found::Alone {
@@ -303,10 +356,10 @@ fn discover(path: &Path) -> Discovery {
             }
         }
     };
-    Discovery {
+    Ok(Discovery {
         path: path.to_owned(),
         found,
-    }
+    })
 }
 
 thread_local! {
@@ -333,8 +386,8 @@ impl Drop for Scope {
     }
 }
 
-pub(crate) fn scope(path: &Path) -> Scope {
-    Scope::enter(discover(path))
+pub(crate) fn scope(path: &Path) -> io::Result<Scope> {
+    Ok(Scope::enter(discover(path)?))
 }
 
 fn in_use(path: &Path) -> Option<Arc<Discovery>> {
@@ -347,12 +400,15 @@ fn in_use(path: &Path) -> Option<Arc<Discovery>> {
     })
 }
 
-fn discovered(path: &Path) -> Arc<Discovery> {
-    in_use(path).unwrap_or_else(|| Arc::new(discover(path)))
+fn discovered(path: &Path) -> io::Result<Arc<Discovery>> {
+    match in_use(path) {
+        Some(discovery) => Ok(discovery),
+        None => Ok(Arc::new(discover(path)?)),
+    }
 }
 
 pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
-    let discovery = discovered(path);
+    let discovery = discovered(path)?;
     Ok(match &discovery.found {
         Found::Alone { .. } => ArchiveFile::One(open_regular_file(path, None)?),
         Found::Broken { why } => {
@@ -370,10 +426,17 @@ pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
 }
 
 pub(crate) fn ensure_stream_set_ends_short(path: &Path) -> io::Result<()> {
-    let Found::Set(set) = &discovered(path).found else {
-        return Ok(());
+    let set = match &discovered(path)?.found {
+        Found::Set(set) => Arc::clone(set),
+        Found::Alone { .. } if joined_name(path).is_some() => {
+            return Err(invalid(format!(
+                "{} would be read alone, but a single compressed file has no end of its own to show it is complete, so later volumes may be missing; open the file under a name without .001, or join the volumes into one file with cat",
+                path.display()
+            )));
+        }
+        _ => return Ok(()),
     };
-    if set.layout.last < set.layout.volume {
+    if set.layout.last != set.layout.volume {
         return Ok(());
     }
     let count = set.identities.len() as u64;
@@ -489,7 +552,7 @@ impl Scope {
                 name(&set.path(earlier))
             ));
         }
-        if set.layout.last == set.layout.volume {
+        if set.layout.last >= set.layout.volume {
             hint.push_str(&format!(
                 "; if this archive is damaged, {} may be missing, or a volume may be truncated, repeated or out of order",
                 name(&set.path(count))
@@ -667,7 +730,7 @@ mod tests {
     fn every_layout_locates_every_offset_as_a_linear_scan_does() {
         for volume in 1..=6u64 {
             for count in 1..=5u64 {
-                for last in 1..=volume {
+                for last in 1..volume + count {
                     let layout = Layout::new(volume, count, last).unwrap();
                     let mut expected = Vec::new();
                     for index in 0..count {
@@ -687,6 +750,7 @@ mod tests {
         }
         assert_eq!(Layout::new(0, 1, 1), None);
         assert_eq!(Layout::new(2, 1, 3), None);
+        assert_eq!(Layout::new(2, 3, 5), None);
         assert_eq!(Layout::new(u64::MAX, 3, 1), None);
     }
 
@@ -754,7 +818,7 @@ mod tests {
             .map(|i| ((i * 2_654_435_761) >> 7) as u8 ^ (i / 64) as u8)
             .collect();
         let first = write_set(folder.path(), "c.bin", &data, 64);
-        let Found::Set(set) = discover(&first).found else {
+        let Found::Set(set) = discover(&first)?.found else {
             panic!("not a set")
         };
         let everything_collides: fn(File) -> io::Result<u32> = |_| Ok(0);
@@ -771,7 +835,7 @@ mod tests {
             folder.path().join("c.bin.002"),
             folder.path().join("c.bin.007"),
         )?;
-        let Found::Set(set) = discover(&first).found else {
+        let Found::Set(set) = discover(&first)?.found else {
             panic!("not a set")
         };
         let repeat = repeated_volume(&set, crc32_of, u64::MAX)?;
@@ -884,7 +948,8 @@ mod proofs {
     #[kani::proof]
     fn a_layout_exists_exactly_when_its_total_fits() {
         let (volume, count, last): (u64, u64, u64) = kani::any();
-        let valid = volume > 0 && count > 0 && last > 0 && last <= volume;
+        let valid =
+            volume > 0 && count > 0 && last > 0 && (last <= volume || last - volume < count);
         let fits = valid
             && (u128::from(volume) * u128::from(count - 1) + u128::from(last))
                 <= u128::from(u64::MAX);

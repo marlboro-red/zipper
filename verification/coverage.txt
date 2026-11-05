@@ -282,7 +282,7 @@ item = src/lzma.rs | fn finish_stream<
 
 [split-volumes]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = e4121531e8614b05
+fingerprint = f91803ca9d8fcde8
 full-check = cargo kani --harness volumes::proofs::
 full-check = cargo test --release --lib volumes
 item = src/volumes.rs | struct Layout {

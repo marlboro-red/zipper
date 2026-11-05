@@ -246,7 +246,7 @@ fn without_backend_advice(error: anyhow::Error) -> anyhow::Error {
 }
 
 fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
-    let volumes = crate::volumes::scope(archive);
+    let volumes = crate::volumes::scope(archive)?;
     let error = match read() {
         Ok(value) => return Ok(value),
         Err(error) => error,
