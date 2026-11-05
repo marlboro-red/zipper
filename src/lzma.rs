@@ -700,6 +700,7 @@ pub(crate) struct RawLzmaReader<R> {
     pending: usize,
     started: bool,
     finished: bool,
+    failed: bool,
     output_start: u64,
 }
 
@@ -721,6 +722,7 @@ impl<R: Read> RawLzmaReader<R> {
             pending: 0,
             started: false,
             finished: false,
+            failed: false,
             output_start: 0,
         }
     }
@@ -728,6 +730,17 @@ impl<R: Read> RawLzmaReader<R> {
 
 impl<R: Read> Read for RawLzmaReader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if self.failed {
+            return Err(data_error("LZMA stream failed earlier"));
+        }
+        let read = self.read_unlatched(buffer);
+        self.failed = read.is_err();
+        read
+    }
+}
+
+impl<R: Read> RawLzmaReader<R> {
+    fn read_unlatched(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         if self.finished || buffer.is_empty() {
             return Ok(0);
         }
@@ -1873,6 +1886,42 @@ mod tests {
             assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         }
         assert!(checked > 50, "{checked}");
+    }
+
+    #[test]
+    fn a_read_after_an_error_fails_again_and_never_panics() {
+        let data = samples().remove(5);
+        let stream = encode(&data, 3, 0, 2, 1 << 16, 6);
+        let properties = Properties {
+            lc: 3,
+            lp: 0,
+            pb: 2,
+        };
+        let mut seed = 7u32;
+        let mut failed_streams = 0;
+        for _ in 0..3_000 {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            let mut damaged = stream.clone();
+            let at = 1 + (seed >> 8) as usize % (damaged.len() - 1);
+            damaged[at] ^= 1 << (seed % 8);
+            let mut reader = RawLzmaReader::new(&damaged[..], properties, 1 << 16, 300);
+            let mut buffer = [0u8; 64];
+            let mut errors = 0;
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(_) => assert_eq!(errors, 0, "a read after an error returned bytes"),
+                    Err(_) => {
+                        errors += 1;
+                        if errors == 3 {
+                            break;
+                        }
+                    }
+                }
+            }
+            failed_streams += usize::from(errors > 0);
+        }
+        assert!(failed_streams > 0);
     }
 
     #[test]

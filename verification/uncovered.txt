@@ -7,7 +7,6 @@ src/compat.rs | routes formats to 7-Zip by a fixed signature allowlist and parse
 src/counters.rs | profiling counters that compile to nothing without the `counters` feature
 src/duplicates.rs | read-only duplicate scan that writes nothing; tests/duplicates.rs covers it
 src/extract.rs | dispatch from the public API to a reader; every reader it calls has its own checks
-src/lzma.rs | candidate: Kani proofs and an [lzma] section are being added for M21; the module is test-only until then
 src/main.rs | the command-line front end over the library; tests/cli.rs covers it
 src/metadata.rs | maps archive modes and times to the platform; tests/content_only.rs and tests/native_zip.rs cover it
 src/native_stream.rs | wraps the decoders other sections cover and names one output file; its unit test checks every short name, and tests/hostile_stream.rs covers each format
