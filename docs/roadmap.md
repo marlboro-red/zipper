@@ -34,7 +34,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M18. RAR](#m18-rar) | Planned | M14, M15 |
 | [M19. Legacy formats](#m19-legacy-formats) | Planned | M13 |
 | [M20. Zipper without 7-Zip](#m20-zipper-without-7-zip) | Planned | M11 to M19, M21 |
-| [M22. Zipper's own ZIP directory reader](#m22-zippers-own-zip-directory-reader) | Planned | M21 |
+| [M22. Zipper's own ZIP directory reader](#m22-zippers-own-zip-directory-reader) | In progress | M21 |
 
 M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment. M8 closed on 3 November 2026. Applications can call `zipper::extract_archive` to extract into an existing folder, select ZIP paths, follow progress and cancel. Four adversarial reviews found five issues, each fixed with a test that failed first. The 7-Zip backend reports no progress yet. M9 closed the same day. The default engine reads 7z in process with all of these options, and sends BCJ2, PPMd, BZip2, encrypted and split 7z archives to 7-Zip. An early timing on one Mac shows the reader faster than 7-Zip on non-solid archives and 1.85× slower on solid Silesia, where 7-Zip decodes the two LZMA2 blocks at once. Splitting LZMA2 at its dictionary resets is the next experiment. M10 and M11 closed on 4 November 2026. `docs/reference/parity.md` lists 112 rows of 7-Zip extraction, and the gate fails when a row loses its proof. On Windows every reader now copies the archive's Mark of the Web, restores read-only, hidden and system attributes, and creates links that stay inside. 7-Zip stores NTFS alternate streams only in WIM, so they move to M17. Two adversarial reviews found no escape in the links. M12 closed the same day. `--existing` takes 7-Zip's skip and rename modes, `--include` and `--exclude` select in every native reader, tar included, and `--flat`, `-` and `--stdout` cover `7z e`, `-si` and `-so`. Two adversarial reviews found a race that replaced files written during extraction and two link escapes through links the destination keeps, all fixed with tests. Their shared formal checks were added afterwards, on 4 November 2026. An exhaustive check follows every published link on disk across 25,200 runs. The ZIP decoder budget has a TLA+ model, and the new header parsers have Kani proofs. Every stream end is tested at every truncation and padding.
 
@@ -447,6 +447,11 @@ Exit checks:
 2. Kani proves the central directory entry, its extra fields and the ZIP64 records never panic or overflow, up to a bound.
 3. Every test in `tests/hostile_zip.rs` and `tests/zip_fuzz.rs` passes, and an adversarial review finds no layout the new parser accepts that the old one refused.
 4. `cargo tree -e normal` shows no `zip` crate, and the scoreboard shows no slower listing.
+
+Done so far, by 5 November 2026:
+
+- The reader in `src/zip_directory.rs`, written by a builder agent and used only by tests so far. A differential test agrees with the `zip` crate on the corpora, 34 hand-built shapes and 198,100 damaged archives, or both refuse. It refuses more than the `zip` crate does wherever the native reader's own checks already refuse.
+- Four Kani proofs of its extra fields, central records and end records, run by `cargo xtask verify-sync zip-directory`.
 
 ## Close a milestone
 
