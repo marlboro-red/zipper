@@ -1,5 +1,5 @@
 use crate::{BadField, Field, field_check};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::{
     borrow::Cow,
     io::{Read, Seek, SeekFrom},
@@ -32,16 +32,6 @@ const UNICODE_PATH: u16 = 0x7075;
 const AES: u16 = 0x9901;
 const ALIGNMENT: u16 = 0xa11e;
 const ANDROID_ALIGNMENT: u16 = 0xd935;
-const IDS_THE_ZIP_CRATE_PARSES: [u16; 8] = [
-    ZIP64,
-    NTFS,
-    EXTENDED_TIMESTAMP,
-    UNICODE_COMMENT,
-    UNICODE_PATH,
-    AES,
-    ALIGNMENT,
-    ANDROID_ALIGNMENT,
-];
 const UNICODE_FIELD_HEADER: usize = 5;
 
 const MADE_ON_DOS: u16 = 0;
@@ -67,11 +57,10 @@ pub(crate) struct Directory {
 pub(crate) struct CentralEntry {
     pub(crate) stored_name: Box<[u8]>,
     pub(crate) unicode_name: Option<Box<[u8]>>,
-    pub(crate) extra: Box<[u8]>,
+    pub(crate) time: crate::native_zip::EntryTime,
     pub(crate) made_by: u16,
     pub(crate) flags: u16,
     pub(crate) method: u16,
-    pub(crate) dos_time: u32,
     pub(crate) crc32: u32,
     pub(crate) compressed_size: u64,
     pub(crate) size: u64,
@@ -151,7 +140,7 @@ pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> 
     file.seek(SeekFrom::Start(extent.start))?;
     Ok(Directory {
         start: extent.start,
-        entries: central_entries(file, extent)?,
+        entries: central_entries(file, extent).map_err(WalkError::into_anyhow)?,
     })
 }
 
@@ -160,66 +149,134 @@ struct DirectoryBytes<'r, R> {
     remaining: u64,
 }
 
+enum WalkError {
+    Read(std::io::Error),
+    Bad(BadField),
+}
+
+impl From<std::io::Error> for WalkError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Read(error)
+    }
+}
+
+impl From<BadField> for WalkError {
+    fn from(error: BadField) -> Self {
+        Self::Bad(error)
+    }
+}
+
+impl WalkError {
+    fn into_anyhow(self) -> anyhow::Error {
+        match self {
+            Self::Read(error) => error.into(),
+            Self::Bad(error) => error.into(),
+        }
+    }
+}
+
+type Walk<T> = std::result::Result<T, WalkError>;
+
 impl<R: Read> DirectoryBytes<'_, R> {
-    fn append(&mut self, wanted: usize, record: &mut Vec<u8>) -> Result<()> {
-        let wanted = self.remaining.min(wanted as u64);
-        let read = self.reader.by_ref().take(wanted).read_to_end(record)?;
-        ensure!(read as u64 == wanted, "truncated ZIP central directory");
-        self.remaining -= wanted;
+    fn within_directory(&self, wanted: usize) -> usize {
+        usize::try_from(self.remaining).map_or(wanted, |left| left.min(wanted))
+    }
+
+    fn fill(&mut self, bytes: &mut [u8]) -> Walk<()> {
+        match self.reader.read_exact(bytes) {
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+                Err(BadField("truncated ZIP central directory"))?
+            }
+            outcome => outcome?,
+        }
+        self.remaining -= bytes.len() as u64;
         Ok(())
     }
 
-    fn next_record(&mut self, record: &mut Vec<u8>) -> Result<()> {
+    fn append(&mut self, wanted: usize, record: &mut Vec<u8>) -> Walk<()> {
+        let wanted = self.within_directory(wanted);
+        let start = record.len();
+        record.reserve_exact(wanted);
+        record.resize(start + wanted, 0);
+        self.fill(&mut record[start..])
+    }
+
+    fn next_record(&mut self, record: &mut Vec<u8>) -> Walk<()> {
+        let mut header = [0; CENTRAL_ENTRY];
+        let header = &mut header[..self.within_directory(CENTRAL_ENTRY)];
+        self.fill(header)?;
         record.clear();
-        self.append(CENTRAL_ENTRY, record)?;
-        if record.len() == CENTRAL_ENTRY {
-            let variable = [28, 30, 32].map(|at| usize::from(le16(record, at)));
+        record.reserve_exact(header.len());
+        record.extend_from_slice(header);
+        if header.len() == CENTRAL_ENTRY {
+            let variable = [28, 30, 32].map(|at| usize::from(le16(header, at)));
             self.append(variable.iter().sum(), record)?;
         }
         Ok(())
     }
 }
 
-fn central_entries<R: Read>(file: &mut R, extent: Extent) -> Result<Vec<CentralEntry>> {
+fn central_entries<R: Read>(file: &mut R, extent: Extent) -> Walk<Vec<CentralEntry>> {
+    walk_records(file, extent, |record, position| {
+        central_entry(record, position, is_utf8)
+    })
+}
+
+fn is_utf8(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes).is_ok()
+}
+
+fn walk_records<R: Read, T>(
+    file: &mut R,
+    extent: Extent,
+    mut entry: impl FnMut(&[u8], u64) -> Field<T>,
+) -> Walk<Vec<T>> {
     let mut directory = DirectoryBytes {
         reader: file,
         remaining: extent.bytes,
     };
     let mut entries = Vec::new();
-    let mut bytes = Vec::new();
+    let mut record = Vec::new();
     let mut position = extent.start;
     for _ in 0..extent.count {
-        directory.next_record(&mut bytes)?;
-        let record = central_record(&bytes)?;
-        // EXTERNAL(Python zipfile, 7-Zip): no CP437 fallback for a flagged name.
-        ensure!(
-            record.flags & UTF8_NAME == 0 || std::str::from_utf8(record.name).is_ok(),
-            "ZIP name flagged as UTF-8 is not UTF-8"
-        );
-        let unicode_name = unicode_name(record.extra, record.name)?;
-        // EXTERNAL(zip crate): it refuses a local header offset that overflows when added to the entry's position.
-        ensure!(
-            record.header_start.checked_add(position).is_some(),
-            "ZIP local header offset is too large"
-        );
-        entries.push(CentralEntry {
-            stored_name: record.name.into(),
-            unicode_name,
-            extra: record.extra.into(),
-            made_by: record.made_by,
-            flags: record.flags,
-            method: record.method,
-            dos_time: record.dos_time,
-            crc32: record.crc32,
-            compressed_size: record.compressed_size,
-            size: record.size,
-            external_attributes: record.external_attributes,
-            header_start: record.header_start,
-        });
-        position += record.length as u64;
+        directory.next_record(&mut record)?;
+        entries.push(entry(&record, position)?);
+        position += record.len() as u64;
     }
-    ensure!(directory.remaining == 0, "ZIP directory count mismatch");
+    field_check(directory.remaining == 0, "ZIP directory count mismatch")?;
     Ok(entries)
+}
+
+fn central_entry(
+    bytes: &[u8],
+    position: u64,
+    is_utf8: impl Fn(&[u8]) -> bool,
+) -> Field<CentralEntry> {
+    let record = central_record(bytes)?;
+    // EXTERNAL(Python zipfile, 7-Zip): no CP437 fallback for a flagged name.
+    field_check(
+        record.flags & UTF8_NAME == 0 || is_utf8(record.name),
+        "ZIP name flagged as UTF-8 is not UTF-8",
+    )?;
+    let unicode_name = unicode_name_judged_by(record.extra, record.name, &is_utf8)?;
+    // EXTERNAL(zip crate): it refuses a local header offset that overflows when added to the entry's position.
+    field_check(
+        record.header_start.checked_add(position).is_some(),
+        "ZIP local header offset is too large",
+    )?;
+    Ok(CentralEntry {
+        stored_name: record.name.into(),
+        unicode_name,
+        time: crate::native_zip::entry_time(record.extra, record.dos_time),
+        made_by: record.made_by,
+        flags: record.flags,
+        method: record.method,
+        crc32: record.crc32,
+        compressed_size: record.compressed_size,
+        size: record.size,
+        external_attributes: record.external_attributes,
+        header_start: record.header_start,
+    })
 }
 
 fn fixed<const N: usize>(bytes: &[u8], at: usize) -> &[u8; N] {
@@ -342,7 +399,6 @@ struct Record<'a> {
     header_start: u64,
     name: &'a [u8],
     extra: &'a [u8],
-    length: usize,
 }
 
 fn central_record(rest: &[u8]) -> Field<Record<'_>> {
@@ -369,7 +425,6 @@ fn central_record(rest: &[u8]) -> Field<Record<'_>> {
         header_start,
         name: &rest[CENTRAL_ENTRY..extra_start],
         extra: extra_field,
-        length,
     })
 }
 
@@ -404,10 +459,24 @@ fn extra_values(mut extra: &[u8], entry: [u32; 3]) -> Field<[u64; 3]> {
     }
     // EXTERNAL(zip crate): it refuses two or three trailing bytes that start with an id it parses.
     field_check(
-        extra.len() < 2 || !IDS_THE_ZIP_CRATE_PARSES.contains(&le16(extra, 0)),
+        extra.len() < 2 || !the_zip_crate_parses(le16(extra, 0)),
         "truncated ZIP extra field header",
     )?;
     Ok(values)
+}
+
+fn the_zip_crate_parses(id: u16) -> bool {
+    matches!(
+        id,
+        ZIP64
+            | NTFS
+            | EXTENDED_TIMESTAMP
+            | UNICODE_COMMENT
+            | UNICODE_PATH
+            | AES
+            | ALIGNMENT
+            | ANDROID_ALIGNMENT
+    )
 }
 
 // SPEC(APPNOTE 4.5.3): only the fields that hold 0xFFFFFFFF appear, in this order.
@@ -438,45 +507,114 @@ fn extra_fields(mut extra: &[u8]) -> impl Iterator<Item = (u16, &[u8])> {
     })
 }
 
-fn unicode_name(extra: &[u8], stored: &[u8]) -> Result<Option<Box<[u8]>>> {
+fn unicode_name_judged_by(
+    extra: &[u8],
+    stored: &[u8],
+    is_utf8: impl Fn(&[u8]) -> bool,
+) -> Field<Option<Box<[u8]>>> {
     let mut renamed = None;
     for (_, body) in extra_fields(extra).filter(|&(id, _)| id == UNICODE_PATH) {
         let path = body
             .get(UNICODE_FIELD_HEADER..)
-            .filter(|path| std::str::from_utf8(path).is_ok())
-            .context("malformed ZIP Unicode path field")?;
+            .filter(|path| is_utf8(path))
+            .ok_or(BadField("malformed ZIP Unicode path field"))?;
         if path != stored {
-            ensure!(
-                respells_stored_name_as_zip_crate_decodes(body, path, stored),
-                "ZIP Unicode path field renames an entry"
-            );
+            // EXTERNAL(zip crate): it takes a Unicode path only when the checksum matches the stored name.
+            field_check(
+                le32(body, 1) == name_checksum(stored)
+                    && respells_stored_name_as_zip_crate_decodes(path, stored, &is_utf8),
+                "ZIP Unicode path field renames an entry",
+            )?;
             renamed = Some(path);
         }
     }
     Ok(renamed.map(Box::from))
 }
 
-// EXTERNAL(zip crate): it takes a Unicode path only when the checksum matches the stored name.
-fn respells_stored_name_as_zip_crate_decodes(body: &[u8], path: &[u8], stored: &[u8]) -> bool {
-    le32(body, 1) == crc32fast::hash(stored)
-        && *path == *decode_name_like_zip_crate(stored).as_bytes()
+fn respells_stored_name_as_zip_crate_decodes(
+    path: &[u8],
+    stored: &[u8],
+    is_utf8: impl Fn(&[u8]) -> bool,
+) -> bool {
+    let decodes_to_itself = is_utf8(stored);
+    !decodes_to_itself && is_cp437_spelling(path, stored)
 }
 
-const CP437_HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
+fn is_cp437_spelling(path: &[u8], stored: &[u8]) -> bool {
+    let mut rest = path;
+    for &byte in stored {
+        let mut buffer = [0; 4];
+        match rest.strip_prefix(cp437_char(byte).encode_utf8(&mut buffer).as_bytes()) {
+            Some(after) => rest = after,
+            None => return false,
+        }
+    }
+    rest.is_empty()
+}
+
+#[cfg(not(kani))]
+fn name_checksum(name: &[u8]) -> u32 {
+    crc32fast::hash(name)
+}
+
+// EXTERNAL(Kani 0.68): its compiler panics on crc32fast's Arm CRC32 intrinsics.
+#[cfg(kani)]
+fn name_checksum(name: &[u8]) -> u32 {
+    reference_crc32(name)
+}
+
+#[cfg(any(test, kani))]
+const CRC32_TABLE: [u32; 256] = {
+    const REFLECTED_CRC32_POLYNOMIAL: u32 = 0xEDB8_8320;
+    let mut table = [0; 256];
+    let mut index = 0;
+    while index < 256 {
+        let mut crc = index as u32;
+        let mut bit = 0;
+        while bit < 8 {
+            crc = (crc >> 1) ^ (REFLECTED_CRC32_POLYNOMIAL & (crc & 1).wrapping_neg());
+            bit += 1;
+        }
+        table[index] = crc;
+        index += 1;
+    }
+    table
+};
+
+#[cfg(any(test, kani))]
+fn reference_crc32(bytes: &[u8]) -> u32 {
+    !bytes.iter().fold(!0u32, |crc, &byte| {
+        (crc >> 8) ^ CRC32_TABLE[usize::from(crc as u8 ^ byte)]
+    })
+}
+
+#[rustfmt::skip]
+const CP437_HIGH: [char; 128] = [
+    'Ç', 'ü', 'é', 'â', 'ä', 'à', 'å', 'ç', 'ê', 'ë', 'è', 'ï', 'î', 'ì', 'Ä', 'Å',
+    'É', 'æ', 'Æ', 'ô', 'ö', 'ò', 'û', 'ù', 'ÿ', 'Ö', 'Ü', '¢', '£', '¥', '₧', 'ƒ',
+    'á', 'í', 'ó', 'ú', 'ñ', 'Ñ', 'ª', 'º', '¿', '⌐', '¬', '½', '¼', '¡', '«', '»',
+    '░', '▒', '▓', '│', '┤', '╡', '╢', '╖', '╕', '╣', '║', '╗', '╝', '╜', '╛', '┐',
+    '└', '┴', '┬', '├', '─', '┼', '╞', '╟', '╚', '╔', '╩', '╦', '╠', '═', '╬', '╧',
+    '╨', '╤', '╥', '╙', '╘', '╒', '╓', '╫', '╪', '┘', '┌', '█', '▄', '▌', '▐', '▀',
+    'α', 'ß', 'Γ', 'π', 'Σ', 'σ', 'µ', 'τ', 'Φ', 'Θ', 'Ω', 'δ', '∞', 'φ', 'ε', '∩',
+    '≡', '±', '≥', '≤', '⌠', '⌡', '÷', '≈', '°', '∙', '·', '√', 'ⁿ', '²', '■', '\u{a0}',
+];
 
 pub(crate) fn decode_name_like_zip_crate(stored: &[u8]) -> Cow<'_, str> {
-    static HIGH: std::sync::LazyLock<Vec<char>> =
-        std::sync::LazyLock::new(|| CP437_HIGH.chars().collect());
     match std::str::from_utf8(stored) {
         Ok(name) => name.into(),
         Err(_) => stored
             .iter()
-            .map(|&byte| match byte {
-                0..0x80 => char::from(byte),
-                _ => HIGH[usize::from(byte - 0x80)],
-            })
+            .map(|&byte| cp437_char(byte))
             .collect::<String>()
             .into(),
+    }
+}
+
+fn cp437_char(byte: u8) -> char {
+    match byte {
+        0..0x80 => char::from(byte),
+        _ => CP437_HIGH[usize::from(byte - 0x80)],
     }
 }
 
@@ -509,8 +647,7 @@ mod proofs {
         let length: usize = kani::any();
         kani::assume(length <= RECORD);
         if let Ok(record) = central_record(&bytes[..length]) {
-            assert!(record.length >= CENTRAL_ENTRY && record.length <= length);
-            assert!(CENTRAL_ENTRY + record.name.len() + record.extra.len() <= record.length);
+            assert!(CENTRAL_ENTRY + record.name.len() + record.extra.len() <= length);
         }
     }
 
@@ -529,6 +666,178 @@ mod proofs {
                 assert!(extent.start + extent.bytes == end);
                 assert!(extent.count <= MAX_ENTRIES && extent.bytes <= MAX_METADATA);
             }
+        }
+    }
+
+    struct ShortReads<'a> {
+        bytes: &'a [u8],
+        served: usize,
+    }
+
+    impl Read for ShortReads<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if kani::any() {
+                return Err(std::io::ErrorKind::Other.into());
+            }
+            let most = buffer.len().min(self.bytes.len() - self.served);
+            let count: usize = kani::any();
+            kani::assume(count <= most && (count > 0 || most == 0));
+            buffer[..count].copy_from_slice(&self.bytes[self.served..self.served + count]);
+            self.served += count;
+            Ok(count)
+        }
+    }
+
+    const STREAM: usize = 4;
+    const HELD: usize = 2;
+    const WANTED: usize = STREAM + 1;
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn directory_bytes_stay_inside_the_directory_and_the_record() {
+        let stream: [u8; STREAM] = kani::any();
+        let available: usize = kani::any();
+        kani::assume(available <= STREAM);
+        let held: [u8; HELD] = kani::any();
+        let held_length: usize = kani::any();
+        kani::assume(held_length <= HELD);
+        let remaining: u64 = kani::any();
+        let wanted: usize = kani::any();
+        kani::assume(wanted <= WANTED);
+        let mut record = held[..held_length].to_vec();
+        let capacity_before = record.capacity();
+        let mut reader = ShortReads {
+            bytes: &stream[..available],
+            served: 0,
+        };
+        let mut directory = DirectoryBytes {
+            reader: &mut reader,
+            remaining,
+        };
+        let outcome = directory.append(wanted, &mut record);
+        let left = directory.remaining;
+        let asked = remaining.min(wanted as u64) as usize;
+        let served = reader.served;
+        assert!(served <= asked);
+        assert!(record[..held_length] == held[..held_length]);
+        assert!(record.capacity() <= capacity_before.max(held_length + asked));
+        match outcome {
+            Ok(()) => {
+                assert!(served == asked && left == remaining - asked as u64);
+                assert!(record[held_length..] == stream[..asked]);
+            }
+            Err(_) => assert!(left == remaining),
+        }
+    }
+
+    const UNICODE_EXTRA: usize = 12;
+    const STORED: usize = 2;
+
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn unicode_names_never_panic_and_rename_only_when_the_checksum_matches() {
+        let extra: [u8; UNICODE_EXTRA] = kani::any();
+        let extra_length: usize = kani::any();
+        kani::assume(extra_length <= UNICODE_EXTRA);
+        let extra = &extra[..extra_length];
+        let stored: [u8; STORED] = kani::any();
+        let stored_length: usize = kani::any();
+        kani::assume(stored_length <= STORED);
+        let stored = &stored[..stored_length];
+        let any_utf8_verdict = |_: &[u8]| kani::any();
+        if let Ok(Some(name)) = unicode_name_judged_by(extra, stored, any_utf8_verdict) {
+            assert!(le16(extra, 0) == UNICODE_PATH);
+            assert!(le32(extra, 5) == reference_crc32(stored));
+            assert!(*name == extra[4 + UNICODE_FIELD_HEADER..4 + usize::from(le16(extra, 2))]);
+            let mut spelling = Vec::new();
+            for &byte in stored {
+                let mut buffer = [0; 4];
+                spelling.extend_from_slice(cp437_char(byte).encode_utf8(&mut buffer).as_bytes());
+            }
+            assert!(*name == *spelling && *name != *stored);
+        }
+    }
+
+    #[kani::proof]
+    fn unix_modes_never_panic_or_keep_special_bits() {
+        let entry = CentralEntry {
+            stored_name: Box::new([]),
+            unicode_name: None,
+            time: crate::native_zip::entry_time(&[], 0),
+            made_by: kani::any(),
+            flags: 0,
+            method: 0,
+            crc32: 0,
+            compressed_size: 0,
+            size: 0,
+            external_attributes: kani::any(),
+            header_start: 0,
+        };
+        let mode = entry.unix_mode_like_zip_crate();
+        assert!(mode.is_none_or(|mode| mode & SPECIAL_BITS == 0 && mode >> 16 == 0));
+        assert!(mode.is_some() || entry.external_attributes >> 16 == 0);
+        let _ = entry.is_symlink();
+    }
+
+    const SHORT: usize = 4;
+    const TWO_SHORT_RECORDS: usize = 2 * (CENTRAL_ENTRY + SHORT);
+    const PAST_THE_DIRECTORY: usize = 1;
+
+    fn declared_variable_length(file: &[u8], at: usize) -> usize {
+        [28, 30, 32]
+            .map(|field| usize::from(le16(file, at + field)))
+            .iter()
+            .sum()
+    }
+
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn the_record_walk_reads_exactly_the_directory_or_refuses() {
+        let file: [u8; TWO_SHORT_RECORDS + PAST_THE_DIRECTORY] = kani::any();
+        let file_length: usize = kani::any();
+        kani::assume(file_length <= file.len());
+        let directory_length: usize = kani::any();
+        kani::assume(directory_length <= TWO_SHORT_RECORDS);
+        let first = declared_variable_length(&file, 0);
+        kani::assume(first <= SHORT);
+        kani::assume(declared_variable_length(&file, CENTRAL_ENTRY + first) <= SHORT);
+        let start: u64 = kani::any();
+        let extent = Extent {
+            count: kani::any(),
+            bytes: directory_length as u64,
+            start,
+            end: start.wrapping_add(directory_length as u64),
+        };
+        kani::assume(check_extent(&extent).is_ok());
+        let mut reader = &file[..file_length];
+        let accepts_only_whole_headers = |record: &[u8], _| {
+            field_check(
+                record.len() >= CENTRAL_ENTRY && kani::any(),
+                "any refusal of a record",
+            )
+        };
+        let outcome = walk_records(&mut reader, extent, accepts_only_whole_headers);
+        let consumed = file_length - reader.len();
+        assert!(consumed <= directory_length);
+        if let Ok(entries) = outcome {
+            assert!(consumed == directory_length);
+            assert!(entries.len() as u64 == extent.count);
+        }
+    }
+
+    const SHORT_RECORD: usize = CENTRAL_ENTRY + SHORT;
+
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn every_short_record_becomes_an_entry_or_a_refusal() {
+        let bytes: [u8; SHORT_RECORD] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= SHORT_RECORD);
+        let any_utf8_verdict = |_: &[u8]| kani::any();
+        let position: u64 = kani::any();
+        if let Ok(entry) = central_entry(&bytes[..length], position, any_utf8_verdict) {
+            assert!(CENTRAL_ENTRY + entry.stored_name.len() <= length);
+            assert!(entry.header_start.checked_add(position).is_some());
         }
     }
 
@@ -1321,7 +1630,43 @@ mod tests {
     }
 
     #[test]
-    fn entries_keep_their_stored_names_times_and_extra_fields() {
+    fn a_record_buffer_grows_only_to_the_record() {
+        let directory = [0x55; 3 * CENTRAL_ENTRY];
+        for wanted in [1, CENTRAL_ENTRY, 2 * CENTRAL_ENTRY] {
+            let mut reader = &directory[..];
+            let mut bytes = DirectoryBytes {
+                reader: &mut reader,
+                remaining: directory.len() as u64,
+            };
+            let mut record = Vec::new();
+            assert!(bytes.append(wanted, &mut record).is_ok());
+            assert_eq!(record.len(), wanted);
+            assert_eq!(record.capacity(), wanted);
+        }
+    }
+
+    #[test]
+    fn the_proofs_checksum_matches_crc32fast() {
+        let mut inputs: Vec<Vec<u8>> = (0..=u16::MAX)
+            .flat_map(|pair| {
+                let [low, high] = pair.to_le_bytes();
+                [vec![low], vec![low, high]]
+            })
+            .collect();
+        inputs.push(Vec::new());
+        inputs.push(b"123456789".to_vec());
+        inputs.push((0..=255).collect());
+        for input in inputs {
+            assert_eq!(
+                reference_crc32(&input),
+                crc32fast::hash(&input),
+                "{input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn entries_keep_their_stored_names_and_times() {
         let cp437 = b"caf\x82".to_vec();
         let specs = [
             Spec {
@@ -1339,8 +1684,10 @@ mod tests {
         assert_eq!(directory.entries.len(), specs.len());
         for (entry, spec) in directory.entries.iter().zip(&specs) {
             assert_eq!(*entry.stored_name, *spec.name);
-            assert_eq!(*entry.extra, *spec.extra);
-            assert_eq!(entry.dos_time, spec.dos_time);
+            assert_eq!(
+                entry.time,
+                crate::native_zip::entry_time(&spec.extra, spec.dos_time)
+            );
             assert_eq!(entry.made_by, spec.made_by);
             assert_eq!(entry.flags, spec.flags);
         }

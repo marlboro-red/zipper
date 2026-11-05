@@ -1,6 +1,6 @@
 //! Opt-in ZIP extraction of stored and Deflate entries, published only after
 //! full verification. See `docs/reference/zip-reader.md` for what it restores.
-use crate::zip_directory::{CentralEntry, Directory, decode_name_like_zip_crate};
+use crate::zip_directory::{Directory, decode_name_like_zip_crate};
 use crate::{BadField, Field, field_check};
 use crate::{
     Entry,
@@ -226,7 +226,8 @@ fn entry_buffer(size: usize) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
-struct EntryTime {
+#[cfg_attr(test, derive(Debug, PartialEq))]
+pub(crate) struct EntryTime {
     exact: Option<u32>,
     ntfs: Option<i64>,
     dos: u32,
@@ -424,11 +425,11 @@ fn open(path: &Path, cache: bool) -> Result<Opened> {
     Ok(Opened { reader, directory })
 }
 
-fn entry_time(entry: &CentralEntry) -> EntryTime {
+pub(crate) fn entry_time(extra: &[u8], dos: u32) -> EntryTime {
     EntryTime {
-        exact: exact_time(&entry.extra),
-        ntfs: ntfs_time(&entry.extra),
-        dos: entry.dos_time,
+        exact: exact_time(extra),
+        ntfs: ntfs_time(extra),
+        dos,
     }
 }
 
@@ -511,9 +512,7 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
             next_record_start: 0,
             mode: unix_mode.map(|mode| mode & 0o777),
             windows_attributes: crate::windows_attributes(file.external_attributes, unix_mode),
-            modified: restore_times
-                .then(|| clock.modified(&entry_time(file)))
-                .flatten(),
+            modified: restore_times.then(|| clock.modified(&file.time)).flatten(),
             symlink,
         });
     }
