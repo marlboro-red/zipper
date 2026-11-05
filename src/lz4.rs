@@ -8,6 +8,9 @@ const HISTORY_HELD: usize = 16 * WINDOW;
 const LEGACY_MAGIC: u32 = 0x184C_2102;
 const MIN_MATCH: usize = 4;
 const UNCOMPRESSED_BLOCK: u32 = 1 << 31;
+const LARGEST_BLOCK: usize = 4 * 1024 * 1024;
+// SPEC(LZ4 Frame Format 1.6.4): a header of at most 19 bytes, then a block's size, data and checksum.
+pub(crate) const FIRST_BLOCK_INPUT_MAX: u64 = 19 + 4 + LARGEST_BLOCK as u64 + 4;
 const PRIMES: [u32; 5] = [
     2_654_435_761,
     2_246_822_519,
@@ -250,7 +253,7 @@ impl<R: BufRead> Lz4Frames<R> {
                 4 => 64 * 1024,
                 5 => 256 * 1024,
                 6 => 1024 * 1024,
-                7 => 4 * 1024 * 1024,
+                7 => LARGEST_BLOCK,
                 _ => return Err(data_error("LZ4 frame has an unknown block size")),
             };
             let mut descriptor = vec![flags, block];

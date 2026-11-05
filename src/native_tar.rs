@@ -334,7 +334,7 @@ fn read_up_to(file: &mut File, buffer: &mut [u8]) -> std::io::Result<usize> {
     Ok(filled)
 }
 
-const SNIFF_INPUT: u64 = 1024 * 1024;
+const SNIFF_INPUT: u64 = crate::lz4::FIRST_BLOCK_INPUT_MAX;
 const BZIP2_OUTPUT_PER_EXTRA_STREAM: u64 = 4096;
 
 pub(crate) fn decoder(path: &Path, compression: Compression) -> Result<Box<dyn Read + Send>> {
@@ -1611,5 +1611,28 @@ mod signature_tests {
                 "{bytes:02x?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod sniff_tests {
+    use super::*;
+
+    #[test]
+    fn a_tar_in_lz4_is_found_behind_a_first_block_larger_than_a_mebibyte() {
+        let mut tar = vec![0u8; 2 << 20];
+        tar[..3].copy_from_slice(b"big");
+        tar[257..263].copy_from_slice(b"ustar\0");
+        let mut frame = 0x184D_2204u32.to_le_bytes().to_vec();
+        let descriptor = [0x60, 0x70];
+        frame.extend_from_slice(&descriptor);
+        frame.push((crate::lz4::xxh32(&descriptor) >> 8) as u8);
+        frame.extend_from_slice(&(tar.len() as u32 | 1 << 31).to_le_bytes());
+        frame.extend_from_slice(&tar);
+        frame.extend_from_slice(&0u32.to_le_bytes());
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("a.tar.lz4");
+        std::fs::write(&path, frame).unwrap();
+        assert!(matches!(sniff(&path).unwrap(), Some(Compression::Lz4)));
     }
 }
