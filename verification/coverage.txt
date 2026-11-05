@@ -111,6 +111,8 @@ item = src/native_7z.rs | impl ParallelLzma2 {
 item = src/native_7z.rs | impl Read for ParallelLzma2 {
 item = src/native_7z.rs | impl Drop for ParallelLzma2 {
 item = src/native_7z.rs | impl SegmentThread {
+item = src/native_7z.rs | impl Segment {
+item = src/native_7z.rs | fn decode_segment(
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md

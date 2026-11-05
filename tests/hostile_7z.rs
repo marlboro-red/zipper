@@ -773,27 +773,43 @@ fn lzma_streams_end_where_7zip_ends_them() {
         ("bcj2-empty-lzma-branch-cut.7z", "truncated LZMA stream"),
         (
             "lzma-match-crosses-its-size.7z",
-            "does not end cleanly at its declared size",
+            "LZMA match runs past the declared size",
         ),
         (
             "lzma-goes-past-its-size.7z",
-            "does not end cleanly at its declared size",
+            "past its declared size without an end marker",
         ),
         (
             "bcj2-lzma-branch-unclean-at-its-size.7z",
-            "does not end cleanly at its declared size",
+            "past its declared size without an end marker",
+        ),
+        (
+            "lzma-damaged-end-marker.7z",
+            "past its declared size without an end marker",
         ),
     ];
     for (name, words) in refused {
         assert_refused(name, &fs::read(hostile.join(name)).unwrap(), words);
     }
+    let unmarked = "lzma2-without-end-marker.7z";
+    let (root, result) = extract(&fs::read(hostile.join(unmarked)).unwrap());
+    result.unwrap();
+    assert_eq!(
+        fs::read(root.path().join("parent/out/src/a.txt")).unwrap(),
+        b"linked text that repeats, linked text that repeats, linked text that repeats again.\n"
+    );
     let Some(seven_zip) = which("7zz") else {
         return;
     };
-    for (name, _) in refused {
-        assert!(
-            !seven_zip_accepts(&seven_zip, &fs::read(hostile.join(name)).unwrap()),
-            "7-Zip accepts {name}"
+    let verdicts = refused
+        .iter()
+        .map(|&(name, _)| (name, false))
+        .chain([(unmarked, true)]);
+    for (name, accepted) in verdicts {
+        assert_eq!(
+            seven_zip_accepts(&seven_zip, &fs::read(hostile.join(name)).unwrap()),
+            accepted,
+            "7-Zip on {name}"
         );
     }
 }

@@ -37,7 +37,7 @@ fn native_reader_matches_the_reference_readers() {
 #[test]
 fn unsupported_methods_are_refused_by_name_and_routed_to_7zip() {
     let refused = std::fs::read_to_string(corpus().join("refused.tsv")).unwrap();
-    assert!(refused.lines().count() >= 2);
+    assert!(refused.lines().count() >= 1);
     for line in refused.lines() {
         let (name, error) = line.split_once('\t').unwrap();
         let archive = corpus().join(name);
@@ -53,4 +53,22 @@ fn unsupported_methods_are_refused_by_name_and_routed_to_7zip() {
             zipper::Reader::Backend { format: Some(_) }
         ));
     }
+}
+
+#[test]
+fn an_lzma_setting_liblzma_refuses_reads_natively_as_7zip_reads_it() {
+    let archives = corpus::expected(&corpus());
+    let archive = corpus().join("7zip-lzma-lc8-short.7z");
+    assert!(matches!(
+        zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
+        zipper::Reader::SevenZip
+    ));
+    let work = tempfile::tempdir().unwrap();
+    read_archive(
+        &archive,
+        Some(&work.path().join("out")),
+        ReadOptions::default(),
+    )
+    .unwrap();
+    corpus::assert_tree_matches_manifest(work.path(), &archives["7zip-lzma-short"], "lzma-lc8");
 }

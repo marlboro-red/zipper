@@ -4,7 +4,6 @@ pub mod counters;
 pub mod duplicates;
 mod extract;
 mod lz4;
-#[cfg(test)]
 mod lzma;
 mod lzw;
 mod memory;

@@ -1,3 +1,4 @@
+#[cfg(test)]
 use crate::xz_filters::{Filter, read_through, xz_filter};
 use std::io::{self, Read};
 
@@ -401,9 +402,13 @@ struct Window {
 }
 
 impl Window {
+    fn allocation(size: usize) -> usize {
+        size.max(1) + 2 * COPY_CHUNK
+    }
+
     fn new(size: usize) -> Self {
         Window {
-            buffer: vec![0; size.max(1) + 2 * COPY_CHUNK],
+            buffer: vec![0; Self::allocation(size)],
             size: size.max(1) + COPY_CHUNK,
             position: 0,
             full: false,
@@ -628,6 +633,39 @@ impl ChunkState {
     }
 }
 
+fn raw_window(dictionary: u32, decoded_size: u64) -> usize {
+    u64::from(dictionary)
+        .max(DICTIONARY_MIN as u64)
+        .min(decoded_size.max(1)) as usize
+}
+
+fn lzma2_window(dictionary: u32) -> usize {
+    // EXTERNAL(liblzma lz_decoder.c): the dictionary is at least 4 KiB, rounded up to 16 bytes, and matches may reach all of it.
+    (dictionary as usize)
+        .max(DICTIONARY_MIN)
+        .next_multiple_of(LIBLZMA_DICTIONARY_ALIGN)
+}
+
+fn decoder_memory(window: usize, lc_plus_lp: u32) -> u64 {
+    let literal = 0x300usize << lc_plus_lp;
+    (Window::allocation(window)
+        + INPUT_CHUNK
+        + SYMBOL_INPUT_MAX
+        + std::mem::size_of::<ChunkState>()
+        + literal * std::mem::size_of::<u16>()) as u64
+}
+
+pub(crate) fn lzma_memory(properties: Properties, dictionary: u32, decoded_size: u64) -> u64 {
+    decoder_memory(
+        raw_window(dictionary, decoded_size),
+        properties.lc + properties.lp,
+    )
+}
+
+pub(crate) fn lzma2_memory(dictionary: u32) -> u64 {
+    decoder_memory(lzma2_window(dictionary), LZMA2_LC_PLUS_LP_MAX)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Stop {
     Limit,
@@ -762,6 +800,7 @@ pub(crate) struct RawLzmaReader<R> {
     finished: bool,
     failed: bool,
     output_start: u64,
+    requires_a_clean_end: bool,
 }
 
 impl<R: Read> RawLzmaReader<R> {
@@ -771,20 +810,23 @@ impl<R: Read> RawLzmaReader<R> {
         dictionary: u32,
         decoded_size: u64,
     ) -> Self {
-        let window = u64::from(dictionary)
-            .max(DICTIONARY_MIN as u64)
-            .min(decoded_size.max(1)) as usize;
         RawLzmaReader {
             state: ChunkState::new(properties, dictionary as usize),
             range: RangeDecoder::new(input),
-            window: Window::new(window),
+            window: Window::new(raw_window(dictionary, decoded_size)),
             decoded_size,
             pending: 0,
             started: false,
             finished: false,
             failed: false,
             output_start: 0,
+            requires_a_clean_end: false,
         }
+    }
+
+    pub(crate) fn requiring_a_clean_end(mut self) -> Self {
+        self.requires_a_clean_end = true;
+        self
     }
 }
 
@@ -830,6 +872,24 @@ impl<R: Read> RawLzmaReader<R> {
             if self.window.total == self.decoded_size && self.pending > 0 {
                 return Err(data_error("LZMA match runs past the declared size"));
             }
+            if self.window.total == self.decoded_size
+                && stop != Stop::EndMarker
+                && self.requires_a_clean_end
+                && self.range.code != 0
+                && decode(
+                    &mut self.state,
+                    &mut self.range,
+                    &mut self.window,
+                    self.decoded_size + 1,
+                    &mut self.pending,
+                )
+                .ok()
+                    != Some(Stop::EndMarker)
+            {
+                return Err(data_error(
+                    "LZMA stream goes on past its declared size without an end marker",
+                ));
+            }
         }
         let available = (self.window.total - self.output_start) as usize;
         let count = available.min(buffer.len());
@@ -872,14 +932,12 @@ pub(crate) struct Lzma2Reader<R> {
     needs_properties: bool,
     pending: usize,
     output_start: u64,
+    ends_at_the_input_end: bool,
 }
 
 impl<R: Read> Lzma2Reader<R> {
     pub(crate) fn new(input: R, dictionary: u32) -> Self {
-        // EXTERNAL(liblzma lz_decoder.c): the dictionary is at least 4 KiB, rounded up to 16 bytes, and matches may reach all of it.
-        let dictionary = (dictionary as usize)
-            .max(DICTIONARY_MIN)
-            .next_multiple_of(LIBLZMA_DICTIONARY_ALIGN);
+        let dictionary = lzma2_window(dictionary);
         let properties = Properties {
             lc: 0,
             lp: 0,
@@ -894,7 +952,13 @@ impl<R: Read> Lzma2Reader<R> {
             needs_properties: true,
             pending: 0,
             output_start: 0,
+            ends_at_the_input_end: false,
         }
+    }
+
+    pub(crate) fn ending_at_the_input_end(mut self) -> Self {
+        self.ends_at_the_input_end = true;
+        self
     }
 
     fn header_byte(&mut self) -> io::Result<u8> {
@@ -910,10 +974,11 @@ impl<R: Read> Lzma2Reader<R> {
     }
 
     fn next_chunk(&mut self) -> io::Result<Lzma2Chunk> {
-        let control = self
-            .range
-            .next_byte()?
-            .ok_or_else(|| data_error("LZMA2 stream ends without its end marker"))?;
+        let control = match self.range.next_byte()? {
+            Some(control) => control,
+            None if self.ends_at_the_input_end => CONTROL_END,
+            None => return Err(data_error("LZMA2 stream ends without its end marker")),
+        };
         if control == CONTROL_END {
             return Ok(Lzma2Chunk::End);
         }
@@ -1043,7 +1108,7 @@ impl<R: Read> Read for Lzma2Reader<R> {
 }
 
 impl<R> Lzma2Reader<R> {
-    fn into_input(self) -> (R, Vec<u8>) {
+    pub(crate) fn into_input(self) -> (R, Vec<u8>) {
         let RangeDecoder {
             input,
             mut buffer,
@@ -1057,28 +1122,50 @@ impl<R> Lzma2Reader<R> {
     }
 }
 
+#[cfg(test)]
 const XZ_MAGIC: [u8; 6] = [0xFD, b'7', b'z', b'X', b'Z', 0x00];
+#[cfg(test)]
 const XZ_FOOTER_MAGIC: [u8; 2] = *b"YZ";
+#[cfg(test)]
 const XZ_STREAM_EDGE: usize = 12;
+#[cfg(test)]
 const XZ_INDEX_INDICATOR: u8 = 0x00;
+#[cfg(test)]
 const XZ_RESERVED_CHECK_BITS: u8 = 0xF0;
+#[cfg(test)]
 const XZ_BLOCK_RESERVED_FLAGS: u8 = 0x3C;
+#[cfg(test)]
 const XZ_BLOCK_HAS_COMPRESSED_SIZE: u8 = 0x40;
+#[cfg(test)]
 const XZ_BLOCK_HAS_UNCOMPRESSED_SIZE: u8 = 0x80;
+#[cfg(test)]
 const XZ_BLOCK_FILTER_COUNT: u8 = 0x03;
+#[cfg(test)]
 const XZ_FILTER_LZMA2: u64 = 0x21;
+#[cfg(test)]
 const XZ_FILTER_RESERVED_START: u64 = 1 << 62;
+#[cfg(test)]
 const XZ_LZMA2_DICTIONARY_LARGEST: u8 = 40;
+#[cfg(test)]
 const XZ_VLI_BYTES_MAX: usize = 9;
+#[cfg(test)]
 const XZ_VLI_MAX: u64 = u64::MAX >> 1;
+#[cfg(test)]
 const XZ_UNPADDED_SIZE_MIN: u64 = 5;
+#[cfg(test)]
 const XZ_UNPADDED_SIZE_MAX: u64 = XZ_VLI_MAX & !3;
+#[cfg(test)]
 const XZ_ALIGN: u64 = 4;
+#[cfg(test)]
 const XZ_CHECK_SIZE_MAX: usize = 32;
+#[cfg(test)]
 const XZ_INPUT_CHUNK: usize = 4096;
+#[cfg(test)]
 const CRC64_POLYNOMIAL: u64 = 0xC96C_5795_D787_0F42;
+#[cfg(test)]
 const CRC64_TABLE: [u64; 256] = crc64_table();
 
+#[cfg(test)]
 const fn crc64_table() -> [u64; 256] {
     let mut table = [0; 256];
     let mut index = 0;
@@ -1099,16 +1186,19 @@ const fn crc64_table() -> [u64; 256] {
     table
 }
 
+#[cfg(test)]
 fn crc64(crc: u64, bytes: &[u8]) -> u64 {
     !bytes.iter().fold(!crc, |crc, &byte| {
         CRC64_TABLE[usize::from(crc as u8 ^ byte)] ^ (crc >> 8)
     })
 }
 
+#[cfg(test)]
 fn padding_to_align(length: u64) -> u64 {
     length.wrapping_neg() % XZ_ALIGN
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum XzCheck {
     None,
@@ -1117,6 +1207,7 @@ enum XzCheck {
     Sha256,
 }
 
+#[cfg(test)]
 impl XzCheck {
     fn size(self) -> usize {
         match self {
@@ -1128,6 +1219,7 @@ impl XzCheck {
     }
 }
 
+#[cfg(test)]
 enum XzCheckState {
     None,
     Crc32(crc32fast::Hasher),
@@ -1135,6 +1227,7 @@ enum XzCheckState {
     Sha256(sha2::Sha256),
 }
 
+#[cfg(test)]
 impl XzCheckState {
     fn new(check: XzCheck) -> Self {
         match check {
@@ -1166,6 +1259,7 @@ impl XzCheckState {
 
 // SPEC(xz-file-format.txt 1.2 Multibyte Integers): seven bits a byte, low first, at most nine
 // bytes, and no zero byte after the first.
+#[cfg(test)]
 fn xz_integer(mut next: impl FnMut() -> io::Result<u8>) -> io::Result<u64> {
     let mut value = 0;
     for index in 0..XZ_VLI_BYTES_MAX {
@@ -1181,6 +1275,7 @@ fn xz_integer(mut next: impl FnMut() -> io::Result<u8>) -> io::Result<u64> {
     Err(data_error("xz integer is longer than nine bytes"))
 }
 
+#[cfg(test)]
 fn xz_header_integer(fields: &[u8], at: &mut usize) -> io::Result<u64> {
     xz_integer(|| {
         let byte = fields
@@ -1194,6 +1289,7 @@ fn xz_header_integer(fields: &[u8], at: &mut usize) -> io::Result<u64> {
 
 // SPEC(xz-file-format.txt 2.1.1.2 Stream Flags): the first byte and the high four bits of the
 // second are reserved, and the low four bits name the check.
+#[cfg(test)]
 fn xz_stream_flags(flags: [u8; 2]) -> io::Result<XzCheck> {
     if flags[0] != 0 || flags[1] & XZ_RESERVED_CHECK_BITS != 0 {
         return Err(data_error("xz stream flags set reserved bits"));
@@ -1203,6 +1299,7 @@ fn xz_stream_flags(flags: [u8; 2]) -> io::Result<XzCheck> {
 
 // SPEC(xz-file-format.txt 2.1.1.2 Stream Flags): a decoder that cannot verify a check should
 // warn or refuse; liblzma warns, and this reader refuses.
+#[cfg(test)]
 fn supported_xz_check(id: u8) -> io::Result<XzCheck> {
     match id {
         0x00 => Ok(XzCheck::None),
@@ -1213,6 +1310,7 @@ fn supported_xz_check(id: u8) -> io::Result<XzCheck> {
     }
 }
 
+#[cfg(test)]
 fn xz_stream_header(header: &[u8; XZ_STREAM_EDGE]) -> io::Result<([u8; 2], XzCheck)> {
     if header[..6] != XZ_MAGIC {
         return Err(data_error("xz stream header has no xz magic"));
@@ -1224,6 +1322,7 @@ fn xz_stream_header(header: &[u8; XZ_STREAM_EDGE]) -> io::Result<([u8; 2], XzChe
     Ok((flags, xz_stream_flags(flags)?))
 }
 
+#[cfg(test)]
 fn xz_stream_footer(footer: &[u8; XZ_STREAM_EDGE]) -> io::Result<(u64, [u8; 2])> {
     if footer[10..] != XZ_FOOTER_MAGIC {
         return Err(data_error("xz stream footer has no footer magic"));
@@ -1238,6 +1337,7 @@ fn xz_stream_footer(footer: &[u8; XZ_STREAM_EDGE]) -> io::Result<(u64, [u8; 2])>
     Ok(((u64::from(stored) + 1) * XZ_ALIGN, flags))
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 struct XzBlockHeader {
     compressed: Option<u64>,
@@ -1246,6 +1346,7 @@ struct XzBlockHeader {
     filters: Vec<Filter>,
 }
 
+#[cfg(test)]
 impl XzBlockHeader {
     fn window_within_uncompressed_size(&self) -> u32 {
         self.uncompressed.map_or(self.dictionary, |size| {
@@ -1256,6 +1357,7 @@ impl XzBlockHeader {
 
 // SPEC(xz-file-format.txt 5.3.1 to 5.3.3): LZMA2 is allowed only as the last filter, and the
 // branch filters and Delta only before it.
+#[cfg(test)]
 fn xz_non_last_filter(id: u64, properties: &[u8]) -> io::Result<Filter> {
     if id == XZ_FILTER_LZMA2 {
         return Err(data_error(
@@ -1265,6 +1367,7 @@ fn xz_non_last_filter(id: u64, properties: &[u8]) -> io::Result<Filter> {
     xz_filter(id, properties).map_err(data_error)
 }
 
+#[cfg(test)]
 fn xz_last_filter(id: u64, properties: &[u8]) -> io::Result<u32> {
     if id == XZ_FILTER_LZMA2 {
         return xz_lzma2_dictionary(properties);
@@ -1275,6 +1378,7 @@ fn xz_last_filter(id: u64, properties: &[u8]) -> io::Result<u32> {
 
 // SPEC(xz-file-format.txt 5.3.1 LZMA2): one property byte; 40 means 4 GiB less one, and below
 // it the dictionary is 2 or 3 times a power of two from 4 KiB.
+#[cfg(test)]
 fn xz_lzma2_dictionary(properties: &[u8]) -> io::Result<u32> {
     match *properties {
         [byte] if byte < XZ_LZMA2_DICTIONARY_LARGEST => {
@@ -1285,6 +1389,7 @@ fn xz_lzma2_dictionary(properties: &[u8]) -> io::Result<u32> {
     }
 }
 
+#[cfg(test)]
 fn xz_block_header(header: &[u8], check: XzCheck) -> io::Result<XzBlockHeader> {
     let (fields, stored) = header.split_at(header.len() - 4);
     if crc32fast::hash(fields).to_le_bytes() != stored {
@@ -1340,6 +1445,7 @@ fn xz_block_header(header: &[u8], check: XzCheck) -> io::Result<XzBlockHeader> {
     })
 }
 
+#[cfg(test)]
 struct XzInput<R> {
     inner: R,
     held: Vec<u8>,
@@ -1348,6 +1454,7 @@ struct XzInput<R> {
     limit: u64,
 }
 
+#[cfg(test)]
 impl<R: Read> XzInput<R> {
     fn peek(&mut self) -> io::Result<Option<u8>> {
         if self.next == self.held.len() {
@@ -1389,6 +1496,7 @@ impl<R: Read> XzInput<R> {
     }
 }
 
+#[cfg(test)]
 impl<R: Read> Read for XzInput<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let room = (self.limit - self.position).min(buffer.len() as u64) as usize;
@@ -1409,6 +1517,7 @@ impl<R: Read> Read for XzInput<R> {
     }
 }
 
+#[cfg(test)]
 #[derive(Default)]
 struct XzRecords {
     count: u64,
@@ -1417,6 +1526,7 @@ struct XzRecords {
     digest: sha2::Sha256,
 }
 
+#[cfg(test)]
 impl XzRecords {
     fn add(&mut self, unpadded: u64, uncompressed: u64) -> io::Result<()> {
         let too_large = || data_error("xz stream sizes pass the largest xz integer");
@@ -1442,12 +1552,14 @@ impl XzRecords {
     }
 }
 
+#[cfg(test)]
 struct XzStream {
     flags: [u8; 2],
     check: XzCheck,
     blocks: XzRecords,
 }
 
+#[cfg(test)]
 struct XzBlock<R> {
     decoder: Lzma2Reader<XzInput<R>>,
     filters: Vec<Filter>,
@@ -1459,6 +1571,7 @@ struct XzBlock<R> {
     check: XzCheckState,
 }
 
+#[cfg(test)]
 impl<R: Read> XzBlock<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let read = read_through(&mut self.filters, &mut self.decoder, buffer)?;
@@ -1518,6 +1631,7 @@ impl<R: Read> XzBlock<R> {
     }
 }
 
+#[cfg(test)]
 enum XzPart<R> {
     BeforeStream { input: XzInput<R>, first: bool },
     InStream { input: XzInput<R>, stream: XzStream },
@@ -1526,10 +1640,12 @@ enum XzPart<R> {
     Failed,
 }
 
+#[cfg(test)]
 pub(crate) struct XzReader<R> {
     part: XzPart<R>,
 }
 
+#[cfg(test)]
 impl<R: Read> XzReader<R> {
     pub(crate) fn new(input: R) -> Self {
         XzReader {
@@ -1549,6 +1665,7 @@ impl<R: Read> XzReader<R> {
 
 // SPEC(xz-file-format.txt 2.2 Stream Padding): streams may follow one another, separated by
 // zero bytes in groups of four.
+#[cfg(test)]
 fn start_stream<R: Read>(mut input: XzInput<R>, first: bool) -> io::Result<XzPart<R>> {
     if !first {
         let mut padding = 0u64;
@@ -1578,6 +1695,7 @@ fn start_stream<R: Read>(mut input: XzInput<R>, first: bool) -> io::Result<XzPar
     })
 }
 
+#[cfg(test)]
 fn start_block<R: Read>(
     mut input: XzInput<R>,
     stream: XzStream,
@@ -1603,12 +1721,14 @@ fn start_block<R: Read>(
     })))
 }
 
+#[cfg(test)]
 struct XzIndex<'a, R> {
     input: &'a mut XzInput<R>,
     crc: crc32fast::Hasher,
     size: u64,
 }
 
+#[cfg(test)]
 impl<R: Read> XzIndex<'_, R> {
     fn byte(&mut self) -> io::Result<u8> {
         let byte = self.input.byte("truncated xz index")?;
@@ -1622,6 +1742,7 @@ impl<R: Read> XzIndex<'_, R> {
     }
 }
 
+#[cfg(test)]
 fn read_xz_index<R: Read>(input: &mut XzInput<R>) -> io::Result<(XzRecords, u64)> {
     let mut index = XzIndex {
         input,
@@ -1653,6 +1774,7 @@ fn read_xz_index<R: Read>(input: &mut XzInput<R>) -> io::Result<(XzRecords, u64)
     Ok((records, size + stored.len() as u64))
 }
 
+#[cfg(test)]
 fn read_xz_stream_footer<R: Read>(
     input: &mut XzInput<R>,
     index_size: u64,
@@ -1670,6 +1792,7 @@ fn read_xz_stream_footer<R: Read>(
     Ok(())
 }
 
+#[cfg(test)]
 fn finish_stream<R: Read>(mut input: XzInput<R>, stream: XzStream) -> io::Result<XzPart<R>> {
     let (records, index_size) = read_xz_index(&mut input)?;
     if records.summary() != stream.blocks.summary() {
@@ -1682,6 +1805,7 @@ fn finish_stream<R: Read>(mut input: XzInput<R>, stream: XzStream) -> io::Result
     })
 }
 
+#[cfg(test)]
 fn next_part<R: Read>(part: XzPart<R>) -> io::Result<XzPart<R>> {
     match part {
         XzPart::BeforeStream { input, first } => start_stream(input, first),
@@ -1700,6 +1824,7 @@ fn next_part<R: Read>(part: XzPart<R>) -> io::Result<XzPart<R>> {
     }
 }
 
+#[cfg(test)]
 impl<R: Read> Read for XzReader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         if buffer.is_empty() {
@@ -1891,6 +2016,112 @@ mod tests {
             }
         }
         assert!(checked > 100_000, "{checked}");
+    }
+
+    fn liblzma_raw_lzma1(
+        stream: &[u8],
+        properties: Properties,
+        dictionary: u32,
+    ) -> Option<Vec<u8>> {
+        let mut options = liblzma::stream::LzmaOptions::new_preset(0).unwrap();
+        options
+            .literal_context_bits(properties.lc)
+            .literal_position_bits(properties.lp)
+            .position_bits(properties.pb)
+            .dict_size(dictionary);
+        let mut filters = liblzma::stream::Filters::new();
+        filters.lzma1(&options);
+        let mut decoder = liblzma::stream::Stream::new_raw_decoder(&filters).unwrap();
+        let mut out = Vec::with_capacity(1 << 20);
+        loop {
+            let before = (decoder.total_in(), decoder.total_out());
+            let rest = &stream[decoder.total_in() as usize..];
+            match decoder.process_vec(rest, &mut out, liblzma::stream::Action::Run) {
+                Ok(liblzma::stream::Status::StreamEnd) => return Some(out),
+                Ok(_) if (decoder.total_in(), decoder.total_out()) != before => {}
+                _ => return None,
+            }
+            if out.len() == out.capacity() {
+                out.reserve(1 << 20);
+            }
+        }
+    }
+
+    #[test]
+    fn a_reader_requiring_a_clean_end_reads_the_end_marker_after_the_declared_size() {
+        let data = b"abcabd".repeat(3_000);
+        let properties = Properties {
+            lc: 3,
+            lp: 0,
+            pb: 2,
+        };
+        let stream = encode(&data, 3, 0, 2, 1 << 16, 6);
+        let mut damaged_streams = vec![stream.clone()];
+        for at in stream.len().saturating_sub(12)..stream.len() {
+            for bit in 0..8 {
+                let mut damaged = stream.clone();
+                damaged[at] ^= 1 << bit;
+                damaged_streams.push(damaged);
+            }
+        }
+        let (mut accepted, mut refused) = (0, 0);
+        for damaged in &damaged_streams {
+            let liblzma = liblzma_raw_lzma1(damaged, properties, 1 << 16)
+                .filter(|decoded| decoded.len() == data.len());
+            let mut ours = Vec::new();
+            let result = RawLzmaReader::new(&damaged[..], properties, 1 << 16, data.len() as u64)
+                .requiring_a_clean_end()
+                .read_to_end(&mut ours);
+            match liblzma {
+                Some(decoded) => {
+                    result.unwrap();
+                    assert!(ours == decoded);
+                    accepted += 1;
+                }
+                None => {
+                    assert!(result.is_err());
+                    refused += 1;
+                }
+            }
+        }
+        assert!(accepted >= 1 && refused >= 40, "{accepted} {refused}");
+        for size in [1, 997, 10_000] {
+            let short = RawLzmaReader::new(&stream[..], properties, 1 << 16, size)
+                .requiring_a_clean_end()
+                .read_to_end(&mut Vec::new());
+            assert!(short.is_err(), "{size}");
+        }
+    }
+
+    #[test]
+    fn a_reader_ending_at_the_input_end_accepts_a_stream_cut_after_a_whole_chunk() {
+        let data = &samples()[4];
+        let mut stream = encode_lzma2(data, 3, 0, 2, 1 << 16, 6);
+        assert_eq!(stream.pop(), Some(0));
+        let mut boundaries = vec![0];
+        boundaries.extend(lzma2_chunks(&stream).iter().map(|chunk| chunk.end));
+        assert!(boundaries.len() >= 3, "{boundaries:?}");
+        assert!(decode_lzma2(&stream, 1 << 16, 65_536).1.is_err());
+        let mut checked = 0;
+        for cut in 0..=stream.len() {
+            let near_a_boundary = boundaries.iter().any(|&end| end.abs_diff(cut) <= 1);
+            if cut % 61 != 0 && !near_a_boundary {
+                continue;
+            }
+            let mut decoded = Vec::new();
+            let result = Lzma2Reader::new(&stream[..cut], 1 << 16)
+                .ending_at_the_input_end()
+                .read_to_end(&mut decoded);
+            if boundaries.contains(&cut) {
+                result.unwrap_or_else(|error| panic!("cut at {cut}: {error}"));
+                let (liblzma, _) = liblzma_lzma2_partial(&stream[..cut], 1 << 16);
+                assert!(decoded == liblzma && data.starts_with(&decoded), "{cut}");
+            } else {
+                assert!(result.is_err(), "cut at {cut}");
+            }
+            checked += 1;
+        }
+        assert!(checked > 1000, "{checked}");
     }
 
     #[test]
