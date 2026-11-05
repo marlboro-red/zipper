@@ -288,3 +288,31 @@ full-check = cargo test --release --lib volumes
 item = src/volumes.rs | struct Layout {
 item = src/volumes.rs | impl Layout {
 item = src/volumes.rs | impl Joined {
+
+[cpio-fields]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 7a10f3e7d6f07f5b
+full-check = cargo kani --harness native_cpio::proofs::
+full-check = cargo test --release --lib native_cpio
+item = src/native_cpio.rs | const ODC_FIELDS:
+item = src/native_cpio.rs | impl Form {
+item = src/native_cpio.rs | fn padding(
+item = src/native_cpio.rs | struct Header {
+item = src/native_cpio.rs | fn hex(
+item = src/native_cpio.rs | fn octal(
+item = src/native_cpio.rs | fn newc_header(
+item = src/native_cpio.rs | fn odc_header(
+item = src/native_cpio.rs | fn binary_header(
+
+[ar-fields]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 1709c5f751dd16d5
+full-check = cargo kani --harness native_ar::proofs::
+full-check = cargo test --release --lib native_ar
+item = src/native_ar.rs | const SPECIAL_MEMBERS:
+item = src/native_ar.rs | struct Header {
+item = src/native_ar.rs | enum ShortName<'a> {
+item = src/native_ar.rs | fn number(
+item = src/native_ar.rs | fn decimal(
+item = src/native_ar.rs | fn header(
+item = src/native_ar.rs | fn short_name(

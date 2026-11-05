@@ -1,4 +1,4 @@
-use crate::{Control, Existing, compat, native_7z, native_tar, native_zip};
+use crate::{Control, Existing, compat, native_7z, native_ar, native_cpio, native_tar, native_zip};
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
 
@@ -6,14 +6,15 @@ use std::{io::Read, path::Path};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Engine {
-    /// Native for ZIP, tar, unrecognized files and 7z whose methods it
-    /// decodes. 7-Zip for other 7z and the other formats whose signature
-    /// Zipper recognizes.
+    /// Native for ZIP, tar, cpio, `ar`, unrecognized files and 7z whose
+    /// methods it decodes. 7-Zip for other 7z and the other formats whose
+    /// signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
-    /// Native for ZIP and tar, and native ZIP for unrecognized files.
+    /// Native for ZIP, tar, cpio, `ar`, 7z and single compressed files, and
+    /// native ZIP for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -28,6 +29,10 @@ pub enum Reader {
     Tar,
     /// The native 7z reader.
     SevenZip,
+    /// The native reader for binary, odc and newc cpio.
+    Cpio,
+    /// The native reader for `ar` archives and Debian packages.
+    Ar,
     /// The native reader for one gzip, bzip2, xz, zstd or LZMA stream that
     /// holds no tar.
     Stream,
@@ -52,6 +57,8 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             fast: engine == Engine::NativeFast,
         },
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
+        _ if native_cpio::sniff(archive)? => Reader::Cpio,
+        _ if native_ar::sniff(archive)? => Reader::Ar,
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
             Reader::Backend {
                 format: compat::pinned_format(archive)?,
@@ -94,12 +101,12 @@ pub struct ExtractOptions<'a> {
     /// attributes or Mark of the Web. The 7-Zip backend refuses it.
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation. Every reader checks the cancel flag
-    /// before it starts. Only ZIP, tar and 7z report progress and check it
-    /// later.
+    /// before it starts. Only ZIP, tar, 7z, cpio and `ar` report progress
+    /// and check it later.
     pub control: Control<'a>,
-    /// Cap on declared output bytes. Without it, ZIP, tar and 7z output must
-    /// fit in free space. The 7-Zip backend refuses a cap and checks no free
-    /// space.
+    /// Cap on declared output bytes. Without it, ZIP, tar, 7z, cpio and `ar`
+    /// output must fit in free space. The 7-Zip backend refuses a cap and
+    /// checks no free space.
     pub max_output_bytes: Option<u64>,
     /// Maximum ZIP workers, tar writer threads or 7z folders decoded at
     /// once, 1–64.
@@ -339,6 +346,27 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
             bail!(
                 "--path, --include, --exclude, --strip-prefix, --strip-components and --content-only need an archive read in process"
             )
+        }
+        Reader::Cpio | Reader::Ar => {
+            let read = if reader == Reader::Cpio {
+                native_cpio::read_archive
+            } else {
+                native_ar::read_archive
+            };
+            read(
+                archive,
+                Some(destination),
+                native_cpio::ReadOptions {
+                    max_output_bytes: options.max_output_bytes,
+                    existing: options.existing,
+                    paths: options.paths,
+                    include: options.include,
+                    exclude: options.exclude,
+                    strip: options.strip,
+                    metadata: options.metadata,
+                    control: options.control,
+                },
+            )?;
         }
         Reader::Tar => {
             native_tar::read_archive(

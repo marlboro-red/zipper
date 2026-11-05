@@ -276,6 +276,16 @@ fn main() -> Result<()> {
                         None,
                         zipper::native_stream::ReadOptions::default(),
                     )?),
+                    Reader::Cpio => print(zipper::native_cpio::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_cpio::ReadOptions::default(),
+                    )?),
+                    Reader::Ar => print(zipper::native_ar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_ar::ReadOptions::default(),
+                    )?),
                     Reader::Backend { format } => zipper::compat::run(
                         "l",
                         &archive,
@@ -320,6 +330,16 @@ fn main() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_stream::ReadOptions::default(),
+                    )?),
+                    Reader::Cpio => report(zipper::native_cpio::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_cpio::ReadOptions::default(),
+                    )?),
+                    Reader::Ar => report(zipper::native_ar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_ar::ReadOptions::default(),
                     )?),
                     Reader::Backend { format } => zipper::compat::run(
                         "t",
