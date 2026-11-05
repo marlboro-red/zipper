@@ -27,8 +27,9 @@ const ODC_HEADER: usize = 76;
 const NEWC_HEADER: usize = 110;
 const LONGEST_HEADER: usize = NEWC_HEADER;
 const LINK_MEMORY: usize = 128 * 1024 * 1024;
-const NAME_COST: usize = 32;
-const GROUP_COST: usize = 2 * (size_of::<Inode>() + size_of::<Group>());
+const NAME_COST: usize = 16;
+const GROUP_COST: usize = table_cost(size_of::<(Inode, Group)>());
+const WAITING_COST: usize = table_cost(size_of::<(Inode, Vec<Deferred>)>());
 const DEFERRED_COST: usize = 2 * size_of::<Deferred>() + NAME_COST;
 // SPEC(cpio(5) Portable ASCII Format): device, inode, mode, owner, group, links, rdev, mtime, name size, file size.
 const ODC_FIELDS: [(usize, usize); 10] = [
@@ -118,6 +119,10 @@ impl Form {
             Form::Newc { crc } => newc_header(bytes, crc),
         }
     }
+}
+
+const fn table_cost(entry: usize) -> usize {
+    (entry * 7).div_ceil(2)
 }
 
 fn padding(length: u64, alignment: u64) -> u64 {
@@ -360,12 +365,12 @@ struct Group {
     first_seen: u32,
     names_left: u32,
     written: Option<Box<str>>,
-    waiting: Vec<Deferred>,
 }
 
 #[derive(Default)]
 struct HardLinks {
     groups: HashMap<Inode, Group>,
+    waiting: HashMap<Inode, Vec<Deferred>>,
     seen: u32,
     memory: usize,
 }
@@ -399,7 +404,6 @@ impl HardLinks {
                     first_seen: self.seen,
                     names_left: u32::try_from(links).unwrap_or(u32::MAX),
                     written: None,
-                    waiting: Vec::new(),
                 },
             );
         }
@@ -427,12 +431,15 @@ impl HardLinks {
         entry: Deferred,
     ) -> Result<()> {
         tree.check_name(&entry.name)?;
-        tree.charge_name(entry.name.len())?;
         if let Some(target) = self.group(inode, links)?.written.clone() {
             tree.hard_link(&entry.name, &target)?;
         } else {
+            tree.charge_name(entry.name.len())?;
+            if !self.waiting.contains_key(&inode) {
+                self.charge(WAITING_COST)?;
+            }
             self.charge(deferred_cost(&entry.name))?;
-            let waiting = &mut self.group_mut(inode).waiting;
+            let waiting = self.waiting.entry(inode).or_default();
             if waiting.len() == waiting.capacity() {
                 waiting.reserve_exact(waiting.len().max(1));
             }
@@ -440,10 +447,6 @@ impl HardLinks {
         }
         self.forget_if_complete(inode);
         Ok(())
-    }
-
-    fn group_mut(&mut self, inode: Inode) -> &mut Group {
-        self.groups.get_mut(&inode).expect("a group of this inode")
     }
 
     fn written(
@@ -454,31 +457,37 @@ impl HardLinks {
         name: &str,
     ) -> Result<()> {
         let group = self.group(inode, links)?;
-        let waiting = std::mem::take(&mut group.waiting);
         let first = group.written.is_none();
         if first {
             group.written = Some(name.into());
             self.charge(name_cost(name))?;
         }
-        for entry in waiting {
-            self.memory -= deferred_cost(&entry.name);
-            tree.hard_link(&entry.name, name)?;
+        if let Some(waiting) = self.waiting.remove(&inode) {
+            self.memory -= WAITING_COST;
+            for entry in waiting {
+                self.memory -= deferred_cost(&entry.name);
+                tree.hard_link(&entry.name, name)?;
+            }
         }
-        if first && !self.forget_if_complete(inode) {
+        let complete = self.forget_if_complete(inode);
+        if first && !complete {
             tree.keep_for_links(name)?;
         }
         Ok(())
     }
 
     fn finish(self, tree: &mut tree::Tree) -> Result<()> {
-        let mut unwritten: Vec<Group> = self
-            .groups
-            .into_values()
-            .filter(|group| group.written.is_none() && !group.waiting.is_empty())
+        let mut unwritten: Vec<(u32, Vec<Deferred>)> = self
+            .waiting
+            .into_iter()
+            .map(|(inode, waiting)| {
+                let first_seen = self.groups.get(&inode).map_or(0, |group| group.first_seen);
+                (first_seen, waiting)
+            })
             .collect();
-        unwritten.sort_unstable_by_key(|group| group.first_seen);
-        for group in unwritten {
-            let mut entries = group.waiting.into_iter();
+        unwritten.sort_unstable_by_key(|(first_seen, _)| *first_seen);
+        for (_, waiting) in unwritten {
+            let mut entries = waiting.into_iter();
             let Some(first) = entries.next() else {
                 continue;
             };
@@ -794,8 +803,12 @@ pub(crate) mod tree {
         }
 
         pub(crate) fn keep_for_links(&mut self, raw: &str) -> Result<()> {
-            let (name, _) = checked_name(raw)?;
-            if let Some((node @ Node::File, _)) = self.nodes.get_mut(&name) {
+            let (name, dots) = checked_name(raw)?;
+            if self.placement.strips() {
+                if let Some(placed) = self.placement.place_after_dots(&name, dots) {
+                    self.placed.keep(placed);
+                }
+            } else if let Some((node @ Node::File, _)) = self.nodes.get_mut(&name) {
                 *node = Node::LinkedFile;
             }
             Ok(())
@@ -1269,6 +1282,20 @@ mod link_tests {
             number,
             device: (0, 0),
         }
+    }
+
+    #[test]
+    fn charges_cover_a_hash_table_mid_growth_and_every_heap_block() {
+        let entry = size_of::<(Inode, Group)>();
+        assert!(GROUP_COST * 2 >= entry * 7, "{GROUP_COST} for {entry}");
+        let waiting = size_of::<(Inode, Vec<Deferred>)>();
+        assert!(
+            WAITING_COST * 2 >= waiting * 7,
+            "{WAITING_COST} for {waiting}"
+        );
+        assert!(DEFERRED_COST >= 2 * size_of::<Deferred>() + NAME_COST);
+        let smallest_heap_block = 16;
+        assert!(NAME_COST >= smallest_heap_block);
     }
 
     #[test]

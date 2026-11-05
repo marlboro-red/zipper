@@ -68,6 +68,17 @@ One thread reads the archive and writes each file in archive order through a 1 M
 - 7-Zip ignores anything after the trailer. Zipper refuses it unless it is all zero bytes.
 - A newc name without data that comes after the name carrying the data becomes an empty file in 7-Zip. Zipper links it to the data while the group still expects names, by the rule above.
 
+## Differences from bsdcpio
+
+The newc hard link rule follows bsdcpio 3.7.4, except in these cases:
+
+- When two names of one inode both carry data, bsdcpio gives every name the data of the last one. Zipper links the names that wait to the first data name, and writes the second as its own file.
+- When a name without data repeats the name of an earlier file, bsdcpio replaces that file with an empty one. Zipper refuses the archive when it would replace a file a hard link names, or that a group still waits on. Otherwise the reader writes the empty file in place of the earlier one, as bsdcpio does.
+- bsdcpio extracts these shapes, which Zipper refuses because a name would change kind or replace a linked file:
+  - a waiting name, then a file of the same name with data;
+  - a file that a link names, then a waiting name of the same spelling;
+  - a waiting name and its data under the same name, in either order.
+
 ## Extraction options
 
 `Existing`, `Control`, `paths`, `include`, `exclude`, `strip` and `metadata` work as in the [tar reader](tar-reader.md#extraction-options). A selected hard link whose data the selection or strip leaves out is refused. Progress counts each file and its bytes as they are written. The cancel flag is checked between entries, while data is copied, and every 1,024 links while links are created at the end.

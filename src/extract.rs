@@ -6,9 +6,9 @@ use std::{io::Read, path::Path};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Engine {
-    /// Native for ZIP, tar, cpio, `ar`, unrecognized files and 7z whose
-    /// methods it decodes. 7-Zip for other 7z and the other formats whose
-    /// signature Zipper recognizes.
+    /// Native for ZIP, tar, cpio, `ar`, single compressed files,
+    /// unrecognized files and 7z whose methods it decodes. 7-Zip for other
+    /// 7z and the other formats whose signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
@@ -101,12 +101,12 @@ pub struct ExtractOptions<'a> {
     /// attributes or Mark of the Web. The 7-Zip backend refuses it.
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation. Every reader checks the cancel flag
-    /// before it starts. Only ZIP, tar, 7z, cpio and `ar` report progress
-    /// and check it later.
+    /// before it starts. Every reader in process reports progress and checks
+    /// it later. The 7-Zip backend does neither.
     pub control: Control<'a>,
-    /// Cap on declared output bytes. Without it, ZIP, tar, 7z, cpio and `ar`
-    /// output must fit in free space. The 7-Zip backend refuses a cap and
-    /// checks no free space.
+    /// Cap on declared output bytes. Without it, the output of every reader
+    /// in process, including single compressed files, must fit in free
+    /// space. The 7-Zip backend refuses a cap and checks no free space.
     pub max_output_bytes: Option<u64>,
     /// Maximum ZIP workers, tar writer threads or 7z folders decoded at
     /// once, 1–64.

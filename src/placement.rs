@@ -102,9 +102,11 @@ impl<'a> Placement<'a> {
     }
 }
 
+const NO_ENTRY: u32 = u32::MAX;
+
 enum Placed {
     Folder,
-    File { entry: Option<u32> },
+    File { entry: u32, kept: bool },
 }
 
 #[derive(Default)]
@@ -114,14 +116,10 @@ pub(crate) struct PlacedNames {
 
 impl PlacedNames {
     pub(crate) fn add(&mut self, name: &str, directory: bool) -> Result<()> {
-        self.add_for(name, directory, None).map(|_| ())
+        self.add_entry(name, directory, NO_ENTRY).map(|_| ())
     }
 
     pub(crate) fn add_entry(&mut self, name: &str, directory: bool, entry: u32) -> Result<bool> {
-        self.add_for(name, directory, Some(entry))
-    }
-
-    fn add_for(&mut self, name: &str, directory: bool, entry: Option<u32>) -> Result<bool> {
         for (slash, _) in name.match_indices('/') {
             if let Some(Placed::File { .. }) =
                 self.kinds.insert(name[..slash].to_owned(), Placed::Folder)
@@ -134,16 +132,29 @@ impl PlacedNames {
                 let placed = if directory {
                     Placed::Folder
                 } else {
-                    Placed::File { entry }
+                    Placed::File { entry, kept: false }
                 };
                 self.kinds.insert(name.to_owned(), placed);
                 Ok(false)
             }
             Some(Placed::Folder) if directory => Ok(true),
             Some(Placed::File {
-                entry: Some(earlier),
-            }) if !directory && entry == Some(*earlier) => Ok(true),
+                entry: earlier,
+                kept,
+            }) if !directory && entry != NO_ENTRY && entry == *earlier => {
+                ensure!(
+                    !kept,
+                    "the archive replaces {name:?}, which an earlier hard link names"
+                );
+                Ok(true)
+            }
             Some(_) => bail!("stripping the path leaves two entries at {name:?}"),
+        }
+    }
+
+    pub(crate) fn keep(&mut self, name: &str) {
+        if let Some(Placed::File { kept, .. }) = self.kinds.get_mut(name) {
+            *kept = true;
         }
     }
 }

@@ -931,6 +931,16 @@ fn a_name_after_its_group_is_complete_waits_for_new_data_or_stays_empty() {
             &["c"],
         ),
         (
+            "second data completes the group",
+            vec![
+                linked("a", b"AAAA", 5, 2),
+                linked("b", b"BBBB", 5, 2),
+                linked("c", b"", 5, 2),
+            ],
+            &["a"],
+            &["c"],
+        ),
+        (
             "new data after the group",
             vec![
                 linked("a", b"AAAA", 5, 2),
@@ -1028,4 +1038,54 @@ fn cancel_while_links_are_created_publishes_nothing() {
         .filter(|name| name != "case.cpio")
         .collect();
     assert!(left.is_empty(), "{left:?}");
+}
+
+#[test]
+fn a_name_that_joins_a_group_with_data_counts_once_toward_the_name_limit() {
+    let mut members = vec![linked("data", b"x", 9, 9_001)];
+    members.extend(
+        (0..9_000).map(|index| linked(&format!("{index:05}{}", "n".repeat(4000)), b"", 9, 9_001)),
+    );
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("first.cpio");
+    fs::write(&archive, newc(&members)).unwrap();
+    read_archive(&archive, None, ReadOptions::default()).unwrap();
+}
+
+#[test]
+fn a_data_name_that_lands_elsewhere_under_a_strip_may_be_reused_by_another_entry() {
+    let bytes = newc(&[
+        linked("./t/a", b"AA", 5, 2),
+        linked("t/a", b"ZZ", 6, 1),
+        linked("t/b", b"", 5, 2),
+    ]);
+    let (_root, destination, result) = extract_with(
+        &bytes,
+        ReadOptions {
+            strip: Strip::Components(1),
+            ..ReadOptions::default()
+        },
+    );
+    result.unwrap();
+    assert_eq!(fs::read(destination.join("a")).unwrap(), b"ZZ");
+    assert_eq!(fs::read(destination.join("t/a")).unwrap(), b"AA");
+    assert_eq!(fs::read(destination.join("b")).unwrap(), b"AA");
+    let same_landing = newc(&[
+        linked("./t/a", b"AA", 5, 2),
+        linked("./t/a", b"ZZ", 6, 1),
+        linked("t/b", b"", 5, 2),
+    ]);
+    let error = format!(
+        "{:#}",
+        extract_with(
+            &same_landing,
+            ReadOptions {
+                strip: Strip::Components(1),
+                ..ReadOptions::default()
+            },
+        )
+        .2
+        .unwrap_err()
+    );
+    assert!(error.contains("an earlier hard link names"), "{error}");
 }

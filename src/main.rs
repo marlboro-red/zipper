@@ -102,8 +102,8 @@ enum Command {
         #[arg(long)]
         content_only: bool,
         /// Refuse archives whose declared output exceeds this many bytes. By
-        /// default, ZIP, tar, 7z, cpio and ar output read in process must fit
-        /// in free space.
+        /// default, the output of every archive read in process, including a
+        /// single compressed file, must fit in free space.
         #[arg(long)]
         max_extracted_bytes: Option<u64>,
     },
