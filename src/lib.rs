@@ -18,6 +18,8 @@ mod pattern;
 mod placement;
 mod progress;
 mod staging;
+#[cfg(any(test, kani))]
+mod zip_directory;
 mod zip_reader;
 use anyhow::{Context, Result, ensure};
 pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};

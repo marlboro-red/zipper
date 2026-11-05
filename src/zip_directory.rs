@@ -1,0 +1,1541 @@
+use crate::{BadField, Field, field_check};
+use anyhow::{Context, Result, ensure};
+use std::{
+    borrow::Cow,
+    io::{Read, Seek, SeekFrom},
+};
+
+const END_RECORD: usize = 22;
+const END_SIGNATURE: &[u8; 4] = b"PK\x05\x06";
+const LONGEST_COMMENT: usize = u16::MAX as usize;
+const ZIP64_LOCATOR: usize = 20;
+const ZIP64_LOCATOR_SIGNATURE: &[u8; 4] = b"PK\x06\x07";
+const ZIP64_END_RECORD: usize = 56;
+const ZIP64_END_SIGNATURE: &[u8; 4] = b"PK\x06\x06";
+const ZIP64_END_RECORD_SIZE_FIELD: u64 = 44;
+const CENTRAL_ENTRY: usize = 46;
+const CENTRAL_SIGNATURE: &[u8; 4] = b"PK\x01\x02";
+const MAX_ENTRIES: u64 = 100_000;
+const MAX_METADATA: u64 = 64 * 1024 * 1024;
+const ZIP64_SENTINEL: u32 = u32::MAX;
+const ZIP64_COUNT_SENTINEL: u64 = u16::MAX as u64;
+const ZIP64_VALUE: usize = 8;
+
+const ENCRYPTED: u16 = 0x0001;
+const UTF8_NAME: u16 = 0x0800;
+
+const ZIP64: u16 = 0x0001;
+const NTFS: u16 = 0x000a;
+const EXTENDED_TIMESTAMP: u16 = 0x5455;
+const UNICODE_COMMENT: u16 = 0x6375;
+const UNICODE_PATH: u16 = 0x7075;
+const AES: u16 = 0x9901;
+const ALIGNMENT: u16 = 0xa11e;
+const ANDROID_ALIGNMENT: u16 = 0xd935;
+const IDS_THE_ZIP_CRATE_PARSES: [u16; 8] = [
+    ZIP64,
+    NTFS,
+    EXTENDED_TIMESTAMP,
+    UNICODE_COMMENT,
+    UNICODE_PATH,
+    AES,
+    ALIGNMENT,
+    ANDROID_ALIGNMENT,
+];
+const UNICODE_FIELD_HEADER: usize = 5;
+
+const MADE_ON_DOS: u16 = 0;
+const MADE_ON_UNIX: u16 = 3;
+const DOS_DIRECTORY: u8 = 0x10;
+const DOS_READ_ONLY: u8 = 0x01;
+const S_IFDIR: u32 = 0o040000;
+const S_IFREG: u32 = 0o100000;
+const S_IFLNK: u32 = 0o120000;
+const SPECIAL_BITS: u32 = 0o7000;
+const WRITE_BITS: u32 = 0o222;
+
+const MULTI_DISK: &str =
+    "multi-disk ZIP is not supported; pass --zip-engine backend to read it with 7-Zip";
+const MULTI_DISK_ZIP64: &str =
+    "multi-disk ZIP64 is not supported; pass --zip-engine backend to read it with 7-Zip";
+
+pub(crate) struct Directory {
+    pub(crate) start: u64,
+    pub(crate) entries: Vec<CentralEntry>,
+}
+
+pub(crate) struct CentralEntry {
+    pub(crate) stored_name: Box<[u8]>,
+    pub(crate) unicode_name: Option<Box<[u8]>>,
+    pub(crate) extra: Box<[u8]>,
+    pub(crate) made_by: u16,
+    pub(crate) flags: u16,
+    pub(crate) method: u16,
+    pub(crate) dos_time: u32,
+    pub(crate) crc32: u32,
+    pub(crate) compressed_size: u64,
+    pub(crate) size: u64,
+    pub(crate) external_attributes: u32,
+    pub(crate) header_start: u64,
+}
+
+impl CentralEntry {
+    pub(crate) fn name_raw(&self) -> &[u8] {
+        self.unicode_name.as_deref().unwrap_or(&self.stored_name)
+    }
+
+    pub(crate) fn name(&self) -> Cow<'_, str> {
+        decode_name_like_zip_crate(self.name_raw())
+    }
+
+    pub(crate) fn is_dir(&self) -> bool {
+        matches!(self.name_raw().last(), Some(b'/' | b'\\'))
+    }
+
+    pub(crate) fn encrypted(&self) -> bool {
+        self.flags & ENCRYPTED != 0
+    }
+
+    pub(crate) fn unix_mode_like_zip_crate(&self) -> Option<u32> {
+        let attributes = self.external_attributes;
+        if attributes == 0 {
+            return None;
+        }
+        let high_half = attributes >> 16;
+        match self.made_by >> 8 {
+            MADE_ON_UNIX => Some(high_half & !SPECIAL_BITS),
+            MADE_ON_DOS => {
+                let dos = attributes as u8;
+                let mode = if dos & DOS_DIRECTORY != 0 {
+                    S_IFDIR | 0o775
+                } else {
+                    S_IFREG | 0o664
+                };
+                Some(if dos & DOS_READ_ONLY != 0 {
+                    mode & !WRITE_BITS
+                } else {
+                    mode
+                })
+            }
+            _ => (high_half != 0).then_some(high_half & !SPECIAL_BITS),
+        }
+    }
+
+    pub(crate) fn is_symlink(&self) -> bool {
+        self.unix_mode_like_zip_crate()
+            .is_some_and(|mode| mode & S_IFLNK == S_IFLNK)
+    }
+}
+
+pub(crate) fn read_directory<R: Read + Seek>(file: &mut R) -> Result<Directory> {
+    let length = file.seek(SeekFrom::End(0))?;
+    ensure!(
+        length >= END_RECORD as u64,
+        "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend"
+    );
+    let tail_size = length.min((END_RECORD + LONGEST_COMMENT) as u64);
+    file.seek(SeekFrom::Start(length - tail_size))?;
+    let mut tail = vec![0; tail_size as usize];
+    file.read_exact(&mut tail)?;
+    let end = end_record(&tail)?;
+    let end_offset = length - tail_size + end as u64;
+    let mut extent = end_extent(fixed(&tail, end), end_offset)?;
+    if extent.needs_zip64() {
+        ensure!(end_offset >= ZIP64_LOCATOR as u64, "missing ZIP64 locator");
+        file.seek(SeekFrom::Start(end_offset - ZIP64_LOCATOR as u64))?;
+        let record_start = zip64_record_start(&crate::number(file)?, end_offset)?;
+        file.seek(SeekFrom::Start(record_start))?;
+        extent = zip64_extent(&crate::number(file)?, record_start)?;
+    }
+    check_extent(&extent)?;
+    file.seek(SeekFrom::Start(extent.start))?;
+    let mut directory = Vec::new();
+    file.by_ref()
+        .take(extent.bytes)
+        .read_to_end(&mut directory)?;
+    ensure!(
+        directory.len() as u64 == extent.bytes,
+        "truncated ZIP central directory"
+    );
+    Ok(Directory {
+        start: extent.start,
+        entries: central_entries(&directory, extent)?,
+    })
+}
+
+fn central_entries(directory: &[u8], extent: Extent) -> Result<Vec<CentralEntry>> {
+    let mut entries = Vec::new();
+    let mut rest = directory;
+    let mut position = extent.start;
+    for _ in 0..extent.count {
+        let record = central_record(rest)?;
+        // EXTERNAL(Python zipfile, 7-Zip): no CP437 fallback for a flagged name.
+        ensure!(
+            record.flags & UTF8_NAME == 0 || std::str::from_utf8(record.name).is_ok(),
+            "ZIP name flagged as UTF-8 is not UTF-8"
+        );
+        let unicode_name = unicode_name(record.extra, record.name)?;
+        // EXTERNAL(zip crate): it refuses a local header offset that overflows when added to the entry's position.
+        ensure!(
+            record.header_start.checked_add(position).is_some(),
+            "ZIP local header offset is too large"
+        );
+        entries.push(CentralEntry {
+            stored_name: record.name.into(),
+            unicode_name,
+            extra: record.extra.into(),
+            made_by: record.made_by,
+            flags: record.flags,
+            method: record.method,
+            dos_time: record.dos_time,
+            crc32: record.crc32,
+            compressed_size: record.compressed_size,
+            size: record.size,
+            external_attributes: record.external_attributes,
+            header_start: record.header_start,
+        });
+        position += record.length as u64;
+        rest = &rest[record.length..];
+    }
+    ensure!(rest.is_empty(), "ZIP directory count mismatch");
+    Ok(entries)
+}
+
+fn fixed<const N: usize>(bytes: &[u8], at: usize) -> &[u8; N] {
+    bytes[at..at + N].try_into().expect("a slice of N bytes")
+}
+
+fn le16(bytes: &[u8], at: usize) -> u16 {
+    u16::from_le_bytes(*fixed(bytes, at))
+}
+
+fn le32(bytes: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(*fixed(bytes, at))
+}
+
+fn le64(bytes: &[u8], at: usize) -> u64 {
+    u64::from_le_bytes(*fixed(bytes, at))
+}
+
+fn end_record(tail: &[u8]) -> Field<usize> {
+    let comment = |at: usize| usize::from(le16(tail, at + 20));
+    let end = (0..=tail.len().saturating_sub(END_RECORD))
+        .rev()
+        .find(|&at| {
+            tail.len() >= at + END_RECORD
+                && tail[at..at + 4] == *END_SIGNATURE
+                && at + END_RECORD + comment(at) == tail.len()
+        })
+        .ok_or(BadField(
+            "ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend",
+        ))?;
+    // EXTERNAL(zip crate): it accepts trailing data and may pick an end record inside a comment.
+    field_check(
+        !tail[end + 4..]
+            .windows(4)
+            .any(|bytes| bytes == END_SIGNATURE),
+        "ZIP has ambiguous end records",
+    )?;
+    Ok(end)
+}
+
+#[derive(Clone, Copy)]
+struct Extent {
+    count: u64,
+    bytes: u64,
+    start: u64,
+    end: u64,
+}
+
+impl Extent {
+    fn needs_zip64(&self) -> bool {
+        self.count == ZIP64_COUNT_SENTINEL
+            || self.bytes == u64::from(ZIP64_SENTINEL)
+            || self.start == u64::from(ZIP64_SENTINEL)
+    }
+}
+
+fn end_extent(record: &[u8; END_RECORD], end: u64) -> Field<Extent> {
+    field_check(
+        le16(record, 4) == 0 && le16(record, 6) == 0 && le16(record, 8) == le16(record, 10),
+        MULTI_DISK,
+    )?;
+    Ok(Extent {
+        count: le16(record, 10).into(),
+        bytes: le32(record, 12).into(),
+        start: le32(record, 16).into(),
+        end,
+    })
+}
+
+fn zip64_record_start(locator: &[u8; ZIP64_LOCATOR], end_offset: u64) -> Field<u64> {
+    field_check(
+        locator[..4] == *ZIP64_LOCATOR_SIGNATURE && le32(locator, 4) == 0 && le32(locator, 16) == 1,
+        "invalid ZIP64 locator",
+    )?;
+    let start = le64(locator, 8);
+    field_check(
+        start.checked_add((ZIP64_END_RECORD + ZIP64_LOCATOR) as u64) == Some(end_offset),
+        "unsupported ZIP64 extension or offset",
+    )?;
+    Ok(start)
+}
+
+fn zip64_extent(record: &[u8; ZIP64_END_RECORD], end: u64) -> Field<Extent> {
+    field_check(
+        record[..4] == *ZIP64_END_SIGNATURE
+            && le64(record, 4) == ZIP64_END_RECORD_SIZE_FIELD
+            && le64(record, 16) == 0,
+        "unsupported ZIP64 record",
+    )?;
+    let count = le64(record, 32);
+    field_check(le64(record, 24) == count, MULTI_DISK_ZIP64)?;
+    Ok(Extent {
+        count,
+        bytes: le64(record, 40),
+        start: le64(record, 48),
+        end,
+    })
+}
+
+fn check_extent(extent: &Extent) -> Field<()> {
+    field_check(
+        extent.count <= MAX_ENTRIES && extent.bytes <= MAX_METADATA,
+        "ZIP metadata limit exceeded",
+    )?;
+    field_check(
+        extent.start.checked_add(extent.bytes) == Some(extent.end),
+        "unsupported ZIP central-directory extent",
+    )
+}
+
+struct Record<'a> {
+    made_by: u16,
+    flags: u16,
+    method: u16,
+    dos_time: u32,
+    crc32: u32,
+    compressed_size: u64,
+    size: u64,
+    external_attributes: u32,
+    header_start: u64,
+    name: &'a [u8],
+    extra: &'a [u8],
+    length: usize,
+}
+
+fn central_record(rest: &[u8]) -> Field<Record<'_>> {
+    field_check(rest.len() >= CENTRAL_ENTRY, "truncated ZIP central entry")?;
+    field_check(rest[..4] == *CENTRAL_SIGNATURE, "invalid ZIP central entry")?;
+    let [name, extra, comment] = [28, 30, 32].map(|at| usize::from(le16(rest, at)));
+    let length = CENTRAL_ENTRY + name + extra + comment;
+    field_check(length <= rest.len(), "ZIP central entry exceeds directory")?;
+    let extra_start = CENTRAL_ENTRY + name;
+    let extra_field = &rest[extra_start..extra_start + extra];
+    let [size, compressed_size, header_start] = extra_values(
+        extra_field,
+        [le32(rest, 24), le32(rest, 20), le32(rest, 42)],
+    )?;
+    Ok(Record {
+        made_by: le16(rest, 4),
+        flags: le16(rest, 8),
+        method: le16(rest, 10),
+        dos_time: le32(rest, 12),
+        crc32: le32(rest, 16),
+        compressed_size,
+        size,
+        external_attributes: le32(rest, 38),
+        header_start,
+        name: &rest[CENTRAL_ENTRY..extra_start],
+        extra: extra_field,
+        length,
+    })
+}
+
+fn extra_values(mut extra: &[u8], entry: [u32; 3]) -> Field<[u64; 3]> {
+    let mut values = entry.map(u64::from);
+    let mut zip64_seen = false;
+    while extra.len() >= 4 {
+        let length = usize::from(le16(extra, 2));
+        let body = extra
+            .get(4..4 + length)
+            .ok_or(BadField("truncated ZIP extra field"))?;
+        match le16(extra, 0) {
+            ZIP64 => {
+                field_check(!zip64_seen, "ZIP entry has two ZIP64 extra fields")?;
+                zip64_seen = true;
+                values = zip64_values(body, entry)?;
+            }
+            // EXTERNAL(zip crate): it refuses these three kinds when too short for their own header.
+            EXTENDED_TIMESTAMP => {
+                field_check(!body.is_empty(), "empty ZIP extended timestamp field")?
+            }
+            UNICODE_COMMENT | UNICODE_PATH => field_check(
+                body.len() >= UNICODE_FIELD_HEADER,
+                "short ZIP Unicode extra field",
+            )?,
+            ALIGNMENT | ANDROID_ALIGNMENT => {
+                field_check(body.len() >= 2, "short ZIP alignment extra field")?
+            }
+            _ => {}
+        }
+        extra = &extra[4 + length..];
+    }
+    // EXTERNAL(zip crate): it refuses two or three trailing bytes that start with an id it parses.
+    field_check(
+        extra.len() < 2 || !IDS_THE_ZIP_CRATE_PARSES.contains(&le16(extra, 0)),
+        "truncated ZIP extra field header",
+    )?;
+    Ok(values)
+}
+
+// SPEC(APPNOTE 4.5.3): only the fields that hold 0xFFFFFFFF appear, in this order.
+fn zip64_values(body: &[u8], entry: [u32; 3]) -> Field<[u64; 3]> {
+    let mut values = entry.map(u64::from);
+    let mut read = 0;
+    for (value, field) in values.iter_mut().zip(entry) {
+        if field == ZIP64_SENTINEL {
+            let bytes = body
+                .get(read..)
+                .and_then(<[u8]>::first_chunk::<ZIP64_VALUE>)
+                .ok_or(BadField("ZIP64 extra field is too short"))?;
+            *value = u64::from_le_bytes(*bytes);
+            read += ZIP64_VALUE;
+        }
+    }
+    Ok(values)
+}
+
+fn extra_fields(mut extra: &[u8]) -> impl Iterator<Item = (u16, &[u8])> {
+    std::iter::from_fn(move || {
+        let header = extra.first_chunk::<4>()?;
+        let length = usize::from(u16::from_le_bytes([header[2], header[3]]));
+        let body = extra.get(4..4 + length)?;
+        let id = u16::from_le_bytes([header[0], header[1]]);
+        extra = &extra[4 + length..];
+        Some((id, body))
+    })
+}
+
+fn unicode_name(extra: &[u8], stored: &[u8]) -> Result<Option<Box<[u8]>>> {
+    let mut renamed = None;
+    for (_, body) in extra_fields(extra).filter(|&(id, _)| id == UNICODE_PATH) {
+        let path = body
+            .get(UNICODE_FIELD_HEADER..)
+            .filter(|path| std::str::from_utf8(path).is_ok())
+            .context("malformed ZIP Unicode path field")?;
+        if path != stored {
+            ensure!(
+                respells_stored_name_as_zip_crate_decodes(body, path, stored),
+                "ZIP Unicode path field renames an entry"
+            );
+            renamed = Some(path);
+        }
+    }
+    Ok(renamed.map(Box::from))
+}
+
+// EXTERNAL(zip crate): it takes a Unicode path only when the checksum matches the stored name.
+fn respells_stored_name_as_zip_crate_decodes(body: &[u8], path: &[u8], stored: &[u8]) -> bool {
+    le32(body, 1) == crc32fast::hash(stored)
+        && *path == *decode_name_like_zip_crate(stored).as_bytes()
+}
+
+const CP437_HIGH: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u{a0}";
+
+fn decode_name_like_zip_crate(stored: &[u8]) -> Cow<'_, str> {
+    static HIGH: std::sync::LazyLock<Vec<char>> =
+        std::sync::LazyLock::new(|| CP437_HIGH.chars().collect());
+    match std::str::from_utf8(stored) {
+        Ok(name) => name.into(),
+        Err(_) => stored
+            .iter()
+            .map(|&byte| match byte {
+                0..0x80 => char::from(byte),
+                _ => HIGH[usize::from(byte - 0x80)],
+            })
+            .collect::<String>()
+            .into(),
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    const EXTRA: usize = 20;
+
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn extra_fields_never_panic_and_keep_every_value_without_a_sentinel() {
+        let extra: [u8; EXTRA] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= EXTRA);
+        let entry: [u32; 3] = kani::any();
+        if let Ok(values) = extra_values(&extra[..length], entry) {
+            for (value, field) in values.into_iter().zip(entry) {
+                assert!(field == ZIP64_SENTINEL || value == u64::from(field));
+            }
+        }
+    }
+
+    const RECORD: usize = CENTRAL_ENTRY + 8;
+
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn central_records_never_panic_and_end_inside_the_directory() {
+        let bytes: [u8; RECORD] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= RECORD);
+        if let Ok(record) = central_record(&bytes[..length]) {
+            assert!(record.length >= CENTRAL_ENTRY && record.length <= length);
+            assert!(CENTRAL_ENTRY + record.name.len() + record.extra.len() <= record.length);
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn end_records_and_zip64_records_end_where_their_directory_ends() {
+        let end: u64 = kani::any();
+        if let Ok(extent) = end_extent(&kani::any(), end) {
+            assert!(extent.end == end && extent.count <= ZIP64_COUNT_SENTINEL);
+        }
+        if let Ok(start) = zip64_record_start(&kani::any(), end) {
+            assert!(start + (ZIP64_END_RECORD + ZIP64_LOCATOR) as u64 == end);
+        }
+        if let Ok(extent) = zip64_extent(&kani::any(), end) {
+            if check_extent(&extent).is_ok() {
+                assert!(extent.start + extent.bytes == end);
+                assert!(extent.count <= MAX_ENTRIES && extent.bytes <= MAX_METADATA);
+            }
+        }
+    }
+
+    const TAIL: usize = 26;
+
+    #[kani::proof]
+    #[kani::unwind(27)]
+    fn the_end_record_is_the_last_signature_and_reaches_the_end() {
+        let bytes: [u8; TAIL] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= TAIL);
+        let tail = &bytes[..length];
+        if let Ok(end) = end_record(tail) {
+            assert!(tail[end..end + 4] == *END_SIGNATURE);
+            assert!(end + END_RECORD + usize::from(le16(tail, end + 20)) == tail.len());
+            for later in end + 1..tail.len().saturating_sub(3) {
+                assert!(tail[later..later + 4] != *END_SIGNATURE);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{Cursor, Write},
+        path::Path,
+    };
+
+    #[derive(Debug, PartialEq)]
+    struct Listed {
+        name: String,
+        name_raw: Vec<u8>,
+        size: u64,
+        compressed_size: u64,
+        method: u16,
+        crc32: u32,
+        encrypted: bool,
+        external_attributes: u32,
+        header_start: u64,
+        is_dir: bool,
+        is_symlink: bool,
+        unix_mode: Option<u32>,
+    }
+
+    fn listed_by_us(entry: &CentralEntry) -> Listed {
+        Listed {
+            name: entry.name().into_owned(),
+            name_raw: entry.name_raw().to_vec(),
+            size: entry.size,
+            compressed_size: entry.compressed_size,
+            method: entry.method,
+            crc32: entry.crc32,
+            encrypted: entry.encrypted(),
+            external_attributes: entry.external_attributes,
+            header_start: entry.header_start,
+            is_dir: entry.is_dir(),
+            is_symlink: entry.is_symlink(),
+            unix_mode: entry.unix_mode_like_zip_crate(),
+        }
+    }
+
+    #[expect(
+        deprecated,
+        reason = "the zip crate names other methods only behind features this build leaves off"
+    )]
+    fn method_code(method: zip::CompressionMethod) -> u16 {
+        method.to_u16()
+    }
+
+    struct ZipCrateListing {
+        start: u64,
+        offset: u64,
+        entries: Vec<Listed>,
+    }
+
+    fn listed_by_zip_crate(bytes: &[u8]) -> zip::result::ZipResult<ZipCrateListing> {
+        let archive = zip::ZipArchive::new(Cursor::new(bytes))?;
+        let mut entries = Vec::new();
+        for index in 0..archive.len() {
+            let file = archive.by_index_data(index)?;
+            entries.push(Listed {
+                name: file.name()?.into_owned(),
+                name_raw: file.name_raw().to_vec(),
+                size: file.size(),
+                compressed_size: file.compressed_size(),
+                method: method_code(file.compression()),
+                crc32: file.crc32(),
+                encrypted: file.encrypted(),
+                external_attributes: file.external_attributes(),
+                header_start: file.header_start(),
+                is_dir: file.is_dir(),
+                is_symlink: file.is_symlink(),
+                unix_mode: file.unix_mode(),
+            });
+        }
+        Ok(ZipCrateListing {
+            start: archive.central_directory_start(),
+            offset: archive.offset(),
+            entries,
+        })
+    }
+
+    fn merged_like_zip_crate(entries: Vec<Listed>) -> Vec<Listed> {
+        let mut merged: Vec<Listed> = Vec::new();
+        for entry in entries {
+            match merged
+                .iter_mut()
+                .find(|seen| seen.name_raw == entry.name_raw)
+            {
+                Some(seen) => *seen = entry,
+                None => merged.push(entry),
+            }
+        }
+        merged
+    }
+
+    const REFUSALS_BEFORE_THE_ZIP_CRATE: [&str; 20] = [
+        "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend",
+        "ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend",
+        "ZIP has ambiguous end records",
+        MULTI_DISK,
+        "missing ZIP64 locator",
+        "invalid ZIP64 locator",
+        "unsupported ZIP64 extension or offset",
+        "unsupported ZIP64 record",
+        MULTI_DISK_ZIP64,
+        "ZIP metadata limit exceeded",
+        "unsupported ZIP central-directory extent",
+        "truncated ZIP central entry",
+        "invalid ZIP central entry",
+        "ZIP central entry exceeds directory",
+        "truncated ZIP extra field",
+        "ZIP directory count mismatch",
+        "ZIP entry has two ZIP64 extra fields",
+        "ZIP name flagged as UTF-8 is not UTF-8",
+        "malformed ZIP Unicode path field",
+        "ZIP Unicode path field renames an entry",
+    ];
+    const DIRECTORY_DISAGREEMENT: &str = "ZIP parser disagrees with validated directory";
+
+    fn refused_before_the_zip_crate(message: &str) -> bool {
+        REFUSALS_BEFORE_THE_ZIP_CRATE.contains(&message)
+    }
+
+    fn native_listing(bytes: &[u8]) -> std::result::Result<(), String> {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("case.zip");
+        std::fs::write(&path, bytes).unwrap();
+        crate::native_zip::list(&path)
+            .map(drop)
+            .map_err(|error| error.to_string())
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    enum Outcome {
+        BothRefuse,
+        RefusedBeforeTheZipCrate,
+        RepeatedNameRefusedAfterListing,
+        Listed,
+    }
+
+    fn compare(bytes: &[u8]) -> std::result::Result<Outcome, String> {
+        let ours = read_directory(&mut Cursor::new(bytes));
+        let theirs = listed_by_zip_crate(bytes);
+        match (ours, theirs) {
+            (Err(_), Err(_)) => Ok(Outcome::BothRefuse),
+            (Ok(_), Err(error)) => Err(format!("we accept, the zip crate refuses: {error}")),
+            (Err(ours), Ok(_)) => {
+                let ours = ours.to_string();
+                match native_listing(bytes) {
+                    Err(native) if native == ours && refused_before_the_zip_crate(&ours) => {
+                        Ok(Outcome::RefusedBeforeTheZipCrate)
+                    }
+                    native => Err(format!(
+                        "we refuse with {ours:?}, the zip crate accepts, native_zip::list gives {native:?}"
+                    )),
+                }
+            }
+            (Ok(ours), Ok(theirs)) => {
+                let listed: Vec<_> = ours.entries.iter().map(listed_by_us).collect();
+                let raw_count = listed.len();
+                let merged = merged_like_zip_crate(listed);
+                let repeated_names = merged.len() != raw_count;
+                if theirs.offset != 0 {
+                    return Err(format!("the zip crate finds offset {}", theirs.offset));
+                }
+                if ours.start != theirs.start {
+                    return Err(format!(
+                        "directory start {} against {}",
+                        ours.start, theirs.start
+                    ));
+                }
+                if let Some((index, (ours, theirs))) = merged
+                    .iter()
+                    .zip(&theirs.entries)
+                    .enumerate()
+                    .find(|(_, (ours, theirs))| ours != theirs)
+                {
+                    return Err(format!("entry {index}: {ours:?} against {theirs:?}"));
+                }
+                if merged.len() != theirs.entries.len() {
+                    return Err(format!(
+                        "{} entries against {}",
+                        merged.len(),
+                        theirs.entries.len()
+                    ));
+                }
+                match native_listing(bytes) {
+                    Err(native) if repeated_names && native == DIRECTORY_DISAGREEMENT => {
+                        Ok(Outcome::RepeatedNameRefusedAfterListing)
+                    }
+                    _ if repeated_names => Err("a repeated name was not refused".to_owned()),
+                    Err(native)
+                        if refused_before_the_zip_crate(&native)
+                            || native == DIRECTORY_DISAGREEMENT =>
+                    {
+                        Err(format!(
+                            "we accept, native_zip::list refuses with {native:?}"
+                        ))
+                    }
+                    _ => Ok(Outcome::Listed),
+                }
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct Spec {
+        name: Vec<u8>,
+        made_by: u16,
+        flags: u16,
+        method: u16,
+        dos_time: u32,
+        crc32: u32,
+        compressed_size: u32,
+        size: u32,
+        external_attributes: u32,
+        header_start: Option<u32>,
+        extra: Vec<u8>,
+        comment: Vec<u8>,
+    }
+
+    const PAYLOAD: &[u8] = b"data";
+
+    fn file(name: &str) -> Spec {
+        Spec {
+            name: name.as_bytes().to_vec(),
+            made_by: 20,
+            flags: 0,
+            method: 0,
+            dos_time: 0x5a21_6000,
+            crc32: crc32fast::hash(PAYLOAD),
+            compressed_size: PAYLOAD.len() as u32,
+            size: PAYLOAD.len() as u32,
+            external_attributes: 0,
+            header_start: None,
+            extra: Vec::new(),
+            comment: Vec::new(),
+        }
+    }
+
+    fn named(name: &[u8]) -> Spec {
+        Spec {
+            name: name.to_vec(),
+            ..file("")
+        }
+    }
+
+    fn unix(spec: Spec, mode: u32) -> Spec {
+        Spec {
+            made_by: 0x0314,
+            external_attributes: mode << 16,
+            ..spec
+        }
+    }
+
+    fn with_extra(spec: Spec, fields: &[(u16, &[u8])]) -> Spec {
+        let mut extra = spec.extra.clone();
+        for (id, body) in fields {
+            extra.extend_from_slice(&id.to_le_bytes());
+            extra.extend_from_slice(&(body.len() as u16).to_le_bytes());
+            extra.extend_from_slice(body);
+        }
+        Spec { extra, ..spec }
+    }
+
+    fn unicode_path(stored: &[u8], crc: Option<u32>, path: &[u8]) -> Vec<u8> {
+        let mut body = vec![1];
+        body.extend_from_slice(&crc.unwrap_or_else(|| crc32fast::hash(stored)).to_le_bytes());
+        body.extend_from_slice(path);
+        body
+    }
+
+    fn cp437_path(stored: &[u8]) -> Vec<u8> {
+        unicode_path(stored, None, decode_name_like_zip_crate(stored).as_bytes())
+    }
+
+    fn values(values: &[u64]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect()
+    }
+
+    #[derive(Clone, Default)]
+    struct End {
+        zip64: Option<Zip64End>,
+        comment: Vec<u8>,
+    }
+
+    #[derive(Clone)]
+    struct Zip64End {
+        sentinels: [bool; 3],
+        size_field: u64,
+        extensible: Vec<u8>,
+        disks: u32,
+    }
+
+    fn zip64_end(sentinels: [bool; 3]) -> End {
+        End {
+            zip64: Some(Zip64End {
+                sentinels,
+                size_field: ZIP64_END_RECORD_SIZE_FIELD,
+                extensible: Vec::new(),
+                disks: 1,
+            }),
+            comment: Vec::new(),
+        }
+    }
+
+    fn build(entries: &[Spec], end: &End) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut offsets = Vec::new();
+        for entry in entries {
+            offsets.push(out.len() as u32);
+            out.extend_from_slice(b"PK\x03\x04");
+            out.extend_from_slice(&20u16.to_le_bytes());
+            out.extend_from_slice(&entry.flags.to_le_bytes());
+            out.extend_from_slice(&entry.method.to_le_bytes());
+            out.extend_from_slice(&entry.dos_time.to_le_bytes());
+            out.extend_from_slice(&entry.crc32.to_le_bytes());
+            out.extend_from_slice(&(PAYLOAD.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(PAYLOAD.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(entry.name.len() as u16).to_le_bytes());
+            out.extend_from_slice(&0u16.to_le_bytes());
+            out.extend_from_slice(&entry.name);
+            out.extend_from_slice(PAYLOAD);
+        }
+        let start = out.len() as u64;
+        for (entry, offset) in entries.iter().zip(offsets) {
+            out.extend_from_slice(CENTRAL_SIGNATURE);
+            out.extend_from_slice(&entry.made_by.to_le_bytes());
+            out.extend_from_slice(&20u16.to_le_bytes());
+            out.extend_from_slice(&entry.flags.to_le_bytes());
+            out.extend_from_slice(&entry.method.to_le_bytes());
+            out.extend_from_slice(&entry.dos_time.to_le_bytes());
+            out.extend_from_slice(&entry.crc32.to_le_bytes());
+            out.extend_from_slice(&entry.compressed_size.to_le_bytes());
+            out.extend_from_slice(&entry.size.to_le_bytes());
+            for length in [entry.name.len(), entry.extra.len(), entry.comment.len()] {
+                out.extend_from_slice(&(length as u16).to_le_bytes());
+            }
+            out.extend_from_slice(&[0; 4]);
+            out.extend_from_slice(&entry.external_attributes.to_le_bytes());
+            out.extend_from_slice(&entry.header_start.unwrap_or(offset).to_le_bytes());
+            out.extend_from_slice(&entry.name);
+            out.extend_from_slice(&entry.extra);
+            out.extend_from_slice(&entry.comment);
+        }
+        let bytes = out.len() as u64 - start;
+        let count = entries.len() as u64;
+        let mut fields = [count, bytes, start];
+        if let Some(zip64) = &end.zip64 {
+            let record_start = out.len() as u64;
+            out.extend_from_slice(ZIP64_END_SIGNATURE);
+            out.extend_from_slice(&zip64.size_field.to_le_bytes());
+            out.extend_from_slice(&[45, 3, 45, 0]);
+            out.extend_from_slice(&[0; 8]);
+            out.extend_from_slice(&values(&[count, count, bytes, start]));
+            out.extend_from_slice(&zip64.extensible);
+            out.extend_from_slice(ZIP64_LOCATOR_SIGNATURE);
+            out.extend_from_slice(&0u32.to_le_bytes());
+            out.extend_from_slice(&record_start.to_le_bytes());
+            out.extend_from_slice(&zip64.disks.to_le_bytes());
+            for (field, sentinel) in fields.iter_mut().zip(zip64.sentinels) {
+                if sentinel {
+                    *field = u64::MAX;
+                }
+            }
+        }
+        out.extend_from_slice(END_SIGNATURE);
+        out.extend_from_slice(&[0; 4]);
+        let count = fields[0].min(ZIP64_COUNT_SENTINEL) as u16;
+        out.extend_from_slice(&count.to_le_bytes());
+        out.extend_from_slice(&count.to_le_bytes());
+        out.extend_from_slice(&(fields[1].min(u64::from(ZIP64_SENTINEL)) as u32).to_le_bytes());
+        out.extend_from_slice(&(fields[2].min(u64::from(ZIP64_SENTINEL)) as u32).to_le_bytes());
+        out.extend_from_slice(&(end.comment.len() as u16).to_le_bytes());
+        out.extend_from_slice(&end.comment);
+        out
+    }
+
+    fn built_archives() -> Vec<(String, Vec<u8>)> {
+        let plain = End::default();
+        let cp437 = b"caf\x82 \x80\xff".to_vec();
+        let all_high_bytes: Vec<u8> = (0x80..=0xff).collect();
+        let shapes: Vec<(&str, Vec<Spec>, End)> = vec![
+            ("empty", vec![], plain.clone()),
+            ("one file", vec![file("a.txt")], plain.clone()),
+            (
+                "folders, links and modes",
+                vec![
+                    unix(file("d/"), 0o040755),
+                    unix(file("d/link"), 0o120777),
+                    unix(file("d/socket"), 0o140644),
+                    unix(file("d/whiteout"), 0o160644),
+                    unix(file("d/setuid"), 0o104755),
+                    unix(file("d/plain"), 0),
+                    Spec {
+                        external_attributes: 0x10,
+                        ..file("dos-folder/")
+                    },
+                    Spec {
+                        external_attributes: 0x01,
+                        ..file("dos-read-only")
+                    },
+                    Spec {
+                        made_by: 0x0a14,
+                        external_attributes: 0o100600 << 16 | 0x20,
+                        ..file("ntfs-made")
+                    },
+                    Spec {
+                        made_by: 0x0a14,
+                        external_attributes: 0x20,
+                        ..file("ntfs-no-mode")
+                    },
+                    file("back\\slash\\"),
+                ],
+                plain.clone(),
+            ),
+            (
+                "names in CP437 and UTF-8",
+                vec![
+                    named(&cp437),
+                    named(&all_high_bytes),
+                    Spec {
+                        flags: UTF8_NAME,
+                        ..file("café/ü.txt")
+                    },
+                ],
+                plain.clone(),
+            ),
+            (
+                "a flagged name that is not UTF-8",
+                vec![Spec {
+                    flags: UTF8_NAME,
+                    ..named(&cp437)
+                }],
+                plain.clone(),
+            ),
+            (
+                "Unicode paths",
+                vec![
+                    with_extra(named(&cp437), &[(UNICODE_PATH, &cp437_path(&cp437))]),
+                    with_extra(
+                        file("same.txt"),
+                        &[(
+                            UNICODE_PATH,
+                            &unicode_path(b"same.txt", Some(7), b"same.txt"),
+                        )],
+                    ),
+                    with_extra(
+                        file("twice.txt"),
+                        &[
+                            (
+                                UNICODE_PATH,
+                                &unicode_path(b"twice.txt", None, b"twice.txt"),
+                            ),
+                            (
+                                UNICODE_PATH,
+                                &unicode_path(b"twice.txt", Some(1), b"twice.txt"),
+                            ),
+                        ],
+                    ),
+                ],
+                plain.clone(),
+            ),
+            (
+                "a Unicode path that renames",
+                vec![with_extra(
+                    file("a.txt"),
+                    &[(UNICODE_PATH, &unicode_path(b"a.txt", None, b"b.txt"))],
+                )],
+                plain.clone(),
+            ),
+            (
+                "a CP437 Unicode path with a wrong checksum",
+                vec![with_extra(
+                    named(&cp437),
+                    &[(
+                        UNICODE_PATH,
+                        &unicode_path(
+                            &cp437,
+                            Some(0),
+                            decode_name_like_zip_crate(&cp437).as_bytes(),
+                        ),
+                    )],
+                )],
+                plain.clone(),
+            ),
+            (
+                "a Unicode path that is not UTF-8",
+                vec![with_extra(
+                    file("a.txt"),
+                    &[(UNICODE_PATH, &unicode_path(b"a.txt", Some(9), b"\xff"))],
+                )],
+                plain.clone(),
+            ),
+            (
+                "a short Unicode path",
+                vec![with_extra(file("a.txt"), &[(UNICODE_PATH, &[1, 2, 3])])],
+                plain.clone(),
+            ),
+            (
+                "Unicode comments",
+                vec![
+                    with_extra(file("long"), &[(UNICODE_COMMENT, &[1, 0, 0, 0, 0, b'x'])]),
+                    with_extra(file("short"), &[(UNICODE_COMMENT, &[1, 0])]),
+                ],
+                plain.clone(),
+            ),
+            (
+                "timestamps",
+                vec![
+                    with_extra(file("one"), &[(EXTENDED_TIMESTAMP, &[1])]),
+                    with_extra(file("five"), &[(EXTENDED_TIMESTAMP, &[1, 2, 3, 4, 5])]),
+                    with_extra(file("thirteen"), &[(EXTENDED_TIMESTAMP, &[7; 13])]),
+                    with_extra(file("ntfs"), &[(NTFS, &[0; 32])]),
+                    with_extra(file("odd ntfs"), &[(NTFS, &[1; 7])]),
+                ],
+                plain.clone(),
+            ),
+            (
+                "an empty timestamp",
+                vec![with_extra(file("zero"), &[(EXTENDED_TIMESTAMP, &[])])],
+                plain.clone(),
+            ),
+            (
+                "alignment fields",
+                vec![
+                    with_extra(file("two"), &[(ALIGNMENT, &[4, 0])]),
+                    with_extra(file("android"), &[(ANDROID_ALIGNMENT, &[4, 0, 0, 0])]),
+                    with_extra(file("aes"), &[(AES, &[2, 0, b'A', b'E', 3, 0, 0])]),
+                    with_extra(file("short aes"), &[(AES, &[])]),
+                    with_extra(file("unknown"), &[(0x4242, &[])]),
+                ],
+                plain.clone(),
+            ),
+            (
+                "a short alignment field",
+                vec![with_extra(file("one"), &[(ALIGNMENT, &[4])])],
+                plain.clone(),
+            ),
+            (
+                "a truncated extra field",
+                vec![Spec {
+                    extra: vec![0x42, 0x42, 9, 0, 1],
+                    ..file("a")
+                }],
+                plain.clone(),
+            ),
+            (
+                "trailing extra bytes",
+                vec![
+                    Spec {
+                        extra: vec![0x55],
+                        ..file("one")
+                    },
+                    Spec {
+                        extra: vec![0x42, 0x42, 0],
+                        ..file("unknown")
+                    },
+                ],
+                plain.clone(),
+            ),
+            (
+                "trailing bytes of a known field",
+                vec![Spec {
+                    extra: vec![0x55, 0x54],
+                    ..file("timestamp")
+                }],
+                plain.clone(),
+            ),
+            (
+                "ZIP64 fields",
+                vec![
+                    with_extra(
+                        Spec {
+                            size: ZIP64_SENTINEL,
+                            compressed_size: ZIP64_SENTINEL,
+                            ..file("both")
+                        },
+                        &[(ZIP64, &values(&[4, 4]))],
+                    ),
+                    with_extra(
+                        Spec {
+                            compressed_size: ZIP64_SENTINEL,
+                            ..file("compressed")
+                        },
+                        &[(ZIP64, &values(&[4, 99, 98]))],
+                    ),
+                    with_extra(
+                        Spec {
+                            header_start: Some(ZIP64_SENTINEL),
+                            ..file("offset")
+                        },
+                        &[(ZIP64, &values(&[1 << 40]))],
+                    ),
+                    with_extra(file("unasked"), &[(ZIP64, &values(&[5, 6, 7]))]),
+                    Spec {
+                        size: ZIP64_SENTINEL,
+                        ..file("no field")
+                    },
+                ],
+                plain.clone(),
+            ),
+            (
+                "a short ZIP64 field",
+                vec![with_extra(
+                    Spec {
+                        size: ZIP64_SENTINEL,
+                        compressed_size: ZIP64_SENTINEL,
+                        ..file("short")
+                    },
+                    &[(ZIP64, &values(&[4]))],
+                )],
+                plain.clone(),
+            ),
+            (
+                "two ZIP64 fields",
+                vec![with_extra(
+                    file("twice"),
+                    &[(ZIP64, &values(&[1])), (ZIP64, &values(&[2]))],
+                )],
+                plain.clone(),
+            ),
+            (
+                "an offset that overflows",
+                vec![with_extra(
+                    Spec {
+                        header_start: Some(ZIP64_SENTINEL),
+                        ..file("far")
+                    },
+                    &[(ZIP64, &values(&[u64::MAX - 20]))],
+                )],
+                plain.clone(),
+            ),
+            (
+                "flags, methods and comments",
+                vec![
+                    Spec {
+                        flags: ENCRYPTED,
+                        ..file("locked")
+                    },
+                    Spec {
+                        flags: 0x0008,
+                        method: 8,
+                        ..file("described")
+                    },
+                    Spec {
+                        method: 99,
+                        comment: b"\x80 comment".to_vec(),
+                        ..file("aes method")
+                    },
+                    Spec {
+                        method: 0x4242,
+                        ..file("unknown method")
+                    },
+                ],
+                End {
+                    comment: b"archive comment".to_vec(),
+                    ..End::default()
+                },
+            ),
+            (
+                "repeated names",
+                vec![file("same"), file("other"), unix(file("same"), 0o100600)],
+                plain.clone(),
+            ),
+            (
+                "a name repeated through a Unicode path",
+                vec![
+                    named(&cp437),
+                    with_extra(named(&cp437), &[(UNICODE_PATH, &cp437_path(&cp437))]),
+                ],
+                plain.clone(),
+            ),
+            (
+                "a comment holding an end signature",
+                vec![file("a")],
+                End {
+                    comment: b"x PK\x05\x06 y".to_vec(),
+                    ..End::default()
+                },
+            ),
+            (
+                "a ZIP64 end",
+                vec![file("a"), file("b")],
+                zip64_end([true, false, false]),
+            ),
+            (
+                "a ZIP64 end with every sentinel",
+                vec![file("a")],
+                zip64_end([true, true, true]),
+            ),
+            (
+                "an empty ZIP64 end",
+                vec![],
+                zip64_end([false, false, true]),
+            ),
+            (
+                "a ZIP64 end without sentinels",
+                vec![file("a")],
+                zip64_end([false, false, false]),
+            ),
+            (
+                "a ZIP64 end with extensible data",
+                vec![file("a")],
+                End {
+                    zip64: Some(Zip64End {
+                        sentinels: [true, true, true],
+                        size_field: ZIP64_END_RECORD_SIZE_FIELD + 4,
+                        extensible: vec![1, 2, 3, 4],
+                        disks: 1,
+                    }),
+                    comment: Vec::new(),
+                },
+            ),
+            (
+                "a ZIP64 locator for two disks",
+                vec![file("a")],
+                End {
+                    zip64: Some(Zip64End {
+                        sentinels: [true, true, true],
+                        size_field: ZIP64_END_RECORD_SIZE_FIELD,
+                        extensible: Vec::new(),
+                        disks: 2,
+                    }),
+                    comment: Vec::new(),
+                },
+            ),
+        ];
+        let mut archives: Vec<(String, Vec<u8>)> = shapes
+            .into_iter()
+            .map(|(name, entries, end)| (name.to_owned(), build(&entries, &end)))
+            .collect();
+        let mut trailing = build(&[file("a")], &plain);
+        trailing.extend_from_slice(b"trailing");
+        archives.push(("trailing data".to_owned(), trailing));
+        let mut prefixed = b"#!/bin/sh\n".to_vec();
+        prefixed.extend_from_slice(&build(&[file("a")], &plain));
+        archives.push(("a self-extractor prefix".to_owned(), prefixed));
+        archives.extend(written_by_zip_crate());
+        archives
+    }
+
+    fn written_by_zip_crate() -> Vec<(String, Vec<u8>)> {
+        use zip::{CompressionMethod, write::SimpleFileOptions};
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer.add_directory("folder/", options).unwrap();
+        writer
+            .start_file("folder/large.bin", options.large_file(true))
+            .unwrap();
+        writer.write_all(b"large").unwrap();
+        writer
+            .start_file("mode.txt", options.unix_permissions(0o4755))
+            .unwrap();
+        writer.add_symlink("link", "mode.txt", options).unwrap();
+        let mut archives = vec![(
+            "written by the zip crate".to_owned(),
+            writer.finish().unwrap().into_inner(),
+        )];
+        let mut many = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for index in 0..=ZIP64_COUNT_SENTINEL {
+            many.start_file(format!("{index}"), options).unwrap();
+        }
+        archives.push((
+            "more entries than a ZIP32 count holds".to_owned(),
+            many.finish().unwrap().into_inner(),
+        ));
+        archives
+    }
+
+    #[test]
+    fn entries_keep_their_stored_names_times_and_extra_fields() {
+        let cp437 = b"caf\x82".to_vec();
+        let specs = [
+            Spec {
+                dos_time: 0xffff_ffff,
+                ..with_extra(file("odd time"), &[(EXTENDED_TIMESTAMP, &[1, 2, 3, 4, 5])])
+            },
+            Spec {
+                flags: 0x0808,
+                comment: b"comment".to_vec(),
+                ..unix(file("flags"), 0o100644)
+            },
+            with_extra(named(&cp437), &[(UNICODE_PATH, &cp437_path(&cp437))]),
+        ];
+        let directory = read_directory(&mut Cursor::new(build(&specs, &End::default()))).unwrap();
+        assert_eq!(directory.entries.len(), specs.len());
+        for (entry, spec) in directory.entries.iter().zip(&specs) {
+            assert_eq!(*entry.stored_name, *spec.name);
+            assert_eq!(*entry.extra, *spec.extra);
+            assert_eq!(entry.dos_time, spec.dos_time);
+            assert_eq!(entry.made_by, spec.made_by);
+            assert_eq!(entry.flags, spec.flags);
+        }
+        assert_eq!(
+            directory.entries[2].unicode_name.as_deref(),
+            Some("café".as_bytes())
+        );
+    }
+
+    fn real_archives() -> Vec<(String, Vec<u8>)> {
+        let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let mut archives = Vec::new();
+        for folder in ["zip-corpus", "parity/archives"] {
+            let mut paths: Vec<_> = std::fs::read_dir(data.join(folder))
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path.extension().is_some_and(|extension| extension == "zip"))
+                .collect();
+            paths.sort();
+            for path in paths {
+                archives.push((path.display().to_string(), std::fs::read(&path).unwrap()));
+            }
+        }
+        assert!(archives.len() >= 30, "the ZIP corpora are missing");
+        archives
+    }
+
+    const BUILT_REFUSALS: [(&str, Outcome); 14] = [
+        (
+            "a flagged name that is not UTF-8",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+        (
+            "a CP437 Unicode path with a wrong checksum",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+        (
+            "a Unicode path that renames",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+        (
+            "a Unicode path that is not UTF-8",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+        ("a short Unicode path", Outcome::BothRefuse),
+        ("an empty timestamp", Outcome::BothRefuse),
+        ("a short alignment field", Outcome::BothRefuse),
+        ("a truncated extra field", Outcome::BothRefuse),
+        ("trailing bytes of a known field", Outcome::BothRefuse),
+        ("a short ZIP64 field", Outcome::BothRefuse),
+        ("two ZIP64 fields", Outcome::RefusedBeforeTheZipCrate),
+        ("an offset that overflows", Outcome::BothRefuse),
+        ("repeated names", Outcome::RepeatedNameRefusedAfterListing),
+        (
+            "a ZIP64 end without sentinels",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+    ];
+    const MORE_BUILT_REFUSALS: [(&str, Outcome); 6] = [
+        ("Unicode comments", Outcome::BothRefuse),
+        (
+            "a comment holding an end signature",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+        (
+            "a ZIP64 end with extensible data",
+            Outcome::RefusedBeforeTheZipCrate,
+        ),
+        ("a ZIP64 locator for two disks", Outcome::BothRefuse),
+        ("trailing data", Outcome::RefusedBeforeTheZipCrate),
+        ("a self-extractor prefix", Outcome::RefusedBeforeTheZipCrate),
+    ];
+
+    #[test]
+    fn every_archive_lists_as_the_zip_crate_lists_it_or_both_refuse() {
+        let mut failures = Vec::new();
+        for (name, bytes) in real_archives().into_iter().chain(built_archives()) {
+            let expected = BUILT_REFUSALS
+                .iter()
+                .chain(&MORE_BUILT_REFUSALS)
+                .find(|(refused, _)| *refused == name)
+                .map_or(Outcome::Listed, |&(_, outcome)| outcome);
+            match compare(&bytes) {
+                Ok(outcome) if outcome == expected => {}
+                outcome => failures.push(format!("{name}: expected {expected:?}, got {outcome:?}")),
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, bound: usize) -> usize {
+            (self.next() % bound.max(1) as u64) as usize
+        }
+    }
+
+    const SIGNATURES: [&[u8; 4]; 5] = [
+        CENTRAL_SIGNATURE,
+        END_SIGNATURE,
+        ZIP64_END_SIGNATURE,
+        ZIP64_LOCATOR_SIGNATURE,
+        b"PK\x03\x04",
+    ];
+    const EDGE_VALUES: [u64; 8] = [0, 1, 4, 0x7fff, 0xffff, 0xffff_fffe, 0xffff_ffff, u64::MAX];
+
+    fn directory_position(bytes: &[u8], rng: &mut Rng) -> usize {
+        let directory = bytes
+            .windows(4)
+            .position(|window| window == CENTRAL_SIGNATURE)
+            .unwrap_or(0);
+        if rng.below(4) == 0 {
+            rng.below(bytes.len())
+        } else {
+            directory + rng.below(bytes.len() - directory)
+        }
+    }
+
+    fn overwrite_field_near_signature(bytes: &mut [u8], rng: &mut Rng) {
+        let signature = SIGNATURES[rng.below(SIGNATURES.len())];
+        let starts: Vec<usize> = bytes
+            .windows(4)
+            .enumerate()
+            .filter(|(_, window)| window == signature)
+            .map(|(at, _)| at)
+            .collect();
+        if starts.is_empty() {
+            return;
+        }
+        let at = starts[rng.below(starts.len())] + 4 + rng.below(52);
+        let value = EDGE_VALUES[rng.below(EDGE_VALUES.len())].to_le_bytes();
+        let width = [1, 2, 4, 8][rng.below(4)];
+        for (offset, byte) in value.iter().take(width).enumerate() {
+            if let Some(slot) = bytes.get_mut(at + offset) {
+                *slot = *byte;
+            }
+        }
+    }
+
+    fn mutate(archive: &[u8], rng: &mut Rng) -> Vec<u8> {
+        let mut bytes = archive.to_vec();
+        for _ in 0..1 + rng.below(3) {
+            if bytes.is_empty() {
+                break;
+            }
+            let at = directory_position(&bytes, rng);
+            match rng.below(6) {
+                0 => bytes[at] ^= 1 << rng.below(8),
+                1 => bytes[at] = EDGE_VALUES[rng.below(EDGE_VALUES.len())] as u8,
+                2 => bytes.truncate(at),
+                3 => {
+                    let count = (1 + rng.below(8)).min(bytes.len() - at);
+                    bytes.drain(at..at + count);
+                }
+                4 => {
+                    let insert: Vec<u8> = (0..1 + rng.below(8)).map(|_| rng.next() as u8).collect();
+                    bytes.splice(at..at, insert);
+                }
+                _ => overwrite_field_near_signature(&mut bytes, rng),
+            }
+        }
+        bytes
+    }
+
+    const LARGE_ARCHIVE: usize = 1 << 20;
+
+    #[test]
+    fn every_damaged_archive_lists_as_the_zip_crate_lists_it_or_both_refuse() {
+        let cases: u64 =
+            std::env::var("ZIPPER_DIRECTORY_CASES").map_or(300, |cases| cases.parse().unwrap());
+        let seed: u64 = std::env::var("ZIPPER_DIRECTORY_SEED")
+            .map_or(0x5eed_d1ec, |seed| seed.parse().unwrap());
+        let mut failures = Vec::new();
+        let mut outcomes = std::collections::HashMap::new();
+        for (name, archive) in real_archives().into_iter().chain(built_archives()) {
+            let cases = if archive.len() > LARGE_ARCHIVE {
+                cases / 30
+            } else {
+                cases
+            };
+            let archive_seed = seed ^ u64::from(crc32fast::hash(name.as_bytes()));
+            for case in 0..cases {
+                let case_seed = archive_seed ^ case << 32 | 1;
+                let damaged = mutate(&archive, &mut Rng(case_seed));
+                match compare(&damaged) {
+                    Ok(outcome) => *outcomes.entry(outcome).or_insert(0) += 1,
+                    Err(failure) => {
+                        failures.push(format!("{name} case seed {case_seed}: {failure}"))
+                    }
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} disagreements:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+        println!("outcomes of damaged archives: {outcomes:?}");
+        assert_eq!(
+            outcomes.len(),
+            4,
+            "a kind of outcome never happened: {outcomes:?}"
+        );
+    }
+}
