@@ -33,6 +33,30 @@ impl Memory {
             amount,
         }
     }
+
+    pub(crate) fn reserve_within(
+        &self,
+        wanted: u64,
+        patience: std::time::Duration,
+    ) -> Option<Reservation<'_>> {
+        let amount = wanted.min(self.total);
+        let available = self
+            .available
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let (mut available, waited) = self
+            .released
+            .wait_timeout_while(available, patience, |available| *available < amount)
+            .unwrap_or_else(|poison| poison.into_inner());
+        if waited.timed_out() && *available < amount {
+            return None;
+        }
+        *available -= amount;
+        Some(Reservation {
+            memory: self,
+            amount,
+        })
+    }
 }
 
 pub(crate) struct Reservation<'a> {

@@ -101,6 +101,15 @@ impl<'a> Tracker<'a> {
         self.check()
     }
 
+    pub(crate) fn count_bytes(&self, bytes: u64) {
+        self.bytes_done.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub(crate) fn report(&self) -> Result<()> {
+        self.report_unless_busy();
+        self.check()
+    }
+
     pub(crate) fn file_done(&self) -> Result<()> {
         self.files_done.fetch_add(1, Ordering::Relaxed);
         self.report_unless_busy();

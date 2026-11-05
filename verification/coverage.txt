@@ -33,7 +33,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 6f7fe3fe622d691c
+fingerprint = 65a5ffb8fb6b4a43
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
 item = src/memory.rs | pub(crate) struct Memory {
@@ -44,11 +44,15 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 6c85335373f4186b
+fingerprint = 1b48c12357fb6652
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
 item = src/progress.rs | impl<'a> Tracker<'a> {
 item = src/native_zip.rs | pub fn read_archive_with_options(
+item = src/native_zip.rs | impl EntryOnThisThread {
+item = src/native_zip.rs | const DECODER_MEMORY_PATIENCE:
+item = src/native_zip.rs | fn decoder_need(
+item = src/memory.rs | impl Memory {
 
 [overwrite]
 skill = .claude/skills/zipper-verify-overwrite/SKILL.md
@@ -66,10 +70,12 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = 58475c36699c6d7f
+fingerprint = 17413872c5d5d93f
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
 item = src/native_zip.rs | pub fn read_archive_with_options(
+item = src/native_zip.rs | const DECODER_MEMORY_PATIENCE:
+item = src/native_zip.rs | fn decoder_need(
 item = src/memory.rs | impl Memory {
 item = src/memory.rs | impl Drop for Reservation<'_> {
 

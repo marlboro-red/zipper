@@ -1,0 +1,12 @@
+head 9.01 rc=0 bad=0, extra=0
+100ms 9.82 rc=0 bad=0, extra=0
+1000ms 9.53 rc=0 bad=0, extra=0
+head 9.34 rc=0 bad=0, extra=0
+100ms 9.76 rc=0 bad=0, extra=0
+1000ms 9.32 rc=0 bad=0, extra=0
+head 9.38 rc=0 bad=0, extra=0
+100ms 10.11 rc=0 bad=0, extra=0
+1000ms 9.46 rc=0 bad=0, extra=0
+head 9.74 rc=0 bad=0, extra=0
+100ms 10.71 rc=0 bad=0, extra=0
+1000ms 10.5 rc=0 bad=0, extra=0

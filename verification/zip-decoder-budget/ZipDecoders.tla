@@ -4,14 +4,15 @@
 (* src/native_zip.rs and the shared decoder budget in src/memory.rs.       *)
 (* Rayon workers take entries in order and stop taking new ones once any   *)
 (* entry has failed (`try_for_each_init` returns the first error). An XZ,  *)
-(* LZMA or PPMd entry reserves memory from the shared `Memory` before it   *)
-(* decodes, waiting on a condition variable while the budget is short, and *)
-(* releases it when the `Reservation` drops. A large entry may hand its    *)
+(* LZMA or PPMd entry takes memory from the shared `Memory` before it      *)
+(* starts (`reserve_within`). When the budget is short it records the entry  *)
+(* in `for_the_next_pass` and returns, and `run` runs the recorded entries *)
+(* in another pass. It releases the memory when the `Reservation` drops. A large entry may hand its    *)
 (* output through a bounded channel to a writer thread (`write_behind`), a *)
 (* scoped OS thread outside the Rayon pool that writes until the channel   *)
 (* closes and can fail on a write error.                                   *)
 (***************************************************************************)
-EXTENDS Naturals, Sequences
+EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANTS
     Need,          \* entry -> memory it reserves, 0 for an entry that reserves none
@@ -29,7 +30,8 @@ W == 1..Threads
 Min(a, b) == IF a < b THEN a ELSE b
 
 VARIABLES
-    next,       \* the next entry Rayon hands out
+    order,      \* entries this pass has not handed out, largest first
+    recorded,   \* `for_the_next_pass`
     stop,       \* an entry failed, so no new entry starts
     wpc,        \* worker -> step
     entry,      \* worker -> entry it holds, 0 for none
@@ -44,11 +46,12 @@ VARIABLES
     mpc,
     result
 
-vars == <<next, stop, wpc, entry, reserved, available, sent, queue, writer,
+vars == <<order, recorded, stop, wpc, entry, reserved, available, sent, queue, writer,
           failed, decoded, corrupted, mpc, result>>
 
 Init ==
-    /\ next = 1
+    /\ order = [i \in 1..N |-> i]
+    /\ recorded = {}
     /\ stop = FALSE
     /\ wpc = [w \in W |-> "take"]
     /\ entry = [w \in W |-> 0]
@@ -68,24 +71,31 @@ Unchanged(names) == UNCHANGED names
 \* Rayon hands the next entry to an idle worker unless a failure stopped it.
 Take(w) ==
     /\ wpc[w] = "take"
-    /\ IF next <= N /\ ~stop
-       THEN /\ entry' = [entry EXCEPT ![w] = next]
-            /\ next' = next + 1
-            /\ wpc' = [wpc EXCEPT ![w] = IF Need[next] > 0 THEN "reserve" ELSE "start"]
+    /\ IF order /= <<>> /\ ~stop
+       THEN /\ entry' = [entry EXCEPT ![w] = Head(order)]
+            /\ order' = Tail(order)
+            /\ wpc' = [wpc EXCEPT ![w] = IF Need[Head(order)] > 0 THEN "reserve" ELSE "start"]
        ELSE /\ wpc' = [wpc EXCEPT ![w] = "exited"]
-            /\ UNCHANGED <<entry, next>>
-    /\ UNCHANGED <<stop, reserved, available, sent, queue, writer, failed, decoded,
-                   corrupted, mpc, result>>
+            /\ UNCHANGED <<entry, order>>
+    /\ UNCHANGED <<recorded, stop, reserved, available, sent, queue, writer, failed,
+                   decoded, corrupted, mpc, result>>
 
-\* `decoder_memory.reserve(..)` waits while `available` is short.
+\* `decoder_memory.reserve_within(..)` takes the memory, or records the
+\* entry for the next pass when `available` stays short. Waiting is the
+\* other steps running first, so the patience needs no step of its own.
 Reserve(w) ==
     /\ wpc[w] = "reserve"
     /\ LET amount == Min(Need[entry[w]], Total) IN
-         /\ available >= amount
-         /\ available' = available - amount
-         /\ reserved' = [reserved EXCEPT ![w] = amount]
-    /\ wpc' = [wpc EXCEPT ![w] = "start"]
-    /\ UNCHANGED <<next, stop, entry, sent, queue, writer, failed, decoded, corrupted,
+         IF available >= amount
+         THEN /\ available' = available - amount
+              /\ reserved' = [reserved EXCEPT ![w] = amount]
+              /\ wpc' = [wpc EXCEPT ![w] = "start"]
+              /\ UNCHANGED <<recorded, entry>>
+         ELSE /\ recorded' = recorded \cup {entry[w]}
+              /\ entry' = [entry EXCEPT ![w] = 0]
+              /\ wpc' = [wpc EXCEPT ![w] = "take"]
+              /\ UNCHANGED <<available, reserved>>
+    /\ UNCHANGED <<order, stop, sent, queue, writer, failed, decoded, corrupted,
                    mpc, result>>
 
 \* The entry decodes in place, or starts its writer thread.
@@ -103,7 +113,7 @@ Start(w) ==
                /\ corrupted' = TRUE
                /\ wpc' = [wpc EXCEPT ![w] = "release"]
                /\ UNCHANGED <<decoded, writer>>
-    /\ UNCHANGED <<next, stop, entry, reserved, available, sent, queue, mpc, result>>
+    /\ UNCHANGED <<order, recorded, stop, entry, reserved, available, sent, queue, mpc, result>>
 
 \* The decoder sends a chunk when the channel has room; a send to a writer
 \* that failed returns an error.
@@ -125,7 +135,7 @@ Send(w) ==
                /\ corrupted' = TRUE
                /\ wpc' = [wpc EXCEPT ![w] = "close"]
                /\ UNCHANGED <<sent, queue>>
-    /\ UNCHANGED <<next, stop, entry, reserved, available, writer, decoded, mpc, result>>
+    /\ UNCHANGED <<order, recorded, stop, entry, reserved, available, writer, decoded, mpc, result>>
 
 \* The writer thread takes chunks until the channel closes and is empty.
 WriterWrites(w) ==
@@ -142,14 +152,14 @@ WriterWrites(w) ==
           /\ wpc[w] = "join"
           /\ writer' = [writer EXCEPT ![w] = "done"]
           /\ UNCHANGED <<queue, corrupted>>
-    /\ UNCHANGED <<next, stop, wpc, entry, reserved, available, sent, failed, decoded,
+    /\ UNCHANGED <<order, recorded, stop, wpc, entry, reserved, available, sent, failed, decoded,
                    mpc, result>>
 
 \* The decoder drops its sender, then joins the writer thread.
 Close(w) ==
     /\ wpc[w] = "close"
     /\ wpc' = [wpc EXCEPT ![w] = "join"]
-    /\ UNCHANGED <<next, stop, entry, reserved, available, sent, queue, writer, failed,
+    /\ UNCHANGED <<order, recorded, stop, entry, reserved, available, sent, queue, writer, failed,
                    decoded, corrupted, mpc, result>>
 
 Join(w) ==
@@ -163,7 +173,7 @@ Join(w) ==
     /\ writer' = [writer EXCEPT ![w] = "idle"]
     /\ sent' = [sent EXCEPT ![w] = 0]
     /\ wpc' = [wpc EXCEPT ![w] = "release"]
-    /\ UNCHANGED <<next, stop, entry, reserved, available, queue, corrupted, mpc, result>>
+    /\ UNCHANGED <<order, recorded, stop, entry, reserved, available, queue, corrupted, mpc, result>>
 
 \* The `Reservation` drops; a failure stops Rayon from starting new entries.
 Release(w) ==
@@ -173,14 +183,31 @@ Release(w) ==
     /\ stop' = (stop \/ failed[w])
     /\ entry' = [entry EXCEPT ![w] = 0]
     /\ wpc' = [wpc EXCEPT ![w] = IF failed[w] THEN "exited" ELSE "take"]
-    /\ UNCHANGED <<next, sent, queue, writer, failed, decoded, corrupted, mpc, result>>
+    /\ UNCHANGED <<order, recorded, sent, queue, writer, failed, decoded, corrupted, mpc, result>>
+
+\* Every order of a set of entries.
+Orders(set) == {seq \in [1..Cardinality(set) -> set] : \A i, j \in DOMAIN seq : seq[i] = seq[j] => i = j}
+
+\* `run_pass` returns with entries recorded and no failure, so `run`
+\* starts another pass.
+CallerStartsNextPass ==
+    /\ mpc = "joining"
+    /\ \A w \in W : wpc[w] = "exited"
+    /\ ~\E w \in W : failed[w]
+    /\ recorded /= {}
+    /\ order' \in Orders(recorded)
+    /\ recorded' = {}
+    /\ wpc' = [w \in W |-> "take"]
+    /\ UNCHANGED <<stop, entry, reserved, available, sent, queue, writer, failed,
+                   decoded, corrupted, mpc, result>>
 
 CallerFinishes ==
     /\ mpc = "joining"
     /\ \A w \in W : wpc[w] = "exited"
+    /\ (\E w \in W : failed[w]) \/ recorded = {}
     /\ result' = IF \E w \in W : failed[w] THEN "failed" ELSE "ok"
     /\ mpc' = "done"
-    /\ UNCHANGED <<next, stop, wpc, entry, reserved, available, sent, queue, writer,
+    /\ UNCHANGED <<order, recorded, order, recorded, stop, wpc, entry, reserved, available, sent, queue, writer,
                    failed, decoded, corrupted>>
 
 Finished == mpc = "done" /\ UNCHANGED vars
@@ -188,10 +215,13 @@ Finished == mpc = "done" /\ UNCHANGED vars
 Next ==
     \/ \E w \in W : Take(w) \/ Reserve(w) \/ Start(w) \/ Send(w) \/ WriterWrites(w)
                     \/ Close(w) \/ Join(w) \/ Release(w)
-    \/ CallerFinishes
+    \/ CallerStartsNextPass \/ CallerFinishes
     \/ Finished
 
 Spec == Init /\ [][Next]_vars
+
+\* Every step that can happen eventually happens, as threads keep running.
+FairSpec == Spec /\ WF_vars(Next)
 
 RECURSIVE ReservedBy(_)
 ReservedBy(n) == IF n = 0 THEN 0 ELSE reserved[n] + ReservedBy(n - 1)
@@ -210,4 +240,7 @@ SuccessIsComplete == result = "ok" => \A e \in Entries : decoded[e] = 1
 
 \* A corrupt or unwritable entry never ends in a published extraction.
 FailureIsReported == (mpc = "done" /\ corrupted) => result /= "ok"
+
+\* The extraction ends: passes never repeat forever.
+EventuallyDone == <>(mpc = "done")
 =============================================================================

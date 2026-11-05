@@ -597,3 +597,132 @@ fn counts_reach_their_totals_only_after_every_file_is_closed() {
         );
     }
 }
+
+fn xz_entries_that_each_reserve_most_of_the_budget(path: &Path) {
+    const XZ: u16 = 95;
+    const DECLARED: u32 = 1_200 << 20;
+    let mut payload = Vec::new();
+    let mut encoder = liblzma::write::XzEncoder::new(&mut payload, 0);
+    encoder.write_all(&vec![0u8; 4 << 20]).unwrap();
+    encoder.finish().unwrap();
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for name in ["a", "b"] {
+        let offset = out.len() as u32;
+        let fields = |record: &mut Vec<u8>| {
+            record.extend_from_slice(&0u16.to_le_bytes());
+            record.extend_from_slice(&XZ.to_le_bytes());
+            record.extend_from_slice(&0u32.to_le_bytes());
+            record.extend_from_slice(&0u32.to_le_bytes());
+            record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            record.extend_from_slice(&DECLARED.to_le_bytes());
+            record.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            record.extend_from_slice(&0u16.to_le_bytes());
+        };
+        out.extend_from_slice(b"PK\x03\x04\x3f\x00");
+        fields(&mut out);
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(&payload);
+        central.extend_from_slice(b"PK\x01\x02\x3f\x00\x3f\x00");
+        fields(&mut central);
+        central.extend_from_slice(&[0; 6]);
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name.as_bytes());
+    }
+    let central_offset = out.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(b"PK\x05\x06\x00\x00\x00\x00\x02\x00\x02\x00");
+    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    out.extend_from_slice(&central_offset.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    fs::write(path, out).unwrap();
+}
+
+#[test]
+fn a_callback_that_runs_rayon_work_never_waits_on_memory_its_own_thread_holds() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.zip");
+    xz_entries_that_each_reserve_most_of_the_budget(&archive);
+    let destination = root.path().join("out");
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let yields = |_: Progress| {
+            rayon::yield_local();
+        };
+        let result = native_zip::read_archive_with_options(
+            &archive,
+            Some(&destination),
+            native_zip::ReadOptions {
+                threads: Some(1),
+                control: Control {
+                    progress: Some(&yields),
+                    cancel: None,
+                },
+                ..Default::default()
+            },
+        );
+        let _ = done.send(result.map(|_| ()).map_err(|error| format!("{error:#}")));
+    });
+    let result = finished
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the callback ran the second entry, which waits for memory the first holds");
+    assert!(
+        result.is_err(),
+        "the declared sizes are false, so the read must fail"
+    );
+}
+
+#[test]
+fn an_extraction_started_inside_a_callback_on_the_same_thread_finishes() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.zip");
+    write_zip(&archive);
+    let (done, finished) = std::sync::mpsc::channel();
+    let paths = (
+        archive.clone(),
+        root.path().join("outer"),
+        root.path().join("inner"),
+    );
+    std::thread::spawn(move || {
+        let (archive, outer, inner) = paths;
+        let started = AtomicBool::new(false);
+        let inner_result = Mutex::new(None);
+        let nested = |_: Progress| {
+            if !started.swap(true, Ordering::Relaxed) {
+                let read = native_zip::read_archive_with_options(
+                    &archive,
+                    Some(&inner),
+                    Default::default(),
+                );
+                *inner_result.lock().unwrap() = Some(
+                    read.map(|entries| entries.len())
+                        .map_err(|error| error.to_string()),
+                );
+            }
+        };
+        let read = native_zip::read_archive_with_options(
+            &archive,
+            Some(&outer),
+            native_zip::ReadOptions {
+                threads: Some(1),
+                control: Control {
+                    progress: Some(&nested),
+                    cancel: None,
+                },
+                ..Default::default()
+            },
+        );
+        let inner_read = inner_result.into_inner().unwrap();
+        let _ = done.send((
+            read.map(|entries| entries.len())
+                .map_err(|error| error.to_string()),
+            inner_read,
+        ));
+    });
+    let (outer, inner) = finished
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the inner extraction kept putting off its own entries");
+    let entries = outer.unwrap();
+    assert_eq!(inner, Some(Ok(entries)));
+}

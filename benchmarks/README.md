@@ -33,6 +33,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-05 | [Patience for ZIP decoder memory](native-zip/decoder-memory-patience/README.md) | Kept a 1 s wait before an entry is recorded for another pass. A PPMd archive ran 9.50 s against 9.36 s at `80af2b5`, overlapping. Without the wait it took 1.3 times as long. |
 | 2026-11-02 | [Larger streaming steps](native-zip/stream-steps/README.md) | Kept. The 256 MiB random entry extracts 1.30× faster at one thread. Other large rows improved in median but overlap their ranges. |
 | 2026-11-02 | [Single-thread extraction on the calling thread](native-zip/inline-single-thread/README.md) | Rejected. Skipping the rayon pool at one thread moved no workload beyond its range. |
 | 2026-11-02 | [System zlib for streamed Deflate on macOS](native-zip/system-zlib/README.md) | Kept on macOS. Silesia extracts 1.23× faster at one thread and 1.18× at four, with 22% less CPU at four. Linux and Windows unchanged. |
