@@ -14,7 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
-| 2026-11-05 | [LZMA decoder hot loop](lzma/hot-loop/README.md) | Kept six changes. Zipper's own decoder is 1.27× faster than its first version and still 1.34× slower than liblzma 5.8.4. No reader uses it yet. |
+| 2026-11-05 | [LZMA decoder hot loop](lzma/hot-loop/README.md) | Kept eight changes. Zipper's own decoder is 1.48× faster than its first version and still 1.14× slower than liblzma 5.8.4. 7-Zip took about 310 ms against 459 ms. No reader uses it yet. |
 
 ## 7z reader
 

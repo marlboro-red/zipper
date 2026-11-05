@@ -45,6 +45,8 @@ struct RangeDecoder<R> {
     buffer: Vec<u8>,
     start: usize,
     end: usize,
+    ended: bool,
+    taken: u64,
     range: u32,
     code: u32,
 }
@@ -56,65 +58,107 @@ impl<R: Read> RangeDecoder<R> {
             buffer: vec![0; INPUT_CHUNK + SYMBOL_INPUT_MAX],
             start: 0,
             end: 0,
+            ended: false,
+            taken: 0,
             range: u32::MAX,
             code: 0,
         }
     }
 
-    #[inline(always)]
-    fn ready_for_symbol(&mut self) -> io::Result<()> {
-        if self.end - self.start.min(self.end) < SYMBOL_INPUT_MAX {
-            self.refill()?;
-        }
-        Ok(())
-    }
-
-    #[cold]
     fn refill(&mut self) -> io::Result<()> {
-        self.ran_past_input()?;
         self.buffer.copy_within(self.start..self.end, 0);
         self.end -= self.start;
         self.start = 0;
         while self.end < INPUT_CHUNK {
             let read = self.input.read(&mut self.buffer[self.end..INPUT_CHUNK])?;
             if read == 0 {
+                self.ended = true;
                 break;
             }
             self.end += read;
+            self.taken += read as u64;
         }
         self.buffer[self.end..].fill(0);
         Ok(())
     }
 
+    fn consumed(&self) -> u64 {
+        self.taken - (self.end - self.start) as u64
+    }
+
+    fn bits(&self) -> Bits<'_> {
+        Bits {
+            input: &self.buffer,
+            position: self.start,
+            end: self.end,
+            room: if self.ended {
+                self.end + SYMBOL_INPUT_MAX
+            } else {
+                self.end
+            },
+            range: self.range,
+            code: self.code,
+        }
+    }
+
+    fn keep(&mut self, (position, range, code): (usize, u32, u32)) {
+        self.start = position;
+        self.range = range;
+        self.code = code;
+    }
+
+    fn start(&mut self) -> io::Result<()> {
+        self.refill()?;
+        let mut bits = self.bits();
+        if bits.byte() != 0 {
+            return Err(data_error("LZMA stream does not start with a zero byte"));
+        }
+        bits.range = u32::MAX;
+        bits.code = 0;
+        for _ in 0..4 {
+            bits.code = bits.code << 8 | u32::from(bits.byte());
+        }
+        bits.ran_past_input()?;
+        if bits.code == bits.range {
+            return Err(data_error("LZMA range coder starts out of range"));
+        }
+        let kept = bits.parts();
+        self.keep(kept);
+        Ok(())
+    }
+}
+
+struct Bits<'a> {
+    input: &'a [u8],
+    position: usize,
+    end: usize,
+    room: usize,
+    range: u32,
+    code: u32,
+}
+
+impl Bits<'_> {
+    #[inline(always)]
+    fn needs_input(&self) -> bool {
+        self.position + SYMBOL_INPUT_MAX > self.room
+    }
+
     fn ran_past_input(&self) -> io::Result<()> {
-        if self.start > self.end {
+        if self.position > self.end {
             return Err(data_error("truncated LZMA stream"));
         }
         Ok(())
     }
 
-    #[inline(always)]
-    fn byte(&mut self) -> u8 {
-        let byte = self.buffer[self.start];
-        self.start += 1;
-        byte
+    fn parts(&self) -> (usize, u32, u32) {
+        (self.position, self.range, self.code)
     }
 
-    fn start(&mut self) -> io::Result<()> {
-        self.ready_for_symbol()?;
-        if self.byte() != 0 {
-            return Err(data_error("LZMA stream does not start with a zero byte"));
-        }
-        self.range = u32::MAX;
-        self.code = 0;
-        for _ in 0..4 {
-            self.code = self.code << 8 | u32::from(self.byte());
-        }
-        self.ran_past_input()?;
-        if self.code == self.range {
-            return Err(data_error("LZMA range coder starts out of range"));
-        }
-        Ok(())
+    #[inline(always)]
+    fn byte(&mut self) -> u8 {
+        let byte = self.input[self.position];
+        self.position += 1;
+        byte
     }
 
     #[inline(always)]
@@ -201,8 +245,8 @@ impl<R: Read> RangeDecoder<R> {
 struct LengthDecoder {
     choice: u16,
     choice2: u16,
-    low: Vec<[u16; 8]>,
-    middle: Vec<[u16; 8]>,
+    low: [[u16; 8]; POSITION_STATES_MAX],
+    middle: [[u16; 8]; POSITION_STATES_MAX],
     high: [u16; 256],
 }
 
@@ -211,14 +255,14 @@ impl LengthDecoder {
         LengthDecoder {
             choice: PROBABILITY_ONE / 2,
             choice2: PROBABILITY_ONE / 2,
-            low: vec![[PROBABILITY_ONE / 2; 8]; POSITION_STATES_MAX],
-            middle: vec![[PROBABILITY_ONE / 2; 8]; POSITION_STATES_MAX],
+            low: [[PROBABILITY_ONE / 2; 8]; POSITION_STATES_MAX],
+            middle: [[PROBABILITY_ONE / 2; 8]; POSITION_STATES_MAX],
             high: [PROBABILITY_ONE / 2; 256],
         }
     }
 
     #[inline(always)]
-    fn decode<R: Read>(&mut self, range: &mut RangeDecoder<R>, position_state: usize) -> usize {
+    fn decode(&mut self, range: &mut Bits, position_state: usize) -> usize {
         if range.branching_bit(&mut self.choice) == 0 {
             return range.tree(&mut self.low[position_state], 3) as usize;
         }
@@ -380,7 +424,7 @@ impl ChunkState {
         }
     }
 
-    fn decode_literal<R: Read>(&mut self, range: &mut RangeDecoder<R>, window: &mut Window) {
+    fn decode_literal(&mut self, range: &mut Bits, window: &mut Window) {
         let Properties { lc, lp, .. } = self.properties;
         let previous = window.last;
         let position = window.total as usize;
@@ -406,7 +450,7 @@ impl ChunkState {
         self.state = Self::literal_state_after(self.state);
     }
 
-    fn decode_distance<R: Read>(&mut self, range: &mut RangeDecoder<R>, length: usize) -> usize {
+    fn decode_distance(&mut self, range: &mut Bits, length: usize) -> usize {
         let length_state = length.min(LENGTH_STATES - 1);
         let slot = range.tree(&mut self.distance_slot[length_state], 6) as usize;
         if slot < 4 {
@@ -438,6 +482,26 @@ fn decode<R: Read>(
     limit: u64,
     pending: &mut usize,
 ) -> io::Result<Stop> {
+    loop {
+        let mut bits = range.bits();
+        let stop = decode_symbols(state, &mut bits, window, limit, pending);
+        let kept = bits.parts();
+        range.keep(kept);
+        match stop? {
+            Some(stop) => return Ok(stop),
+            None if range.ended => return Err(data_error("truncated LZMA stream")),
+            None => range.refill()?,
+        }
+    }
+}
+
+fn decode_symbols(
+    state: &mut ChunkState,
+    range: &mut Bits,
+    window: &mut Window,
+    limit: u64,
+    pending: &mut usize,
+) -> io::Result<Option<Stop>> {
     let position_mask = (1usize << state.properties.pb) - 1;
     while window.total < limit {
         if *pending > 0 {
@@ -447,7 +511,9 @@ fn decode<R: Read>(
             *pending -= length;
             continue;
         }
-        range.ready_for_symbol()?;
+        if range.needs_input() {
+            return Ok(None);
+        }
         let position_state = window.total as usize & position_mask;
         if range.branching_bit(&mut state.is_match[state.state][position_state]) == 0 {
             state.decode_literal(range, window);
@@ -497,7 +563,7 @@ fn decode<R: Read>(
                         "LZMA end marker leaves the range coder unfinished",
                     ));
                 }
-                return Ok(Stop::EndMarker);
+                return Ok(Some(Stop::EndMarker));
             }
             if distance >= state.dictionary {
                 return Err(data_error("LZMA match reaches past its dictionary"));
@@ -513,7 +579,7 @@ fn decode<R: Read>(
         *pending = length + MATCH_LENGTH_MIN;
     }
     range.ran_past_input()?;
-    Ok(Stop::Limit)
+    Ok(Some(Stop::Limit))
 }
 
 pub(crate) struct RawLzmaReader<R> {
@@ -709,6 +775,45 @@ mod tests {
     }
 
     #[test]
+    fn a_stream_cut_before_the_last_byte_it_reads_is_refused_at_every_size() {
+        let data = samples().remove(5);
+        let stream = encode(&data, 3, 0, 2, 1 << 16, 6);
+        let properties = Properties {
+            lc: 3,
+            lp: 0,
+            pb: 2,
+        };
+        let mut checked = 0;
+        for size in (1..6_000).chain((6_000..data.len()).step_by(983)) {
+            let mut reader = RawLzmaReader::new(&stream[..], properties, 1 << 16, size as u64);
+            let mut decoded = Vec::new();
+            if reader.read_to_end(&mut decoded).is_err() {
+                continue;
+            }
+            assert!(decoded == data[..size]);
+            checked += 1;
+            let needed = reader.range.consumed() as usize;
+            assert!(
+                decode_all(&stream[..needed], properties, 1 << 16, size as u64, 65_536).unwrap()
+                    == data[..size]
+            );
+            let error = decode_all(
+                &stream[..needed - 1],
+                properties,
+                1 << 16,
+                size as u64,
+                65_536,
+            )
+            .expect_err(&format!(
+                "size {size} decoded from {} of {needed} bytes",
+                needed - 1
+            ));
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        }
+        assert!(checked > 50, "{checked}");
+    }
+
+    #[test]
     fn cut_and_damaged_streams_never_panic_or_pass_their_size() {
         let data = samples().remove(5);
         let stream = encode(&data, 3, 0, 2, 1 << 16, 6);
@@ -717,7 +822,10 @@ mod tests {
             lp: 0,
             pb: 2,
         };
-        for cut in (0..stream.len()).step_by(97) {
+        for cut in (0..stream.len())
+            .step_by(97)
+            .chain(stream.len() - 32..stream.len())
+        {
             if let Ok(decoded) = decode_all(
                 &stream[..cut],
                 properties,
