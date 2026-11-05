@@ -4,6 +4,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import statistics
 import os
 from pathlib import Path
 import platform
@@ -17,6 +18,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SCOREBOARD = ROOT / 'benchmarks' / 'scoreboard'
 RESULTS = ROOT / 'docs' / 'results.md'
 REALWORLD = ROOT / 'benchmarks' / 'realworld'
+CODECS = SCOREBOARD / 'codecs'
+CODEC_ORDER = ['zip-deflate64', 'zip-bzip2', 'zip-lzma', 'zip-xz', 'zip-ppmd', 'zip-zstd', '7z-deflate64',
+               '7z-bzip2', '7z-ppmd', '7z-bcj2', '7z-swap4', 'tar-bzip2', 'tar-compress', 'tar-lzip', 'tar-lz4']
 REALWORLD_SOURCES = {'pypi-sdist': 'PyPI source packages', 'pypi-wheel': 'PyPI wheels', 'npm': 'npm packages',
                      'crate': 'Crates', 'maven': 'Maven jars', 'go': 'Go modules',
                      'github': 'GitHub source archives', 'release': 'Release tarballs'}
@@ -279,8 +283,44 @@ def render():
             gz_bytes = result['archives']['input.tar.gz']['bytes']
             lines += [f"Tar rows read a TAR of {tar_bytes:,} bytes and its gzip level 6 form of {gz_bytes:,} bytes.", '',
                       *tar_rows, '']
+    lines += codecs()
     lines += realworld()
     return '\n'.join(lines).rstrip('\n') + '\n'
+
+
+def codecs():
+    """A section from `scripts/codec_scoreboard.py`, when its JSON exists."""
+    found = [json.loads(path.read_text(encoding='utf-8')) for path in sorted(CODECS.glob('*.json'))]
+    if not found:
+        return []
+    order = {name: index for index, name in enumerate(CODEC_ORDER)}
+    found.sort(key=lambda result: order.get(result['codec'], len(order)))
+    first = found[0]
+    lines = ['## Codecs', '',
+             f"Each row extracts one archive of the Silesia corpus, {first['input_bytes']:,} bytes in 12 files, with Zipper's",
+             'default engine at one thread and with the named tool at one thread. 7-Zip extracts a compressed tar',
+             'by decoding into a second 7-Zip that reads the tar, so its peak memory is the larger of the two.',
+             '7-Zip reads no lzip or LZ4, so bsdtar is the reference there, and it reads no Zstandard in ZIP.',
+             f"Every extraction is compared byte for byte with the source. Revision `{first['revision'][:7]}`, recorded",
+             f"{first['recorded']}, {count(first['runs'], 'measured round')} after one warmup, on `{first['platform']}`.", '',
+             '| Codec | Archive MB | Zipper ms, median [range] | Zipper CPU ms | Reference | Reference ms, median [range] '
+             '| Reference CPU ms | Reference time ÷ Zipper time |',
+             '| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |']
+    for result in found:
+        rows = result['results']
+        zipper = rows['zipper']
+        cpu = lambda row: statistics.median(sample['cpu_seconds'] for sample in row['samples'])
+        reference = rows.get(result['reference']) if result['reference'] else None
+        if reference:
+            theirs = (f"`{result['reference']}` | {ms(reference['median_seconds'])} "
+                      f"[{ms(reference['min_seconds'])}–{ms(reference['max_seconds'])}] | {ms(cpu(reference))} "
+                      f"| {reference['median_seconds'] / zipper['median_seconds']:.2f}×")
+        else:
+            theirs = 'none reads it | | |'
+        lines.append(f"| `{result['codec']}` | {result['archive_bytes'] / 1e6:,.1f} "
+                     f"| {ms(zipper['median_seconds'])} [{ms(zipper['min_seconds'])}–{ms(zipper['max_seconds'])}] "
+                     f"| {ms(cpu(zipper))} | {theirs} |")
+    return lines + ['']
 
 
 def realworld():
@@ -312,7 +352,7 @@ def realworld():
 
 
 def check(_args):
-    for path in sorted(SCOREBOARD.glob('*.json')):
+    for path in sorted([*SCOREBOARD.glob('*.json'), *CODECS.glob('*.json')]):
         result = json.loads(path.read_text(encoding='utf-8'))
         if not result['tree_clean'] or not (result.get('counters') or {}).get('tree_clean', True):
             sys.exit(f'{path.name} was measured on a dirty tree, so its revision cannot reproduce it')
