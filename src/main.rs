@@ -680,6 +680,28 @@ fn no_signal_action() -> libc::sigaction {
     unsafe { std::mem::zeroed() }
 }
 
+const COPY_CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(10);
+
+fn copy_to_standard_output_until_cancelled(mut from: std::fs::File) -> Result<()> {
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut to = std::io::stdout().lock();
+        let copied = std::io::copy(&mut from, &mut to).and_then(|_| std::io::Write::flush(&mut to));
+        let _ = done.send(copied);
+    });
+    loop {
+        match finished.recv_timeout(COPY_CANCEL_POLL) {
+            Ok(copied) => return Ok(copied?),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                anyhow::ensure!(!ending_signal_received(), zipper::Cancelled);
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                anyhow::bail!("the copy to standard output stopped")
+            }
+        }
+    }
+}
+
 fn ending_signal_received() -> bool {
     cancel_on_signal().is_some_and(|cancel| cancel.load(std::sync::atomic::Ordering::SeqCst))
 }
@@ -877,10 +899,7 @@ fn run() -> Result<()> {
                         files.len()
                     );
                 };
-                std::io::copy(
-                    &mut std::fs::File::open(file)?,
-                    &mut std::io::stdout().lock(),
-                )?;
+                copy_to_standard_output_until_cancelled(std::fs::File::open(file)?)?;
             }
         }
         Command::List { archive } => {
@@ -911,13 +930,17 @@ fn run() -> Result<()> {
                     None,
                     zipper::native_stream::ReadOptions::default(),
                 )?),
-                Reader::Backend { format } => zipper::compat::run(
-                    "l",
-                    &archive,
-                    None,
-                    format.as_deref(),
-                    zipper::Existing::Refuse,
-                )?,
+                Reader::Backend { format } => {
+                    let _catching = catch_ending_signals(&Reader::Backend { format: None });
+                    zipper::compat::run_until_cancelled(
+                        "l",
+                        &archive,
+                        None,
+                        format.as_deref(),
+                        zipper::Existing::Refuse,
+                        cancel_on_signal(),
+                    )?
+                }
             }
         }
         Command::Test { archive } => {
@@ -962,13 +985,17 @@ fn run() -> Result<()> {
                     None,
                     zipper::native_stream::ReadOptions::default(),
                 )?),
-                Reader::Backend { format } => zipper::compat::run(
-                    "t",
-                    &archive,
-                    None,
-                    format.as_deref(),
-                    zipper::Existing::Refuse,
-                )?,
+                Reader::Backend { format } => {
+                    let _catching = catch_ending_signals(&Reader::Backend { format: None });
+                    zipper::compat::run_until_cancelled(
+                        "t",
+                        &archive,
+                        None,
+                        format.as_deref(),
+                        zipper::Existing::Refuse,
+                        cancel_on_signal(),
+                    )?
+                }
             }
         }
     }

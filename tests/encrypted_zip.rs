@@ -2245,3 +2245,150 @@ fn a_signal_during_a_single_stream_extraction_removes_staging() {
         assert_eq!(listing(work.path()), ["large.bin.gz"], "SIG{signal}");
     }
 }
+
+#[cfg(unix)]
+fn wait_at_most(child: &mut std::process::Child, seconds: u64) -> Option<std::process::ExitStatus> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    while std::time::Instant::now() < deadline {
+        if let Some(status) = child.try_wait().unwrap() {
+            return Some(status);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+#[cfg(unix)]
+fn terminate(child: &std::process::Child) {
+    assert!(
+        Command::new("kill")
+            .arg("-TERM")
+            .arg(child.id().to_string())
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_stops_a_copy_to_standard_output() {
+    use std::io::Read;
+    use std::os::unix::process::ExitStatusExt;
+    const LARGE: usize = 256 << 20;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_stored_zip(&archive, LARGE);
+    for slow_reader in [false, true] {
+        let temporary = work.path().join("tmp");
+        fs::create_dir_all(&temporary).unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .env("TMPDIR", &temporary)
+            .arg("extract")
+            .arg(&archive)
+            .arg("--stdout")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let copied = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut unread = None;
+        let reader = if !slow_reader {
+            unread = Some(stdout);
+            None
+        } else {
+            let copied = copied.clone();
+            Some(std::thread::spawn(move || {
+                let mut buffer = vec![0; 1 << 20];
+                while let Ok(read) = stdout.read(&mut buffer) {
+                    if read == 0 {
+                        break;
+                    }
+                    copied.fetch_add(read, std::sync::atomic::Ordering::SeqCst);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            }))
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let copying = || {
+            if slow_reader {
+                copied.load(std::sync::atomic::Ordering::SeqCst) > 4 << 20
+            } else {
+                decrypted_bytes_on_disk(&temporary) >= LARGE as u64
+            }
+        };
+        while !copying() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        terminate(&child);
+        let status = wait_at_most(&mut child, 10);
+        if let Some(reader) = reader {
+            reader.join().unwrap();
+            assert!(copied.load(std::sync::atomic::Ordering::SeqCst) < LARGE);
+        }
+        let case = if slow_reader {
+            "a slow reader"
+        } else {
+            "a full pipe"
+        };
+        assert_eq!(
+            status.and_then(|status| status.signal()),
+            Some(15),
+            "{case}"
+        );
+        assert_eq!(listing(&temporary), Vec::<String>::new(), "{case}");
+        drop(unread);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_stops_7zip_listing_and_testing() {
+    use std::os::unix::process::ExitStatusExt;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("plain.zip");
+    large_stored_zip(&archive, 1 << 20);
+    for (command, pause) in [("list", "61.25"), ("test", "61.5")] {
+        let fake = work.path().join(format!("fake-7z-{command}"));
+        fs::write(&fake, format!("#!/bin/sh\nexec sleep {pause}\n")).unwrap();
+        let mut permissions = fs::metadata(&fake).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&fake, permissions).unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .env("ZIPPER_7Z", &fake)
+            .args(["--zip-engine", "backend", command])
+            .arg(&archive)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let marker = format!("sleep {pause}");
+        let running = || {
+            !Command::new("pgrep")
+                .args(["-f", &marker])
+                .output()
+                .unwrap()
+                .stdout
+                .is_empty()
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !running() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(running(), "{command}: the stand-in for 7-Zip never started");
+        terminate(&child);
+        let status = wait_at_most(&mut child, 10);
+        assert_eq!(
+            status.and_then(|status| status.signal()),
+            Some(15),
+            "{command}"
+        );
+        assert!(!running(), "{command}: 7-Zip was left running");
+    }
+}
