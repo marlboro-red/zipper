@@ -385,15 +385,13 @@ mod hidden_terminal {
             .any(|deferred| deferred.load(Ordering::SeqCst))
     }
 
-    pub(super) fn raise_deferred_signals() {
-        for signal in SIGNALS_CAUGHT_WHILE_HIDDEN {
-            if let Some(slot) = slot(signal)
-                && DEFERRED[slot].swap(false, Ordering::SeqCst)
-            {
-                // SAFETY: kill takes plain integers, and the signal's own action is back in place.
-                unsafe { libc::kill(libc::getpid(), signal) };
-            }
-        }
+    pub(super) fn take_deferred_signals() -> Vec<libc::c_int> {
+        SIGNALS_CAUGHT_WHILE_HIDDEN
+            .into_iter()
+            .filter(|&signal| {
+                slot(signal).is_some_and(|slot| DEFERRED[slot].swap(false, Ordering::SeqCst))
+            })
+            .collect()
     }
 
     pub(super) enum Hidden {
@@ -657,17 +655,21 @@ mod stop_on_signal {
         }
     }
 
-    pub(super) fn raise_received_signals() {
-        for signal in ENDING {
-            if let Some(received) = usize::try_from(signal)
-                .ok()
-                .and_then(|slot| RECEIVED.get(slot))
-                && received.swap(false, Ordering::SeqCst)
-            {
-                // SAFETY: kill takes plain integers, and the signal's own action is back in place.
-                unsafe { libc::kill(libc::getpid(), signal) };
-            }
-        }
+    pub(super) fn take_received_signals() -> Vec<libc::c_int> {
+        ENDING
+            .into_iter()
+            .filter(|&signal| {
+                usize::try_from(signal)
+                    .ok()
+                    .and_then(|slot| RECEIVED.get(slot))
+                    .is_some_and(|received| received.swap(false, Ordering::SeqCst))
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(super) fn receive(signal: libc::c_int) {
+        record(signal);
     }
 }
 
@@ -694,8 +696,15 @@ fn cancel_on_signal() -> Option<&'static std::sync::atomic::AtomicBool> {
 
 #[cfg(unix)]
 fn catch_ending_signals(reader: &Reader) -> Option<stop_on_signal::Catching> {
-    matches!(reader, Reader::Zip { .. } | Reader::Tar | Reader::SevenZip)
-        .then(stop_on_signal::Catching::start)
+    matches!(
+        reader,
+        Reader::Zip { .. }
+            | Reader::Tar
+            | Reader::SevenZip
+            | Reader::Stream
+            | Reader::Backend { .. }
+    )
+    .then(stop_on_signal::Catching::start)
 }
 
 #[cfg(not(unix))]
@@ -703,17 +712,29 @@ fn catch_ending_signals(_: &Reader) -> Option<()> {
     None
 }
 
-fn raise_signals_that_ended_the_run() {
-    #[cfg(unix)]
-    {
-        hidden_terminal::raise_deferred_signals();
-        stop_on_signal::raise_received_signals();
+#[cfg(unix)]
+fn signals_that_ended_the_run(succeeded: bool) -> Vec<libc::c_int> {
+    let mut ending = hidden_terminal::take_deferred_signals();
+    ending.extend(stop_on_signal::take_received_signals());
+    if succeeded {
+        ending.clear();
     }
+    ending
+}
+
+fn raise_signals_that_ended_the_run(succeeded: bool) {
+    #[cfg(unix)]
+    for signal in signals_that_ended_the_run(succeeded) {
+        // SAFETY: kill takes plain integers, and every handler of ours is gone again.
+        unsafe { libc::kill(libc::getpid(), signal) };
+    }
+    #[cfg(not(unix))]
+    let _ = succeeded;
 }
 
 fn main() -> std::process::ExitCode {
     let ran = run();
-    raise_signals_that_ended_the_run();
+    raise_signals_that_ended_the_run(ran.is_ok());
     match ran {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
@@ -952,4 +973,22 @@ fn run() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_signal_after_a_finished_run_is_not_raised_and_one_before_is() {
+        stop_on_signal::receive(libc::SIGTERM);
+        assert_eq!(signals_that_ended_the_run(true), Vec::<libc::c_int>::new());
+        assert_eq!(signals_that_ended_the_run(false), Vec::<libc::c_int>::new());
+        stop_on_signal::receive(libc::SIGTERM);
+        stop_on_signal::receive(libc::SIGHUP);
+        assert_eq!(
+            signals_that_ended_the_run(false),
+            [libc::SIGTERM, libc::SIGHUP]
+        );
+    }
 }

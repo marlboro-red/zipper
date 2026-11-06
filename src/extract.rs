@@ -92,8 +92,8 @@ pub struct ExtractOptions<'a> {
     /// attributes or Mark of the Web. The 7-Zip backend refuses it.
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation. Every reader checks the cancel flag
-    /// before it starts. Only ZIP, tar and 7z report progress and check it
-    /// later.
+    /// before it starts. The in-process readers report progress and check it
+    /// while they write, and the 7-Zip backend stops 7-Zip when it is set.
     pub control: Control<'a>,
     /// Cap on declared output bytes. Without it, ZIP, tar and 7z output must
     /// fit in free space. The 7-Zip backend refuses a cap and checks no free
@@ -297,12 +297,13 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                 options.max_output_bytes.is_none(),
                 "--max-extracted-bytes needs a ZIP, tar or 7z archive read in process"
             );
-            compat::run(
+            compat::run_until_cancelled(
                 "x",
                 archive,
                 Some(destination),
                 format.as_deref(),
                 options.existing,
+                options.control.cancel,
             )?;
         }
     }

@@ -74,6 +74,23 @@ pub fn run(
     format: Option<&str>,
     existing: crate::Existing,
 ) -> Result<()> {
+    run_until_cancelled(action, archive, destination, format, existing, None)
+}
+
+const CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(10);
+#[cfg(unix)]
+const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Like [`run`], but when `cancel` is set it stops 7-Zip, waits for it to
+/// exit, removes the staging folder and fails with [`crate::Cancelled`].
+pub fn run_until_cancelled(
+    action: &str,
+    archive: &Path,
+    destination: Option<&Path>,
+    format: Option<&str>,
+    existing: crate::Existing,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<()> {
     ensure!(
         ["x", "l", "t"].contains(&action),
         "unsupported backend action"
@@ -93,15 +110,51 @@ pub fn run(
     } else {
         None
     };
-    let status = command
+    let mut child = command
         .arg("--")
         .arg(archive)
-        .status()
+        .spawn()
         .context("failed to launch 7-Zip backend")?;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if cancelled(cancel) {
+            stop(&mut child)?;
+            return Err(crate::Cancelled.into());
+        }
+        std::thread::sleep(CANCEL_POLL);
+    };
+    if cancelled(cancel) {
+        return Err(crate::Cancelled.into());
+    }
     ensure!(status.success(), "7-Zip backend failed: {status}");
     if let Some(staging) = staging {
         staging.publish(&[])?;
     }
+    Ok(())
+}
+
+fn cancelled(cancel: Option<&std::sync::atomic::AtomicBool>) -> bool {
+    cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+fn stop(child: &mut std::process::Child) -> Result<()> {
+    #[cfg(unix)]
+    if let Ok(id) = libc::pid_t::try_from(child.id()) {
+        // SAFETY: kill takes plain integers, and the child has not been waited for, so its
+        // process id still names it.
+        unsafe { libc::kill(id, libc::SIGTERM) };
+        let deadline = std::time::Instant::now() + STOP_GRACE;
+        while std::time::Instant::now() < deadline {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return Ok(());
+            }
+            std::thread::sleep(CANCEL_POLL);
+        }
+    }
+    let _ = child.kill();
+    child.wait()?;
     Ok(())
 }
 

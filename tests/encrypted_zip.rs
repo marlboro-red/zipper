@@ -2085,3 +2085,163 @@ fn ctrl_c_during_decryption_after_the_prompt_leaves_no_plaintext() {
     assert_terminal_restored("Ctrl-C while decrypting", &transcript);
     assert_eq!(listing(work.path()), ["large.zip"], "{transcript}");
 }
+
+#[cfg(unix)]
+fn large_stored_zip(path: &Path, size: usize) {
+    use std::io::Write;
+    const CHUNK: usize = 1 << 20;
+    let zeros = vec![0u8; CHUNK];
+    let mut crc = crc32fast::Hasher::new();
+    for _ in 0..size / CHUNK {
+        crc.update(&zeros);
+    }
+    let crc = crc.finalize();
+    let name = b"large.bin";
+    let mut file = std::io::BufWriter::new(fs::File::create(path).unwrap());
+    let mut header = b"PK\x03\x04\x14\x00\x00\x00\x00\x00\x0e\x13\x21\x5b".to_vec();
+    header.extend_from_slice(&crc.to_le_bytes());
+    header.extend_from_slice(&(size as u32).to_le_bytes());
+    header.extend_from_slice(&(size as u32).to_le_bytes());
+    header.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    header.extend_from_slice(&0u16.to_le_bytes());
+    header.extend_from_slice(name);
+    file.write_all(&header).unwrap();
+    for _ in 0..size / CHUNK {
+        file.write_all(&zeros).unwrap();
+    }
+    let directory = (header.len() + size) as u32;
+    let mut central = b"PK\x01\x02\x14\x03\x14\x00\x00\x00\x00\x00\x0e\x13\x21\x5b".to_vec();
+    central.extend_from_slice(&crc.to_le_bytes());
+    central.extend_from_slice(&(size as u32).to_le_bytes());
+    central.extend_from_slice(&(size as u32).to_le_bytes());
+    central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    central.extend_from_slice(&[0; 12]);
+    central.extend_from_slice(&0u32.to_le_bytes());
+    central.extend_from_slice(name);
+    file.write_all(&central).unwrap();
+    let mut end = b"PK\x05\x06\0\0\0\0\x01\x00\x01\x00".to_vec();
+    end.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    end.extend_from_slice(&directory.to_le_bytes());
+    end.extend_from_slice(&[0, 0]);
+    file.write_all(&end).unwrap();
+}
+
+#[cfg(unix)]
+fn signal_once_output_grows(
+    work: &Path,
+    archive_name: &str,
+    arguments: &[&std::ffi::OsStr],
+    signal: &str,
+) -> std::process::Output {
+    let child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let written = || {
+        walkdir::WalkDir::new(work)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file() && entry.file_name() != archive_name)
+            .filter_map(|entry| entry.metadata().ok())
+            .map(|metadata| metadata.len())
+            .sum::<u64>()
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while written() < 8 << 20 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(
+        Command::new("kill")
+            .arg(format!("-{signal}"))
+            .arg(child.id().to_string())
+            .status()
+            .unwrap()
+            .success()
+    );
+    child.wait_with_output().unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_during_a_7zip_extraction_stops_the_child_and_removes_staging() {
+    use std::os::unix::process::ExitStatusExt;
+    if seven_zip().is_none() {
+        assert!(std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none());
+        return;
+    }
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_stored_zip(&archive, 512 << 20);
+    let output = work.path().join("out");
+    for (signal, number) in [("TERM", 15), ("INT", 2)] {
+        let run = signal_once_output_grows(
+            work.path(),
+            "large.zip",
+            &[
+                "--zip-engine".as_ref(),
+                "backend".as_ref(),
+                "extract".as_ref(),
+                archive.as_os_str(),
+                "-o".as_ref(),
+                output.as_os_str(),
+            ],
+            signal,
+        );
+        let status = run.status;
+        assert_eq!(status.signal(), Some(number), "SIG{signal}: {status:?}");
+        let children = Command::new("pgrep")
+            .args(["-f", "--"])
+            .arg(work.path())
+            .output()
+            .unwrap();
+        assert!(
+            children.stdout.is_empty(),
+            "SIG{signal}: 7-Zip still runs: {}",
+            String::from_utf8_lossy(&children.stdout)
+        );
+        assert_eq!(listing(work.path()), ["large.zip"], "SIG{signal}");
+        let said = String::from_utf8_lossy(&run.stdout);
+        assert!(
+            !said.contains("Everything is Ok"),
+            "SIG{signal}: 7-Zip ran to the end instead of being stopped: {said}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_during_a_single_stream_extraction_removes_staging() {
+    use std::io::Write;
+    use std::os::unix::process::ExitStatusExt;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.bin.gz");
+    let mut encoder = flate2::write::GzEncoder::new(
+        fs::File::create(&archive).unwrap(),
+        flate2::Compression::fast(),
+    );
+    let zeros = vec![0u8; 1 << 20];
+    for _ in 0..512 {
+        encoder.write_all(&zeros).unwrap();
+    }
+    encoder.finish().unwrap();
+    let output = work.path().join("out");
+    for (signal, number) in [("TERM", 15), ("INT", 2)] {
+        let run = signal_once_output_grows(
+            work.path(),
+            "large.bin.gz",
+            &[
+                "extract".as_ref(),
+                archive.as_os_str(),
+                "-o".as_ref(),
+                output.as_os_str(),
+            ],
+            signal,
+        );
+        let status = run.status;
+        assert_eq!(status.signal(), Some(number), "SIG{signal}: {status:?}");
+        assert_eq!(listing(work.path()), ["large.bin.gz"], "SIG{signal}");
+    }
+}
