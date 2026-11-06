@@ -1,0 +1,244 @@
+{
+ "platform": "macOS-26.7.1-arm64-arm-64bit",
+ "cpu_count": 10,
+ "threads": 4,
+ "runs": 7,
+ "warmup_rounds": 1,
+ "archive_format": "7z",
+ "operation": "extract",
+ "cooldown_seconds": 0,
+ "source": "silesia",
+ "input_bytes": 211938580,
+ "archive_bytes": 49608000,
+ "archive_sha256": "b2546d2e27e4a128be23190ed4a1356d3ef651fdfca38a5acc5c9c1a73618dce",
+ "readers": {
+  "before": {
+   "mode": "native",
+   "binary": "/private/tmp/claude-501/-Users-aleph-Desktop-Projects-marlboro-red-zipper/56f23781-5805-4583-ad5f-23e1afdf3c07/scratchpad/zipper-before",
+   "sha256": "b0a234d47e726e30cf74fcd2f93963d73a4dc7243f82f2b5fd609f09a863cfac",
+   "threads": 4
+  },
+  "after": {
+   "mode": "native",
+   "binary": "/private/tmp/claude-501/-Users-aleph-Desktop-Projects-marlboro-red-zipper/56f23781-5805-4583-ad5f-23e1afdf3c07/scratchpad/zipper-after",
+   "sha256": "89ee1042f4ff886c00afc3c44773fd540449ad4e8b33297157965eea59bb35b6",
+   "threads": 4
+  },
+  "7zip": {
+   "mode": "7zip",
+   "binary": "/opt/homebrew/Cellar/sevenzip/26.05/bin/7zz",
+   "sha256": "60e4afd68d86a4b709e2f7993fb4566955bb7659a7f8d62a66390dfc50c742ca",
+   "threads": 4
+  }
+ },
+ "verification": "direct bytes, file sizes and tree membership",
+ "errors": 0,
+ "busy_processes": [],
+ "load_average_start": [
+  1.68505859375,
+  2.83447265625,
+  3.82861328125
+ ],
+ "order_including_warmup": [
+  [
+   "before",
+   "after",
+   "7zip"
+  ],
+  [
+   "7zip",
+   "after",
+   "before"
+  ],
+  [
+   "before",
+   "7zip",
+   "after"
+  ],
+  [
+   "7zip",
+   "after",
+   "before"
+  ],
+  [
+   "before",
+   "after",
+   "7zip"
+  ],
+  [
+   "7zip",
+   "after",
+   "before"
+  ],
+  [
+   "before",
+   "after",
+   "7zip"
+  ],
+  [
+   "7zip",
+   "after",
+   "before"
+  ]
+ ],
+ "results": {
+  "before": {
+   "samples": [
+    {
+     "seconds": 0.40976341699999974,
+     "peak_rss_bytes": 160661504,
+     "cpu_seconds": 1.3735039999999998,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.41215258300000013,
+     "peak_rss_bytes": 160268288,
+     "cpu_seconds": 1.381055,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.4160421670000005,
+     "peak_rss_bytes": 160268288,
+     "cpu_seconds": 1.3902649999999999,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.41854624999999945,
+     "peak_rss_bytes": 160235520,
+     "cpu_seconds": 1.401108,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.41360045799999945,
+     "peak_rss_bytes": 160251904,
+     "cpu_seconds": 1.386646,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.41691250000000046,
+     "peak_rss_bytes": 160251904,
+     "cpu_seconds": 1.4010360000000002,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.415005292,
+     "peak_rss_bytes": 160219136,
+     "cpu_seconds": 1.3890980000000002,
+     "verified_bytes": 211938580
+    }
+   ],
+   "median_seconds": 0.415005292,
+   "min_seconds": 0.40976341699999974,
+   "max_seconds": 0.41854624999999945,
+   "mib_s": 487.0308506851795,
+   "peak_rss_bytes": 160661504
+  },
+  "after": {
+   "samples": [
+    {
+     "seconds": 0.4356400840000001,
+     "peak_rss_bytes": 158695424,
+     "cpu_seconds": 1.4590400000000001,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.43513,
+     "peak_rss_bytes": 159694848,
+     "cpu_seconds": 1.4645810000000001,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.4350219160000002,
+     "peak_rss_bytes": 159793152,
+     "cpu_seconds": 1.4623410000000001,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.44648304200000055,
+     "peak_rss_bytes": 158728192,
+     "cpu_seconds": 1.4990169999999998,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.4348409170000007,
+     "peak_rss_bytes": 158711808,
+     "cpu_seconds": 1.458513,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.44721174999999924,
+     "peak_rss_bytes": 158777344,
+     "cpu_seconds": 1.506504,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 0.4348269999999985,
+     "peak_rss_bytes": 158711808,
+     "cpu_seconds": 1.4619870000000001,
+     "verified_bytes": 211938580
+    }
+   ],
+   "median_seconds": 0.43513,
+   "min_seconds": 0.4348269999999985,
+   "max_seconds": 0.44721174999999924,
+   "mib_s": 464.50573484156763,
+   "peak_rss_bytes": 159793152
+  },
+  "7zip": {
+   "samples": [
+    {
+     "seconds": 1.0451856249999998,
+     "peak_rss_bytes": 79167488,
+     "cpu_seconds": 1.039328,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 1.0442972919999995,
+     "peak_rss_bytes": 79134720,
+     "cpu_seconds": 1.038489,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 1.03996025,
+     "peak_rss_bytes": 79151104,
+     "cpu_seconds": 1.036082,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 1.0413014580000013,
+     "peak_rss_bytes": 79085568,
+     "cpu_seconds": 1.036677,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 1.0435179170000008,
+     "peak_rss_bytes": 79151104,
+     "cpu_seconds": 1.0389810000000002,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 1.0428770410000006,
+     "peak_rss_bytes": 79183872,
+     "cpu_seconds": 1.038198,
+     "verified_bytes": 211938580
+    },
+    {
+     "seconds": 1.0412824589999996,
+     "peak_rss_bytes": 79167488,
+     "cpu_seconds": 1.036601,
+     "verified_bytes": 211938580
+    }
+   ],
+   "median_seconds": 1.0428770410000006,
+   "min_seconds": 1.03996025,
+   "max_seconds": 1.0451856249999998,
+   "mib_s": 193.81036541738501,
+   "peak_rss_bytes": 79183872
+  }
+ },
+ "load_average_end": [
+  2.28076171875,
+  2.89306640625,
+  3.82666015625
+ ]
+}
