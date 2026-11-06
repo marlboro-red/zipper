@@ -943,3 +943,30 @@ fn a_selected_path_with_the_leading_dot_slash_says_how_to_select_it() {
     let error = format!("{:#}", result.unwrap_err());
     assert!(error.contains("\"usr/share/a.txt\""), "{error}");
 }
+
+#[test]
+fn xz_and_lzma_payloads_past_the_decoder_memory_limit_are_refused() {
+    let mut lzma = compress("lzma", &cpio(&sample()));
+    lzma[1..5].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert_rejected_saying(
+        "lzma with a 4 GiB dictionary",
+        &package_with(&main_tags(Some("lzma")), &lzma),
+        "4294967295-byte dictionary",
+    );
+    let mut xz = compress("xz", &cpio(&sample()));
+    let block = 12;
+    let size = (usize::from(xz[block]) + 1) * 4;
+    let filter = (block..block + size)
+        .find(|&at| xz[at..at + 2] == [0x21, 0x01])
+        .unwrap();
+    xz[filter + 2] = 40;
+    let check = crc32fast::hash(&xz[block..block + size - 4]);
+    xz[block + size - 4..block + size].copy_from_slice(&check.to_le_bytes());
+    let bytes = package_with(&main_tags(Some("xz")), &xz);
+    assert_rejected_saying("xz with a 4 GiB dictionary", &bytes, "256 MiB");
+    let error = format!(
+        "{:#}",
+        extract_with(&bytes, ReadOptions::default()).2.unwrap_err()
+    );
+    assert!(!error.contains("damaged"), "{error}");
+}

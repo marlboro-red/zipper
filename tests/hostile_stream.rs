@@ -318,3 +318,47 @@ fn a_nine_bit_compress_file_widens_to_ten_bit_codes_as_7zip_reads_it() {
         "the 9-bit file decoded to other bytes"
     );
 }
+
+#[test]
+fn an_lzma_dictionary_past_the_decoder_memory_limit_is_refused_by_its_size() {
+    let encode = |dictionary: u32| {
+        let mut options = liblzma::stream::LzmaOptions::new_preset(0).unwrap();
+        options.dict_size(1 << 20);
+        let stream = liblzma::stream::Stream::new_lzma_encoder(&options).unwrap();
+        let mut encoder = liblzma::write::XzEncoder::new_stream(Vec::new(), stream);
+        std::io::Write::write_all(&mut encoder, b"hello\n").unwrap();
+        let mut encoded = encoder.finish().unwrap();
+        encoded[1..5].copy_from_slice(&dictionary.to_le_bytes());
+        encoded
+    };
+    let (_root, result) = extract("ok.tar.lzma", &encode(64 << 20), ReadOptions::default());
+    result.unwrap_or_else(|error| panic!("a 64 MiB dictionary: {error:#}"));
+    let bomb = encode(u32::MAX);
+    assert_refused(
+        "4 GiB dictionary",
+        "bomb.tar.lzma",
+        &bomb,
+        ReadOptions::default(),
+    );
+    let error = format!(
+        "{:#}",
+        extract("bomb.tar.lzma", &bomb, ReadOptions::default())
+            .1
+            .unwrap_err()
+    );
+    assert!(
+        error.contains("4294967295-byte dictionary") && error.contains("--zip-engine backend"),
+        "{error}"
+    );
+    let at_the_limit = encode(256 << 20);
+    let error = format!(
+        "{:#}",
+        extract("limit.tar.lzma", &at_the_limit, ReadOptions::default())
+            .1
+            .unwrap_err()
+    );
+    assert!(
+        error.contains("256 MiB of decoder memory") && error.contains("--zip-engine backend"),
+        "{error}"
+    );
+}

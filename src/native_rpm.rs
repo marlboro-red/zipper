@@ -349,12 +349,9 @@ fn payload(path: &Path) -> Result<Box<dyn Read + Send>> {
     );
     let input = std::io::Cursor::new(head).chain(package.reader);
     let decoder: Box<dyn Read + Send> = match compressor {
-        Compressor::Lzma => Box::new(LzmaToTheEnd {
-            decoder: liblzma::bufread::XzDecoder::new_stream(
-                input,
-                liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
-            ),
-        }),
+        Compressor::Lzma => Box::new(crate::native_tar::DecoderMemory(LzmaToTheEnd {
+            decoder: crate::native_tar::lzma_decoder(input)?,
+        })),
         _ => crate::native_tar::decode(input, compressor.compression())?,
     };
     Ok(Box::new(Damaged(decoder)))
@@ -381,9 +378,10 @@ struct Damaged<R>(R);
 
 impl<R: Read> Read for Damaged<R> {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        self.0
-            .read(buffer)
-            .map_err(|error| std::io::Error::new(error.kind(), format!("{DAMAGED}: {error}")))
+        self.0.read(buffer).map_err(|error| match error.kind() {
+            std::io::ErrorKind::OutOfMemory => error,
+            kind => std::io::Error::new(kind, format!("{DAMAGED}: {error}")),
+        })
     }
 }
 

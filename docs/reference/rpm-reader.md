@@ -44,10 +44,11 @@ The reader does not check header digests, payload digests or signatures. A damag
 | Index entries in each header | at most 65,535 |
 | Data store of each header | at most 256 MiB |
 | Payload format and compressor tags | at most 64 bytes each |
+| xz and LZMA decoder memory | at most 256 MiB, four times the 64 MiB dictionary of `xz -9e` |
 | Payload | the [cpio limits](cpio-reader.md#limits) |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-The reader keeps no header in memory. It reads the index one entry at a time, keeps only the payload format and compressor entries, and seeks over each data store. So a package whose headers fill the limits costs no more memory than a small one. One thread decodes the payload and writes each file in archive order through a 1 MiB buffer. `--threads` has no effect on RPM.
+The reader keeps no header in memory. It reads the index one entry at a time, keeps only the payload format and compressor entries, and seeks over each data store. So a package whose headers fill the limits costs no more memory than a small one. An xz or LZMA payload whose dictionary needs more decoder memory than the limit is refused, as the [tar reader](tar-reader.md#limits) refuses it. One thread decodes the payload and writes each file in archive order through a 1 MiB buffer. `--threads` has no effect on RPM.
 
 ## Differences from 7-Zip
 

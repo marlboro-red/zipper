@@ -353,8 +353,10 @@ pub(crate) fn sniff_part(part: &Part) -> Result<Option<Compression>> {
         return Ok(None);
     };
     let mut first = [0u8; BLOCK];
-    if stream.read_exact(&mut first).is_err() {
-        return Ok(None);
+    match stream.read_exact(&mut first) {
+        Err(error) if error.kind() == std::io::ErrorKind::OutOfMemory => return Err(error.into()),
+        Err(_) => return Ok(None),
+        Ok(()) => {}
     }
     let tar = first != [0; BLOCK] && (checksum_matches(&first) || &first[257..262] == b"ustar");
     Ok(tar.then_some(compression))
@@ -408,6 +410,7 @@ fn read_up_to(file: &mut impl Read, buffer: &mut [u8]) -> std::io::Result<usize>
 
 const SNIFF_INPUT: u64 = crate::lz4::FIRST_BLOCK_INPUT_MAX;
 const BZIP2_OUTPUT_PER_EXTRA_STREAM: u64 = 4096;
+const XZ_DECODER_MEMORY: u64 = 256 * 1024 * 1024;
 
 pub(crate) fn decoder(path: &Path, compression: Compression) -> Result<Box<dyn Read + Send>> {
     decode(
@@ -424,22 +427,64 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
         Compression::None => Box::new(input),
         Compression::Gzip => Box::new(flate2::bufread::MultiGzDecoder::new(input)),
         Compression::Zstd => Box::new(zstd::stream::read::Decoder::with_buffer(input)?),
-        Compression::Xz => Box::new(liblzma::bufread::XzDecoder::new_multi_decoder(input)),
+        Compression::Xz => Box::new(DecoderMemory(liblzma::bufread::XzDecoder::new_stream(
+            input,
+            liblzma::stream::Stream::new_auto_decoder(
+                XZ_DECODER_MEMORY,
+                liblzma::stream::CONCATENATED,
+            )?,
+        ))),
         Compression::Bzip2 => Box::new(Bzip2Streams {
             decoder: Some(bzip2::bufread::BzDecoder::new(input)),
             streams: 1,
             decoded: 0,
         }),
-        Compression::Lzma => Box::new(liblzma::bufread::XzDecoder::new_stream(
-            input,
-            liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
-        )),
+        Compression::Lzma => Box::new(DecoderMemory(lzma_decoder(input)?)),
         Compression::Lzip => Box::new(LzipMembers {
             decoder: Some(lzip_member(input)?),
         }),
         Compression::Lz4 => Box::new(crate::lz4::Lz4Frames::new(input)),
         Compression::Compress => Box::new(crate::lzw::Unlzw::new(input)),
     })
+}
+
+pub(crate) fn lzma_decoder<R: BufRead>(mut input: R) -> Result<liblzma::bufread::XzDecoder<R>> {
+    if let Some(field) = input.fill_buf()?.get(1..5) {
+        let dictionary = u32::from_le_bytes(field.try_into().unwrap());
+        ensure!(
+            u64::from(dictionary) <= XZ_DECODER_MEMORY,
+            "LZMA stream declares a {dictionary}-byte dictionary, more than the {} MiB of decoder memory Zipper allows; {BACKEND_HINT}",
+            XZ_DECODER_MEMORY >> 20
+        );
+    }
+    Ok(liblzma::bufread::XzDecoder::new_stream(
+        input,
+        liblzma::stream::Stream::new_lzma_decoder(XZ_DECODER_MEMORY)?,
+    ))
+}
+
+pub(crate) struct DecoderMemory<R>(pub(crate) R);
+
+impl<R: Read> Read for DecoderMemory<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buffer).map_err(|error| {
+            let over = error
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<liblzma::stream::Error>())
+                .is_some_and(|inner| matches!(inner, liblzma::stream::Error::MemLimit));
+            if over {
+                std::io::Error::new(
+                    std::io::ErrorKind::OutOfMemory,
+                    format!(
+                        "the stream's dictionary needs more than the {} MiB of decoder memory Zipper allows an xz or LZMA stream; {BACKEND_HINT}",
+                        XZ_DECODER_MEMORY >> 20
+                    ),
+                )
+            } else {
+                error
+            }
+        })
+    }
 }
 
 fn lzip_member<R: BufRead>(input: R) -> std::io::Result<liblzma::bufread::XzDecoder<R>> {
