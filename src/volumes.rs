@@ -890,6 +890,7 @@ fn read_file_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<usize
 pub(crate) enum ArchiveFile {
     One(File),
     Joined(Joined),
+    After { inner: Box<ArchiveFile>, base: u64 },
 }
 
 pub(crate) struct ZipDisks(Arc<VolumeSet>);
@@ -931,7 +932,19 @@ impl ArchiveFile {
         match self {
             Self::One(file) => Ok(file.metadata()?.len()),
             Self::Joined(joined) => Ok(joined.set.spans.total()),
+            Self::After { inner, base } => Ok(inner.len()?.saturating_sub(*base)),
         }
+    }
+
+    pub(crate) fn after(mut self, base: u64) -> io::Result<Self> {
+        if base == 0 {
+            return Ok(self);
+        }
+        self.seek(SeekFrom::Start(base))?;
+        Ok(Self::After {
+            inner: Box::new(self),
+            base,
+        })
     }
 
     pub(crate) fn zip_disks(&self) -> Option<ZipDisks> {
@@ -951,12 +964,18 @@ impl ArchiveFile {
                 position: joined.position,
                 open: Mutex::new(None),
             }),
+            Self::After { inner, base } => Self::After {
+                inner: Box::new(inner.try_clone()?),
+                base: *base,
+            },
         })
     }
 
     pub(crate) fn ensure_ends_at(&self, end: u64) -> io::Result<()> {
-        let Self::Joined(joined) = self else {
-            return Ok(());
+        let joined = match self {
+            Self::Joined(joined) => joined,
+            Self::After { inner, base } => return inner.ensure_ends_at(base.saturating_add(end)),
+            Self::One(_) => return Ok(()),
         };
         match joined.set.spans.locate(end) {
             None => Ok(()),
@@ -974,6 +993,7 @@ impl ArchiveFile {
                 Some(Identity::of(&file.metadata()?)),
             )?)),
             Self::Joined(_) => self.try_clone(),
+            Self::After { inner, base } => inner.reopen(path)?.after(*base),
         }
     }
 
@@ -981,6 +1001,10 @@ impl ArchiveFile {
         match self {
             Self::One(file) => read_file_at(file, buffer, offset),
             Self::Joined(joined) => joined.read_at(buffer, offset),
+            Self::After { inner, base } => match base.checked_add(offset) {
+                Some(offset) => inner.read_at(buffer, offset),
+                None => Ok(0),
+            },
         }
     }
 }
@@ -994,6 +1018,7 @@ impl Read for ArchiveFile {
                 joined.position += read as u64;
                 Ok(read)
             }
+            Self::After { inner, .. } => inner.read(buffer),
         }
     }
 }
@@ -1014,6 +1039,25 @@ impl Seek for ArchiveFile {
                     io::Error::new(io::ErrorKind::InvalidInput, "invalid split archive seek")
                 })?;
                 Ok(joined.position)
+            }
+            Self::After { inner, base } => {
+                let base = *base;
+                let target = match seek {
+                    SeekFrom::Start(position) => i128::from(position),
+                    SeekFrom::Current(delta) => {
+                        i128::from(inner.stream_position()?) - i128::from(base) + i128::from(delta)
+                    }
+                    SeekFrom::End(delta) => {
+                        i128::from(inner.len()?) - i128::from(base) + i128::from(delta)
+                    }
+                };
+                let position = u64::try_from(target)
+                    .ok()
+                    .and_then(|position| position.checked_add(base))
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidInput, "invalid archive seek")
+                    })?;
+                Ok(inner.seek(SeekFrom::Start(position))? - base)
             }
         }
     }
@@ -1145,12 +1189,43 @@ mod tests {
     }
 
     #[test]
+    fn a_file_read_after_a_base_reads_and_seeks_as_the_bytes_past_it() -> io::Result<()> {
+        let data: Vec<u8> = (0..300u32).map(|i| (i * 13 % 251) as u8).collect();
+        for volume in [7, 300] {
+            let folder = tempfile::tempdir()?;
+            let first = write_set(folder.path(), "a.bin", &data, volume);
+            for base in [1, 7, 100, 297] {
+                let rest = &data[base..];
+                let mut after = open(&first)?.after(base as u64)?;
+                assert_eq!(after.len()?, rest.len() as u64);
+                let mut whole = Vec::new();
+                after.read_to_end(&mut whole)?;
+                assert_eq!(whole, rest, "volume {volume} base {base}");
+                assert_eq!(after.seek(SeekFrom::End(-1))?, rest.len() as u64 - 1);
+                assert_eq!(after.seek(SeekFrom::Current(-1))?, rest.len() as u64 - 2);
+                assert!(after.seek(SeekFrom::Current(-(rest.len() as i64))).is_err());
+                after.seek(SeekFrom::Start(0))?;
+                let mut again = Vec::new();
+                after.try_clone()?.read_to_end(&mut again)?;
+                assert_eq!(again, rest);
+                let mut buffer = [0; 5];
+                let read = after.read_at(&mut buffer, 1)?;
+                assert_eq!(buffer[..read], rest[1..][..read]);
+                let mut reopened = Vec::new();
+                after.reopen(&first)?.read_to_end(&mut reopened)?;
+                assert_eq!(reopened, rest);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn a_set_is_found_once_per_scope_and_never_shared_across_scopes() -> io::Result<()> {
         let folder = tempfile::tempdir()?;
         let first = write_set(folder.path(), "once.bin", &[5; 30], 10);
         let joined_set = |file: ArchiveFile| match file {
             ArchiveFile::Joined(joined) => joined.set,
-            ArchiveFile::One(_) => panic!("read alone"),
+            _ => panic!("read alone"),
         };
         let outer = scope(&first);
         let held = joined_set(open(&first)?);

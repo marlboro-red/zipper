@@ -358,6 +358,7 @@ Done so far, by 6 November 2026:
 - Raw numbered volumes for every native format, as [split volumes](reference/zip-reader.md#split-volumes) describes.
 - ZIP split sets from Info-ZIP `zip -s`, read in process with every disk number and offset placed inside its own volume, as [ZIP split sets](reference/zip-reader.md#zip-split-sets) describes. 7-Zip writes no `.z01` sets and WinZip was not available, so Info-ZIP is the only writer in the corpus.
 - Self-extracting ZIP, with offsets adjusted by `zip -A` or not, as [self-extracting ZIP](reference/zip-reader.md#self-extracting-zip) describes. The rule for the stub changed. The reader accepts any prefix the archive's own offsets account for, and refuses one that holds another archive's signature. Recognizing a known stub was dropped, because stubs differ by writer and version, and the offsets decide what Python `zipfile`, bsdtar and 7-Zip read.
+- Self-extracting 7z, found within 8 MiB after a PE, ELF or Mach-O stub, as [self-extracting 7z](reference/7z-reader.md#self-extracting-7z) describes. `7zz a -sfx` has no SFX module on macOS, so the tests build the stubs by hand.
 
 ## M16. Package formats
 

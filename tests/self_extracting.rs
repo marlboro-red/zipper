@@ -1,10 +1,14 @@
-//! Self-extracting ZIP archives, an executable stub followed by a ZIP. Info-ZIP
-//! `zip -A` adjusts the archive's offsets to count the stub, and a plain
+//! Self-extracting archives, an executable stub followed by a ZIP or a 7z.
+//! Info-ZIP `zip -A` adjusts a ZIP's offsets to count the stub, and a plain
 //! `cat stub a.zip` leaves them counting from the ZIP. Both must extract the
-//! tree the ZIP gives alone, the tree Python `zipfile` lists and 7-Zip
-//! extracts. A prefix whose offsets do not reconcile, or that holds another
-//! archive's records, must fail before anything is published, with an error
-//! that names the offset.
+//! tree the ZIP gives alone, the names Python `zipfile` lists and the tree
+//! 7-Zip extracts. A 7z whose signature starts at offset 8 MiB or earlier
+//! after a PE, ELF or Mach-O stub must extract as it does alone and as 7-Zip
+//! extracts it, and a start header that fails its CRC is skipped. A 7z past
+//! that offset or after a prefix that is no executable is not found. A prefix
+//! whose offsets do not reconcile, a prefix that holds another archive, two 7z
+//! start headers that both verify, and a 7z followed by a ZIP end record must
+//! fail before anything is published, with an error that names the offset.
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -384,4 +388,107 @@ fn an_empty_or_encrypted_zip_after_a_stub_is_refused() {
         );
         assert_refused(&path, &["encrypted"], "encrypted");
     }
+}
+
+const SEVEN_ZIPS: &[&str] = &[
+    "7z-corpus/7zip-lzma2-long.7z",
+    "7z-corpus/7zip-bcj2-short.7z",
+    "7z-corpus/7zip-nonsolid-links.7z",
+    "7z-corpus/7zip-plain-header-short.7z",
+    "7z-corpus/bsdtar-store-short.7z",
+    "parity/archives/7z-copy.7z",
+];
+
+const SEARCH_LIMIT: usize = 8 << 20;
+
+fn with_magic(magic: &[u8], length: usize) -> Vec<u8> {
+    let mut bytes = stub(length);
+    bytes[..magic.len()].copy_from_slice(magic);
+    bytes
+}
+
+#[test]
+fn a_7z_after_a_stub_extracts_as_the_7z_alone_and_as_7zip_extracts_it() {
+    let seven = sevenzip();
+    let folder = tempfile::tempdir().unwrap();
+    for name in SEVEN_ZIPS {
+        let archive = fs::read(data(name)).unwrap();
+        let whole = extracted_tree(&data(name));
+        for (kind, prefix) in [
+            ("PE", stub(5000)),
+            ("ELF", with_magic(b"\x7fELF", 70_000)),
+            ("Mach-O", with_magic(b"\xcf\xfa\xed\xfe", 300)),
+            ("PE at the limit", stub(SEARCH_LIMIT)),
+        ] {
+            let label = format!("{name} after a {kind} stub");
+            let path = written(folder.path(), "sfx.exe", &[&prefix[..], &archive].concat());
+            assert_eq!(extracted_tree(&path), whole, "{label}");
+            if let Some(binary) = &seven {
+                assert_eq!(tree_by_7zip(binary, &path), whole, "{label}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_7z_signature_past_the_search_limit_or_after_no_executable_is_not_found() {
+    let folder = tempfile::tempdir().unwrap();
+    let archive = fs::read(data("parity/archives/7z.7z")).unwrap();
+    let far = written(
+        folder.path(),
+        "far.exe",
+        &[&stub(SEARCH_LIMIT + 1)[..], &archive].concat(),
+    );
+    assert_refused(&far, &[], "past the limit");
+    let mut text = b"#!/bin/sh\n".to_vec();
+    text.resize(4000, b'#');
+    let script = written(folder.path(), "script.sh", &[&text[..], &archive].concat());
+    assert_refused(&script, &[], "after a script");
+}
+
+#[test]
+fn two_7z_signatures_that_both_verify_are_refused_by_offset() {
+    let folder = tempfile::tempdir().unwrap();
+    let first = fs::read(data("parity/archives/7z.7z")).unwrap();
+    let second = fs::read(data("7z-corpus/7zip-lzma2-short.7z")).unwrap();
+    let head = stub(1000);
+    let path = written(
+        folder.path(),
+        "two.exe",
+        &[&head[..], &first, &second].concat(),
+    );
+    let second_at = format!("offset {}", 1000 + first.len());
+    assert_refused(&path, &["offset 1000", &second_at], "two archives");
+    let mut damaged = first.clone();
+    damaged[8] ^= 1;
+    let path = written(
+        folder.path(),
+        "damaged-first.exe",
+        &[&head[..], &damaged, &second].concat(),
+    );
+    assert_eq!(
+        extracted_tree(&path),
+        extracted_tree(&data("7z-corpus/7zip-lzma2-short.7z"))
+    );
+}
+
+#[test]
+fn a_7z_after_a_stub_that_is_also_a_zip_is_refused() {
+    let folder = tempfile::tempdir().unwrap();
+    let seven = fs::read(data("parity/archives/7z.7z")).unwrap();
+    let zip = fs::read(data("zip-corpus/infozip-default.zip")).unwrap();
+    let path = written(
+        folder.path(),
+        "both.exe",
+        &[&stub(1000)[..], &seven, &zip].concat(),
+    );
+    assert_refused(&path, &["offset 1000"], "7z then ZIP");
+    let small = fs::read(data("parity/archives/zip.zip")).unwrap();
+    let path = written(
+        folder.path(),
+        "zip-in-stub.exe",
+        &[&stub(1000)[..], &small, &seven].concat(),
+    );
+    let at = format!("offset {}", 1000 + small.len());
+    assert_refused(&path, &[&at], "ZIP in the stub, then 7z");
 }

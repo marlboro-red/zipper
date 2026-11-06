@@ -1,6 +1,6 @@
 # In-process 7z reader
 
-Zipper reads 7z archives with its own Rust reader by default. The default engine, `--zip-engine auto`, opens a file that starts with the 7z signature and reads its header first. When a folder uses a method the reader does not decode, or the header itself is encrypted, the archive goes to 7-Zip with the format pinned, before anything is extracted. Every other archive goes to the reader, including damaged and unsafe ones, so the reader refuses them rather than 7-Zip extracting them. `--zip-engine native` always uses the reader, and `--zip-engine backend` always uses 7-Zip.
+Zipper reads 7z archives with its own Rust reader by default. The default engine, `--zip-engine auto`, opens a file that starts with the 7z signature, or a [self-extracting 7z](#self-extracting-7z), and reads its header first. When a folder uses a method the reader does not decode, or the header itself is encrypted, the archive goes to 7-Zip with the format pinned, before anything is extracted. Every other archive goes to the reader, including damaged and unsafe ones, so the reader refuses them rather than 7-Zip extracting them. `--zip-engine native` always uses the reader, and `--zip-engine backend` always uses 7-Zip.
 
 ## Supported archives
 
@@ -24,6 +24,14 @@ The reader does not support these features:
 - Anti-items, which delete files during an update, external data and additional header streams.
 - Windows reparse points, devices and FIFOs.
 - Names with a backslash, which Windows reads as a separator and Unix as part of the name.
+
+## Self-extracting 7z
+
+A self-extracting 7z is an executable stub followed by a 7z archive. Every offset in a 7z counts from its signature, so the archive reads the same after any stub. The reader looks for the signature only when the file starts like a PE, ELF or Mach-O executable, with `MZ`, `\x7FELF` or one of the Mach-O magic numbers. 7-Zip searches any file, but searching every unrecognized file would read 8 MiB of each gzip or ZIP self-extractor that reaches this reader.
+
+The signature must start within the first 8 MiB, at offset 8,388,608 or before. 7-Zip 26.05 on macOS opens an archive whose signature starts at that offset and not one byte past it. Each signature found there counts only when its start header has version 0 and its CRC matches. When two signatures pass, the file holds two archives, and the error names both offsets. That includes a stored 7z inside the first 8 MiB of the archive itself. A start header that fails its CRC is skipped. The archive may be followed by other bytes, as a signed installer is. A ZIP end record in the last 64 KiB after the archive is refused, because Python and bsdtar would then read a ZIP. So is a ZIP local header or end record signature in the stub. Python and bsdtar find a small ZIP there before a 7z under 64 KiB, and 7-Zip may find one by its forward search. The ZIP reader refuses a 7z signature in a ZIP's prefix, so a file is never read as the other format.
+
+`7zz a -sfx` fails on macOS, which ships no SFX module. So `tests/self_extracting.rs` builds each self-extractor by hand, from a generated PE, ELF or Mach-O stub and six corpus and parity archives. That includes BCJ2, a plain header, links and bsdtar's output. Stubs run from 300 bytes to exactly 8 MiB. Each must extract the tree the archive gives alone, and the tree 7-Zip extracts when it is installed. A signature 1 byte past the limit, an archive after a shell script, two archives, and an archive followed by a ZIP or after a ZIP in the stub are refused. An archive after a damaged start header extracts.
 
 ## Metadata
 

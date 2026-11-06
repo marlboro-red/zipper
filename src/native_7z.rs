@@ -913,8 +913,135 @@ fn decode_header(file: &mut ArchiveFile, streams: &Streams) -> Result<Vec<u8>> {
     Ok(decoded)
 }
 
+const EXECUTABLE_MAGICS: [&[u8]; 7] = [
+    b"MZ",
+    b"\x7FELF",
+    b"\xFE\xED\xFA\xCE",
+    b"\xFE\xED\xFA\xCF",
+    b"\xCE\xFA\xED\xFE",
+    b"\xCF\xFA\xED\xFE",
+    b"\xCA\xFE\xBA\xBE",
+];
+// EXTERNAL(7-Zip): it finds a 7z signature after a stub only when the signature starts at offset 8 MiB or earlier.
+const STUB_SEARCH_LIMIT: u64 = 8 << 20;
+const STUB_SCAN_CHUNK: usize = 64 * 1024;
+const ZIP_END_SIGNATURE: &[u8; 4] = b"PK\x05\x06";
+const ZIP_TAIL: u64 = 22 + u16::MAX as u64;
+
+fn read_up_to(file: &ArchiveFile, buffer: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        let read = file.read_at(&mut buffer[filled..], offset + filled as u64)?;
+        if read == 0 {
+            break;
+        }
+        filled += read;
+    }
+    Ok(filled)
+}
+
+fn start_header_verifies(file: &ArchiveFile, at: u64) -> std::io::Result<bool> {
+    let mut start = [0u8; SIGNATURE_HEADER as usize];
+    Ok(read_up_to(file, &mut start, at)? == start.len()
+        && &start[..6] == SIGNATURE
+        && start[6] == 0
+        && crc32fast::hash(&start[12..32]) == u32::from_le_bytes(start[8..12].try_into().unwrap()))
+}
+
+fn archive_start(file: &ArchiveFile) -> Result<Option<u64>> {
+    let mut head = [0u8; 6];
+    let read = read_up_to(file, &mut head, 0)?;
+    let head = &head[..read];
+    if head == SIGNATURE {
+        return Ok(Some(0));
+    }
+    if !EXECUTABLE_MAGICS
+        .iter()
+        .any(|magic| head.starts_with(magic))
+    {
+        return Ok(None);
+    }
+    let scanned = file.len()?.min(STUB_SEARCH_LIMIT + SIGNATURE.len() as u64);
+    let mut found = Vec::new();
+    let mut chunk = vec![0u8; STUB_SCAN_CHUNK];
+    let mut at = 0u64;
+    while at < scanned && found.len() < 2 {
+        let wanted =
+            usize::try_from(scanned - at).map_or(chunk.len(), |left| left.min(chunk.len()));
+        let read = read_up_to(file, &mut chunk[..wanted], at)?;
+        let window = &chunk[..read];
+        for candidate in (0..window.len()).filter(|&i| window[i..].starts_with(SIGNATURE)) {
+            let start = at + candidate as u64;
+            let new = found.last() != Some(&start);
+            if new && start_header_verifies(file, start)? {
+                found.push(start);
+            }
+        }
+        if read < SIGNATURE.len() {
+            break;
+        }
+        at += (read - (SIGNATURE.len() - 1)) as u64;
+    }
+    match found[..] {
+        [] => Ok(None),
+        [start] => Ok(Some(start)),
+        [first, second, ..] => bail!(
+            "7z signatures at offset {first} and offset {second} after an executable stub both pass their start header check, so the file holds two 7z archives"
+        ),
+    }
+}
+
+fn ensure_no_zip_follows(file: &ArchiveFile, base: u64, end: u64) -> Result<()> {
+    let length = file.len()?;
+    let from = end.max(length.saturating_sub(ZIP_TAIL));
+    let mut tail = vec![0u8; usize::try_from(length.saturating_sub(from)).unwrap_or(0)];
+    let read = read_up_to(file, &mut tail, from)?;
+    ensure!(
+        !tail[..read]
+            .windows(4)
+            .any(|window| window == ZIP_END_SIGNATURE),
+        "the 7z archive at offset {base} after an executable stub is followed by a ZIP end record, so other readers may see a ZIP instead"
+    );
+    Ok(())
+}
+
+fn ensure_no_zip_in_stub(file: &ArchiveFile, base: u64) -> Result<()> {
+    let records: [(&[u8; 4], &str); 2] = [
+        (b"PK\x03\x04", "a ZIP local header"),
+        (ZIP_END_SIGNATURE, "a ZIP end record"),
+    ];
+    let mut chunk = vec![0u8; STUB_SCAN_CHUNK];
+    let mut at = 0u64;
+    while at < base {
+        let wanted =
+            usize::try_from(base + 3 - at).map_or(chunk.len(), |left| left.min(chunk.len()));
+        let read = read_up_to(file, &mut chunk[..wanted], at)?;
+        let window = &chunk[..read];
+        let found = (0..window.len()).find_map(|index| {
+            records
+                .iter()
+                .find(|(signature, _)| window[index..].starts_with(*signature))
+                .map(|&(_, record)| (at + index as u64, record))
+                .filter(|&(start, _)| start < base)
+        });
+        if let Some((start, record)) = found {
+            bail!(
+                "the stub before the 7z archive at offset {base} holds {record} at offset {start}, so other readers may see a ZIP instead"
+            );
+        }
+        if read < 4 {
+            break;
+        }
+        at += (read - 3) as u64;
+    }
+    Ok(())
+}
+
 fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
-    let mut file = crate::volumes::open(path)?;
+    let file = crate::volumes::open(path)?;
+    let base = archive_start(&file)?.unwrap_or(0);
+    ensure_no_zip_in_stub(&file, base)?;
+    let mut file = file.after(base)?;
     let length = file.len()?;
     let mut start = [0u8; 32];
     file.read_exact(&mut start).context("not a 7z archive")?;
@@ -939,6 +1066,9 @@ fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
         bail!("7z header lies outside the file")
     };
     file.ensure_ends_at(header_start + size)?;
+    if base > 0 {
+        ensure_no_zip_follows(&file, base, header_start + size)?;
+    }
     ensure!(size <= MAX_HEADER, "7z header is larger than 64 MiB");
     ensure!(size > 0, "empty 7z archives have no header");
     file.seek(SeekFrom::Start(header_start))?;
@@ -2313,11 +2443,11 @@ fn create_links(root: &Path, items: &[Item], targets: Vec<(usize, Vec<u8>)>) -> 
     Ok(())
 }
 
-/// Whether the file starts with the 7z signature.
+/// Whether the file starts with the 7z signature, or starts like a PE, ELF
+/// or Mach-O executable and holds exactly one 7z start header that passes its
+/// CRC check at offset 8 MiB or earlier.
 pub fn sniff(path: &Path) -> Result<bool> {
-    let mut start = [0u8; 6];
-    let read = crate::volumes::open(path)?.read(&mut start)?;
-    Ok(read == 6 && &start == SIGNATURE)
+    Ok(archive_start(&crate::volumes::open(path)?)?.is_some())
 }
 
 #[cfg(test)]
