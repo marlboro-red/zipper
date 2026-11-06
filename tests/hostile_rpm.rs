@@ -772,7 +772,7 @@ fn a_damaged_payload_fails_its_compressors_check() {
         assert_rejected_without_leftovers(&format!("{case} damaged"), &damaged);
         let mut tail = good.clone();
         let last = tail.len() - 1;
-        tail[last] ^= 0x55;
+        tail[last] ^= 0xff;
         assert_rejected_without_leftovers(&format!("{case} trailer"), &tail);
     }
 }
