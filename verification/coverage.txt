@@ -316,3 +316,27 @@ item = src/native_ar.rs | fn number(
 item = src/native_ar.rs | fn decimal(
 item = src/native_ar.rs | fn header(
 item = src/native_ar.rs | fn short_name(
+
+[rpm-fields]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 7cb31b09e9513850
+full-check = cargo kani --harness native_rpm::proofs::
+full-check = cargo test --release --lib native_rpm
+item = src/native_rpm.rs | const MAX_INDEX_ENTRIES:
+item = src/native_rpm.rs | const MAX_DATA:
+item = src/native_rpm.rs | const MAX_TAG_TEXT:
+item = src/native_rpm.rs | const LZMA_PROPERTIES_LIMIT:
+item = src/native_rpm.rs | enum Kind {
+item = src/native_rpm.rs | impl Kind {
+item = src/native_rpm.rs | struct Extent {
+item = src/native_rpm.rs | impl Extent {
+item = src/native_rpm.rs | fn word(
+item = src/native_rpm.rs | fn lead(
+item = src/native_rpm.rs | fn header_intro(
+item = src/native_rpm.rs | fn index_entry(
+item = src/native_rpm.rs | fn text_window(
+item = src/native_rpm.rs | fn tag_text(
+item = src/native_rpm.rs | fn signature_padding(
+item = src/native_rpm.rs | impl Compressor {
+item = src/native_rpm.rs |     fn header(
+item = src/native_rpm.rs |     fn text(

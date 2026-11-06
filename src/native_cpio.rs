@@ -1,7 +1,7 @@
 //! In-process extraction of cpio archives in the binary, odc and newc forms,
 //! published only after the whole archive reads cleanly. See
 //! `docs/reference/cpio-reader.md` for what it accepts and restores.
-use crate::{BadField, Entry, Field, field_check, volumes::ArchiveFile};
+use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::HashMap,
@@ -279,11 +279,11 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(Form::of(&magic).is_some())
 }
 
-struct Input {
-    reader: BufReader<ArchiveFile>,
+struct Input<R> {
+    reader: R,
 }
 
-impl Input {
+impl<R: Read> Input<R> {
     fn exact(&mut self, buffer: &mut [u8], what: &str) -> Result<()> {
         let mut filled = 0;
         while filled < buffer.len() {
@@ -514,7 +514,7 @@ fn utf8(bytes: Vec<u8>, what: &str) -> Result<String> {
 
 fn entry(
     tree: &mut tree::Tree,
-    input: &mut Input,
+    input: &mut Input<impl Read>,
     form: Form,
     header: &Header,
     name: &str,
@@ -570,7 +570,7 @@ fn entry(
     }
 }
 
-fn parse(tree: &mut tree::Tree, input: &mut Input, form: Form) -> Result<()> {
+fn parse(tree: &mut tree::Tree, input: &mut Input<impl Read>, form: Form) -> Result<()> {
     let mut links = HardLinks::default();
     let mut headers = 0usize;
     loop {
@@ -625,6 +625,25 @@ pub fn read_archive(
     let form = Form::of(&magic).context("not a cpio archive")?;
     input.reader = BufReader::with_capacity(COPY_BUFFER, crate::volumes::open(path)?);
     tree::extract("cpio", path, destination, options, |tree| {
+        parse(tree, &mut input, form)
+    })
+}
+
+pub(crate) fn read_newc_stream(
+    format: &'static str,
+    archive: &Path,
+    magic: [u8; 6],
+    rest: impl Read,
+    destination: Option<&Path>,
+    options: ReadOptions,
+) -> Result<Vec<Entry>> {
+    let form = Form::of(&magic)
+        .filter(|form| matches!(form, Form::Newc { .. }))
+        .with_context(|| format!("{format} payload is not newc cpio"))?;
+    let mut input = Input {
+        reader: BufReader::with_capacity(COPY_BUFFER, std::io::Cursor::new(magic).chain(rest)),
+    };
+    tree::extract(format, archive, destination, options, |tree| {
         parse(tree, &mut input, form)
     })
 }

@@ -103,6 +103,41 @@ def write_ar(src, out):
     out.write_bytes(b"!<arch>\n" + header + data + (b"\n" if len(data) % 2 else b""))
 
 
+RPM_SPEC = """Name: parity
+Version: 1.0
+Release: 1
+Summary: Zipper parity package
+License: MIT
+BuildArch: noarch
+%description
+The parity corpus tree, with a symlink and a hard link.
+%install
+cp -R SOURCE/. %{buildroot}/
+ln -s data.txt %{buildroot}/folder/link
+ln %{buildroot}/folder/data.txt %{buildroot}/folder/hard
+%files
+/hello.txt
+/folder
+"""
+RPM_PAYLOADS = {"gzip": "w9.gzdio", "xz": "w6.xzdio", "zstd": "w19.zstdio", "bzip2": "w9.bzdio", "lzma": "w6.lzdio"}
+
+
+def write_rpm(compressor):
+    """An RPM package in the version 4 format, the newest one 7-Zip unpacks, with one payload compressor."""
+    def build(src, out):
+        top = out.with_name(out.name + ".top")
+        top.mkdir()
+        spec = top / "parity.spec"
+        spec.write_text(RPM_SPEC.replace("SOURCE", str(src)))
+        run(["rpmbuild", "--define", f"_topdir {top}", "--define", "_rpmformat 4",
+             "--define", f"_binary_payload {RPM_PAYLOADS[compressor]}", "--define", "_buildhost zipper",
+             "-bb", str(spec)], src)
+        [built] = (top / "RPMS").rglob("*.rpm")
+        built.rename(out)
+        shutil.rmtree(top)
+    return build
+
+
 def run(command, cwd):
     subprocess.run(command, cwd=cwd, check=True, capture_output=True)
 
@@ -158,6 +193,8 @@ def builders(binary):
             subprocess.run(["cpio", "-o", "-H", form], cwd=src, input=b"hello.txt\nfolder\nfolder/data.txt\nfolder/empty\n",
                            check=True, capture_output=True).stdout)))
     table.append(("ar.a", ("formats", "Ar"), True, write_ar))
+    for compressor in RPM_PAYLOADS:
+        table.append((f"rpm-{compressor}.rpm", ("formats", "Rpm"), found("rpmbuild"), write_rpm(compressor)))
     table.append(("xar.xar", ("formats", "Xar"), found("xar"), lambda src, out: run(["xar", "-cf", str(out), "hello.txt", "folder"], src)))
     table.append(("split.7z.001", ("formats", "Split"), True, lambda src, out: run(
         [binary, "a", "-t7z", "-mx0", "-v4k", str(out.with_suffix("")), "hello.txt", "folder"], src)))
@@ -182,11 +219,13 @@ def builders(binary):
 
 
 def extract_with_7zip(binary, archive, into):
-    """7-Zip's tree, with a lone inner tar extracted too, as Zipper extracts a compressed tar."""
+    """7-Zip's tree, with a lone inner tar extracted too, as Zipper extracts a compressed tar,
+    and the lone cpio 7-Zip writes from an RPM, as Zipper extracts the files a package installs."""
     command = [binary, "x", "-y", f"-p{PASSWORD}", f"-o{into}", str(archive)]
     subprocess.run(command, check=True, capture_output=True, stdin=subprocess.DEVNULL)
     inner = list(into.iterdir())
-    if len(inner) == 1 and inner[0].suffix == ".tar" and archive.suffix != ".tar":
+    nested = {".tar": archive.suffix != ".tar", ".cpio": archive.suffix == ".rpm"}
+    if len(inner) == 1 and nested.get(inner[0].suffix):
         return extract_with_7zip(binary, inner[0], into.with_name(into.name + "-inner"))
     return tree(into)
 

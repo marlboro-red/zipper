@@ -12,6 +12,7 @@ mod metadata;
 pub mod native_7z;
 pub mod native_ar;
 pub mod native_cpio;
+pub mod native_rpm;
 pub mod native_stream;
 pub mod native_tar;
 pub mod native_zip;

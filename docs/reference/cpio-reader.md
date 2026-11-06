@@ -19,7 +19,7 @@ The reader does not support these features:
 - Devices, FIFOs and sockets.
 - Names and link targets that are not UTF-8.
 - Several archives one after another, as a Linux initramfs holds them.
-- The cpio inside an RPM package, which stays on the 7-Zip backend.
+- The cpio inside an RPM package, which the [RPM reader](rpm-reader.md) extracts.
 
 ## Metadata
 
