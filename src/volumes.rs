@@ -901,6 +901,7 @@ pub(crate) enum Stub {
     NotAtTheOverlay {
         end: u64,
     },
+    TooManyRanges,
     RangeReaches {
         what: &'static str,
         start: u64,
@@ -921,6 +922,9 @@ impl Stub {
             ),
             Self::NotAtTheOverlay { end } => Some(format!(
                 "form an executable whose own data ends at offset {end}, not where the archive starts, so 7-Zip reads whatever starts at offset {end} instead"
+            )),
+            Self::TooManyRanges => Some(format!(
+                "form an executable whose headers name more than {STUB_RANGES_MAX} file ranges, more than any real stub"
             )),
             Self::RangeReaches { what, start, end } => Some(format!(
                 "name {what} at offset {start} that ends {}, past where the archive starts, so 7-Zip may count the archive's first bytes as part of the executable",
@@ -1060,8 +1064,43 @@ impl FileRange {
 
 enum Executable {
     Script,
-    Ranges(Vec<FileRange>),
+    Walked,
     Malformed,
+}
+
+const STUB_RANGES_MAX: u64 = 65_536;
+
+enum Stop {
+    Reaches(FileRange),
+    TooMany,
+}
+
+struct Walk {
+    prefix: u64,
+    furthest: u64,
+    walked: u64,
+    stop: Option<Stop>,
+}
+
+impl Walk {
+    fn push(&mut self, range: FileRange) {
+        if self.stop.is_some() {
+            return;
+        }
+        self.walked += 1;
+        if self.walked > STUB_RANGES_MAX {
+            self.stop = Some(Stop::TooMany);
+            return;
+        }
+        match range.end {
+            Some(end) if end <= self.prefix => self.furthest = self.furthest.max(end),
+            _ => self.stop = Some(Stop::Reaches(range)),
+        }
+    }
+
+    fn stopped(&self) -> bool {
+        self.stop.is_some()
+    }
 }
 
 const PE_SECTIONS_MAX: u64 = 96;
@@ -1094,7 +1133,7 @@ impl PeSection {
     }
 }
 
-fn pe_ranges(header: &mut Header) -> io::Result<Executable> {
+fn pe_ranges(header: &mut Header, ranges: &mut Walk) -> io::Result<Executable> {
     let Some([pointer]) = header.fields(0, [(PE_HEADER_POINTER as u64, 4)])? else {
         return Ok(Executable::Malformed);
     };
@@ -1113,14 +1152,17 @@ fn pe_ranges(header: &mut Header) -> io::Result<Executable> {
     }
     let optional = pointer + PE_COFF_HEADER;
     let table = optional + optional_size;
-    let mut ranges = vec![FileRange::table(
+    ranges.push(FileRange::table(
         "a PE section table",
         table,
         PE_SECTION,
         count,
-    )];
+    ));
     let mut sections = Vec::new();
     for index in 0..count {
+        if ranges.stopped() {
+            break;
+        }
         let Some([virtual_size, virtual_start, raw_size, raw_start]) = header.fields(
             table + index * PE_SECTION,
             [(8, 4), (12, 4), (16, 4), (20, 4)],
@@ -1175,6 +1217,9 @@ fn pe_ranges(header: &mut Header) -> io::Result<Executable> {
             .unwrap_or(rva)
     };
     for directory in 0..declared.min(PE_DIRECTORIES_MAX).min(fitting) {
+        if ranges.stopped() {
+            break;
+        }
         let Some([address, size]) = header.fields(directories + directory * 8, [(0, 4), (4, 4)])?
         else {
             return Ok(Executable::Malformed);
@@ -1189,11 +1234,17 @@ fn pe_ranges(header: &mut Header) -> io::Result<Executable> {
         let start = file_offset(address);
         ranges.push(FileRange::new("a PE data directory", start, size));
         if directory == PE_DEBUG_DIRECTORY {
+            if size % PE_DEBUG_ENTRY != 0 {
+                return Ok(Executable::Malformed);
+            }
             let entries = size / PE_DEBUG_ENTRY;
             if entries > PE_DEBUG_ENTRIES_MAX {
                 return Ok(Executable::Malformed);
             }
             for entry in 0..entries {
+                if ranges.stopped() {
+                    break;
+                }
                 let Some([data_size, data_start]) =
                     header.fields(start + entry * PE_DEBUG_ENTRY, [(16, 4), (24, 4)])?
                 else {
@@ -1209,10 +1260,10 @@ fn pe_ranges(header: &mut Header) -> io::Result<Executable> {
             }
         }
     }
-    Ok(Executable::Ranges(ranges))
+    Ok(Executable::Walked)
 }
 
-fn elf_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
+fn elf_ranges(header: &mut Header, wide: bool, ranges: &mut Walk) -> io::Result<Executable> {
     let word = if wide { 8 } else { 4 };
     let layout = if wide {
         [(32, 8), (40, 8), (54, 2), (56, 2), (58, 2), (60, 2)]
@@ -1232,27 +1283,38 @@ fn elf_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
     else {
         return Ok(Executable::Malformed);
     };
-    let mut ranges = vec![
-        FileRange::new("an ELF header", 0, if wide { 64 } else { 52 }),
-        FileRange::table(
-            "an ELF program header table",
-            programs,
-            program_size,
-            program_count,
-        ),
-        FileRange::table(
-            "an ELF section header table",
-            sections,
-            section_size,
-            section_count,
-        ),
-    ];
+    ranges.push(FileRange::new(
+        "an ELF header",
+        0,
+        if wide { 64 } else { 52 },
+    ));
+    ranges.push(FileRange::table(
+        "an ELF program header table",
+        programs,
+        program_size,
+        program_count,
+    ));
+    ranges.push(FileRange::table(
+        "an ELF section header table",
+        sections,
+        section_size,
+        section_count,
+    ));
+    let (program_entry, section_entry) = if wide { (56, 64) } else { (32, 40) };
+    if (program_count > 0 && program_size != program_entry)
+        || (section_count > 0 && section_size != section_entry)
+    {
+        return Ok(Executable::Malformed);
+    }
     let program_fields = if wide {
         [(8, 8), (32, 8)]
     } else {
         [(4, 4), (16, 4)]
     };
     for index in 0..program_count {
+        if ranges.stopped() {
+            break;
+        }
         let Some([offset, size]) =
             header.fields(programs + index * program_size, program_fields)?
         else {
@@ -1268,6 +1330,9 @@ fn elf_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
         (8 + 3 * word as u64, word),
     ];
     for index in 0..section_count {
+        if ranges.stopped() {
+            break;
+        }
         let Some([kind, offset, size]) =
             header.fields(sections + index * section_size, section_fields)?
         else {
@@ -1277,7 +1342,7 @@ fn elf_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
             ranges.push(FileRange::new("an ELF section", offset, size));
         }
     }
-    Ok(Executable::Ranges(ranges))
+    Ok(Executable::Walked)
 }
 
 enum MachoRanges {
@@ -1326,8 +1391,9 @@ const DYSYMTAB_64: &[(u64, u64, u64)] = &[
 fn macho_segment(
     header: &mut Header,
     at: u64,
+    command_size: u64,
     wide: bool,
-    ranges: &mut Vec<FileRange>,
+    ranges: &mut Walk,
 ) -> io::Result<bool> {
     let (fields, first, section, section_fields) = if wide {
         (
@@ -1347,13 +1413,16 @@ fn macho_segment(
     let Some([offset, size, count]) = header.fields(at, fields)? else {
         return Ok(false);
     };
-    if count > MACHO_SECTIONS_MAX {
+    if count > MACHO_SECTIONS_MAX || first + count * section > command_size {
         return Ok(false);
     }
     if size > 0 {
         ranges.push(FileRange::new("a Mach-O segment", offset, size));
     }
     for index in 0..count {
+        if ranges.stopped() {
+            break;
+        }
         let Some([size, offset, flags]) =
             header.fields(at + first + index * section, section_fields)?
         else {
@@ -1367,7 +1436,7 @@ fn macho_segment(
     Ok(true)
 }
 
-fn macho_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
+fn macho_ranges(header: &mut Header, wide: bool, ranges: &mut Walk) -> io::Result<Executable> {
     let Some([commands, commands_size]) = header.fields(0, [(16, 4), (20, 4)])? else {
         return Ok(Executable::Malformed);
     };
@@ -1375,22 +1444,25 @@ fn macho_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
         return Ok(Executable::Malformed);
     }
     let first: u64 = if wide { 32 } else { 28 };
-    let mut ranges = vec![FileRange::new(
+    ranges.push(FileRange::new(
         "the Mach-O load commands",
         0,
         first + commands_size,
-    )];
+    ));
     let mut at = first;
     for _ in 0..commands {
+        if ranges.stopped() {
+            break;
+        }
         let Some([command, size]) = header.fields(at, [(0, 4), (4, 4)])? else {
             return Ok(Executable::Malformed);
         };
-        if size < 8 {
+        if size < 8 || at + size > first + commands_size {
             return Ok(Executable::Malformed);
         }
         match command {
             0x01 | 0x19 => {
-                if !macho_segment(header, at, command == 0x19, &mut ranges)? {
+                if !macho_segment(header, at, size, command == 0x19, ranges)? {
                     return Ok(Executable::Malformed);
                 }
             }
@@ -1403,6 +1475,9 @@ fn macho_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
             _ => match macho_command_ranges(command, wide) {
                 Some(MachoRanges::Pairs(what, pairs)) => {
                     for &(offset, length) in pairs {
+                        if ranges.stopped() {
+                            break;
+                        }
                         let Some([offset, length]) =
                             header.fields(at, [(offset, 4), (length, 4)])?
                         else {
@@ -1415,6 +1490,9 @@ fn macho_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
                 }
                 Some(MachoRanges::Tables(what, tables)) => {
                     for &(offset, count, entry) in tables {
+                        if ranges.stopped() {
+                            break;
+                        }
                         let Some([offset, count]) = header.fields(at, [(offset, 4), (count, 4)])?
                         else {
                             return Ok(Executable::Malformed);
@@ -1429,10 +1507,10 @@ fn macho_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
         }
         at += size;
     }
-    Ok(Executable::Ranges(ranges))
+    Ok(Executable::Walked)
 }
 
-fn fat_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
+fn fat_ranges(header: &mut Header, wide: bool, ranges: &mut Walk) -> io::Result<Executable> {
     let Some([arches]) = header.fields(0, [(4, 4)])? else {
         return Ok(Executable::Malformed);
     };
@@ -1444,24 +1522,28 @@ fn fat_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
     } else {
         (MACHO_FAT_ARCH, [(8, 4), (12, 4)])
     };
-    let mut ranges = vec![FileRange::table(
+    ranges.push(FileRange::table(
         "a fat Mach-O header",
         0,
         1,
         8 + arches * entry,
-    )];
+    ));
     for index in 0..arches {
+        if ranges.stopped() {
+            break;
+        }
         let Some([offset, size]) = header.fields(8 + index * entry, layout)? else {
             return Ok(Executable::Malformed);
         };
         ranges.push(FileRange::new("a fat Mach-O slice", offset, size));
     }
-    Ok(Executable::Ranges(ranges))
+    Ok(Executable::Walked)
 }
 
 fn executable_end(
     read_at: &mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
     prefix: u64,
+    walk: &mut Walk,
 ) -> io::Result<Executable> {
     let mut head = [0u8; 8];
     let read = read_up_to(read_at, &mut head, 0)?.min(usize::try_from(prefix).unwrap_or(8));
@@ -1475,7 +1557,7 @@ fn executable_end(
         big_endian: false,
     };
     if head.starts_with(b"MZ") {
-        return pe_ranges(&mut header);
+        return pe_ranges(&mut header, walk);
     }
     if head.starts_with(b"\x7FELF") && head.len() >= 7 && head[6] == 1 {
         header.big_endian = match head[5] {
@@ -1484,18 +1566,18 @@ fn executable_end(
             _ => return Ok(Executable::Malformed),
         };
         return match head[4] {
-            1 => elf_ranges(&mut header, false),
-            2 => elf_ranges(&mut header, true),
+            1 => elf_ranges(&mut header, false, walk),
+            2 => elf_ranges(&mut header, true, walk),
             _ => Ok(Executable::Malformed),
         };
     }
     if let Some(index) = MACHO_THIN.iter().position(|magic| head.starts_with(magic)) {
         header.big_endian = index < 2;
-        return macho_ranges(&mut header, index % 2 == 1);
+        return macho_ranges(&mut header, index % 2 == 1, walk);
     }
     if head.starts_with(&MACHO_FAT) || head.starts_with(&MACHO_FAT_64) {
         header.big_endian = true;
-        return fat_ranges(&mut header, head.starts_with(&MACHO_FAT_64));
+        return fat_ranges(&mut header, head.starts_with(&MACHO_FAT_64), walk);
     }
     Ok(Executable::Malformed)
 }
@@ -1547,30 +1629,26 @@ pub(crate) fn check_stub(
     if let Some((at, what, _)) = archive_signature_in(read_at, prefix, zip_records_count)? {
         return Ok(Stub::Holds { at, what });
     }
-    let ranges = match executable_end(read_at, prefix)? {
+    let mut walk = Walk {
+        prefix,
+        furthest: 0,
+        walked: 0,
+        stop: None,
+    };
+    match executable_end(read_at, prefix, &mut walk)? {
         Executable::Script => return Ok(Stub::Accepted),
         Executable::Malformed => return Ok(Stub::NotAnExecutable),
-        Executable::Ranges(ranges) => ranges,
-    };
-    if let Some(range) = ranges
-        .iter()
-        .find(|range| range.end.is_none_or(|end| end > prefix))
-    {
-        return Ok(Stub::RangeReaches {
+        Executable::Walked => {}
+    }
+    Ok(match walk.stop {
+        Some(Stop::Reaches(range)) => Stub::RangeReaches {
             what: range.what,
             start: range.start,
             end: range.end,
-        });
-    }
-    let end = ranges
-        .iter()
-        .filter_map(|range| range.end)
-        .max()
-        .unwrap_or(0);
-    Ok(if end == prefix {
-        Stub::Accepted
-    } else {
-        Stub::NotAtTheOverlay { end }
+        },
+        Some(Stop::TooMany) => Stub::TooManyRanges,
+        None if walk.furthest == prefix => Stub::Accepted,
+        None => Stub::NotAtTheOverlay { end: walk.furthest },
     })
 }
 

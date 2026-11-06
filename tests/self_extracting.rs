@@ -707,14 +707,19 @@ fn a_stub_without_a_whole_executable_header_is_refused() {
             put(&mut bytes, PE_OPTIONAL_START, &0u16.to_le_bytes());
             bytes
         }),
+        ("a PE debug directory that is no whole number of entries", {
+            let mut bytes = with_directory(stub(1000), PE_DEBUG, PE_SECTION_ADDRESS + 100, 30);
+            put(&mut bytes, PE_DATA + 100, &[0; 30]);
+            bytes
+        }),
+        ("Mach-O load commands longer than they declare", {
+            let mut bytes = macho_stub(1000);
+            put(&mut bytes, 20, &8u32.to_le_bytes());
+            bytes
+        }),
         ("a PE with no sections", {
             let mut bytes = stub(1000);
             put(&mut bytes, PE_HEADER + 6, &0u16.to_le_bytes());
-            bytes
-        }),
-        ("a PE section table past the stub", {
-            let mut bytes = stub(1000);
-            put(&mut bytes, PE_HEADER + 6, &96u16.to_le_bytes());
             bytes
         }),
         ("a PE pointer past the stub", pointer_past_the_stub),
@@ -925,6 +930,80 @@ fn a_real_executable_stub_works_only_with_the_archive_at_its_end() {
     }
 }
 
+fn macho_bomb(commands: u32, sections: u32) -> Vec<u8> {
+    let mut command = vec![0x41u8; 72];
+    put(&mut command, 0, &0x19u32.to_le_bytes());
+    put(&mut command, 4, &72u32.to_le_bytes());
+    put(&mut command, 40, &0u64.to_le_bytes());
+    put(&mut command, 48, &0u64.to_le_bytes());
+    put(&mut command, 64, &sections.to_le_bytes());
+    let mut bytes = b"\xcf\xfa\xed\xfe".to_vec();
+    for value in [0x0100_000Cu32, 0, 2, commands, 72 * commands, 0, 0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for _ in 0..commands {
+        bytes.extend_from_slice(&command);
+    }
+    bytes.resize(bytes.len() + 72 + 80 * sections as usize, 0x41);
+    bytes
+}
+
+fn elf_bomb(program_size: u16, count: u16) -> Vec<u8> {
+    let mut bytes = vec![0u8; 64];
+    put(&mut bytes, 0, b"\x7fELF\x02\x01\x01");
+    put(&mut bytes, 32, &64u64.to_le_bytes());
+    put(&mut bytes, 54, &program_size.to_le_bytes());
+    put(&mut bytes, 56, &count.to_le_bytes());
+    let mut program = vec![0u8; 56];
+    put(&mut program, 0, &1u32.to_le_bytes());
+    put(&mut program, 32, &64u64.to_le_bytes());
+    for _ in 0..count {
+        bytes.extend_from_slice(&program[..usize::from(program_size)]);
+    }
+    bytes.resize(bytes.len().max(64 + 56), 0);
+    bytes
+}
+
+#[test]
+fn header_bombs_are_refused_quickly() {
+    let folder = tempfile::tempdir().unwrap();
+    let zip = fs::read(data("zip-corpus/infozip-default.zip")).unwrap();
+    let seven = fs::read(data("parity/archives/7z.7z")).unwrap();
+    for (label, prefix, named) in [
+        (
+            "4096 segments of 4096 sections",
+            macho_bomb(4096, 4096),
+            "no whole PE, ELF or Mach-O header",
+        ),
+        (
+            "1024 segments of 1024 sections",
+            macho_bomb(1024, 1024),
+            "no whole PE, ELF or Mach-O header",
+        ),
+        (
+            "65535 program headers of size 0",
+            elf_bomb(0, 65535),
+            "no whole PE, ELF or Mach-O header",
+        ),
+        (
+            "65535 program headers inside the stub",
+            elf_bomb(56, 65535),
+            "more than 65536 file ranges",
+        ),
+    ] {
+        for (kind, archive) in [("ZIP", &zip), ("7z", &seven)] {
+            let path = written(folder.path(), "bomb.exe", &[&prefix[..], archive].concat());
+            let started = std::time::Instant::now();
+            assert_refused(&path, &[named], &format!("{label} before a {kind}"));
+            let elapsed = started.elapsed();
+            assert!(
+                elapsed < std::time::Duration::from_secs(1),
+                "{label} before a {kind} took {elapsed:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn a_header_range_that_reaches_the_archive_is_refused_by_name() {
     let mut debug = with_directory(stub(1000), PE_DEBUG, PE_SECTION_ADDRESS + 100, 28);
@@ -950,6 +1029,15 @@ fn a_header_range_that_reaches_the_archive_is_refused_by_name() {
             "an ELF null segment over the archive",
             elf_stub_with_null_segment(1000, 1000, 35),
             "ELF segment at offset 1000",
+        ),
+        (
+            "a PE section table past the stub",
+            {
+                let mut bytes = stub(1000);
+                put(&mut bytes, PE_HEADER + 6, &96u16.to_le_bytes());
+                bytes
+            },
+            "PE section table at offset",
         ),
         (
             "Mach-O symbols over the archive",
