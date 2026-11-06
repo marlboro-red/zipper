@@ -178,12 +178,13 @@ impl Staging {
             fs::metadata(&self.root)?.permissions().mode() & 0o777
         };
         let mut done = Vec::new();
-        let published = self.carry_out(&steps, &mut done, |_| {}).and_then(|()| {
-            #[cfg(unix)]
-            crate::unix_modes::apply_with_default(&self.destination, &created, default)
-                .inspect_err(|_| self.unlock_created(&steps))?;
-            Ok(())
-        });
+        #[cfg_attr(not(unix), expect(unused_mut))]
+        let mut published = self.carry_out(&steps, &mut done, |_| {});
+        #[cfg(unix)]
+        if published.is_ok() {
+            published = crate::unix_modes::apply_with_default(&self.destination, &created, default)
+                .inspect_err(|_| self.unlock_created(&steps));
+        }
         if let Err(error) = published {
             return Err(self.undo(&done, error));
         }
