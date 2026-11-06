@@ -214,7 +214,7 @@ impl Bits<'_> {
         }
     }
 
-    #[inline(always)]
+    #[cfg(kani)]
     fn bit(&mut self, probability: &mut u16) -> u32 {
         let (bit, updated) = self.bit_value(*probability);
         *probability = updated;
@@ -325,21 +325,39 @@ impl Bits<'_> {
     #[inline(always)]
     fn matched_literal(&mut self, probabilities: &mut [u16], match_byte: u8) -> usize {
         let mut symbol = 1usize;
-        let mut matched = usize::from(match_byte);
+        let mut matched = usize::from(match_byte) << 1;
         let mut offset = 0x100usize;
-        while symbol < 0x100 {
-            matched <<= 1;
+        let mut index = matched_literal_index(offset, matched, symbol);
+        let mut probability = probabilities[index];
+        while symbol < 0x80 {
             let match_bit = matched & offset;
-            let bit = self.bit(&mut probabilities[offset + match_bit + symbol]) as usize;
-            symbol = symbol << 1 | bit;
-            offset &= match_bit ^ bit.wrapping_sub(1);
+            matched <<= 1;
+            let offset_zero = offset & !match_bit;
+            let offset_one = offset & match_bit;
+            let index_zero = matched_literal_index(offset_zero, matched, symbol << 1);
+            let index_one = matched_literal_index(offset_one, matched, symbol << 1 | 1);
+            let zero = probabilities[index_zero];
+            let one = probabilities[index_one];
+            let (bit, updated) = self.bit_value(probability);
+            probabilities[index] = updated;
+            symbol = symbol << 1 | bit as usize;
+            offset &= match_bit ^ (bit as usize).wrapping_sub(1);
+            index = matched_literal_index(offset, matched, symbol);
+            probability = if bit == 0 { zero } else { one };
         }
-        symbol
+        let (bit, updated) = self.bit_value(probability);
+        probabilities[index] = updated;
+        symbol << 1 | bit as usize
     }
 
     fn finished_cleanly(&self) -> bool {
         self.code == 0
     }
+}
+
+#[inline(always)]
+fn matched_literal_index(offset: usize, matched: usize, symbol: usize) -> usize {
+    offset + (matched & offset) + symbol
 }
 
 struct LengthDecoder {
@@ -4474,6 +4492,72 @@ mod proofs {
         let symbol = range.matched_literal(&mut probabilities, kani::any());
         assert!((0x100..0x200).contains(&symbol));
         assert!(range.range >= TOP);
+    }
+
+    fn reachable_matched_literal_one_bit_at_a_time(
+        range: &mut Bits,
+        probabilities: &mut [u16],
+        match_byte: u8,
+    ) -> usize {
+        let mut symbol = 1usize;
+        let mut matched = usize::from(match_byte);
+        let mut offset = 0x100usize;
+        while symbol < 0x100 {
+            matched <<= 1;
+            let match_bit = matched & offset;
+            let index = offset + match_bit + symbol;
+            kani::assume(reachable(probabilities[index]));
+            let bit = range.bit(&mut probabilities[index]) as usize;
+            symbol = symbol << 1 | bit;
+            offset &= match_bit ^ bit.wrapping_sub(1);
+        }
+        symbol
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn matched_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities() {
+        let input: [u8; 8] = kani::any();
+        let probabilities: [u16; 0x300] = kani::any();
+        let match_byte: u8 = kani::any();
+        let range = normalized(&input);
+        let mut reference = Bits { ..range };
+        let mut reference_table = probabilities;
+        let expected = reachable_matched_literal_one_bit_at_a_time(
+            &mut reference,
+            &mut reference_table,
+            match_byte,
+        );
+        let mut pipelined = Bits { ..range };
+        let mut pipelined_table = probabilities;
+        assert_eq!(
+            pipelined.matched_literal(&mut pipelined_table, match_byte),
+            expected
+        );
+        assert_eq!(pipelined.parts(), reference.parts());
+        let index: usize = kani::any();
+        kani::assume(index < 0x300);
+        assert_eq!(pipelined_table[index], reference_table[index]);
+    }
+
+    #[kani::proof]
+    fn matched_literal_children_stay_in_their_coder_apart_from_the_entry_they_follow() {
+        let symbol: usize = kani::any();
+        kani::assume((1..0x80).contains(&symbol));
+        let offset = if kani::any() { 0x100 } else { 0 };
+        let matched: usize = kani::any();
+        let index = matched_literal_index(offset, matched, symbol);
+        assert!(index < 0x300);
+        let match_bit = matched & offset;
+        let children = [
+            (offset & !match_bit, symbol << 1),
+            (offset & match_bit, symbol << 1 | 1),
+        ];
+        for (child_offset, child) in children {
+            let child_index = matched_literal_index(child_offset, matched << 1, child);
+            assert!(child_index < 0x300);
+            assert_ne!(child_index, index);
+        }
     }
 
     fn distance_tables() -> ChunkState {
