@@ -178,7 +178,8 @@ The bytes before the first record are then read and refused when the offsets can
 
 - The offsets move by some bytes, but the first record starts past that point, so the offsets count only part of the prefix.
 - The archive has no entries.
-- The prefix holds a ZIP local header, central record, end record, ZIP64 end record or ZIP64 locator signature, or a 7z signature, starting anywhere before the first record. 7-Zip searches a prefix for a local header or an end record and opens the first archive it finds there, while Python and bsdtar read the archive the end record names. Info-ZIP's `unzipsfx` stub holds none of these signatures. Executables that hold one, such as Info-ZIP `zip` and 7-Zip themselves, are refused as stubs.
+- The prefix starts like neither a PE, ELF or Mach-O executable nor a `#!` script, and is not the 4-byte spanning signature. bsdtar and 7-Zip read a cpio, ar, ISO or xar archive at the start of a file instead of the ZIP after it.
+- The prefix holds a ZIP local header, central record, end record, ZIP64 end record or ZIP64 locator signature, or a 7z, CAB or RAR signature, starting anywhere before the first record. bsdtar and 7-Zip search an executable for a CAB. 7-Zip searches a prefix for a local header or an end record and opens the first archive it finds there, while Python and bsdtar read the archive the end record names. Info-ZIP's `unzipsfx` stub holds none of these signatures. Executables that hold one, such as Info-ZIP `zip` and 7-Zip themselves, are refused as stubs.
 
 The error names the offset at fault. Encrypted entries stay refused. Stubs are not limited in size, and the prefix is read once, 64 KiB at a time. A split set may hold such a prefix in its first volume, but its offsets may not move. An end record that leaves its values to ZIP64 records with no sentinel, as Info-ZIP's piped output does, is read only without a moved directory.
 

@@ -222,7 +222,7 @@ fn a_zip_after_a_stub_extracts_as_the_zip_alone_whether_or_not_its_offsets_count
     for name in ZIPS {
         let archive = fs::read(data(name)).unwrap();
         let whole = extracted_tree(&data(name));
-        for length in [1, 2, 3, 4, 5, 4096, 70_000] {
+        for length in [2, 3, 4, 5, 4096, 70_000] {
             let prefix = stub(length);
             let mut cases = Vec::new();
             if !name.contains("one-piece") {
@@ -307,6 +307,23 @@ fn a_prefix_that_hides_another_archive_is_refused_by_offset() {
         ),
         ("an empty ZIP", [&head[..], empty].concat(), "offset 1000"),
         ("a 7z", [&head[..], &seven_zip].concat(), "offset 1000"),
+        (
+            "a CAB in a stub",
+            [&head[..], b"MSCF\0\0\0\0", &head[..]].concat(),
+            "offset 1000",
+        ),
+        (
+            "a RAR in a stub",
+            [&head[..], b"Rar!\x1A\x07\x01\x00", &head[..]].concat(),
+            "offset 1000",
+        ),
+        ("an ar archive", b"!<arch>\n".repeat(20), "offset 0"),
+        (
+            "a cpio archive",
+            [&b"070701"[..], &[b'0'; 200]].concat(),
+            "offset 0",
+        ),
+        ("zeros, as an ISO starts", vec![0; 40_000], "offset 0"),
     ] {
         let length = prefix.len() as u32;
         for (kind, bytes) in [
@@ -491,4 +508,27 @@ fn a_7z_after_a_stub_that_is_also_a_zip_is_refused() {
     );
     let at = format!("offset {}", 1000 + small.len());
     assert_refused(&path, &[&at], "ZIP in the stub, then 7z");
+    let padded = [&stub(1000)[..], &seven, &zip, &[0; 65536]].concat();
+    let path = written(folder.path(), "zip-in-the-tail.exe", &padded);
+    assert_refused(&path, &["offset 1000"], "ZIP 65558 bytes from the end");
+    let Some(binary) = sevenzip() else {
+        return;
+    };
+    let source = folder.path().join("source");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("a.txt"), b"in the 7z\n").unwrap();
+    fs::copy(data("parity/archives/zip.zip"), source.join("inner.zip")).unwrap();
+    let holding = folder.path().join("holding.7z");
+    let status = Command::new(binary)
+        .args(["a", "-bd", "-mx0", "-ms=off"])
+        .arg(&holding)
+        .arg(source.join("a.txt"))
+        .arg(source.join("inner.zip"))
+        .stdout(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let bytes = [&stub(1000)[..], &fs::read(&holding).unwrap()].concat();
+    let path = written(folder.path(), "holding.exe", &bytes);
+    assert_refused(&path, &["offset 1000"], "7z that stores a ZIP");
 }

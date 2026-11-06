@@ -238,14 +238,19 @@ fn shift_entries(entries: &mut [CentralEntry], shift: u64) -> Result<()> {
     Ok(())
 }
 
-const HIDDEN_RECORDS: [(&[u8], &str); 6] = [
+const HIDDEN_RECORDS: [(&[u8], &str); 8] = [
     (b"PK\x03\x04", "a ZIP local header"),
     (b"PK\x01\x02", "a ZIP central record"),
     (b"PK\x05\x06", "a ZIP end record"),
     (b"PK\x06\x06", "a ZIP64 end record"),
     (b"PK\x06\x07", "a ZIP64 locator"),
     (b"7z\xBC\xAF\x27\x1C", "a 7z signature"),
+    (b"MSCF\0\0\0\0", "a CAB signature"),
+    (b"Rar!\x1A\x07", "a RAR signature"),
 ];
+// SPEC(APPNOTE 8.5.3, 8.5.4): a split archive may start with the spanning signature, or with PK00 when it fits one piece.
+const SPANNING_MARKERS: [&[u8; 4]; 2] = [b"PK\x07\x08", b"PK00"];
+const SCRIPT: &[u8] = b"#!";
 const PREFIX_SCAN_CHUNK: usize = 64 * 1024;
 
 fn archive_start<R: Read + Seek>(
@@ -275,6 +280,18 @@ fn archive_start<R: Read + Seek>(
             "ZIP has {first} bytes before its first record, and they hold {record} at offset {at}, so another reader may see a different archive"
         );
     }
+    file.seek(SeekFrom::Start(0))?;
+    let mut head = Vec::with_capacity(4);
+    file.take(first.min(4)).read_to_end(&mut head)?;
+    let spanning_marker = first == 4 && SPANNING_MARKERS.iter().any(|marker| head == marker[..]);
+    let executable = crate::native_7z::EXECUTABLE_MAGICS
+        .iter()
+        .chain(&[SCRIPT])
+        .any(|magic| head.starts_with(magic));
+    ensure!(
+        spanning_marker || executable,
+        "ZIP has {first} bytes before its first record that start at offset 0 like neither an executable nor a script, so another reader may read them as an archive"
+    );
     Ok(first)
 }
 

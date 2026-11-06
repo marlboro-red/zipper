@@ -913,7 +913,7 @@ fn decode_header(file: &mut ArchiveFile, streams: &Streams) -> Result<Vec<u8>> {
     Ok(decoded)
 }
 
-const EXECUTABLE_MAGICS: [&[u8]; 7] = [
+pub(crate) const EXECUTABLE_MAGICS: [&[u8]; 7] = [
     b"MZ",
     b"\x7FELF",
     b"\xFE\xED\xFA\xCE",
@@ -926,7 +926,8 @@ const EXECUTABLE_MAGICS: [&[u8]; 7] = [
 const STUB_SEARCH_LIMIT: u64 = 8 << 20;
 const STUB_SCAN_CHUNK: usize = 64 * 1024;
 const ZIP_END_SIGNATURE: &[u8; 4] = b"PK\x05\x06";
-const ZIP_TAIL: u64 = 22 + u16::MAX as u64;
+// EXTERNAL(Python zipfile): it looks for an end record in the last 64 KiB and 22 bytes.
+const ZIP_TAIL: u64 = 22 + (1 << 16);
 
 fn read_up_to(file: &ArchiveFile, buffer: &mut [u8], offset: u64) -> std::io::Result<usize> {
     let mut filled = 0;
@@ -991,16 +992,16 @@ fn archive_start(file: &ArchiveFile) -> Result<Option<u64>> {
     }
 }
 
-fn ensure_no_zip_follows(file: &ArchiveFile, base: u64, end: u64) -> Result<()> {
+fn ensure_no_zip_ends_the_file(file: &ArchiveFile, base: u64) -> Result<()> {
     let length = file.len()?;
-    let from = end.max(length.saturating_sub(ZIP_TAIL));
+    let from = length.saturating_sub(ZIP_TAIL);
     let mut tail = vec![0u8; usize::try_from(length.saturating_sub(from)).unwrap_or(0)];
     let read = read_up_to(file, &mut tail, from)?;
     ensure!(
         !tail[..read]
             .windows(4)
             .any(|window| window == ZIP_END_SIGNATURE),
-        "the 7z archive at offset {base} after an executable stub is followed by a ZIP end record, so other readers may see a ZIP instead"
+        "the file with a 7z archive at offset {base} after an executable stub has a ZIP end record in its last 64 KiB, so other readers may see a ZIP instead"
     );
     Ok(())
 }
@@ -1041,6 +1042,9 @@ fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
     let file = crate::volumes::open(path)?;
     let base = archive_start(&file)?.unwrap_or(0);
     ensure_no_zip_in_stub(&file, base)?;
+    if base > 0 {
+        ensure_no_zip_ends_the_file(&file, base)?;
+    }
     let mut file = file.after(base)?;
     let length = file.len()?;
     let mut start = [0u8; 32];
@@ -1066,9 +1070,6 @@ fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
         bail!("7z header lies outside the file")
     };
     file.ensure_ends_at(header_start + size)?;
-    if base > 0 {
-        ensure_no_zip_follows(&file, base, header_start + size)?;
-    }
     ensure!(size <= MAX_HEADER, "7z header is larger than 64 MiB");
     ensure!(size > 0, "empty 7z archives have no header");
     file.seek(SeekFrom::Start(header_start))?;
