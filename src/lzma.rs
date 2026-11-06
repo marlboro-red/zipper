@@ -269,12 +269,21 @@ impl Bits<'_> {
     }
 
     #[inline(always)]
-    fn tree(&mut self, probabilities: &mut [u16], bits: u32) -> u32 {
+    fn tree<const N: usize>(&mut self, probabilities: &mut [u16; N]) -> u32 {
+        let bits = N.trailing_zeros();
         let mut index = 1usize;
-        for _ in 0..bits {
-            index = index << 1 | self.bit(&mut probabilities[index]) as usize;
+        let mut probability = probabilities[index];
+        for _ in 1..bits {
+            let zero = probabilities[index << 1];
+            let one = probabilities[index << 1 | 1];
+            let (bit, updated) = self.bit_value(probability);
+            probabilities[index] = updated;
+            index = index << 1 | bit as usize;
+            probability = if bit == 0 { zero } else { one };
         }
-        index as u32 - (1 << bits)
+        let (bit, updated) = self.bit_value(probability);
+        probabilities[index] = updated;
+        (index << 1 | bit as usize) as u32 - (1 << bits)
     }
 
     #[inline(always)]
@@ -348,12 +357,12 @@ impl LengthDecoder {
     #[inline(always)]
     fn decode(&mut self, range: &mut Bits, position_state: usize) -> usize {
         if range.branching_bit(&mut self.choice) == 0 {
-            return range.tree(&mut self.low[position_state], 3) as usize;
+            return range.tree(&mut self.low[position_state]) as usize;
         }
         if range.branching_bit(&mut self.choice2) == 0 {
-            return 8 + range.tree(&mut self.middle[position_state], 3) as usize;
+            return 8 + range.tree(&mut self.middle[position_state]) as usize;
         }
-        16 + range.tree(&mut self.high, 8) as usize
+        16 + range.tree(&mut self.high) as usize
     }
 }
 
@@ -572,7 +581,7 @@ impl ChunkState {
 
     fn decode_distance(&mut self, range: &mut Bits, length: usize) -> usize {
         let length_state = length.min(LENGTH_STATES - 1);
-        let slot = range.tree(&mut self.distance_slot[length_state], 6) as usize;
+        let slot = range.tree(&mut self.distance_slot[length_state]) as usize;
         if slot < 4 {
             return slot;
         }
@@ -4271,7 +4280,7 @@ mod proofs {
         let value = if reverse {
             range.reverse_tree(&mut probabilities, bits)
         } else {
-            range.tree(&mut probabilities, bits)
+            range.tree(&mut probabilities)
         };
         assert!(value < 1 << bits);
         assert!(range.position <= bits as usize);
@@ -4285,6 +4294,53 @@ mod proofs {
         tree_stays_inside::<64>(6, false);
         tree_stays_inside::<256>(8, false);
         tree_stays_inside::<{ 1 << ALIGN_BITS }>(ALIGN_BITS, true);
+    }
+
+    fn reachable_tree_one_bit_at_a_time(
+        range: &mut Bits,
+        probabilities: &mut [u16],
+        bits: u32,
+    ) -> u32 {
+        let mut index = 1usize;
+        for _ in 0..bits {
+            kani::assume(reachable(probabilities[index]));
+            index = index << 1 | range.bit(&mut probabilities[index]) as usize;
+        }
+        index as u32 - (1 << bits)
+    }
+
+    fn tree_decodes_as_one_bit_at_a_time<const N: usize>(bits: u32) {
+        let input: [u8; 8] = kani::any();
+        let probabilities: [u16; N] = kani::any();
+        let range = normalized(&input[..bits as usize]);
+        let mut reference = Bits { ..range };
+        let mut reference_table = probabilities;
+        let expected = reachable_tree_one_bit_at_a_time(&mut reference, &mut reference_table, bits);
+        let mut pipelined = Bits { ..range };
+        let mut pipelined_table = probabilities;
+        assert_eq!(pipelined.tree(&mut pipelined_table), expected);
+        assert_eq!(pipelined.parts(), reference.parts());
+        let index: usize = kani::any();
+        kani::assume(index < N);
+        assert_eq!(pipelined_table[index], reference_table[index]);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn length_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities() {
+        tree_decodes_as_one_bit_at_a_time::<8>(3);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn slot_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities() {
+        tree_decodes_as_one_bit_at_a_time::<64>(6);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn high_length_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities() {
+        tree_decodes_as_one_bit_at_a_time::<256>(8);
     }
 
     #[kani::proof]
