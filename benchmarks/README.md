@@ -14,7 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
-| 2026-11-06 | [LZMA decoder state kept in registers](lzma/kernel-state/README.md) | Kept one change. Zipper's decoder takes 1.09 times liblzma's time on the probe stream, against 1.29 times before. Three more changes stayed out on overlapping ranges, in a loaded session. No reader uses it yet. |
+| 2026-11-06 | [LZMA decoder state kept in registers](lzma/kernel-state/README.md) | Kept one change. Zipper's decoder takes 1.09 times liblzma's time on the probe stream, against 1.29 times before, and 434.3 ms on an idle machine. An idle re-time rejected three more changes. No reader uses it yet. |
 | 2026-11-05 | [LZMA decoder hot loop](lzma/hot-loop/README.md) | Kept nine changes. Zipper's own decoder is 1.56× faster than its first version and still 1.09× slower than liblzma 5.8.4. 7-Zip took about 310 ms against 437 ms. No reader uses it yet. |
 
 ## 7z reader

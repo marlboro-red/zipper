@@ -1,6 +1,6 @@
 # LZMA decoder state kept in registers
 
-**Kept one change. With the range coder's state owned by the decode kernel, Zipper's LZMA decoder takes 1.09 times liblzma's time on the probe stream, against 1.29 times before.** The session was loaded by other agents, so the verdict rests on the ratio to liblzma in the same round, not on absolute times. Three further changes stayed out because their ranges overlap.
+**Kept one change. With the range coder's state owned by the decode kernel, Zipper's LZMA decoder takes 1.09 times liblzma's time on the probe stream, against 1.29 times before, and 434.3 ms on an idle machine.** The first session was loaded by other agents, so its verdict rests on the ratio to liblzma in the same round. An idle re-time rejected the three further changes. Two moved nothing, and the third overlaps its parent's range.
 
 ## Question
 
@@ -34,17 +34,26 @@ Raw samples are in [`samples.json`](samples.json). Times are in milliseconds.
 
 The absolute times swing with the load. On the three samples of `da108d5` that saw no other busy process, Zipper took 514.0 to 519.7 ms against 399.8 to 403.7 ms for liblzma. The hot-loop record measured 436.9 ms for the decoder of that time, so the stores it removed had come back by `da108d5`. When they came back is not bisected.
 
+A second session ran on an idle machine, with Spotlight off and no agents running. 3 of its 108 samples saw another process at 25% CPU or more, and that process was the session's own shell. [`run.py`](run.py) ran nine rounds of `d6b83f6` and the three changes on top of it, in rotating order, leaving 24 measured samples each. Raw samples are in [`samples-quiet.json`](samples-quiet.json).
+
+| Binary | Samples | Zipper median | Zipper range | liblzma median | Ratio median |
+| --- | ---: | ---: | --- | ---: | ---: |
+| `d6b83f6` | 24 | 434.3 | 430.8 to 436.9 | 399.2 | 1.088 |
+| `9656259` | 24 | 434.5 | 431.8 to 438.0 | 399.1 | 1.088 |
+| `53ab48a` | 24 | 435.5 | 432.6 to 438.2 | 401.2 | 1.086 |
+| `fbead1c` | 24 | 431.6 | 427.5 to 434.1 | 400.6 | 1.076 |
+
 The disassembly of `decode_symbols` shows the change. At `da108d5` it holds 2,256 instructions and 221 stores. At `d6b83f6` it holds 1,972 instructions and 88 stores, and the matched-literal loop keeps `range`, `code` and the input position in registers.
 
 ## Decision
 
 Kept `d6b83f6`. Its whole ratio range lies below the base's. Passing `Bits` by value was not enough, because the ABI passes a 48-byte struct by pointer, so the kernel moves it into its own local and returns its parts on every exit. The LZMA2 error-latch fix found by the same review ships with it.
 
-`9656259`, `53ab48a` and `fbead1c` stayed out. Each one's ratio range overlaps the range of the commit before it, so no gain is established. `53ab48a` also grows the kernel by 231 instructions. They wait for a re-timing on an idle machine.
+`9656259`, `53ab48a` and `fbead1c` were reverted. On the idle machine the two literal unrollings moved the median by less than 1.3 ms, inside the ranges, and `53ab48a` also grows the kernel by 231 instructions. `fbead1c` lowered the median by 3.9 ms, 0.9%, but its range overlaps the range of `53ab48a`, so no gain is established. `d6b83f6` decodes the probe in 434.3 ms on the idle machine, back to the 436.9 ms the hot-loop record measured.
 
 ## Limits
 
-One Mac, one stream and one loaded session. The ratio to liblzma cancels load that hits both decoders alike, but not load that lands on one of them, which is why some ranges reach 1.6 or fall to 0.6. Only 3 to 12 samples per binary saw an idle machine. 7-Zip was not measured in this session. Linux and Windows were not measured. No reader uses the decoder yet.
+One Mac and one stream, in one loaded session and one idle session. The ratio to liblzma cancels load that hits both decoders alike, but not load that lands on one of them, which is why some ranges reach 1.6 or fall to 0.6. 7-Zip was not measured in this session. Linux and Windows were not measured. No reader uses the decoder yet.
 
 ## Reproduce
 
