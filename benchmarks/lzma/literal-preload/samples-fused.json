@@ -1,0 +1,488 @@
+[
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 407.186333,
+  "liblzma": 403.351833,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 408.990875,
+  "liblzma": 400.32725,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 407.786625,
+  "liblzma": 400.216291,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 404.913541,
+  "liblzma": 401.704625,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 404.671792,
+  "liblzma": 397.870416,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 405.910708,
+  "liblzma": 397.830791,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 408.938416,
+  "liblzma": 401.781458,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 409.431667,
+  "liblzma": 397.43925,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 409.384209,
+  "liblzma": 398.259,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 407.522667,
+  "liblzma": 401.98375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 408.829458,
+  "liblzma": 398.094667,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 409.489542,
+  "liblzma": 399.232875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 406.383125,
+  "liblzma": 402.595875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 409.48075,
+  "liblzma": 399.093541,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 409.700292,
+  "liblzma": 398.93875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 406.043167,
+  "liblzma": 400.574959,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 407.624625,
+  "liblzma": 398.454709,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 409.010375,
+  "liblzma": 397.732666,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 407.406083,
+  "liblzma": 400.510917,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 407.825125,
+  "liblzma": 398.727166,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 407.537542,
+  "liblzma": 398.632125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 406.922209,
+  "liblzma": 402.438916,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 407.783833,
+  "liblzma": 399.331875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 407.547416,
+  "liblzma": 399.480584,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 407.450667,
+  "liblzma": 402.663375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 407.099708,
+  "liblzma": 399.058667,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 410.134,
+  "liblzma": 398.823208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 407.97,
+  "liblzma": 401.242625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 407.633209,
+  "liblzma": 399.274334,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 408.109209,
+  "liblzma": 398.296375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 405.510542,
+  "liblzma": 402.217083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 405.567166,
+  "liblzma": 398.197583,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 406.800458,
+  "liblzma": 398.223541,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 406.411834,
+  "liblzma": 402.159667,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 406.919458,
+  "liblzma": 398.64125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 408.912209,
+  "liblzma": 399.079667,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 407.085875,
+  "liblzma": 402.011083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 408.719667,
+  "liblzma": 398.717375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 409.809,
+  "liblzma": 397.711625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 401.373666,
+  "liblzma": 400.215375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 403.081,
+  "liblzma": 398.058833,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 404.619833,
+  "liblzma": 397.432042,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 407.13225,
+  "liblzma": 401.805833,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 407.840792,
+  "liblzma": 399.181,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 406.245375,
+  "liblzma": 399.804875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 406.298167,
+  "liblzma": 402.000167,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 406.863667,
+  "liblzma": 398.096042,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 409.157166,
+  "liblzma": 398.2535,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "138e57b",
+  "inner": 0,
+  "zipper": 407.238834,
+  "liblzma": 402.256292,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "138e57b",
+  "inner": 1,
+  "zipper": 408.546708,
+  "liblzma": 399.373083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "138e57b",
+  "inner": 2,
+  "zipper": 410.217,
+  "liblzma": 399.011292,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "fused",
+  "inner": 0,
+  "zipper": 404.448125,
+  "liblzma": 401.1655,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "fused",
+  "inner": 1,
+  "zipper": 405.09375,
+  "liblzma": 397.793083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "fused",
+  "inner": 2,
+  "zipper": 406.977375,
+  "liblzma": 398.190125,
+  "busy": []
+ }
+]
