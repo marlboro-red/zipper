@@ -216,18 +216,25 @@ impl Bits<'_> {
 
     #[inline(always)]
     fn bit(&mut self, probability: &mut u16) -> u32 {
-        let bound = (self.range >> PROBABILITY_BITS) * u32::from(*probability);
+        let (bit, updated) = self.bit_value(*probability);
+        *probability = updated;
+        bit
+    }
+
+    #[inline(always)]
+    fn bit_value(&mut self, probability: u16) -> (u32, u16) {
+        let bound = (self.range >> PROBABILITY_BITS) * u32::from(probability);
         let bit = u32::from(self.code >= bound);
         let mask = 0u32.wrapping_sub(bit);
         self.range = (bound & !mask) | (self.range.wrapping_sub(bound) & mask);
         self.code -= bound & mask;
-        let toward_zero = *probability >> MOVE_BITS;
-        let toward_one = (PROBABILITY_ONE - *probability) >> MOVE_BITS;
-        *probability = probability
+        let toward_zero = probability >> MOVE_BITS;
+        let toward_one = (PROBABILITY_ONE - probability) >> MOVE_BITS;
+        let updated = probability
             .wrapping_add(toward_one & !(mask as u16))
             .wrapping_sub(toward_zero & mask as u16);
         self.normalize();
-        bit
+        (bit, updated)
     }
 
     #[inline(always)]
@@ -285,10 +292,18 @@ impl Bits<'_> {
     #[inline(always)]
     fn literal(&mut self, probabilities: &mut [u16]) -> usize {
         let mut symbol = 1usize;
-        while symbol < 0x100 {
-            symbol = symbol << 1 | self.bit(&mut probabilities[symbol]) as usize;
+        let mut probability = probabilities[symbol];
+        while symbol < 0x80 {
+            let zero = probabilities[symbol << 1];
+            let one = probabilities[symbol << 1 | 1];
+            let (bit, updated) = self.bit_value(probability);
+            probabilities[symbol] = updated;
+            symbol = symbol << 1 | bit as usize;
+            probability = if bit == 0 { zero } else { one };
         }
-        symbol
+        let (bit, updated) = self.bit_value(probability);
+        probabilities[symbol] = updated;
+        symbol << 1 | bit as usize
     }
 
     #[inline(always)]
@@ -4314,6 +4329,33 @@ mod proofs {
         let symbol = range.literal(&mut probabilities);
         assert!((0x100..0x200).contains(&symbol));
         assert!(range.range >= TOP);
+    }
+
+    fn reachable_literal_one_bit_at_a_time(range: &mut Bits, probabilities: &mut [u16]) -> usize {
+        let mut symbol = 1usize;
+        while symbol < 0x100 {
+            kani::assume(reachable(probabilities[symbol]));
+            symbol = symbol << 1 | range.bit(&mut probabilities[symbol]) as usize;
+        }
+        symbol
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn plain_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities() {
+        let input: [u8; 8] = kani::any();
+        let probabilities: [u16; 0x100] = kani::any();
+        let range = normalized(&input);
+        let mut reference = Bits { ..range };
+        let mut reference_table = probabilities;
+        let expected = reachable_literal_one_bit_at_a_time(&mut reference, &mut reference_table);
+        let mut pipelined = Bits { ..range };
+        let mut pipelined_table = probabilities;
+        assert_eq!(pipelined.literal(&mut pipelined_table), expected);
+        assert_eq!(pipelined.parts(), reference.parts());
+        let index: usize = kani::any();
+        kani::assume(index < 0x100);
+        assert_eq!(pipelined_table[index], reference_table[index]);
     }
 
     #[kani::proof]
