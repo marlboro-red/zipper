@@ -762,3 +762,100 @@ fn a_destination_folder_that_cannot_be_read_is_named() {
         common::make_tree_deletable(root.path());
     }
 }
+
+#[cfg(target_os = "macos")]
+struct DiskImage {
+    mount: PathBuf,
+    _folder: tempfile::TempDir,
+}
+
+#[cfg(target_os = "macos")]
+impl DiskImage {
+    fn new(filesystem: &str) -> DiskImage {
+        let folder = tempfile::tempdir().unwrap();
+        let image = folder.path().join("disk.dmg");
+        let mount = folder.path().join("mount");
+        fs::create_dir(&mount).unwrap();
+        let run = |arguments: &[&std::ffi::OsStr]| {
+            let status = std::process::Command::new("hdiutil")
+                .args(arguments)
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "hdiutil {arguments:?}");
+        };
+        run(&[
+            "create".as_ref(),
+            "-size".as_ref(),
+            "40m".as_ref(),
+            "-fs".as_ref(),
+            filesystem.as_ref(),
+            "-volname".as_ref(),
+            "ZIPPER".as_ref(),
+            image.as_os_str(),
+        ]);
+        run(&[
+            "attach".as_ref(),
+            "-nobrowse".as_ref(),
+            "-mountpoint".as_ref(),
+            mount.as_os_str(),
+            image.as_os_str(),
+        ]);
+        DiskImage {
+            mount,
+            _folder: folder,
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for DiskImage {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("hdiutil")
+            .args(["detach".as_ref(), "-force".as_ref(), self.mount.as_os_str()])
+            .stdout(std::process::Stdio::null())
+            .status();
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "attaches FAT32 and exFAT disk images with hdiutil"]
+fn a_merge_into_fat_or_exfat_is_refused_before_any_change() {
+    for (filesystem, named) in [("MS-DOS FAT32", "msdos"), ("ExFAT", "exfat")] {
+        let disk = DiskImage::new(filesystem);
+        for format in &FORMATS {
+            let archive = disk.mount.join(format!("a.{}", format.name));
+            (format.write)(
+                &archive,
+                &[
+                    Member::File("old", b"new"),
+                    Member::File("added", b"added"),
+                    Member::File("sub/x", b"x"),
+                ],
+            );
+            let destination = disk.mount.join(format!("out-{}", format.name));
+            fs::create_dir_all(destination.join("sub")).unwrap();
+            fs::write(destination.join("old"), b"old").unwrap();
+            fs::write(destination.join("kept"), b"kept").unwrap();
+            let before = snapshot(&destination);
+            let error = (format.extract)(&archive, &destination, Existing::Overwrite).unwrap_err();
+            let message = format!("{error:#}");
+            assert!(
+                message.contains(named) && message.contains("new folder"),
+                "{filesystem} {}: {message}",
+                format.name
+            );
+            assert_eq!(
+                snapshot(&destination),
+                before,
+                "{filesystem} {}: {message}",
+                format.name
+            );
+            let fresh = disk.mount.join(format!("fresh-{}", format.name));
+            (format.extract)(&archive, &fresh, Existing::Overwrite).unwrap();
+            assert_eq!(fs::read(fresh.join("old")).unwrap(), b"new");
+            assert_eq!(fs::read(fresh.join("sub/x")).unwrap(), b"x");
+        }
+    }
+}

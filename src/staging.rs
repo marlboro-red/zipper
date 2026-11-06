@@ -14,6 +14,9 @@ pub enum Existing {
     #[default]
     Refuse,
     /// Extract into an existing directory, or the directory a symlink names.
+    /// A destination on FAT or exFAT on macOS, or on a filesystem that cannot
+    /// rename without replacing, is refused before decoding, because a merge
+    /// there cannot be undone exactly.
     /// A failed decode replaces nothing. File and directory conflicts, and
     /// folders on another filesystem, fail before any replacement. Then each
     /// archive file replaces the file of the same name by rename. A rename
@@ -22,8 +25,8 @@ pub enum Existing {
     /// file, link, folder and mode it had, and the error names the path that
     /// failed. Another program that changes the destination or the staging
     /// folder during extraction can defeat the undo. If an undo fails, the
-    /// error names each path left changed and the staging folder that keeps
-    /// the replaced files. Existing directories keep their mode, and files
+    /// error names each path left changed and the staging folder, which is
+    /// kept with everything not moved back. Existing directories keep their mode, and files
     /// the archive does not name are left alone.
     Overwrite,
     /// Extract into an existing directory, leaving out every archive file
@@ -131,6 +134,9 @@ pub(crate) fn stage(
                 folder.display()
             ))
         })?;
+    if merge {
+        Staging::ensure_exact_merge(destination, temp.path())?;
+    }
     Ok(Staging {
         root: temp.path().to_owned(),
         temp: std::sync::Mutex::new(Some(temp)),
@@ -142,6 +148,59 @@ pub(crate) fn stage(
 }
 
 impl Staging {
+    fn ensure_exact_merge(destination: &Path, staging: &Path) -> Result<()> {
+        let refused = |filesystem: &str| {
+            crate::DestinationRefused(format!(
+                "{} is on {filesystem}, where a merge cannot be made exact; \
+                 extract into a new folder instead",
+                destination.display()
+            ))
+        };
+        #[cfg(target_vendor = "apple")]
+        {
+            let stats = rustix::fs::statfs(destination).with_context(|| {
+                format!("cannot read the filesystem of {}", destination.display())
+            })?;
+            let name: String = stats
+                .f_fstypename
+                .iter()
+                .take_while(|&&character| character != 0)
+                .map(|&character| char::from(character.to_ne_bytes()[0]))
+                .collect();
+            if ["msdos", "exfat"].contains(&name.as_str()) {
+                bail!(refused(&name));
+            }
+        }
+        #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
+        {
+            let (first, second) = (staging.join("first"), staging.join("second"));
+            fs::write(&first, b"").with_context(|| format!("cannot write {}", first.display()))?;
+            let renamed = rustix::fs::renameat_with(
+                rustix::fs::CWD,
+                &first,
+                rustix::fs::CWD,
+                &second,
+                rustix::fs::RenameFlags::NOREPLACE,
+            )
+            .map_err(std::io::Error::from);
+            let _ = fs::remove_file(&first);
+            let _ = fs::remove_file(&second);
+            match renamed {
+                Err(error) if unsupported(&error) => {
+                    bail!(refused("a filesystem that cannot rename without replacing"))
+                }
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("cannot rename in {}", staging.display()));
+                }
+                Ok(()) => {}
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_vendor = "apple")))]
+        let _ = (destination, staging, refused);
+        Ok(())
+    }
+
     pub(crate) fn path(&self) -> &Path {
         &self.root
     }
@@ -266,8 +325,13 @@ impl Staging {
         aside: PathBuf,
         done: &mut Vec<Done>,
     ) -> Result<()> {
-        Self::move_into_place(old, aside.clone(), done)
-            .with_context(|| format!("cannot replace {}", placed.display()))?;
+        Self::move_into_place(old, aside.clone(), done).map_err(|error| {
+            anyhow::anyhow!(
+                "cannot move {} aside to replace it: {}",
+                placed.display(),
+                error.root_cause()
+            )
+        })?;
         Self::ensure_replaced_no_folder(&aside, &placed)?;
         Self::move_into_place(staged, placed, done)
     }
@@ -292,7 +356,7 @@ impl Staging {
                     .tempdir_in(&self.root)
                     .with_context(|| format!("cannot make a folder in {}", self.root.display()))?
                     .keep();
-                let swaps = swap_works(&created);
+                let swaps = swap_works(&created)?;
                 folder.insert((created, swaps))
             }
         };
@@ -314,8 +378,18 @@ impl Staging {
             .rev()
             .filter_map(|step| {
                 let undone = match step {
-                    Done::Moved { from, to, moved } => ensure_unchanged(to, *moved)
-                        .and_then(|()| rename_without_replacing(to, from)),
+                    Done::Moved { from, to, moved } => {
+                        ensure_unchanged(to, *moved).and_then(|()| {
+                            rename_without_replacing(to, from).map_err(|error| {
+                                anyhow::anyhow!(
+                                    "cannot move {} back to {}: {}",
+                                    to.display(),
+                                    from.display(),
+                                    error.root_cause()
+                                )
+                            })
+                        })
+                    }
                     Done::Swapped {
                         staged,
                         placed,
@@ -345,7 +419,7 @@ impl Staging {
             let _ = temp.keep();
         }
         error.context(format!(
-            "extraction failed and could not undo {}; {} keeps the files it replaced",
+            "extraction failed and could not undo {}; {} is kept with everything not moved back",
             left.join(", "),
             self.root.display()
         ))
@@ -369,16 +443,43 @@ fn swap(_: &Path, _: &Path) -> std::io::Result<()> {
     Err(std::io::ErrorKind::Unsupported.into())
 }
 
-fn swap_works(folder: &Path) -> bool {
+fn swap_works(folder: &Path) -> Result<bool> {
     let (first, second) = (folder.join("first"), folder.join("second"));
-    let swapped = fs::write(&first, b"first").is_ok()
-        && fs::write(&second, b"second").is_ok()
-        && swap(&first, &second).is_ok()
-        && fs::read(&first).is_ok_and(|bytes| bytes == b"second")
-        && fs::read(&second).is_ok_and(|bytes| bytes == b"first");
-    let _ = fs::remove_file(first);
-    let _ = fs::remove_file(second);
-    swapped
+    let probe = || -> Result<bool> {
+        fs::write(&first, b"first").with_context(|| format!("cannot write {}", first.display()))?;
+        fs::write(&second, b"second")
+            .with_context(|| format!("cannot write {}", second.display()))?;
+        match swap(&first, &second) {
+            Err(error) if unsupported(&error) => return Ok(false),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("cannot swap names in {}", folder.display()));
+            }
+            Ok(()) => {}
+        }
+        Ok(fs::read(&first).is_ok_and(|bytes| bytes == b"second")
+            && fs::read(&second).is_ok_and(|bytes| bytes == b"first"))
+    };
+    let swaps = probe();
+    let _ = fs::remove_file(&first);
+    let _ = fs::remove_file(&second);
+    swaps
+}
+
+fn unsupported(error: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    let unsupported_here = rustix::io::Errno::from_io_error(error).is_some_and(|errno| {
+        [
+            rustix::io::Errno::INVAL,
+            rustix::io::Errno::NOTSUP,
+            rustix::io::Errno::OPNOTSUPP,
+            rustix::io::Errno::NOSYS,
+        ]
+        .contains(&errno)
+    });
+    #[cfg(not(unix))]
+    let unsupported_here = false;
+    unsupported_here || error.kind() == std::io::ErrorKind::Unsupported
 }
 
 #[cfg(unix)]
@@ -953,6 +1054,20 @@ mod tests {
             message.contains(&merge.destination.join("x").display().to_string()),
             "{message}"
         );
+        let back = format!(
+            "cannot move {} back to {}",
+            merge.destination.join("d").display(),
+            staging.join("d").display()
+        );
+        assert!(message.contains(&back), "{message}");
+        assert!(!message.contains("into place"), "{message}");
+        assert!(
+            message.contains(&format!(
+                "{} is kept with everything not moved back",
+                staging.display()
+            )),
+            "{message}"
+        );
         drop(merge.staging);
         assert!(staging.is_dir());
         assert_eq!(fs::read(staging.join("x")).unwrap(), b"new x");
@@ -999,6 +1114,29 @@ mod tests {
             "{error:#}"
         );
         assert!(merge.destination.join("x").is_dir());
+        fs::remove_dir(merge.destination.join("x")).unwrap();
+        fs::write(merge.destination.join("x"), b"old x").unwrap();
+        set_mode(&merge.destination, 0o555);
+        let aside_path = merge.staging.aside(&mut aside, 3).unwrap().0;
+        let error = Staging::replace_in_two_moves(
+            merge.staging.path().join("x"),
+            merge.destination.join("x"),
+            merge.destination.join("x"),
+            aside_path.clone(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        set_mode(&merge.destination, 0o755);
+        let message = format!("{error:#}");
+        let aside_named = format!(
+            "cannot move {} aside to replace it",
+            merge.destination.join("x").display()
+        );
+        assert!(message.contains(&aside_named), "{message}");
+        assert!(
+            !message.contains(&aside_path.display().to_string()),
+            "{message}"
+        );
     }
 
     #[cfg(unix)]
@@ -1037,7 +1175,7 @@ mod tests {
     fn a_swap_probe_matches_the_filesystem() {
         let folder = tempfile::tempdir().unwrap();
         assert_eq!(
-            swap_works(folder.path()),
+            swap_works(folder.path()).unwrap(),
             cfg!(any(
                 target_os = "linux",
                 target_os = "android",
@@ -1047,7 +1185,20 @@ mod tests {
         assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 0);
         let merge = merge();
         let (aside, swaps) = merge.staging.aside(&mut None, 0).unwrap();
-        assert_eq!(swaps, swap_works(folder.path()));
+        assert_eq!(swaps, swap_works(folder.path()).unwrap());
         assert_eq!(fs::read_dir(aside.parent().unwrap()).unwrap().count(), 0);
+        set_mode(folder.path(), 0o555);
+        let unwritable = swap_works(folder.path());
+        set_mode(folder.path(), 0o755);
+        assert!(unwritable.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_ordinary_filesystem_allows_an_exact_merge_and_keeps_staging_empty() {
+        let merge = merge();
+        let folder = tempfile::tempdir().unwrap();
+        Staging::ensure_exact_merge(&merge.destination, folder.path()).unwrap();
+        assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 0);
     }
 }
