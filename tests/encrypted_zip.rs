@@ -1897,3 +1897,191 @@ fn a_password_argument_takes_the_same_bytes_as_typing() {
         "{stderr}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_prompt_started_in_the_background_restores_the_settings_it_found_in_the_foreground() {
+    let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
+    let work = tempfile::tempdir().unwrap();
+    let archive = shell_quoted(&hunter_archive(work.path()));
+    let output = work.path().join("out");
+    let probe = work.path().join("probe");
+    let steps = [
+        (
+            "type",
+            format!(
+                "(sleep 1; {zipper} extract {archive} -o {}; stty -a > {}) &",
+                shell_quoted(&output),
+                shell_quoted(&probe)
+            ),
+        ),
+        ("sleep", "2.5".to_owned()),
+        ("type", "fg".to_owned()),
+        ("wait", "Password: ".to_owned()),
+        ("sleep", "0.5".to_owned()),
+        ("type", "hunter2".to_owned()),
+        ("sleep", "2".to_owned()),
+    ];
+    let transcript = in_an_interactive_shell(&steps);
+    let settings = fs::read_to_string(&probe).unwrap_or_default();
+    let words: Vec<&str> = settings.split_whitespace().collect();
+    for setting in ["echo", "icanon", "isig", "ixon"] {
+        assert!(
+            words.contains(&setting) && !words.contains(&format!("-{setting}").as_str()),
+            "the prompt restored {setting} off: {settings}\n{transcript}"
+        );
+    }
+    assert!(output.join("hunter.txt").exists(), "{transcript}");
+}
+
+#[cfg(unix)]
+fn large_zip_crypto_archive(path: &Path, password: &[u8], size: usize) {
+    use std::io::Write;
+    const CHUNK: usize = 1 << 20;
+    let zeros = vec![0u8; CHUNK];
+    let mut crc = crc32fast::Hasher::new();
+    for _ in 0..size / CHUNK {
+        crc.update(&zeros);
+    }
+    let crc = crc.finalize();
+    let name = b"large.bin";
+    let compressed = (size + 12) as u32;
+    let mut keys = [0x1234_5678u32, 0x2345_6789, 0x3456_7890];
+    let step = |crc: u32, byte: u8| {
+        let mut crc = crc ^ u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+        crc
+    };
+    let update = |keys: &mut [u32; 3], byte: u8| {
+        keys[0] = step(keys[0], byte);
+        keys[1] = keys[1]
+            .wrapping_add(keys[0] & 0xff)
+            .wrapping_mul(134_775_813)
+            .wrapping_add(1);
+        keys[2] = step(keys[2], (keys[1] >> 24) as u8);
+    };
+    for &byte in password {
+        update(&mut keys, byte);
+    }
+    let mut encrypt = |plain: &[u8], out: &mut Vec<u8>| {
+        for &byte in plain {
+            let temp = (keys[2] | 2) & 0xffff;
+            out.push(byte ^ ((temp * (temp ^ 1)) >> 8) as u8);
+            update(&mut keys, byte);
+        }
+    };
+    let mut file = std::io::BufWriter::new(fs::File::create(path).unwrap());
+    let mut header = b"PK\x03\x04\x14\x00\x01\x00\x00\x00\x0e\x13\x21\x5b".to_vec();
+    header.extend_from_slice(&crc.to_le_bytes());
+    header.extend_from_slice(&compressed.to_le_bytes());
+    header.extend_from_slice(&(size as u32).to_le_bytes());
+    header.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    header.extend_from_slice(&0u16.to_le_bytes());
+    header.extend_from_slice(name);
+    file.write_all(&header).unwrap();
+    let mut out = Vec::with_capacity(CHUNK + 12);
+    let mut encryption_header = vec![0x5a; 11];
+    encryption_header.push((crc >> 24) as u8);
+    encrypt(&encryption_header, &mut out);
+    file.write_all(&out).unwrap();
+    for _ in 0..size / CHUNK {
+        out.clear();
+        encrypt(&zeros, &mut out);
+        file.write_all(&out).unwrap();
+    }
+    let directory = header.len() as u32 + compressed;
+    let mut central = b"PK\x01\x02\x14\x03\x14\x00\x01\x00\x00\x00\x0e\x13\x21\x5b".to_vec();
+    central.extend_from_slice(&crc.to_le_bytes());
+    central.extend_from_slice(&compressed.to_le_bytes());
+    central.extend_from_slice(&(size as u32).to_le_bytes());
+    central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    central.extend_from_slice(&[0; 12]);
+    central.extend_from_slice(&0u32.to_le_bytes());
+    central.extend_from_slice(name);
+    file.write_all(&central).unwrap();
+    let mut end = b"PK\x05\x06\0\0\0\0\x01\x00\x01\x00".to_vec();
+    end.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    end.extend_from_slice(&directory.to_le_bytes());
+    end.extend_from_slice(&[0, 0]);
+    file.write_all(&end).unwrap();
+}
+
+#[cfg(unix)]
+fn decrypted_bytes_on_disk(folder: &Path) -> u64 {
+    walkdir::WalkDir::new(folder)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file() && entry.file_name() != "large.zip")
+        .filter_map(|entry| entry.metadata().ok())
+        .map(|metadata| metadata.len())
+        .sum()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
+    use std::os::unix::process::ExitStatusExt;
+    const LARGE: usize = 512 << 20;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_zip_crypto_archive(&archive, b"hunter2", LARGE);
+    for (name, number) in [("INT", 2), ("TERM", 15), ("HUP", 1), ("QUIT", 3)] {
+        let output = work.path().join("out");
+        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .args(["--password", "hunter2", "extract"])
+            .arg(&archive)
+            .arg("-o")
+            .arg(&output)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while decrypted_bytes_on_disk(work.path()) < 8 << 20 && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let sent = Command::new("kill")
+            .arg(format!("-{name}"))
+            .arg(child.id().to_string())
+            .status()
+            .unwrap();
+        assert!(sent.success());
+        let status = child.wait().unwrap();
+        assert_eq!(status.signal(), Some(number), "SIG{name}: {status:?}");
+        assert_eq!(listing(work.path()), ["large.zip"], "SIG{name}");
+        assert_eq!(decrypted_bytes_on_disk(work.path()), 0, "SIG{name}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_c_during_decryption_after_the_prompt_leaves_no_plaintext() {
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_zip_crypto_archive(&archive, b"hunter2", 512 << 20);
+    let output = work.path().join("out");
+    let command = format!(
+        "{} extract {} -o {}",
+        shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+        shell_quoted(&archive),
+        shell_quoted(&output)
+    );
+    let steps = [
+        ("wait", "Password: ".to_owned()),
+        ("send", hex(b"hunter2\r")),
+        ("sleep", "0.3".to_owned()),
+        ("send", hex(b"\x03")),
+        ("sleep", "1".to_owned()),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=130"), "{transcript}");
+    assert_terminal_restored("Ctrl-C while decrypting", &transcript);
+    assert_eq!(listing(work.path()), ["large.zip"], "{transcript}");
+}

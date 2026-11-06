@@ -153,6 +153,9 @@ fn with_password<T>(
         std::io::stdin().is_terminal(),
         "{needed}; standard input is not a terminal, so Zipper cannot ask for it"
     );
+    if ending_signal_received() {
+        return Err(PromptInterrupted.into());
+    }
     let asked = match ask_password().context("a password is needed")? {
         Typed::Password(password) => password,
         Typed::Interrupt => return Err(PromptInterrupted.into()),
@@ -203,11 +206,15 @@ enum Typed {
 
 #[cfg(unix)]
 fn ask_password() -> Result<Typed> {
-    let mut original = None;
+    let mut last = None;
     loop {
-        let mut terminal = hidden_terminal::HiddenTerminal::open(original)?;
-        original = Some(terminal.original_settings());
-        let typed = match terminal.hide()? {
+        if ending_signal_received() {
+            return Ok(Typed::Interrupt);
+        }
+        let mut terminal = hidden_terminal::HiddenTerminal::open(last)?;
+        let hidden = terminal.hide();
+        last = Some(terminal.settings());
+        let typed = match hidden? {
             hidden_terminal::Hidden::Yes => match terminal.prompt(b"Password: ")? {
                 hidden_terminal::Hidden::Yes => read_password(&mut terminal)?,
                 hidden_terminal::Hidden::Interrupted => None,
@@ -400,28 +407,61 @@ mod hidden_terminal {
         Interrupted,
     }
 
+    #[derive(Clone, Copy)]
+    pub(super) struct Settings {
+        saved: libc::termios,
+        quiet: libc::termios,
+    }
+
+    fn same_mode(left: &libc::termios, right: &libc::termios) -> bool {
+        left.c_iflag == right.c_iflag
+            && left.c_lflag == right.c_lflag
+            && left.c_cc[libc::VMIN] == right.c_cc[libc::VMIN]
+            && left.c_cc[libc::VTIME] == right.c_cc[libc::VTIME]
+    }
+
+    const FOREGROUND_TRIES: usize = 3;
+
+    fn wait_for_the_foreground(terminal: &File) {
+        for _ in 0..FOREGROUND_TRIES {
+            if in_the_foreground(terminal) {
+                return;
+            }
+            stop_the_whole_job();
+        }
+    }
+
+    fn stop_the_whole_job() {
+        // SAFETY: kill takes plain integers.
+        unsafe { libc::kill(0, libc::SIGTTOU) };
+    }
+
     pub(super) struct HiddenTerminal {
         terminal: File,
         saved: libc::termios,
+        quiet: libc::termios,
         hidden: bool,
         prompted: bool,
         previous: Vec<(libc::c_int, libc::sigaction)>,
     }
 
     impl HiddenTerminal {
-        pub(super) fn open(original: Option<libc::termios>) -> Result<Self> {
+        pub(super) fn open(last: Option<Settings>) -> Result<Self> {
             let terminal = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
                 .open("/dev/tty")
                 .context("cannot open the terminal")?;
-            let saved = match original {
-                Some(saved) => saved,
-                None => current_settings(&terminal)?,
+            wait_for_the_foreground(&terminal);
+            let current = current_settings(&terminal)?;
+            let saved = match last {
+                Some(last) if same_mode(&current, &last.quiet) => last.saved,
+                _ => current,
             };
             let mut opened = Self {
                 terminal,
                 saved,
+                quiet: quiet_settings(&saved),
                 hidden: false,
                 prompted: false,
                 previous: Vec::with_capacity(SIGNALS_CAUGHT_WHILE_HIDDEN.len()),
@@ -430,15 +470,18 @@ mod hidden_terminal {
             Ok(opened)
         }
 
-        pub(super) fn original_settings(&self) -> libc::termios {
-            self.saved
+        pub(super) fn settings(&self) -> Settings {
+            Settings {
+                saved: self.saved,
+                quiet: self.quiet,
+            }
         }
 
         fn catch_signals(&mut self) {
-            let mut action = no_action();
+            let mut action = super::no_signal_action();
             action.sa_sigaction = record as extern "C" fn(libc::c_int) as usize;
             for signal in SIGNALS_CAUGHT_WHILE_HIDDEN {
-                let mut old = no_action();
+                let mut old = super::no_signal_action();
                 // SAFETY: a null new action only reads the current one into the live `old`.
                 unsafe { libc::sigaction(signal, std::ptr::null(), &mut old) };
                 if old.sa_sigaction == libc::SIG_IGN {
@@ -471,14 +514,9 @@ mod hidden_terminal {
         }
 
         pub(super) fn hide(&mut self) -> Result<Hidden> {
-            let mut quiet = self.saved;
-            quiet.c_lflag &= !(libc::ECHO | libc::ICANON | libc::IEXTEN);
-            quiet.c_iflag &= !libc::IXON;
-            quiet.c_cc[libc::VMIN] = 1;
-            quiet.c_cc[libc::VTIME] = 0;
             self.hidden = true;
             if self
-                .set(&quiet, any_caught)
+                .set(&self.quiet, any_caught)
                 .context("cannot turn off echo on the terminal")?
             {
                 Ok(Hidden::Yes)
@@ -534,6 +572,15 @@ mod hidden_terminal {
         }
     }
 
+    fn quiet_settings(saved: &libc::termios) -> libc::termios {
+        let mut quiet = *saved;
+        quiet.c_lflag &= !(libc::ECHO | libc::ICANON | libc::IEXTEN);
+        quiet.c_iflag &= !libc::IXON;
+        quiet.c_cc[libc::VMIN] = 1;
+        quiet.c_cc[libc::VTIME] = 0;
+        quiet
+    }
+
     fn current_settings(terminal: &File) -> Result<libc::termios> {
         // SAFETY: termios is plain data, and zeroed is a valid value for every field.
         let mut settings: libc::termios = unsafe { std::mem::zeroed() };
@@ -545,12 +592,6 @@ mod hidden_terminal {
         }
         Ok(settings)
     }
-
-    fn no_action() -> libc::sigaction {
-        // SAFETY: sigaction is plain data, and zeroed is a valid value for every field: no
-        // handler, no flags and an empty mask.
-        unsafe { std::mem::zeroed() }
-    }
 }
 
 #[cfg(not(unix))]
@@ -560,12 +601,122 @@ fn ask_password() -> Result<Typed> {
     )
 }
 
+#[cfg(unix)]
+mod stop_on_signal {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    const ENDING: [libc::c_int; 4] = [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT];
+    const SIGNAL_SLOTS: usize = 32;
+
+    pub(super) static CANCEL: AtomicBool = AtomicBool::new(false);
+    static RECEIVED: [AtomicBool; SIGNAL_SLOTS] = [const { AtomicBool::new(false) }; SIGNAL_SLOTS];
+
+    extern "C" fn record(signal: libc::c_int) {
+        if let Some(received) = usize::try_from(signal)
+            .ok()
+            .and_then(|slot| RECEIVED.get(slot))
+        {
+            received.store(true, Ordering::SeqCst);
+            CANCEL.store(true, Ordering::SeqCst);
+        }
+    }
+
+    pub(super) struct Catching {
+        previous: Vec<(libc::c_int, libc::sigaction)>,
+    }
+
+    impl Catching {
+        pub(super) fn start() -> Self {
+            let mut action = super::no_signal_action();
+            action.sa_sigaction = record as extern "C" fn(libc::c_int) as usize;
+            action.sa_flags = libc::SA_RESTART;
+            let mut previous = Vec::with_capacity(ENDING.len());
+            for signal in ENDING {
+                let mut old = super::no_signal_action();
+                // SAFETY: a null new action only reads the current one into the live `old`.
+                unsafe { libc::sigaction(signal, std::ptr::null(), &mut old) };
+                if old.sa_sigaction == libc::SIG_IGN {
+                    continue;
+                }
+                // SAFETY: both pointers refer to live sigaction values for the call, and `record`
+                // only stores to lock-free atomics, which is safe in a signal handler.
+                if unsafe { libc::sigaction(signal, &action, &mut old) } == 0 {
+                    previous.push((signal, old));
+                }
+            }
+            Self { previous }
+        }
+    }
+
+    impl Drop for Catching {
+        fn drop(&mut self) {
+            for (signal, old) in &self.previous {
+                // SAFETY: `old` is the live action this signal had before `start`.
+                unsafe { libc::sigaction(*signal, old, std::ptr::null_mut()) };
+            }
+        }
+    }
+
+    pub(super) fn raise_received_signals() {
+        for signal in ENDING {
+            if let Some(received) = usize::try_from(signal)
+                .ok()
+                .and_then(|slot| RECEIVED.get(slot))
+                && received.swap(false, Ordering::SeqCst)
+            {
+                // SAFETY: kill takes plain integers, and the signal's own action is back in place.
+                unsafe { libc::kill(libc::getpid(), signal) };
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn no_signal_action() -> libc::sigaction {
+    // SAFETY: sigaction is plain data, and zeroed is a valid value for every field: no
+    // handler, no flags and an empty mask.
+    unsafe { std::mem::zeroed() }
+}
+
+fn ending_signal_received() -> bool {
+    cancel_on_signal().is_some_and(|cancel| cancel.load(std::sync::atomic::Ordering::SeqCst))
+}
+
+#[cfg(unix)]
+fn cancel_on_signal() -> Option<&'static std::sync::atomic::AtomicBool> {
+    Some(&stop_on_signal::CANCEL)
+}
+
+#[cfg(not(unix))]
+fn cancel_on_signal() -> Option<&'static std::sync::atomic::AtomicBool> {
+    None
+}
+
+#[cfg(unix)]
+fn catch_ending_signals(reader: &Reader) -> Option<stop_on_signal::Catching> {
+    matches!(reader, Reader::Zip { .. } | Reader::Tar | Reader::SevenZip)
+        .then(stop_on_signal::Catching::start)
+}
+
+#[cfg(not(unix))]
+fn catch_ending_signals(_: &Reader) -> Option<()> {
+    None
+}
+
+fn raise_signals_that_ended_the_run() {
+    #[cfg(unix)]
+    {
+        hidden_terminal::raise_deferred_signals();
+        stop_on_signal::raise_received_signals();
+    }
+}
+
 fn main() -> std::process::ExitCode {
-    match run() {
+    let ran = run();
+    raise_signals_that_ended_the_run();
+    match ran {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            #[cfg(unix)]
-            hidden_terminal::raise_deferred_signals();
             eprintln!("Error: {error:?}");
             if error.is::<PromptInterrupted>() {
                 std::process::ExitCode::from(INTERRUPTED)
@@ -658,6 +809,8 @@ fn run() -> Result<()> {
             let archive = spooled
                 .as_ref()
                 .map_or(archive, |spool| spool.path().to_owned());
+            let _catching =
+                catch_ending_signals(&zipper::choose_reader(cli.zip_engine.into(), &archive)?);
             with_password(password, |password| {
                 zipper::extract_archive(
                     &archive,
@@ -686,7 +839,10 @@ fn run() -> Result<()> {
                         threads: cli.threads,
                         engine: cli.zip_engine.into(),
                         zip_buffer_bytes: buffer_bytes,
-                        ..Default::default()
+                        control: zipper::Control {
+                            progress: None,
+                            cancel: cancel_on_signal(),
+                        },
                     },
                 )
             })?;
