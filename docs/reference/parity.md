@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 50 |
+| `native` | 55 |
 | `partial` | 1 |
-| `backend` | 52 |
-| `missing` | 7 |
+| `backend` | 49 |
+| `missing` | 5 |
 | `dropped` | 2 |
 
-44 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+43 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -31,14 +31,14 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `7z` | `native` |  | `tests/data/parity/archives/7z.7z` |
 | `APFS` | `backend` |  | `tests/data/parity/archives/apfs.img.stored.xz` |
 | `APM` | `backend` |  | `tests/data/parity/archives/apm.img.stored.xz` |
-| `Ar` | `backend` |  | `tests/data/parity/archives/ar.a` |
+| `Ar` | `native` |  | `tests/data/parity/archives/ar.a` |
 | `Arj` | `backend` |  | No proof yet. |
 | `Base64` | `backend` |  | No proof yet. |
 | `COFF` | `backend` |  | No proof yet. |
 | `Cab` | `backend` |  | No proof yet. |
 | `Chm` | `backend` |  | No proof yet. |
 | `Compound` | `backend` |  | No proof yet. |
-| `Cpio` | `backend` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
+| `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
 | `CramFS` | `backend` |  | No proof yet. |
 | `Dmg` | `backend` |  | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg` |
 | `ELF` | `backend` |  | No proof yet. |
@@ -63,7 +63,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `QCOW` | `backend` |  | No proof yet. |
 | `Rar` | `backend` |  | No proof yet. |
 | `Rar5` | `backend` |  | No proof yet. |
-| `Rpm` | `backend` |  | No proof yet. |
+| `Rpm` | `native` |  | `tests/data/parity/archives/rpm-bzip2.rpm`, `tests/data/parity/archives/rpm-gzip.rpm`, `tests/data/parity/archives/rpm-lzma.rpm`, `tests/data/parity/archives/rpm-xz.rpm`, `tests/data/parity/archives/rpm-zstd.rpm` |
 | `SWF` | `backend` |  | No proof yet. |
 | `SWFc` | `backend` |  | No proof yet. |
 | `Sparse` | `backend` |  | No proof yet. |
@@ -130,8 +130,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Zstandard` | `native` | 7-Zip 26.05 cannot write it, so the proof is a built entry. | `other_methods_decode_exactly_and_refuse_damage` in `tests/hostile_zip.rs` |
 | `XZ` | `native` |  | `tests/data/parity/archives/zip-xz.zip` |
 | `PPMd` | `native` |  | `tests/data/parity/archives/zip-ppmd.zip` |
-| `ZipCrypto` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | `tests/data/parity/archives/zip-zipcrypto.zip` |
-| `WinZip AES` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | `tests/data/parity/archives/zip-winzip-aes.zip` |
+| `ZipCrypto` | `native` | Read for compatibility only; ZipCrypto is weak. | `tests/data/parity/archives/zip-zipcrypto.zip`, `every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines` in `tests/encrypted_zip.rs` |
+| `WinZip AES` | `native` |  | `tests/data/parity/archives/zip-winzip-aes.zip`, `every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines` in `tests/encrypted_zip.rs` |
 
 ## Extraction switches
 

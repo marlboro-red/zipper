@@ -781,6 +781,106 @@
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
     },
+    "rpm-bzip2.rpm": {
+      "files": [
+        "rpm-bzip2.rpm"
+      ],
+      "row": [
+        "formats",
+        "Rpm"
+      ],
+      "sha256": {
+        "rpm-bzip2.rpm": "35527fd4bd6f73dfe3ea4200750f3f13318a9f5fec10df641d42ea439af90899"
+      },
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/hard": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/link": "link:data.txt",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "rpm-gzip.rpm": {
+      "files": [
+        "rpm-gzip.rpm"
+      ],
+      "row": [
+        "formats",
+        "Rpm"
+      ],
+      "sha256": {
+        "rpm-gzip.rpm": "1570382b0f689b3c01b9fd5fa3e950fb26bdf37a74252885fa1d249ba46fcda8"
+      },
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/hard": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/link": "link:data.txt",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "rpm-lzma.rpm": {
+      "files": [
+        "rpm-lzma.rpm"
+      ],
+      "row": [
+        "formats",
+        "Rpm"
+      ],
+      "sha256": {
+        "rpm-lzma.rpm": "3c3bbee920622634cd28c350720a36530655291fcbc57c045c9610351e91c2f7"
+      },
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/hard": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/link": "link:data.txt",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "rpm-xz.rpm": {
+      "files": [
+        "rpm-xz.rpm"
+      ],
+      "row": [
+        "formats",
+        "Rpm"
+      ],
+      "sha256": {
+        "rpm-xz.rpm": "f13793f0c9d65764d190b496c3cb4d06092820085da201f46268c07bf4beab03"
+      },
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/hard": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/link": "link:data.txt",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "rpm-zstd.rpm": {
+      "files": [
+        "rpm-zstd.rpm"
+      ],
+      "row": [
+        "formats",
+        "Rpm"
+      ],
+      "sha256": {
+        "rpm-zstd.rpm": "5367b4838e871131795fbbfa00bf502454db89df405ed0e8b2be413b3d8fdc19"
+      },
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "folder/hard": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/link": "link:data.txt",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
     "split.7z.001": {
       "files": [
         "split.7z.001",

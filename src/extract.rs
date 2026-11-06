@@ -1,4 +1,7 @@
-use crate::{Control, Existing, compat, native_7z, native_tar, native_zip};
+use crate::{
+    Control, Existing, compat, native_7z, native_ar, native_cpio, native_rpm, native_tar,
+    native_zip,
+};
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
 
@@ -6,14 +9,15 @@ use std::{io::Read, path::Path};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Engine {
-    /// Native for ZIP, tar, unrecognized files and 7z whose methods it
-    /// decodes. 7-Zip for other 7z and the other formats whose signature
-    /// Zipper recognizes.
+    /// Native for ZIP, tar, cpio, `ar`, RPM, single compressed files,
+    /// unrecognized files and 7z whose methods it decodes. 7-Zip for other
+    /// 7z and the other formats whose signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
-    /// Native for ZIP and tar, and native ZIP for unrecognized files.
+    /// Native for ZIP, tar, cpio, `ar`, RPM, 7z and single compressed files,
+    /// and native ZIP for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -28,6 +32,12 @@ pub enum Reader {
     Tar,
     /// The native 7z reader.
     SevenZip,
+    /// The native reader for binary, odc and newc cpio.
+    Cpio,
+    /// The native reader for `ar` archives and Debian packages.
+    Ar,
+    /// The native reader for the files an RPM package installs.
+    Rpm,
     /// The native reader for one gzip, bzip2, xz, zstd or LZMA stream that
     /// holds no tar.
     Stream,
@@ -54,6 +64,9 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             }
         }
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
+        _ if native_cpio::sniff(archive)? => Reader::Cpio,
+        _ if native_ar::sniff(archive)? => Reader::Ar,
+        _ if native_rpm::sniff(archive)? => Reader::Rpm,
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
             Reader::Backend {
                 format: Some(compat::pinned_format(archive)?.unwrap_or_else(|| "-t7z".to_owned())),
@@ -96,12 +109,12 @@ pub struct ExtractOptions<'a> {
     /// attributes or Mark of the Web. The 7-Zip backend refuses it.
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation. Every reader checks the cancel flag
-    /// before it starts. Only ZIP, tar and 7z report progress and check it
-    /// later.
+    /// before it starts. The in-process readers report progress and check it
+    /// while they write, and the 7-Zip backend stops 7-Zip when it is set.
     pub control: Control<'a>,
-    /// Cap on declared output bytes. Without it, ZIP, tar and 7z output must
-    /// fit in free space. The 7-Zip backend refuses a cap and checks no free
-    /// space.
+    /// Cap on declared output bytes. Without it, the output of every reader
+    /// in process, including single compressed files, must fit in free
+    /// space. The 7-Zip backend refuses a cap and checks no free space.
     pub max_output_bytes: Option<u64>,
     /// Maximum ZIP workers, tar writer threads or 7z folders decoded at
     /// once, 1–64.
@@ -115,6 +128,11 @@ pub struct ExtractOptions<'a> {
     /// first, and the rename modes number the others `name_1.ext` and on.
     /// An archive with links is refused.
     pub flat: bool,
+    /// Password for ZipCrypto and WinZip AES entries in a ZIP read in
+    /// process. A selected encrypted entry without it fails with
+    /// [`crate::native_zip::PasswordNeeded`]. The tar, 7z and single-file
+    /// readers and the 7-Zip backend refuse it.
+    pub password: Option<&'a [u8]>,
 }
 
 fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Result<()> {
@@ -303,6 +321,11 @@ pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Resu
 
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     let reader = choose_reader(options.engine, archive)?;
+    ensure!(
+        options.password.is_none() || matches!(reader, Reader::Zip { .. } | Reader::Backend { .. }),
+        "--password applies only to ZIP archives, and Zipper does not decrypt {}",
+        archive.display()
+    );
     match reader {
         Reader::Zip { fast } => {
             native_zip::read_archive_with_options(
@@ -320,6 +343,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                     strip: options.strip,
                     metadata: options.metadata,
                     control: options.control,
+                    password: options.password,
                 },
             )?;
         }
@@ -356,6 +380,9 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 },
             )?;
         }
+        Reader::Backend { .. } if options.password.is_some() => {
+            bail!("--password needs a ZIP archive read in process")
+        }
         Reader::Backend { .. }
             if !(options.paths.is_empty()
                 && options.include.is_empty()
@@ -366,6 +393,27 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
             bail!(
                 "--path, --include, --exclude, --strip-prefix, --strip-components and --content-only need an archive read in process"
             )
+        }
+        Reader::Cpio | Reader::Ar | Reader::Rpm => {
+            let read = match reader {
+                Reader::Cpio => native_cpio::read_archive,
+                Reader::Ar => native_ar::read_archive,
+                _ => native_rpm::read_archive,
+            };
+            read(
+                archive,
+                Some(destination),
+                native_cpio::ReadOptions {
+                    max_output_bytes: options.max_output_bytes,
+                    existing: options.existing,
+                    paths: options.paths,
+                    include: options.include,
+                    exclude: options.exclude,
+                    strip: options.strip,
+                    metadata: options.metadata,
+                    control: options.control,
+                },
+            )?;
         }
         Reader::Tar => {
             native_tar::read_archive(
@@ -387,14 +435,15 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         Reader::Backend { format } => {
             ensure!(
                 options.max_output_bytes.is_none(),
-                "--max-extracted-bytes needs a ZIP, tar or 7z archive read in process"
+                "--max-extracted-bytes needs an archive read in process"
             );
-            compat::run(
+            compat::run_until_cancelled(
                 "x",
                 archive,
                 Some(destination),
                 format.as_deref(),
                 options.existing,
+                options.control.cancel,
             )?;
         }
     }

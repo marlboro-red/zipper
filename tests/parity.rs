@@ -131,10 +131,18 @@ fn sevenzip() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn zipper(engine: Option<&str>, archive: &Path, output: &Path) -> std::process::Output {
+fn zipper(
+    engine: Option<&str>,
+    password: Option<&str>,
+    archive: &Path,
+    output: &Path,
+) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_zipper"));
     if let Some(engine) = engine {
         command.args(["--zip-engine", engine]);
+    }
+    if let Some(password) = password {
+        command.args(["--password", password]);
     }
     command
         .arg("extract")
@@ -173,7 +181,14 @@ fn every_parity_archive_extracts_as_its_row_says() {
         let output = work.path().join("out");
         match (&expect, &backend) {
             (Expect::Native, _) => {
-                let run = zipper(Some("native"), &archive, &output);
+                let run = zipper(
+                    Some("native"),
+                    corpus["password"]
+                        .as_str()
+                        .filter(|_| name.ends_with(".zip")),
+                    &archive,
+                    &output,
+                );
                 assert!(
                     run.status.success(),
                     "{name}: {}",
@@ -182,7 +197,7 @@ fn every_parity_archive_extracts_as_its_row_says() {
                 assert_eq!(tree(&output), reference_tree(record), "{name}");
             }
             (Expect::Backend, Some(binary)) => {
-                let run = zipper(Some("backend"), &archive, &output);
+                let run = zipper(Some("backend"), None, &archive, &output);
                 let direct = work.path().join("direct");
                 let mut flag = std::ffi::OsString::from("-o");
                 flag.push(&direct);
@@ -213,7 +228,7 @@ fn every_parity_archive_extracts_as_its_row_says() {
                 continue;
             }
             (Expect::Refused, _) => {
-                let run = zipper(None, &archive, &output);
+                let run = zipper(None, None, &archive, &output);
                 assert!(!run.status.success(), "{name} was extracted");
                 assert_eq!(leftovers(work.path()), Vec::<String>::new(), "{name}");
             }

@@ -3,7 +3,7 @@
 Zipper reads ZIP archives with its own parallel Rust reader by default.
 The default engine, `--zip-engine auto`, decides from the file's leading bytes and never from 7-Zip's output. A file that starts with a ZIP record signature goes to the in-process reader. A tar, plain or inside gzip, zstd, xz or bzip2, goes to the in-process [tar reader](tar-reader.md), and any other gzip, bzip2, xz or zstd file goes to the in-process [single compressed file reader](stream-reader.md). A file that starts with the signature of 7z, RAR or CAB goes to 7-Zip with that format pinned by `-t`, unless it is a 7z the native reader decodes. A file named `*.001` is read with the volumes after it as one archive, as [split volumes](#split-volumes) describes, and a set that goes to 7-Zip gets the split chain, such as `-trar5.split`. A `name.zip` with `name.z01` beside it is read in process as a [ZIP split set](#zip-split-sets). A pinned 7-Zip cannot reopen the file as a ZIP, even when a ZIP is appended or a wrong password is typed. Every other file goes to the in-process reader, which rejects anything that is not a ZIP it supports. Use `--zip-engine backend` for other formats 7-Zip reads, such as ISO, DMG, WIM and ARJ. ISO is not pinned, because `-tiso` makes 7-Zip skip a disc's UDF tree. Zipper refuses `*` and `?` in any path it gives 7-Zip, because 7-Zip expands them as wildcards.
 
-A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as encryption or another compression method, the error names `--zip-engine backend`. Passing that flag is the user's decision.
+A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as PKWARE strong encryption or another compression method, the error names `--zip-engine backend`. Passing that flag is the user's decision.
 
 `--zip-engine native` and `--zip-engine native-fast` select the reader explicitly. `--zip-engine backend` sends every archive to 7-Zip. Whenever 7-Zip extracts, under either engine, it anchors an absolute symlink target inside its output directory. Zipper renames that directory into place, so such a link can dangle outside the destination.
 The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
@@ -19,10 +19,11 @@ The reader supports these features:
 - File bytes and directories. A file with the FIFO type, which is how Info-ZIP `zip - -` stores piped input, is written as a regular file, as `unzip`, bsdtar, 7-Zip and Python write it. Device and socket entries are rejected.
 - Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
 - Names stored as UTF-8, and other names decoded as code page 437. A name that is valid UTF-8 is read as UTF-8 even without the UTF-8 flag, because Info-ZIP and `ditto` store UTF-8 names without it. A name with the UTF-8 flag that is not valid UTF-8 is rejected, because Python and 7-Zip do not decode it as CP437.
+- Entries encrypted with ZipCrypto or WinZip AES, with the password. See [Encrypted entries](#encrypted-entries).
 
 The reader does not support these features:
 
-- Encryption.
+- PKWARE strong encryption and encrypted central directories.
 - Symlinks that point outside the destination.
 - Shrink, Implode and other legacy methods.
 - The last volume of a split set without the volumes before it.
@@ -78,6 +79,43 @@ The `..` rule makes the check independent of how the filesystem compares names. 
 
 Links are created after every file is written, so no file is written through a link. An archive with any other symlink is rejected, and the compatibility backend reads it. On Windows, creating a symlink needs Developer Mode or administrator rights. Without them the archive is refused before anything is published, and the error names `--zip-engine backend`. A link to a folder in the destination becomes a folder link, and a target with `\` or `:` is refused, because it could name a drive or a share. A target part that ends in a dot or a space, or names a device such as `CON`, is refused as an entry name is. A link whose target is another link not yet created becomes a file link, so such a chain that ends at a folder does not open as a folder on Windows. Junctions are never created.
 
+## Encrypted entries
+
+The reader decrypts ZipCrypto and WinZip AES entries in process when it has the password. Pass `--password`, or set `password` in `ExtractOptions` or `native_zip::ReadOptions`. When a selected entry is encrypted and no password was given, the reader fails with `native_zip::PasswordNeeded`. It checks the destination first, so a destination it cannot use fails with that error instead, and it writes no entry before it fails. On Unix, when standard input is a terminal, the command line then asks for the password and tries again. Otherwise it refuses. `list` needs no password and refuses one, as `duplicates` does. `--password` with an archive Zipper does not decrypt, such as a tar or 7z archive, fails instead of being ignored. An encrypted ZIP that is split into volumes or has a self-extractor in front is refused. The in-process reader does not read those layouts, and the 7-Zip backend refuses `--password`.
+
+ZipCrypto is the traditional PKWARE cipher from APPNOTE section 6.1. It is weak. A known-plaintext attack recovers its keys, so it protects nothing against a determined attacker. Zipper reads it only so that old archives open. Each entry starts with a 12-byte header whose last byte, once decrypted, must match a check byte. Without a data descriptor the check byte is the high byte of the CRC. With one it is the high byte of the DOS time, as Info-ZIP writes. A wrong password passes the check byte 1 time in 256, so the CRC of the decoded data is the real test.
+
+WinZip AES uses AES-128, AES-192 or AES-256 in CTR mode with a little-endian counter that starts at 1. The keys come from PBKDF2 with HMAC-SHA1 and 1,000 iterations over the password and the entry's salt. A 2-byte verifier rejects most wrong passwords before any data is read. An HMAC-SHA1 code of 10 bytes covers every encrypted byte, so a wrong password that passes the verifier, 1 time in 65,536, fails there. AE-1 entries also keep the CRC, which the reader checks. AE-2 entries, which 7-Zip writes, store a zero CRC and rely on the code alone.
+
+The reader refuses these encrypted entries:
+
+- An AES extra field (`0x9901`) that appears twice or is not 7 bytes long.
+- An AES field with a vendor version other than 1 or 2, a vendor other than `AE`, or a strength other than 1, 2 or 3.
+- Method 99 without the AES field or without the encryption flag.
+- A local AES field that differs from the central one, or a local encryption flag that differs from the central one.
+- An entry too short to hold its salt, verifier and code, or its 12-byte ZipCrypto header.
+- PKWARE strong encryption, flag bit 6. 7-Zip reads it with `--zip-engine backend`.
+
+7-Zip 26.05 extracts an entry whose AES field is longer than 7 bytes, has vendor version 3, appears twice, or is missing or different in the local header. Zipper refuses these, because readers that trust different copies of the field can decrypt one entry in different ways.
+
+A wrong password fails the extraction before anything is published. When the ZipCrypto check byte or the AES verifier fails, the error says the password is wrong. When either passes but the data does not decode, its CRC differs or the AES code does not match, the error says the password is wrong or the entry is damaged. Decrypted bytes can reach the private staging folder before the CRC or the authentication code is checked, but the staging folder is removed and the destination keeps its contents.
+
+The library keeps no copy of the password. The keys live in one heap allocation per entry, and these are zeroed when the entry ends:
+
+- The ZipCrypto keys.
+- The PBKDF2 output.
+- The AES key schedule and the HMAC-SHA1 state.
+
+Building and using them leaves copies on the worker's stack, so after key setup and again after each encrypted entry the reader overwrites 64 KiB of the stack below its own frame. Core dumps were taken while the rest of the archive was still extracting, on both engines and at 1 to 8 threads. They held none of the AES-256 round keys, the HMAC inner and outer states, the HMAC key or the PBKDF2 output. That is a check of this build on macOS, not a guarantee. A compiler that inlines differently or spills to another place could leave a copy the overwrite misses.
+
+The command line holds the password in a buffer that is zeroed on exit. A typed password is read from the terminal one byte at a time, into a buffer that never grows. A password given with `--password` stays in the process arguments, where other users can see it and Zipper cannot clear it, and argument parsing may leave copies in freed memory. Errors and progress reports never contain the password, and `--password` takes values that start with a hyphen, so they never reach a usage error.
+
+The header fields of an entry are not covered by the AES code. Suppose someone changes the method of an AE-2 entry to one whose output has the same size, such as stored instead of Deflate when the two sizes match. The entry then decodes without error to the wrong bytes, as in 7-Zip. AE-1 and ZipCrypto entries catch it with the CRC.
+
+`native-fast` streams encrypted entries instead of buffering them.
+
+`tests/encrypted_zip.rs` extracts archives from 7-Zip and Info-ZIP with each scheme and several methods, and compares them with the tree `7zz x` gives. It flips every byte of an encrypted entry, the CRC and the code, and checks that each run fails with the destination unchanged and no staging folder left.
+
 ## Integrity checks
 
 Both native ZIP modes run these checks before publishing any output:
@@ -86,7 +124,7 @@ Both native ZIP modes run these checks before publishing any output:
 - Each local header's name, method, CRC and sizes match its central-directory entry. With a data descriptor, a local CRC or size may be zero or `0xFFFFFFFF` instead.
 - Local records tile the archive. The first starts at offset 0, and each ends exactly where the next record or the central directory starts.
 - With a data descriptor, the bytes after the data are exactly one descriptor of 12, 16, 20 or 24 bytes, and its CRC and sizes match the central directory.
-- The local encryption flag is clear, and any local ZIP64 sizes match the central directory.
+- The local encryption flag matches the central one, and any local ZIP64 sizes match the central directory.
 - No local or central record has two ZIP64 extra fields. Readers disagree on which one wins.
 - Each Deflate stream ends exactly at its compressed size, so no bytes can hide after it.
 - A stored entry followed by a data descriptor does not contain a descriptor whose CRC and sizes match the bytes before it. A streaming reader would end the entry there. Descriptors that describe other data, as in a nested archive, are allowed.

@@ -1,3 +1,4 @@
+use crate::zip_crypto::{AES_METHOD, AesExtra, aes_field};
 use crate::{BadField, Field, field_check, volumes::ZipDisks};
 use anyhow::{Context, Result, ensure};
 use std::{
@@ -52,6 +53,15 @@ pub(crate) struct Directory {
     pub(crate) start: u64,
     pub(crate) archive_start: u64,
     pub(crate) entries: Vec<CentralEntry>,
+    pub(crate) aes_fields: Vec<(usize, AesExtra)>,
+}
+
+impl Directory {
+    pub(crate) fn aes_extra(&self, entry: usize) -> AesExtra {
+        self.aes_fields
+            .binary_search_by_key(&entry, |&(index, _)| index)
+            .map_or(AesExtra::Absent, |found| self.aes_fields[found].1)
+    }
 }
 
 pub(crate) struct CentralEntry {
@@ -192,17 +202,13 @@ pub(crate) fn read_directory<R: Read + Seek>(
     extent.start += shift;
     check_extent(&extent)?;
     file.seek(SeekFrom::Start(extent.start))?;
-    let mut entries = central_entries(file, extent).map_err(WalkError::into_anyhow)?;
+    let mut directory = central_entries(file, extent).map_err(WalkError::into_anyhow)?;
     match disks {
-        Some(disks) => place_entries(&mut entries, disks)?,
-        None => shift_entries(&mut entries, shift)?,
+        Some(disks) => place_entries(&mut directory.entries, disks)?,
+        None => shift_entries(&mut directory.entries, shift)?,
     }
-    let archive_start = archive_start(file, &entries, extent.start, shift)?;
-    Ok(Directory {
-        start: extent.start,
-        archive_start,
-        entries,
-    })
+    directory.archive_start = archive_start(file, &directory.entries, extent.start, shift)?;
+    Ok(directory)
 }
 
 // EXTERNAL(Python zipfile): it reads a directory that ends before its end record as shifted by the gap.
@@ -414,9 +420,22 @@ impl<R: Read> DirectoryBytes<'_, R> {
     }
 }
 
-fn central_entries<R: Read>(file: &mut R, extent: Extent) -> Walk<Vec<CentralEntry>> {
-    walk_records(file, extent, |record, position| {
-        central_entry(record, position, is_utf8)
+fn central_entries<R: Read>(file: &mut R, extent: Extent) -> Walk<Directory> {
+    let mut aes_fields = Vec::new();
+    let mut index = 0;
+    let entries = walk_records(file, extent, |record, position| {
+        let entry = central_entry(record, position, is_utf8)?;
+        if entry.method == AES_METHOD && entry.encrypted() {
+            aes_fields.push((index, aes_extra(central_record(record)?.extra)));
+        }
+        index += 1;
+        Ok(entry)
+    })?;
+    Ok(Directory {
+        start: extent.start,
+        archive_start: extent.start,
+        entries,
+        aes_fields,
     })
 }
 
@@ -748,6 +767,15 @@ fn extra_fields(mut extra: &[u8]) -> impl Iterator<Item = (u16, &[u8])> {
         extra = &extra[4 + length..];
         Some((id, body))
     })
+}
+
+pub(crate) fn aes_extra(extra: &[u8]) -> AesExtra {
+    let mut bodies = extra_fields(extra).filter_map(|(id, body)| (id == AES).then_some(body));
+    match (bodies.next(), bodies.next()) {
+        (None, _) => AesExtra::Absent,
+        (Some(body), None) => aes_field(body).map_or(AesExtra::Malformed, AesExtra::Present),
+        (Some(_), Some(_)) => AesExtra::Malformed,
+    }
 }
 
 fn unicode_name_judged_by(

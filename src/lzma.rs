@@ -593,9 +593,7 @@ fn decode<R: Read>(
     pending: &mut usize,
 ) -> io::Result<Stop> {
     loop {
-        let mut bits = range.bits();
-        let stop = decode_symbols(state, &mut bits, window, limit, pending);
-        let kept = bits.parts();
+        let (stop, kept) = decode_symbols(state, range.bits(), window, limit, pending);
         range.keep(kept);
         match stop? {
             Some(stop) => return Ok(stop),
@@ -606,6 +604,19 @@ fn decode<R: Read>(
 }
 
 fn decode_symbols(
+    state: &mut ChunkState,
+    start: Bits,
+    window: &mut Window,
+    limit: u64,
+    pending: &mut usize,
+) -> (io::Result<Option<Stop>>, (usize, u32, u32)) {
+    let mut bits = start;
+    let stop = decode_symbols_from(state, &mut bits, window, limit, pending);
+    (stop, bits.parts())
+}
+
+#[inline(always)]
+fn decode_symbols_from(
     state: &mut ChunkState,
     range: &mut Bits,
     window: &mut Window,
@@ -949,6 +960,9 @@ impl<R: Read> Lzma2Reader<R> {
 
 impl<R: Read> Read for Lzma2Reader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if matches!(self.chunk, Lzma2Chunk::Failed) {
+            return Err(data_error("LZMA2 stream failed earlier"));
+        }
         if buffer.is_empty() {
             return Ok(0);
         }
@@ -2717,12 +2731,37 @@ mod tests {
         }
     }
 
+    fn reads_after_the_first_error(mut reader: impl Read, chunk: usize) -> Option<Vec<bool>> {
+        let mut buffer = vec![0u8; chunk];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => return None,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        Some((0..3).map(|_| reader.read(&mut buffer).is_err()).collect())
+    }
+
     #[test]
     fn an_lzma2_reader_keeps_refusing_after_an_error() {
-        let mut reader = Lzma2Reader::new(&[2u8, 0, 0, b'a', 0][..], 1 << 16);
-        let mut buffer = [0u8; 16];
-        assert!(reader.read(&mut buffer).is_err());
-        assert!(reader.read(&mut buffer).is_err());
+        let stored_before_any_output = [2u8, 0, 0, b'a', 0];
+        let cut_after_decoding_bytes = [
+            0xE0u8, 0x17, 0x6F, 0x01, 0x86, 0x00, 0x00, 0x3A, 0x1B, 0x37, 0xBE,
+        ];
+        for stream in [&stored_before_any_output[..], &cut_after_decoding_bytes[..]] {
+            let reader = Lzma2Reader::new(stream, 1 << 20);
+            assert_eq!(reads_after_the_first_error(reader, 64), Some(vec![true; 3]));
+        }
+        let data = text(20_000, 61);
+        let stream = encode_lzma2(&data, 3, 0, 2, 1 << 16, 6);
+        for cut in 0..stream.len() {
+            for chunk in [1, 64, 4_093] {
+                let reader = Lzma2Reader::new(&stream[..cut], 1 << 16);
+                let refused = reads_after_the_first_error(reader, chunk);
+                assert_eq!(refused, Some(vec![true; 3]), "cut {cut} read size {chunk}");
+            }
+        }
     }
 
     mod xz {
@@ -3993,6 +4032,21 @@ mod tests {
                         );
                     }
                     assert!(liblzma_xz(&stream[..cut]).is_none());
+                }
+            }
+        }
+
+        #[test]
+        fn an_xz_reader_keeps_refusing_after_an_error() {
+            let plain = encode_xz(&text(20_000, 62), 6, Check::Crc32, 6_000);
+            let filtered = encode_chain(&[(X86, Vec::new())], &machine_code(63, 8_000), 3_000);
+            for stream in [plain, filtered] {
+                for cut in 0..stream.len() {
+                    for chunk in [1, 64, 4_093] {
+                        let reader = XzReader::new(&stream[..cut]);
+                        let refused = reads_after_the_first_error(reader, chunk);
+                        assert_eq!(refused, Some(vec![true; 3]), "cut {cut} read size {chunk}");
+                    }
                 }
             }
         }

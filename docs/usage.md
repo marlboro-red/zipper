@@ -190,7 +190,7 @@ zipper --threads 4 extract files.zip -o restored
 zipper test files.zip
 ```
 
-If the archive is encrypted, uses another compression method or spans disks, the error says so. To read it with 7-Zip, pass `--zip-engine backend`. Zipper never makes that switch itself, because 7-Zip accepts some archives the in-process reader rejects as unsafe.
+If the archive uses another compression method, PKWARE strong encryption or more than one disk, the error says so. To read it with 7-Zip, pass `--zip-engine backend`. Zipper never makes that switch itself, because 7-Zip accepts some archives the in-process reader rejects as unsafe.
 
 Pick the engine by workload:
 
@@ -201,6 +201,39 @@ Pick the engine by workload:
 
 The default is `native` because it uses little memory. On the [scoreboard](results.md), its peak stays under 9 MiB, while `native-fast` reaches 187 MiB on Silesia. `native-fast` is at most 1.10× faster on every other workload, and 1.32× faster on Silesia at one thread.
 The [ZIP reader reference](reference/zip-reader.md) lists supported features, limits, budgets, and caching rules.
+
+### Extract an encrypted ZIP
+
+Zipper decrypts ZipCrypto and WinZip AES entries in process. Run `extract` or `test` as usual. When a selected entry is encrypted and the destination can be used, Zipper asks for the password on the terminal with echo off:
+
+```sh
+zipper extract secret.zip -o restored
+```
+
+The prompt follows the design of OpenBSD's `readpassphrase`. Zipper turns off echo, line editing and the Ctrl-S and Ctrl-Q flow keys before it shows the prompt, and drops anything typed earlier. The terminal's signal keys stay on. At the prompt these keys act:
+
+- Enter or Return ends the password.
+- Backspace or Delete removes the last character. When the password ends in a whole UTF-8 character, all its bytes go at once. Otherwise one byte goes. On a terminal that does not send UTF-8, pass the password with `--password` instead.
+- Ctrl-U clears what was typed.
+- Ctrl-D cancels on an empty line, and does nothing after text.
+- The interrupt key, usually Ctrl-C, ends Zipper by SIGINT, so a calling script stops too. The quit key, usually Ctrl-\\, ends it by SIGQUIT.
+- The suspend key, usually Ctrl-Z, stops Zipper. When the job resumes, it shows a new prompt.
+
+These three keys act only while the terminal sends signals. When the caller turned that off, as `stty raw` or `stty -isig` do, the interrupt, quit and suspend characters are password bytes.
+
+Every other byte, such as Tab, Escape, Ctrl-S or Ctrl-Q, is part of the password. A password, typed or given, holds at most 1,024 bytes. A longer one fails, but only after Zipper has read and dropped the rest of the line. A paste over the limit is therefore dropped up to the next Enter, and the prompt waits for Enter before it fails, so the paste never reaches the shell. Typing cannot enter line feed, carriage return, backspace, delete, Ctrl-U or Ctrl-D, nor the terminal's interrupt, quit and suspend characters. Pass a password that holds them with `--password`. When the prompt ends, Zipper restores the terminal and drops anything typed but not read, such as the rest of a paste.
+
+During the prompt Zipper catches SIGALRM, SIGCONT, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM, SIGTSTP, SIGTTIN and SIGTTOU, unless they are ignored. SIGCONT, which follows any resume, including one after an uncatchable SIGSTOP, restores the terminal and shows a new hidden prompt, so it does not matter whether the shell put the hidden settings back. Rust programs ignore SIGPIPE, so it stays ignored. A caught signal restores the terminal first. A stop then stops Zipper, and when the job resumes Zipper hides the terminal again and shows a new prompt. A stray SIGTTIN or SIGTTOU that arrives while Zipper is already in the foreground only brings a new prompt. So does a stop that the system discards, as it does for a process group with no job-control parent. Any other caught signal ends Zipper by that signal, after it removes the temporary folder of `--stdout`. With the archive read from `-`, standard input is not a terminal, so Zipper never prompts. Zipper reads the terminal settings to restore only while its job is in the foreground. A job started in the background stops first, and reads them after `fg`, so it never takes a line editor's raw settings as the ones to restore. A signal the shell ignores, as `nohup` and `trap ''` arrange, stays ignored. That includes SIGINT and SIGQUIT, which `readpassphrase` takes over even when they are ignored. SIGKILL and SIGSTOP cannot be caught. SIGKILL leaves the terminal hidden, and `stty sane` recovers it.
+
+While `extract` runs, and while the 7-Zip backend runs `list` or `test`, Zipper also catches SIGINT, SIGTERM, SIGHUP and SIGQUIT, unless they are ignored. The signal stops the extraction through its cancel check, and the staging folder and any decrypted bytes in it are removed. With the 7-Zip backend, for `extract`, `list` and `test` alike, Zipper sends SIGTERM to 7-Zip, waits for it to exit, and sends SIGKILL if it still runs after 2 seconds. Only that one process is stopped, so a program that `ZIPPER_7Z` names and that starts helpers of its own must stop them itself. With `--stdout`, the signal also stops the copy to standard output, even while a full pipe blocks it, and the temporary folder is removed. A signal after the last byte was copied leaves the output whole, and Zipper exits with success. While Zipper copies an archive read from `-` into its spool file, the signal stops the copy and the spool is removed. Zipper then ends by the same signal. A signal that arrives after the result was moved into the destination does not undo it, and Zipper exits with success.
+
+To give the password without a prompt, as a script must, pass `--password`. It takes any bytes on Unix, including ones that are not UTF-8. Other users on the machine can read it in the process list:
+
+```sh
+zipper --password 'correct horse' extract secret.zip -o restored
+```
+
+When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so `extract` and `test` fail there when a selected entry is encrypted and no `--password` was given. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper refuses `--password` for archives it does not decrypt, such as tar and 7z, and the 7-Zip backend refuses it too. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
 
 ## Read tar archives in process
 

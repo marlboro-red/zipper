@@ -1,6 +1,7 @@
 //! Opt-in ZIP extraction of stored and Deflate entries, published only after
 //! full verification. See `docs/reference/zip-reader.md` for what it restores.
-use crate::zip_directory::{Directory, decode_name_like_zip_crate};
+use crate::zip_crypto::{AesExtra, Decryptor, Encryption};
+use crate::zip_directory::{CentralEntry, Directory, decode_name_like_zip_crate};
 use crate::{BadField, Field, field_check};
 use crate::{
     Entry,
@@ -29,6 +30,7 @@ struct Item {
     windows_attributes: u32,
     modified: Option<i64>,
     symlink: bool,
+    encryption: Option<Encryption>,
 }
 
 const CROWDED_FOLDER_FILES: usize = 1024;
@@ -100,6 +102,25 @@ const REGULAR: u32 = 0o100000;
 const PIPED_INPUT: u32 = 0o010000;
 
 impl Item {
+    fn packed(&self) -> u64 {
+        self.encryption.map_or(self.compressed, |encryption| {
+            encryption
+                .packed(self.compressed)
+                .expect("scan checked the encryption overhead")
+        })
+    }
+
+    fn stored_method(&self) -> u16 {
+        match self.encryption {
+            Some(Encryption::Aes(_)) => crate::zip_crypto::AES_METHOD,
+            _ => self.method,
+        }
+    }
+
+    fn checks_crc(&self) -> bool {
+        self.encryption.is_none_or(Encryption::checks_crc)
+    }
+
     fn stored_name_len(&self) -> usize {
         self.stored_name_if_different.as_ref().map_or(
             self.entry.name.len() + usize::from(self.entry.directory),
@@ -458,11 +479,8 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
     let mut names = HashMap::new();
     let mut metadata_bytes = 0usize;
     let mut clock = Clock::default();
-    for file in &directory.entries {
-        ensure!(
-            !file.encrypted(),
-            "encrypted ZIP is not supported; pass --zip-engine backend to read it with 7-Zip"
-        );
+    for (index, file) in directory.entries.iter().enumerate() {
+        let (encryption, method) = encryption(file, directory.aes_extra(index))?;
         let symlink = file.is_symlink();
         ensure!(
             !symlink || file.size <= crate::MAX_LINK_TARGET,
@@ -484,7 +502,7 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
         }
         ensure!(
             matches!(
-                file.method,
+                method,
                 STORED | DEFLATE | DEFLATE64 | BZIP2 | LZMA | ZSTANDARD | XZ | PPMD
             ),
             "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
@@ -520,7 +538,7 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
             },
             crc: file.crc32,
             compressed: file.compressed_size,
-            method: file.method,
+            method,
             stored_name_if_different,
             header_start: file.header_start,
             next_record_start: 0,
@@ -528,6 +546,7 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
             windows_attributes: crate::windows_attributes(file.external_attributes, unix_mode),
             modified: restore_times.then(|| clock.modified(&file.time)).flatten(),
             symlink,
+            encryption,
         });
     }
     for item in &items {
@@ -539,6 +558,33 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
     }
     assign_record_limits(&mut items, directory.archive_start, directory.start)?;
     Ok(items)
+}
+
+const STRONG_ENCRYPTION: u16 = 0x0040;
+
+fn encryption(file: &CentralEntry, aes: AesExtra) -> Result<(Option<Encryption>, u16)> {
+    if !file.encrypted() {
+        ensure!(
+            file.method != crate::zip_crypto::AES_METHOD,
+            "ZIP entry uses the AES method but is not marked encrypted"
+        );
+        return Ok((None, file.method));
+    }
+    ensure!(
+        file.flags & STRONG_ENCRYPTION == 0,
+        "PKWARE strong encryption is not supported; pass --zip-engine backend to read it with 7-Zip"
+    );
+    let (encryption, method) = if file.method == crate::zip_crypto::AES_METHOD {
+        match aes {
+            AesExtra::Present(field) => (Encryption::Aes(field), field.method),
+            AesExtra::Absent => anyhow::bail!("ZIP AES entry has no AES extra field"),
+            AesExtra::Malformed => anyhow::bail!("malformed ZIP AES extra field"),
+        }
+    } else {
+        (Encryption::ZipCrypto, file.method)
+    };
+    encryption.packed(file.compressed_size)?;
+    Ok((Some(encryption), method))
 }
 
 fn assign_record_limits(items: &mut [Item], archive_start: u64, central_start: u64) -> Result<()> {
@@ -666,6 +712,7 @@ fn descriptor_values(descriptor: &[u8], signature: bool, wide: bool) -> Field<[u
 struct LocalRecord {
     data_start: u64,
     has_descriptor: bool,
+    zip_crypto_check: u8,
 }
 
 fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Result<LocalRecord> {
@@ -680,14 +727,19 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
     reader.read_exact(&mut extra)?;
     let flags = read16(6);
     ensure!(
-        flags & 1 == 0,
-        "ZIP local header is encrypted but its central entry is not"
+        (flags & 1 != 0) == item.encryption.is_some(),
+        "ZIP local header encryption flag disagrees with central directory"
     );
-    let method = item.method;
     ensure!(
-        item.stored_name_is(&name) && read16(8) == method,
+        item.stored_name_is(&name) && read16(8) == item.stored_method(),
         "ZIP local header disagrees with central directory"
     );
+    if let Some(Encryption::Aes(field)) = item.encryption {
+        ensure!(
+            crate::zip_directory::aes_extra(&extra) == AesExtra::Present(field),
+            "ZIP local AES extra field disagrees with central directory"
+        );
+    }
     // EXTERNAL(Info-ZIP zip): writing to a pipe zeroes the local CRC and compressed size.
     let deferred = flags & 8 != 0;
     let agrees = |local: u64, central: u64| {
@@ -724,11 +776,18 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
         .filter(|&end| end <= item.next_record_start)
         .context("overlapping ZIP entries")?;
     let tail = item.next_record_start - data_end;
+    // EXTERNAL(Info-ZIP zip, 7-Zip): with a data descriptor, the check byte is the high byte of the time.
+    let zip_crypto_check = if deferred {
+        (read16(10) >> 8) as u8
+    } else {
+        (item.crc >> 24) as u8
+    };
     if !deferred {
         ensure!(tail == 0, "ZIP has bytes between records");
         return Ok(LocalRecord {
             data_start,
             has_descriptor: false,
+            zip_crypto_check,
         });
     }
     let (signature, wide) = descriptor_layout(tail)?;
@@ -743,6 +802,7 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
     Ok(LocalRecord {
         data_start,
         has_descriptor: true,
+        zip_crypto_check,
     })
 }
 
@@ -1123,7 +1183,7 @@ fn stream_entry(
     };
     if item.method == STORED {
         ensure!(
-            item.compressed == item.entry.size,
+            item.packed() == item.entry.size,
             "stored ZIP entry sizes differ"
         );
         let mut scan = descriptor.then(HiddenDescriptorScan::default);
@@ -1141,7 +1201,7 @@ fn stream_entry(
             emit(chunk)?;
         }
     } else if item.method == DEFLATE64 {
-        inflate64(input, item.compressed, buffer, emit)?;
+        inflate64(input, item.packed(), buffer, emit)?;
     } else if item.method != DEFLATE {
         let input: &mut dyn Read = input;
         let mut input = std::io::BufReader::with_capacity(OTHER_METHOD_INPUT, input);
@@ -1187,14 +1247,147 @@ fn stream_entry(
             ensure!(consumed > 0 || produced > 0, "truncated ZIP Deflate stream");
         }
         ensure!(
-            inflater.total_in() == item.compressed,
+            inflater.total_in() == item.packed(),
             "ZIP Deflate stream ends before its compressed size"
         );
     }
     ensure!(written == item.entry.size, "ZIP decoded size mismatch");
-    ensure!(crc.finalize() == item.crc, "ZIP CRC mismatch");
+    ensure!(
+        !item.checks_crc() || crc.finalize() == item.crc,
+        "ZIP CRC mismatch"
+    );
     Ok(())
 }
+
+struct Payload<R> {
+    data: std::io::Take<R>,
+    decryptor: Option<Decryptor>,
+}
+
+impl<R: Read> Read for Payload<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.data.read(buffer)?;
+        if let Some(decryptor) = &mut self.decryptor {
+            decryptor.decrypt(&mut buffer[..read]);
+        }
+        Ok(read)
+    }
+}
+
+fn wrong_password(item: &Item) -> anyhow::Error {
+    anyhow::anyhow!(
+        "the password is wrong for encrypted ZIP entry {:?}",
+        item.entry.name
+    )
+}
+
+impl<R: Read> Payload<R> {
+    fn open(
+        mut record: R,
+        item: &Item,
+        local: &LocalRecord,
+        password: Option<&[u8]>,
+    ) -> Result<Self> {
+        let Some(encryption) = item.encryption else {
+            return Ok(Self {
+                data: record.take(item.compressed),
+                decryptor: None,
+            });
+        };
+        let password = password.ok_or_else(|| PasswordNeeded {
+            entry: item.entry.name.clone(),
+        })?;
+        let mut header = [0; crate::zip_crypto::LONGEST_HEADER];
+        let header = &mut header[..encryption.header_len()];
+        record
+            .read_exact(header)
+            .context("truncated ZIP encryption header")?;
+        let started = Decryptor::start(encryption, password, header, local.zip_crypto_check);
+        crate::zip_crypto::scrub_stack();
+        let decryptor = started.map_err(|_| wrong_password(item))?;
+        Ok(Self {
+            data: record.take(item.packed()),
+            decryptor: Some(decryptor),
+        })
+    }
+
+    fn stream(
+        self,
+        item: &Item,
+        descriptor: bool,
+        buffer: &mut [u8],
+        sink: impl FnMut(&[u8]) -> Result<()>,
+    ) -> Result<()> {
+        let encrypted = self.decryptor.is_some();
+        let streamed = self.decrypt_and_check(item, descriptor, buffer, sink);
+        if encrypted {
+            crate::zip_crypto::scrub_stack();
+        }
+        streamed
+    }
+
+    #[inline(never)]
+    fn decrypt_and_check(
+        mut self,
+        item: &Item,
+        descriptor: bool,
+        buffer: &mut [u8],
+        mut sink: impl FnMut(&[u8]) -> Result<()>,
+    ) -> Result<()> {
+        let mut sink_failed = false;
+        let streamed = stream_entry(&mut self, item, descriptor, buffer, |bytes| {
+            sink(bytes).inspect_err(|_| sink_failed = true)
+        });
+        let Some(encryption) = item.encryption.filter(|_| !sink_failed) else {
+            return streamed;
+        };
+        if let Encryption::Aes(_) = encryption {
+            std::io::copy(&mut self, &mut std::io::sink())?;
+            let mut code = [0; crate::zip_crypto::AES_CODE];
+            self.data
+                .get_mut()
+                .read_exact(&mut code)
+                .context("truncated ZIP AES authentication code")?;
+            let decryptor = self
+                .decryptor
+                .take()
+                .expect("an encrypted entry has a decryptor");
+            if !decryptor.authenticates(&code) {
+                return Err(anyhow::anyhow!(
+                    "the password is wrong or ZIP entry {:?} is damaged: its AES authentication code does not match",
+                    item.entry.name
+                ));
+            }
+            return streamed;
+        }
+        streamed.map_err(|error| {
+            error.context(format!(
+                "the password is wrong or ZIP entry {:?} is damaged",
+                item.entry.name
+            ))
+        })
+    }
+}
+
+/// The error when a selected ZIP entry is encrypted and no password was
+/// given.
+#[derive(Debug)]
+pub struct PasswordNeeded {
+    /// The first encrypted entry, as it would be written.
+    pub entry: String,
+}
+
+impl std::fmt::Display for PasswordNeeded {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            formatter,
+            "ZIP entry {:?} is encrypted; give its password with --password",
+            self.entry
+        )
+    }
+}
+
+impl std::error::Error for PasswordNeeded {}
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
@@ -1260,6 +1453,9 @@ pub struct ReadOptions<'a> {
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
+    /// Password for ZipCrypto and WinZip AES entries. Zipper keeps no copy
+    /// of it and clears the keys it derives from it after each entry.
+    pub password: Option<&'a [u8]>,
 }
 
 pub fn read_archive_with_options(
@@ -1369,6 +1565,14 @@ pub fn read_archive_with_options(
         }
         None => None,
     };
+    if options.password.is_none()
+        && let Some(item) = items.iter().find(|item| item.encryption.is_some())
+    {
+        return Err(PasswordNeeded {
+            entry: item.entry.name.clone(),
+        }
+        .into());
+    }
     if let Some(temp) = &staging {
         create_directories_in_archive_order(temp.path(), &items)?;
     }
@@ -1415,15 +1619,18 @@ pub fn read_archive_with_options(
             },
             None => None,
         };
-        let LocalRecord {
-            data_start,
-            has_descriptor: descriptor,
-        } = check_local_header(raw, item)?;
+        let local = check_local_header(raw, item)?;
+        let descriptor = local.has_descriptor;
         // RECORD(benchmarks/native-zip/decoder-selection/README.md): large, compressible entries stream.
         let prefer_streaming = destination.is_some()
             && item.entry.size >= 16 * 1024 * 1024
             && item.compressed <= item.entry.size / 128;
-        let reservation = if fast && !prefer_streaming && !item.symlink && item.method == DEFLATE {
+        let reservation = if fast
+            && !prefer_streaming
+            && !item.symlink
+            && item.method == DEFLATE
+            && item.encryption.is_none()
+        {
             item.entry
                 .size
                 .checked_add(item.compressed)
@@ -1433,11 +1640,11 @@ pub fn read_archive_with_options(
             None
         };
         let buffered = reservation.is_some();
-        raw.seek(SeekFrom::Start(data_start))?;
-        let mut source = Read::take(&mut *raw, item.compressed);
+        raw.seek(SeekFrom::Start(local.data_start))?;
+        let mut payload = Payload::open(&mut *raw, item, &local, options.password)?;
         if item.symlink {
             let mut target = Vec::new();
-            stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+            payload.stream(item, descriptor, buffer, |bytes| {
                 target.extend_from_slice(bytes);
                 Ok(())
             })?;
@@ -1470,7 +1677,7 @@ pub fn read_archive_with_options(
         if buffered {
             let mut compressed = entry_buffer(item.compressed as usize)?;
             let mut decoded = entry_buffer(item.entry.size as usize)?;
-            source.read_exact(&mut compressed)?;
+            payload.read_exact(&mut compressed)?;
             let length = counters::time(Counter::DecodeNanos, || {
                 codec.as_mut().unwrap().inflate(&compressed, &mut decoded)
             })?;
@@ -1500,7 +1707,7 @@ pub fn read_archive_with_options(
         {
             let report_written = |bytes| tracker.count_bytes(bytes);
             let (mut written, held) = write_behind(unwritten, &report_written, |sink| {
-                stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+                payload.stream(item, descriptor, buffer, |bytes| {
                     tracker.report()?;
                     sink(bytes)
                 })
@@ -1512,7 +1719,7 @@ pub fn read_archive_with_options(
             return finished(item);
         }
         let mut held = 0;
-        stream_entry(&mut source, item, descriptor, buffer, |bytes| {
+        payload.stream(item, descriptor, buffer, |bytes| {
             if bytes.is_empty() {
                 return Ok(());
             }

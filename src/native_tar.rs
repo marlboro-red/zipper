@@ -33,6 +33,7 @@ const BYTES_IN_FLIGHT: usize = 16 * 1024 * 1024;
 const DEFAULT_WRITERS: usize = 4;
 // RECORD(benchmarks/cross-platform/tar-folder-lanes/README.md): one writer per folder is faster on Windows.
 const ONE_WRITER_PER_FOLDER: bool = cfg!(windows);
+const LINKS_PER_REPORT: usize = 1024;
 const READ_ERROR: &str = "cannot read the tar stream";
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
@@ -278,14 +279,86 @@ fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<(u64, u64)> {
 /// Returns the compression of a tar archive, or `None` when the file does not
 /// start with a tar header, plain or inside gzip, zstd or xz.
 pub fn sniff(path: &Path) -> Result<Option<Compression>> {
-    let compression = compression_by_signature(path)?;
-    let input = BufReader::new(crate::volumes::open(path)?.take(SNIFF_INPUT));
-    let Ok(mut stream) = decode(input, compression) else {
-        return Ok(None);
+    sniff_part(&Part::whole(path)?)
+}
+
+pub(crate) struct Part {
+    path: PathBuf,
+    start: u64,
+    length: u64,
+}
+
+impl Part {
+    pub(crate) fn new(path: &Path, start: u64, length: u64) -> Self {
+        Part {
+            path: path.to_owned(),
+            start,
+            length,
+        }
+    }
+
+    fn whole(path: &Path) -> Result<Self> {
+        Ok(Part::new(path, 0, crate::volumes::open(path)?.len()?))
+    }
+
+    fn open(&self) -> Result<PartReader> {
+        let mut file = crate::volumes::open(&self.path)?;
+        file.seek(SeekFrom::Start(self.start))?;
+        Ok(PartReader {
+            file,
+            start: self.start,
+            end: self.start.saturating_add(self.length),
+            position: self.start,
+        })
+    }
+}
+
+struct PartReader {
+    file: crate::volumes::ArchiveFile,
+    start: u64,
+    end: u64,
+    position: u64,
+}
+
+impl Read for PartReader {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.end.saturating_sub(self.position);
+        let want = buffer
+            .len()
+            .min(usize::try_from(left).unwrap_or(usize::MAX));
+        let read = self.file.read(&mut buffer[..want])?;
+        self.position += read as u64;
+        Ok(read)
+    }
+}
+
+impl Seek for PartReader {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        let target = match to {
+            SeekFrom::Start(offset) => self.start.checked_add(offset),
+            SeekFrom::Current(offset) => self.position.checked_add_signed(offset),
+            SeekFrom::End(offset) => self.end.checked_add_signed(offset),
+        }
+        .filter(|&target| target >= self.start)
+        .ok_or_else(|| std::io::Error::other("seek outside the tar"))?;
+        self.position = self.file.seek(SeekFrom::Start(target))?;
+        Ok(self.position - self.start)
+    }
+}
+
+pub(crate) fn sniff_part(part: &Part) -> Result<Option<Compression>> {
+    let compression = compression_of(&mut part.open()?)?;
+    let input = BufReader::new(part.open()?.take(SNIFF_INPUT));
+    let mut stream = match decode(input, compression) {
+        Ok(stream) => stream,
+        Err(error) if is_over_memory(&error) => return Err(error),
+        Err(_) => return Ok(None),
     };
     let mut first = [0u8; BLOCK];
-    if stream.read_exact(&mut first).is_err() {
-        return Ok(None);
+    match stream.read_exact(&mut first) {
+        Err(error) if error.kind() == std::io::ErrorKind::OutOfMemory => return Err(error.into()),
+        Err(_) => return Ok(None),
+        Ok(()) => {}
     }
     let tar = first != [0; BLOCK] && (checksum_matches(&first) || &first[257..262] == b"ustar");
     Ok(tar.then_some(compression))
@@ -294,10 +367,13 @@ pub fn sniff(path: &Path) -> Result<Option<Compression>> {
 const SKIPPABLE_FRAMES_SNIFFED: usize = 16;
 
 pub(crate) fn compression_by_signature(path: &Path) -> Result<Compression> {
-    let mut file = crate::volumes::open(path)?;
+    compression_of(&mut crate::volumes::open(path)?)
+}
+
+fn compression_of(file: &mut (impl Read + Seek)) -> Result<Compression> {
     for skipped in 0..SKIPPABLE_FRAMES_SNIFFED {
         let mut magic = [0u8; 8];
-        let read = read_up_to(&mut file, &mut magic)?;
+        let read = read_up_to(file, &mut magic)?;
         let compression = match &magic[..read] {
             [0x1f, 0x8b, ..] => Compression::Gzip,
             [0x28, 0xb5, 0x2f, 0xfd, ..] => Compression::Zstd,
@@ -336,6 +412,9 @@ fn read_up_to(file: &mut impl Read, buffer: &mut [u8]) -> std::io::Result<usize>
 
 const SNIFF_INPUT: u64 = crate::lz4::FIRST_BLOCK_INPUT_MAX;
 const BZIP2_OUTPUT_PER_EXTRA_STREAM: u64 = 4096;
+const LARGEST_DICTIONARY: u64 = 256 * 1024 * 1024;
+const DECODER_OVERHEAD: u64 = 16 * 1024 * 1024;
+const DECODER_MEMORY: u64 = LARGEST_DICTIONARY + DECODER_OVERHEAD;
 
 pub(crate) fn decoder(path: &Path, compression: Compression) -> Result<Box<dyn Read + Send>> {
     decode(
@@ -352,16 +431,19 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
         Compression::None => Box::new(input),
         Compression::Gzip => Box::new(flate2::bufread::MultiGzDecoder::new(input)),
         Compression::Zstd => Box::new(zstd::stream::read::Decoder::with_buffer(input)?),
-        Compression::Xz => Box::new(liblzma::bufread::XzDecoder::new_multi_decoder(input)),
+        Compression::Xz => Box::new(DecoderMemory(liblzma::bufread::XzDecoder::new_stream(
+            input,
+            liblzma::stream::Stream::new_auto_decoder(
+                DECODER_MEMORY,
+                liblzma::stream::CONCATENATED,
+            )?,
+        ))),
         Compression::Bzip2 => Box::new(Bzip2Streams {
             decoder: Some(bzip2::bufread::BzDecoder::new(input)),
             streams: 1,
             decoded: 0,
         }),
-        Compression::Lzma => Box::new(liblzma::bufread::XzDecoder::new_stream(
-            input,
-            liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
-        )),
+        Compression::Lzma => Box::new(DecoderMemory(lzma_decoder(input)?)),
         Compression::Lzip => Box::new(LzipMembers {
             decoder: Some(lzip_member(input)?),
         }),
@@ -370,10 +452,81 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
     })
 }
 
-fn lzip_member<R: BufRead>(input: R) -> std::io::Result<liblzma::bufread::XzDecoder<R>> {
+pub(crate) fn lzma_decoder<R: BufRead>(mut input: R) -> Result<liblzma::bufread::XzDecoder<R>> {
+    if let Some(field) = input.fill_buf()?.get(1..5) {
+        let dictionary = u32::from_le_bytes(field.try_into().unwrap());
+        ensure_dictionary_fits("LZMA", u64::from(dictionary))?;
+    }
     Ok(liblzma::bufread::XzDecoder::new_stream(
         input,
-        liblzma::stream::Stream::new_lzip_decoder(u64::MAX, 0)?,
+        liblzma::stream::Stream::new_lzma_decoder(DECODER_MEMORY)?,
+    ))
+}
+
+fn is_over_memory(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|error| error.kind() == std::io::ErrorKind::OutOfMemory)
+}
+
+fn largest_dictionary() -> String {
+    format!(
+        "the largest dictionary Zipper accepts, {} MiB",
+        LARGEST_DICTIONARY >> 20
+    )
+}
+
+fn ensure_dictionary_fits(format: &str, dictionary: u64) -> std::io::Result<()> {
+    if dictionary <= LARGEST_DICTIONARY {
+        return Ok(());
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::OutOfMemory,
+        format!(
+            "{format} stream declares a {dictionary}-byte dictionary, more than {}; {BACKEND_HINT}",
+            largest_dictionary()
+        ),
+    ))
+}
+
+// SPEC(lzip manual, File format): bits 4-0 of the coded dictionary size are the base 2 logarithm
+// of a base size, and bits 7-5 how many sixteenths of the base to subtract from it.
+fn lzip_dictionary(coded: u8) -> u64 {
+    let base = 1u64 << (coded & 0x1F);
+    base - base / 16 * u64::from(coded >> 5)
+}
+
+pub(crate) struct DecoderMemory<R>(pub(crate) R);
+
+impl<R: Read> Read for DecoderMemory<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buffer).map_err(|error| {
+            let over = error
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<liblzma::stream::Error>())
+                .is_some_and(|inner| matches!(inner, liblzma::stream::Error::MemLimit));
+            if over {
+                std::io::Error::new(
+                    std::io::ErrorKind::OutOfMemory,
+                    format!(
+                        "the stream needs a dictionary larger than {}; {BACKEND_HINT}",
+                        largest_dictionary()
+                    ),
+                )
+            } else {
+                error
+            }
+        })
+    }
+}
+
+fn lzip_member<R: BufRead>(mut input: R) -> std::io::Result<liblzma::bufread::XzDecoder<R>> {
+    if let Some(&coded) = input.fill_buf()?.get(5) {
+        ensure_dictionary_fits("lzip", lzip_dictionary(coded))?;
+    }
+    Ok(liblzma::bufread::XzDecoder::new_stream(
+        input,
+        liblzma::stream::Stream::new_lzip_decoder(DECODER_MEMORY, 0)?,
     ))
 }
 
@@ -806,7 +959,7 @@ struct Output<'a, 'f> {
 
 struct Extraction<'a, 'f> {
     output: Option<Output<'a, 'f>>,
-    nodes: HashMap<String, Node>,
+    nodes: HashMap<String, (Node, u32)>,
     metadata_bytes: usize,
     created_directories: HashSet<String>,
     directories: Vec<DirectoryMetadata>,
@@ -869,7 +1022,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             .ensure_each_path_matches(self.nodes.keys().map(String::as_str))?;
         self.placement.ensure_something_placed(self.placed_any)?;
         self.placement
-            .ensure_prefix_is_a_folder(self.nodes.iter().map(|(name, node)| {
+            .ensure_prefix_is_a_folder(self.nodes.iter().map(|(name, (node, _))| {
                 (
                     name.as_str(),
                     matches!(node, Node::Directory | Node::ImpliedDirectory),
@@ -883,7 +1036,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
         dots: usize,
         directory: bool,
         replaces: bool,
-    ) -> Result<Option<String>> {
+    ) -> Result<Option<(String, bool)>> {
         if !self.selection.selects(name) {
             return Ok(None);
         }
@@ -892,10 +1045,13 @@ impl<'a, 'f> Extraction<'a, 'f> {
             return Ok(None);
         };
         self.placed_any = true;
-        if self.placement.strips() && !replaces {
-            self.placed.add(placed, directory)?;
-        }
-        Ok(Some(placed.to_owned()))
+        let replaces = if self.placement.strips() {
+            self.placed
+                .add_entry(placed, directory, self.nodes[name].1)?
+        } else {
+            replaces
+        };
+        Ok(Some((placed.to_owned(), replaces)))
     }
 
     fn root(&self) -> Option<&'a Path> {
@@ -917,14 +1073,21 @@ impl<'a, 'f> Extraction<'a, 'f> {
             "tar has more than {MAX_ENTRIES} entries"
         );
         self.charge_name(name.len())?;
-        Ok(self.nodes.insert(name.to_owned(), node))
+        let id = self.nodes.len() as u32;
+        Ok(match self.nodes.get_mut(name) {
+            Some((earlier, _)) => Some(std::mem::replace(earlier, node)),
+            None => {
+                self.nodes.insert(name.to_owned(), (node, id));
+                None
+            }
+        })
     }
 
     fn claim(&mut self, name: &str, node: Node) -> Result<bool> {
         let mut ancestor = name;
         while let Some(slash) = ancestor.rfind('/') {
             ancestor = &ancestor[..slash];
-            match self.nodes.get(ancestor) {
+            match self.nodes.get(ancestor).map(|(node, _)| node) {
                 Some(Node::ImpliedDirectory | Node::Directory) => break,
                 Some(_) => bail!("tar entry {name:?} is inside a file or link"),
                 None => {
@@ -1014,7 +1177,10 @@ impl<'a, 'f> Extraction<'a, 'f> {
         let Some(root) = self.root() else {
             return Ok(());
         };
-        for (name, target) in &self.hard_links {
+        for (index, (name, target)) in self.hard_links.iter().enumerate() {
+            if index % LINKS_PER_REPORT == 0 {
+                self.tracker.report()?;
+            }
             fs::hard_link(root.join(target), root.join(name)).map_err(|error| {
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
                     anyhow::anyhow!(
@@ -1025,7 +1191,10 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 }
             })?;
         }
-        for (name, target) in &self.symlinks {
+        for (index, (name, target)) in self.symlinks.iter().enumerate() {
+            if index % LINKS_PER_REPORT == 0 {
+                self.tracker.report()?;
+            }
             crate::create_symlink("tar", root, name, target)?;
         }
         Ok(())
@@ -1100,7 +1269,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             _ if directory => {
                 ensure!(size == 0, "tar directory {name:?} has data");
                 let replaces = self.claim(&name, Node::Directory)?;
-                let Some(name) = self.place(&name, dots, true, replaces)? else {
+                let Some((name, _)) = self.place(&name, dots, true, replaces)? else {
                     return Ok(());
                 };
                 if self.output.is_some() {
@@ -1122,7 +1291,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             }
             b'0' | 0 | b'7' => {
                 let replaces = self.claim(&name, Node::File)?;
-                let Some(name) = self.place(&name, dots, false, replaces)? else {
+                let Some((name, replaces)) = self.place(&name, dots, false, replaces)? else {
                     return input.copy(size, |_| Ok(()));
                 };
                 self.write_file(input, &name, size, mode, modified, replaces)?;
@@ -1143,13 +1312,13 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 safe_path(&target)?;
                 ensure!(
                     matches!(
-                        self.nodes.get(&target),
+                        self.nodes.get(&target).map(|(node, _)| node),
                         Some(Node::File | Node::LinkedFile | Node::HardLink)
                     ),
                     "tar hard link {name:?} does not name an earlier file"
                 );
                 self.charge_name(target.len())?;
-                if let Some(node @ Node::File) = self.nodes.get_mut(&target) {
+                if let Some((node @ Node::File, _)) = self.nodes.get_mut(&target) {
                     *node = Node::LinkedFile;
                 }
                 self.claim(&name, Node::HardLink)?;
@@ -1158,7 +1327,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
                     .place_after_dots(&target, target_dots)
                     .filter(|_| self.selection.selects(&target))
                     .map(str::to_owned);
-                let Some(name) = self.place(&name, dots, false, false)? else {
+                let Some((name, _)) = self.place(&name, dots, false, false)? else {
                     return Ok(());
                 };
                 let target = placed_target.with_context(|| {
@@ -1172,7 +1341,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
                 self.charge_name(raw_target.len())?;
                 self.claim(&name, Node::Symlink)?;
-                let Some(name) = self.place(&name, dots, false, false)? else {
+                let Some((name, _)) = self.place(&name, dots, false, false)? else {
                     return Ok(());
                 };
                 crate::ensure_link_stays_inside("tar", &name, &raw_target)?;
@@ -1256,7 +1425,18 @@ pub fn read_archive(
     destination: Option<&Path>,
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
-    let compression = sniff(path)?.context("not a tar archive")?;
+    read_part(path, &Part::whole(path)?, destination, options)
+}
+
+pub(crate) fn read_part(
+    path: &Path,
+    part: &Part,
+    destination: Option<&Path>,
+    options: ReadOptions,
+) -> Result<Vec<Entry>> {
+    let compression = sniff_part(part)?.context("not a tar archive")?;
+    let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
+    let placement = crate::placement::Placement::new(options.strip)?;
     let staging = destination
         .map(|destination| {
             crate::staging::stage(path, destination, options.existing, options.metadata)
@@ -1277,10 +1457,12 @@ pub fn read_archive(
         estimate: 0,
     };
     let mut input = Input {
-        reader: decoder(path, compression)?,
+        reader: decode(
+            BufReader::with_capacity(COPY_BUFFER, part.open()?),
+            compression,
+        )?,
         buffer: vec![0; COPY_BUFFER],
     };
-    let selection = || crate::Selection::new(options.paths, options.include, options.exclude);
     let tracker = Tracker::new(options.control, None, None);
     let count_written = |written: Written| match written {
         Written::Bytes(bytes) => tracker.add_bytes(bytes),
@@ -1291,8 +1473,8 @@ pub fn read_archive(
             None,
             budget,
             &tracker,
-            selection()?,
-            crate::placement::Placement::new(options.strip)?,
+            selection,
+            placement,
             options.metadata,
         );
         parse(&mut extraction, &mut input)?;
@@ -1330,6 +1512,7 @@ pub fn read_archive(
                 scope.spawn(move || writers.work(queue, count_written))
             })
             .collect();
+        let closing = ClosesOnDrop(&writers);
         let output = Output {
             root: staging.path(),
             writers: &writers,
@@ -1338,14 +1521,14 @@ pub fn read_archive(
             Some(output),
             budget,
             &tracker,
-            selection()?,
-            crate::placement::Placement::new(options.strip)?,
+            selection,
+            placement,
             options.metadata,
         );
         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             parse(&mut extraction, &mut input)
         }));
-        writers.close();
+        drop(closing);
         let joined: Vec<_> = threads.into_iter().map(|thread| thread.join()).collect();
         if let Some(panic) = writers.callback_panic.lock().unwrap().take() {
             std::panic::resume_unwind(panic);
@@ -1359,6 +1542,14 @@ pub fn read_archive(
         publish(&extraction, &staging)?;
         Ok(extraction.entries)
     })
+}
+
+struct ClosesOnDrop<'w, 'f>(&'w Writers<'f>);
+
+impl Drop for ClosesOnDrop<'_, '_> {
+    fn drop(&mut self) {
+        self.0.close();
+    }
 }
 
 fn publish(extraction: &Extraction, staging: &crate::staging::Staging) -> Result<()> {
@@ -1638,5 +1829,24 @@ mod sniff_tests {
         let path = root.path().join("a.tar.lz4");
         std::fs::write(&path, frame).unwrap();
         assert!(matches!(sniff(&path).unwrap(), Some(Compression::Lz4)));
+    }
+}
+
+#[cfg(test)]
+mod lzip_tests {
+    use super::*;
+
+    #[test]
+    fn coded_dictionary_sizes_read_as_lzip_reports_them() {
+        for (coded, size) in [
+            (0x0C, 4 << 10),
+            (0x8D, 6 << 10),
+            (0x71, 104 << 10),
+            (0xD4, 640 << 10),
+            (0x1C, 256 << 20),
+            (0x1D, 512 << 20),
+        ] {
+            assert_eq!(lzip_dictionary(coded), size, "{coded:#x}");
+        }
     }
 }

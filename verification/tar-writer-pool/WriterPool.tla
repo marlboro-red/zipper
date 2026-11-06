@@ -128,10 +128,11 @@ DecoderTakesChunk ==
                    failure, everFailed, wpc, job, written, removing, result>>
 
 \* The stream is corrupt: `parse` returns an error. The held chunk and the
-\* stream sender drop as `write_file` unwinds.
+\* stream sender drop as `write_file` unwinds. At "start" it also stands for
+\* any error the scope returns before `parse`.
 DecoderFindsCorruptInput ==
     /\ DecoderCanFail
-    /\ dpc \in {"take", "count", "send_chunk"}
+    /\ dpc \in {"start", "take", "count", "send_chunk"}
     /\ dpc' = "failing"
     /\ dropping' = IF holding THEN dropping + 1 ELSE dropping
     /\ UNCHANGED <<inflight, pushed, spare, allocated>>
@@ -203,7 +204,8 @@ DecoderFinishesFile ==
                    failure, everFailed, wpc, job, written, removing, result>>
     /\ UNCHANGED drops
 
-\* `writers.close()` after `parse` returns, success or error.
+\* `drop(closing)` after `parse` returns, success or error, or the drop of the
+\* `ClosesOnDrop` guard when the scope returns early.
 DecoderClosesLanes ==
     /\ dpc \in {"closing", "failing"}
     /\ lanesOpen' = FALSE

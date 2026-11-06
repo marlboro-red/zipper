@@ -55,7 +55,10 @@ The reader checks the whole archive before it publishes anything, and it publish
 | Entries and implied directories | at most 1,000,000 |
 | Names, implied directories and link targets | at most 64 MiB in total |
 | One pax header, GNU long name or long link | at most 1 MiB |
+| Largest xz, LZMA or lzip dictionary | 256 MiB, four times the 64 MiB of `xz -9e` |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
+
+An LZMA or lzip stream whose header declares a larger dictionary is refused before decoding, with its size in the error. An xz stream is refused when one of its blocks needs a larger dictionary. Each error names the largest dictionary accepted and points at `--zip-engine backend`.
 
 One thread decodes and checks the stream. Four writer threads create and write the files, or the number `--threads` sets. A file larger than 1 MiB streams to one writer in order. On Windows, all files of one folder go to the same writer, because creating files in one folder from several threads is slower there. At most 16 MiB of file data waits between the decoder and the writers, so memory does not grow with file size or writer count. A repeated file name waits for every pending write before it replaces the file. A TLA+ model in `verification/tar-writer-pool/` checks every order of these steps, within a bound, for hangs, budget overruns, leaked chunks and lost write failures. The `zipper-verify-tar-pool` skill in `.claude/skills/` runs it.
 
@@ -64,9 +67,9 @@ One thread decodes and checks the stream. Four writer threads create and write t
 These options work the same way in every reader. [Usage](../usage.md#extract-into-an-existing-folder) shows them.
 
 - `Existing::Overwrite`, or `zipper extract --overwrite`, extracts into an existing folder. The whole archive decodes into a hidden staging folder first. Each file then replaces the file of the same name by rename. `tests/overwrite.rs` covers links and conflicts in the destination.
-- `Control` carries a progress callback and a cancel flag. `tests/control.rs` covers cancellation at any point.
+- `Control` carries a progress callback and a cancel flag. `tests/control.rs` covers cancellation at any point. While the reader creates links after the last entry, it reports progress and checks the flag every 1,024 links.
 - `paths`, `include` and `exclude`, or `--path`, `--include` and `--exclude`, select entries. The reader still parses and checks every header, and writes only the selected entries. A selected hard link whose target is left out is refused, and each `--path` must match an entry.
-- `strip`, or `--strip-prefix` and `--strip-components`, places a folder's contents at the destination root, as [usage](../usage.md#extract-a-folder-at-the-output-root) describes. The reader checks the prefix after the last header, before it publishes.
+- `strip`, or `--strip-prefix` and `--strip-components`, places a folder's contents at the destination root, as [usage](../usage.md#extract-a-folder-at-the-output-root) describes. The reader checks the prefix after the last header, before it publishes. A repeated name replaces its earlier file only when both spellings land on one path, as `a/x` and `./a/x` do without a strip. Under `--strip-components`, a leading `./` counts as a segment, so the two spellings can land apart. Each then keeps its own file, and a spelling that lands on another entry's path is refused.
 - `metadata: Metadata::ContentOnly`, or `--content-only`, writes contents and the execute bit only, as [usage](../usage.md#extract-contents-only) describes.
 
 ## Reference corpus

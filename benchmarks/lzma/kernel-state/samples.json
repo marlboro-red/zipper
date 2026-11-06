@@ -1,0 +1,1256 @@
+[
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "da108d5",
+  "inner": 0,
+  "zipper": 512.925792,
+  "liblzma": 401.0665,
+  "busy": [
+   "98.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "98.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "99.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "da108d5",
+  "inner": 1,
+  "zipper": 514.235666,
+  "liblzma": 397.765958,
+  "busy": [
+   "98.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "98.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "99.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "da108d5",
+  "inner": 2,
+  "zipper": 515.723625,
+  "liblzma": 397.644417,
+  "busy": [
+   "98.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "98.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "99.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "d6b83f6",
+  "inner": 0,
+  "zipper": 518.73875,
+  "liblzma": 446.537625,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "d6b83f6",
+  "inner": 1,
+  "zipper": 457.568625,
+  "liblzma": 421.19825,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "d6b83f6",
+  "inner": 2,
+  "zipper": 456.735042,
+  "liblzma": 421.6615,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "9656259",
+  "inner": 0,
+  "zipper": 432.654583,
+  "liblzma": 402.477792,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "9656259",
+  "inner": 1,
+  "zipper": 435.99925,
+  "liblzma": 401.832917,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "9656259",
+  "inner": 2,
+  "zipper": 438.063625,
+  "liblzma": 398.935291,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "53ab48a",
+  "inner": 0,
+  "zipper": 437.383083,
+  "liblzma": 403.015625,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "53ab48a",
+  "inner": 1,
+  "zipper": 441.757084,
+  "liblzma": 400.565375,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "53ab48a",
+  "inner": 2,
+  "zipper": 437.46075,
+  "liblzma": 400.323083,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "fbead1c",
+  "inner": 0,
+  "zipper": 433.154167,
+  "liblzma": 402.759625,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "fbead1c",
+  "inner": 1,
+  "zipper": 435.142084,
+  "liblzma": 403.592083,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "fbead1c",
+  "inner": 2,
+  "zipper": 432.366625,
+  "liblzma": 397.828083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "d6b83f6",
+  "inner": 0,
+  "zipper": 432.387083,
+  "liblzma": 400.490292,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "d6b83f6",
+  "inner": 1,
+  "zipper": 435.167416,
+  "liblzma": 397.891167,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "d6b83f6",
+  "inner": 2,
+  "zipper": 435.085375,
+  "liblzma": 397.851083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "9656259",
+  "inner": 0,
+  "zipper": 472.591459,
+  "liblzma": 439.21925,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "9656259",
+  "inner": 1,
+  "zipper": 482.222125,
+  "liblzma": 441.074959,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "9656259",
+  "inner": 2,
+  "zipper": 479.61675,
+  "liblzma": 435.5685,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "53ab48a",
+  "inner": 0,
+  "zipper": 470.193083,
+  "liblzma": 433.434625,
+  "busy": [
+   "99.1 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "53ab48a",
+  "inner": 1,
+  "zipper": 477.584542,
+  "liblzma": 434.49,
+  "busy": [
+   "99.1 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "53ab48a",
+  "inner": 2,
+  "zipper": 470.388125,
+  "liblzma": 431.409916,
+  "busy": [
+   "99.1 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "fbead1c",
+  "inner": 0,
+  "zipper": 467.17575,
+  "liblzma": 435.676625,
+  "busy": [
+   "100.0 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "fbead1c",
+  "inner": 1,
+  "zipper": 467.056875,
+  "liblzma": 434.78125,
+  "busy": [
+   "100.0 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "fbead1c",
+  "inner": 2,
+  "zipper": 469.405791,
+  "liblzma": 430.719709,
+  "busy": [
+   "100.0 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "da108d5",
+  "inner": 0,
+  "zipper": 578.639084,
+  "liblzma": 448.93575,
+  "busy": [
+   "99.1 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "da108d5",
+  "inner": 1,
+  "zipper": 576.897792,
+  "liblzma": 448.408959,
+  "busy": [
+   "99.1 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "da108d5",
+  "inner": 2,
+  "zipper": 576.214459,
+  "liblzma": 444.320917,
+  "busy": [
+   "99.1 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "9656259",
+  "inner": 0,
+  "zipper": 492.238125,
+  "liblzma": 457.009666,
+  "busy": [
+   "99.4 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "9656259",
+  "inner": 1,
+  "zipper": 480.873792,
+  "liblzma": 400.779208,
+  "busy": [
+   "99.4 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "9656259",
+  "inner": 2,
+  "zipper": 435.840541,
+  "liblzma": 397.983625,
+  "busy": [
+   "99.4 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/release/deps/self_extracting-15f11c3ce87fe755"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "53ab48a",
+  "inner": 0,
+  "zipper": 432.055,
+  "liblzma": 402.482958,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "53ab48a",
+  "inner": 1,
+  "zipper": 439.081084,
+  "liblzma": 401.279208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "53ab48a",
+  "inner": 2,
+  "zipper": 433.888166,
+  "liblzma": 400.429208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "fbead1c",
+  "inner": 0,
+  "zipper": 465.787458,
+  "liblzma": 441.085291,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "fbead1c",
+  "inner": 1,
+  "zipper": 471.325875,
+  "liblzma": 412.051583,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "fbead1c",
+  "inner": 2,
+  "zipper": 467.414583,
+  "liblzma": 441.594583,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "da108d5",
+  "inner": 0,
+  "zipper": 512.895834,
+  "liblzma": 403.228,
+  "busy": [
+   "97.9 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "da108d5",
+  "inner": 1,
+  "zipper": 513.824292,
+  "liblzma": 399.859125,
+  "busy": [
+   "97.9 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "da108d5",
+  "inner": 2,
+  "zipper": 514.66325,
+  "liblzma": 400.94625,
+  "busy": [
+   "97.9 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "d6b83f6",
+  "inner": 0,
+  "zipper": 479.698875,
+  "liblzma": 441.459166,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "d6b83f6",
+  "inner": 1,
+  "zipper": 473.749,
+  "liblzma": 433.842292,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "d6b83f6",
+  "inner": 2,
+  "zipper": 475.853166,
+  "liblzma": 434.578709,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "53ab48a",
+  "inner": 0,
+  "zipper": 433.043333,
+  "liblzma": 403.668042,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "53ab48a",
+  "inner": 1,
+  "zipper": 433.968583,
+  "liblzma": 400.367958,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "53ab48a",
+  "inner": 2,
+  "zipper": 435.316084,
+  "liblzma": 401.489209,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "fbead1c",
+  "inner": 0,
+  "zipper": 431.303208,
+  "liblzma": 402.393125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "fbead1c",
+  "inner": 1,
+  "zipper": 439.267541,
+  "liblzma": 406.450708,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "fbead1c",
+  "inner": 2,
+  "zipper": 440.902875,
+  "liblzma": 409.837709,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "da108d5",
+  "inner": 0,
+  "zipper": 513.670875,
+  "liblzma": 401.7865,
+  "busy": [
+   "102.6 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "da108d5",
+  "inner": 1,
+  "zipper": 515.03775,
+  "liblzma": 398.548542,
+  "busy": [
+   "102.6 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "da108d5",
+  "inner": 2,
+  "zipper": 516.182708,
+  "liblzma": 397.599708,
+  "busy": [
+   "102.6 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "d6b83f6",
+  "inner": 0,
+  "zipper": 594.093708,
+  "liblzma": 495.582875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "d6b83f6",
+  "inner": 1,
+  "zipper": 532.917209,
+  "liblzma": 490.311167,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "d6b83f6",
+  "inner": 2,
+  "zipper": 540.196291,
+  "liblzma": 496.997959,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "9656259",
+  "inner": 0,
+  "zipper": 482.701834,
+  "liblzma": 448.18875,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "99.8 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "9656259",
+  "inner": 1,
+  "zipper": 474.475583,
+  "liblzma": 472.189917,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "99.8 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "9656259",
+  "inner": 2,
+  "zipper": 631.227458,
+  "liblzma": 1040.855417,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "99.8 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "fbead1c",
+  "inner": 0,
+  "zipper": 496.724875,
+  "liblzma": 464.951875,
+  "busy": [
+   "438.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "332.8 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "fbead1c",
+  "inner": 1,
+  "zipper": 496.003917,
+  "liblzma": 453.998542,
+  "busy": [
+   "438.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "332.8 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "fbead1c",
+  "inner": 2,
+  "zipper": 488.711292,
+  "liblzma": 454.616625,
+  "busy": [
+   "438.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc",
+   "332.8 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "da108d5",
+  "inner": 0,
+  "zipper": 804.4315,
+  "liblzma": 492.413292,
+  "busy": [
+   "99.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "da108d5",
+  "inner": 1,
+  "zipper": 580.606333,
+  "liblzma": 453.918541,
+  "busy": [
+   "99.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "da108d5",
+  "inner": 2,
+  "zipper": 585.752083,
+  "liblzma": 459.472667,
+  "busy": [
+   "99.7 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "d6b83f6",
+  "inner": 0,
+  "zipper": 503.465166,
+  "liblzma": 468.815417,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "d6b83f6",
+  "inner": 1,
+  "zipper": 503.467875,
+  "liblzma": 461.701666,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "d6b83f6",
+  "inner": 2,
+  "zipper": 505.487,
+  "liblzma": 463.192167,
+  "busy": [
+   "100.0 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "9656259",
+  "inner": 0,
+  "zipper": 492.299042,
+  "liblzma": 450.263041,
+  "busy": [
+   "92.3 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "9656259",
+  "inner": 1,
+  "zipper": 498.709292,
+  "liblzma": 461.229875,
+  "busy": [
+   "92.3 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "9656259",
+  "inner": 2,
+  "zipper": 508.206375,
+  "liblzma": 461.280042,
+  "busy": [
+   "92.3 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "53ab48a",
+  "inner": 0,
+  "zipper": 432.277792,
+  "liblzma": 404.627792,
+  "busy": [
+   "99.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "53ab48a",
+  "inner": 1,
+  "zipper": 437.90425,
+  "liblzma": 401.742708,
+  "busy": [
+   "99.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "53ab48a",
+  "inner": 2,
+  "zipper": 436.7895,
+  "liblzma": 401.673583,
+  "busy": [
+   "99.4 /Users/aleph/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "da108d5",
+  "inner": 0,
+  "zipper": 519.733291,
+  "liblzma": 403.715542,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "da108d5",
+  "inner": 1,
+  "zipper": 513.975167,
+  "liblzma": 400.113375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "da108d5",
+  "inner": 2,
+  "zipper": 517.428583,
+  "liblzma": 399.763625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "d6b83f6",
+  "inner": 0,
+  "zipper": 432.995417,
+  "liblzma": 402.199916,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "d6b83f6",
+  "inner": 1,
+  "zipper": 435.552,
+  "liblzma": 398.135083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "d6b83f6",
+  "inner": 2,
+  "zipper": 436.891959,
+  "liblzma": 398.204708,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "9656259",
+  "inner": 0,
+  "zipper": 486.788542,
+  "liblzma": 447.481167,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "9656259",
+  "inner": 1,
+  "zipper": 480.230042,
+  "liblzma": 432.934792,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "9656259",
+  "inner": 2,
+  "zipper": 475.092416,
+  "liblzma": 430.993959,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "53ab48a",
+  "inner": 0,
+  "zipper": 489.341875,
+  "liblzma": 450.459667,
+  "busy": [
+   "99.8 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "53ab48a",
+  "inner": 1,
+  "zipper": 489.057958,
+  "liblzma": 434.832709,
+  "busy": [
+   "99.8 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "53ab48a",
+  "inner": 2,
+  "zipper": 474.809875,
+  "liblzma": 433.562125,
+  "busy": [
+   "99.8 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "fbead1c",
+  "inner": 0,
+  "zipper": 486.28825,
+  "liblzma": 458.031125,
+  "busy": [
+   "99.4 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "fbead1c",
+  "inner": 1,
+  "zipper": 485.86175,
+  "liblzma": 452.158625,
+  "busy": [
+   "99.4 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "fbead1c",
+  "inner": 2,
+  "zipper": 482.157292,
+  "liblzma": 449.172125,
+  "busy": [
+   "99.4 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "d6b83f6",
+  "inner": 0,
+  "zipper": 503.294209,
+  "liblzma": 463.754583,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "d6b83f6",
+  "inner": 1,
+  "zipper": 499.66125,
+  "liblzma": 456.793209,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "d6b83f6",
+  "inner": 2,
+  "zipper": 509.055625,
+  "liblzma": 466.335375,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "9656259",
+  "inner": 0,
+  "zipper": 501.383125,
+  "liblzma": 460.693958,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "9656259",
+  "inner": 1,
+  "zipper": 494.408708,
+  "liblzma": 458.002,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "9656259",
+  "inner": 2,
+  "zipper": 494.018125,
+  "liblzma": 458.059167,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "53ab48a",
+  "inner": 0,
+  "zipper": 505.464167,
+  "liblzma": 466.329792,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "53ab48a",
+  "inner": 1,
+  "zipper": 504.720792,
+  "liblzma": 460.942833,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "53ab48a",
+  "inner": 2,
+  "zipper": 500.14525,
+  "liblzma": 461.645,
+  "busy": [
+   "100.0 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "fbead1c",
+  "inner": 0,
+  "zipper": 497.873417,
+  "liblzma": 503.307541,
+  "busy": [
+   "99.3 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "fbead1c",
+  "inner": 1,
+  "zipper": 518.48975,
+  "liblzma": 464.738,
+  "busy": [
+   "99.3 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "fbead1c",
+  "inner": 2,
+  "zipper": 479.052583,
+  "liblzma": 507.011417,
+  "busy": [
+   "99.3 cbmc"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "da108d5",
+  "inner": 0,
+  "zipper": 516.896041,
+  "liblzma": 402.102792,
+  "busy": [
+   "43.7 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+   "38.6 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+   "29.0 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "da108d5",
+  "inner": 1,
+  "zipper": 516.432166,
+  "liblzma": 398.960333,
+  "busy": [
+   "43.7 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+   "38.6 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+   "29.0 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "da108d5",
+  "inner": 2,
+  "zipper": 522.415042,
+  "liblzma": 400.345833,
+  "busy": [
+   "43.7 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+   "38.6 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+   "29.0 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "9656259",
+  "inner": 0,
+  "zipper": 448.86625,
+  "liblzma": 401.464667,
+  "busy": [
+   "66.3 /usr/libexec/biomesyncd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "9656259",
+  "inner": 1,
+  "zipper": 434.653417,
+  "liblzma": 399.42,
+  "busy": [
+   "66.3 /usr/libexec/biomesyncd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "9656259",
+  "inner": 2,
+  "zipper": 435.441167,
+  "liblzma": 398.246959,
+  "busy": [
+   "66.3 /usr/libexec/biomesyncd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "53ab48a",
+  "inner": 0,
+  "zipper": 905.151875,
+  "liblzma": 832.030041,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "53ab48a",
+  "inner": 1,
+  "zipper": 940.67175,
+  "liblzma": 823.533166,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "53ab48a",
+  "inner": 2,
+  "zipper": 845.836292,
+  "liblzma": 732.298458,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "fbead1c",
+  "inner": 0,
+  "zipper": 509.373125,
+  "liblzma": 476.216,
+  "busy": [
+   "500.0 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/ci/deps/zipper-1d0d205a4610a0ee"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "fbead1c",
+  "inner": 1,
+  "zipper": 486.171583,
+  "liblzma": 406.888,
+  "busy": [
+   "500.0 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/ci/deps/zipper-1d0d205a4610a0ee"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "fbead1c",
+  "inner": 2,
+  "zipper": 433.040459,
+  "liblzma": 400.730625,
+  "busy": [
+   "500.0 /Users/aleph/Desktop/Projects/marlboro-red/zipper/.claude/worktrees/agent-a9723f6bcc1c12f67/target/ci/deps/zipper-1d0d205a4610a0ee"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "da108d5",
+  "inner": 0,
+  "zipper": 600.497916,
+  "liblzma": 471.286584,
+  "busy": [
+   "38.7 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "da108d5",
+  "inner": 1,
+  "zipper": 601.58125,
+  "liblzma": 454.77725,
+  "busy": [
+   "38.7 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "da108d5",
+  "inner": 2,
+  "zipper": 561.389458,
+  "liblzma": 427.287125,
+  "busy": [
+   "38.7 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "d6b83f6",
+  "inner": 0,
+  "zipper": 514.96075,
+  "liblzma": 476.646333,
+  "busy": [
+   "38.1 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "d6b83f6",
+  "inner": 1,
+  "zipper": 514.765042,
+  "liblzma": 476.676291,
+  "busy": [
+   "38.1 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "d6b83f6",
+  "inner": 2,
+  "zipper": 529.559666,
+  "liblzma": 475.46,
+  "busy": [
+   "38.1 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+  ]
+ }
+]

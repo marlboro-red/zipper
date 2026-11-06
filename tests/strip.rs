@@ -261,3 +261,77 @@ fn a_strip_that_leaves_nothing_is_refused() {
         assert!(!destination.exists());
     }
 }
+
+fn cpio_of(path: &Path, names: &[&str]) {
+    let mut bytes = Vec::new();
+    let mut record = |name: &str, mode: u32, data: &[u8]| {
+        let fields = [
+            1,
+            mode,
+            0,
+            0,
+            1,
+            0,
+            data.len() as u32,
+            0,
+            0,
+            0,
+            0,
+            name.len() as u32 + 1,
+            0,
+        ];
+        bytes.extend_from_slice(b"070701");
+        for field in fields {
+            bytes.extend_from_slice(format!("{field:08X}").as_bytes());
+        }
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.push(0);
+        bytes.resize(bytes.len().next_multiple_of(4), 0);
+        bytes.extend_from_slice(data);
+        bytes.resize(bytes.len().next_multiple_of(4), 0);
+    };
+    for name in names {
+        record(name, 0o100644, name.as_bytes());
+    }
+    record("TRAILER!!!", 0, b"");
+    std::fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn two_spellings_of_one_name_never_overwrite_another_entry() {
+    let work = tempfile::tempdir().unwrap();
+    for (format, write) in [("tar", tar_of as fn(&Path, &[&str])), ("cpio", cpio_of)] {
+        let archive = work.path().join(format!("collide.{format}"));
+        write(&archive, &["q/a/x", "a/x", "./a/x"]);
+        let destination = work.path().join(format!("{format}-collide"));
+        let result = extract_archive(
+            &archive,
+            &destination,
+            ExtractOptions {
+                strip: Strip::Components(1),
+                ..Default::default()
+            },
+        );
+        let error = format!("{:#}", result.expect_err(format));
+        assert!(error.contains("two entries at"), "{format}: {error}");
+        assert!(!destination.exists(), "{format}");
+        let archive = work.path().join(format!("respelled.{format}"));
+        write(&archive, &["a", "./a"]);
+        let destination = work.path().join(format!("{format}-respelled"));
+        extract_archive(
+            &archive,
+            &destination,
+            ExtractOptions {
+                strip: Strip::Components(1),
+                ..Default::default()
+            },
+        )
+        .unwrap_or_else(|error| panic!("{format}: {error:#}"));
+        assert_eq!(files(&destination), ["a"], "{format}");
+        assert_eq!(
+            std::fs::read(destination.join("a")).unwrap(),
+            b"./a",
+            "{format}"
+        );
+    }
+}

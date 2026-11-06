@@ -6,7 +6,7 @@
 
 [tar-writer-pool]
 skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
-fingerprint = 7f5a0b3be2f7f7d4
+fingerprint = ba6c247156dc7835
 full-check = python3 scripts/check_model.py verification/tar-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/native_tar.rs | const CHUNK:
 item = src/native_tar.rs | const QUEUED_FILES:
@@ -23,7 +23,7 @@ item = src/native_tar.rs | struct Writers<'f> {
 item = src/native_tar.rs | impl<'f> Writers<'f> {
 item = src/native_tar.rs | fn write_job(
 item = src/native_tar.rs |     fn write_file(
-item = src/native_tar.rs | pub fn read_archive(
+item = src/native_tar.rs | pub(crate) fn read_part(
 
 [zip-write-behind]
 skill = .claude/skills/zipper-verify-zip-write-behind/SKILL.md
@@ -47,7 +47,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 26e4252d9925c9a7
+fingerprint = 141783358afa9ce3
 full-check = python3 scripts/check_model.py verification/progress-callback MCCallback.tla:callback.cfg
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
@@ -74,7 +74,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = a51115d41d4124d1
+fingerprint = 9355fe56ca7f5df0
 full-check = python3 scripts/check_model.py verification/zip-decoder-budget MCZip.tla:zip.cfg
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
@@ -164,7 +164,7 @@ item = src/native_7z.rs | impl<R: Read> Read for StoredLzma2<R> {
 
 [strip]
 skill = .claude/skills/zipper-verify-strip/SKILL.md
-fingerprint = 3210da04e8cee3ac
+fingerprint = 88be94670750d906
 full-check = cargo test --release --lib placement
 item = src/placement.rs | impl<'a> Placement<'a> {
 item = src/placement.rs | impl PlacedNames {
@@ -239,7 +239,7 @@ item = src/xz_filters.rs | pub(crate) fn xz_filter(
 
 [lzma]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 342081dfa2e9feb9
+fingerprint = 4bb24194b28bca39
 full-check = cargo kani --tests --harness lzma::proofs::
 full-check = cargo test --release --lib lzma
 item = src/lzma.rs | const PROBABILITY_BITS:
@@ -280,6 +280,41 @@ item = src/lzma.rs | fn read_xz_index<
 item = src/lzma.rs | fn read_xz_stream_footer<
 item = src/lzma.rs | fn finish_stream<
 
+[zip-crypto]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 00c21bee29774faa
+full-check = cargo kani --harness zip_crypto::proofs::
+full-check = cargo test --release --lib zip_crypto
+full-check = cargo test --release --test encrypted_zip
+item = src/zip_crypto.rs | const ZIP_CRYPTO_HEADER:
+item = src/zip_crypto.rs | const AES_VERIFIER:
+item = src/zip_crypto.rs | const AES_VENDOR:
+item = src/zip_crypto.rs | const AES_FIELD:
+item = src/zip_crypto.rs | const AES_ITERATIONS:
+item = src/zip_crypto.rs | const LONGEST_AES_KEYS:
+item = src/zip_crypto.rs | pub(crate) const LONGEST_HEADER:
+item = src/zip_crypto.rs | pub(crate) const AES_CODE:
+item = src/zip_crypto.rs | impl Strength {
+item = src/zip_crypto.rs | pub(crate) fn aes_field(
+item = src/zip_crypto.rs | impl Encryption {
+item = src/zip_crypto.rs | impl AesStream {
+item = src/zip_crypto.rs | impl Decryptor {
+item = src/zip_crypto.rs | const SCRUBBED_STACK:
+item = src/zip_crypto.rs | pub(crate) fn scrub_stack(
+item = src/zip_crypto.rs | const ZIP_CRYPTO_KEYS:
+item = src/zip_crypto.rs | const ZIP_CRYPTO_MULTIPLIER:
+item = src/zip_crypto.rs | impl Keys {
+item = src/zip_crypto.rs | impl Drop for Keys {
+item = src/zip_crypto.rs | fn crc32_byte(
+item = src/zip_crypto.rs | const CRC32_TABLE:
+item = src/zip_directory.rs | pub(crate) fn aes_extra(
+item = src/zip_directory.rs | fn central_entries<
+item = src/zip_directory.rs | impl Directory {
+item = src/native_zip.rs | fn encryption(
+item = src/native_zip.rs | fn check_local_header(
+item = src/native_zip.rs | impl<R: Read> Read for Payload<R> {
+item = src/native_zip.rs | impl<R: Read> Payload<R> {
+
 [split-volumes]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 4ea895e026a64fd8
@@ -297,3 +332,55 @@ item = src/volumes.rs | pub(crate) enum ArchiveFile {
 item = src/volumes.rs | impl ArchiveFile {
 item = src/volumes.rs | impl Read for ArchiveFile {
 item = src/volumes.rs | impl Seek for ArchiveFile {
+
+[cpio-fields]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 7a10f3e7d6f07f5b
+full-check = cargo kani --harness native_cpio::proofs::
+full-check = cargo test --release --lib native_cpio
+item = src/native_cpio.rs | const ODC_FIELDS:
+item = src/native_cpio.rs | impl Form {
+item = src/native_cpio.rs | fn padding(
+item = src/native_cpio.rs | struct Header {
+item = src/native_cpio.rs | fn hex(
+item = src/native_cpio.rs | fn octal(
+item = src/native_cpio.rs | fn newc_header(
+item = src/native_cpio.rs | fn odc_header(
+item = src/native_cpio.rs | fn binary_header(
+
+[ar-fields]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 1709c5f751dd16d5
+full-check = cargo kani --harness native_ar::proofs::
+full-check = cargo test --release --lib native_ar
+item = src/native_ar.rs | const SPECIAL_MEMBERS:
+item = src/native_ar.rs | struct Header {
+item = src/native_ar.rs | enum ShortName<'a> {
+item = src/native_ar.rs | fn number(
+item = src/native_ar.rs | fn decimal(
+item = src/native_ar.rs | fn header(
+item = src/native_ar.rs | fn short_name(
+
+[rpm-fields]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 7cb31b09e9513850
+full-check = cargo kani --harness native_rpm::proofs::
+full-check = cargo test --release --lib native_rpm
+item = src/native_rpm.rs | const MAX_INDEX_ENTRIES:
+item = src/native_rpm.rs | const MAX_DATA:
+item = src/native_rpm.rs | const MAX_TAG_TEXT:
+item = src/native_rpm.rs | const LZMA_PROPERTIES_LIMIT:
+item = src/native_rpm.rs | enum Kind {
+item = src/native_rpm.rs | impl Kind {
+item = src/native_rpm.rs | struct Extent {
+item = src/native_rpm.rs | impl Extent {
+item = src/native_rpm.rs | fn word(
+item = src/native_rpm.rs | fn lead(
+item = src/native_rpm.rs | fn header_intro(
+item = src/native_rpm.rs | fn index_entry(
+item = src/native_rpm.rs | fn text_window(
+item = src/native_rpm.rs | fn tag_text(
+item = src/native_rpm.rs | fn signature_padding(
+item = src/native_rpm.rs | impl Compressor {
+item = src/native_rpm.rs |     fn header(
+item = src/native_rpm.rs |     fn text(

@@ -1,0 +1,2606 @@
+//! Encrypted ZIP archives from 7-Zip and Info-ZIP in `tests/data/encrypted-zip`,
+//! extracted with the right password, a wrong one, none, and damage at every
+//! byte. `trees.json` holds the tree `7zz x` gave when the fixtures were
+//! written.
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
+use zipper::{Engine, Existing, ExtractOptions, native_zip::PasswordNeeded};
+
+const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/encrypted-zip");
+const PASSWORD: &[u8] = b"zipper";
+const WRONG: &[u8] = b"Zipper-but-wrong";
+const ENGINES: [Engine; 2] = [Engine::Native, Engine::NativeFast];
+const AES_METHOD: u16 = 99;
+const AES_FIELD: u16 = 0x9901;
+const AES_CODE: usize = 10;
+
+const SEVEN_ZIP_FIXTURES: &[(&str, &[&str])] = &[
+    ("zipcrypto-deflate.zip", &["-mem=ZipCrypto", "-mm=Deflate"]),
+    ("zipcrypto-stored.zip", &["-mem=ZipCrypto", "-mm=Copy"]),
+    ("zipcrypto-bzip2.zip", &["-mem=ZipCrypto", "-mm=BZip2"]),
+    ("zipcrypto-lzma.zip", &["-mem=ZipCrypto", "-mm=LZMA"]),
+    ("zipcrypto-descriptor.zip", &["-mem=ZipCrypto", "-so"]),
+    ("aes128-deflate.zip", &["-mem=AES128", "-mm=Deflate"]),
+    ("aes192-lzma.zip", &["-mem=AES192", "-mm=LZMA"]),
+    ("aes256-deflate.zip", &["-mem=AES256", "-mm=Deflate"]),
+    ("aes256-stored.zip", &["-mem=AES256", "-mm=Copy"]),
+    ("aes256-bzip2.zip", &["-mem=AES256", "-mm=BZip2"]),
+    ("aes256-deflate64.zip", &["-mem=AES256", "-mm=Deflate64"]),
+    ("aes256-ppmd.zip", &["-mem=AES256", "-mm=PPMd"]),
+    ("aes256-xz.zip", &["-mem=AES256", "-mm=XZ"]),
+    ("aes128-descriptor.zip", &["-mem=AES128", "-so"]),
+];
+const AE1_FIXTURES: &[(&str, &str)] = &[
+    ("aes256-ae1.zip", "aes256-deflate.zip"),
+    ("tiny-aes256-ae1.zip", "tiny-aes256.zip"),
+];
+const TINY_FIXTURES: &[(&str, &str, &str)] = &[
+    ("tiny-zipcrypto.zip", "-mem=ZipCrypto", "-mm=Copy"),
+    ("tiny-zipcrypto-descriptor.zip", INFO_ZIP, "-0"),
+    ("tiny-aes128.zip", "-mem=AES128", "-mm=Deflate"),
+    ("tiny-aes192.zip", "-mem=AES192", "-mm=Deflate"),
+    ("tiny-aes256.zip", "-mem=AES256", "-mm=Deflate"),
+];
+const INFO_ZIP: &str = "Info-ZIP";
+const TINY_NAME: &str = "secret.txt";
+const TINY_TEXT: &[u8] = b"attack at dawn, attack at dawn, attack at dawn; bring the ladder\n";
+const MANY_FILES: usize = 300;
+const LARGE_FILE: usize = 17 << 20;
+
+fn fixture(name: &str) -> PathBuf {
+    Path::new(DATA).join(name)
+}
+
+fn every_fixture() -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(DATA)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".zip"))
+        .collect();
+    names.sort();
+    names
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn tree(root: &Path) -> BTreeMap<String, String> {
+    walkdir::WalkDir::new(root)
+        .min_depth(1)
+        .follow_links(false)
+        .sort_by_file_name()
+        .into_iter()
+        .map(|entry| entry.unwrap())
+        .map(|entry| {
+            let name = entry
+                .path()
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let kind = if entry.file_type().is_symlink() {
+                format!("link:{}", fs::read_link(entry.path()).unwrap().display())
+            } else if entry.file_type().is_dir() {
+                "dir".to_owned()
+            } else {
+                sha256(&fs::read(entry.path()).unwrap())
+            };
+            (name, kind)
+        })
+        .collect()
+}
+
+fn recorded_trees() -> BTreeMap<String, BTreeMap<String, String>> {
+    serde_json::from_str(&fs::read_to_string(fixture("trees.json")).unwrap()).unwrap()
+}
+
+fn seven_zip() -> Option<PathBuf> {
+    if let Some(binary) = std::env::var_os("ZIPPER_7Z") {
+        return Some(binary.into());
+    }
+    ["7zz", "7z"]
+        .into_iter()
+        .find(|binary| {
+            Command::new(binary)
+                .arg("i")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
+        .map(PathBuf::from)
+}
+
+fn seven_zip_tree(binary: &Path, archive: &Path) -> BTreeMap<String, String> {
+    let work = tempfile::tempdir().unwrap();
+    let mut flag = std::ffi::OsString::from("-o");
+    flag.push(work.path().join("out"));
+    let run = Command::new(binary)
+        .args(["x", "-y", "-pzipper"])
+        .arg(flag)
+        .arg(archive)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "7-Zip failed on {}: {}",
+        archive.display(),
+        String::from_utf8_lossy(&run.stdout)
+    );
+    tree(&work.path().join("out"))
+}
+
+fn extract(
+    archive: &Path,
+    destination: &Path,
+    engine: Engine,
+    password: Option<&[u8]>,
+    existing: Existing,
+    paths: &[String],
+) -> anyhow::Result<()> {
+    zipper::extract_archive(
+        archive,
+        destination,
+        ExtractOptions {
+            engine,
+            password,
+            existing,
+            paths,
+            ..Default::default()
+        },
+    )
+}
+
+#[derive(Clone, Debug)]
+struct Record {
+    central: usize,
+    local: usize,
+    name: String,
+    flags: u16,
+    method: u16,
+    crc: u32,
+    compressed: usize,
+    central_extra: std::ops::Range<usize>,
+    local_extra: std::ops::Range<usize>,
+    data: usize,
+}
+
+fn le16(bytes: &[u8], at: usize) -> u16 {
+    u16::from_le_bytes([bytes[at], bytes[at + 1]])
+}
+
+fn le32(bytes: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+}
+
+fn records(zip: &[u8]) -> Vec<Record> {
+    let end = (0..=zip.len() - 22)
+        .rev()
+        .find(|&at| zip[at..].starts_with(b"PK\x05\x06"))
+        .unwrap();
+    let count = le16(zip, end + 10) as usize;
+    let mut at = le32(zip, end + 16) as usize;
+    (0..count)
+        .map(|_| {
+            assert!(zip[at..].starts_with(b"PK\x01\x02"));
+            let [name, extra, comment] = [28, 30, 32].map(|field| le16(zip, at + field) as usize);
+            let local = le32(zip, at + 42) as usize;
+            let local_name = le16(zip, local + 26) as usize;
+            let local_extra = le16(zip, local + 28) as usize;
+            let record = Record {
+                central: at,
+                local,
+                name: String::from_utf8(zip[at + 46..at + 46 + name].to_vec()).unwrap(),
+                flags: le16(zip, at + 8),
+                method: le16(zip, at + 10),
+                crc: le32(zip, at + 16),
+                compressed: le32(zip, at + 20) as usize,
+                central_extra: at + 46 + name..at + 46 + name + extra,
+                local_extra: local + 30 + local_name..local + 30 + local_name + local_extra,
+                data: local + 30 + local_name + local_extra,
+            };
+            at += 46 + name + extra + comment;
+            record
+        })
+        .collect()
+}
+
+fn only_file(zip: &[u8]) -> Record {
+    let mut files: Vec<Record> = records(zip)
+        .into_iter()
+        .filter(|record| !record.name.ends_with('/'))
+        .collect();
+    assert_eq!(files.len(), 1);
+    files.remove(0)
+}
+
+fn aes_field_at(zip: &[u8], extra: std::ops::Range<usize>) -> Option<usize> {
+    let mut at = extra.start;
+    while at + 4 <= extra.end {
+        let length = le16(zip, at + 2) as usize;
+        if le16(zip, at) == AES_FIELD {
+            return Some(at + 4);
+        }
+        at += 4 + length;
+    }
+    None
+}
+
+fn salt_len(zip: &[u8], record: &Record) -> usize {
+    let field = aes_field_at(zip, record.central_extra.clone()).unwrap();
+    4 + 4 * zip[field + 4] as usize
+}
+
+fn with_crc(zip: &[u8], record: &Record, crc: u32) -> Vec<u8> {
+    let mut patched = zip.to_vec();
+    patched[record.central + 16..record.central + 20].copy_from_slice(&crc.to_le_bytes());
+    patched[record.local + 14..record.local + 18].copy_from_slice(&crc.to_le_bytes());
+    patched
+}
+
+fn listing(folder: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+fn assert_fails_cleanly(zip: &[u8], password: Option<&[u8]>, case: &str) -> Vec<String> {
+    let mut errors = Vec::new();
+    for engine in ENGINES {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join("case.zip");
+        fs::write(&archive, zip).unwrap();
+        let kept = work.path().join("kept");
+        fs::create_dir(&kept).unwrap();
+        fs::write(kept.join(TINY_NAME), b"the file that was here").unwrap();
+        let before = tree(&kept);
+        for (destination, existing) in [
+            (kept.clone(), Existing::Overwrite),
+            (work.path().join("fresh"), Existing::Refuse),
+        ] {
+            let error = extract(&archive, &destination, engine, password, existing, &[])
+                .expect_err(&format!("{case}: {engine:?} extracted into {existing:?}"));
+            errors.push(format!("{error:?}"));
+            assert_eq!(
+                tree(&kept),
+                before,
+                "{case}: {engine:?} changed the destination"
+            );
+            assert_eq!(
+                listing(work.path()),
+                ["case.zip", "kept"],
+                "{case}: {engine:?} left a staging folder or output"
+            );
+        }
+    }
+    errors
+}
+
+fn assert_says_wrong_password(errors: &[String], case: &str) {
+    for error in errors {
+        assert!(
+            error.contains("password is wrong"),
+            "{case}: the error does not say the password is wrong: {error}"
+        );
+    }
+}
+
+#[test]
+fn every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines() {
+    let trees = recorded_trees();
+    let live = seven_zip();
+    assert!(
+        live.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
+        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip was found"
+    );
+    let names = every_fixture();
+    assert_eq!(
+        names.len(),
+        trees.len(),
+        "trees.json and the fixtures differ"
+    );
+    for name in names {
+        let archive = fixture(&name);
+        let expected = &trees[&name];
+        if let Some(binary) = &live {
+            assert_eq!(&seven_zip_tree(binary, &archive), expected, "{name}: 7-Zip");
+        }
+        for engine in ENGINES {
+            let work = tempfile::tempdir().unwrap();
+            let output = work.path().join("out");
+            extract(
+                &archive,
+                &output,
+                engine,
+                Some(PASSWORD),
+                Existing::Refuse,
+                &[],
+            )
+            .unwrap_or_else(|error| panic!("{name}: {engine:?}: {error:?}"));
+            assert_eq!(&tree(&output), expected, "{name}: {engine:?}");
+        }
+    }
+}
+
+#[test]
+fn selected_paths_extract_only_their_entries() {
+    let trees = recorded_trees();
+    for name in [
+        "zipcrypto-deflate.zip",
+        "aes256-ppmd.zip",
+        "aes128-descriptor.zip",
+    ] {
+        for engine in ENGINES {
+            let work = tempfile::tempdir().unwrap();
+            let output = work.path().join("out");
+            let paths = ["sub/text.txt".to_owned()];
+            extract(
+                &fixture(name),
+                &output,
+                engine,
+                Some(PASSWORD),
+                Existing::Refuse,
+                &paths,
+            )
+            .unwrap();
+            let expected: BTreeMap<String, String> = trees[name]
+                .iter()
+                .filter(|(path, _)| *path == "sub" || *path == "sub/text.txt")
+                .map(|(path, kind)| (path.clone(), kind.clone()))
+                .collect();
+            assert_eq!(tree(&output), expected, "{name}: {engine:?}");
+        }
+    }
+}
+
+#[test]
+fn integrity_checks_need_and_use_the_password() {
+    for name in ["zipcrypto-stored.zip", "aes192-lzma.zip"] {
+        let archive = fixture(name);
+        let read = |password| {
+            zipper::native_zip::read_archive_with_options(
+                &archive,
+                None,
+                zipper::native_zip::ReadOptions {
+                    password,
+                    ..Default::default()
+                },
+            )
+        };
+        assert!(read(Some(PASSWORD)).is_ok(), "{name}");
+        let error = read(Some(WRONG)).unwrap_err();
+        assert!(format!("{error:?}").contains("password is wrong"), "{name}");
+        assert!(read(None).unwrap_err().is::<PasswordNeeded>(), "{name}");
+        let listed = zipper::native_zip::list(&archive).unwrap();
+        assert!(listed.iter().any(|entry| entry.name == "sub/text.txt"));
+    }
+}
+
+#[test]
+fn a_wrong_password_changes_nothing_for_every_scheme() {
+    for name in every_fixture() {
+        let zip = fs::read(fixture(&name)).unwrap();
+        let errors = assert_fails_cleanly(&zip, Some(WRONG), &name);
+        assert_says_wrong_password(&errors, &name);
+        for error in &errors {
+            assert!(
+                !error.contains(std::str::from_utf8(WRONG).unwrap()),
+                "{name}: the error shows the password"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_destination_that_cannot_be_used_fails_before_the_password_is_asked_for() {
+    let work = tempfile::tempdir().unwrap();
+    let taken = work.path().join("taken");
+    fs::create_dir(&taken).unwrap();
+    fs::write(taken.join("keep.txt"), b"kept").unwrap();
+    for engine in ENGINES {
+        let error = extract(
+            &fixture("tiny-aes128.zip"),
+            &taken,
+            engine,
+            None,
+            Existing::Refuse,
+            &[],
+        )
+        .unwrap_err();
+        assert!(!error.is::<PasswordNeeded>(), "{engine:?}: {error:?}");
+        assert_eq!(listing(&taken), ["keep.txt"]);
+    }
+    let run = zipper_command(&[
+        "extract",
+        fixture("tiny-aes128.zip").to_str().unwrap(),
+        "-o",
+        taken.to_str().unwrap(),
+    ]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(!run.status.success());
+    assert!(!stderr.contains("encrypted"), "{stderr}");
+}
+
+#[test]
+fn a_password_for_an_archive_zipper_does_not_decrypt_is_refused() {
+    let work = tempfile::tempdir().unwrap();
+    let source = work.path().join("source");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("a.txt"), b"a").unwrap();
+    let tar = work.path().join("plain.tar");
+    let made = Command::new("tar")
+        .arg("-cf")
+        .arg(&tar)
+        .arg("-C")
+        .arg(&source)
+        .arg("a.txt")
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let output = work.path().join("out");
+    let error = zipper::extract_archive(
+        &tar,
+        &output,
+        ExtractOptions {
+            password: Some(PASSWORD),
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(format!("{error}").contains("--password"), "{error:?}");
+    assert!(!output.exists());
+    for command in [
+        vec![
+            "--password",
+            "zipper",
+            "extract",
+            tar.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ],
+        vec!["--password", "zipper", "test", tar.to_str().unwrap()],
+    ] {
+        let run = zipper_command(&command);
+        assert!(!run.status.success(), "{command:?}");
+        assert!(String::from_utf8_lossy(&run.stderr).contains("--password"));
+    }
+}
+
+#[test]
+fn no_password_fails_before_anything_is_written_and_asks_for_one() {
+    for name in ["tiny-zipcrypto.zip", "tiny-aes256.zip"] {
+        let zip = fs::read(fixture(name)).unwrap();
+        let errors = assert_fails_cleanly(&zip, None, name);
+        for error in errors {
+            assert!(
+                error.contains("is encrypted; give its password"),
+                "{name}: {error}"
+            );
+        }
+        let work = tempfile::tempdir().unwrap();
+        let error = extract(
+            &fixture(name),
+            &work.path().join("out"),
+            Engine::Auto,
+            None,
+            Existing::Refuse,
+            &[],
+        )
+        .unwrap_err();
+        assert!(error.is::<PasswordNeeded>(), "{name}: {error:?}");
+    }
+}
+
+fn zip_crypto_reference_check(password: &[u8], header: &[u8]) -> u8 {
+    let crc = |value: u32, byte: u8| {
+        let mut crc = value ^ u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+        crc
+    };
+    let mut keys = [0x1234_5678u32, 0x2345_6789, 0x3456_7890];
+    let update = |keys: &mut [u32; 3], byte: u8| {
+        keys[0] = crc(keys[0], byte);
+        keys[1] = (keys[1].wrapping_add(keys[0] & 0xff))
+            .wrapping_mul(134_775_813)
+            .wrapping_add(1);
+        keys[2] = crc(keys[2], (keys[1] >> 24) as u8);
+    };
+    for &byte in password {
+        update(&mut keys, byte);
+    }
+    let mut last = 0;
+    for &byte in header {
+        let temp = (keys[2] | 2) & 0xffff;
+        last = byte ^ ((temp * (temp ^ 1)) >> 8) as u8;
+        update(&mut keys, last);
+    }
+    last
+}
+
+#[test]
+fn a_wrong_zip_crypto_password_that_passes_the_check_byte_is_stopped_by_the_crc() {
+    for name in [
+        "tiny-zipcrypto.zip",
+        "tiny-zipcrypto-descriptor.zip",
+        "zipcrypto-stored.zip",
+    ] {
+        let zip = fs::read(fixture(name)).unwrap();
+        let file = records(&zip)
+            .into_iter()
+            .rfind(|record| record.compressed > 12)
+            .unwrap();
+        let header = &zip[file.data..file.data + 12];
+        assert_eq!(zip_crypto_reference_check(PASSWORD, header), {
+            if file.flags & 8 != 0 {
+                zip[file.local + 11]
+            } else {
+                (file.crc >> 24) as u8
+            }
+        });
+        let check = zip_crypto_reference_check(PASSWORD, header);
+        let lucky = (0..100_000)
+            .map(|number| format!("wrong-{number}").into_bytes())
+            .find(|candidate| zip_crypto_reference_check(candidate, header) == check)
+            .expect("one password in 256 passes the check byte");
+        let only_that_entry = [file.name.clone()];
+        for engine in ENGINES {
+            let work = tempfile::tempdir().unwrap();
+            let error = extract(
+                &fixture(name),
+                &work.path().join("out"),
+                engine,
+                Some(&lucky),
+                Existing::Refuse,
+                &only_that_entry,
+            )
+            .unwrap_err();
+            let error = format!("{error:?}");
+            assert!(error.contains("password is wrong"), "{name}: {error}");
+            assert!(
+                error.contains("CRC") || error.contains("invalid") || error.contains("size"),
+                "{name}: the check byte passed, so the data check must refuse it: {error}"
+            );
+            assert_eq!(listing(work.path()), Vec::<String>::new(), "{name}");
+        }
+    }
+}
+
+#[test]
+fn a_wrong_aes_password_that_passes_the_verifier_is_stopped_by_the_authentication_code() {
+    for name in ["tiny-aes128.zip", "tiny-aes256.zip", "tiny-aes256-ae1.zip"] {
+        let mut zip = fs::read(fixture(name)).unwrap();
+        let file = only_file(&zip);
+        let salt = salt_len(&zip, &file);
+        let mut derived = vec![0; 2 * 2 * salt + 2];
+        pbkdf2::pbkdf2_hmac::<sha1::Sha1>(
+            WRONG,
+            &zip[file.data..file.data + salt],
+            1000,
+            &mut derived,
+        );
+        let verifier = file.data + salt;
+        zip[verifier..verifier + 2].copy_from_slice(&derived[4 * salt..]);
+        let errors = assert_fails_cleanly(&zip, Some(WRONG), name);
+        assert_says_wrong_password(&errors, name);
+        for error in &errors {
+            assert!(
+                error.contains("authentication code") && error.contains("is damaged"),
+                "{name}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn damage_at_every_byte_of_an_encrypted_entry_changes_nothing() {
+    let names = TINY_FIXTURES.iter().map(|tiny| tiny.0);
+    for name in names.chain(AE1_FIXTURES.iter().skip(1).map(|ae1| ae1.0)) {
+        let zip = fs::read(fixture(name)).unwrap();
+        let file = only_file(&zip);
+        for at in file.data..file.data + file.compressed {
+            for flip in [0x01, 0x80] {
+                let mut damaged = zip.clone();
+                damaged[at] ^= flip;
+                let case = format!(
+                    "{name}: byte {} of {} xor {flip:#x}",
+                    at - file.data,
+                    file.compressed
+                );
+                let errors = assert_fails_cleanly(&damaged, Some(PASSWORD), &case);
+                assert_says_wrong_password(&errors, &case);
+            }
+        }
+        if file.method != AES_METHOD
+            || zip[aes_field_at(&zip, file.central_extra.clone()).unwrap()] == 1
+        {
+            let damaged = with_crc(&zip, &file, file.crc ^ 1);
+            assert_fails_cleanly(&damaged, Some(PASSWORD), &format!("{name}: CRC"));
+        }
+    }
+}
+
+#[test]
+fn ae2_entries_ignore_the_crc_field_and_ae1_entries_check_it() {
+    for (name, expect_ok) in [("tiny-aes256.zip", true), ("tiny-aes256-ae1.zip", false)] {
+        let zip = fs::read(fixture(name)).unwrap();
+        let file = only_file(&zip);
+        let patched = with_crc(&zip, &file, file.crc ^ 0x0100);
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join("case.zip");
+        fs::write(&archive, &patched).unwrap();
+        for engine in ENGINES {
+            let output = work.path().join(format!("{engine:?}"));
+            let result = extract(
+                &archive,
+                &output,
+                engine,
+                Some(PASSWORD),
+                Existing::Refuse,
+                &[],
+            );
+            assert_eq!(result.is_ok(), expect_ok, "{name}: {engine:?}: {result:?}");
+        }
+    }
+}
+
+struct Built {
+    name: &'static str,
+    flags: u16,
+    method: u16,
+    crc: u32,
+    size: u32,
+    payload: Vec<u8>,
+    local_extra: Vec<u8>,
+    central_extra: Vec<u8>,
+}
+
+fn build(entries: &[Built]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut offsets = Vec::new();
+    for entry in entries {
+        offsets.push(out.len() as u32);
+        out.extend_from_slice(b"PK\x03\x04\x33\x00");
+        out.extend_from_slice(&entry.flags.to_le_bytes());
+        out.extend_from_slice(&entry.method.to_le_bytes());
+        out.extend_from_slice(&[0x0e, 0x13, 0x21, 0x5b]);
+        out.extend_from_slice(&entry.crc.to_le_bytes());
+        out.extend_from_slice(&(entry.payload.len() as u32).to_le_bytes());
+        out.extend_from_slice(&entry.size.to_le_bytes());
+        out.extend_from_slice(&(entry.name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(entry.local_extra.len() as u16).to_le_bytes());
+        out.extend_from_slice(entry.name.as_bytes());
+        out.extend_from_slice(&entry.local_extra);
+        out.extend_from_slice(&entry.payload);
+    }
+    let directory = out.len() as u32;
+    for (entry, offset) in entries.iter().zip(offsets) {
+        out.extend_from_slice(b"PK\x01\x02\x3f\x00\x33\x00");
+        out.extend_from_slice(&entry.flags.to_le_bytes());
+        out.extend_from_slice(&entry.method.to_le_bytes());
+        out.extend_from_slice(&[0x0e, 0x13, 0x21, 0x5b]);
+        out.extend_from_slice(&entry.crc.to_le_bytes());
+        out.extend_from_slice(&(entry.payload.len() as u32).to_le_bytes());
+        out.extend_from_slice(&entry.size.to_le_bytes());
+        out.extend_from_slice(&(entry.name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(entry.central_extra.len() as u16).to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+        out.extend_from_slice(&offset.to_le_bytes());
+        out.extend_from_slice(entry.name.as_bytes());
+        out.extend_from_slice(&entry.central_extra);
+    }
+    let size = out.len() as u32 - directory;
+    out.extend_from_slice(b"PK\x05\x06\0\0\0\0");
+    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&size.to_le_bytes());
+    out.extend_from_slice(&directory.to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
+    out
+}
+
+fn aes_extra(body: &[u8]) -> Vec<u8> {
+    let mut field = AES_FIELD.to_le_bytes().to_vec();
+    field.extend_from_slice(&(body.len() as u16).to_le_bytes());
+    field.extend_from_slice(body);
+    field
+}
+
+fn tiny_entry(name: &str) -> Built {
+    let zip = fs::read(fixture(name)).unwrap();
+    let file = only_file(&zip);
+    let field = aes_field_at(&zip, file.central_extra.clone())
+        .map(|at| aes_extra(&zip[at..at + 7]))
+        .unwrap_or_default();
+    Built {
+        name: TINY_NAME,
+        flags: file.flags,
+        method: file.method,
+        crc: file.crc,
+        size: TINY_TEXT.len() as u32,
+        payload: zip[file.data..file.data + file.compressed].to_vec(),
+        local_extra: field.clone(),
+        central_extra: field,
+    }
+}
+
+#[test]
+fn the_entry_builder_reproduces_a_working_encrypted_entry() {
+    for name in [
+        "tiny-zipcrypto.zip",
+        "tiny-aes128.zip",
+        "tiny-aes256-ae1.zip",
+    ] {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join("case.zip");
+        fs::write(&archive, build(&[tiny_entry(name)])).unwrap();
+        for engine in ENGINES {
+            let output = work.path().join(format!("{engine:?}"));
+            extract(
+                &archive,
+                &output,
+                engine,
+                Some(PASSWORD),
+                Existing::Refuse,
+                &[],
+            )
+            .unwrap();
+            assert_eq!(
+                fs::read(output.join(TINY_NAME)).unwrap(),
+                TINY_TEXT,
+                "{name}"
+            );
+        }
+    }
+}
+
+#[test]
+fn aes_fields_that_lie_are_refused() {
+    let entry = || tiny_entry("tiny-aes256.zip");
+    let honest = entry().central_extra[4..].to_vec();
+    let body = |at: usize, value: u8| {
+        let mut body = honest.clone();
+        body[at] = value;
+        aes_extra(&body)
+    };
+    let both = |extra: Vec<u8>| Built {
+        local_extra: extra.clone(),
+        central_extra: extra,
+        ..entry()
+    };
+    let cases: Vec<(&str, Built)> = vec![
+        ("vendor version 0", both(body(0, 0))),
+        ("vendor version 3", both(body(0, 3))),
+        ("another vendor", both(body(3, b'X'))),
+        ("strength 0", both(body(4, 0))),
+        ("strength 4", both(body(4, 4))),
+        ("strength 128 that is really 256", both(body(4, 1))),
+        ("strength 192 that is really 256", both(body(4, 2))),
+        ("AES inside AES", both(body(5, AES_METHOD as u8))),
+        ("an unknown real method", both(body(6, 0x42))),
+        ("stored that is really Deflate", both(body(5, 0))),
+        ("AE-1 stored that is really Deflate", {
+            let ae1 = tiny_entry("tiny-aes256-ae1.zip");
+            let mut lie = ae1.central_extra[4..].to_vec();
+            lie[5] = 0;
+            Built {
+                local_extra: aes_extra(&lie),
+                central_extra: aes_extra(&lie),
+                ..ae1
+            }
+        }),
+        ("a short field", both(aes_extra(&honest[..6]))),
+        (
+            "a long field",
+            both(aes_extra(&[&honest[..], &[0]].concat())),
+        ),
+        ("an empty field", both(aes_extra(&[]))),
+        (
+            "two fields",
+            both([aes_extra(&honest), aes_extra(&honest)].concat()),
+        ),
+        ("no field", both(Vec::new())),
+        (
+            "a local field that names another strength",
+            Built {
+                local_extra: body(4, 1),
+                ..entry()
+            },
+        ),
+        (
+            "a local field that names another method",
+            Built {
+                local_extra: body(5, 0),
+                ..entry()
+            },
+        ),
+        (
+            "no local field",
+            Built {
+                local_extra: Vec::new(),
+                ..entry()
+            },
+        ),
+        (
+            "the AES method without the encryption flag",
+            Built {
+                flags: 0,
+                ..entry()
+            },
+        ),
+        (
+            "PKWARE strong encryption",
+            Built {
+                flags: 0x41,
+                ..entry()
+            },
+        ),
+        (
+            "a declared size that is too large",
+            Built {
+                size: TINY_TEXT.len() as u32 + 1,
+                ..entry()
+            },
+        ),
+        (
+            "a declared size that is too small",
+            Built {
+                size: TINY_TEXT.len() as u32 - 1,
+                ..entry()
+            },
+        ),
+    ];
+    let authentic_but_misread = [
+        "stored that is really Deflate",
+        "a declared size that is too large",
+        "a declared size that is too small",
+    ];
+    for (case, built) in cases {
+        let errors = assert_fails_cleanly(&build(&[built]), Some(PASSWORD), case);
+        if authentic_but_misread.contains(&case) {
+            for error in errors {
+                assert!(
+                    !error.contains("password is wrong"),
+                    "{case}: the authentication code holds, so the password is right: {error}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn entries_too_short_for_their_header_and_code_are_refused() {
+    for name in ["tiny-zipcrypto.zip", "tiny-aes128.zip", "tiny-aes256.zip"] {
+        let full = tiny_entry(name);
+        let overhead = if full.method == AES_METHOD {
+            let strength = full.central_extra[8] as usize;
+            4 + 4 * strength + 2 + AES_CODE
+        } else {
+            12
+        };
+        for kept in [0, 1, overhead / 2, overhead - 1, overhead, overhead + 1] {
+            let built = Built {
+                payload: full.payload[..kept].to_vec(),
+                ..tiny_entry(name)
+            };
+            assert_fails_cleanly(
+                &build(&[built]),
+                Some(PASSWORD),
+                &format!("{name}: {kept} bytes"),
+            );
+        }
+    }
+}
+
+#[test]
+fn local_encryption_flags_must_agree_with_the_central_directory() {
+    for name in ["tiny-zipcrypto.zip", "tiny-aes128.zip"] {
+        let zip = fs::read(fixture(name)).unwrap();
+        let file = only_file(&zip);
+        let mut local_clear = zip.clone();
+        local_clear[file.local + 6] &= !1;
+        assert_fails_cleanly(
+            &local_clear,
+            Some(PASSWORD),
+            &format!("{name}: local clear"),
+        );
+        let mut central_clear = zip.clone();
+        central_clear[file.central + 8] &= !1;
+        assert_fails_cleanly(
+            &central_clear,
+            Some(PASSWORD),
+            &format!("{name}: central clear"),
+        );
+    }
+}
+
+#[test]
+fn selections_that_leave_out_every_encrypted_entry_need_no_password() {
+    let text = b"a plain entry, larger than the encrypted one\n".repeat(4);
+    let plain = Built {
+        name: "plain.txt",
+        flags: 0,
+        method: 0,
+        crc: crc32fast::hash(&text),
+        size: text.len() as u32,
+        payload: text,
+        local_extra: Vec::new(),
+        central_extra: Vec::new(),
+    };
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("mixed.zip");
+    fs::write(&archive, build(&[plain, tiny_entry("tiny-aes192.zip")])).unwrap();
+    for engine in ENGINES {
+        let output = work.path().join(format!("{engine:?}"));
+        extract(
+            &archive,
+            &output,
+            engine,
+            None,
+            Existing::Refuse,
+            &["plain.txt".to_owned()],
+        )
+        .unwrap();
+        assert_eq!(listing(&output), ["plain.txt"]);
+        let all = work.path().join(format!("{engine:?}-all"));
+        let files_reported = std::sync::atomic::AtomicU64::new(0);
+        let count = |progress: zipper::Progress| {
+            files_reported.fetch_max(progress.files_done, std::sync::atomic::Ordering::Relaxed);
+        };
+        let error = zipper::extract_archive(
+            &archive,
+            &all,
+            ExtractOptions {
+                engine,
+                threads: Some(1),
+                control: zipper::Control {
+                    progress: Some(&count),
+                    cancel: None,
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(error.is::<PasswordNeeded>());
+        assert!(!all.exists());
+        assert_eq!(
+            files_reported.into_inner(),
+            0,
+            "{engine:?} wrote the plain entry before it asked for a password"
+        );
+    }
+}
+
+#[cfg(unix)]
+type JobCase = (&'static str, bool, Vec<(&'static str, String)>);
+
+#[cfg(unix)]
+type TerminalCase = (&'static str, Vec<(&'static str, String)>, &'static str);
+
+#[cfg(unix)]
+const DRIVER_PRELUDE: &str = r#"
+import json, os, pty, select, signal, subprocess, sys, time
+transcript = open(sys.argv[1], "ab", buffering=0)
+seen = b""
+def pump(seconds, token=None):
+    global seen
+    deadline = time.time() + seconds
+    while time.time() < deadline and (token is None or token not in seen):
+        ready, _, _ = select.select([terminal], [], [], 0.05)
+        if ready:
+            try:
+                data = os.read(terminal, 65536)
+            except OSError:
+                return
+            if not data:
+                return
+            seen += data
+            transcript.write(data)
+def processes():
+    listed = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,command="], capture_output=True, text=True)
+    rows = []
+    for line in listed.stdout.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) >= 2:
+            rows.append((int(parts[0]), int(parts[1]), parts[2] if len(parts) > 2 else ""))
+    return rows
+def descendants(root):
+    rows = processes()
+    found, frontier = [], [root]
+    while frontier:
+        parent = frontier.pop()
+        for pid, ppid, command in rows:
+            if ppid == parent and pid != os.getpid():
+                found.append((pid, command))
+                frontier.append(pid)
+    return found
+def kill_tree(root):
+    for pid, _ in descendants(root):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    try:
+        os.kill(root, signal.SIGKILL)
+    except OSError:
+        pass
+"#;
+
+#[cfg(unix)]
+const PTY_DRIVER: &str = r#"
+script, steps = sys.argv[2], json.loads(sys.argv[3])
+pid, terminal = pty.fork()
+if pid == 0:
+    os.execv("/bin/bash", ["bash", "-c", script])
+for kind, value in steps:
+    if kind == "wait":
+        pump(20, value.encode())
+    elif kind == "send":
+        os.write(terminal, bytes.fromhex(value))
+    elif kind == "file":
+        os.write(terminal, open(value, "rb").read())
+    elif kind == "echo_on":
+        import termios
+        settings = termios.tcgetattr(terminal)
+        settings[3] |= termios.ECHO | termios.ICANON
+        termios.tcsetattr(terminal, termios.TCSANOW, settings)
+    elif kind == "respond":
+        count, token, reply = value.split("|", 2)
+        deadline = time.time() + 5
+        while seen.count(token.encode()) < int(count) and time.time() < deadline:
+            pump(0.05)
+        if seen.count(token.encode()) >= int(count):
+            os.write(terminal, bytes.fromhex(reply))
+    elif kind == "idle":
+        time.sleep(float(value))
+    elif kind == "sleep":
+        pump(float(value))
+    elif kind == "signal":
+        for child, ppid, _ in processes():
+            if ppid == pid:
+                os.kill(child, getattr(signal, value))
+pump(20, b"LEFT=")
+pump(0.3)
+deadline = time.time() + 10
+while os.waitpid(pid, os.WNOHANG)[0] == 0:
+    if time.time() > deadline:
+        kill_tree(pid)
+        os.waitpid(pid, 0)
+        seen += b"STILL RUNNING"
+        break
+    time.sleep(0.05)
+sys.stdout.write(seen.decode("latin1"))
+"#;
+
+#[cfg(unix)]
+const SHELL_DRIVER: &str = r#"
+steps, history = json.loads(sys.argv[2]), sys.argv[3]
+pid, terminal = pty.fork()
+if pid == 0:
+    env = dict(os.environ, PS1="PROMPT$ ", HISTFILE=history)
+    os.execve("/bin/bash", ["bash", "--norc", "--noprofile", "-i"], env)
+pump(1)
+for kind, value in steps:
+    if kind == "type":
+        os.write(terminal, value.encode() + b"\r")
+    elif kind == "send":
+        os.write(terminal, bytes.fromhex(value))
+    elif kind == "paste":
+        data = value.encode() + b"\r"
+        os.set_blocking(terminal, False)
+        deadline = time.time() + 20
+        while data and time.time() < deadline:
+            try:
+                data = data[os.write(terminal, data):]
+            except BlockingIOError:
+                pump(0.02)
+        os.set_blocking(terminal, True)
+    elif kind == "wait":
+        pump(15, value.encode())
+    elif kind == "sleep":
+        pump(float(value))
+    elif kind == "signal":
+        name, marker = value.split(" ", 1)
+        for target, command in descendants(pid):
+            if marker in command:
+                os.kill(target, getattr(signal, name))
+os.write(terminal, b"exit\r")
+pump(1)
+kill_tree(pid)
+os.waitpid(pid, 0)
+sys.stdout.write(seen.decode("latin1"))
+"#;
+
+#[cfg(unix)]
+const DRIVER_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+
+#[cfg(unix)]
+fn process_tree(root: u32) -> (Vec<u32>, String) {
+    let listed = Command::new("ps")
+        .args(["-A", "-o", "pid=,ppid=,pgid=,stat=,command="])
+        .output()
+        .unwrap();
+    let listed = String::from_utf8_lossy(&listed.stdout).into_owned();
+    let rows: Vec<(u32, u32, &str)> = listed
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let pid = fields.next()?.parse().ok()?;
+            let ppid = fields.next()?.parse().ok()?;
+            Some((pid, ppid, line))
+        })
+        .collect();
+    let (mut tree, mut frontier, mut shown) = (vec![root], vec![root], String::new());
+    while let Some(parent) = frontier.pop() {
+        for &(pid, ppid, line) in &rows {
+            if ppid == parent {
+                tree.push(pid);
+                frontier.push(pid);
+                shown.push_str(line);
+                shown.push('\n');
+            }
+        }
+    }
+    (tree, shown)
+}
+
+#[cfg(unix)]
+fn drive(body: &str, arguments: &[&std::ffi::OsStr]) -> String {
+    let work = tempfile::tempdir().unwrap();
+    let transcript = work.path().join("transcript");
+    let output = work.path().join("output");
+    let errors = work.path().join("errors");
+    let mut child = Command::new("python3")
+        .arg("-I")
+        .arg("-c")
+        .arg(format!("{DRIVER_PRELUDE}{body}"))
+        .arg(&transcript)
+        .args(arguments)
+        .stdout(fs::File::create(&output).unwrap())
+        .stderr(fs::File::create(&errors).unwrap())
+        .spawn()
+        .expect("python3 drives the terminal");
+    let deadline = std::time::Instant::now() + DRIVER_DEADLINE;
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() > deadline {
+            let (tree, shown) = process_tree(child.id());
+            for pid in tree.iter().rev() {
+                let _ = Command::new("kill")
+                    .arg("-KILL")
+                    .arg(pid.to_string())
+                    .status();
+            }
+            let _ = child.wait();
+            panic!(
+                "the terminal driver ran past {DRIVER_DEADLINE:?}\nprocesses:\n{shown}\ntranscript:\n{}",
+                String::from_utf8_lossy(&fs::read(&transcript).unwrap_or_default())
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&fs::read(&output).unwrap()),
+        String::from_utf8_lossy(&fs::read(&errors).unwrap())
+    )
+}
+
+#[cfg(unix)]
+fn on_a_terminal(command: &str, steps: &[(&str, String)]) -> String {
+    let script = format!(
+        "trap : INT QUIT; {command}; echo RC=$?; stty -a; IFS= read -t 2 -r rest; echo \"LEFT=[$rest]\""
+    );
+    let steps = serde_json::to_string(steps).unwrap();
+    drive(PTY_DRIVER, &[script.as_ref(), steps.as_ref()])
+}
+
+#[cfg(unix)]
+fn shell_quoted(path: &Path) -> String {
+    format!("'{}'", path.display())
+}
+
+#[cfg(unix)]
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(unix)]
+fn assert_terminal_restored(case: &str, transcript: &str) {
+    let words: Vec<&str> = transcript.split_whitespace().collect();
+    for setting in ["echo", "icanon", "isig"] {
+        assert!(
+            words.contains(&setting) && !words.contains(&format!("-{setting}").as_str()),
+            "{case}: the terminal kept {setting} off: {transcript}"
+        );
+    }
+    assert!(
+        transcript.contains("LEFT=[]"),
+        "{case}: typed input reached the shell: {transcript}"
+    );
+}
+
+#[cfg(unix)]
+fn zip_crypto_stored(name: &'static str, password: &[u8], data: &[u8]) -> Vec<u8> {
+    let crc = crc32fast::hash(data);
+    let mut plain = vec![0x5a; 11];
+    plain.push((crc >> 24) as u8);
+    plain.extend_from_slice(data);
+    let mut keys = [0x1234_5678u32, 0x2345_6789, 0x3456_7890];
+    let step = |crc: u32, byte: u8| {
+        let mut crc = crc ^ u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+        crc
+    };
+    let update = |keys: &mut [u32; 3], byte: u8| {
+        keys[0] = step(keys[0], byte);
+        keys[1] = keys[1]
+            .wrapping_add(keys[0] & 0xff)
+            .wrapping_mul(134_775_813)
+            .wrapping_add(1);
+        keys[2] = step(keys[2], (keys[1] >> 24) as u8);
+    };
+    for &byte in password {
+        update(&mut keys, byte);
+    }
+    let payload = plain
+        .iter()
+        .map(|&byte| {
+            let temp = (keys[2] | 2) & 0xffff;
+            let cipher = byte ^ ((temp * (temp ^ 1)) >> 8) as u8;
+            update(&mut keys, byte);
+            cipher
+        })
+        .collect();
+    build(&[Built {
+        name,
+        flags: 1,
+        method: 0,
+        crc,
+        size: data.len() as u32,
+        payload,
+        local_extra: Vec::new(),
+        central_extra: Vec::new(),
+    }])
+}
+
+#[cfg(unix)]
+#[test]
+fn the_password_prompt_restores_the_terminal_and_drops_unread_input_on_every_exit() {
+    let send = |bytes: &[u8]| ("send", hex(bytes));
+    let wait = ("wait", "Password: ".to_owned());
+    let pause = |_: ()| ("sleep", "0.4".to_owned());
+    let long = [vec![b'L'; 1030], b"LEAKEDTAIL\n".to_vec()].concat();
+    let cases: Vec<TerminalCase> = vec![
+        ("Ctrl-C", vec![wait.clone(), send(b"abc\x03")], "RC=130"),
+        (
+            "Ctrl-backslash",
+            vec![wait.clone(), send(b"abc\x1c")],
+            "RC=131",
+        ),
+        (
+            "Ctrl-C, then more pasted input",
+            vec![wait.clone(), send(b"abc\x03SECRETTAIL\n")],
+            "RC=130",
+        ),
+        ("Ctrl-D", vec![wait.clone(), send(b"\x04")], "RC=1"),
+        (
+            "a password that is too long",
+            vec![wait.clone(), send(&long)],
+            "RC=1",
+        ),
+        (
+            "a wrong password",
+            vec![wait.clone(), send(b"nope\r")],
+            "RC=1",
+        ),
+        (
+            "a corrected password",
+            vec![wait.clone(), send(b"zipz\x7fper\n")],
+            "RC=0",
+        ),
+        (
+            "a password typed the moment the prompt shows",
+            vec![wait.clone(), send(b"zipper"), pause(()), send(b"\n")],
+            "RC=0",
+        ),
+    ];
+    let signals: Vec<TerminalCase> = [
+        ("SIGTERM", "RC=143"),
+        ("SIGHUP", "RC=129"),
+        ("SIGQUIT", "RC=131"),
+        ("SIGINT", "RC=130"),
+        ("SIGALRM", "RC=142"),
+    ]
+    .into_iter()
+    .map(|(signal, exit)| {
+        (
+            signal,
+            vec![
+                wait.clone(),
+                send(b"abc"),
+                pause(()),
+                ("signal", signal.to_owned()),
+                pause(()),
+            ],
+            exit,
+        )
+    })
+    .collect();
+    for (case, steps, exit) in cases.into_iter().chain(signals) {
+        let work = tempfile::tempdir().unwrap();
+        let output = work.path().join("out");
+        let command = format!(
+            "{} extract {} -o {}",
+            shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+            shell_quoted(&fixture("aes128-deflate.zip")),
+            shell_quoted(&output)
+        );
+        let transcript = on_a_terminal(&command, &steps);
+        assert!(transcript.contains(exit), "{case}: {transcript}");
+        assert_terminal_restored(case, &transcript);
+        for hidden in [
+            "abc",
+            "nope",
+            "zipper\r",
+            "SECRETTAIL",
+            "LEAKEDTAIL",
+            "zipz",
+        ] {
+            assert!(
+                !transcript.contains(hidden),
+                "{case}: {hidden} was shown: {transcript}"
+            );
+        }
+        assert_eq!(output.exists(), exit == "RC=0", "{case}");
+        assert_eq!(
+            listing(work.path()).len(),
+            usize::from(exit == "RC=0"),
+            "{case}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn every_typed_byte_but_the_editing_keys_is_part_of_the_password() {
+    let wait = ("wait", "Password: ".to_owned());
+    for (password, typed) in [
+        (&b"a\tb"[..], &b"a\tb\n"[..]),
+        (b"a\x1b[x", b"a\x1b[x\n"),
+        (b"ax", "a\u{e9}\x7fx\n".as_bytes()),
+        ("a\u{e9}".as_bytes(), "ab\x7f\u{e9}\r".as_bytes()),
+        (b"kept", b"gone\x15kept\n"),
+        (b"a\x11\x13b", b"a\x11\x13b\n"),
+        (b"ab", b"a\x80\x7fb\n"),
+    ] {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join("typed.zip");
+        fs::write(
+            &archive,
+            zip_crypto_stored("typed.txt", password, b"typed\n"),
+        )
+        .unwrap();
+        let output = work.path().join("out");
+        let command = format!(
+            "{} extract {} -o {}",
+            shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+            shell_quoted(&archive),
+            shell_quoted(&output)
+        );
+        let transcript = on_a_terminal(&command, &[wait.clone(), ("send", hex(typed))]);
+        assert!(transcript.contains("RC=0"), "{typed:?}: {transcript}");
+        assert_eq!(fs::read(output.join("typed.txt")).unwrap(), b"typed\n");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_interrupted_prompt_leaves_no_temporary_folder_or_spool() {
+    let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
+    let work = tempfile::tempdir().unwrap();
+    let temporary = work.path().join("tmp");
+    fs::create_dir(&temporary).unwrap();
+    let command = format!(
+        "TMPDIR={} {zipper} extract {} --stdout",
+        shell_quoted(&temporary),
+        shell_quoted(&fixture("tiny-aes128.zip"))
+    );
+    let steps = [("wait", "Password: ".to_owned()), ("send", hex(b"\x03"))];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=130"), "{transcript}");
+    assert_eq!(
+        listing(&temporary),
+        Vec::<String>::new(),
+        "--stdout: {transcript}"
+    );
+
+    let spooled = work.path().join("spooled");
+    fs::create_dir(&spooled).unwrap();
+    let command = format!(
+        "stty raw -echo min 0 time 20; {zipper} extract -o {} -",
+        shell_quoted(&spooled.join("out"))
+    );
+    let steps = [
+        ("sleep", "0.5".to_owned()),
+        (
+            "file",
+            fixture("tiny-aes128.zip").to_string_lossy().into_owned(),
+        ),
+        ("wait", "Password: ".to_owned()),
+        ("signal", "SIGINT".to_owned()),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=130"), "{transcript}");
+    assert_eq!(
+        listing(&spooled),
+        Vec::<String>::new(),
+        "archive -: {transcript}"
+    );
+}
+
+fn zipper_command(arguments: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .args(arguments)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn the_command_line_takes_a_password_and_refuses_to_ask_without_a_terminal() {
+    let work = tempfile::tempdir().unwrap();
+    let archive = fixture("aes256-deflate.zip");
+    let archive = archive.to_str().unwrap();
+    let out = work.path().join("out");
+    let out = out.to_str().unwrap();
+    let run = zipper_command(&["--password", "zipper", "extract", archive, "-o", out]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(tree(Path::new(out)), recorded_trees()["aes256-deflate.zip"]);
+    let run = zipper_command(&["test", "--password", "zipper", archive]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let missing = work.path().join("missing");
+    let missing = missing.to_str().unwrap();
+    let run = zipper_command(&["extract", archive, "-o", missing]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(!run.status.success());
+    assert!(
+        stderr.contains("is encrypted") && stderr.contains("not a terminal"),
+        "{stderr}"
+    );
+    let secret = "Never-Show-This-Password";
+    let hyphenated = "--Never-Show-This-Password";
+    for command in [
+        vec!["--password", secret, "extract", archive, "-o", missing],
+        vec!["--password", secret, "test", archive],
+        vec!["--password", hyphenated, "extract", archive, "-o", missing],
+        vec!["extract", archive, "-o", missing, "--password", hyphenated],
+        vec!["test", "--password", "-x", archive],
+    ] {
+        let run = zipper_command(&command);
+        let output = format!(
+            "{}{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        );
+        assert!(!run.status.success());
+        assert!(output.contains("password is wrong"), "{output}");
+        assert!(
+            !output.contains(secret),
+            "the password appears in the output"
+        );
+    }
+    assert!(!Path::new(missing).exists());
+    let run = zipper_command(&[
+        "--zip-engine",
+        "backend",
+        "--password",
+        "zipper",
+        "extract",
+        archive,
+        "-o",
+        missing,
+    ]);
+    assert!(
+        !run.status.success(),
+        "the 7-Zip backend must refuse --password"
+    );
+}
+
+fn write_source(root: &Path) {
+    fs::create_dir_all(root.join("sub")).unwrap();
+    fs::write(root.join("a.txt"), b"hello world\n").unwrap();
+    fs::write(root.join("empty"), b"").unwrap();
+    let mut state = 0x2545_f491u32;
+    let random: Vec<u8> = (0..4096)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state as u8
+        })
+        .collect();
+    fs::write(root.join("sub/random.bin"), random).unwrap();
+    let text: String = (0..2000)
+        .map(|line| format!("compressible line {line}\n"))
+        .collect();
+    fs::write(root.join("sub/text.txt"), text).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("a.txt", root.join("link")).unwrap();
+}
+
+fn seven_zip_write(binary: &Path, source: &Path, archive: &Path, switches: &[&str]) {
+    let mut command = Command::new(binary);
+    command
+        .args(["a", "-tzip", "-pzipper", "-snl", "-bso0", "-bsp0"])
+        .args(switches)
+        .current_dir(source);
+    if switches.contains(&"-so") {
+        command.arg(".").stdout(fs::File::create(archive).unwrap());
+    } else {
+        command.arg(archive).arg(".");
+    }
+    assert!(command.status().unwrap().success(), "{}", archive.display());
+}
+
+fn info_zip_write(source: &Path, archive: &Path, switches: &[&str]) {
+    let written = Command::new("zip")
+        .args(["-q", "-r", "-y", "-P", "zipper"])
+        .args(switches)
+        .arg(archive)
+        .arg(".")
+        .current_dir(source)
+        .status();
+    assert!(
+        written.is_ok_and(|status| status.success()),
+        "Info-ZIP zip {}",
+        archive.display()
+    );
+}
+
+fn rewrite_as_ae1(zip: &[u8], source: &Path) -> Vec<u8> {
+    let mut patched = zip.to_vec();
+    for record in records(zip)
+        .into_iter()
+        .filter(|record| record.method == AES_METHOD)
+    {
+        assert_eq!(
+            record.flags & 8,
+            0,
+            "rewrite only archives without data descriptors"
+        );
+        let path = source.join(&record.name);
+        let content = match fs::read_link(&path) {
+            Ok(target) => target.to_string_lossy().into_owned().into_bytes(),
+            Err(_) => fs::read(&path).unwrap(),
+        };
+        patched = with_crc(&patched, &record, crc32fast::hash(&content));
+        for extra in [record.central_extra.clone(), record.local_extra.clone()] {
+            let field = aes_field_at(&patched, extra).unwrap();
+            patched[field..field + 2].copy_from_slice(&1u16.to_le_bytes());
+        }
+    }
+    patched
+}
+
+#[test]
+#[ignore = "rewrites the fixtures with 7-Zip and Info-ZIP when ZIPPER_WRITE_ENCRYPTED_ZIPS=1"]
+fn write_fixtures() {
+    assert!(std::env::var_os("ZIPPER_WRITE_ENCRYPTED_ZIPS").is_some());
+    let binary = seven_zip().expect("7-Zip writes the fixtures");
+    let work = tempfile::tempdir().unwrap();
+    let source = work.path().join("source");
+    write_source(&source);
+    let out = Path::new(DATA);
+    fs::create_dir_all(out).unwrap();
+    for name in every_fixture() {
+        fs::remove_file(fixture(&name)).unwrap();
+    }
+    for (name, switches) in SEVEN_ZIP_FIXTURES {
+        seven_zip_write(&binary, &source, &out.join(name), switches);
+    }
+    let tiny = work.path().join("tiny");
+    fs::create_dir_all(&tiny).unwrap();
+    fs::write(tiny.join(TINY_NAME), TINY_TEXT).unwrap();
+    for (name, method, compression) in TINY_FIXTURES {
+        if *method == INFO_ZIP {
+            info_zip_write(&tiny, &out.join(name), &[compression]);
+        } else {
+            seven_zip_write(&binary, &tiny, &out.join(name), &[method, compression]);
+        }
+    }
+    for (name, from) in AE1_FIXTURES {
+        let from_source = if from.starts_with("tiny") {
+            &tiny
+        } else {
+            &source
+        };
+        let zip = fs::read(out.join(from)).unwrap();
+        fs::write(out.join(name), rewrite_as_ae1(&zip, from_source)).unwrap();
+    }
+    let many = work.path().join("many");
+    fs::create_dir_all(&many).unwrap();
+    for number in 0..MANY_FILES {
+        fs::write(
+            many.join(format!("file-{number:03}.txt")),
+            format!("file {number}\n").repeat(number % 7),
+        )
+        .unwrap();
+    }
+    seven_zip_write(
+        &binary,
+        &many,
+        &out.join("aes256-many.zip"),
+        &["-mem=AES256"],
+    );
+    let large = work.path().join("large");
+    fs::create_dir_all(&large).unwrap();
+    let pattern = b"large file line\n".repeat(LARGE_FILE / 16);
+    fs::write(large.join("large.bin"), pattern).unwrap();
+    seven_zip_write(
+        &binary,
+        &large,
+        &out.join("aes256-large.zip"),
+        &["-mem=AES256", "-mx=9"],
+    );
+    seven_zip_write(
+        &binary,
+        &large,
+        &out.join("zipcrypto-large.zip"),
+        &["-mem=ZipCrypto", "-mx=9"],
+    );
+    info_zip_write(&source, &out.join("infozip-zipcrypto.zip"), &[]);
+    let trees: BTreeMap<String, BTreeMap<String, String>> = every_fixture()
+        .into_iter()
+        .map(|name| {
+            let tree = seven_zip_tree(&binary, &fixture(&name));
+            (name, tree)
+        })
+        .collect();
+    fs::write(
+        out.join("trees.json"),
+        serde_json::to_string_pretty(&trees).unwrap() + "\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn commands_that_decrypt_nothing_refuse_a_password() {
+    let archive = fixture("tiny-aes128.zip");
+    for command in [
+        vec!["--password", "zipper", "list", archive.to_str().unwrap()],
+        vec!["--password", "zipper", "duplicates", DATA],
+    ] {
+        let run = zipper_command(&command);
+        assert!(!run.status.success(), "{command:?}");
+        assert!(String::from_utf8_lossy(&run.stderr).contains("--password"));
+    }
+    let run = zipper_command(&["list", archive.to_str().unwrap()]);
+    assert!(run.status.success());
+}
+
+#[cfg(unix)]
+fn in_an_interactive_shell(steps: &[(&str, String)]) -> String {
+    let folder = tempfile::tempdir().unwrap();
+    let steps = serde_json::to_string(steps).unwrap();
+    let history = folder.path().join("history");
+    drive(SHELL_DRIVER, &[steps.as_ref(), history.as_os_str()])
+}
+
+#[cfg(unix)]
+fn hunter_archive(work: &Path) -> PathBuf {
+    let archive = work.join("hunter.zip");
+    fs::write(
+        &archive,
+        zip_crypto_stored("hunter.txt", b"hunter2", b"secret\n"),
+    )
+    .unwrap();
+    archive
+}
+
+#[cfg(unix)]
+#[test]
+fn a_prompt_stopped_and_resumed_by_job_control_stays_hidden() {
+    let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
+    let step = |kind: &'static str, value: &str| (kind, value.to_owned());
+    let cases: Vec<JobCase> = vec![
+        (
+            "stopped with SIGTSTP",
+            false,
+            vec![
+                step("signal", "SIGTSTP"),
+                step("sleep", "1"),
+                step("type", "echo SHELL$((40+2))"),
+                step("wait", "SHELL42"),
+                step("type", "fg"),
+            ],
+        ),
+        (
+            "stopped with Ctrl-Z",
+            false,
+            vec![step("send", "1a"), step("sleep", "1"), step("type", "fg")],
+        ),
+        (
+            "stopped with SIGSTOP",
+            false,
+            vec![
+                step("signal", "SIGSTOP"),
+                step("sleep", "0.5"),
+                step("type", "fg"),
+            ],
+        ),
+        (
+            "stopped with SIGSTOP, resumed in the background, then brought back",
+            false,
+            vec![
+                step("signal", "SIGSTOP"),
+                step("sleep", "0.5"),
+                step("type", "bg"),
+                step("sleep", "1"),
+                step("type", "fg"),
+            ],
+        ),
+        ("started in the background", true, vec![step("type", "fg")]),
+    ];
+    for (case, background, middle) in cases {
+        let work = tempfile::tempdir().unwrap();
+        let archive = shell_quoted(&hunter_archive(work.path()));
+        let output = work.path().join("out");
+        let marker = format!("-o {}", output.display());
+        let start = if background {
+            format!("{zipper} extract {archive} -o {} &", shell_quoted(&output))
+        } else {
+            format!("{zipper} extract {archive} -o {}", shell_quoted(&output))
+        };
+        let mut steps = vec![("type", start)];
+        steps.push(if background {
+            step("sleep", "1.5")
+        } else {
+            step("wait", "Password: ")
+        });
+        for (kind, value) in middle {
+            let value = if kind == "signal" {
+                format!("{value} {marker}")
+            } else {
+                value
+            };
+            steps.push((kind, value));
+        }
+        steps.push(step("sleep", "1"));
+        steps.push(step("type", "hunter2"));
+        steps.push(step("sleep", "2"));
+        steps.push(step("type", "echo AFTER$((40+2))"));
+        steps.push(step("wait", "AFTER42"));
+        let transcript = in_an_interactive_shell(&steps);
+        assert!(
+            !transcript.contains("hunter2"),
+            "{case}: the password was shown: {transcript}"
+        );
+        assert!(
+            !transcript.contains("not found"),
+            "{case}: the password ran as a command: {transcript}"
+        );
+        assert_eq!(
+            fs::read(output.join("hunter.txt")).ok().as_deref(),
+            Some(&b"secret\n"[..]),
+            "{case}: {transcript}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_paste_longer_than_a_password_never_reaches_the_shell() {
+    let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
+    for length in [3_000, 20_000] {
+        let work = tempfile::tempdir().unwrap();
+        let archive = shell_quoted(&hunter_archive(work.path()));
+        let output = work.path().join("out");
+        let steps = [
+            (
+                "type",
+                format!("{zipper} extract {archive} -o {}", shell_quoted(&output)),
+            ),
+            ("wait", "Password: ".to_owned()),
+            ("paste", "A".repeat(length) + "; echo LEAKED$((40+2))"),
+            ("sleep", "2".to_owned()),
+            ("type", "echo AFTER$((40+2))".to_owned()),
+            ("wait", "AFTER42".to_owned()),
+        ];
+        let transcript = in_an_interactive_shell(&steps);
+        assert!(
+            !transcript.contains("LEAKED"),
+            "{length}: the paste reached the shell: {transcript}"
+        );
+        assert!(
+            transcript.contains("longer than 1024"),
+            "{length}: {transcript}"
+        );
+        assert!(!output.exists());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_stop_without_job_control_still_restores_the_terminal() {
+    let work = tempfile::tempdir().unwrap();
+    let output = work.path().join("out");
+    let command = format!(
+        "{} extract {} -o {}",
+        shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+        shell_quoted(&fixture("aes128-deflate.zip")),
+        shell_quoted(&output)
+    );
+    let again = format!("2|Password: |{}", hex(b"zipper\r"));
+    for (signal, during_the_restore) in ["SIGTSTP", "SIGTTIN", "SIGTTOU"]
+        .into_iter()
+        .flat_map(|signal| [(signal, false), (signal, true)])
+    {
+        let steps = if during_the_restore {
+            vec![
+                ("idle", "1.5".to_owned()),
+                ("send", hex(b"zipper\r")),
+                ("idle", "0.5".to_owned()),
+                ("signal", signal.to_owned()),
+                ("respond", again.clone()),
+                ("sleep", "1".to_owned()),
+            ]
+        } else {
+            vec![
+                ("wait", "Password: ".to_owned()),
+                ("sleep", "0.3".to_owned()),
+                ("signal", signal.to_owned()),
+                ("respond", again.clone()),
+                ("sleep", "1".to_owned()),
+            ]
+        };
+        let signal = format!("{signal} during the restore: {during_the_restore}");
+        let signal = signal.as_str();
+        let transcript = on_a_terminal(&command, &steps);
+        assert!(transcript.contains("RC=0"), "{signal}: {transcript}");
+        assert_terminal_restored(signal, &transcript);
+        let words: Vec<&str> = transcript.split_whitespace().collect();
+        assert!(
+            words.contains(&"ixon") && !words.contains(&"-ixon"),
+            "{signal}: {transcript}"
+        );
+        fs::remove_dir_all(&output).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_prompt_continued_after_sigstop_hides_the_terminal_again() {
+    let work = tempfile::tempdir().unwrap();
+    let archive = hunter_archive(work.path());
+    let output = work.path().join("out");
+    let command = format!(
+        "{} extract {} -o {}",
+        shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+        shell_quoted(&archive),
+        shell_quoted(&output)
+    );
+    let steps = [
+        ("wait", "Password: ".to_owned()),
+        ("sleep", "0.3".to_owned()),
+        ("signal", "SIGSTOP".to_owned()),
+        ("sleep", "0.3".to_owned()),
+        ("echo_on", String::new()),
+        ("signal", "SIGCONT".to_owned()),
+        ("respond", format!("2|Password: |{}", hex(b"hunter2\r"))),
+        ("sleep", "1".to_owned()),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=0"), "{transcript}");
+    assert!(
+        !transcript.contains("hunter2"),
+        "the password was shown: {transcript}"
+    );
+    assert_terminal_restored("SIGSTOP and SIGCONT", &transcript);
+    assert!(output.join("hunter.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_c_at_the_prompt_stops_the_calling_script() {
+    let work = tempfile::tempdir().unwrap();
+    let command = format!(
+        "bash -c 'for round in 1 2; do {} extract {} -o {}/out$round; echo ROUND$round; done; echo LOOPDONE'",
+        Path::new(env!("CARGO_BIN_EXE_zipper")).display(),
+        fixture("aes128-deflate.zip").display(),
+        work.path().display()
+    );
+    let steps = [
+        ("wait", "Password: ".to_owned()),
+        ("sleep", "0.3".to_owned()),
+        ("send", hex(b"\x03")),
+        ("sleep", "1".to_owned()),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=130"), "{transcript}");
+    assert!(
+        !transcript.contains("ROUND") && !transcript.contains("LOOPDONE"),
+        "{transcript}"
+    );
+    assert_terminal_restored("Ctrl-C in a script", &transcript);
+}
+
+#[cfg(unix)]
+#[test]
+fn signals_the_caller_ignores_stay_ignored_at_the_prompt() {
+    let work = tempfile::tempdir().unwrap();
+    let output = work.path().join("out");
+    let command = format!(
+        "trap '' INT HUP TERM; {} extract {} -o {}",
+        shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+        shell_quoted(&fixture("aes128-deflate.zip")),
+        shell_quoted(&output)
+    );
+    let steps = [
+        ("wait", "Password: ".to_owned()),
+        ("signal", "SIGINT".to_owned()),
+        ("signal", "SIGHUP".to_owned()),
+        ("signal", "SIGTERM".to_owned()),
+        ("sleep", "0.5".to_owned()),
+        ("send", hex(b"zipper\n")),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=0"), "{transcript}");
+    assert_terminal_restored("ignored signals", &transcript);
+    assert!(output.join("a.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_password_argument_takes_the_same_bytes_as_typing() {
+    use std::os::unix::ffi::OsStrExt;
+    let work = tempfile::tempdir().unwrap();
+    let password: &[u8] = b"\xff\xfe-not-utf-8\x11";
+    let archive = work.path().join("bytes.zip");
+    fs::write(
+        &archive,
+        zip_crypto_stored("bytes.txt", password, b"bytes\n"),
+    )
+    .unwrap();
+    let output = work.path().join("out");
+    let run = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .arg("--password")
+        .arg(std::ffi::OsStr::from_bytes(password))
+        .arg("extract")
+        .arg(&archive)
+        .arg("-o")
+        .arg(&output)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(fs::read(output.join("bytes.txt")).unwrap(), b"bytes\n");
+    let too_long = "p".repeat(1025);
+    let run = zipper_command(&[
+        "--password",
+        &too_long,
+        "extract",
+        archive.to_str().unwrap(),
+        "-o",
+        work.path().join("long").to_str().unwrap(),
+    ]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(!run.status.success());
+    assert!(
+        stderr.contains("1024 bytes") && !stderr.contains(&too_long),
+        "{stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_prompt_started_in_the_background_restores_the_settings_it_found_in_the_foreground() {
+    let zipper = shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper")));
+    let work = tempfile::tempdir().unwrap();
+    let archive = shell_quoted(&hunter_archive(work.path()));
+    let output = work.path().join("out");
+    let probe = work.path().join("probe");
+    let steps = [
+        (
+            "type",
+            format!(
+                "(sleep 1; {zipper} extract {archive} -o {}; stty -a > {}) &",
+                shell_quoted(&output),
+                shell_quoted(&probe)
+            ),
+        ),
+        ("sleep", "2.5".to_owned()),
+        ("type", "fg".to_owned()),
+        ("wait", "Password: ".to_owned()),
+        ("sleep", "0.5".to_owned()),
+        ("type", "hunter2".to_owned()),
+        ("sleep", "2".to_owned()),
+    ];
+    let transcript = in_an_interactive_shell(&steps);
+    let settings = fs::read_to_string(&probe).unwrap_or_default();
+    let words: Vec<&str> = settings.split_whitespace().collect();
+    for setting in ["echo", "icanon", "isig", "ixon"] {
+        assert!(
+            words.contains(&setting) && !words.contains(&format!("-{setting}").as_str()),
+            "the prompt restored {setting} off: {settings}\n{transcript}"
+        );
+    }
+    assert!(output.join("hunter.txt").exists(), "{transcript}");
+}
+
+#[cfg(unix)]
+fn large_zip_crypto_archive(path: &Path, password: &[u8], size: usize) {
+    use std::io::Write;
+    const CHUNK: usize = 1 << 20;
+    let zeros = vec![0u8; CHUNK];
+    let mut crc = crc32fast::Hasher::new();
+    for _ in 0..size / CHUNK {
+        crc.update(&zeros);
+    }
+    let crc = crc.finalize();
+    let name = b"large.bin";
+    let compressed = (size + 12) as u32;
+    let mut keys = [0x1234_5678u32, 0x2345_6789, 0x3456_7890];
+    let step = |crc: u32, byte: u8| {
+        let mut crc = crc ^ u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+        crc
+    };
+    let update = |keys: &mut [u32; 3], byte: u8| {
+        keys[0] = step(keys[0], byte);
+        keys[1] = keys[1]
+            .wrapping_add(keys[0] & 0xff)
+            .wrapping_mul(134_775_813)
+            .wrapping_add(1);
+        keys[2] = step(keys[2], (keys[1] >> 24) as u8);
+    };
+    for &byte in password {
+        update(&mut keys, byte);
+    }
+    let mut encrypt = |plain: &[u8], out: &mut Vec<u8>| {
+        for &byte in plain {
+            let temp = (keys[2] | 2) & 0xffff;
+            out.push(byte ^ ((temp * (temp ^ 1)) >> 8) as u8);
+            update(&mut keys, byte);
+        }
+    };
+    let mut file = std::io::BufWriter::new(fs::File::create(path).unwrap());
+    let mut header = b"PK\x03\x04\x14\x00\x01\x00\x00\x00\x0e\x13\x21\x5b".to_vec();
+    header.extend_from_slice(&crc.to_le_bytes());
+    header.extend_from_slice(&compressed.to_le_bytes());
+    header.extend_from_slice(&(size as u32).to_le_bytes());
+    header.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    header.extend_from_slice(&0u16.to_le_bytes());
+    header.extend_from_slice(name);
+    file.write_all(&header).unwrap();
+    let mut out = Vec::with_capacity(CHUNK + 12);
+    let mut encryption_header = vec![0x5a; 11];
+    encryption_header.push((crc >> 24) as u8);
+    encrypt(&encryption_header, &mut out);
+    file.write_all(&out).unwrap();
+    for _ in 0..size / CHUNK {
+        out.clear();
+        encrypt(&zeros, &mut out);
+        file.write_all(&out).unwrap();
+    }
+    let directory = header.len() as u32 + compressed;
+    let mut central = b"PK\x01\x02\x14\x03\x14\x00\x01\x00\x00\x00\x0e\x13\x21\x5b".to_vec();
+    central.extend_from_slice(&crc.to_le_bytes());
+    central.extend_from_slice(&compressed.to_le_bytes());
+    central.extend_from_slice(&(size as u32).to_le_bytes());
+    central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    central.extend_from_slice(&[0; 12]);
+    central.extend_from_slice(&0u32.to_le_bytes());
+    central.extend_from_slice(name);
+    file.write_all(&central).unwrap();
+    let mut end = b"PK\x05\x06\0\0\0\0\x01\x00\x01\x00".to_vec();
+    end.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    end.extend_from_slice(&directory.to_le_bytes());
+    end.extend_from_slice(&[0, 0]);
+    file.write_all(&end).unwrap();
+}
+
+#[cfg(unix)]
+fn decrypted_bytes_on_disk(folder: &Path) -> u64 {
+    walkdir::WalkDir::new(folder)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file() && entry.file_name() != "large.zip")
+        .filter_map(|entry| entry.metadata().ok())
+        .map(|metadata| metadata.len())
+        .sum()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
+    use std::os::unix::process::ExitStatusExt;
+    const LARGE: usize = 512 << 20;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_zip_crypto_archive(&archive, b"hunter2", LARGE);
+    for (name, number) in [("INT", 2), ("TERM", 15), ("HUP", 1), ("QUIT", 3)] {
+        let output = work.path().join("out");
+        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .args(["--password", "hunter2", "extract"])
+            .arg(&archive)
+            .arg("-o")
+            .arg(&output)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while decrypted_bytes_on_disk(work.path()) < 8 << 20 && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let sent = Command::new("kill")
+            .arg(format!("-{name}"))
+            .arg(child.id().to_string())
+            .status()
+            .unwrap();
+        assert!(sent.success());
+        let status = child.wait().unwrap();
+        assert_eq!(status.signal(), Some(number), "SIG{name}: {status:?}");
+        assert_eq!(listing(work.path()), ["large.zip"], "SIG{name}");
+        assert_eq!(decrypted_bytes_on_disk(work.path()), 0, "SIG{name}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ctrl_c_during_decryption_after_the_prompt_leaves_no_plaintext() {
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_zip_crypto_archive(&archive, b"hunter2", 512 << 20);
+    let output = work.path().join("out");
+    let command = format!(
+        "{} extract {} -o {}",
+        shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+        shell_quoted(&archive),
+        shell_quoted(&output)
+    );
+    let steps = [
+        ("wait", "Password: ".to_owned()),
+        ("send", hex(b"hunter2\r")),
+        ("sleep", "0.3".to_owned()),
+        ("send", hex(b"\x03")),
+        ("sleep", "1".to_owned()),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=130"), "{transcript}");
+    assert_terminal_restored("Ctrl-C while decrypting", &transcript);
+    assert_eq!(listing(work.path()), ["large.zip"], "{transcript}");
+}
+
+#[cfg(unix)]
+fn large_stored_zip(path: &Path, size: usize) {
+    use std::io::Write;
+    const CHUNK: usize = 1 << 20;
+    let zeros = vec![0u8; CHUNK];
+    let mut crc = crc32fast::Hasher::new();
+    for _ in 0..size / CHUNK {
+        crc.update(&zeros);
+    }
+    let crc = crc.finalize();
+    let name = b"large.bin";
+    let mut file = std::io::BufWriter::new(fs::File::create(path).unwrap());
+    let mut header = b"PK\x03\x04\x14\x00\x00\x00\x00\x00\x0e\x13\x21\x5b".to_vec();
+    header.extend_from_slice(&crc.to_le_bytes());
+    header.extend_from_slice(&(size as u32).to_le_bytes());
+    header.extend_from_slice(&(size as u32).to_le_bytes());
+    header.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    header.extend_from_slice(&0u16.to_le_bytes());
+    header.extend_from_slice(name);
+    file.write_all(&header).unwrap();
+    for _ in 0..size / CHUNK {
+        file.write_all(&zeros).unwrap();
+    }
+    let directory = (header.len() + size) as u32;
+    let mut central = b"PK\x01\x02\x14\x03\x14\x00\x00\x00\x00\x00\x0e\x13\x21\x5b".to_vec();
+    central.extend_from_slice(&crc.to_le_bytes());
+    central.extend_from_slice(&(size as u32).to_le_bytes());
+    central.extend_from_slice(&(size as u32).to_le_bytes());
+    central.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    central.extend_from_slice(&[0; 12]);
+    central.extend_from_slice(&0u32.to_le_bytes());
+    central.extend_from_slice(name);
+    file.write_all(&central).unwrap();
+    let mut end = b"PK\x05\x06\0\0\0\0\x01\x00\x01\x00".to_vec();
+    end.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    end.extend_from_slice(&directory.to_le_bytes());
+    end.extend_from_slice(&[0, 0]);
+    file.write_all(&end).unwrap();
+}
+
+#[cfg(unix)]
+fn signal_once_output_grows(
+    work: &Path,
+    archive_name: &str,
+    arguments: &[&std::ffi::OsStr],
+    signal: &str,
+) -> std::process::Output {
+    let child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let written = || {
+        walkdir::WalkDir::new(work)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file() && entry.file_name() != archive_name)
+            .filter_map(|entry| entry.metadata().ok())
+            .map(|metadata| metadata.len())
+            .sum::<u64>()
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while written() < 8 << 20 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(
+        Command::new("kill")
+            .arg(format!("-{signal}"))
+            .arg(child.id().to_string())
+            .status()
+            .unwrap()
+            .success()
+    );
+    child.wait_with_output().unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_during_a_7zip_extraction_stops_the_child_and_removes_staging() {
+    use std::os::unix::process::ExitStatusExt;
+    if seven_zip().is_none() {
+        assert!(std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none());
+        return;
+    }
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_stored_zip(&archive, 512 << 20);
+    let output = work.path().join("out");
+    for (signal, number) in [("TERM", 15), ("INT", 2)] {
+        let run = signal_once_output_grows(
+            work.path(),
+            "large.zip",
+            &[
+                "--zip-engine".as_ref(),
+                "backend".as_ref(),
+                "extract".as_ref(),
+                archive.as_os_str(),
+                "-o".as_ref(),
+                output.as_os_str(),
+            ],
+            signal,
+        );
+        let status = run.status;
+        assert_eq!(status.signal(), Some(number), "SIG{signal}: {status:?}");
+        let children = Command::new("pgrep")
+            .args(["-f", "--"])
+            .arg(work.path())
+            .output()
+            .unwrap();
+        assert!(
+            children.stdout.is_empty(),
+            "SIG{signal}: 7-Zip still runs: {}",
+            String::from_utf8_lossy(&children.stdout)
+        );
+        assert_eq!(listing(work.path()), ["large.zip"], "SIG{signal}");
+        let said = String::from_utf8_lossy(&run.stdout);
+        assert!(
+            !said.contains("Everything is Ok"),
+            "SIG{signal}: 7-Zip ran to the end instead of being stopped: {said}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_during_a_single_stream_extraction_removes_staging() {
+    use std::io::Write;
+    use std::os::unix::process::ExitStatusExt;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.bin.gz");
+    let mut encoder = flate2::write::GzEncoder::new(
+        fs::File::create(&archive).unwrap(),
+        flate2::Compression::fast(),
+    );
+    let zeros = vec![0u8; 1 << 20];
+    for _ in 0..512 {
+        encoder.write_all(&zeros).unwrap();
+    }
+    encoder.finish().unwrap();
+    let output = work.path().join("out");
+    for (signal, number) in [("TERM", 15), ("INT", 2)] {
+        let run = signal_once_output_grows(
+            work.path(),
+            "large.bin.gz",
+            &[
+                "extract".as_ref(),
+                archive.as_os_str(),
+                "-o".as_ref(),
+                output.as_os_str(),
+            ],
+            signal,
+        );
+        let status = run.status;
+        assert_eq!(status.signal(), Some(number), "SIG{signal}: {status:?}");
+        assert_eq!(listing(work.path()), ["large.bin.gz"], "SIG{signal}");
+    }
+}
+
+#[cfg(unix)]
+fn wait_at_most(child: &mut std::process::Child, seconds: u64) -> Option<std::process::ExitStatus> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    while std::time::Instant::now() < deadline {
+        if let Some(status) = child.try_wait().unwrap() {
+            return Some(status);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+#[cfg(unix)]
+fn terminate(child: &std::process::Child) {
+    assert!(
+        Command::new("kill")
+            .arg("-TERM")
+            .arg(child.id().to_string())
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_stops_a_copy_to_standard_output() {
+    use std::io::Read;
+    use std::os::unix::process::ExitStatusExt;
+    const LARGE: usize = 256 << 20;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_stored_zip(&archive, LARGE);
+    for slow_reader in [false, true] {
+        let temporary = work.path().join("tmp");
+        fs::create_dir_all(&temporary).unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .env("TMPDIR", &temporary)
+            .arg("extract")
+            .arg(&archive)
+            .arg("--stdout")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let copied = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut unread = None;
+        let reader = if !slow_reader {
+            unread = Some(stdout);
+            None
+        } else {
+            let copied = copied.clone();
+            Some(std::thread::spawn(move || {
+                let mut buffer = vec![0; 1 << 20];
+                while let Ok(read) = stdout.read(&mut buffer) {
+                    if read == 0 {
+                        break;
+                    }
+                    copied.fetch_add(read, std::sync::atomic::Ordering::SeqCst);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            }))
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let copying = || {
+            if slow_reader {
+                copied.load(std::sync::atomic::Ordering::SeqCst) > 4 << 20
+            } else {
+                decrypted_bytes_on_disk(&temporary) >= LARGE as u64
+            }
+        };
+        while !copying() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        terminate(&child);
+        let status = wait_at_most(&mut child, 10);
+        if let Some(reader) = reader {
+            reader.join().unwrap();
+            assert!(copied.load(std::sync::atomic::Ordering::SeqCst) < LARGE);
+        }
+        let case = if slow_reader {
+            "a slow reader"
+        } else {
+            "a full pipe"
+        };
+        assert_eq!(
+            status.and_then(|status| status.signal()),
+            Some(15),
+            "{case}"
+        );
+        assert_eq!(listing(&temporary), Vec::<String>::new(), "{case}");
+        drop(unread);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_stops_7zip_listing_and_testing() {
+    use std::os::unix::process::ExitStatusExt;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("plain.zip");
+    large_stored_zip(&archive, 1 << 20);
+    for (command, pause) in [("list", "61.25"), ("test", "61.5")] {
+        let fake = work.path().join(format!("fake-7z-{command}"));
+        fs::write(&fake, format!("#!/bin/sh\nexec sleep {pause}\n")).unwrap();
+        let mut permissions = fs::metadata(&fake).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&fake, permissions).unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .env("ZIPPER_7Z", &fake)
+            .args(["--zip-engine", "backend", command])
+            .arg(&archive)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let marker = format!("sleep {pause}");
+        let running = || {
+            !Command::new("pgrep")
+                .args(["-f", &marker])
+                .output()
+                .unwrap()
+                .stdout
+                .is_empty()
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while !running() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(running(), "{command}: the stand-in for 7-Zip never started");
+        terminate(&child);
+        let status = wait_at_most(&mut child, 10);
+        assert_eq!(
+            status.and_then(|status| status.signal()),
+            Some(15),
+            "{command}"
+        );
+        assert!(!running(), "{command}: 7-Zip was left running");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_right_after_the_copy_to_standard_output_leaves_no_temporary_folder() {
+    use std::os::unix::process::ExitStatusExt;
+    const LARGE: usize = 256 << 20;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_stored_zip(&archive, LARGE);
+    let temporary = work.path().join("tmp");
+    fs::create_dir(&temporary).unwrap();
+    let copy = work.path().join("copy.bin");
+    for trial in 0..16u64 {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .env("TMPDIR", &temporary)
+            .arg("extract")
+            .arg(&archive)
+            .arg("--stdout")
+            .stdin(Stdio::null())
+            .stdout(fs::File::create(&copy).unwrap())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        while fs::metadata(&copy).map_or(0, |metadata| metadata.len()) < LARGE as u64
+            && child.try_wait().unwrap().is_none()
+        {
+            std::thread::sleep(std::time::Duration::from_micros(500));
+        }
+        std::thread::sleep(std::time::Duration::from_micros(trial * 500));
+        let _ = Command::new("kill")
+            .arg("-TERM")
+            .arg(child.id().to_string())
+            .status();
+        let status = child.wait().unwrap();
+        let complete = fs::metadata(&copy).unwrap().len() == LARGE as u64;
+        assert_eq!(
+            listing(&temporary),
+            Vec::<String>::new(),
+            "trial {trial}: {status:?}"
+        );
+        assert!(
+            status.success() || (status.signal() == Some(15) && !complete),
+            "trial {trial}: a complete copy must exit with success: {status:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_while_standard_input_is_spooled_removes_the_spool() {
+    use std::io::Write;
+    use std::os::unix::process::ExitStatusExt;
+    let work = tempfile::tempdir().unwrap();
+    let output = work.path().join("out");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .arg("extract")
+        .arg("-")
+        .arg("-o")
+        .arg(&output)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    input.write_all(&vec![0x5a; 4 << 20]).unwrap();
+    input.flush().unwrap();
+    let spooled = || {
+        listing(work.path())
+            .iter()
+            .any(|name| name.starts_with(".zipper-stdin-"))
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !(spooled() && decrypted_bytes_on_disk(work.path()) >= 4 << 20)
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(spooled());
+    terminate(&child);
+    let status = wait_at_most(&mut child, 10);
+    drop(input);
+    assert_eq!(status.and_then(|status| status.signal()), Some(15));
+    assert_eq!(listing(work.path()), Vec::<String>::new());
+}
