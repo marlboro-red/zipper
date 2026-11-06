@@ -7,7 +7,7 @@ use zipper::Reader;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Zipper — fast, safe extraction of ZIP, tar and 7z archives"
+    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio and ar archives"
 )]
 struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers).
@@ -35,7 +35,7 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Native for ZIP, tar, unrecognized files and 7z it decodes; 7-Zip for other recognized formats.
+    /// Native for ZIP, tar, cpio, ar, single compressed files, unrecognized files and 7z it decodes; 7-Zip for other recognized formats.
     Auto,
     /// 7-Zip for every archive.
     Backend,
@@ -113,7 +113,8 @@ enum Command {
         #[arg(long)]
         content_only: bool,
         /// Refuse archives whose declared output exceeds this many bytes. By
-        /// default, ZIP, tar and 7z output read in process must fit in free space.
+        /// default, the output of every archive read in process, including a
+        /// single compressed file, must fit in free space.
         #[arg(long)]
         max_extracted_bytes: Option<u64>,
     },
@@ -923,86 +924,112 @@ fn run() -> Result<()> {
                     );
                 }
             };
-            match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
-                Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
-                Reader::SevenZip => print(zipper::native_7z::list(&archive)?),
-                Reader::Tar => print(zipper::native_tar::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_tar::ReadOptions::default(),
-                )?),
-                Reader::Stream => print(zipper::native_stream::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_stream::ReadOptions::default(),
-                )?),
-                Reader::Backend { format } => {
-                    let _catching = catch_ending_signals();
-                    zipper::compat::run_until_cancelled(
-                        "l",
+            zipper::read_volumes(&archive, || {
+                match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
+                    Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
+                    Reader::SevenZip => print(zipper::native_7z::list(&archive)?),
+                    Reader::Tar => print(zipper::native_tar::read_archive(
                         &archive,
                         None,
-                        format.as_deref(),
-                        zipper::Existing::Refuse,
-                        cancel_on_signal(),
-                    )?
+                        zipper::native_tar::ReadOptions::default(),
+                    )?),
+                    Reader::Stream => print(zipper::native_stream::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_stream::ReadOptions::default(),
+                    )?),
+                    Reader::Cpio => print(zipper::native_cpio::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_cpio::ReadOptions::default(),
+                    )?),
+                    Reader::Ar => print(zipper::native_ar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_ar::ReadOptions::default(),
+                    )?),
+                    Reader::Backend { format } => {
+                        let _catching = catch_ending_signals();
+                        zipper::compat::run_until_cancelled(
+                            "l",
+                            &archive,
+                            None,
+                            format.as_deref(),
+                            zipper::Existing::Refuse,
+                            cancel_on_signal(),
+                        )?
+                    }
                 }
-            }
+                Ok::<_, anyhow::Error>(())
+            })?;
         }
         Command::Test { archive } => {
             let report =
                 |entries: Vec<zipper::Entry>| println!("Verified {} entries", entries.len());
-            let reader = zipper::choose_reader(cli.zip_engine.into(), &archive)?;
-            anyhow::ensure!(
-                password.is_none() || matches!(reader, Reader::Zip { .. }),
-                "--password applies only to ZIP archives, and Zipper does not decrypt {}",
-                archive.display()
-            );
-            match reader {
-                Reader::Zip { fast } => report(with_password(password, |password| {
-                    zipper::native_zip::read_archive_with_options(
+            zipper::read_volumes(&archive, || {
+                let reader = zipper::choose_reader(cli.zip_engine.into(), &archive)?;
+                anyhow::ensure!(
+                    password.is_none() || matches!(reader, Reader::Zip { .. }),
+                    "--password applies only to ZIP archives, and Zipper does not decrypt {}",
+                    archive.display()
+                );
+                match reader {
+                    Reader::Zip { fast } => report(with_password(password, |password| {
+                        zipper::native_zip::read_archive_with_options(
+                            &archive,
+                            None,
+                            zipper::native_zip::ReadOptions {
+                                fast,
+                                threads: cli.threads,
+                                buffer_bytes,
+                                max_output_bytes: None,
+                                password,
+                                ..Default::default()
+                            },
+                        )
+                    })?),
+                    Reader::SevenZip => report(zipper::native_7z::read_archive(
                         &archive,
                         None,
-                        zipper::native_zip::ReadOptions {
-                            fast,
+                        zipper::native_7z::ReadOptions {
                             threads: cli.threads,
-                            buffer_bytes,
-                            max_output_bytes: None,
-                            password,
                             ..Default::default()
                         },
-                    )
-                })?),
-                Reader::SevenZip => report(zipper::native_7z::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_7z::ReadOptions {
-                        threads: cli.threads,
-                        ..Default::default()
-                    },
-                )?),
-                Reader::Tar => report(zipper::native_tar::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_tar::ReadOptions::default(),
-                )?),
-                Reader::Stream => report(zipper::native_stream::read_archive(
-                    &archive,
-                    None,
-                    zipper::native_stream::ReadOptions::default(),
-                )?),
-                Reader::Backend { format } => {
-                    let _catching = catch_ending_signals();
-                    zipper::compat::run_until_cancelled(
-                        "t",
+                    )?),
+                    Reader::Tar => report(zipper::native_tar::read_archive(
                         &archive,
                         None,
-                        format.as_deref(),
-                        zipper::Existing::Refuse,
-                        cancel_on_signal(),
-                    )?
+                        zipper::native_tar::ReadOptions::default(),
+                    )?),
+                    Reader::Stream => report(zipper::native_stream::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_stream::ReadOptions::default(),
+                    )?),
+                    Reader::Cpio => report(zipper::native_cpio::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_cpio::ReadOptions::default(),
+                    )?),
+                    Reader::Ar => report(zipper::native_ar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_ar::ReadOptions::default(),
+                    )?),
+                    Reader::Backend { format } => {
+                        let _catching = catch_ending_signals();
+                        zipper::compat::run_until_cancelled(
+                            "t",
+                            &archive,
+                            None,
+                            format.as_deref(),
+                            zipper::Existing::Refuse,
+                            cancel_on_signal(),
+                        )?
+                    }
                 }
-            }
+                Ok::<_, anyhow::Error>(())
+            })?;
         }
     }
     Ok(())

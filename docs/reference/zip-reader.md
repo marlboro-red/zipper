@@ -1,7 +1,7 @@
 # In-process ZIP reader
 
 Zipper reads ZIP archives with its own parallel Rust reader by default.
-The default engine, `--zip-engine auto`, decides from the file's leading bytes and never from 7-Zip's output. A file that starts with a ZIP record signature goes to the in-process reader. A tar, plain or inside gzip, zstd, xz or bzip2, goes to the in-process [tar reader](tar-reader.md), and any other gzip, bzip2, xz or zstd file goes to the in-process [single compressed file reader](stream-reader.md). A file that starts with the signature of 7z, RAR or CAB goes to 7-Zip with that format pinned by `-t`, unless it is a 7z the native reader decodes. A `*.001` volume gets the split chain, such as `-t7z.split`. A pinned 7-Zip cannot reopen the file as a ZIP, even when a ZIP is appended or a wrong password is typed. Every other file goes to the in-process reader, which rejects anything that is not a ZIP it supports. Use `--zip-engine backend` for other formats 7-Zip reads, such as ISO, DMG, WIM and ARJ, and for split ZIP volumes. ISO is not pinned, because `-tiso` makes 7-Zip skip a disc's UDF tree. Zipper refuses `*` and `?` in any path it gives 7-Zip, because 7-Zip expands them as wildcards.
+The default engine, `--zip-engine auto`, decides from the file's leading bytes and never from 7-Zip's output. A file that starts with a ZIP record signature goes to the in-process reader. A tar, plain or inside gzip, zstd, xz or bzip2, goes to the in-process [tar reader](tar-reader.md), and any other gzip, bzip2, xz or zstd file goes to the in-process [single compressed file reader](stream-reader.md). A file that starts with the signature of 7z, RAR or CAB goes to 7-Zip with that format pinned by `-t`, unless it is a 7z the native reader decodes. A file named `*.001` is read with the volumes after it as one archive, as [split volumes](#split-volumes) describes, and a set that goes to 7-Zip gets the split chain, such as `-trar5.split`. A pinned 7-Zip cannot reopen the file as a ZIP, even when a ZIP is appended or a wrong password is typed. Every other file goes to the in-process reader, which rejects anything that is not a ZIP it supports. Use `--zip-engine backend` for other formats 7-Zip reads, such as ISO, DMG, WIM and ARJ, and for spanned ZIP volumes named `.z01`. ISO is not pinned, because `-tiso` makes 7-Zip skip a disc's UDF tree. Zipper refuses `*` and `?` in any path it gives 7-Zip, because 7-Zip expands them as wildcards.
 
 A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as PKWARE strong encryption, another compression method or more than one disk, the error names `--zip-engine backend`. Passing that flag is the user's decision.
 
@@ -13,8 +13,8 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 The reader supports these features:
 
 - Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
-- Conventional ZIP64.
-- File bytes and directories.
+- Conventional ZIP64. Info-ZIP also writes a ZIP64 end record when its input is piped, even when the regular end record holds every value. The reader then requires both records to agree. With ZIP64, every end record value that is not a sentinel must equal its ZIP64 value.
+- File bytes and directories. A file with the FIFO type, which is how Info-ZIP `zip - -` stores piped input, is written as a regular file, as `unzip`, bsdtar, 7-Zip and Python write it. Device and socket entries are rejected.
 - Symlinks that stay inside the destination, on Unix. See [Symlinks](#symlinks).
 - Names stored as UTF-8, and other names decoded as code page 437. A name that is valid UTF-8 is read as UTF-8 even without the UTF-8 flag, because Info-ZIP and `ditto` store UTF-8 names without it. A name with the UTF-8 flag that is not valid UTF-8 is rejected, because Python and 7-Zip do not decode it as CP437.
 - Entries encrypted with ZipCrypto or WinZip AES, with the password. See [Encrypted entries](#encrypted-entries).
@@ -26,6 +26,7 @@ The reader does not support these features:
 - Shrink, Implode and other legacy methods.
 - Multi-disk archives.
 - Ambiguous end records.
+- A ZIP64 locator just before the end record that the end record does not use. bsdtar, 7-Zip and Python follow such a locator and can read a different directory.
 - Data before the first record, such as a self-extracting executable from `zip -A`. The default engine reads it in process and rejects it, because no 7-Zip signature matches.
 
 It restores Unix permission bits the way bsdtar does:
@@ -132,9 +133,9 @@ Both native ZIP modes run these checks before publishing any output:
 
 ## Reference corpus
 
-`tests/data/zip-corpus` holds 21 archives. Seventeen come from these real ZIP writers:
+`tests/data/zip-corpus` holds 22 archives. Eighteen come from these real ZIP writers:
 
-- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes.
+- Info-ZIP `zip` 3.0, in default, stored, ZIP64, data-descriptor and piped modes, and with piped input.
 - 7-Zip, with Deflate, Copy and timestamps.
 - bsdtar, with Deflate and stored entries.
 - macOS `ditto`.
@@ -147,7 +148,7 @@ The manifest also records each path's exact modification time where `unzip` and 
 
 `scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 6 archives.
 
-`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on all 21 archives. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
+`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on 21 of the 22 archives. They disagree on the mode of Info-ZIP's piped input. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Java `jar` output is missing because no JDK was installed.
 
 The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 94 ZIP archives from PyPI, Maven, Go and GitHub with Zipper and default bsdtar. All matched, along with the 154 tar archives in the same set.
 
@@ -163,6 +164,45 @@ ZIPPER_FUZZ_SEED=303 ZIPPER_FUZZ_CASES=1 cargo test --release --test zip_fuzz
 ```
 
 A run of 300,000 cases on 2026-11-01 at this revision found no failure. In a 20,000-case sample, 3,588 of 40,000 extractions accepted their mutant, mostly through changed timestamps, attributes or comments. The rest were rejected. This is random mutation, not coverage-guided fuzzing. A coverage-guided `cargo fuzz` target needs a nightly toolchain and is not set up.
+
+## Split volumes
+
+Every reader reads an archive split into raw numbered volumes, such as `7z a -v1m` writes. The file named `name.001` opens with `name.002` and each next number as one stream. The reader picks itself from the joined stream's first bytes, so `a.7z.001`, `a.zip.001`, `a.tar.001`, `a.tar.gz.001` and `a.txt.xz.001` all extract in process. A single compressed file is named from the name without `.001`. Volume numbers have three digits and grow past 999 as 7-Zip writes them, so `name.1000` follows `name.999`.
+
+`src/volumes.rs` finds the set when a `zipper extract`, `list` or `test` run starts. The calling thread keeps it for that run only, and passes it to every reader handle and LZMA2 decoding thread. Two runs never share a set, so a set replaced between runs is found again. Finding it reads each volume's metadata once and lists no folder. Each handle keeps at most one volume open. It opens a volume without blocking, so a volume replaced by a FIFO fails instead of hanging. It then checks that the volume is still a regular file with the size, modification time and identity found at the start. On Unix the identity also holds the device and inode, and on Windows it is the size and modification time alone. The change time is left out, because indexing, quarantine and backup tools change it on files they never write. A file rewritten in place at the same length with its modification time put back is not caught, as no check on the file's metadata can catch it. Every file the readers open through `src/volumes.rs`, a volume or a file read alone, opens without blocking and must be a regular file.
+
+`name.002`, or any volume after it, opened by name is read alone, as 7-Zip reads it. When that read fails, the error says that the file is a volume of a split archive and names `name.001`. `name.000` is not a volume.
+
+`name.001` itself must be a regular file. A missing or dangling `name.001`, or one that is a FIFO or device, fails with its full path before anything else is read.
+
+The volumes form a set only when they are consistent. Every volume but the last must match the first one's size. The last may be shorter, or larger by fewer bytes than the number of volumes, which is how BSD `split -n` spreads a remainder. 7-Zip reads both. GNU `split -n` gives the remainder to the first volumes instead, so a middle volume is one byte short of the first. Such a set is refused as damaged. Join its volumes with `cat` and open the joined file. `name.001` is read alone, as an archive that is not split, in two cases only. Either no `name.002` exists, or `name.002` is the only other volume and is larger than `name.001` by two bytes or more, which suggests an unrelated file. So a two-volume set whose `name.002` is larger by exactly one byte is joined, as BSD `split -n 2` writes it. Every other inconsistency means the set is damaged. Then `name.001` is neither joined nor read alone, and the error leads with the volume at fault, named by its full path when the problem is the file itself:
+
+- A gap in the numbering. Zipper looks for the 16 numbers after the first missing one. It asks the filesystem for each name, so a name that differs only in letter case or Unicode form counts where the filesystem treats it as the same name.
+- A size 7-Zip and `split` never write. That is a volume larger than the first when more follow, or a last volume larger than the first by the number of volumes or more.
+- An empty volume, or a volume shorter than the first that another volume follows.
+- A volume that is not a file, or whose metadata cannot be read.
+
+A consistent set is read as one archive, even when it is a false join, such as a complete ZIP or tar named `name.001` beside an unrelated, smaller `name.002`. That read fails, as 7-Zip's does, and the error says to rename a whole archive named `name.001` or open it by another name. Zipper never falls back to reading `name.001` alone. A first volume can be a whole archive by itself, such as a gzip, zstd or xz file of several members that splits at a member boundary. A fallback would then turn a damaged or missing volume, or a size refusal, into a truncated success. A set whose joined read succeeds is kept, so `log.gz.001` and an unrelated, smaller gzip `log.gz.002` extract as one gzip of two members, as `7zz x` does.
+
+A single compressed file, such as gzip, bzip2, xz, zstd, LZ4 or `compress`, has no overall end or length. When its members end exactly at a volume boundary, missing trailing volumes leave a stream that decodes cleanly. So a set read by the single compressed file reader is refused unless its last volume is smaller than the first. A last volume as large as the first may hide a missing next volume. A last volume larger than the first may be an unrelated file, such as a whole gzip beside another one byte larger, because a stream that ends cleanly cannot show where the first file stopped. The `split -n` allowance for a larger last volume therefore applies only to ZIP, 7z and tar, which end with their own records. One case stays undetectable. A gzip, xz, zstd or LZ4 file of several members can lose the end of its last volume exactly at a member boundary. The volumes left still have a smaller last volume and decode cleanly, so the members present are extracted. Main reads the same bytes joined into one file the same way. A `name.001` that would be read alone is refused for the same reason, since it is a set whose last volume is full. A genuine set whose last volume happens to be full is refused too. To read it, join the volumes into one file, such as with `cat name.001 name.002 > name`, and open that file, or rename a lone `name.001` to a name without `.001`. ZIP, 7z and tar, plain or compressed, end with their own records, so their sets are not refused this way.
+
+A `compress` (`.Z`) stream and an LZ4 legacy frame, as `lz4 -l` writes, have no checksum and no end mark. A truncated last volume still decodes to a shorter file without any error. So the single compressed file reader refuses a split set in either format, with the same advice to join the volumes with `cat`. This refusal applies to that reader only. A `.Z` set that holds a tar goes to the tar reader, which relies on the tar end-of-archive marker to catch truncation. As with a single `.Z` file, a corrupted byte is not detected, because `compress` has no checksum. The LZ4 reader refuses legacy frames in any case.
+
+Inside a consistent set, a volume that changes while it is read fails. So does a 7z set that holds bytes past the end of its header, which catches an unrelated volume after a full last volume. A single 7z named `name.001` keeps 7-Zip's tolerance for trailing bytes. A file that a 7z reader opens again for another folder or decoding thread goes through the same non-blocking open, and it must keep the identity it had when it was first opened.
+
+The readers' own checks catch the rest. Every failure while reading a joined set or a numbered file read alone gains one informational line after the reader's own message, such as "read as split volumes `a.zip.001` to `a.zip.014`". A damaged set is the exception, because nothing is read from it. Its error already leads with the volume at fault, so it gains no line. Damage can cause almost any error, including an unsafe path, a method, encryption, a collision or a selection that matches nothing, so those get the line too. Only errors whose type shows they have nothing to do with the volumes leave it out:
+
+- a cancel;
+- a destination that exists, is not a folder, or where the staging folder cannot be created;
+- the `--max-extracted-bytes` cap or the free-space refusal.
+
+The line never claims a volume is damaged. For a set, it names the first and last volume and says to rename a whole first volume. It adds that a damaged archive may have a missing next volume, a truncated last volume, or a volume that is repeated or out of order. A volume that holds the same bytes as an earlier one is named. That check hashes each volume once, compares a volume only with the first of its length and hash, and stops after reading 256 MiB. For a file read alone, the line says why. The reader's advice to pass `--zip-engine backend` for a split volume is left out whenever the line is added. A volume that cannot be opened is named by its path.
+
+7z, ZIP and compressed tar check their data, so a repeated or swapped volume fails. A plain tar has no checksum over file data, so a volume repeated or swapped inside one file's data extracts wrong bytes. 7-Zip reads such a set the same way. When the volumes fall on entry boundaries, a repeated volume can even extract a valid tar with an entry missing. The repeat scan cannot catch this after a successful read, because each reader publishes the extraction before it returns, so the scan runs only after a failure.
+
+A library caller that calls one reader, such as `native_7z::read_archive`, on a `name.001` path gets the same reading, but finds the set again for each file it opens. Wrapping the call in `zipper::read_volumes` finds the set once and adds the volume line to a failure, as `extract_archive` does.
+
+`tests/volumes.rs` splits every native format at sizes from 1 byte up past the whole archive and compares each tree with the whole archive's. It also extracts 7-Zip's own volumes of 7z, ZIP, tar, gzip tar and xz tar, from 1-byte to single volumes, and compares each tree with `7zz x`. Its hostile cases cover each failure above, and check that no staging folder is left. Two Kani proofs in `src/volumes.rs` cover the offset arithmetic. `a_layout_exists_exactly_when_its_total_fits` shows that a set is accepted exactly when its total size fits 64 bits, for any volume size, count and last size. `every_offset_maps_to_the_one_volume_and_position_that_hold_it` shows that every offset maps to the one volume and position that hold it, with no panic or overflow, for volume sizes and counts up to 255 and offsets up to 65,535. A wider bound ran for over 30 minutes without a verdict. `every_layout_locates_every_offset_as_a_linear_scan_does` compares the mapping with a linear scan on every small set.
 
 ## Extraction options
 

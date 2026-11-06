@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 51 |
+| `native` | 54 |
 | `partial` | 1 |
-| `backend` | 53 |
+| `backend` | 50 |
 | `missing` | 5 |
 | `dropped` | 2 |
 
@@ -31,14 +31,14 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `7z` | `native` |  | `tests/data/parity/archives/7z.7z` |
 | `APFS` | `backend` |  | `tests/data/parity/archives/apfs.img.stored.xz` |
 | `APM` | `backend` |  | `tests/data/parity/archives/apm.img.stored.xz` |
-| `Ar` | `backend` |  | `tests/data/parity/archives/ar.a` |
+| `Ar` | `native` |  | `tests/data/parity/archives/ar.a` |
 | `Arj` | `backend` |  | No proof yet. |
 | `Base64` | `backend` |  | No proof yet. |
 | `COFF` | `backend` |  | No proof yet. |
 | `Cab` | `backend` |  | No proof yet. |
 | `Chm` | `backend` |  | No proof yet. |
 | `Compound` | `backend` |  | No proof yet. |
-| `Cpio` | `backend` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
+| `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
 | `CramFS` | `backend` |  | No proof yet. |
 | `Dmg` | `backend` |  | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg` |
 | `ELF` | `backend` |  | No proof yet. |
@@ -67,7 +67,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `SWF` | `backend` |  | No proof yet. |
 | `SWFc` | `backend` |  | No proof yet. |
 | `Sparse` | `backend` |  | No proof yet. |
-| `Split` | `backend` |  | `tests/data/parity/archives/split.7z.001` |
+| `Split` | `native` | Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip. | `tests/data/parity/archives/split.7z.001` |
 | `SquashFS` | `backend` |  | No proof yet. |
 | `TE` | `backend` |  | No proof yet. |
 | `UEFIc` | `backend` |  | No proof yet. |

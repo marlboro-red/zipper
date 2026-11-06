@@ -1,6 +1,8 @@
-use crate::counters::{self, Counter};
+use crate::{
+    counters::{self, Counter},
+    volumes::ArchiveFile,
+};
 use std::{
-    fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom},
     sync::{Arc, Mutex},
 };
@@ -17,7 +19,7 @@ impl<R: Read> Read for CountedRead<R> {
 
 #[derive(Clone)]
 pub(crate) struct Cursor {
-    file: Arc<Mutex<File>>,
+    file: Arc<Mutex<ArchiveFile>>,
     position: u64,
     length: u64,
 }
@@ -86,8 +88,8 @@ pub(crate) enum Reader {
     Memory(io::Cursor<Arc<[u8]>>),
 }
 impl Reader {
-    pub(crate) fn new(file: File) -> io::Result<Self> {
-        let length = file.metadata()?.len();
+    pub(crate) fn new(file: ArchiveFile) -> io::Result<Self> {
+        let length = file.len()?;
         let cursor = Cursor {
             file: Arc::new(Mutex::new(file)),
             position: 0,
@@ -103,11 +105,11 @@ impl Reader {
         }
     }
 
-    pub(crate) fn cached(mut file: File, limit: u64) -> io::Result<Self> {
+    pub(crate) fn cached(mut file: ArchiveFile, limit: u64) -> io::Result<Self> {
         let read_limit = limit.checked_add(1).ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "invalid archive cache limit")
         })?;
-        if file.metadata()?.len() > limit {
+        if file.len()? > limit {
             return Self::new(file);
         }
         file.seek(SeekFrom::Start(0))?;
@@ -220,7 +222,7 @@ mod tests {
         let mut file = tempfile::tempfile()?;
         let bytes: Vec<_> = (0..1024 * 1024).map(|i| (i % 251) as u8).collect();
         std::io::Write::write_all(&mut file, &bytes)?;
-        let mut reader = Reader::new(file)?;
+        let mut reader = Reader::new(file.into())?;
         let mut position = 0;
         for _ in 0..10 {
             let mut actual = [0; 8192];
@@ -256,7 +258,7 @@ mod tests {
             let mut file = tempfile::tempfile()?;
             let bytes: Vec<_> = (0..length).map(|i| (i % 251) as u8).collect();
             std::io::Write::write_all(&mut file, &bytes)?;
-            let reader = Reader::cached(file, 128)?;
+            let reader = Reader::cached(file.into(), 128)?;
             assert_eq!(matches!(&reader, Reader::Memory(_)), length <= 128);
             std::thread::scope(|scope| {
                 let mut handles = Vec::new();
@@ -287,7 +289,7 @@ mod tests {
         let mut file = tempfile::tempfile()?;
         let bytes: Vec<_> = (0..700_000).map(|i| (i % 251) as u8).collect();
         std::io::Write::write_all(&mut file, &bytes)?;
-        let mut reader = Reader::new(file)?;
+        let mut reader = Reader::new(file.into())?;
         let mut expected = io::Cursor::new(&bytes);
         for seek in [
             SeekFrom::Start(13),
@@ -323,7 +325,7 @@ mod tests {
         let mut file = tempfile::tempfile()?;
         let bytes: Vec<_> = (0..1024 * 1024).map(|i| (i % 251) as u8).collect();
         std::io::Write::write_all(&mut file, &bytes)?;
-        let mut reader = Reader::new(file)?;
+        let mut reader = Reader::new(file.into())?;
         let mut prefix = [0; 13];
         reader.read_exact(&mut prefix)?;
         let mut clone = reader.clone();

@@ -66,9 +66,15 @@ impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
     }
 
     fn start(&mut self) -> io::Result<()> {
-        for _ in 0..RANGE_CODER_HEADER {
+        if byte(&mut self.decisions, "truncated BCJ2 range coder")? != 0 {
+            return Err(data_error("BCJ2 range coder does not start at zero"));
+        }
+        for _ in 1..RANGE_CODER_HEADER {
             self.code = (self.code << 8)
                 | u32::from(byte(&mut self.decisions, "truncated BCJ2 range coder")?);
+        }
+        if self.code >= self.range {
+            return Err(data_error("BCJ2 range coder starts outside its range"));
         }
         self.started = true;
         Ok(())
@@ -102,7 +108,7 @@ impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
         }
         let current = byte(&mut self.main, "truncated BCJ2 main stream")?;
         self.position += 1;
-        if !is_jump(self.previous, current) || self.position == self.size {
+        if !is_jump(self.previous, current) {
             self.previous = current;
             return Ok(current);
         }
@@ -148,6 +154,9 @@ impl<M: Read, C: Read, J: Read, R: Read> Read for Bcj2<M, C, J, R> {
         while written < buffer.len() && (self.position < self.size || self.pending_start < TARGET) {
             buffer[written] = self.next_byte()?;
             written += 1;
+        }
+        if written == 0 && !buffer.is_empty() && self.code != 0 {
+            return Err(data_error("BCJ2 range coder does not end at zero"));
         }
         Ok(written)
     }
@@ -225,12 +234,11 @@ mod tests {
         let mut coder = RangeEncoder::new();
         let mut probabilities = [MODEL_TOTAL >> 1; MODELS];
         let (mut previous, mut index, mut position, mut candidate) = (0u8, 0usize, 0u64, 0usize);
-        let size = data.len() as u64;
         while index < data.len() {
             let current = data[index];
             main.push(current);
             position += 1;
-            if !is_jump(previous, current) || position == size {
+            if !is_jump(previous, current) {
                 previous = current;
                 index += 1;
                 continue;
@@ -264,7 +272,7 @@ mod tests {
         (main, calls, jumps, coder.finish())
     }
 
-    fn decode(streams: &Streams, size: u64, chunk: usize) -> (Vec<u8>, [usize; 3]) {
+    fn decode(streams: &Streams, size: u64, chunk: usize) -> (Vec<u8>, [usize; 4]) {
         let (main, calls, jumps, decisions) = streams;
         let mut decoder = Bcj2::new(&main[..], &calls[..], &jumps[..], &decisions[..], size);
         let mut output = Vec::new();
@@ -276,8 +284,11 @@ mod tests {
             }
             output.extend_from_slice(&buffer[..read]);
         }
-        let (main, calls, jumps, _) = decoder.into_streams();
-        (output, [main.len(), calls.len(), jumps.len()])
+        let (main, calls, jumps, decisions) = decoder.into_streams();
+        (
+            output,
+            [main.len(), calls.len(), jumps.len(), decisions.len()],
+        )
     }
 
     #[test]
@@ -302,7 +313,7 @@ mod tests {
                     for chunk in [1, 3, 64] {
                         let (output, left) = decode(&streams, input.len() as u64, chunk);
                         assert_eq!(&output, input, "{input:02x?} mask {mask:05b} chunk {chunk}");
-                        assert_eq!(left, [0, 0, 0], "{input:02x?} mask {mask:05b}");
+                        assert_eq!(left, [0, 0, 0, 0], "{input:02x?} mask {mask:05b}");
                     }
                     checked += 1;
                 }
@@ -327,6 +338,42 @@ mod tests {
                 "size {size}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn a_range_coder_must_start_and_end_at_zero() {
+        let data = b"no branch opcodes";
+        for (decisions, refused) in [
+            ([0, 0, 0, 0, 0], None),
+            ([1, 0, 0, 0, 0], Some("does not start at zero")),
+            ([0, 0, 0, 0, 1], Some("does not end at zero")),
+            ([0, 0xFF, 0xFF, 0xFF, 0xFF], Some("outside its range")),
+        ] {
+            let mut decoder = Bcj2::new(&data[..], &[][..], &[][..], &decisions[..], 17);
+            let mut output = Vec::new();
+            match (decoder.read_to_end(&mut output), refused) {
+                (Ok(_), None) => assert_eq!(output, data),
+                (Err(error), Some(words)) => assert!(error.to_string().contains(words), "{error}"),
+                (result, _) => panic!("{decisions:02x?}: {result:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_branch_opcode_that_ends_the_output_takes_a_bit() {
+        let data = [0x41, 0xE8];
+        let (main, calls, jumps, decisions) = encode(&data, |_| false);
+        let mut decoder = Bcj2::new(&main[..], &calls[..], &jumps[..], &decisions[..], 2);
+        let mut output = Vec::new();
+        decoder.read_to_end(&mut output).unwrap();
+        assert_eq!(output, data);
+        let mut coder = RangeEncoder::new();
+        let mut probability = MODEL_TOTAL >> 1;
+        coder.encode(&mut probability, true);
+        let converted = coder.finish();
+        let mut decoder = Bcj2::new(&main[..], &calls[..], &jumps[..], &converted[..], 2);
+        let error = decoder.read_to_end(&mut Vec::new()).unwrap_err();
+        assert!(error.to_string().contains("past the end"), "{error}");
     }
 
     #[test]

@@ -96,6 +96,10 @@ fn ensure_link_stays_inside(name: &str, target: &[u8]) -> Result<()> {
 }
 
 const LOCAL_HEADER: u64 = 30;
+const REGULAR: u32 = 0o100000;
+// EXTERNAL(Info-ZIP): `zip - -` stores its piped input with the FIFO type.
+// unzip, bsdtar, 7-Zip and Python each write that entry as a regular file.
+const PIPED_INPUT: u32 = 0o010000;
 
 impl Item {
     fn packed(&self) -> u64 {
@@ -436,7 +440,7 @@ struct Opened {
 }
 
 fn open(path: &Path, cache: bool) -> Result<Opened> {
-    let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
+    let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
     let directory = crate::zip_directory::read_directory(&mut file)?;
     let reader = if cache {
         crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
@@ -482,9 +486,12 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
             let expected = match (symlink, directory) {
                 (true, _) => 0o120000,
                 (false, true) => 0o040000,
-                (false, false) => 0o100000,
+                (false, false) => REGULAR,
             };
-            ensure!(kind == 0 || kind == expected, "unsupported ZIP file type");
+            ensure!(
+                kind == 0 || kind == expected || (expected == REGULAR && kind == PIPED_INPUT),
+                "unsupported ZIP file type"
+            );
         }
         ensure!(
             matches!(
@@ -1372,7 +1379,7 @@ impl std::error::Error for PasswordNeeded {}
 
 /// List validated central-directory entries; payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    let mut file = BufReader::with_capacity(64 * 1024, File::open(path)?);
+    let mut file = BufReader::with_capacity(64 * 1024, crate::volumes::open(path)?);
     let directory = crate::zip_directory::read_directory(&mut file)?;
     Ok(scan(&directory, false)?
         .into_iter()

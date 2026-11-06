@@ -1,11 +1,11 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
 
-A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs`, `src/native_tar.rs`, `src/bcj2.rs`, `src/zip_directory.rs` and `src/lzma.rs`.
+A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs`, `src/native_tar.rs`, `src/native_cpio.rs`, `src/native_ar.rs`, `src/bcj2.rs`, `src/zip_directory.rs` and `src/lzma.rs`. The cpio and `ar` proofs sit under `[cpio-fields]` and `[ar-fields]` in `verification/coverage.txt`, and `cargo xtask verify-sync cpio-fields` or `ar-fields` runs them with their field tests.
 
 ## The proofs
 
@@ -27,6 +27,15 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `ppmd_properties_read_only_five_bytes` | `ppmd7_fields` reads exactly five 7z PPMd property bytes and nothing else | 2 s |
 | `decoding_any_short_block_never_panics_or_passes_its_limit` | the LZ4 block decoder never panics on any block of up to 4 bytes after 0 or 1 byte of history, and never writes past its limit | 119 s |
 | `decoding_any_short_streams_never_panics` | the BCJ2 decoder never panics or overflows on any main, call and jump streams of 4 bytes, range coder stream of 6 bytes and output size up to 8 | 46 s |
+| `newc_headers_never_panic_and_fit_their_fields` | the cpio newc reader never panics on any 110 header bytes, and every size and name size it returns fits 32 bits and pads below 4 | 54 s |
+| `odc_headers_never_panic_and_fit_their_fields` | the cpio odc reader never panics on any 76 header bytes, and its size, time and name size fit their octal fields | 49 s |
+| `binary_headers_never_panic_and_fit_their_fields` | the binary cpio reader never panics on any 26 header bytes in either byte order, and its fields fit their words | 0.4 s |
+| `hex_and_octal_fields_never_panic_and_read_back_their_values` | the cpio hexadecimal and octal field readers never panic on any field of up to 8 bytes, and every 32-bit value reads back from its 8 hex digits | 6 s |
+| `eleven_octal_digits_read_back_every_value_below_their_limit` | every value below 8^11 reads back from its 11-digit odc field | 2 s |
+| `padding_aligns_every_length_of_every_form` | cpio name and data padding aligns every length in each form | 0.2 s |
+| `headers_never_panic_and_their_sizes_fit_ten_digits` | the `ar` header reader never panics on any 60 bytes, and its size, time and mode fit their fields | 31 s |
+| `names_never_panic_and_long_name_lengths_fit_their_field` | the `ar` name reader never panics on any 16 bytes, and BSD name lengths and GNU offsets fit their fields | 32 s |
+| `every_size_reads_back_from_its_decimal_field` | every `ar` size below 10^10 reads back from its decimal field | 460 s |
 
 Some checks are too heavy for Kani, so exhaustive unit tests cover them:
 
@@ -157,3 +166,5 @@ Kani needs `cargo install --locked kani-verifier` and `cargo kani setup` once, o
 | A short distance starts its special probabilities one entry too far on | `short_distances_stay_inside_the_special_probabilities` fails |
 | A long distance shifts its direct bits two places too far | `long_distances_fit_32_bits` fails |
 | `bits` gives one byte more room than the padding past the end | `input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk` fails |
+| The cpio `hex` reader accepts base-17 digits | `newc_headers_never_panic_and_fit_their_fields` fails |
+| The `ar` field reader accepts a digit equal to its radix | `headers_never_panic_and_their_sizes_fit_ten_digits` fails |

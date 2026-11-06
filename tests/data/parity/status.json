@@ -10,7 +10,7 @@
       "status": "backend"
     },
     "Ar": {
-      "status": "backend"
+      "status": "native"
     },
     "Arj": {
       "status": "backend"
@@ -31,7 +31,7 @@
       "status": "backend"
     },
     "Cpio": {
-      "status": "backend"
+      "status": "native"
     },
     "CramFS": {
       "status": "backend"
@@ -118,7 +118,8 @@
       "status": "backend"
     },
     "Split": {
-      "status": "backend"
+      "status": "native",
+      "note": "Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip."
     },
     "SquashFS": {
       "status": "backend"

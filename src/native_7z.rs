@@ -1,11 +1,11 @@
 //! In-process extraction of 7z archives whose folders use Copy, LZMA, LZMA2,
 //! Deflate and the liblzma branch and delta filters. See
 //! `docs/reference/7z-reader.md` for what it accepts and restores.
-use crate::{Entry, counters, progress::Tracker, safe_path};
+use crate::{Entry, counters, progress::Tracker, safe_path, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, VecDeque},
-    fs::{self, File},
+    fs,
     io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
@@ -892,7 +892,7 @@ struct Archive {
     items: Vec<Item>,
 }
 
-fn decode_header(file: &mut File, streams: &Streams) -> Result<Vec<u8>> {
+fn decode_header(file: &mut ArchiveFile, streams: &Streams) -> Result<Vec<u8>> {
     ensure!(
         streams.folders.len() == 1 && streams.files_by_folder[0].len() == 1,
         "7z encoded header must be one folder"
@@ -913,9 +913,9 @@ fn decode_header(file: &mut File, streams: &Streams) -> Result<Vec<u8>> {
     Ok(decoded)
 }
 
-fn open(path: &Path) -> Result<(File, Archive)> {
-    let mut file = File::open(path)?;
-    let length = file.metadata()?.len();
+fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
+    let mut file = crate::volumes::open(path)?;
+    let length = file.len()?;
     let mut start = [0u8; 32];
     file.read_exact(&mut start).context("not a 7z archive")?;
     ensure!(&start[..6] == SIGNATURE, "not a 7z archive");
@@ -935,15 +935,10 @@ fn open(path: &Path) -> Result<(File, Archive)> {
     let header_start = SIGNATURE_HEADER
         .checked_add(offset)
         .filter(|&header| header.checked_add(size).is_some_and(|end| end <= length));
-    let header_start = match header_start {
-        Some(start) => start,
-        None if path.extension().is_some_and(|extension| extension == "001") => {
-            return Err(unsupported(format!(
-                "7z header is in a later volume of a split archive; {BACKEND_HINT}"
-            )));
-        }
-        None => bail!("7z header lies outside the file"),
+    let Some(header_start) = header_start else {
+        bail!("7z header lies outside the file")
     };
+    file.ensure_ends_at(header_start + size)?;
     ensure!(size <= MAX_HEADER, "7z header is larger than 64 MiB");
     ensure!(size > 0, "empty 7z archives have no header");
     file.seek(SeekFrom::Start(header_start))?;
@@ -1374,16 +1369,13 @@ impl<R: Read> Read for LzmaReader<R> {
 }
 
 struct ReadAt {
-    file: File,
+    file: ArchiveFile,
     position: u64,
 }
 
 impl Read for ReadAt {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        #[cfg(unix)]
-        let read = std::os::unix::fs::FileExt::read_at(&self.file, buffer, self.position)?;
-        #[cfg(windows)]
-        let read = std::os::windows::fs::FileExt::seek_read(&self.file, buffer, self.position)?;
+        let read = self.file.read_at(buffer, self.position)?;
         self.position += read as u64;
         Ok(read)
     }
@@ -1532,7 +1524,7 @@ impl Read for Bcj2Folder {
     }
 }
 
-fn bcj2_reader(file: &File, folder: &Folder) -> Result<Box<dyn Read + Send>> {
+fn bcj2_reader(file: &ArchiveFile, folder: &Folder) -> Result<Box<dyn Read + Send>> {
     let mut branches = Vec::with_capacity(BCJ2_INPUTS);
     for branch in &folder.bcj2_branches {
         branches.push(Exact {
@@ -1555,7 +1547,7 @@ fn bcj2_reader(file: &File, folder: &Folder) -> Result<Box<dyn Read + Send>> {
 }
 
 fn folder_reader(
-    mut file: File,
+    mut file: ArchiveFile,
     folder: &Folder,
     segment_threads: Option<(&Path, usize)>,
 ) -> Result<Box<dyn Read + Send>> {
@@ -1579,6 +1571,7 @@ fn folder_reader(
     {
         return Ok(Box::new(ParallelLzma2 {
             path: path.to_owned(),
+            input: file,
             pack_start: SIGNATURE_HEADER + folder.pack_offset,
             properties,
             segments,
@@ -1852,6 +1845,7 @@ fn independent_lzma2_segments(
 // RECORD(benchmarks/native-7z/lzma2-segments/README.md): solid folders decode their LZMA2 segments in parallel.
 struct ParallelLzma2 {
     path: PathBuf,
+    input: ArchiveFile,
     pack_start: u64,
     properties: u8,
     segments: Vec<Segment>,
@@ -1888,13 +1882,13 @@ impl ParallelLzma2 {
             && self.held + segment.held(self.properties) <= SEGMENT_BUDGET
         {
             let (sender, receiver) = sync_channel(1);
-            let path = self.path.clone();
+            let input = self.input.reopen(&self.path)?;
             let stop = Arc::clone(&self.stop);
             let start = self.pack_start + segment.pack_offset;
             let (length, output, properties) =
                 (segment.pack_length, segment.output, self.properties);
             let spawned = std::thread::Builder::new().spawn(move || {
-                let decoded = decode_segment(&path, start, length, output, properties, &stop);
+                let decoded = decode_segment(input, start, length, output, properties, &stop);
                 let _ = sender.send(decoded);
             });
             let thread = match spawned {
@@ -1945,7 +1939,7 @@ impl Read for ParallelLzma2 {
 }
 
 fn decode_segment(
-    path: &Path,
+    mut file: ArchiveFile,
     start: u64,
     length: u64,
     output: u64,
@@ -1955,7 +1949,6 @@ fn decode_segment(
     let invalid =
         |message: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, message.to_owned());
     let too_large = || invalid("7z segment is too large");
-    let mut file = File::open(path)?;
     file.seek(SeekFrom::Start(start))?;
     let mut packed = vec![0u8; usize::try_from(length).map_err(|_| too_large())?];
     file.read_exact(&mut packed)?;
@@ -2035,7 +2028,7 @@ pub fn read_archive(
             .is_none_or(|threads| (1..=64).contains(&threads)),
         "7z threads must be 1..64"
     );
-    let (_, mut archive) = open(path)?;
+    let (file, mut archive) = open(path)?;
     for folder in &archive.folders {
         check_methods(folder)?;
     }
@@ -2144,7 +2137,7 @@ pub fn read_archive(
         tracker.check()?;
         let folder = &archive.folders[folder_index];
         let _reservation = memory.reserve(decoder_memory(folder, segment_threads > 1));
-        let mut reader = folder_reader(File::open(path)?, folder, Some((path, segment_threads)))?;
+        let mut reader = folder_reader(file.reopen(path)?, folder, Some((path, segment_threads)))?;
         let mut folder_crc = crc32fast::Hasher::new();
         for &index in &by_folder[folder_index] {
             let item = &archive.items[index];
@@ -2323,7 +2316,7 @@ fn create_links(root: &Path, items: &[Item], targets: Vec<(usize, Vec<u8>)>) -> 
 /// Whether the file starts with the 7z signature.
 pub fn sniff(path: &Path) -> Result<bool> {
     let mut start = [0u8; 6];
-    let read = File::open(path)?.read(&mut start)?;
+    let read = crate::volumes::open(path)?.read(&mut start)?;
     Ok(read == 6 && &start == SIGNATURE)
 }
 

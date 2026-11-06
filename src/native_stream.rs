@@ -48,7 +48,7 @@ pub fn sniff(path: &Path) -> Result<Option<Compression>> {
         return Ok(None);
     }
     let compression = match crate::native_tar::compression_by_signature(path)? {
-        Compression::None if has_extension(path, ".lzma") && has_lzma_properties(path)? => {
+        Compression::None if has_extension(&named(path), ".lzma") && has_lzma_properties(path)? => {
             Compression::Lzma
         }
         found => found,
@@ -56,10 +56,22 @@ pub fn sniff(path: &Path) -> Result<Option<Compression>> {
     Ok((compression != Compression::None).then_some(compression))
 }
 
+const LEGACY_LZ4_MAGIC: [u8; 4] = [0x02, 0x21, 0x4c, 0x18];
+
+fn starts_with_legacy_lz4(path: &Path) -> Result<bool> {
+    let mut magic = [0u8; 4];
+    let read = crate::volumes::open(path)?.read(&mut magic)?;
+    Ok(read == magic.len() && magic == LEGACY_LZ4_MAGIC)
+}
+
 fn has_lzma_properties(path: &Path) -> Result<bool> {
     let mut first = [0u8; 1];
-    let read = std::fs::File::open(path)?.read(&mut first)?;
+    let read = crate::volumes::open(path)?.read(&mut first)?;
     Ok(read == 1 && first[0] < LZMA_PROPERTIES_LIMIT)
+}
+
+fn named(path: &Path) -> std::path::PathBuf {
+    crate::volumes::joined_name(path).unwrap_or_else(|| path.to_owned())
 }
 
 fn has_extension(path: &Path, extension: &str) -> bool {
@@ -117,7 +129,15 @@ pub fn read_archive(
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
     let compression = sniff(path)?.context("not a single compressed stream")?;
-    let name = output_name(path)?;
+    crate::volumes::ensure_stream_set_ends_short(path)?;
+    match compression {
+        Compression::Compress => crate::volumes::ensure_not_split(path, "compress")?,
+        Compression::Lz4 if starts_with_legacy_lz4(path)? => {
+            crate::volumes::ensure_not_split(path, "legacy LZ4")?
+        }
+        _ => {}
+    }
+    let name = output_name(&named(path))?;
     let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
     selection.ensure_each_path_matches(std::iter::once(name.as_str()))?;
     let placement = crate::placement::Placement::new(options.strip)?;
@@ -148,7 +168,7 @@ pub fn read_archive(
     let mut input: Box<dyn Read + Send> = match compression {
         Compression::Lzma => {
             let decoder = liblzma::bufread::XzDecoder::new_stream(
-                std::io::BufReader::new(std::fs::File::open(path)?),
+                std::io::BufReader::new(crate::volumes::open(path)?),
                 liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
             );
             Box::new(lzma.insert(decoder))
@@ -168,7 +188,9 @@ pub fn read_archive(
         size += read as u64;
         ensure!(
             size <= limit,
-            "{name} decodes to more than {limit} bytes; pass --max-extracted-bytes to raise the cap"
+            crate::OverLimit(format!(
+                "{name} decodes to more than {limit} bytes; pass --max-extracted-bytes to raise the cap"
+            ))
         );
         if let Some(output) = &mut output {
             output.write_all(&buffer[..read])?;

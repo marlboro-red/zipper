@@ -74,19 +74,20 @@ pub(crate) fn stage(
     existing: Existing,
     metadata: crate::Metadata,
 ) -> Result<Staging> {
+    let refused = |message: String| crate::DestinationRefused(message);
     let merge = match fs::metadata(destination) {
         Ok(metadata) if existing != Existing::Refuse => {
             ensure!(
                 metadata.is_dir(),
-                "extraction destination is not a directory"
+                refused("extraction destination is not a directory".to_owned())
             );
             true
         }
-        Ok(_) => bail!("extraction destination must not exist"),
+        Ok(_) => bail!(refused("extraction destination must not exist".to_owned())),
         Err(_) => {
             ensure!(
                 fs::symlink_metadata(destination).is_err(),
-                "extraction destination is a broken symlink"
+                refused("extraction destination is a broken symlink".to_owned())
             );
             false
         }
@@ -98,7 +99,13 @@ pub(crate) fn stage(
     };
     let temp = tempfile::Builder::new()
         .prefix(".zipper-")
-        .tempdir_in(folder)?;
+        .tempdir_in(folder)
+        .map_err(|error| {
+            refused(format!(
+                "cannot create a staging folder in {}: {error}",
+                folder.display()
+            ))
+        })?;
     Ok(Staging {
         temp,
         destination: destination.to_owned(),

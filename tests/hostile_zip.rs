@@ -350,12 +350,26 @@ fn local_headers_must_match_the_central_directory() {
 
 #[test]
 fn special_file_types_are_rejected() {
+    for (name, kind) in [
+        ("device", 0o020000),
+        ("block device", 0o060000),
+        ("socket", 0o140000),
+    ] {
+        assert_rejected_without_leftovers(
+            name,
+            &[Raw {
+                version_made_by: 3 << 8 | 20,
+                external: (kind | 0o644) << 16,
+                ..stored("device", b"")
+            }],
+        );
+    }
     assert_rejected_without_leftovers(
-        "device",
+        "a folder typed as a pipe",
         &[Raw {
             version_made_by: 3 << 8 | 20,
-            external: 0o020644 << 16,
-            ..stored("device", b"")
+            external: 0o010755 << 16,
+            ..stored("folder/", b"")
         }],
     );
 }

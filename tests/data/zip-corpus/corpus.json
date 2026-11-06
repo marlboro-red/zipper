@@ -254,6 +254,22 @@
     "unzip": "ok"
    }
   },
+  "infozip-stdin": {
+   "agreeing": [
+    "7zip",
+    "bsdtar",
+    "python",
+    "unzip"
+   ],
+   "dissenting": [],
+   "modes_agreed_by": [],
+   "readers": {
+    "7zip": "ok",
+    "bsdtar": "ok",
+    "python": "ok",
+    "unzip": "ok"
+   }
+  },
   "infozip-stored": {
    "agreeing": [
     "7zip",

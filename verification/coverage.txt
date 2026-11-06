@@ -6,7 +6,7 @@
 
 [tar-writer-pool]
 skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
-fingerprint = 7f5a0b3be2f7f7d4
+fingerprint = 2a7c3cc21f1e7db5
 full-check = python3 scripts/check_model.py verification/tar-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/native_tar.rs | const CHUNK:
 item = src/native_tar.rs | const QUEUED_FILES:
@@ -23,7 +23,7 @@ item = src/native_tar.rs | struct Writers<'f> {
 item = src/native_tar.rs | impl<'f> Writers<'f> {
 item = src/native_tar.rs | fn write_job(
 item = src/native_tar.rs |     fn write_file(
-item = src/native_tar.rs | pub fn read_archive(
+item = src/native_tar.rs | pub(crate) fn read_part(
 
 [zip-write-behind]
 skill = .claude/skills/zipper-verify-zip-write-behind/SKILL.md
@@ -35,7 +35,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 65a5ffb8fb6b4a43
+fingerprint = 119d151bb05cf7f7
 full-check = python3 scripts/check_model.py verification/7z-folder-workers MCWorkers.tla:workers.cfg
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
@@ -60,7 +60,7 @@ item = src/memory.rs | impl Memory {
 
 [overwrite]
 skill = .claude/skills/zipper-verify-overwrite/SKILL.md
-fingerprint = c39f4930497b6664
+fingerprint = 69782451e8e51dcd
 full-check = cargo test --release --test overwrite_exhaustive ZIPPER_MERGE_STRIDE=1 ZIPPER_OVERWRITE_EXHAUSTIVE=1 -- --nocapture
 item = src/staging.rs | pub(crate) fn stage(
 item = src/staging.rs | impl Staging {
@@ -96,7 +96,7 @@ item = src/lib.rs | fn ensure_link_stays_inside(
 
 [7z-lzma2-segments]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = bf6d3f88d7ccfd67
+fingerprint = c7eb034bcb343f80
 full-check = python3 scripts/check_model.py verification/7z-lzma2-segments MCSegments.tla:segments.cfg
 item = src/native_7z.rs | const SEGMENT_BUDGET:
 item = src/native_7z.rs | const PARALLEL_FOLDER_MIN:
@@ -108,7 +108,7 @@ item = src/native_7z.rs | impl SegmentThread {
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 85aecacf55826008
+fingerprint = 7326861c0e89df17
 full-check = cargo kani
 item = src/native_7z.rs | struct Malformed {
 item = src/native_7z.rs | fn check(
@@ -139,7 +139,7 @@ item = src/lz4.rs | fn length(
 
 [7z-bcj2-graph]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = e47c62441d3b8611
+fingerprint = 0f96fa8c6326bc6d
 full-check = cargo test --release --lib bcj2
 item = src/native_7z.rs | fn bcj2_plan(
 item = src/native_7z.rs | const BCJ2_INPUTS:
@@ -164,7 +164,7 @@ item = src/native_7z.rs | impl<R: Read> Read for StoredLzma2<R> {
 
 [strip]
 skill = .claude/skills/zipper-verify-strip/SKILL.md
-fingerprint = 3210da04e8cee3ac
+fingerprint = 88be94670750d906
 full-check = cargo test --release --lib placement
 item = src/placement.rs | impl<'a> Placement<'a> {
 item = src/placement.rs | impl PlacedNames {
@@ -187,7 +187,7 @@ item = src/lzw.rs | impl<R: BufRead> Read for Unlzw<R> {
 
 [zip-directory]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 317012ab44cf06e2
+fingerprint = 9032a667aa7c045e
 full-check = cargo kani --harness zip_directory::proofs::
 item = src/zip_directory.rs | fn fixed<
 item = src/zip_directory.rs | fn le16(
@@ -314,3 +314,40 @@ item = src/native_zip.rs | fn encryption(
 item = src/native_zip.rs | fn check_local_header(
 item = src/native_zip.rs | impl<R: Read> Read for Payload<R> {
 item = src/native_zip.rs | impl<R: Read> Payload<R> {
+
+[split-volumes]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = f91803ca9d8fcde8
+full-check = cargo kani --harness volumes::proofs::
+full-check = cargo test --release --lib volumes
+item = src/volumes.rs | struct Layout {
+item = src/volumes.rs | impl Layout {
+item = src/volumes.rs | impl Joined {
+
+[cpio-fields]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 7a10f3e7d6f07f5b
+full-check = cargo kani --harness native_cpio::proofs::
+full-check = cargo test --release --lib native_cpio
+item = src/native_cpio.rs | const ODC_FIELDS:
+item = src/native_cpio.rs | impl Form {
+item = src/native_cpio.rs | fn padding(
+item = src/native_cpio.rs | struct Header {
+item = src/native_cpio.rs | fn hex(
+item = src/native_cpio.rs | fn octal(
+item = src/native_cpio.rs | fn newc_header(
+item = src/native_cpio.rs | fn odc_header(
+item = src/native_cpio.rs | fn binary_header(
+
+[ar-fields]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 1709c5f751dd16d5
+full-check = cargo kani --harness native_ar::proofs::
+full-check = cargo test --release --lib native_ar
+item = src/native_ar.rs | const SPECIAL_MEMBERS:
+item = src/native_ar.rs | struct Header {
+item = src/native_ar.rs | enum ShortName<'a> {
+item = src/native_ar.rs | fn number(
+item = src/native_ar.rs | fn decimal(
+item = src/native_ar.rs | fn header(
+item = src/native_ar.rs | fn short_name(

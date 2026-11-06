@@ -10,6 +10,8 @@ mod lzw;
 mod memory;
 mod metadata;
 pub mod native_7z;
+pub mod native_ar;
+pub mod native_cpio;
 pub mod native_stream;
 pub mod native_tar;
 pub mod native_zip;
@@ -18,13 +20,14 @@ mod pattern;
 mod placement;
 mod progress;
 mod staging;
+mod volumes;
 #[cfg(test)]
 mod xz_filters;
 mod zip_crypto;
 mod zip_directory;
 mod zip_reader;
 use anyhow::{Context, Result, ensure};
-pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};
+pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive, read_volumes};
 pub use metadata::Metadata;
 pub use placement::Strip;
 pub use progress::{Cancelled, Control, Phase, Progress};
@@ -48,6 +51,28 @@ impl std::fmt::Display for BadField {
 }
 
 impl std::error::Error for BadField {}
+
+#[derive(Debug)]
+pub(crate) struct OverLimit(pub(crate) String);
+
+impl std::fmt::Display for OverLimit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for OverLimit {}
+
+#[derive(Debug)]
+pub(crate) struct DestinationRefused(pub(crate) String);
+
+impl std::fmt::Display for DestinationRefused {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DestinationRefused {}
 
 pub(crate) type Field<T> = std::result::Result<T, BadField>;
 
@@ -471,15 +496,19 @@ pub(crate) fn check_output_size<'a>(
     match limit {
         Some(limit) => ensure!(
             declared <= limit,
-            "archive expands to {declared} bytes, over --max-extracted-bytes {limit}"
+            OverLimit(format!(
+                "archive expands to {declared} bytes, over --max-extracted-bytes {limit}"
+            ))
         ),
         None => {
             let free = available_bytes(staging)
                 .with_context(|| format!("cannot measure free space at {}", staging.display()))?;
             ensure!(
                 estimate <= free,
-                "archive needs about {estimate} bytes but {free} are free; \
-                 pass --max-extracted-bytes to override"
+                OverLimit(format!(
+                    "archive needs about {estimate} bytes but {free} are free; \
+                     pass --max-extracted-bytes to override"
+                ))
             );
         }
     }

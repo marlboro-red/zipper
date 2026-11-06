@@ -102,22 +102,59 @@ impl<'a> Placement<'a> {
     }
 }
 
+const NO_ENTRY: u32 = u32::MAX;
+
+enum Placed {
+    Folder,
+    File { entry: u32, kept: bool },
+}
+
 #[derive(Default)]
 pub(crate) struct PlacedNames {
-    kinds: HashMap<String, bool>,
+    kinds: HashMap<String, Placed>,
 }
 
 impl PlacedNames {
     pub(crate) fn add(&mut self, name: &str, directory: bool) -> Result<()> {
+        self.add_entry(name, directory, NO_ENTRY).map(|_| ())
+    }
+
+    pub(crate) fn add_entry(&mut self, name: &str, directory: bool, entry: u32) -> Result<bool> {
         for (slash, _) in name.match_indices('/') {
-            if self.kinds.insert(name[..slash].to_owned(), true) == Some(false) {
+            if let Some(Placed::File { .. }) =
+                self.kinds.insert(name[..slash].to_owned(), Placed::Folder)
+            {
                 bail!("stripping the path leaves a file where {name:?} needs a folder");
             }
         }
-        match self.kinds.insert(name.to_owned(), directory) {
-            Some(true) if directory => Ok(()),
+        match self.kinds.get(name) {
+            None => {
+                let placed = if directory {
+                    Placed::Folder
+                } else {
+                    Placed::File { entry, kept: false }
+                };
+                self.kinds.insert(name.to_owned(), placed);
+                Ok(false)
+            }
+            Some(Placed::Folder) if directory => Ok(true),
+            Some(Placed::File {
+                entry: earlier,
+                kept,
+            }) if !directory && entry != NO_ENTRY && entry == *earlier => {
+                ensure!(
+                    !kept,
+                    "the archive replaces {name:?}, which an earlier hard link names"
+                );
+                Ok(true)
+            }
             Some(_) => bail!("stripping the path leaves two entries at {name:?}"),
-            None => Ok(()),
+        }
+    }
+
+    pub(crate) fn keep(&mut self, name: &str) {
+        if let Some(Placed::File { kept, .. }) = self.kinds.get_mut(name) {
+            *kept = true;
         }
     }
 }
@@ -212,6 +249,45 @@ mod tests {
         assert_eq!(placement.place("a/b"), Some("b"));
         assert_eq!(placement.place("a"), None);
         assert_eq!(placement.place("ab/c"), None);
+    }
+
+    #[test]
+    fn a_file_lands_twice_at_one_path_only_when_one_archive_entry_repeats_there() {
+        let paths = names(2);
+        let mut checked = 0;
+        let id = |name: &String| paths.iter().position(|path| path == name).unwrap() as u32;
+        for first in &paths {
+            for second in &paths {
+                for (place_first, place_second) in [(first, first), (first, second)] {
+                    let mut placed = PlacedNames::default();
+                    assert!(!placed.add_entry(place_first, false, id(first)).unwrap());
+                    let again = placed.add_entry(place_second, false, id(second));
+                    let same_spot = place_first == place_second;
+                    let under = place_second
+                        .strip_prefix(place_first.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+                        || place_first
+                            .strip_prefix(place_second.as_str())
+                            .is_some_and(|rest| rest.starts_with('/'));
+                    match (same_spot, first == second) {
+                        (true, true) => assert!(again.unwrap(), "{first} twice"),
+                        (true, false) => assert!(again.is_err(), "{first} then {second}"),
+                        _ if under => assert!(again.is_err(), "{first} then {second}"),
+                        _ => assert!(!again.unwrap(), "{first} then {second}"),
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        let mut anonymous = PlacedNames::default();
+        anonymous.add("a", false).unwrap();
+        assert!(anonymous.add("a", false).is_err());
+        assert!(checked > 100, "{checked}");
+    }
+
+    #[test]
+    fn a_placed_file_holds_a_number_for_its_entry_not_a_copy_of_its_name() {
+        assert!(size_of::<Placed>() <= 8, "{}", size_of::<Placed>());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::{Control, Existing, compat, native_7z, native_tar, native_zip};
+use crate::{Control, Existing, compat, native_7z, native_ar, native_cpio, native_tar, native_zip};
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
 
@@ -6,14 +6,15 @@ use std::{io::Read, path::Path};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Engine {
-    /// Native for ZIP, tar, unrecognized files and 7z whose methods it
-    /// decodes. 7-Zip for other 7z and the other formats whose signature
-    /// Zipper recognizes.
+    /// Native for ZIP, tar, cpio, `ar`, single compressed files,
+    /// unrecognized files and 7z whose methods it decodes. 7-Zip for other
+    /// 7z and the other formats whose signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
-    /// Native for ZIP and tar, and native ZIP for unrecognized files.
+    /// Native for ZIP, tar, cpio, `ar`, 7z and single compressed files, and
+    /// native ZIP for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -28,6 +29,10 @@ pub enum Reader {
     Tar,
     /// The native 7z reader.
     SevenZip,
+    /// The native reader for binary, odc and newc cpio.
+    Cpio,
+    /// The native reader for `ar` archives and Debian packages.
+    Ar,
     /// The native reader for one gzip, bzip2, xz, zstd or LZMA stream that
     /// holds no tar.
     Stream,
@@ -37,12 +42,14 @@ pub enum Reader {
 
 fn starts_with_zip_signature(archive: &Path) -> Result<bool> {
     let mut signature = [0; 4];
-    let read = std::fs::File::open(archive)?.read(&mut signature)?;
+    let read = crate::volumes::open(archive)?.read(&mut signature)?;
     Ok(read == 4 && matches!(&signature, b"PK\x03\x04" | b"PK\x05\x06"))
 }
 
-/// Pick the reader for `archive` from its first bytes. A `.001` name only
-/// marks a recognized 7-Zip format as split.
+/// Pick the reader for `archive` from its first bytes. When a file named
+/// `.001` is read with its later volumes as one archive, these are the
+/// joined archive's first bytes. `docs/reference/zip-reader.md` gives the
+/// rules for numbered volumes.
 pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     Ok(match engine {
         Engine::Backend => Reader::Backend { format: None },
@@ -50,6 +57,8 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             fast: engine == Engine::NativeFast,
         },
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
+        _ if native_cpio::sniff(archive)? => Reader::Cpio,
+        _ if native_ar::sniff(archive)? => Reader::Ar,
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
             Reader::Backend {
                 format: compat::pinned_format(archive)?,
@@ -95,9 +104,9 @@ pub struct ExtractOptions<'a> {
     /// before it starts. The in-process readers report progress and check it
     /// while they write, and the 7-Zip backend stops 7-Zip when it is set.
     pub control: Control<'a>,
-    /// Cap on declared output bytes. Without it, ZIP, tar and 7z output must
-    /// fit in free space. The 7-Zip backend refuses a cap and checks no free
-    /// space.
+    /// Cap on declared output bytes. Without it, the output of every reader
+    /// in process, including single compressed files, must fit in free
+    /// space. The 7-Zip backend refuses a cap and checks no free space.
     pub max_output_bytes: Option<u64>,
     /// Maximum ZIP workers, tar writer threads or 7z folders decoded at
     /// once, 1–64.
@@ -201,6 +210,83 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
         "threads must be between 1 and 64"
     );
     crate::progress::Tracker::new(options.control, None, None).check()?;
+    with_volumes(archive, || read_into(archive, destination, options))
+}
+
+#[derive(Debug)]
+struct VolumeNote {
+    error: anyhow::Error,
+    note: String,
+}
+
+impl std::fmt::Display for VolumeNote {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}\n{}", self.error, self.note)
+    }
+}
+
+impl std::error::Error for VolumeNote {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.error.chain().nth(1)
+    }
+}
+
+fn says_nothing_about_the_volumes(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause.is::<crate::Cancelled>()
+            || cause.is::<crate::DestinationRefused>()
+            || cause.is::<crate::OverLimit>()
+    })
+}
+
+const BACKEND_ADVICE: &str =
+    "; if the file is another format or a split volume, pass --zip-engine backend";
+
+fn without_backend_advice(error: anyhow::Error) -> anyhow::Error {
+    if let Some(&crate::BadField(message)) = error.downcast_ref::<crate::BadField>() {
+        return match message.split_once(BACKEND_ADVICE) {
+            Some((kept, _)) => crate::BadField(kept).into(),
+            None => error,
+        };
+    }
+    let message = error.to_string();
+    match message.split_once(BACKEND_ADVICE) {
+        Some((kept, _)) if error.source().is_none() => anyhow::anyhow!("{kept}"),
+        _ => error,
+    }
+}
+
+fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
+    let volumes = crate::volumes::scope(archive)?;
+    let error = match read() {
+        Ok(value) => return Ok(value),
+        Err(error) => error,
+    };
+    if says_nothing_about_the_volumes(&error) {
+        return Err(error);
+    }
+    match volumes.note() {
+        Some(note) => Err(VolumeNote {
+            error: without_backend_advice(error),
+            note,
+        }
+        .into()),
+        None => Err(error),
+    }
+}
+
+/// Run `read`, which reads `archive`. When `archive` is a numbered volume,
+/// its volumes are found once for every reader that `read` opens, by the
+/// rules in `docs/reference/zip-reader.md`. When `read` fails, other than by
+/// a cancel, a destination problem or a size limit, the error gains a line
+/// that names the volumes read as one archive, or says why a numbered file
+/// was read alone when there is a reason to give. A damaged set is neither
+/// joined nor read alone, and its error names the volume at fault instead.
+pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
+    with_volumes(archive, read)
+}
+
+fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     let reader = choose_reader(options.engine, archive)?;
     ensure!(
         options.password.is_none() || matches!(reader, Reader::Zip { .. } | Reader::Backend { .. }),
@@ -275,6 +361,27 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                 "--path, --include, --exclude, --strip-prefix, --strip-components and --content-only need an archive read in process"
             )
         }
+        Reader::Cpio | Reader::Ar => {
+            let read = if reader == Reader::Cpio {
+                native_cpio::read_archive
+            } else {
+                native_ar::read_archive
+            };
+            read(
+                archive,
+                Some(destination),
+                native_cpio::ReadOptions {
+                    max_output_bytes: options.max_output_bytes,
+                    existing: options.existing,
+                    paths: options.paths,
+                    include: options.include,
+                    exclude: options.exclude,
+                    strip: options.strip,
+                    metadata: options.metadata,
+                    control: options.control,
+                },
+            )?;
+        }
         Reader::Tar => {
             native_tar::read_archive(
                 archive,
@@ -295,7 +402,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
         Reader::Backend { format } => {
             ensure!(
                 options.max_output_bytes.is_none(),
-                "--max-extracted-bytes needs a ZIP, tar or 7z archive read in process"
+                "--max-extracted-bytes needs an archive read in process"
             );
             compat::run_until_cancelled(
                 "x",
