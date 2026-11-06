@@ -301,11 +301,16 @@ impl<'a> Selection<'a> {
             .iter()
             .map(|path| {
                 let path = path.trim_end_matches('/');
-                safe_path(path).map_err(|error| match path.strip_prefix("./") {
-                    Some(rest) => error.context(format!(
-                        "selected paths have no leading ./; select {rest:?}"
-                    )),
-                    None => error,
+                safe_path(path).map_err(|error| {
+                    match path
+                        .strip_prefix("./")
+                        .filter(|rest| safe_path(rest).is_ok())
+                    {
+                        Some(rest) => error.context(format!(
+                            "selected paths have no leading ./; select {rest:?}"
+                        )),
+                        None => error,
+                    }
                 })?;
                 Ok(path)
             })

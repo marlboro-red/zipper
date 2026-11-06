@@ -974,3 +974,27 @@ fn xz_and_lzma_payloads_past_the_decoder_memory_limit_are_refused() {
     );
     assert!(!error.contains("damaged"), "{error}");
 }
+
+#[test]
+fn the_dot_slash_hint_never_suggests_a_path_that_would_also_fail() {
+    for (path, unwanted) in [
+        ("./../etc", "\"../etc\""),
+        ("././usr/share/a.txt", "\"./usr/share/a.txt\""),
+        ("./", "\"\""),
+        ("./usr//a", "\"usr//a\""),
+    ] {
+        let paths = [path.to_owned()];
+        let (_root, _destination, result) = extract_with(
+            &rpm("gzip", &sample()),
+            ReadOptions {
+                paths: &paths,
+                ..ReadOptions::default()
+            },
+        );
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(
+            !error.contains("leading ./") && !error.contains(unwanted),
+            "{path}: {error}"
+        );
+    }
+}
