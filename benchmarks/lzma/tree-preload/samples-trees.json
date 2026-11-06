@@ -1,0 +1,1529 @@
+[
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 417.036542,
+  "liblzma": 432.565459,
+  "busy": [
+   "92.5 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 424.429375,
+  "liblzma": 413.698291,
+  "busy": [
+   "92.5 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 421.751334,
+  "liblzma": 401.207333,
+  "busy": [
+   "92.5 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 372.908625,
+  "liblzma": 402.389209,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 374.930834,
+  "liblzma": 399.513166,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 376.644167,
+  "liblzma": 399.524541,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 367.157541,
+  "liblzma": 404.488875,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 367.816,
+  "liblzma": 402.626916,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 371.722084,
+  "liblzma": 409.4835,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 355.024875,
+  "liblzma": 402.352125,
+  "busy": [
+   "29.4 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 355.563833,
+  "liblzma": 399.711292,
+  "busy": [
+   "29.4 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 355.441208,
+  "liblzma": 399.92225,
+  "busy": [
+   "29.4 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 350.085459,
+  "liblzma": 402.781792,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 351.393834,
+  "liblzma": 399.149333,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 352.159125,
+  "liblzma": 399.57925,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 343.935375,
+  "liblzma": 403.384708,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 346.396042,
+  "liblzma": 401.632709,
+  "busy": []
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 347.484916,
+  "liblzma": 407.483,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 373.275625,
+  "liblzma": 406.097667,
+  "busy": [
+   "43.8 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 377.922417,
+  "liblzma": 402.3005,
+  "busy": [
+   "43.8 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 379.355083,
+  "liblzma": 406.830708,
+  "busy": [
+   "43.8 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 368.519375,
+  "liblzma": 403.522583,
+  "busy": [
+   "26.2 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 368.48925,
+  "liblzma": 402.821667,
+  "busy": [
+   "26.2 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 369.176458,
+  "liblzma": 401.59975,
+  "busy": [
+   "26.2 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 356.731084,
+  "liblzma": 404.151084,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 373.784959,
+  "liblzma": 417.003334,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 370.595958,
+  "liblzma": 405.037458,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 353.404,
+  "liblzma": 405.602875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 351.095959,
+  "liblzma": 401.881666,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 355.54725,
+  "liblzma": 400.150375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 348.43475,
+  "liblzma": 405.800625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 349.784875,
+  "liblzma": 400.270709,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 350.604667,
+  "liblzma": 400.525375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 407.898584,
+  "liblzma": 402.564166,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 406.82925,
+  "liblzma": 399.247458,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 407.534584,
+  "liblzma": 400.134,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 367.05475,
+  "liblzma": 404.536375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 369.156708,
+  "liblzma": 402.540041,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 368.703708,
+  "liblzma": 401.078208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 354.611792,
+  "liblzma": 403.097917,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 356.22175,
+  "liblzma": 399.842666,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 356.992333,
+  "liblzma": 400.367625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 349.432917,
+  "liblzma": 403.405833,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 353.198541,
+  "liblzma": 403.889584,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 363.302625,
+  "liblzma": 400.499,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 349.536291,
+  "liblzma": 402.807917,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 351.095708,
+  "liblzma": 399.7875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 351.153583,
+  "liblzma": 400.667459,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 421.148667,
+  "liblzma": 412.597292,
+  "busy": [
+   "30.3 /Applications/Firefox.app/Contents/MacOS/gpu-helper.app/Contents/MacOS/Firefox GPU Helper"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 413.742375,
+  "liblzma": 422.635791,
+  "busy": [
+   "30.3 /Applications/Firefox.app/Contents/MacOS/gpu-helper.app/Contents/MacOS/Firefox GPU Helper"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 411.332125,
+  "liblzma": 399.839042,
+  "busy": [
+   "30.3 /Applications/Firefox.app/Contents/MacOS/gpu-helper.app/Contents/MacOS/Firefox GPU Helper"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 378.73775,
+  "liblzma": 413.621833,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 377.988792,
+  "liblzma": 401.251542,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 379.493833,
+  "liblzma": 402.066083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 354.369083,
+  "liblzma": 405.250833,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 355.941084,
+  "liblzma": 401.507292,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 357.087584,
+  "liblzma": 401.438667,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 351.63625,
+  "liblzma": 403.4125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 360.043625,
+  "liblzma": 399.31675,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 353.028584,
+  "liblzma": 399.759209,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 349.219834,
+  "liblzma": 402.587417,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 353.40725,
+  "liblzma": 410.926209,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 345.527917,
+  "liblzma": 409.66525,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 410.904958,
+  "liblzma": 406.360666,
+  "busy": [
+   "29.6 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 406.935917,
+  "liblzma": 399.487458,
+  "busy": [
+   "29.6 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 409.200166,
+  "liblzma": 400.669083,
+  "busy": [
+   "29.6 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 373.917709,
+  "liblzma": 403.723625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 375.182083,
+  "liblzma": 400.030291,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 376.562167,
+  "liblzma": 399.782208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 365.900542,
+  "liblzma": 404.316083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 367.092,
+  "liblzma": 401.349916,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 367.765708,
+  "liblzma": 400.989042,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 364.439166,
+  "liblzma": 409.995875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 350.961208,
+  "liblzma": 399.642667,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 352.860209,
+  "liblzma": 400.049917,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 353.038,
+  "liblzma": 403.459459,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 350.266375,
+  "liblzma": 399.721917,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 349.959667,
+  "liblzma": 399.921625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 414.625875,
+  "liblzma": 402.987125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 411.267708,
+  "liblzma": 403.356125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 409.8225,
+  "liblzma": 399.979416,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 375.098333,
+  "liblzma": 403.706292,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 376.374375,
+  "liblzma": 399.746833,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 376.128083,
+  "liblzma": 399.786625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 367.397708,
+  "liblzma": 417.317542,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 369.006417,
+  "liblzma": 408.72125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 372.6685,
+  "liblzma": 401.194416,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 356.591,
+  "liblzma": 403.552208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 356.263542,
+  "liblzma": 400.526208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 356.398542,
+  "liblzma": 400.390208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 350.059458,
+  "liblzma": 405.697958,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 350.395584,
+  "liblzma": 400.220959,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 351.959458,
+  "liblzma": 401.272167,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 412.349542,
+  "liblzma": 406.866709,
+  "busy": [
+   "68.2 /usr/libexec/duetexpertd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 410.650667,
+  "liblzma": 400.791875,
+  "busy": [
+   "68.2 /usr/libexec/duetexpertd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 413.834708,
+  "liblzma": 402.637167,
+  "busy": [
+   "68.2 /usr/libexec/duetexpertd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 383.091375,
+  "liblzma": 424.019459,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 379.384667,
+  "liblzma": 401.066916,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 377.926292,
+  "liblzma": 404.123917,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 367.8615,
+  "liblzma": 406.330584,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 368.880375,
+  "liblzma": 400.838583,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 374.215,
+  "liblzma": 401.820584,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 353.708458,
+  "liblzma": 403.401,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 355.84375,
+  "liblzma": 399.055709,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 356.09975,
+  "liblzma": 399.182834,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 352.290084,
+  "liblzma": 403.212667,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 350.671833,
+  "liblzma": 399.72075,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 351.242,
+  "liblzma": 400.271625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 413.913292,
+  "liblzma": 405.979209,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 413.630375,
+  "liblzma": 402.687542,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 413.1295,
+  "liblzma": 409.274209,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 378.688042,
+  "liblzma": 405.083917,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 378.224917,
+  "liblzma": 405.4285,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 381.2015,
+  "liblzma": 407.07425,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 367.082917,
+  "liblzma": 404.081458,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 369.509959,
+  "liblzma": 401.320208,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 368.942042,
+  "liblzma": 401.958209,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 358.426667,
+  "liblzma": 412.911416,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 356.322792,
+  "liblzma": 405.381166,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 353.985458,
+  "liblzma": 400.286083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 352.169417,
+  "liblzma": 404.439125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 351.586625,
+  "liblzma": 401.053083,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 354.188209,
+  "liblzma": 415.876875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 346.389792,
+  "liblzma": 402.88575,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 349.013417,
+  "liblzma": 401.098459,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 348.844584,
+  "liblzma": 398.878125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 378.295708,
+  "liblzma": 405.642292,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 380.621292,
+  "liblzma": 402.54625,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 380.168208,
+  "liblzma": 403.141291,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 366.691667,
+  "liblzma": 404.163875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 367.316334,
+  "liblzma": 400.485125,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 367.799958,
+  "liblzma": 400.675792,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 359.406167,
+  "liblzma": 406.363875,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 355.802917,
+  "liblzma": 400.06175,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 355.722125,
+  "liblzma": 416.426375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 358.384833,
+  "liblzma": 405.076041,
+  "busy": [
+   "26.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+   "38.1 /Applications/Firefox.app/Contents/MacOS/firefox"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 353.445916,
+  "liblzma": 401.348,
+  "busy": [
+   "26.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+   "38.1 /Applications/Firefox.app/Contents/MacOS/firefox"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 353.905958,
+  "liblzma": 403.5745,
+  "busy": [
+   "26.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+   "38.1 /Applications/Firefox.app/Contents/MacOS/firefox"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 348.370417,
+  "liblzma": 403.117042,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 350.060417,
+  "liblzma": 400.309167,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 359.356917,
+  "liblzma": 409.917541,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 408.902584,
+  "liblzma": 405.159875,
+  "busy": [
+   "38.3 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 410.693459,
+  "liblzma": 401.956875,
+  "busy": [
+   "38.3 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 411.144209,
+  "liblzma": 402.187042,
+  "busy": [
+   "38.3 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "279f756",
+  "inner": 0,
+  "zipper": 369.767167,
+  "liblzma": 406.224417,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "279f756",
+  "inner": 1,
+  "zipper": 370.5325,
+  "liblzma": 402.638709,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "279f756",
+  "inner": 2,
+  "zipper": 369.923083,
+  "liblzma": 406.204959,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "4e635ea",
+  "inner": 0,
+  "zipper": 354.182875,
+  "liblzma": 404.91375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "4e635ea",
+  "inner": 1,
+  "zipper": 354.728083,
+  "liblzma": 401.8355,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "4e635ea",
+  "inner": 2,
+  "zipper": 356.3085,
+  "liblzma": 405.687375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "5741daa",
+  "inner": 0,
+  "zipper": 353.828833,
+  "liblzma": 404.677167,
+  "busy": [
+   "34.2 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "5741daa",
+  "inner": 1,
+  "zipper": 356.241833,
+  "liblzma": 401.556958,
+  "busy": [
+   "34.2 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "5741daa",
+  "inner": 2,
+  "zipper": 356.202375,
+  "liblzma": 406.007,
+  "busy": [
+   "34.2 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "e39d515",
+  "inner": 0,
+  "zipper": 348.704042,
+  "liblzma": 403.795958,
+  "busy": [
+   "29.3 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "e39d515",
+  "inner": 1,
+  "zipper": 349.538542,
+  "liblzma": 399.97325,
+  "busy": [
+   "29.3 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "e39d515",
+  "inner": 2,
+  "zipper": 349.041166,
+  "liblzma": 400.088792,
+  "busy": [
+   "29.3 /Applications/Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "7dba90c",
+  "inner": 0,
+  "zipper": 414.735958,
+  "liblzma": 405.998708,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "7dba90c",
+  "inner": 1,
+  "zipper": 409.318959,
+  "liblzma": 401.193791,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "7dba90c",
+  "inner": 2,
+  "zipper": 409.506959,
+  "liblzma": 399.836459,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "cc269ce",
+  "inner": 0,
+  "zipper": 371.743625,
+  "liblzma": 403.045167,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "cc269ce",
+  "inner": 1,
+  "zipper": 374.2985,
+  "liblzma": 399.803375,
+  "busy": []
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "cc269ce",
+  "inner": 2,
+  "zipper": 374.341166,
+  "liblzma": 399.781834,
+  "busy": []
+ }
+]
