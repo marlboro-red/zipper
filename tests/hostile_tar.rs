@@ -687,3 +687,52 @@ fn xz_dictionaries_past_the_decoder_memory_limit_are_refused() {
         );
     }
 }
+
+#[test]
+fn options_that_fail_to_parse_return_their_error_instead_of_hanging_and_valid_ones_finish() {
+    let archive = tar(&[directory("dir"), file("dir/a", b"x")]);
+    let paths = |path: &str| vec![path.to_owned()];
+    let cases = [
+        ("dot path", paths("./dir/a"), vec![], None, true),
+        ("parent path", paths("../x"), vec![], None, true),
+        ("absolute path", paths("/abs"), vec![], None, true),
+        ("absolute include", vec![], paths("/abs"), None, true),
+        ("parent strip prefix", vec![], vec![], Some("../x"), true),
+        (
+            "valid options",
+            paths("dir"),
+            paths("**/a"),
+            Some("dir"),
+            false,
+        ),
+    ];
+    for (form, bytes) in [("plain", archive.clone()), ("gzip", gzip(&archive))] {
+        for (case, paths, include, prefix, refused) in &cases {
+            let (paths, include, prefix) = (paths.clone(), include.clone(), *prefix);
+            let bytes = bytes.clone();
+            let (sender, receiver) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let root = tempfile::tempdir().unwrap();
+                let archive = root.path().join("case.tar");
+                fs::write(&archive, bytes).unwrap();
+                let result = read_archive(
+                    &archive,
+                    Some(&root.path().join("out")),
+                    ReadOptions {
+                        paths: &paths,
+                        include: &include,
+                        strip: prefix.map_or(zipper::Strip::None, zipper::Strip::Prefix),
+                        ..ReadOptions::default()
+                    },
+                );
+                let left = fs::read_dir(root.path()).unwrap().count();
+                let _ = sender.send((result.is_err(), left));
+            });
+            let (failed, left) = receiver
+                .recv_timeout(std::time::Duration::from_secs(20))
+                .unwrap_or_else(|_| panic!("{form} {case}: the extraction hung"));
+            assert_eq!(failed, *refused, "{form} {case}");
+            assert_eq!(left, if *refused { 1 } else { 2 }, "{form} {case}");
+        }
+    }
+}

@@ -1399,6 +1399,8 @@ pub(crate) fn read_part(
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
     let compression = sniff_part(part)?.context("not a tar archive")?;
+    let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
+    let placement = crate::placement::Placement::new(options.strip)?;
     let staging = destination
         .map(|destination| {
             crate::staging::stage(path, destination, options.existing, options.metadata)
@@ -1425,7 +1427,6 @@ pub(crate) fn read_part(
         )?,
         buffer: vec![0; COPY_BUFFER],
     };
-    let selection = || crate::Selection::new(options.paths, options.include, options.exclude);
     let tracker = Tracker::new(options.control, None, None);
     let count_written = |written: Written| match written {
         Written::Bytes(bytes) => tracker.add_bytes(bytes),
@@ -1436,8 +1437,8 @@ pub(crate) fn read_part(
             None,
             budget,
             &tracker,
-            selection()?,
-            crate::placement::Placement::new(options.strip)?,
+            selection,
+            placement,
             options.metadata,
         );
         parse(&mut extraction, &mut input)?;
@@ -1475,6 +1476,7 @@ pub(crate) fn read_part(
                 scope.spawn(move || writers.work(queue, count_written))
             })
             .collect();
+        let closing = ClosesOnDrop(&writers);
         let output = Output {
             root: staging.path(),
             writers: &writers,
@@ -1483,14 +1485,14 @@ pub(crate) fn read_part(
             Some(output),
             budget,
             &tracker,
-            selection()?,
-            crate::placement::Placement::new(options.strip)?,
+            selection,
+            placement,
             options.metadata,
         );
         let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             parse(&mut extraction, &mut input)
         }));
-        writers.close();
+        drop(closing);
         let joined: Vec<_> = threads.into_iter().map(|thread| thread.join()).collect();
         if let Some(panic) = writers.callback_panic.lock().unwrap().take() {
             std::panic::resume_unwind(panic);
@@ -1504,6 +1506,14 @@ pub(crate) fn read_part(
         publish(&extraction, &staging)?;
         Ok(extraction.entries)
     })
+}
+
+struct ClosesOnDrop<'w, 'f>(&'w Writers<'f>);
+
+impl Drop for ClosesOnDrop<'_, '_> {
+    fn drop(&mut self) {
+        self.0.close();
+    }
 }
 
 fn publish(extraction: &Extraction, staging: &crate::staging::Staging) -> Result<()> {
