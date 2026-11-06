@@ -14,6 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-06 | [7z LZMA and LZMA2 streams ended where 7-Zip ends them](native-7z/stricter-lzma-ends/README.md) | Kept. Refusing five hostile LZMA and LZMA2 ends costs no measurable time on five archives at one thread or default threads. Every range overlaps. |
 | 2026-11-06 | [LZMA plain literals with both children loaded early](lzma/literal-preload/README.md) | Kept one change of three. The probe stream fell from 434.8 to 408.7 ms, and the decoder takes 1.03 times liblzma's time. Eight direct bits per normalisation was slower, and one `is_match` branch moved nothing. |
 | 2026-11-06 | [LZMA decoder state kept in registers](lzma/kernel-state/README.md) | Kept one change. Zipper's decoder takes 1.09 times liblzma's time on the probe stream, against 1.29 times before, and 434.3 ms on an idle machine. An idle re-time rejected three more changes. No reader uses it yet. |
 | 2026-11-05 | [LZMA decoder hot loop](lzma/hot-loop/README.md) | Kept nine changes. Zipper's own decoder is 1.56× faster than its first version and still 1.09× slower than liblzma 5.8.4. 7-Zip took about 310 ms against 437 ms. No reader uses it yet. |
