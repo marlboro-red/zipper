@@ -240,18 +240,18 @@ impl Bits<'_> {
     #[inline(always)]
     fn branching_bit(&mut self, probability: &mut u16) -> u32 {
         let bound = (self.range >> PROBABILITY_BITS) * u32::from(*probability);
-        let bit = if self.code < bound {
+        if self.code < bound {
             self.range = bound;
             *probability += (PROBABILITY_ONE - *probability) >> MOVE_BITS;
+            self.normalize();
             0
         } else {
             self.range -= bound;
             self.code -= bound;
             *probability -= *probability >> MOVE_BITS;
+            self.normalize();
             1
-        };
-        self.normalize();
-        bit
+        }
     }
 
     fn direct_bits(&mut self, count: u32) -> u32 {
@@ -4279,6 +4279,45 @@ mod proofs {
             }
         }
         assert!(reachable(PROBABILITY_ONE / 2));
+    }
+
+    fn branching_bit_normalized_after_both_arms(range: &mut Bits, probability: &mut u16) -> u32 {
+        let bound = (range.range >> PROBABILITY_BITS) * u32::from(*probability);
+        let bit = if range.code < bound {
+            range.range = bound;
+            *probability += (PROBABILITY_ONE - *probability) >> MOVE_BITS;
+            0
+        } else {
+            range.range -= bound;
+            range.code -= bound;
+            *probability -= *probability >> MOVE_BITS;
+            1
+        };
+        range.normalize();
+        bit
+    }
+
+    #[kani::proof]
+    fn branching_bits_normalized_in_each_arm_match_one_normalization_after_both() {
+        let input: [u8; 1] = kani::any();
+        let range: u32 = kani::any();
+        let code: u32 = kani::any();
+        let probability: u16 = kani::any();
+        kani::assume(probability <= PROBABILITY_ONE);
+        let start = |input| Bits {
+            input,
+            position: 0,
+            end: 1,
+            room: 1,
+            range,
+            code,
+        };
+        let (mut reference, mut branching) = (start(&input), start(&input));
+        let (mut expected, mut moved) = (probability, probability);
+        let bit = branching_bit_normalized_after_both_arms(&mut reference, &mut expected);
+        assert_eq!(branching.branching_bit(&mut moved), bit);
+        assert_eq!(moved, expected);
+        assert_eq!(branching.parts(), reference.parts());
     }
 
     #[kani::proof]
