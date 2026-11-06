@@ -246,6 +246,21 @@ fn without_backend_advice(error: anyhow::Error) -> anyhow::Error {
     }
 }
 
+fn lone_zip_is_another_format(archive: &Path) -> Option<&'static str> {
+    if !crate::volumes::has_zip_volumes(archive).unwrap_or(false) {
+        return None;
+    }
+    if native_7z::sniff(archive).unwrap_or(false) {
+        Some("7z")
+    } else if native_tar::sniff(archive).is_ok_and(|tar| tar.is_some()) {
+        Some("tar")
+    } else if crate::native_stream::sniff(archive).is_ok_and(|stream| stream.is_some()) {
+        Some("compressed")
+    } else {
+        None
+    }
+}
+
 fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
     let volumes = crate::volumes::scope(archive)?;
     let error = match read() {
@@ -255,7 +270,14 @@ fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T
     if says_nothing_about_the_volumes(&error) {
         return Err(error);
     }
-    match volumes.note() {
+    let note = match (volumes.note(), lone_zip_is_another_format(archive)) {
+        (Some(note), Some(format)) => Some(format!(
+            "{note}; {} by itself is a {format} archive, so the .z01 volumes beside it may not belong to it; move them aside to read it alone",
+            archive.display()
+        )),
+        (note, _) => note,
+    };
+    match note {
         Some(note) => Err(VolumeNote {
             error: without_backend_advice(error),
             note,

@@ -150,7 +150,7 @@ fn names_by_python(archive: &Path) -> Option<Vec<String>> {
     )
 }
 
-fn stub(length: usize) -> Vec<u8> {
+fn noise(length: usize) -> Vec<u8> {
     let mut state = 0x9E37_79B9u32;
     let mut bytes = b"MZ".to_vec();
     while bytes.len() < length {
@@ -163,16 +163,71 @@ fn stub(length: usize) -> Vec<u8> {
         });
     }
     bytes.truncate(length);
-    if length >= PE_SIGNATURE_END {
-        bytes[PE_POINTER..PE_POINTER + 4].copy_from_slice(&(PE_HEADER as u32).to_le_bytes());
-        bytes[PE_HEADER..PE_SIGNATURE_END].copy_from_slice(b"PE\0\0");
-    }
+    bytes
+}
+
+fn put(bytes: &mut [u8], at: usize, value: &[u8]) {
+    bytes[at..at + value.len()].copy_from_slice(value);
+}
+
+fn stub(length: usize) -> Vec<u8> {
+    let mut bytes = noise(length.max(PE_DATA));
+    bytes[PE_HEADER..PE_DATA].fill(0);
+    put(&mut bytes, PE_POINTER, &(PE_HEADER as u32).to_le_bytes());
+    put(&mut bytes, PE_HEADER, b"PE\0\0");
+    put(&mut bytes, PE_HEADER + 6, &1u16.to_le_bytes());
+    let section = PE_HEADER + 24;
+    put(
+        &mut bytes,
+        section + 16,
+        &((length - PE_DATA) as u32).to_le_bytes(),
+    );
+    put(&mut bytes, section + 20, &(PE_DATA as u32).to_le_bytes());
+    bytes.truncate(length);
+    bytes
+}
+
+fn elf_stub(length: usize) -> Vec<u8> {
+    let mut bytes = noise(length);
+    bytes[..ELF_DATA].fill(0);
+    put(&mut bytes, 0, b"\x7fELF\x02\x01\x01");
+    put(&mut bytes, 32, &64u64.to_le_bytes());
+    put(&mut bytes, 54, &56u16.to_le_bytes());
+    put(&mut bytes, 56, &1u16.to_le_bytes());
+    put(&mut bytes, 64, &1u32.to_le_bytes());
+    put(&mut bytes, 96, &(length as u64).to_le_bytes());
+    bytes
+}
+
+fn macho_stub(length: usize) -> Vec<u8> {
+    let mut bytes = noise(length);
+    bytes[..MACHO_DATA].fill(0);
+    put(&mut bytes, 0, b"\xcf\xfa\xed\xfe");
+    put(&mut bytes, 16, &1u32.to_le_bytes());
+    put(&mut bytes, 20, &72u32.to_le_bytes());
+    put(&mut bytes, 32, &0x19u32.to_le_bytes());
+    put(&mut bytes, 36, &72u32.to_le_bytes());
+    put(&mut bytes, 32 + 48, &(length as u64).to_le_bytes());
+    bytes
+}
+
+fn fat_stub(length: usize) -> Vec<u8> {
+    let mut bytes = noise(length);
+    bytes[..FAT_DATA].fill(0);
+    put(&mut bytes, 0, b"\xca\xfe\xba\xbe");
+    put(&mut bytes, 4, &1u32.to_be_bytes());
+    put(&mut bytes, 16, &(FAT_DATA as u32).to_be_bytes());
+    put(&mut bytes, 20, &((length - FAT_DATA) as u32).to_be_bytes());
     bytes
 }
 
 const PE_POINTER: usize = 0x3C;
 const PE_HEADER: usize = 0x40;
 const PE_SIGNATURE_END: usize = PE_HEADER + 4;
+const PE_DATA: usize = PE_HEADER + 24 + 40;
+const ELF_DATA: usize = 64 + 56;
+const MACHO_DATA: usize = 32 + 72;
+const FAT_DATA: usize = 28;
 
 fn le16(bytes: &[u8], at: usize) -> usize {
     u16::from_le_bytes([bytes[at], bytes[at + 1]]).into()
@@ -230,7 +285,7 @@ fn a_zip_after_a_stub_extracts_as_the_zip_alone_whether_or_not_its_offsets_count
     for name in ZIPS {
         let archive = fs::read(data(name)).unwrap();
         let whole = extracted_tree(&data(name));
-        for length in [PE_SIGNATURE_END, PE_SIGNATURE_END + 1, 4096, 70_000] {
+        for length in [PE_DATA, PE_DATA + 1, 4096, 70_000] {
             let prefix = stub(length);
             let mut cases = Vec::new();
             if !name.contains("one-piece") {
@@ -401,15 +456,15 @@ fn an_empty_or_encrypted_zip_after_a_stub_is_refused() {
     let path = written(
         folder.path(),
         "empty.exe",
-        &[&stub(100)[..], empty].concat(),
+        &[&stub(1000)[..], empty].concat(),
     );
-    assert_refused(&path, &["100 bytes"], "empty");
+    assert_refused(&path, &["1000 bytes"], "empty");
     let encrypted = fs::read(data("parity/archives/zip-zipcrypto.zip"));
     if let Ok(encrypted) = encrypted {
         let path = written(
             folder.path(),
             "locked.exe",
-            &[&stub(100)[..], &encrypted].concat(),
+            &[&stub(1000)[..], &encrypted].concat(),
         );
         assert_refused(&path, &["encrypted"], "encrypted");
     }
@@ -441,8 +496,9 @@ fn a_7z_after_a_stub_extracts_as_the_7z_alone_and_as_7zip_extracts_it() {
         let whole = extracted_tree(&data(name));
         for (kind, prefix) in [
             ("PE", stub(5000)),
-            ("ELF", with_magic(b"\x7fELF\x02\x01\x01", 70_000)),
-            ("Mach-O", with_magic(b"\xcf\xfa\xed\xfe", 300)),
+            ("ELF", elf_stub(70_000)),
+            ("Mach-O", macho_stub(300)),
+            ("fat Mach-O", fat_stub(5000)),
             ("PE at the limit", stub(SEARCH_LIMIT)),
         ] {
             let label = format!("{name} after a {kind} stub");
@@ -586,6 +642,16 @@ fn a_stub_without_a_whole_executable_header_is_refused() {
     iso_with_mz[..2].copy_from_slice(b"MZ");
     for (label, prefix) in [
         ("MZ with no PE header", no_pe_signature),
+        ("a PE with no sections", {
+            let mut bytes = stub(1000);
+            put(&mut bytes, PE_HEADER + 6, &0u16.to_le_bytes());
+            bytes
+        }),
+        ("a PE section table past the stub", {
+            let mut bytes = stub(1000);
+            put(&mut bytes, PE_HEADER + 6, &96u16.to_le_bytes());
+            bytes
+        }),
         ("a PE pointer past the stub", pointer_past_the_stub),
         ("MZ over an empty system area", iso_with_mz),
         (
@@ -603,7 +669,7 @@ fn a_stub_without_a_whole_executable_header_is_refused() {
 
 #[test]
 fn every_archive_signature_in_a_stub_is_refused_before_a_zip_or_a_7z() {
-    let tail = &stub(600)[PE_SIGNATURE_END..];
+    let tail = &noise(600)[2..];
     for signature in [
         &b"MSCF\0\0\0\0"[..],
         b"Rar!\x1A\x07\x00",
@@ -666,12 +732,7 @@ fn an_encrypted_7z_after_a_stub_reaches_7zip_pinned_as_7z_and_only_after_its_stu
     .unwrap();
     fs::set_permissions(&backend, fs::Permissions::from_mode(0o700)).unwrap();
     let encrypted = fs::read(data("parity/archives/7z-7zaes.7z")).unwrap();
-    let cab = [
-        &stub(1000)[..],
-        b"MSCF\0\0\0\0",
-        &stub(600)[PE_SIGNATURE_END..],
-    ]
-    .concat();
+    let cab = [&stub(1000)[..], b"MSCF\0\0\0\0", &noise(600)[2..]].concat();
     for (name, prefix, reaches) in [("clean.exe", stub(1000), true), ("cab.exe", cab, false)] {
         let path = written(folder.path(), name, &[&prefix[..], &encrypted].concat());
         let log = folder.path().join("backend.log");
@@ -691,5 +752,110 @@ fn an_encrypted_7z_after_a_stub_reaches_7zip_pinned_as_7z_and_only_after_its_stu
             assert!(logged.is_empty(), "{name} reached 7-Zip: {logged}");
             assert!(!output.status.success(), "{name}");
         }
+    }
+}
+
+fn ustar_block() -> Vec<u8> {
+    let mut block = vec![0u8; 512];
+    put(&mut block, 0, b"from-tar.txt");
+    put(&mut block, 257, b"ustar\x0000");
+    block
+}
+
+fn uefi_volume() -> Vec<u8> {
+    let mut volume = vec![0xFFu8; 0x1000];
+    volume[..0x48].fill(0);
+    put(&mut volume, 40, b"_FVH");
+    volume
+}
+
+fn iso_at_its_start() -> Vec<u8> {
+    let mut image = vec![0u8; 0x8800];
+    put(&mut image, 0x8000, b"\x01CD001\x01");
+    image
+}
+
+#[test]
+fn an_archive_that_does_not_start_where_the_executable_ends_is_refused() {
+    let blobs: [(&str, Vec<u8>); 9] = [
+        ("one byte", vec![0]),
+        ("512 bytes", vec![0; 512]),
+        ("a tar block", ustar_block()),
+        (
+            "a cpio header",
+            [&b"070701"[..], &[b'0'; 104], b"TRAILER!!!\0"].concat(),
+        ),
+        ("an LHA header", b"\x20\x00-lh0-\0\0\0\0".to_vec()),
+        ("an ARJ header", b"\x60\xEA\x1E\x00".to_vec()),
+        ("a UEFI firmware volume", uefi_volume()),
+        ("an ISO", iso_at_its_start()),
+        ("a xar header", b"xar!\0\x1C\0\x01".to_vec()),
+    ];
+    for (label, blob) in blobs {
+        let prefix = [&stub(1000)[..], &blob].concat();
+        refused_before_a_zip_and_a_7z(
+            &prefix,
+            &["ends at offset 1000"],
+            &format!("PE then {label}"),
+        );
+    }
+    for (label, executable) in [
+        ("ELF", elf_stub(1000)),
+        ("Mach-O", macho_stub(1000)),
+        ("fat Mach-O", fat_stub(1000)),
+    ] {
+        let prefix = [&executable[..], &ustar_block()].concat();
+        refused_before_a_zip_and_a_7z(
+            &prefix,
+            &["ends at offset 1000"],
+            &format!("{label} then a tar block"),
+        );
+    }
+}
+
+#[test]
+fn the_archive_at_the_overlay_decides_whatever_else_the_stub_holds() {
+    let folder = tempfile::tempdir().unwrap();
+    let seven = fs::read(data("parity/archives/7z.7z")).unwrap();
+    let mut prefix = stub(1000);
+    put(&mut prefix, 500, b"PK\x03\x04");
+    let path = written(
+        folder.path(),
+        "pk-then-7z.exe",
+        &[&prefix[..], &seven].concat(),
+    );
+    assert_eq!(
+        extracted_tree(&path),
+        extracted_tree(&data("parity/archives/7z.7z"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_real_executable_stub_works_only_with_the_archive_at_its_end() {
+    let stub = Path::new("/usr/bin/true");
+    let Ok(stub) = fs::read(stub) else {
+        return;
+    };
+    let folder = tempfile::tempdir().unwrap();
+    let zip = fs::read(data("zip-corpus/infozip-default.zip")).unwrap();
+    let seven = fs::read(data("parity/archives/7z.7z")).unwrap();
+    for (name, archive, alone) in [
+        ("true-zip.exe", &zip, "zip-corpus/infozip-default.zip"),
+        ("true-7z.exe", &seven, "parity/archives/7z.7z"),
+    ] {
+        let path = written(folder.path(), name, &[&stub[..], archive].concat());
+        assert_eq!(
+            extracted_tree(&path),
+            extracted_tree(&data(alone)),
+            "{name}"
+        );
+        let padded = written(
+            folder.path(),
+            &format!("padded-{name}"),
+            &[&stub[..], b"\0", archive].concat(),
+        );
+        let at = format!("ends at offset {}", stub.len());
+        assert_refused(&padded, &[&at], &format!("padded {name}"));
     }
 }

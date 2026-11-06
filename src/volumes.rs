@@ -898,11 +898,8 @@ impl Joined {
 pub(crate) enum Stub {
     Accepted,
     NotAnExecutable,
-    Holds {
-        at: u64,
-        what: &'static str,
-        zip: bool,
-    },
+    NotAtTheOverlay { end: u64 },
+    Holds { at: u64, what: &'static str },
 }
 
 impl Stub {
@@ -912,7 +909,10 @@ impl Stub {
             Self::NotAnExecutable => Some(
                 "start with no whole PE, ELF or Mach-O header and no #! line, so another reader may read them as an archive".to_owned(),
             ),
-            Self::Holds { at, what, .. } => Some(format!(
+            Self::NotAtTheOverlay { end } => Some(format!(
+                "form an executable whose own data ends at offset {end}, not where the archive starts, so 7-Zip reads whatever starts at offset {end} instead"
+            )),
+            Self::Holds { at, what } => Some(format!(
                 "hold {what} at offset {at}, so another reader may see a different archive"
             )),
         }
@@ -921,8 +921,6 @@ impl Stub {
 
 const PE_HEADER_POINTER: usize = 0x3C;
 const PE_SIGNATURE: &[u8; 4] = b"PE\0\0";
-const ELF_IDENT: u64 = 16;
-const MACHO_HEADER: u64 = 28;
 const MACHO_THIN: [[u8; 4]; 4] = [
     [0xFE, 0xED, 0xFA, 0xCE],
     [0xFE, 0xED, 0xFA, 0xCF],
@@ -933,7 +931,6 @@ const MACHO_FAT: [u8; 4] = [0xCA, 0xFE, 0xBA, 0xBE];
 const MACHO_FAT_ARCH: u64 = 20;
 const FAT_ARCHES_BELOW_ANY_JAVA_CLASS_VERSION: std::ops::RangeInclusive<u64> = 1..=30;
 const SCRIPT_LINE: &[u8] = b"#!";
-const STUB_HEAD: usize = 64;
 const STUB_SCAN_CHUNK: usize = 64 * 1024;
 const ARCHIVE_SIGNATURES: [(&[u8], &str, bool); 10] = [
     (b"PK\x03\x04", "a ZIP local header", true),
@@ -974,48 +971,271 @@ fn read_up_to(
     Ok(filled)
 }
 
-fn whole_executable_header(
+struct Header<'r> {
+    read_at: &'r mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
+    prefix: u64,
+    big_endian: bool,
+}
+
+impl Header<'_> {
+    fn field(&mut self, at: u64, width: usize) -> io::Result<Option<u64>> {
+        if at
+            .checked_add(width as u64)
+            .is_none_or(|end| end > self.prefix)
+        {
+            return Ok(None);
+        }
+        let mut bytes = [0u8; 8];
+        if read_up_to(self.read_at, &mut bytes[..width], at)? < width {
+            return Ok(None);
+        }
+        let mut value = [0u8; 8];
+        if self.big_endian {
+            value[8 - width..].copy_from_slice(&bytes[..width]);
+            Ok(Some(u64::from_be_bytes(value)))
+        } else {
+            value[..width].copy_from_slice(&bytes[..width]);
+            Ok(Some(u64::from_le_bytes(value)))
+        }
+    }
+
+    fn fields<const N: usize>(
+        &mut self,
+        at: u64,
+        layout: [(u64, usize); N],
+    ) -> io::Result<Option<[u64; N]>> {
+        let mut values = [0u64; N];
+        for (value, (offset, width)) in values.iter_mut().zip(layout) {
+            match at.checked_add(offset) {
+                Some(place) => match self.field(place, width)? {
+                    Some(read) => *value = read,
+                    None => return Ok(None),
+                },
+                None => return Ok(None),
+            }
+        }
+        Ok(Some(values))
+    }
+}
+
+enum Executable {
+    Script,
+    EndsAt(u64),
+    Malformed,
+}
+
+const PE_SECTIONS_MAX: u64 = 96;
+const PE_COFF_HEADER: u64 = 24;
+const PE_SECTION: u64 = 40;
+const ELF_PROGRAM_TYPE_NONE: u64 = 0;
+const ELF_SECTION_NO_BITS: u64 = 8;
+const MACHO_SEGMENT: u64 = 0x1;
+const MACHO_SEGMENT_64: u64 = 0x19;
+const MACHO_COMMANDS_MAX: u64 = 4096;
+const MACHO_FAT_64: [u8; 4] = [0xCA, 0xFE, 0xBA, 0xBF];
+
+fn furthest(ends: impl IntoIterator<Item = Option<u64>>) -> Executable {
+    let mut furthest = 0u64;
+    for end in ends {
+        match end {
+            Some(end) => furthest = furthest.max(end),
+            None => return Executable::Malformed,
+        }
+    }
+    Executable::EndsAt(furthest)
+}
+
+fn pe_end(header: &mut Header) -> io::Result<Executable> {
+    let Some([pointer]) = header.fields(0, [(PE_HEADER_POINTER as u64, 4)])? else {
+        return Ok(Executable::Malformed);
+    };
+    let mut signature = [0u8; 4];
+    if pointer.checked_add(4).is_none_or(|end| end > header.prefix)
+        || read_up_to(header.read_at, &mut signature, pointer)? != 4
+        || signature != *PE_SIGNATURE
+    {
+        return Ok(Executable::Malformed);
+    }
+    let Some([sections, optional]) = header.fields(pointer, [(6, 2), (20, 2)])? else {
+        return Ok(Executable::Malformed);
+    };
+    if sections == 0 || sections > PE_SECTIONS_MAX {
+        return Ok(Executable::Malformed);
+    }
+    let table = pointer + PE_COFF_HEADER + optional;
+    let mut ends = vec![Some(table + sections * PE_SECTION)];
+    for index in 0..sections {
+        let Some([size, start]) = header.fields(table + index * PE_SECTION, [(16, 4), (20, 4)])?
+        else {
+            return Ok(Executable::Malformed);
+        };
+        if size > 0 {
+            ends.push(start.checked_add(size));
+        }
+    }
+    Ok(furthest(ends))
+}
+
+fn elf_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
+    let word = if wide { 8 } else { 4 };
+    let layout = if wide {
+        [(32, 8), (40, 8), (54, 2), (56, 2), (58, 2), (60, 2)]
+    } else {
+        [(28, 4), (32, 4), (42, 2), (44, 2), (46, 2), (48, 2)]
+    };
+    let Some(
+        [
+            programs,
+            sections,
+            program_size,
+            program_count,
+            section_size,
+            section_count,
+        ],
+    ) = header.fields(0, layout)?
+    else {
+        return Ok(Executable::Malformed);
+    };
+    let table_end = |offset: u64, size: u64, count: u64| {
+        size.checked_mul(count)
+            .and_then(|bytes| offset.checked_add(bytes))
+    };
+    let mut ends = vec![
+        Some(if wide { 64 } else { 52 }),
+        table_end(programs, program_size, program_count),
+        table_end(sections, section_size, section_count),
+    ];
+    let program_fields = if wide {
+        [(0, 4), (8, 8), (32, 8)]
+    } else {
+        [(0, 4), (4, 4), (16, 4)]
+    };
+    for index in 0..program_count {
+        let Some([kind, offset, size]) =
+            header.fields(programs + index * program_size, program_fields)?
+        else {
+            return Ok(Executable::Malformed);
+        };
+        if kind != ELF_PROGRAM_TYPE_NONE {
+            ends.push(offset.checked_add(size));
+        }
+    }
+    let section_fields = [
+        (4, 4),
+        (8 + 2 * word as u64, word),
+        (8 + 3 * word as u64, word),
+    ];
+    for index in 0..section_count {
+        let Some([kind, offset, size]) =
+            header.fields(sections + index * section_size, section_fields)?
+        else {
+            return Ok(Executable::Malformed);
+        };
+        if kind != ELF_SECTION_NO_BITS {
+            ends.push(offset.checked_add(size));
+        }
+    }
+    Ok(furthest(ends))
+}
+
+fn macho_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
+    let Some([commands, commands_size]) = header.fields(0, [(16, 4), (20, 4)])? else {
+        return Ok(Executable::Malformed);
+    };
+    if commands > MACHO_COMMANDS_MAX {
+        return Ok(Executable::Malformed);
+    }
+    let first: u64 = if wide { 32 } else { 28 };
+    let mut ends = vec![first.checked_add(commands_size)];
+    let mut at = first;
+    for _ in 0..commands {
+        let Some([command, size]) = header.fields(at, [(0, 4), (4, 4)])? else {
+            return Ok(Executable::Malformed);
+        };
+        if size < 8 {
+            return Ok(Executable::Malformed);
+        }
+        let segment = match command {
+            MACHO_SEGMENT => header.fields(at, [(32, 4), (36, 4)])?,
+            MACHO_SEGMENT_64 => header.fields(at, [(40, 8), (48, 8)])?,
+            _ => Some([0, 0]),
+        };
+        let Some([offset, length]) = segment else {
+            return Ok(Executable::Malformed);
+        };
+        ends.push(offset.checked_add(length));
+        at += size;
+    }
+    Ok(furthest(ends))
+}
+
+fn fat_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
+    let Some([arches]) = header.fields(0, [(4, 4)])? else {
+        return Ok(Executable::Malformed);
+    };
+    if !FAT_ARCHES_BELOW_ANY_JAVA_CLASS_VERSION.contains(&arches) {
+        return Ok(Executable::Malformed);
+    }
+    let (entry, layout) = if wide {
+        (32, [(8, 8), (16, 8)])
+    } else {
+        (MACHO_FAT_ARCH, [(8, 4), (12, 4)])
+    };
+    let mut ends = vec![Some(8 + arches * entry)];
+    for index in 0..arches {
+        let Some([offset, size]) = header.fields(8 + index * entry, layout)? else {
+            return Ok(Executable::Malformed);
+        };
+        ends.push(offset.checked_add(size));
+    }
+    Ok(furthest(ends))
+}
+
+fn executable_end(
     read_at: &mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
     prefix: u64,
-) -> io::Result<bool> {
-    let mut head = [0u8; STUB_HEAD];
-    let read = read_up_to(read_at, &mut head, 0)?.min(usize::try_from(prefix).unwrap_or(STUB_HEAD));
+) -> io::Result<Executable> {
+    let mut head = [0u8; 8];
+    let read = read_up_to(read_at, &mut head, 0)?.min(usize::try_from(prefix).unwrap_or(8));
     let head = &head[..read];
     if head.starts_with(SCRIPT_LINE) {
-        return Ok(true);
+        return Ok(Executable::Script);
     }
-    if head.starts_with(b"MZ") && head.len() >= PE_HEADER_POINTER + 4 {
-        let pointer = u64::from(u32::from_le_bytes(
-            head[PE_HEADER_POINTER..PE_HEADER_POINTER + 4]
-                .try_into()
-                .unwrap(),
-        ));
-        let mut signature = [0u8; 4];
-        return Ok(pointer.checked_add(4).is_some_and(|end| end <= prefix)
-            && read_up_to(read_at, &mut signature, pointer)? == 4
-            && signature == *PE_SIGNATURE);
+    let mut header = Header {
+        read_at,
+        prefix,
+        big_endian: false,
+    };
+    if head.starts_with(b"MZ") {
+        return pe_end(&mut header);
     }
-    if head.starts_with(b"\x7FELF") {
-        return Ok(prefix >= ELF_IDENT
-            && head.len() >= 7
-            && matches!(head[4], 1 | 2)
-            && matches!(head[5], 1 | 2)
-            && head[6] == 1);
+    if head.starts_with(b"\x7FELF") && head.len() >= 7 && head[6] == 1 {
+        header.big_endian = match head[5] {
+            1 => false,
+            2 => true,
+            _ => return Ok(Executable::Malformed),
+        };
+        return match head[4] {
+            1 => elf_end(&mut header, false),
+            2 => elf_end(&mut header, true),
+            _ => Ok(Executable::Malformed),
+        };
     }
-    if MACHO_THIN.iter().any(|magic| head.starts_with(magic)) {
-        return Ok(prefix >= MACHO_HEADER);
+    if let Some(index) = MACHO_THIN.iter().position(|magic| head.starts_with(magic)) {
+        header.big_endian = index < 2;
+        return macho_end(&mut header, index % 2 == 1);
     }
-    if head.starts_with(&MACHO_FAT) && head.len() >= 8 {
-        let arches = u64::from(u32::from_be_bytes(head[4..8].try_into().unwrap()));
-        return Ok(FAT_ARCHES_BELOW_ANY_JAVA_CLASS_VERSION.contains(&arches)
-            && prefix >= 8 + MACHO_FAT_ARCH * arches);
+    if head.starts_with(&MACHO_FAT) || head.starts_with(&MACHO_FAT_64) {
+        header.big_endian = true;
+        return fat_end(&mut header, head.starts_with(&MACHO_FAT_64));
     }
-    Ok(false)
+    Ok(Executable::Malformed)
 }
 
 fn archive_signature_in(
     read_at: &mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
     prefix: u64,
+    zip_records_count: bool,
 ) -> io::Result<Option<(u64, &'static str, bool)>> {
     for sector in VOLUME_DESCRIPTOR_SECTORS {
         let at = sector * SECTOR + VOLUME_DESCRIPTOR_TYPE;
@@ -1038,6 +1258,7 @@ fn archive_signature_in(
         let found = (0..window.len()).find_map(|index| {
             ARCHIVE_SIGNATURES
                 .iter()
+                .filter(|&&(_, _, zip)| zip_records_count || !zip)
                 .find(|(signature, _, _)| window[index..].starts_with(signature))
                 .map(|&(_, what, zip)| (at + index as u64, what, zip))
                 .filter(|&(start, _, _)| start < prefix)
@@ -1053,14 +1274,16 @@ fn archive_signature_in(
 pub(crate) fn check_stub(
     read_at: &mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
     prefix: u64,
+    zip_records_count: bool,
 ) -> io::Result<Stub> {
-    if let Some((at, what, zip)) = archive_signature_in(read_at, prefix)? {
-        return Ok(Stub::Holds { at, what, zip });
+    if let Some((at, what, _)) = archive_signature_in(read_at, prefix, zip_records_count)? {
+        return Ok(Stub::Holds { at, what });
     }
-    Ok(if whole_executable_header(read_at, prefix)? {
-        Stub::Accepted
-    } else {
-        Stub::NotAnExecutable
+    Ok(match executable_end(read_at, prefix)? {
+        Executable::Script => Stub::Accepted,
+        Executable::EndsAt(end) if end == prefix => Stub::Accepted,
+        Executable::EndsAt(end) => Stub::NotAtTheOverlay { end },
+        Executable::Malformed => Stub::NotAnExecutable,
     })
 }
 
@@ -1099,6 +1322,14 @@ impl ZipDisks {
                 "disk number 0xFFFF, which leaves the number to a ZIP64 field".to_owned()
             }
             _ => format!("disk {}", disk + 1),
+        }
+    }
+
+    pub(crate) fn earlier_names(&self) -> String {
+        match self.count() {
+            0 | 1 => String::new(),
+            2 => self.name(0),
+            count => format!("{} to {}", self.name(0), self.name(count - 2)),
         }
     }
 

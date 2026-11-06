@@ -448,13 +448,34 @@ fn a_volume_opened_by_itself_points_at_the_last_volume() {
     );
 }
 
+fn folder_with_a_whole_7z_named_zip() -> tempfile::TempDir {
+    let folder = tempfile::tempdir().unwrap();
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/parity/archives/7z.7z"),
+        folder.path().join("x.zip"),
+    )
+    .unwrap();
+    fs::write(folder.path().join("x.z01"), b"junk").unwrap();
+    folder
+}
+
 #[test]
 fn a_whole_zip_beside_a_stray_volume_or_a_lone_last_volume_is_refused() {
     let folder = tempfile::tempdir().unwrap();
     let whole = folder.path().join("whole.zip");
     fs::copy(corpus().join("infozip-default.zip"), &whole).unwrap();
     fs::write(folder.path().join("whole.z01"), b"stray").unwrap();
-    assert_refused(&whole, &["whole.z01", "2 were found"], "stray volume");
+    assert_refused(
+        &whole,
+        &["whole.zip looks whole", "whole.z01", "move them aside"],
+        "stray volume",
+    );
+    let stray_7z = folder_with_a_whole_7z_named_zip();
+    assert_refused(
+        &stray_7z.path().join("x.zip"),
+        &["by itself is a 7z archive", "move them aside"],
+        "a whole 7z named x.zip",
+    );
     let folder = tempfile::tempdir().unwrap();
     let lone = folder.path().join("lone.zip");
     fs::copy(corpus().join(format!("{SET}.zip")), &lone).unwrap();

@@ -99,8 +99,13 @@ def signature_free_exe_stub(length=4096):
     while len(data) < length:
         byte = rng.getrandbits(8)
         data.append(ord("Q") if byte in b"P7" else byte)
+    section = PE_HEADER + 24
+    data[PE_HEADER:section + 40] = bytes(section + 40 - PE_HEADER)
     data[PE_POINTER:PE_POINTER + 4] = PE_HEADER.to_bytes(4, "little")
     data[PE_HEADER:PE_HEADER + 4] = b"PE\0\0"
+    data[PE_HEADER + 6:PE_HEADER + 8] = (1).to_bytes(2, "little")
+    data[section + 16:section + 20] = (length - section - 40).to_bytes(4, "little")
+    data[section + 20:section + 24] = (section + 40).to_bytes(4, "little")
     return bytes(data)
 
 

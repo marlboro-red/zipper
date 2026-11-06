@@ -994,9 +994,9 @@ fn archive_start(file: &ArchiveFile) -> Result<Option<u64>> {
 
 fn accepted_stub(file: &ArchiveFile, base: u64) -> Result<Option<u64>> {
     let mut read_at = |buffer: &mut [u8], offset: u64| file.read_at(buffer, offset);
-    match crate::volumes::check_stub(&mut read_at, base)? {
+    match crate::volumes::check_stub(&mut read_at, base, false)? {
         crate::volumes::Stub::Accepted => Ok(Some(base)),
-        crate::volumes::Stub::Holds { zip: true, .. } => Ok(None),
+        crate::volumes::Stub::NotAtTheOverlay { .. } if zip_ends_the_file(file)? => Ok(None),
         refused => bail!(
             "the 7z archive at offset {base} follows {base} bytes that {}",
             refused.refusal().unwrap_or_default()
@@ -1004,15 +1004,19 @@ fn accepted_stub(file: &ArchiveFile, base: u64) -> Result<Option<u64>> {
     }
 }
 
-fn ensure_no_zip_ends_the_file(file: &ArchiveFile, base: u64) -> Result<()> {
+fn zip_ends_the_file(file: &ArchiveFile) -> std::io::Result<bool> {
     let length = file.len()?;
     let from = length.saturating_sub(ZIP_TAIL);
     let mut tail = vec![0u8; usize::try_from(length.saturating_sub(from)).unwrap_or(0)];
     let read = read_up_to(file, &mut tail, from)?;
+    Ok(tail[..read]
+        .windows(4)
+        .any(|window| window == ZIP_END_SIGNATURE))
+}
+
+fn ensure_no_zip_ends_the_file(file: &ArchiveFile, base: u64) -> Result<()> {
     ensure!(
-        !tail[..read]
-            .windows(4)
-            .any(|window| window == ZIP_END_SIGNATURE),
+        !zip_ends_the_file(file)?,
         "the file with a 7z archive at offset {base} after an executable stub has a ZIP end record in its last 64 KiB, so other readers may see a ZIP instead"
     );
     Ok(())
@@ -2426,9 +2430,11 @@ fn create_links(root: &Path, items: &[Item], targets: Vec<(usize, Vec<u8>)>) -> 
 /// Whether the file starts with the 7z signature, or starts with a PE, ELF or
 /// Mach-O header and holds one 7z start header, with version byte 0 and a
 /// matching CRC, at offset 8 MiB or earlier. The stub before it must pass the
-/// rules in `docs/reference/7z-reader.md`. Returns an error when two start
-/// headers both pass, or when the stub is refused, and `false` when the stub
-/// holds a ZIP record, so that the file is read as a ZIP.
+/// rules in `docs/reference/7z-reader.md`, and the 7z must start where the
+/// executable's own data ends. Returns an error when two start headers both
+/// pass, or when the stub is refused, and `false` when the 7z does not start
+/// there but a ZIP end record ends the file, so that the file is read as a
+/// ZIP.
 pub fn sniff(path: &Path) -> Result<bool> {
     Ok(archive_start(&crate::volumes::open(path)?)?.is_some())
 }

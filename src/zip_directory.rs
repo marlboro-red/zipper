@@ -269,10 +269,24 @@ fn archive_start<R: Read + Seek>(
         file.seek(SeekFrom::Start(offset))?;
         file.read(buffer)
     };
-    if let Some(why) = crate::volumes::check_stub(&mut read_at, first)?.refusal() {
+    let stub = crate::volumes::check_stub(&mut read_at, first, true)?;
+    if let crate::volumes::Stub::NotAtTheOverlay { end } = stub
+        && end.checked_add(SPANNING_MARKER as u64) == Some(first)
+        && spanning_marker_at(file, end)?
+    {
+        return Ok(first);
+    }
+    if let Some(why) = stub.refusal() {
         anyhow::bail!("ZIP has {first} bytes before its first record, and they {why}");
     }
     Ok(first)
+}
+
+fn spanning_marker_at<R: Read + Seek>(file: &mut R, at: u64) -> Result<bool> {
+    file.seek(SeekFrom::Start(at))?;
+    let mut marker = [0u8; SPANNING_MARKER];
+    file.read_exact(&mut marker)?;
+    Ok(SPANNING_MARKERS.contains(&&marker))
 }
 
 fn volumes(count: u64) -> String {
@@ -284,6 +298,11 @@ fn volumes(count: u64) -> String {
 
 fn directory_on_disks(extent: &Extent, disks: &ZipDisks) -> Result<u64> {
     let last = disks.name(disks.count() - 1);
+    ensure!(
+        extent.disk != 0,
+        "{last} looks whole, since its end record names only one disk, so the volumes beside it, {}, may not belong to it; move them aside to read {last} alone",
+        disks.earlier_names()
+    );
     ensure!(
         extent.disk.checked_add(1) == Some(disks.count()),
         "the end record of {last} says the archive has {}, but {} were found, {}",
