@@ -435,11 +435,15 @@ fn a_prefix_that_hides_another_archive_is_refused_by_offset() {
             [&head[..], b"Rar!\x1A\x07\x01\x00", &head[..]].concat(),
             "offset 1000",
         ),
-        ("an ar archive", b"!<arch>\n".repeat(20), "no whole PE"),
         (
-            "a cpio archive",
+            "an ar archive, which the ar reader refuses",
+            b"!<arch>\n".repeat(20),
+            "ar member header",
+        ),
+        (
+            "a cpio archive, which the cpio reader refuses",
             [&b"070701"[..], &[b'0'; 200]].concat(),
-            "no whole PE",
+            "cpio name size",
         ),
         ("zeros, as an ISO starts", vec![0; 40_000], "no whole PE"),
     ] {
