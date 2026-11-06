@@ -290,12 +290,19 @@ impl Bits<'_> {
     fn reverse_tree(&mut self, probabilities: &mut [u16], bits: u32) -> u32 {
         let mut index = 1usize;
         let mut value = 0u32;
-        for bit_index in 0..bits {
-            let bit = self.bit(&mut probabilities[index]);
+        let mut probability = probabilities[index];
+        for bit_index in 0..bits - 1 {
+            let zero = probabilities[index << 1];
+            let one = probabilities[index << 1 | 1];
+            let (bit, updated) = self.bit_value(probability);
+            probabilities[index] = updated;
             index = index << 1 | bit as usize;
             value |= bit << bit_index;
+            probability = if bit == 0 { zero } else { one };
         }
-        value
+        let (bit, updated) = self.bit_value(probability);
+        probabilities[index] = updated;
+        value | bit << (bits - 1)
     }
 
     #[inline(always)]
@@ -4341,6 +4348,50 @@ mod proofs {
     #[kani::unwind(9)]
     fn high_length_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities() {
         tree_decodes_as_one_bit_at_a_time::<256>(8);
+    }
+
+    fn reachable_reverse_tree_one_bit_at_a_time(
+        range: &mut Bits,
+        probabilities: &mut [u16],
+        bits: u32,
+    ) -> u32 {
+        let mut index = 1usize;
+        let mut value = 0u32;
+        for bit_index in 0..bits {
+            kani::assume(reachable(probabilities[index]));
+            let bit = range.bit(&mut probabilities[index]);
+            index = index << 1 | bit as usize;
+            value |= bit << bit_index;
+        }
+        value
+    }
+
+    fn reverse_tree_decodes_as_one_bit_at_a_time<const N: usize>() {
+        let bits = N.trailing_zeros();
+        let input: [u8; 5] = kani::any();
+        let probabilities: [u16; N] = kani::any();
+        let range = normalized(&input[..bits as usize]);
+        let mut reference = Bits { ..range };
+        let mut reference_table = probabilities;
+        let expected =
+            reachable_reverse_tree_one_bit_at_a_time(&mut reference, &mut reference_table, bits);
+        let mut pipelined = Bits { ..range };
+        let mut pipelined_table = probabilities;
+        assert_eq!(pipelined.reverse_tree(&mut pipelined_table, bits), expected);
+        assert_eq!(pipelined.parts(), reference.parts());
+        let index: usize = kani::any();
+        kani::assume(index < N);
+        assert_eq!(pipelined_table[index], reference_table[index]);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn reverse_trees_decode_as_one_bit_at_a_time_reading_no_entry_past_their_bits() {
+        reverse_tree_decodes_as_one_bit_at_a_time::<2>();
+        reverse_tree_decodes_as_one_bit_at_a_time::<4>();
+        reverse_tree_decodes_as_one_bit_at_a_time::<8>();
+        reverse_tree_decodes_as_one_bit_at_a_time::<16>();
+        reverse_tree_decodes_as_one_bit_at_a_time::<32>();
     }
 
     #[kani::proof]
