@@ -282,9 +282,18 @@ item = src/lzma.rs | fn finish_stream<
 
 [split-volumes]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 1fb787f1a7b003d8
+fingerprint = 269e60922b82f878
 full-check = cargo kani --harness volumes::proofs::
 full-check = cargo test --release --lib volumes
 item = src/volumes.rs | struct Layout {
 item = src/volumes.rs | impl Layout {
 item = src/volumes.rs | impl Joined {
+item = src/volumes.rs | struct Uneven {
+item = src/volumes.rs | impl Uneven {
+item = src/volumes.rs | enum Spans {
+item = src/volumes.rs | impl Spans {
+item = src/volumes.rs | impl ZipDisks {
+item = src/volumes.rs | pub(crate) enum ArchiveFile {
+item = src/volumes.rs | impl ArchiveFile {
+item = src/volumes.rs | impl Read for ArchiveFile {
+item = src/volumes.rs | impl Seek for ArchiveFile {
