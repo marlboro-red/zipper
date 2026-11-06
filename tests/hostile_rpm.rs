@@ -963,7 +963,11 @@ fn xz_and_lzma_payloads_past_the_decoder_memory_limit_are_refused() {
     let check = crc32fast::hash(&xz[block..block + size - 4]);
     xz[block + size - 4..block + size].copy_from_slice(&check.to_le_bytes());
     let bytes = package_with(&main_tags(Some("xz")), &xz);
-    assert_rejected_saying("xz with a 4 GiB dictionary", &bytes, "256 MiB");
+    assert_rejected_saying(
+        "xz with a 4 GiB dictionary",
+        &bytes,
+        "the largest dictionary Zipper accepts, 256 MiB",
+    );
     let error = format!(
         "{:#}",
         extract_with(&bytes, ReadOptions::default()).2.unwrap_err()

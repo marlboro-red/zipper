@@ -673,16 +673,22 @@ fn xz_with_dictionary_property(bytes: &[u8], property: u8) -> Vec<u8> {
 }
 
 #[test]
-fn xz_dictionaries_past_the_decoder_memory_limit_are_refused() {
+fn xz_dictionaries_past_the_largest_accepted_are_refused() {
     let archive = tar(&[file("a", b"x")]);
-    let (_root, result) = extract(&xz_with_dictionary_property(&archive, 28));
-    result.unwrap_or_else(|error| panic!("a 64 MiB dictionary, as xz -9e writes: {error:#}"));
+    for (property, what) in [
+        (28, "64 MiB, as xz -9e writes"),
+        (32, "256 MiB, the largest"),
+    ] {
+        let (_root, result) = extract(&xz_with_dictionary_property(&archive, property));
+        result.unwrap_or_else(|error| panic!("a dictionary of {what}: {error:#}"));
+    }
     for property in [33, 40] {
         let bytes = xz_with_dictionary_property(&archive, property);
         assert_rejected_without_leftovers(&format!("property {property}"), &bytes);
         let error = format!("{:#}", extract(&bytes).1.unwrap_err());
         assert!(
-            error.contains("256 MiB") && error.contains("--zip-engine backend"),
+            error.contains("the largest dictionary Zipper accepts, 256 MiB")
+                && error.contains("--zip-engine backend"),
             "property {property}: {error}"
         );
     }
@@ -735,4 +741,33 @@ fn options_that_fail_to_parse_return_their_error_instead_of_hanging_and_valid_on
             assert_eq!(left, if *refused { 1 } else { 2 }, "{form} {case}");
         }
     }
+}
+
+#[test]
+fn lzip_dictionaries_past_the_largest_accepted_are_refused_by_size() {
+    let real = fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/lzip/lzip-9.tar.lz"
+    ))
+    .unwrap();
+    let (root, result) = extract(&real);
+    result.unwrap_or_else(|error| panic!("lzip -9: {error:#}"));
+    assert_eq!(
+        fs::read(root.path().join("out/lzip/hello.txt")).unwrap(),
+        b"hello from lzip -9\n"
+    );
+    let mut largest = real.clone();
+    largest[5] = 0x1C;
+    let (_root, result) = extract(&largest);
+    result.unwrap_or_else(|error| panic!("a 256 MiB lzip dictionary: {error:#}"));
+    let mut bomb = real;
+    bomb[5] = 0x1D;
+    assert_rejected_without_leftovers("512 MiB lzip dictionary", &bomb);
+    let error = format!("{:#}", extract(&bomb).1.unwrap_err());
+    assert!(
+        error.contains("536870912-byte dictionary")
+            && error.contains("the largest dictionary Zipper accepts, 256 MiB")
+            && error.contains("--zip-engine backend"),
+        "{error}"
+    );
 }

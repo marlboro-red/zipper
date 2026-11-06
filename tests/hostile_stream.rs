@@ -347,18 +347,31 @@ fn an_lzma_dictionary_past_the_decoder_memory_limit_is_refused_by_its_size() {
             .unwrap_err()
     );
     assert!(
-        error.contains("4294967295-byte dictionary") && error.contains("--zip-engine backend"),
+        error.contains("4294967295-byte dictionary")
+            && error.contains("the largest dictionary Zipper accepts, 256 MiB")
+            && error.contains("--zip-engine backend"),
         "{error}"
     );
-    let at_the_limit = encode(256 << 20);
+    let (_root, result) = extract(
+        "largest.tar.lzma",
+        &encode(256 << 20),
+        ReadOptions::default(),
+    );
+    result.unwrap_or_else(|error| panic!("a 256 MiB dictionary, the largest: {error:#}"));
     let error = format!(
         "{:#}",
-        extract("limit.tar.lzma", &at_the_limit, ReadOptions::default())
-            .1
-            .unwrap_err()
+        extract(
+            "past.tar.lzma",
+            &encode((256 << 20) + 1),
+            ReadOptions::default()
+        )
+        .1
+        .unwrap_err()
     );
     assert!(
-        error.contains("256 MiB of decoder memory") && error.contains("--zip-engine backend"),
+        error.contains(
+            "268435457-byte dictionary, more than the largest dictionary Zipper accepts, 256 MiB"
+        ),
         "{error}"
     );
 }
