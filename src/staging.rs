@@ -7,6 +7,10 @@ use std::{
 };
 
 /// What extraction does when the destination already exists.
+///
+/// Every mode but `Refuse` refuses, before decoding, a destination on FAT or
+/// exFAT on macOS, or on Linux or macOS a filesystem whose rename cannot
+/// refuse to replace.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Existing {
     /// Refuse an existing destination. Output appears only when the whole
@@ -14,9 +18,6 @@ pub enum Existing {
     #[default]
     Refuse,
     /// Extract into an existing directory, or the directory a symlink names.
-    /// A destination on FAT or exFAT on macOS, or on a filesystem that cannot
-    /// rename without replacing, is refused before decoding, because a merge
-    /// there cannot be undone exactly.
     /// A failed decode replaces nothing. File and directory conflicts, and
     /// folders on another filesystem, fail before any replacement. Then each
     /// archive file replaces the file of the same name by rename. A rename
@@ -26,8 +27,8 @@ pub enum Existing {
     /// failed. Another program that changes the destination or the staging
     /// folder during extraction can defeat the undo. If an undo fails, the
     /// error names each path left changed and the staging folder, which is
-    /// kept with everything not moved back. Existing directories keep their mode, and files
-    /// the archive does not name are left alone.
+    /// kept with everything not moved back. Existing directories keep their
+    /// mode, and files the archive does not name are left alone.
     Overwrite,
     /// Extract into an existing directory, leaving out every archive file
     /// whose path already exists there, as 7-Zip's `-aos` does. An archive
