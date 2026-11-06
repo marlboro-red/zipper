@@ -51,8 +51,11 @@ CODE_WRITERS = ["bcj", "bcj-lzma", "bcj2", "bcj2-bound"]
 # Archives the native reader refuses, with the words its error must contain.
 REFUSED_WRITERS = [
     ("encrypted", ["-pzipper", "-mhe=off"], "encrypted"),
-    ("lzma-lc8", ["-m0=LZMA:lc=8"], "liblzma does not accept"),
 ]
+
+# An LZMA setting liblzma refuses and Zipper's own decoder reads. Its tree is
+# the short tree, so tests compare it with 7zip-lzma-short's manifest.
+LC8_SWITCHES = ["-m0=LZMA:lc=8"]
 
 BSDTAR_WRITERS = [
     ("lzma1", []),
@@ -148,6 +151,7 @@ def main():
                 archive = args.output / f"refused-{name}.7z"
                 seven_zip_writer(switches)(archive.resolve(), work / "short")
                 refused.append((archive.name, error))
+            seven_zip_writer(LC8_SWITCHES)((args.output / "7zip-lzma-lc8-short.7z").resolve(), work / "short")
         finally:
             unlock(work)
     write_manifest(args, summary, manifests, all_modes, all_times, refused)
