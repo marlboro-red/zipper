@@ -1450,7 +1450,16 @@ struct LzmaReader<R> {
     start: usize,
     end: usize,
     input_done: bool,
+    ending: Ending,
 }
+
+enum Ending {
+    Lzma { size: u64, started_at: u64 },
+    Lzma2 { marker_added: bool },
+}
+
+const LZMA2_END_MARKER: u8 = 0;
+const RANGE_CODER_START: usize = 5;
 
 impl<R: Read> Read for LzmaReader<R> {
     fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
@@ -1461,26 +1470,64 @@ impl<R: Read> Read for LzmaReader<R> {
                 self.input_done = self.end == 0;
             }
             let (read, written) = (self.stream.total_in(), self.stream.total_out());
-            let action = if self.input_done {
-                liblzma::stream::Action::Finish
-            } else {
-                liblzma::stream::Action::Run
-            };
             let status = counters::time(counters::Counter::DecodeNanos, || {
-                self.stream
-                    .process(&self.buffer[self.start..self.end], output, action)
+                self.stream.process(
+                    &self.buffer[self.start..self.end],
+                    output,
+                    liblzma::stream::Action::Run,
+                )
             })
-            .map_err(std::io::Error::other)?;
+            .map_err(|error| self.explain(error))?;
             self.start += (self.stream.total_in() - read) as usize;
             let produced = (self.stream.total_out() - written) as usize;
             if produced > 0 || status == liblzma::stream::Status::StreamEnd {
                 return Ok(produced);
             }
             if self.input_done {
-                return Ok(0);
+                self.end_without_stream_end()?;
             }
         }
     }
+}
+
+impl<R> LzmaReader<R> {
+    fn at_declared_size(&self) -> bool {
+        let (read, written) = (self.stream.total_in(), self.stream.total_out());
+        matches!(self.ending, Ending::Lzma { size, started_at } if read >= started_at && written == size)
+    }
+
+    fn explain(&self, error: liblzma::stream::Error) -> std::io::Error {
+        if self.at_declared_size() {
+            return unclean_lzma_end();
+        }
+        std::io::Error::other(error)
+    }
+
+    fn end_without_stream_end(&mut self) -> std::io::Result<()> {
+        if self.at_declared_size() {
+            return Err(unclean_lzma_end());
+        }
+        match &mut self.ending {
+            // EXTERNAL(7-Zip): 7zz accepts a data folder whose LZMA2 stops after a whole chunk without its end marker.
+            Ending::Lzma2 { marker_added } if !*marker_added => {
+                *marker_added = true;
+                self.buffer[0] = LZMA2_END_MARKER;
+                (self.start, self.end) = (0, 1);
+                Ok(())
+            }
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "7z folder has a truncated LZMA stream",
+            )),
+        }
+    }
+}
+
+fn unclean_lzma_end() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "7z LZMA stream does not end cleanly at its declared size",
+    )
 }
 
 struct ReadAt {
@@ -1734,8 +1781,7 @@ fn folder_reader(
                 output_to_packed: lzma.to_vec(),
                 ..folder.clone()
             };
-            let decoded =
-                raw_decoder(&lzma_filters(&lzma_only, &[Method::Lzma])?, packed)?.take(folder.size);
+            let decoded = lzma_decoder(&lzma_only, packed)?;
             let mut chain = liblzma::stream::Filters::new();
             for (coder, method) in filter_coders.iter().zip(filters) {
                 if let Method::Filter(add) = method {
@@ -1747,9 +1793,7 @@ fn folder_reader(
                 .context("liblzma refuses stored LZMA2")?;
             Box::new(raw_decoder(&chain, StoredLzma2::new(decoded))?)
         }
-        [Method::Lzma] => {
-            Box::new(raw_decoder(&lzma_filters(folder, &methods)?, packed)?.take(folder.size))
-        }
+        [Method::Lzma] => Box::new(lzma_decoder(folder, packed)?),
         _ => Box::new(raw_decoder(&lzma_filters(folder, &methods)?, packed)?),
     })
 }
@@ -1763,6 +1807,35 @@ fn raw_decoder<R: Read>(filters: &liblzma::stream::Filters, input: R) -> Result<
         start: 0,
         end: 0,
         input_done: false,
+        ending: Ending::Lzma2 {
+            marker_added: false,
+        },
+    })
+}
+
+// EXTERNAL(liblzma alone_decoder.c): a .lzma header of 5 property bytes and a little-endian u64 size
+// makes liblzma stop at that size, as 7-Zip does, and require a clean range coder or an end marker there.
+fn lzma_decoder<R: Read>(folder: &Folder, input: R) -> Result<LzmaReader<R>> {
+    let properties = dictionary_capped_at_output(
+        &Method::Lzma,
+        &folder.output_to_packed[0].properties,
+        folder.size,
+    )?;
+    let mut buffer = vec![0; COPY_BUFFER];
+    let header = [properties.as_slice(), &folder.size.to_le_bytes()].concat();
+    buffer[..header.len()].copy_from_slice(&header);
+    Ok(LzmaReader {
+        stream: liblzma::stream::Stream::new_lzma_decoder(u64::MAX)
+            .context("cannot start the 7z decoder")?,
+        input,
+        buffer,
+        start: 0,
+        end: header.len(),
+        input_done: false,
+        ending: Ending::Lzma {
+            size: folder.size,
+            started_at: (header.len() + RANGE_CODER_START) as u64,
+        },
     })
 }
 
@@ -3025,6 +3098,113 @@ mod tests {
             }
         }
         assert!(checked > 5000, "{checked}");
+    }
+
+    fn text(seed: u8) -> Vec<u8> {
+        (0..3000u32)
+            .map(|index| {
+                b"abcdefgh"[((index * 7 + u32::from(seed)) % 8) as usize] ^ (index / 97) as u8
+            })
+            .collect()
+    }
+
+    fn encoded(data: &[u8], filters: &liblzma::stream::Filters) -> Vec<u8> {
+        let mut compressed = Vec::new();
+        liblzma::read::XzEncoder::new_stream(
+            data,
+            liblzma::stream::Stream::new_raw_encoder(filters).unwrap(),
+        )
+        .read_to_end(&mut compressed)
+        .unwrap();
+        compressed
+    }
+
+    fn lzma2_only() -> liblzma::stream::Filters {
+        let mut filters = liblzma::stream::Filters::new();
+        filters.lzma2_properties(&[18]).unwrap();
+        filters
+    }
+
+    fn decoded(mut reader: impl Read) -> std::io::Result<Vec<u8>> {
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output)?;
+        assert_eq!(reader.read(&mut [0; 8])?, 0);
+        Ok(output)
+    }
+
+    #[test]
+    fn lzma2_may_stop_only_after_a_whole_chunk() {
+        let mut encoder = liblzma::stream::Filters::new();
+        encoder.lzma2(&liblzma::stream::LzmaOptions::new_preset(0).unwrap());
+        let (first, second) = (text(1), text(2));
+        let mut stream = encoded(&first, &encoder);
+        let first_end = stream.len() - 1;
+        stream.truncate(first_end);
+        stream.extend_from_slice(&encoded(&second, &encoder));
+        let whole = [first.as_slice(), &second].concat();
+        let chunk_ends = [
+            (0, &whole[..0]),
+            (first_end, &first[..]),
+            (stream.len() - 1, &whole[..]),
+            (stream.len(), &whole[..]),
+        ];
+        for cut in 0..=stream.len() {
+            let result = decoded(raw_decoder(&lzma2_only(), &stream[..cut]).unwrap());
+            match chunk_ends.iter().find(|&&(end, _)| end == cut) {
+                Some(&(_, expected)) => assert_eq!(result.unwrap(), expected, "cut {cut}"),
+                None => assert!(result.is_err(), "cut {cut} of {}", stream.len()),
+            }
+        }
+    }
+
+    fn lzma_folder(size: u64) -> Folder {
+        let mut properties = vec![0x5D];
+        properties.extend_from_slice(&(1u32 << 16).to_le_bytes());
+        Folder {
+            bcj2_branches: Vec::new(),
+            output_to_packed: vec![Coder {
+                id: vec![0x03, 0x01, 0x01],
+                properties,
+            }],
+            unsupported: None,
+            size,
+            crc: None,
+            pack_offset: 0,
+            pack_size: 0,
+        }
+    }
+
+    #[test]
+    fn lzma_ends_exactly_at_its_declared_size() {
+        let data = text(3);
+        let mut encoder = liblzma::stream::Filters::new();
+        let mut options = liblzma::stream::LzmaOptions::new_preset(0).unwrap();
+        options
+            .dict_size(1 << 16)
+            .literal_context_bits(3)
+            .literal_position_bits(0)
+            .position_bits(2);
+        encoder.lzma1(&options);
+        let stream = encoded(&data, &encoder);
+        let size = data.len() as u64;
+        let read = |input: &[u8], size| decoded(lzma_decoder(&lzma_folder(size), input).unwrap());
+        assert_eq!(read(&stream, size).unwrap(), data);
+        let early = read(&stream, size - 1).unwrap_err();
+        assert!(
+            early
+                .to_string()
+                .contains("does not end cleanly at its declared size"),
+            "{early}"
+        );
+        assert!(read(&stream, size + 1).is_err());
+        for cut in 0..stream.len() {
+            let error = read(&stream[..cut], size).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                std::io::ErrorKind::InvalidData,
+                "cut {cut}: {error}"
+            );
+        }
     }
 }
 

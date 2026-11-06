@@ -766,6 +766,39 @@ fn bcj2_folders_that_7zip_refuses_are_refused() {
 }
 
 #[test]
+fn lzma_streams_end_where_7zip_ends_them() {
+    let hostile = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/7z-hostile");
+    let refused = [
+        ("lzma2-cut-in-last-chunk.7z", "truncated LZMA stream"),
+        ("bcj2-empty-lzma-branch-cut.7z", "truncated LZMA stream"),
+        (
+            "lzma-match-crosses-its-size.7z",
+            "does not end cleanly at its declared size",
+        ),
+        (
+            "lzma-goes-past-its-size.7z",
+            "does not end cleanly at its declared size",
+        ),
+        (
+            "bcj2-lzma-branch-unclean-at-its-size.7z",
+            "does not end cleanly at its declared size",
+        ),
+    ];
+    for (name, words) in refused {
+        assert_refused(name, &fs::read(hostile.join(name)).unwrap(), words);
+    }
+    let Some(seven_zip) = which("7zz") else {
+        return;
+    };
+    for (name, _) in refused {
+        assert!(
+            !seven_zip_accepts(&seven_zip, &fs::read(hostile.join(name)).unwrap()),
+            "7-Zip accepts {name}"
+        );
+    }
+}
+
+#[test]
 fn bcj2_with_every_input_bound_to_its_own_coder_matches_the_source() {
     let Some(seven_zip) = which("7zz") else {
         return;
