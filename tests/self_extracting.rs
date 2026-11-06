@@ -131,7 +131,7 @@ fn names_by_python(archive: &Path) -> Option<Vec<String>> {
         .args([
             "-I",
             "-c",
-            "import sys, zipfile; print('\\n'.join(sorted(zipfile.ZipFile(sys.argv[1]).namelist())))",
+            "import sys, zipfile; sys.stdout.buffer.write('\\n'.join(sorted(zipfile.ZipFile(sys.argv[1]).namelist())).encode())",
         ])
         .arg(archive)
         .stdin(Stdio::null())
