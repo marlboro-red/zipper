@@ -994,12 +994,9 @@ type JobCase = (&'static str, bool, Vec<(&'static str, String)>);
 type TerminalCase = (&'static str, Vec<(&'static str, String)>, &'static str);
 
 #[cfg(unix)]
-const PTY_DRIVER: &str = r#"
+const DRIVER_PRELUDE: &str = r#"
 import json, os, pty, select, signal, subprocess, sys, time
-script, steps = sys.argv[1], json.loads(sys.argv[2])
-pid, terminal = pty.fork()
-if pid == 0:
-    os.execv("/bin/bash", ["bash", "-c", script])
+transcript = open(sys.argv[1], "ab", buffering=0)
 seen = b""
 def pump(seconds, token=None):
     global seen
@@ -1014,6 +1011,43 @@ def pump(seconds, token=None):
             if not data:
                 return
             seen += data
+            transcript.write(data)
+def processes():
+    listed = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,command="], capture_output=True, text=True)
+    rows = []
+    for line in listed.stdout.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) >= 2:
+            rows.append((int(parts[0]), int(parts[1]), parts[2] if len(parts) > 2 else ""))
+    return rows
+def descendants(root):
+    rows = processes()
+    found, frontier = [], [root]
+    while frontier:
+        parent = frontier.pop()
+        for pid, ppid, command in rows:
+            if ppid == parent and pid != os.getpid():
+                found.append((pid, command))
+                frontier.append(pid)
+    return found
+def kill_tree(root):
+    for pid, _ in descendants(root):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    try:
+        os.kill(root, signal.SIGKILL)
+    except OSError:
+        pass
+"#;
+
+#[cfg(unix)]
+const PTY_DRIVER: &str = r#"
+script, steps = sys.argv[2], json.loads(sys.argv[3])
+pid, terminal = pty.fork()
+if pid == 0:
+    os.execv("/bin/bash", ["bash", "-c", script])
 for kind, value in steps:
     if kind == "wait":
         pump(20, value.encode())
@@ -1026,21 +1060,134 @@ for kind, value in steps:
     elif kind == "sleep":
         pump(float(value))
     elif kind == "signal":
-        children = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True)
-        for child in children.stdout.split():
-            os.kill(int(child), getattr(signal, value))
+        for child, ppid, _ in processes():
+            if ppid == pid:
+                os.kill(child, getattr(signal, value))
 pump(20, b"LEFT=")
 pump(0.3)
-sys.stdout.write(seen.decode("latin1"))
 deadline = time.time() + 10
 while os.waitpid(pid, os.WNOHANG)[0] == 0:
     if time.time() > deadline:
-        os.killpg(os.getpgid(pid), signal.SIGKILL)
+        kill_tree(pid)
         os.waitpid(pid, 0)
-        sys.stdout.write("STILL RUNNING")
+        seen += b"STILL RUNNING"
         break
     time.sleep(0.05)
+sys.stdout.write(seen.decode("latin1"))
 "#;
+
+#[cfg(unix)]
+const SHELL_DRIVER: &str = r#"
+steps, history = json.loads(sys.argv[2]), sys.argv[3]
+pid, terminal = pty.fork()
+if pid == 0:
+    env = dict(os.environ, PS1="PROMPT$ ", HISTFILE=history)
+    os.execve("/bin/bash", ["bash", "--norc", "--noprofile", "-i"], env)
+pump(1)
+for kind, value in steps:
+    if kind == "type":
+        os.write(terminal, value.encode() + b"\r")
+    elif kind == "send":
+        os.write(terminal, bytes.fromhex(value))
+    elif kind == "paste":
+        data = value.encode() + b"\r"
+        os.set_blocking(terminal, False)
+        deadline = time.time() + 20
+        while data and time.time() < deadline:
+            try:
+                data = data[os.write(terminal, data):]
+            except BlockingIOError:
+                pump(0.02)
+        os.set_blocking(terminal, True)
+    elif kind == "wait":
+        pump(15, value.encode())
+    elif kind == "sleep":
+        pump(float(value))
+    elif kind == "signal":
+        name, marker = value.split(" ", 1)
+        for target, command in descendants(pid):
+            if marker in command:
+                os.kill(target, getattr(signal, name))
+os.write(terminal, b"exit\r")
+pump(1)
+kill_tree(pid)
+os.waitpid(pid, 0)
+sys.stdout.write(seen.decode("latin1"))
+"#;
+
+#[cfg(unix)]
+const DRIVER_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+
+#[cfg(unix)]
+fn process_tree(root: u32) -> (Vec<u32>, String) {
+    let listed = Command::new("ps")
+        .args(["-A", "-o", "pid=,ppid=,pgid=,stat=,command="])
+        .output()
+        .unwrap();
+    let listed = String::from_utf8_lossy(&listed.stdout).into_owned();
+    let rows: Vec<(u32, u32, &str)> = listed
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let pid = fields.next()?.parse().ok()?;
+            let ppid = fields.next()?.parse().ok()?;
+            Some((pid, ppid, line))
+        })
+        .collect();
+    let (mut tree, mut frontier, mut shown) = (vec![root], vec![root], String::new());
+    while let Some(parent) = frontier.pop() {
+        for &(pid, ppid, line) in &rows {
+            if ppid == parent {
+                tree.push(pid);
+                frontier.push(pid);
+                shown.push_str(line);
+                shown.push('\n');
+            }
+        }
+    }
+    (tree, shown)
+}
+
+#[cfg(unix)]
+fn drive(body: &str, arguments: &[&std::ffi::OsStr]) -> String {
+    let work = tempfile::tempdir().unwrap();
+    let transcript = work.path().join("transcript");
+    let output = work.path().join("output");
+    let errors = work.path().join("errors");
+    let mut child = Command::new("python3")
+        .arg("-I")
+        .arg("-c")
+        .arg(format!("{DRIVER_PRELUDE}{body}"))
+        .arg(&transcript)
+        .args(arguments)
+        .stdout(fs::File::create(&output).unwrap())
+        .stderr(fs::File::create(&errors).unwrap())
+        .spawn()
+        .expect("python3 drives the terminal");
+    let deadline = std::time::Instant::now() + DRIVER_DEADLINE;
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() > deadline {
+            let (tree, shown) = process_tree(child.id());
+            for pid in tree.iter().rev() {
+                let _ = Command::new("kill")
+                    .arg("-KILL")
+                    .arg(pid.to_string())
+                    .status();
+            }
+            let _ = child.wait();
+            panic!(
+                "the terminal driver ran past {DRIVER_DEADLINE:?}\nprocesses:\n{shown}\ntranscript:\n{}",
+                String::from_utf8_lossy(&fs::read(&transcript).unwrap_or_default())
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&fs::read(&output).unwrap()),
+        String::from_utf8_lossy(&fs::read(&errors).unwrap())
+    )
+}
 
 #[cfg(unix)]
 fn on_a_terminal(command: &str, steps: &[(&str, String)]) -> String {
@@ -1048,19 +1195,7 @@ fn on_a_terminal(command: &str, steps: &[(&str, String)]) -> String {
         "trap : INT QUIT; {command}; echo RC=$?; stty -a; IFS= read -t 2 -r rest; echo \"LEFT=[$rest]\""
     );
     let steps = serde_json::to_string(steps).unwrap();
-    let run = Command::new("python3")
-        .arg("-I")
-        .arg("-c")
-        .arg(PTY_DRIVER)
-        .arg(script)
-        .arg(steps)
-        .output()
-        .expect("python3 drives the terminal");
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
-    )
+    drive(PTY_DRIVER, &[script.as_ref(), steps.as_ref()])
 }
 
 #[cfg(unix)]
@@ -1562,78 +1697,11 @@ fn commands_that_decrypt_nothing_refuse_a_password() {
 }
 
 #[cfg(unix)]
-const SHELL_DRIVER: &str = r#"
-import json, os, pty, select, signal, subprocess, sys, time
-steps, history = json.loads(sys.argv[1]), sys.argv[2]
-pid, terminal = pty.fork()
-if pid == 0:
-    env = dict(os.environ, PS1="PROMPT$ ", HISTFILE=history)
-    os.execve("/bin/bash", ["bash", "--norc", "--noprofile", "-i"], env)
-seen = b""
-def pump(seconds, token=None):
-    global seen
-    deadline = time.time() + seconds
-    while time.time() < deadline and (token is None or token not in seen):
-        ready, _, _ = select.select([terminal], [], [], 0.05)
-        if ready:
-            try:
-                data = os.read(terminal, 65536)
-            except OSError:
-                return
-            if not data:
-                return
-            seen += data
-pump(1)
-for kind, value in steps:
-    if kind == "type":
-        os.write(terminal, value.encode() + b"\r")
-    elif kind == "send":
-        os.write(terminal, bytes.fromhex(value))
-    elif kind == "paste":
-        data = value.encode() + b"\r"
-        os.set_blocking(terminal, False)
-        deadline = time.time() + 20
-        while data and time.time() < deadline:
-            try:
-                data = data[os.write(terminal, data):]
-            except BlockingIOError:
-                pump(0.02)
-        os.set_blocking(terminal, True)
-    elif kind == "wait":
-        pump(15, value.encode())
-    elif kind == "sleep":
-        pump(float(value))
-    elif kind == "signal":
-        name, marker = value.split(" ", 1)
-        found = subprocess.run(["pgrep", "-f", "--", marker], capture_output=True, text=True)
-        for target in found.stdout.split():
-            os.kill(int(target), getattr(signal, name))
-os.write(terminal, b"exit\r")
-pump(1)
-sys.stdout.write(seen.decode("latin1"))
-try:
-    os.killpg(os.getpgid(pid), signal.SIGKILL)
-except OSError:
-    pass
-os.waitpid(pid, 0)
-"#;
-
-#[cfg(unix)]
 fn in_an_interactive_shell(steps: &[(&str, String)]) -> String {
-    let history = tempfile::tempdir().unwrap();
-    let run = Command::new("python3")
-        .arg("-I")
-        .arg("-c")
-        .arg(SHELL_DRIVER)
-        .arg(serde_json::to_string(steps).unwrap())
-        .arg(history.path().join("history"))
-        .output()
-        .expect("python3 drives the shell");
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
-    )
+    let folder = tempfile::tempdir().unwrap();
+    let steps = serde_json::to_string(steps).unwrap();
+    let history = folder.path().join("history");
+    drive(SHELL_DRIVER, &[steps.as_ref(), history.as_os_str()])
 }
 
 #[cfg(unix)]
