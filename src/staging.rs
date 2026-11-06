@@ -20,10 +20,11 @@ pub enum Existing {
     /// that fails, or a new folder's mode that cannot be set, undoes the
     /// renames already made in reverse order, so the destination keeps every
     /// file, link, folder and mode it had, and the error names the path that
-    /// failed. If an undo fails too, the error names each path left
-    /// changed and the staging folder that keeps the replaced files. Existing
-    /// directories keep their mode, and files the archive does not name are
-    /// left alone.
+    /// failed. Another program that changes the destination or the staging
+    /// folder during extraction can defeat the undo. If an undo fails, the
+    /// error names each path left changed and the staging folder that keeps
+    /// the replaced files. Existing directories keep their mode, and files
+    /// the archive does not name are left alone.
     Overwrite,
     /// Extract into an existing directory, leaving out every archive file
     /// whose path already exists there, as 7-Zip's `-aos` does. An archive
@@ -422,8 +423,21 @@ fn spelled_on_disk(path: &Path, spellings: &mut Spellings) -> PathBuf {
         }
         names
     });
-    match names.get(&metadata.ino()).map(Vec::as_slice) {
-        Some([only]) if only != name => parent.join(only),
+    let folded = |name: &std::ffi::OsStr| name.to_string_lossy().to_lowercase();
+    let candidates = names
+        .get(&metadata.ino())
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    if candidates.iter().any(|candidate| candidate == name) {
+        return path.to_owned();
+    }
+    let matching: Vec<_> = candidates
+        .iter()
+        .filter(|candidate| folded(candidate) == folded(name))
+        .cloned()
+        .collect();
+    match (candidates, matching.as_slice()) {
+        ([only], _) | (_, [only]) => parent.join(only),
         _ => path.to_owned(),
     }
 }

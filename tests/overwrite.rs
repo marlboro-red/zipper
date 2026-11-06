@@ -722,6 +722,7 @@ fn a_failed_rename_existing_keeps_the_spelling_the_destination_had() {
         .map(|name| Member::File(name, b"new"))
         .collect();
     members.push(Member::File("cafe\u{301}.txt", b"new"));
+    members.push(Member::File("HL", b"new"));
     members.push(Member::File("q/new", b"new"));
     write_zip(&archive, &members);
     let destination = root.path().join("out");
@@ -730,6 +731,8 @@ fn a_failed_rename_existing_keeps_the_spelling_the_destination_had() {
         fs::write(destination.join(name), b"old").unwrap();
     }
     fs::write(destination.join("caf\u{e9}.txt"), b"old").unwrap();
+    fs::write(destination.join("hl"), b"old").unwrap();
+    fs::hard_link(destination.join("hl"), destination.join("other")).unwrap();
     set_mode(&destination.join("q"), 0o555);
     let before = unix_tree(&destination);
     let error = zip_reader(&archive, &destination, Existing::RenameExisting).unwrap_err();
