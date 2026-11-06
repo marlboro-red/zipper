@@ -1055,6 +1055,18 @@ for kind, value in steps:
         os.write(terminal, bytes.fromhex(value))
     elif kind == "file":
         os.write(terminal, open(value, "rb").read())
+    elif kind == "echo_on":
+        import termios
+        settings = termios.tcgetattr(terminal)
+        settings[3] |= termios.ECHO | termios.ICANON
+        termios.tcsetattr(terminal, termios.TCSANOW, settings)
+    elif kind == "respond":
+        count, token, reply = value.split("|", 2)
+        deadline = time.time() + 5
+        while seen.count(token.encode()) < int(count) and time.time() < deadline:
+            pump(0.05)
+        if seen.count(token.encode()) >= int(count):
+            os.write(terminal, bytes.fromhex(reply))
     elif kind == "idle":
         time.sleep(float(value))
     elif kind == "sleep":
@@ -1848,16 +1860,31 @@ fn a_stop_without_job_control_still_restores_the_terminal() {
         shell_quoted(&fixture("aes128-deflate.zip")),
         shell_quoted(&output)
     );
-    for signal in ["SIGTSTP", "SIGTTIN", "SIGTTOU"] {
-        let steps = [
-            ("idle", "1.5".to_owned()),
-            ("send", hex(b"zipper\r")),
-            ("idle", "0.5".to_owned()),
-            ("signal", signal.to_owned()),
-            ("sleep", "1".to_owned()),
-            ("send", hex(b"zipper\r")),
-            ("sleep", "1".to_owned()),
-        ];
+    let again = format!("2|Password: |{}", hex(b"zipper\r"));
+    for (signal, during_the_restore) in ["SIGTSTP", "SIGTTIN", "SIGTTOU"]
+        .into_iter()
+        .flat_map(|signal| [(signal, false), (signal, true)])
+    {
+        let steps = if during_the_restore {
+            vec![
+                ("idle", "1.5".to_owned()),
+                ("send", hex(b"zipper\r")),
+                ("idle", "0.5".to_owned()),
+                ("signal", signal.to_owned()),
+                ("respond", again.clone()),
+                ("sleep", "1".to_owned()),
+            ]
+        } else {
+            vec![
+                ("wait", "Password: ".to_owned()),
+                ("sleep", "0.3".to_owned()),
+                ("signal", signal.to_owned()),
+                ("respond", again.clone()),
+                ("sleep", "1".to_owned()),
+            ]
+        };
+        let signal = format!("{signal} during the restore: {during_the_restore}");
+        let signal = signal.as_str();
         let transcript = on_a_terminal(&command, &steps);
         assert!(transcript.contains("RC=0"), "{signal}: {transcript}");
         assert_terminal_restored(signal, &transcript);
@@ -1868,6 +1895,38 @@ fn a_stop_without_job_control_still_restores_the_terminal() {
         );
         fs::remove_dir_all(&output).unwrap();
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_prompt_continued_after_sigstop_hides_the_terminal_again() {
+    let work = tempfile::tempdir().unwrap();
+    let archive = hunter_archive(work.path());
+    let output = work.path().join("out");
+    let command = format!(
+        "{} extract {} -o {}",
+        shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
+        shell_quoted(&archive),
+        shell_quoted(&output)
+    );
+    let steps = [
+        ("wait", "Password: ".to_owned()),
+        ("sleep", "0.3".to_owned()),
+        ("signal", "SIGSTOP".to_owned()),
+        ("sleep", "0.3".to_owned()),
+        ("echo_on", String::new()),
+        ("signal", "SIGCONT".to_owned()),
+        ("respond", format!("2|Password: |{}", hex(b"hunter2\r"))),
+        ("sleep", "1".to_owned()),
+    ];
+    let transcript = on_a_terminal(&command, &steps);
+    assert!(transcript.contains("RC=0"), "{transcript}");
+    assert!(
+        !transcript.contains("hunter2"),
+        "the password was shown: {transcript}"
+    );
+    assert_terminal_restored("SIGSTOP and SIGCONT", &transcript);
+    assert!(output.join("hunter.txt").exists());
 }
 
 #[cfg(unix)]

@@ -299,8 +299,9 @@ mod hidden_terminal {
         sync::atomic::{AtomicBool, Ordering},
     };
 
-    const SIGNALS_CAUGHT_WHILE_HIDDEN: [libc::c_int; 9] = [
+    const SIGNALS_CAUGHT_WHILE_HIDDEN: [libc::c_int; 10] = [
         libc::SIGALRM,
+        libc::SIGCONT,
         libc::SIGHUP,
         libc::SIGINT,
         libc::SIGPIPE,
@@ -362,10 +363,10 @@ mod hidden_terminal {
     }
 
     fn resend_caught_signals(terminal: &File) {
-        RESUMED.store(stop_caught(), Ordering::SeqCst);
+        RESUMED.store(stop_caught() || caught(libc::SIGCONT), Ordering::SeqCst);
         for signal in SIGNALS_CAUGHT_WHILE_HIDDEN {
             let Some(slot) = slot(signal) else { continue };
-            if !CAUGHT[slot].swap(false, Ordering::SeqCst) {
+            if !CAUGHT[slot].swap(false, Ordering::SeqCst) || signal == libc::SIGCONT {
                 continue;
             }
             if !STOPS.contains(&signal) {
