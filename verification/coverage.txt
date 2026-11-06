@@ -323,7 +323,7 @@ item = src/native_zip.rs | impl<R: Read> Payload<R> {
 
 [split-volumes]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 4ea895e026a64fd8
+fingerprint = 0300a8aeafbfdde2
 full-check = cargo kani --harness volumes::proofs::
 full-check = cargo test --release --lib volumes
 item = src/volumes.rs | struct Layout {

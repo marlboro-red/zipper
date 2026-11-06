@@ -665,7 +665,7 @@ pub(crate) fn has_zip_volumes(path: &Path) -> io::Result<bool> {
 
 fn open_found(path: &Path, found: &Found) -> io::Result<ArchiveFile> {
     Ok(match found {
-        Found::Alone { .. } => ArchiveFile::One(open_regular_file(path, None)?),
+        Found::Alone { .. } => ArchiveFile::from(open_regular_file(path, None)?),
         Found::Broken { why } => {
             return Err(invalid(format!(
                 "{why}, so {} is neither joined with its later volumes nor read alone",
@@ -1660,7 +1660,7 @@ fn read_file_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<usize
 }
 
 pub(crate) enum ArchiveFile {
-    One(File),
+    One { file: File, position: u64 },
     Joined(Joined),
     After { inner: Box<ArchiveFile>, base: u64 },
 }
@@ -1705,14 +1705,14 @@ impl ZipDisks {
 
 impl From<File> for ArchiveFile {
     fn from(file: File) -> Self {
-        Self::One(file)
+        Self::One { file, position: 0 }
     }
 }
 
 impl ArchiveFile {
     pub(crate) fn len(&self) -> io::Result<u64> {
         match self {
-            Self::One(file) => Ok(file.metadata()?.len()),
+            Self::One { file, .. } => Ok(file.metadata()?.len()),
             Self::Joined(joined) => Ok(joined.set.spans.total()),
             Self::After { inner, base } => Ok(inner.len()?.saturating_sub(*base)),
         }
@@ -1740,7 +1740,10 @@ impl ArchiveFile {
 
     pub(crate) fn try_clone(&self) -> io::Result<Self> {
         Ok(match self {
-            Self::One(file) => Self::One(file.try_clone()?),
+            Self::One { file, position } => Self::One {
+                file: file.try_clone()?,
+                position: *position,
+            },
             Self::Joined(joined) => Self::Joined(Joined {
                 set: Arc::clone(&joined.set),
                 position: joined.position,
@@ -1757,7 +1760,7 @@ impl ArchiveFile {
         let joined = match self {
             Self::Joined(joined) => joined,
             Self::After { inner, base } => return inner.ensure_ends_at(base.saturating_add(end)),
-            Self::One(_) => return Ok(()),
+            Self::One { .. } => return Ok(()),
         };
         match joined.set.spans.locate(end) {
             None => Ok(()),
@@ -1770,7 +1773,7 @@ impl ArchiveFile {
 
     pub(crate) fn reopen(&self, path: &Path) -> io::Result<Self> {
         match self {
-            Self::One(file) => Ok(Self::One(open_regular_file(
+            Self::One { file, .. } => Ok(Self::from(open_regular_file(
                 path,
                 Some(Identity::of(&file.metadata()?)),
             )?)),
@@ -1781,7 +1784,7 @@ impl ArchiveFile {
 
     pub(crate) fn read_at(&self, buffer: &mut [u8], offset: u64) -> io::Result<usize> {
         match self {
-            Self::One(file) => read_file_at(file, buffer, offset),
+            Self::One { file, .. } => read_file_at(file, buffer, offset),
             Self::Joined(joined) => joined.read_at(buffer, offset),
             Self::After { inner, base } => match base.checked_add(offset) {
                 Some(offset) => inner.read_at(buffer, offset),
@@ -1794,7 +1797,11 @@ impl ArchiveFile {
 impl Read for ArchiveFile {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         match self {
-            Self::One(file) => file.read(buffer),
+            Self::One { file, position } => {
+                let read = read_file_at(file, buffer, *position)?;
+                *position += read as u64;
+                Ok(read)
+            }
             Self::Joined(joined) => {
                 let read = joined.read_at(buffer, joined.position)?;
                 joined.position += read as u64;
@@ -1808,7 +1815,17 @@ impl Read for ArchiveFile {
 impl Seek for ArchiveFile {
     fn seek(&mut self, seek: SeekFrom) -> io::Result<u64> {
         match self {
-            Self::One(file) => file.seek(seek),
+            Self::One { file, position } => {
+                let target = match seek {
+                    SeekFrom::Start(target) => i128::from(target),
+                    SeekFrom::Current(delta) => i128::from(*position) + i128::from(delta),
+                    SeekFrom::End(delta) => i128::from(file.metadata()?.len()) + i128::from(delta),
+                };
+                *position = i64::try_from(target).and_then(u64::try_from).map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "invalid archive seek")
+                })?;
+                Ok(*position)
+            }
             Self::Joined(joined) => {
                 let target = match seek {
                     SeekFrom::Start(position) => i128::from(position),
@@ -1817,7 +1834,7 @@ impl Seek for ArchiveFile {
                         i128::from(joined.set.spans.total()) + i128::from(delta)
                     }
                 };
-                joined.position = u64::try_from(target).map_err(|_| {
+                joined.position = i64::try_from(target).and_then(u64::try_from).map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "invalid split archive seek")
                 })?;
                 Ok(joined.position)
@@ -1966,6 +1983,32 @@ mod tests {
             }
             assert_eq!(joined.seek(SeekFrom::End(-1))?, 299);
             assert!(joined.seek(SeekFrom::Current(-300)).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_positional_read_leaves_the_sequential_position_where_it_was() -> io::Result<()> {
+        let data: Vec<u8> = (0..300u32).map(|i| (i * 7 % 251) as u8).collect();
+        for volume in [7, 300] {
+            let folder = tempfile::tempdir()?;
+            let first = write_set(folder.path(), "a.bin", &data, volume);
+            let mut file = open(&first)?;
+            let mut probe = [0; 16];
+            file.read_at(&mut probe, 250)?;
+            let mut head = [0; 10];
+            file.read_exact(&mut head)?;
+            assert_eq!(head, data[..10], "volume {volume}");
+            file.read_at(&mut probe, 200)?;
+            let mut clone = file.try_clone()?;
+            file.read_exact(&mut head)?;
+            assert_eq!(head, data[10..20], "volume {volume}");
+            clone.read_exact(&mut head)?;
+            assert_eq!(head, data[10..20], "volume {volume} clone");
+            assert!(
+                file.seek(SeekFrom::Start(1 << 63)).is_err(),
+                "volume {volume}"
+            );
         }
         Ok(())
     }
