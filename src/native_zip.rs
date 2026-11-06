@@ -419,7 +419,7 @@ struct Opened {
 }
 
 fn open_directory(path: &Path) -> Result<(BufReader<crate::volumes::ArchiveFile>, Directory)> {
-    let archive = crate::volumes::open(path)?;
+    let archive = crate::volumes::open_zip(path)?;
     let disks = archive.zip_disks();
     let mut file = BufReader::with_capacity(64 * 1024, archive);
     let directory = crate::zip_directory::read_directory(&mut file, disks.as_ref())?;

@@ -163,8 +163,16 @@ fn stub(length: usize) -> Vec<u8> {
         });
     }
     bytes.truncate(length);
+    if length >= PE_SIGNATURE_END {
+        bytes[PE_POINTER..PE_POINTER + 4].copy_from_slice(&(PE_HEADER as u32).to_le_bytes());
+        bytes[PE_HEADER..PE_SIGNATURE_END].copy_from_slice(b"PE\0\0");
+    }
     bytes
 }
+
+const PE_POINTER: usize = 0x3C;
+const PE_HEADER: usize = 0x40;
+const PE_SIGNATURE_END: usize = PE_HEADER + 4;
 
 fn le16(bytes: &[u8], at: usize) -> usize {
     u16::from_le_bytes([bytes[at], bytes[at + 1]]).into()
@@ -222,7 +230,7 @@ fn a_zip_after_a_stub_extracts_as_the_zip_alone_whether_or_not_its_offsets_count
     for name in ZIPS {
         let archive = fs::read(data(name)).unwrap();
         let whole = extracted_tree(&data(name));
-        for length in [2, 3, 4, 5, 4096, 70_000] {
+        for length in [PE_SIGNATURE_END, PE_SIGNATURE_END + 1, 4096, 70_000] {
             let prefix = stub(length);
             let mut cases = Vec::new();
             if !name.contains("one-piece") {
@@ -317,13 +325,13 @@ fn a_prefix_that_hides_another_archive_is_refused_by_offset() {
             [&head[..], b"Rar!\x1A\x07\x01\x00", &head[..]].concat(),
             "offset 1000",
         ),
-        ("an ar archive", b"!<arch>\n".repeat(20), "offset 0"),
+        ("an ar archive", b"!<arch>\n".repeat(20), "no whole PE"),
         (
             "a cpio archive",
             [&b"070701"[..], &[b'0'; 200]].concat(),
-            "offset 0",
+            "no whole PE",
         ),
-        ("zeros, as an ISO starts", vec![0; 40_000], "offset 0"),
+        ("zeros, as an ISO starts", vec![0; 40_000], "no whole PE"),
     ] {
         let length = prefix.len() as u32;
         for (kind, bytes) in [
@@ -433,7 +441,7 @@ fn a_7z_after_a_stub_extracts_as_the_7z_alone_and_as_7zip_extracts_it() {
         let whole = extracted_tree(&data(name));
         for (kind, prefix) in [
             ("PE", stub(5000)),
-            ("ELF", with_magic(b"\x7fELF", 70_000)),
+            ("ELF", with_magic(b"\x7fELF\x02\x01\x01", 70_000)),
             ("Mach-O", with_magic(b"\xcf\xfa\xed\xfe", 300)),
             ("PE at the limit", stub(SEARCH_LIMIT)),
         ] {
@@ -483,9 +491,10 @@ fn two_7z_signatures_that_both_verify_are_refused_by_offset() {
         "damaged-first.exe",
         &[&head[..], &damaged, &second].concat(),
     );
-    assert_eq!(
-        extracted_tree(&path),
-        extracted_tree(&data("7z-corpus/7zip-lzma2-short.7z"))
+    assert_refused(
+        &path,
+        &["7z signature at offset 1000"],
+        "a damaged 7z in the stub",
     );
 }
 
@@ -506,8 +515,7 @@ fn a_7z_after_a_stub_that_is_also_a_zip_is_refused() {
         "zip-in-stub.exe",
         &[&stub(1000)[..], &small, &seven].concat(),
     );
-    let at = format!("offset {}", 1000 + small.len());
-    assert_refused(&path, &[&at], "ZIP in the stub, then 7z");
+    assert_refused(&path, &[], "ZIP in the stub, then 7z");
     let padded = [&stub(1000)[..], &seven, &zip, &[0; 65536]].concat();
     let path = written(folder.path(), "zip-in-the-tail.exe", &padded);
     assert_refused(&path, &["offset 1000"], "ZIP 65558 bytes from the end");
@@ -531,4 +539,157 @@ fn a_7z_after_a_stub_that_is_also_a_zip_is_refused() {
     let bytes = [&stub(1000)[..], &fs::read(&holding).unwrap()].concat();
     let path = written(folder.path(), "holding.exe", &bytes);
     assert_refused(&path, &["offset 1000"], "7z that stores a ZIP");
+}
+
+fn refused_before_a_zip_and_a_7z(prefix: &[u8], names: &[&str], label: &str) {
+    let folder = tempfile::tempdir().unwrap();
+    let zip = fs::read(data("zip-corpus/infozip-default.zip")).unwrap();
+    let seven = fs::read(data("parity/archives/7z.7z")).unwrap();
+    let length = prefix.len() as u32;
+    for (kind, bytes) in [
+        ("ZIP", [prefix, &zip].concat()),
+        ("adjusted ZIP", adjusted(prefix, &zip, length)),
+        ("7z", [prefix, &seven].concat()),
+    ] {
+        let path = written(folder.path(), "stub.exe", &bytes);
+        assert_refused(&path, names, &format!("{label} before a {kind}"));
+    }
+}
+
+#[test]
+fn a_pe_header_pointer_must_land_inside_the_stub() {
+    use std::io::Write;
+    let folder = tempfile::tempdir().unwrap();
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("header.bin", stored).unwrap();
+    zip.write_all(b"PE\0\0 inside the archive").unwrap();
+    let zip = zip.finish().unwrap().into_inner();
+    let inside = zip
+        .windows(4)
+        .position(|window| window == b"PE\0\0")
+        .unwrap();
+    let mut prefix = stub(1000);
+    prefix[PE_POINTER..PE_POINTER + 4].copy_from_slice(&((1000 + inside) as u32).to_le_bytes());
+    let path = written(folder.path(), "pointer.exe", &[&prefix[..], &zip].concat());
+    assert_refused(&path, &["no whole PE"], "a PE pointer into the archive");
+}
+
+#[test]
+fn a_stub_without_a_whole_executable_header_is_refused() {
+    let mut pointer_past_the_stub = stub(1000);
+    pointer_past_the_stub[PE_POINTER..PE_POINTER + 4].copy_from_slice(&5000u32.to_le_bytes());
+    let mut no_pe_signature = stub(1000);
+    no_pe_signature[PE_HEADER..PE_SIGNATURE_END].copy_from_slice(b"\0\0\0\0");
+    let mut iso_with_mz = vec![0u8; 0x9000];
+    iso_with_mz[..2].copy_from_slice(b"MZ");
+    for (label, prefix) in [
+        ("MZ with no PE header", no_pe_signature),
+        ("a PE pointer past the stub", pointer_past_the_stub),
+        ("MZ over an empty system area", iso_with_mz),
+        (
+            "an ELF ident of version 0",
+            with_magic(b"\x7fELF\x02\x01\x00", 1000),
+        ),
+        (
+            "a Java class",
+            with_magic(b"\xca\xfe\xba\xbe\0\0\0\x34", 5000),
+        ),
+    ] {
+        refused_before_a_zip_and_a_7z(&prefix, &["no whole PE, ELF or Mach-O header"], label);
+    }
+}
+
+#[test]
+fn every_archive_signature_in_a_stub_is_refused_before_a_zip_or_a_7z() {
+    let tail = &stub(600)[PE_SIGNATURE_END..];
+    for signature in [
+        &b"MSCF\0\0\0\0"[..],
+        b"Rar!\x1A\x07\x00",
+        b"Rar!\x1A\x07\x01\x00",
+        b"\xEF\xBE\xAD\xDENullsoftInst",
+    ] {
+        let prefix = [&stub(1000)[..], signature, tail].concat();
+        refused_before_a_zip_and_a_7z(&prefix, &["offset 1000"], &format!("{signature:?}"));
+    }
+    for (at, identifier) in [(0x8001, b"CD001"), (0x8801, b"BEA01"), (0x9001, b"NSR02")] {
+        let mut prefix = stub(0xA000);
+        prefix[at..at + 5].copy_from_slice(identifier);
+        let named = format!("offset {at}");
+        refused_before_a_zip_and_a_7z(&prefix, &[&named], &format!("{identifier:?}"));
+    }
+    let folder = tempfile::tempdir().unwrap();
+    let zip = fs::read(data("zip-corpus/infozip-default.zip")).unwrap();
+    let seven = fs::read(data("parity/archives/7z.7z")).unwrap();
+    let prefix = [&stub(1000)[..], &seven, tail].concat();
+    let path = written(folder.path(), "7z-stub.exe", &[&prefix[..], &zip].concat());
+    assert_refused(&path, &["offset 1000"], "a 7z in a ZIP's stub");
+}
+
+#[test]
+fn a_self_extracting_zip_that_stores_a_7z_reads_as_the_zip() {
+    use std::io::Write;
+    let folder = tempfile::tempdir().unwrap();
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("payload.7z", stored).unwrap();
+    zip.write_all(&fs::read(data("parity/archives/7z.7z")).unwrap())
+        .unwrap();
+    zip.start_file("readme.txt", stored).unwrap();
+    zip.write_all(b"outside the 7z\n").unwrap();
+    let zip = zip.finish().unwrap().into_inner();
+    let path = written(
+        folder.path(),
+        "stores.exe",
+        &[&stub(1000)[..], &zip].concat(),
+    );
+    let tree = extracted_tree(&path);
+    assert_eq!(
+        tree.keys().collect::<Vec<_>>(),
+        ["payload.7z", "readme.txt"],
+        "{tree:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_encrypted_7z_after_a_stub_reaches_7zip_pinned_as_7z_and_only_after_its_stub_passes() {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = tempfile::tempdir().unwrap();
+    let backend = folder.path().join("backend");
+    fs::write(
+        &backend,
+        "#!/bin/sh\necho \"$*\" >> \"$0.log\"\nfor a; do case $a in -o*) d=${a#-o};; esac; done\nmkdir -p \"$d\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&backend, fs::Permissions::from_mode(0o700)).unwrap();
+    let encrypted = fs::read(data("parity/archives/7z-7zaes.7z")).unwrap();
+    let cab = [
+        &stub(1000)[..],
+        b"MSCF\0\0\0\0",
+        &stub(600)[PE_SIGNATURE_END..],
+    ]
+    .concat();
+    for (name, prefix, reaches) in [("clean.exe", stub(1000), true), ("cab.exe", cab, false)] {
+        let path = written(folder.path(), name, &[&prefix[..], &encrypted].concat());
+        let log = folder.path().join("backend.log");
+        let _ = fs::remove_file(&log);
+        let output = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .args(["extract", "-o"])
+            .arg(folder.path().join(format!("out-{name}")))
+            .arg(&path)
+            .env("ZIPPER_7Z", &backend)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let logged = fs::read_to_string(&log).unwrap_or_default();
+        if reaches {
+            assert!(logged.contains("-t7z "), "{name}: {logged}");
+        } else {
+            assert!(logged.is_empty(), "{name} reached 7-Zip: {logged}");
+            assert!(!output.status.success(), "{name}");
+        }
+    }
 }

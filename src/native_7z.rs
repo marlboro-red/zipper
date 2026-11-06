@@ -985,9 +985,21 @@ fn archive_start(file: &ArchiveFile) -> Result<Option<u64>> {
     }
     match found[..] {
         [] => Ok(None),
-        [start] => Ok(Some(start)),
+        [start] => accepted_stub(file, start),
         [first, second, ..] => bail!(
             "7z signatures at offset {first} and offset {second} after an executable stub both pass their start header check, so the file holds two 7z archives"
+        ),
+    }
+}
+
+fn accepted_stub(file: &ArchiveFile, base: u64) -> Result<Option<u64>> {
+    let mut read_at = |buffer: &mut [u8], offset: u64| file.read_at(buffer, offset);
+    match crate::volumes::check_stub(&mut read_at, base)? {
+        crate::volumes::Stub::Accepted => Ok(Some(base)),
+        crate::volumes::Stub::Holds { zip: true, .. } => Ok(None),
+        refused => bail!(
+            "the 7z archive at offset {base} follows {base} bytes that {}",
+            refused.refusal().unwrap_or_default()
         ),
     }
 }
@@ -1006,42 +1018,9 @@ fn ensure_no_zip_ends_the_file(file: &ArchiveFile, base: u64) -> Result<()> {
     Ok(())
 }
 
-fn ensure_no_zip_in_stub(file: &ArchiveFile, base: u64) -> Result<()> {
-    let records: [(&[u8; 4], &str); 2] = [
-        (b"PK\x03\x04", "a ZIP local header"),
-        (ZIP_END_SIGNATURE, "a ZIP end record"),
-    ];
-    let mut chunk = vec![0u8; STUB_SCAN_CHUNK];
-    let mut at = 0u64;
-    while at < base {
-        let wanted =
-            usize::try_from(base + 3 - at).map_or(chunk.len(), |left| left.min(chunk.len()));
-        let read = read_up_to(file, &mut chunk[..wanted], at)?;
-        let window = &chunk[..read];
-        let found = (0..window.len()).find_map(|index| {
-            records
-                .iter()
-                .find(|(signature, _)| window[index..].starts_with(*signature))
-                .map(|&(_, record)| (at + index as u64, record))
-                .filter(|&(start, _)| start < base)
-        });
-        if let Some((start, record)) = found {
-            bail!(
-                "the stub before the 7z archive at offset {base} holds {record} at offset {start}, so other readers may see a ZIP instead"
-            );
-        }
-        if read < 4 {
-            break;
-        }
-        at += (read - 3) as u64;
-    }
-    Ok(())
-}
-
 fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
     let file = crate::volumes::open(path)?;
     let base = archive_start(&file)?.unwrap_or(0);
-    ensure_no_zip_in_stub(&file, base)?;
     if base > 0 {
         ensure_no_zip_ends_the_file(&file, base)?;
     }
@@ -2444,9 +2423,12 @@ fn create_links(root: &Path, items: &[Item], targets: Vec<(usize, Vec<u8>)>) -> 
     Ok(())
 }
 
-/// Whether the file starts with the 7z signature, or starts like a PE, ELF
-/// or Mach-O executable and holds exactly one 7z start header that passes its
-/// CRC check at offset 8 MiB or earlier.
+/// Whether the file starts with the 7z signature, or starts with a PE, ELF or
+/// Mach-O header and holds one 7z start header, with version byte 0 and a
+/// matching CRC, at offset 8 MiB or earlier. The stub before it must pass the
+/// rules in `docs/reference/7z-reader.md`. Returns an error when two start
+/// headers both pass, or when the stub is refused, and `false` when the stub
+/// holds a ZIP record, so that the file is read as a ZIP.
 pub fn sniff(path: &Path) -> Result<bool> {
     Ok(archive_start(&crate::volumes::open(path)?)?.is_some())
 }

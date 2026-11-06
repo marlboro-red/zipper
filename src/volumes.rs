@@ -11,6 +11,7 @@ const FIRST_VOLUME: u64 = 1;
 const GAP_PROBE: u64 = 16;
 const REPEAT_MIN_BYTES: u64 = 64;
 const REPEAT_SCAN_BYTES: u64 = 256 << 20;
+const ZIP64_DISK_PLACEHOLDER: u64 = u16::MAX as u64;
 
 fn invalid(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
@@ -329,6 +330,13 @@ enum Found {
 struct Discovery {
     path: PathBuf,
     found: Found,
+    zip: Option<Found>,
+}
+
+impl Discovery {
+    fn for_zip(&self) -> &Found {
+        self.zip.as_ref().unwrap_or(&self.found)
+    }
 }
 
 fn first_present_after(numbered: &Numbered, missing: u64) -> Option<u64> {
@@ -560,16 +568,19 @@ fn zip_volume_alone(names: &ZipNames, number: u64, path: &Path) -> Found {
 }
 
 fn discover(path: &Path) -> io::Result<Discovery> {
-    let found = if let Some(names) = ZipNames::of_last(path) {
-        find_zip_set(names, path)?
+    let (found, zip) = if let Some(names) = ZipNames::of_last(path) {
+        let zip = Some(find_zip_set(names, path)?)
+            .filter(|found| !matches!(found, Found::Alone { why: None }));
+        (Found::Alone { why: None }, zip)
     } else if let Some((names, number)) = ZipNames::of_volume(path) {
-        zip_volume_alone(&names, number, path)
+        (zip_volume_alone(&names, number, path), None)
     } else {
-        discover_numbered(path)?
+        (discover_numbered(path)?, None)
     };
     Ok(Discovery {
         path: path.to_owned(),
         found,
+        zip,
     })
 }
 
@@ -641,8 +652,19 @@ fn discovered(path: &Path) -> io::Result<Arc<Discovery>> {
 }
 
 pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
-    let discovery = discovered(path)?;
-    Ok(match &discovery.found {
+    open_found(path, &discovered(path)?.found)
+}
+
+pub(crate) fn open_zip(path: &Path) -> io::Result<ArchiveFile> {
+    open_found(path, discovered(path)?.for_zip())
+}
+
+pub(crate) fn has_zip_volumes(path: &Path) -> io::Result<bool> {
+    Ok(discovered(path)?.zip.is_some())
+}
+
+fn open_found(path: &Path, found: &Found) -> io::Result<ArchiveFile> {
+    Ok(match found {
         Found::Alone { .. } => ArchiveFile::One(open_regular_file(path, None)?),
         Found::Broken { why } => {
             return Err(invalid(format!(
@@ -661,13 +683,6 @@ pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
 
 pub(crate) fn ensure_stream_set_ends_short(path: &Path) -> io::Result<()> {
     let set = match &discovered(path)?.found {
-        Found::Set(set) if set.even().is_none() => {
-            return Err(invalid(format!(
-                "{} to {} are the volumes of a split ZIP, not of a single compressed file",
-                name(&set.path(0)),
-                name(&set.path(set.count() - 1))
-            )));
-        }
         Found::Set(set) => Arc::clone(set),
         Found::Alone { .. } if joined_name(path).is_some() => {
             return Err(invalid(format!(
@@ -781,7 +796,7 @@ fn repeated_volume(
 impl Scope {
     pub(crate) fn note(&self) -> Option<String> {
         let first = name(&self.0.path);
-        let set = match &self.0.found {
+        let set = match self.0.for_zip() {
             Found::Alone { why: None } | Found::Broken { .. } | Found::Refused { .. } => {
                 return None;
             }
@@ -880,6 +895,175 @@ impl Joined {
     }
 }
 
+pub(crate) enum Stub {
+    Accepted,
+    NotAnExecutable,
+    Holds {
+        at: u64,
+        what: &'static str,
+        zip: bool,
+    },
+}
+
+impl Stub {
+    pub(crate) fn refusal(&self) -> Option<String> {
+        match self {
+            Self::Accepted => None,
+            Self::NotAnExecutable => Some(
+                "start with no whole PE, ELF or Mach-O header and no #! line, so another reader may read them as an archive".to_owned(),
+            ),
+            Self::Holds { at, what, .. } => Some(format!(
+                "hold {what} at offset {at}, so another reader may see a different archive"
+            )),
+        }
+    }
+}
+
+const PE_HEADER_POINTER: usize = 0x3C;
+const PE_SIGNATURE: &[u8; 4] = b"PE\0\0";
+const ELF_IDENT: u64 = 16;
+const MACHO_HEADER: u64 = 28;
+const MACHO_THIN: [[u8; 4]; 4] = [
+    [0xFE, 0xED, 0xFA, 0xCE],
+    [0xFE, 0xED, 0xFA, 0xCF],
+    [0xCE, 0xFA, 0xED, 0xFE],
+    [0xCF, 0xFA, 0xED, 0xFE],
+];
+const MACHO_FAT: [u8; 4] = [0xCA, 0xFE, 0xBA, 0xBE];
+const MACHO_FAT_ARCH: u64 = 20;
+const FAT_ARCHES_BELOW_ANY_JAVA_CLASS_VERSION: std::ops::RangeInclusive<u64> = 1..=30;
+const SCRIPT_LINE: &[u8] = b"#!";
+const STUB_HEAD: usize = 64;
+const STUB_SCAN_CHUNK: usize = 64 * 1024;
+const ARCHIVE_SIGNATURES: [(&[u8], &str, bool); 10] = [
+    (b"PK\x03\x04", "a ZIP local header", true),
+    (b"PK\x01\x02", "a ZIP central record", true),
+    (b"PK\x05\x06", "a ZIP end record", true),
+    (b"PK\x06\x06", "a ZIP64 end record", true),
+    (b"PK\x06\x07", "a ZIP64 locator", true),
+    (b"7z\xBC\xAF\x27\x1C", "a 7z signature", false),
+    (b"MSCF\0\0\0\0", "a CAB signature", false),
+    (b"Rar!\x1A\x07\x00", "a RAR 4 signature", false),
+    (b"Rar!\x1A\x07\x01\x00", "a RAR 5 signature", false),
+    (
+        b"\xEF\xBE\xAD\xDENullsoftInst",
+        "an NSIS installer signature",
+        false,
+    ),
+];
+const LONGEST_SIGNATURE: usize = 16;
+const VOLUME_DESCRIPTOR_SECTORS: std::ops::RangeInclusive<u64> = 16..=31;
+const VOLUME_DESCRIPTOR_TYPE: u64 = 1;
+const SECTOR: u64 = 2048;
+const VOLUME_IDENTIFIERS: [&[u8; 5]; 6] =
+    [b"CD001", b"BEA01", b"NSR02", b"NSR03", b"TEA01", b"BOOT2"];
+
+fn read_up_to(
+    read_at: &mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
+    buffer: &mut [u8],
+    offset: u64,
+) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        let read = read_at(&mut buffer[filled..], offset + filled as u64)?;
+        if read == 0 {
+            break;
+        }
+        filled += read;
+    }
+    Ok(filled)
+}
+
+fn whole_executable_header(
+    read_at: &mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
+    prefix: u64,
+) -> io::Result<bool> {
+    let mut head = [0u8; STUB_HEAD];
+    let read = read_up_to(read_at, &mut head, 0)?.min(usize::try_from(prefix).unwrap_or(STUB_HEAD));
+    let head = &head[..read];
+    if head.starts_with(SCRIPT_LINE) {
+        return Ok(true);
+    }
+    if head.starts_with(b"MZ") && head.len() >= PE_HEADER_POINTER + 4 {
+        let pointer = u64::from(u32::from_le_bytes(
+            head[PE_HEADER_POINTER..PE_HEADER_POINTER + 4]
+                .try_into()
+                .unwrap(),
+        ));
+        let mut signature = [0u8; 4];
+        return Ok(pointer.checked_add(4).is_some_and(|end| end <= prefix)
+            && read_up_to(read_at, &mut signature, pointer)? == 4
+            && signature == *PE_SIGNATURE);
+    }
+    if head.starts_with(b"\x7FELF") {
+        return Ok(prefix >= ELF_IDENT
+            && head.len() >= 7
+            && matches!(head[4], 1 | 2)
+            && matches!(head[5], 1 | 2)
+            && head[6] == 1);
+    }
+    if MACHO_THIN.iter().any(|magic| head.starts_with(magic)) {
+        return Ok(prefix >= MACHO_HEADER);
+    }
+    if head.starts_with(&MACHO_FAT) && head.len() >= 8 {
+        let arches = u64::from(u32::from_be_bytes(head[4..8].try_into().unwrap()));
+        return Ok(FAT_ARCHES_BELOW_ANY_JAVA_CLASS_VERSION.contains(&arches)
+            && prefix >= 8 + MACHO_FAT_ARCH * arches);
+    }
+    Ok(false)
+}
+
+fn archive_signature_in(
+    read_at: &mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
+    prefix: u64,
+) -> io::Result<Option<(u64, &'static str, bool)>> {
+    for sector in VOLUME_DESCRIPTOR_SECTORS {
+        let at = sector * SECTOR + VOLUME_DESCRIPTOR_TYPE;
+        let mut identifier = [0u8; 5];
+        if at + 5 <= prefix
+            && read_up_to(read_at, &mut identifier, at)? == 5
+            && VOLUME_IDENTIFIERS.contains(&&identifier)
+        {
+            return Ok(Some((at, "an ISO 9660 or UDF volume descriptor", false)));
+        }
+    }
+    let mut chunk = vec![0u8; STUB_SCAN_CHUNK];
+    let mut at = 0u64;
+    let scanned = prefix.saturating_add(LONGEST_SIGNATURE as u64 - 1);
+    while at < prefix {
+        let wanted =
+            usize::try_from(scanned - at).map_or(chunk.len(), |left| left.min(chunk.len()));
+        let read = read_up_to(read_at, &mut chunk[..wanted], at)?;
+        let window = &chunk[..read];
+        let found = (0..window.len()).find_map(|index| {
+            ARCHIVE_SIGNATURES
+                .iter()
+                .find(|(signature, _, _)| window[index..].starts_with(signature))
+                .map(|&(_, what, zip)| (at + index as u64, what, zip))
+                .filter(|&(start, _, _)| start < prefix)
+        });
+        if found.is_some() || read < LONGEST_SIGNATURE {
+            return Ok(found);
+        }
+        at += (read - (LONGEST_SIGNATURE - 1)) as u64;
+    }
+    Ok(None)
+}
+
+pub(crate) fn check_stub(
+    read_at: &mut dyn FnMut(&mut [u8], u64) -> io::Result<usize>,
+    prefix: u64,
+) -> io::Result<Stub> {
+    if let Some((at, what, zip)) = archive_signature_in(read_at, prefix)? {
+        return Ok(Stub::Holds { at, what, zip });
+    }
+    Ok(if whole_executable_header(read_at, prefix)? {
+        Stub::Accepted
+    } else {
+        Stub::NotAnExecutable
+    })
+}
+
 fn read_file_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<usize> {
     #[cfg(unix)]
     return std::os::unix::fs::FileExt::read_at(file, buffer, offset);
@@ -909,10 +1093,12 @@ impl ZipDisks {
     }
 
     pub(crate) fn name(&self, disk: u64) -> String {
-        if disk < self.count() {
-            name(&self.0.path(disk)).to_string()
-        } else {
-            format!("disk {}", disk + 1)
+        match disk {
+            _ if disk < self.count() => name(&self.0.path(disk)).to_string(),
+            ZIP64_DISK_PLACEHOLDER => {
+                "disk number 0xFFFF, which leaves the number to a ZIP64 field".to_owned()
+            }
+            _ => format!("disk {}", disk + 1),
         }
     }
 

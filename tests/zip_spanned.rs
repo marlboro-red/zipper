@@ -507,3 +507,109 @@ fn a_zip64_locator_outside_the_set_is_refused_by_name() {
         assert_refused(&last, names, "ZIP64 locator");
     }
 }
+
+fn zipper_cli(args: &[&std::ffi::OsStr]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_volume_beside_a_whole_zip_is_never_joined_for_another_reader() {
+    for (stem, other) in [("poly-7z", "from-7z.txt"), ("poly-tar", "from-tar.txt")] {
+        let folder = tempfile::tempdir().unwrap();
+        for extension in ["z01", "zip"] {
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join(format!("tests/data/zip-hostile/{stem}.{extension}")),
+                folder.path().join(format!("x.{extension}")),
+            )
+            .unwrap();
+        }
+        let last = folder.path().join("x.zip");
+        assert_eq!(
+            choose_reader(Engine::Auto, &last).unwrap(),
+            Reader::Zip { fast: false },
+            "{stem}"
+        );
+        let error = assert_refused(&last, &["x.z01"], stem);
+        assert!(!error.contains(other), "{stem}: {error}");
+        for action in ["list", "test"] {
+            let output = zipper_cli(&[action.as_ref(), last.as_os_str()]);
+            let printed = String::from_utf8_lossy(&output.stdout);
+            assert!(!output.status.success(), "{stem} {action}: {printed}");
+            assert!(!printed.contains(other), "{stem} {action}: {printed}");
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(error.contains("x.z01"), "{stem} {action}: {error}");
+        }
+    }
+}
+
+#[test]
+fn other_readers_open_a_zip_with_volumes_alone_and_the_set_goes_to_the_zip_reader() {
+    let folder = tempfile::tempdir().unwrap();
+    for extension in ["z01", "zip"] {
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("tests/data/zip-hostile/poly-7z.{extension}")),
+            folder.path().join(format!("x.{extension}")),
+        )
+        .unwrap();
+    }
+    let last = folder.path().join("x.zip");
+    let out = folder.path().join("out");
+    let error = zipper::native_7z::read_archive(&last, Some(&out), Default::default())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("not a 7z archive"), "{error}");
+    assert!(!out.exists());
+    let folder = tempfile::tempdir().unwrap();
+    let volumes = copy_set(SET, folder.path());
+    let last = volumes.last().unwrap();
+    let mut bytes = fs::read(last).unwrap();
+    bytes[..6].copy_from_slice(b"7z\xBC\xAF\x27\x1C");
+    fs::write(last, bytes).unwrap();
+    assert_eq!(
+        choose_reader(Engine::Auto, last).unwrap(),
+        Reader::Zip { fast: false }
+    );
+}
+
+#[test]
+fn a_disk_number_that_defers_to_zip64_is_named_as_such() {
+    let (_folder, last) = patched_set(|bytes, found, _| {
+        let entry = found.central[3];
+        bytes[entry + 34..entry + 36].copy_from_slice(&u16::MAX.to_le_bytes());
+    });
+    assert_refused(&last, &["0xFFFF"], "entry disk 0xFFFF");
+}
+
+#[test]
+fn zip64_records_without_a_sentinel_are_judged_by_the_stored_directory_offset() {
+    if !info_zip() {
+        return;
+    }
+    let folder = tempfile::tempdir().unwrap();
+    many_files_tree(folder.path());
+    let last = info_zip_split(folder.path(), "wide", &["-fz", "-s", "64k"]);
+    let mut bytes = fs::read(&last).unwrap();
+    let end = bytes
+        .windows(4)
+        .rposition(|window| window == b"PK\x05\x06")
+        .unwrap();
+    let record = bytes
+        .windows(4)
+        .rposition(|window| window == b"PK\x06\x06")
+        .unwrap();
+    assert_eq!(le32(&bytes, end + 16), u32::MAX as usize);
+    let stored = u64::from_le_bytes(bytes[record + 48..record + 56].try_into().unwrap());
+    bytes[end + 16..end + 20].copy_from_slice(&(stored as u32).to_le_bytes());
+    fs::write(&last, &bytes).unwrap();
+    assert_refused(
+        &last,
+        &["ZIP64 locator its end record does not use"],
+        "no sentinel",
+    );
+}

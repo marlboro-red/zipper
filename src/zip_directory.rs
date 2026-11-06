@@ -136,14 +136,8 @@ pub(crate) fn read_directory<R: Read + Seek>(
     if disks.is_none() {
         field_check(extent.on_one_disk(), MULTI_DISK)?;
     }
-    let placed = Extent {
-        start: disks
-            .and_then(|disks| disks.place(extent.start_disk, extent.start))
-            .unwrap_or(extent.start),
-        ..extent
-    };
     let mut locator_shift = None;
-    if placed.reads_zip64_end() {
+    if extent.reads_zip64_end() {
         ensure!(end_offset >= ZIP64_LOCATOR as u64, "missing ZIP64 locator");
         file.seek(SeekFrom::Start(end_offset - ZIP64_LOCATOR as u64))?;
         let locator = crate::number(file)?;
@@ -211,7 +205,7 @@ pub(crate) fn read_directory<R: Read + Seek>(
     })
 }
 
-// EXTERNAL(Python zipfile, libarchive): they read a directory that ends before its end record as shifted by the gap.
+// EXTERNAL(Python zipfile): it reads a directory that ends before its end record as shifted by the gap.
 fn prefix_shift(extent: &Extent, locator_shift: Option<u64>) -> Result<u64> {
     let Some(shift) = extent
         .start
@@ -238,20 +232,9 @@ fn shift_entries(entries: &mut [CentralEntry], shift: u64) -> Result<()> {
     Ok(())
 }
 
-const HIDDEN_RECORDS: [(&[u8], &str); 8] = [
-    (b"PK\x03\x04", "a ZIP local header"),
-    (b"PK\x01\x02", "a ZIP central record"),
-    (b"PK\x05\x06", "a ZIP end record"),
-    (b"PK\x06\x06", "a ZIP64 end record"),
-    (b"PK\x06\x07", "a ZIP64 locator"),
-    (b"7z\xBC\xAF\x27\x1C", "a 7z signature"),
-    (b"MSCF\0\0\0\0", "a CAB signature"),
-    (b"Rar!\x1A\x07", "a RAR signature"),
-];
 // SPEC(APPNOTE 8.5.3, 8.5.4): a split archive may start with the spanning signature, or with PK00 when it fits one piece.
-const SPANNING_MARKERS: [&[u8; 4]; 2] = [b"PK\x07\x08", b"PK00"];
-const SCRIPT: &[u8] = b"#!";
-const PREFIX_SCAN_CHUNK: usize = 64 * 1024;
+const SPANNING_MARKER: usize = 4;
+const SPANNING_MARKERS: [&[u8; SPANNING_MARKER]; 2] = [b"PK\x07\x08", b"PK00"];
 
 fn archive_start<R: Read + Seek>(
     file: &mut R,
@@ -275,55 +258,21 @@ fn archive_start<R: Read + Seek>(
         !entries.is_empty(),
         "ZIP has {first} bytes before an archive with no entries"
     );
-    if let Some((at, record)) = hidden_record(file, first)? {
-        anyhow::bail!(
-            "ZIP has {first} bytes before its first record, and they hold {record} at offset {at}, so another reader may see a different archive"
-        );
-    }
     file.seek(SeekFrom::Start(0))?;
-    let mut head = Vec::with_capacity(4);
-    file.take(first.min(4)).read_to_end(&mut head)?;
-    let spanning_marker = first == 4 && SPANNING_MARKERS.iter().any(|marker| head == marker[..]);
-    let executable = crate::native_7z::EXECUTABLE_MAGICS
-        .iter()
-        .chain(&[SCRIPT])
-        .any(|magic| head.starts_with(magic));
-    ensure!(
-        spanning_marker || executable,
-        "ZIP has {first} bytes before its first record that start at offset 0 like neither an executable nor a script, so another reader may read them as an archive"
-    );
+    let mut head = Vec::with_capacity(SPANNING_MARKER);
+    file.take(first.min(SPANNING_MARKER as u64))
+        .read_to_end(&mut head)?;
+    if first == SPANNING_MARKER as u64 && SPANNING_MARKERS.iter().any(|marker| head == marker[..]) {
+        return Ok(first);
+    }
+    let mut read_at = |buffer: &mut [u8], offset: u64| {
+        file.seek(SeekFrom::Start(offset))?;
+        file.read(buffer)
+    };
+    if let Some(why) = crate::volumes::check_stub(&mut read_at, first)?.refusal() {
+        anyhow::bail!("ZIP has {first} bytes before its first record, and they {why}");
+    }
     Ok(first)
-}
-
-fn hidden_record<R: Read + Seek>(file: &mut R, prefix: u64) -> Result<Option<(u64, &'static str)>> {
-    let longest = HIDDEN_RECORDS
-        .iter()
-        .map(|(bytes, _)| bytes.len())
-        .max()
-        .unwrap_or(1);
-    file.seek(SeekFrom::Start(0))?;
-    let mut prefix_bytes = file.take(prefix.saturating_add(longest as u64 - 1));
-    let mut window = Vec::with_capacity(PREFIX_SCAN_CHUNK + longest);
-    let mut window_start = 0u64;
-    loop {
-        let kept = window.len();
-        window.resize(kept + PREFIX_SCAN_CHUNK, 0);
-        let read = prefix_bytes.read(&mut window[kept..])?;
-        window.truncate(kept + read);
-        let found = (0..window.len()).find_map(|at| {
-            HIDDEN_RECORDS
-                .iter()
-                .find(|(bytes, _)| window[at..].starts_with(bytes))
-                .map(|&(_, record)| (window_start + at as u64, record))
-                .filter(|&(start, _)| start < prefix)
-        });
-        if found.is_some() || read == 0 {
-            return Ok(found);
-        }
-        let consumed = window.len().saturating_sub(longest - 1);
-        window.drain(..consumed);
-        window_start += consumed as u64;
-    }
 }
 
 fn volumes(count: u64) -> String {

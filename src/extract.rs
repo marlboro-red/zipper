@@ -48,13 +48,15 @@ fn starts_with_zip_signature(archive: &Path) -> Result<bool> {
 pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     Ok(match engine {
         Engine::Backend => Reader::Backend { format: None },
-        _ if starts_with_zip_signature(archive)? => Reader::Zip {
-            fast: engine == Engine::NativeFast,
-        },
+        _ if crate::volumes::has_zip_volumes(archive)? || starts_with_zip_signature(archive)? => {
+            Reader::Zip {
+                fast: engine == Engine::NativeFast,
+            }
+        }
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
             Reader::Backend {
-                format: compat::pinned_format(archive)?,
+                format: Some(compat::pinned_format(archive)?.unwrap_or_else(|| "-t7z".to_owned())),
             }
         }
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
