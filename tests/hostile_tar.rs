@@ -656,3 +656,118 @@ fn cancel_while_links_are_created_publishes_nothing() {
         .collect();
     assert!(left.is_empty(), "{left:?}");
 }
+
+fn xz_with_dictionary_property(bytes: &[u8], property: u8) -> Vec<u8> {
+    let mut encoder = liblzma::write::XzEncoder::new(Vec::new(), 0);
+    encoder.write_all(bytes).unwrap();
+    let mut encoded = encoder.finish().unwrap();
+    let block = 12;
+    let size = (usize::from(encoded[block]) + 1) * 4;
+    let filter = (block..block + size)
+        .find(|&at| encoded[at..at + 2] == [0x21, 0x01])
+        .unwrap();
+    encoded[filter + 2] = property;
+    let check = crc32fast::hash(&encoded[block..block + size - 4]);
+    encoded[block + size - 4..block + size].copy_from_slice(&check.to_le_bytes());
+    encoded
+}
+
+#[test]
+fn xz_dictionaries_past_the_largest_accepted_are_refused() {
+    let archive = tar(&[file("a", b"x")]);
+    for (property, what) in [
+        (28, "64 MiB, as xz -9e writes"),
+        (32, "256 MiB, the largest"),
+    ] {
+        let (_root, result) = extract(&xz_with_dictionary_property(&archive, property));
+        result.unwrap_or_else(|error| panic!("a dictionary of {what}: {error:#}"));
+    }
+    for property in [33, 40] {
+        let bytes = xz_with_dictionary_property(&archive, property);
+        assert_rejected_without_leftovers(&format!("property {property}"), &bytes);
+        let error = format!("{:#}", extract(&bytes).1.unwrap_err());
+        assert!(
+            error.contains("the largest dictionary Zipper accepts, 256 MiB")
+                && error.contains("--zip-engine backend"),
+            "property {property}: {error}"
+        );
+    }
+}
+
+#[test]
+fn options_that_fail_to_parse_return_their_error_instead_of_hanging_and_valid_ones_finish() {
+    let archive = tar(&[directory("dir"), file("dir/a", b"x")]);
+    let paths = |path: &str| vec![path.to_owned()];
+    let cases = [
+        ("dot path", paths("./dir/a"), vec![], None, true),
+        ("parent path", paths("../x"), vec![], None, true),
+        ("absolute path", paths("/abs"), vec![], None, true),
+        ("absolute include", vec![], paths("/abs"), None, true),
+        ("parent strip prefix", vec![], vec![], Some("../x"), true),
+        (
+            "valid options",
+            paths("dir"),
+            paths("**/a"),
+            Some("dir"),
+            false,
+        ),
+    ];
+    for (form, bytes) in [("plain", archive.clone()), ("gzip", gzip(&archive))] {
+        for (case, paths, include, prefix, refused) in &cases {
+            let (paths, include, prefix) = (paths.clone(), include.clone(), *prefix);
+            let bytes = bytes.clone();
+            let (sender, receiver) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let root = tempfile::tempdir().unwrap();
+                let archive = root.path().join("case.tar");
+                fs::write(&archive, bytes).unwrap();
+                let result = read_archive(
+                    &archive,
+                    Some(&root.path().join("out")),
+                    ReadOptions {
+                        paths: &paths,
+                        include: &include,
+                        strip: prefix.map_or(zipper::Strip::None, zipper::Strip::Prefix),
+                        ..ReadOptions::default()
+                    },
+                );
+                let left = fs::read_dir(root.path()).unwrap().count();
+                let _ = sender.send((result.is_err(), left));
+            });
+            let (failed, left) = receiver
+                .recv_timeout(std::time::Duration::from_secs(20))
+                .unwrap_or_else(|_| panic!("{form} {case}: the extraction hung"));
+            assert_eq!(failed, *refused, "{form} {case}");
+            assert_eq!(left, if *refused { 1 } else { 2 }, "{form} {case}");
+        }
+    }
+}
+
+#[test]
+fn lzip_dictionaries_past_the_largest_accepted_are_refused_by_size() {
+    let real = fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/lzip/lzip-9.tar.lz"
+    ))
+    .unwrap();
+    let (root, result) = extract(&real);
+    result.unwrap_or_else(|error| panic!("lzip -9: {error:#}"));
+    assert_eq!(
+        fs::read(root.path().join("out/lzip/hello.txt")).unwrap(),
+        b"hello from lzip -9\n"
+    );
+    let mut largest = real.clone();
+    largest[5] = 0x1C;
+    let (_root, result) = extract(&largest);
+    result.unwrap_or_else(|error| panic!("a 256 MiB lzip dictionary: {error:#}"));
+    let mut bomb = real;
+    bomb[5] = 0x1D;
+    assert_rejected_without_leftovers("512 MiB lzip dictionary", &bomb);
+    let error = format!("{:#}", extract(&bomb).1.unwrap_err());
+    assert!(
+        error.contains("536870912-byte dictionary")
+            && error.contains("the largest dictionary Zipper accepts, 256 MiB")
+            && error.contains("--zip-engine backend"),
+        "{error}"
+    );
+}

@@ -167,11 +167,10 @@ pub fn read_archive(
     let mut lzma = None;
     let mut input: Box<dyn Read + Send> = match compression {
         Compression::Lzma => {
-            let decoder = liblzma::bufread::XzDecoder::new_stream(
-                std::io::BufReader::new(crate::volumes::open(path)?),
-                liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
-            );
-            Box::new(lzma.insert(decoder))
+            let decoder = crate::native_tar::lzma_decoder(std::io::BufReader::new(
+                crate::volumes::open(path)?,
+            ))?;
+            Box::new(crate::native_tar::DecoderMemory(lzma.insert(decoder)))
         }
         _ => crate::native_tar::decoder(path, compression)?,
     };

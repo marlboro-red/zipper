@@ -12,6 +12,7 @@ mod metadata;
 pub mod native_7z;
 pub mod native_ar;
 pub mod native_cpio;
+pub mod native_rpm;
 pub mod native_stream;
 pub mod native_tar;
 pub mod native_zip;
@@ -301,7 +302,17 @@ impl<'a> Selection<'a> {
             .iter()
             .map(|path| {
                 let path = path.trim_end_matches('/');
-                safe_path(path)?;
+                safe_path(path).map_err(|error| {
+                    match path
+                        .strip_prefix("./")
+                        .filter(|rest| safe_path(rest).is_ok())
+                    {
+                        Some(rest) => error.context(format!(
+                            "selected paths have no leading ./; select {rest:?}"
+                        )),
+                        None => error,
+                    }
+                })?;
                 Ok(path)
             })
             .collect::<Result<_>>()?;

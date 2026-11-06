@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 54 |
+| `native` | 55 |
 | `partial` | 1 |
-| `backend` | 50 |
+| `backend` | 49 |
 | `missing` | 5 |
 | `dropped` | 2 |
 
-44 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+43 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -63,7 +63,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `QCOW` | `backend` |  | No proof yet. |
 | `Rar` | `backend` |  | No proof yet. |
 | `Rar5` | `backend` |  | No proof yet. |
-| `Rpm` | `backend` |  | No proof yet. |
+| `Rpm` | `native` |  | `tests/data/parity/archives/rpm-bzip2.rpm`, `tests/data/parity/archives/rpm-gzip.rpm`, `tests/data/parity/archives/rpm-lzma.rpm`, `tests/data/parity/archives/rpm-xz.rpm`, `tests/data/parity/archives/rpm-zstd.rpm` |
 | `SWF` | `backend` |  | No proof yet. |
 | `SWFc` | `backend` |  | No proof yet. |
 | `Sparse` | `backend` |  | No proof yet. |

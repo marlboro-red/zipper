@@ -34,6 +34,7 @@ A name stored inside a gzip header is ignored, because it could hold a path. A f
 - The output goes to a hidden staging folder and is published only when the whole stream decodes, as with every reader.
 - The decoded size must stay within free space, or within `--max-extracted-bytes`, checked while decoding.
 - Every decoder checks the checksum its format carries. gzip has a CRC-32, bzip2 has block and stream CRCs, and xz has its check. zstd has a frame checksum when the frame holds one, each lzip member has a CRC-32 and its sizes, and an LZ4 frame has the checksums above when its writer set them. LZMA has no checksum.
+- An xz, LZMA or lzip stream with a dictionary larger than the [tar reader's limit](tar-reader.md#limits), 256 MiB, is refused.
 - A truncated stream is refused at every length, and data after the last stream is refused, except in `compress`, as above.
 - `--path`, `--include` and `--exclude` select the one decoded file by its output name.
 
