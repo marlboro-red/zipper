@@ -471,10 +471,14 @@ fn a_whole_zip_beside_a_stray_volume_or_a_lone_last_volume_is_refused() {
         "stray volume",
     );
     let stray_7z = folder_with_a_whole_7z_named_zip();
-    assert_refused(
+    let error = assert_refused(
         &stray_7z.path().join("x.zip"),
         &["by itself is a 7z archive", "move them aside"],
         "a whole 7z named x.zip",
+    );
+    assert!(
+        error.find("by itself") < error.find("ZIP end record"),
+        "{error}"
     );
     let folder = tempfile::tempdir().unwrap();
     let lone = folder.path().join("lone.zip");

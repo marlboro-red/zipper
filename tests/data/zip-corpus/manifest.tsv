@@ -262,7 +262,7 @@ infozip-sfx-adjusted	src/nested	dir	-	755	1578100544
 infozip-sfx-adjusted	src/nested/deep	dir	-	755	1578060949
 infozip-sfx-adjusted	src/nested/deep/deeper	dir	-	755	1578045111
 infozip-sfx-adjusted	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644	1577934245
-infozip-sfx-adjusted	src/nested/inner.zip	228	0c1cd24f	644	1578021354
+infozip-sfx-adjusted	src/nested/inner.zip	228	08970a4c	644	1578021354
 infozip-sfx-adjusted	src/text	dir	-	755	1578108463
 infozip-sfx-adjusted	src/text/empty.txt	0	00000000	644	1578029273
 infozip-sfx-adjusted	src/text/readme.txt	1000	55261fc2	644	1578037192
@@ -286,7 +286,7 @@ infozip-sfx-prefixed	src/nested	dir	-	755	1578100544
 infozip-sfx-prefixed	src/nested/deep	dir	-	755	1578060949
 infozip-sfx-prefixed	src/nested/deep/deeper	dir	-	755	1578045111
 infozip-sfx-prefixed	src/nested/deep/deeper/leaf.txt	5	0c7fee48	644	1577934245
-infozip-sfx-prefixed	src/nested/inner.zip	228	0c1cd24f	644	1578021354
+infozip-sfx-prefixed	src/nested/inner.zip	228	08970a4c	644	1578021354
 infozip-sfx-prefixed	src/text	dir	-	755	1578108463
 infozip-sfx-prefixed	src/text/empty.txt	0	00000000	644	1578029273
 infozip-sfx-prefixed	src/text/readme.txt	1000	55261fc2	644	1578037192

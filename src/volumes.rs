@@ -898,8 +898,18 @@ impl Joined {
 pub(crate) enum Stub {
     Accepted,
     NotAnExecutable,
-    NotAtTheOverlay { end: u64 },
-    Holds { at: u64, what: &'static str },
+    NotAtTheOverlay {
+        end: u64,
+    },
+    RangeReaches {
+        what: &'static str,
+        start: u64,
+        end: Option<u64>,
+    },
+    Holds {
+        at: u64,
+        what: &'static str,
+    },
 }
 
 impl Stub {
@@ -911,6 +921,10 @@ impl Stub {
             ),
             Self::NotAtTheOverlay { end } => Some(format!(
                 "form an executable whose own data ends at offset {end}, not where the archive starts, so 7-Zip reads whatever starts at offset {end} instead"
+            )),
+            Self::RangeReaches { what, start, end } => Some(format!(
+                "name {what} at offset {start} that ends {}, past where the archive starts, so 7-Zip may count the archive's first bytes as part of the executable",
+                end.map_or("beyond 16 EiB".to_owned(), |end| format!("at offset {end}"))
             )),
             Self::Holds { at, what } => Some(format!(
                 "hold {what} at offset {at}, so another reader may see a different archive"
@@ -1018,34 +1032,69 @@ impl Header<'_> {
     }
 }
 
+struct FileRange {
+    what: &'static str,
+    start: u64,
+    end: Option<u64>,
+}
+
+impl FileRange {
+    fn new(what: &'static str, start: u64, size: u64) -> Self {
+        Self {
+            what,
+            start,
+            end: start.checked_add(size),
+        }
+    }
+
+    fn table(what: &'static str, start: u64, entry: u64, count: u64) -> Self {
+        Self {
+            what,
+            start,
+            end: entry
+                .checked_mul(count)
+                .and_then(|size| start.checked_add(size)),
+        }
+    }
+}
+
 enum Executable {
     Script,
-    EndsAt(u64),
+    Ranges(Vec<FileRange>),
     Malformed,
 }
 
 const PE_SECTIONS_MAX: u64 = 96;
 const PE_COFF_HEADER: u64 = 24;
 const PE_SECTION: u64 = 40;
-const ELF_PROGRAM_TYPE_NONE: u64 = 0;
+const PE32_MAGIC: u64 = 0x10B;
+const PE32_PLUS_MAGIC: u64 = 0x20B;
+const PE_DIRECTORIES_MAX: u64 = 16;
+const PE_CERTIFICATE_DIRECTORY: u64 = 4;
+const PE_DEBUG_DIRECTORY: u64 = 6;
+const PE_DEBUG_ENTRY: u64 = 28;
+const PE_DEBUG_ENTRIES_MAX: u64 = 1024;
 const ELF_SECTION_NO_BITS: u64 = 8;
-const MACHO_SEGMENT: u64 = 0x1;
-const MACHO_SEGMENT_64: u64 = 0x19;
 const MACHO_COMMANDS_MAX: u64 = 4096;
+const MACHO_SECTIONS_MAX: u64 = 4096;
 const MACHO_FAT_64: [u8; 4] = [0xCA, 0xFE, 0xBA, 0xBF];
 
-fn furthest(ends: impl IntoIterator<Item = Option<u64>>) -> Executable {
-    let mut furthest = 0u64;
-    for end in ends {
-        match end {
-            Some(end) => furthest = furthest.max(end),
-            None => return Executable::Malformed,
-        }
-    }
-    Executable::EndsAt(furthest)
+struct PeSection {
+    virtual_start: u64,
+    virtual_size: u64,
+    raw_size: u64,
+    raw_start: u64,
 }
 
-fn pe_end(header: &mut Header) -> io::Result<Executable> {
+impl PeSection {
+    fn file_offset(&self, rva: u64) -> Option<u64> {
+        let span = self.virtual_size.max(self.raw_size);
+        (rva >= self.virtual_start && rva - self.virtual_start < span)
+            .then(|| self.raw_start + (rva - self.virtual_start))
+    }
+}
+
+fn pe_ranges(header: &mut Header) -> io::Result<Executable> {
     let Some([pointer]) = header.fields(0, [(PE_HEADER_POINTER as u64, 4)])? else {
         return Ok(Executable::Malformed);
     };
@@ -1056,27 +1105,114 @@ fn pe_end(header: &mut Header) -> io::Result<Executable> {
     {
         return Ok(Executable::Malformed);
     }
-    let Some([sections, optional]) = header.fields(pointer, [(6, 2), (20, 2)])? else {
+    let Some([count, optional_size]) = header.fields(pointer, [(6, 2), (20, 2)])? else {
         return Ok(Executable::Malformed);
     };
-    if sections == 0 || sections > PE_SECTIONS_MAX {
+    if count == 0 || count > PE_SECTIONS_MAX {
         return Ok(Executable::Malformed);
     }
-    let table = pointer + PE_COFF_HEADER + optional;
-    let mut ends = vec![Some(table + sections * PE_SECTION)];
-    for index in 0..sections {
-        let Some([size, start]) = header.fields(table + index * PE_SECTION, [(16, 4), (20, 4)])?
+    let optional = pointer + PE_COFF_HEADER;
+    let table = optional + optional_size;
+    let mut ranges = vec![FileRange::table(
+        "a PE section table",
+        table,
+        PE_SECTION,
+        count,
+    )];
+    let mut sections = Vec::new();
+    for index in 0..count {
+        let Some([virtual_size, virtual_start, raw_size, raw_start]) = header.fields(
+            table + index * PE_SECTION,
+            [(8, 4), (12, 4), (16, 4), (20, 4)],
+        )?
         else {
             return Ok(Executable::Malformed);
         };
-        if size > 0 {
-            ends.push(start.checked_add(size));
+        if raw_size > 0 {
+            ranges.push(FileRange::new(
+                "a PE section's raw data",
+                raw_start,
+                raw_size,
+            ));
+        }
+        sections.push(PeSection {
+            virtual_start,
+            virtual_size,
+            raw_size,
+            raw_start,
+        });
+    }
+    let mut raw: Vec<(u64, u64)> = sections
+        .iter()
+        .filter(|section| section.raw_size > 0)
+        .map(|section| {
+            (
+                section.raw_start,
+                section.raw_start.saturating_add(section.raw_size),
+            )
+        })
+        .collect();
+    raw.sort_unstable();
+    if raw.windows(2).any(|pair| pair[1].0 < pair[0].1) {
+        return Ok(Executable::Malformed);
+    }
+    let Some([magic]) = header.fields(optional, [(0, 2)])? else {
+        return Ok(Executable::Malformed);
+    };
+    let directories = match magic {
+        PE32_MAGIC => optional + 96,
+        PE32_PLUS_MAGIC => optional + 112,
+        _ => return Ok(Executable::Malformed),
+    };
+    let Some([declared]) = header.fields(directories - 4, [(0, 4)])? else {
+        return Ok(Executable::Malformed);
+    };
+    let fitting = (optional + optional_size).saturating_sub(directories) / 8;
+    let file_offset = |rva: u64| {
+        sections
+            .iter()
+            .find_map(|section| section.file_offset(rva))
+            .unwrap_or(rva)
+    };
+    for directory in 0..declared.min(PE_DIRECTORIES_MAX).min(fitting) {
+        let Some([address, size]) = header.fields(directories + directory * 8, [(0, 4), (4, 4)])?
+        else {
+            return Ok(Executable::Malformed);
+        };
+        if size == 0 {
+            continue;
+        }
+        if directory == PE_CERTIFICATE_DIRECTORY {
+            ranges.push(FileRange::new("a PE certificate table", address, size));
+            continue;
+        }
+        let start = file_offset(address);
+        ranges.push(FileRange::new("a PE data directory", start, size));
+        if directory == PE_DEBUG_DIRECTORY {
+            let entries = size / PE_DEBUG_ENTRY;
+            if entries > PE_DEBUG_ENTRIES_MAX {
+                return Ok(Executable::Malformed);
+            }
+            for entry in 0..entries {
+                let Some([data_size, data_start]) =
+                    header.fields(start + entry * PE_DEBUG_ENTRY, [(16, 4), (24, 4)])?
+                else {
+                    return Ok(Executable::Malformed);
+                };
+                if data_size > 0 {
+                    ranges.push(FileRange::new(
+                        "a PE debug entry's raw data",
+                        data_start,
+                        data_size,
+                    ));
+                }
+            }
         }
     }
-    Ok(furthest(ends))
+    Ok(Executable::Ranges(ranges))
 }
 
-fn elf_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
+fn elf_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
     let word = if wide { 8 } else { 4 };
     let layout = if wide {
         [(32, 8), (40, 8), (54, 2), (56, 2), (58, 2), (60, 2)]
@@ -1096,28 +1232,34 @@ fn elf_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
     else {
         return Ok(Executable::Malformed);
     };
-    let table_end = |offset: u64, size: u64, count: u64| {
-        size.checked_mul(count)
-            .and_then(|bytes| offset.checked_add(bytes))
-    };
-    let mut ends = vec![
-        Some(if wide { 64 } else { 52 }),
-        table_end(programs, program_size, program_count),
-        table_end(sections, section_size, section_count),
+    let mut ranges = vec![
+        FileRange::new("an ELF header", 0, if wide { 64 } else { 52 }),
+        FileRange::table(
+            "an ELF program header table",
+            programs,
+            program_size,
+            program_count,
+        ),
+        FileRange::table(
+            "an ELF section header table",
+            sections,
+            section_size,
+            section_count,
+        ),
     ];
     let program_fields = if wide {
-        [(0, 4), (8, 8), (32, 8)]
+        [(8, 8), (32, 8)]
     } else {
-        [(0, 4), (4, 4), (16, 4)]
+        [(4, 4), (16, 4)]
     };
     for index in 0..program_count {
-        let Some([kind, offset, size]) =
+        let Some([offset, size]) =
             header.fields(programs + index * program_size, program_fields)?
         else {
             return Ok(Executable::Malformed);
         };
-        if kind != ELF_PROGRAM_TYPE_NONE {
-            ends.push(offset.checked_add(size));
+        if size > 0 {
+            ranges.push(FileRange::new("an ELF segment", offset, size));
         }
     }
     let section_fields = [
@@ -1131,14 +1273,101 @@ fn elf_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
         else {
             return Ok(Executable::Malformed);
         };
-        if kind != ELF_SECTION_NO_BITS {
-            ends.push(offset.checked_add(size));
+        if kind != ELF_SECTION_NO_BITS && size > 0 {
+            ranges.push(FileRange::new("an ELF section", offset, size));
         }
     }
-    Ok(furthest(ends))
+    Ok(Executable::Ranges(ranges))
 }
 
-fn macho_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
+enum MachoRanges {
+    Pairs(&'static str, &'static [(u64, u64)]),
+    Tables(&'static str, &'static [(u64, u64, u64)]),
+}
+
+const MACHO_LINKEDIT_DATA: &[(u64, u64)] = &[(8, 12)];
+
+fn macho_command_ranges(command: u64, wide: bool) -> Option<MachoRanges> {
+    Some(match command {
+        0x02 if wide => MachoRanges::Tables("a Mach-O symbol table", &[(8, 12, 16), (16, 20, 1)]),
+        0x02 => MachoRanges::Tables("a Mach-O symbol table", &[(8, 12, 12), (16, 20, 1)]),
+        0x0B if wide => MachoRanges::Tables("a Mach-O dynamic symbol table", DYSYMTAB_64),
+        0x0B => MachoRanges::Tables("a Mach-O dynamic symbol table", DYSYMTAB_32),
+        0x16 => MachoRanges::Tables("a Mach-O two-level hint table", &[(8, 12, 4)]),
+        0x1D | 0x1E | 0x26 | 0x29 | 0x2B | 0x2E | 0x36 | 0x8000_0033 | 0x8000_0034 => {
+            MachoRanges::Pairs("a Mach-O link-edit data range", MACHO_LINKEDIT_DATA)
+        }
+        0x22 | 0x8000_0022 => MachoRanges::Pairs(
+            "a Mach-O dyld information range",
+            &[(8, 12), (16, 20), (24, 28), (32, 36), (40, 44)],
+        ),
+        0x21 | 0x2C => MachoRanges::Pairs("a Mach-O encrypted range", &[(8, 12)]),
+        _ => return None,
+    })
+}
+
+const DYSYMTAB_32: &[(u64, u64, u64)] = &[
+    (32, 36, 8),
+    (40, 44, 52),
+    (48, 52, 4),
+    (56, 60, 4),
+    (64, 68, 8),
+    (72, 76, 8),
+];
+const DYSYMTAB_64: &[(u64, u64, u64)] = &[
+    (32, 36, 8),
+    (40, 44, 56),
+    (48, 52, 4),
+    (56, 60, 4),
+    (64, 68, 8),
+    (72, 76, 8),
+];
+
+fn macho_segment(
+    header: &mut Header,
+    at: u64,
+    wide: bool,
+    ranges: &mut Vec<FileRange>,
+) -> io::Result<bool> {
+    let (fields, first, section, section_fields) = if wide {
+        (
+            [(40, 8), (48, 8), (64, 4)],
+            72,
+            80,
+            [(40, 8), (48, 4), (64, 4)],
+        )
+    } else {
+        (
+            [(32, 4), (36, 4), (48, 4)],
+            56,
+            68,
+            [(36, 4), (40, 4), (56, 4)],
+        )
+    };
+    let Some([offset, size, count]) = header.fields(at, fields)? else {
+        return Ok(false);
+    };
+    if count > MACHO_SECTIONS_MAX {
+        return Ok(false);
+    }
+    if size > 0 {
+        ranges.push(FileRange::new("a Mach-O segment", offset, size));
+    }
+    for index in 0..count {
+        let Some([size, offset, flags]) =
+            header.fields(at + first + index * section, section_fields)?
+        else {
+            return Ok(false);
+        };
+        let zero_fill = matches!(flags & 0xFF, 0x01 | 0x0C | 0x12);
+        if size > 0 && !zero_fill {
+            ranges.push(FileRange::new("a Mach-O section", offset, size));
+        }
+    }
+    Ok(true)
+}
+
+fn macho_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
     let Some([commands, commands_size]) = header.fields(0, [(16, 4), (20, 4)])? else {
         return Ok(Executable::Malformed);
     };
@@ -1146,7 +1375,11 @@ fn macho_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
         return Ok(Executable::Malformed);
     }
     let first: u64 = if wide { 32 } else { 28 };
-    let mut ends = vec![first.checked_add(commands_size)];
+    let mut ranges = vec![FileRange::new(
+        "the Mach-O load commands",
+        0,
+        first + commands_size,
+    )];
     let mut at = first;
     for _ in 0..commands {
         let Some([command, size]) = header.fields(at, [(0, 4), (4, 4)])? else {
@@ -1155,21 +1388,51 @@ fn macho_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
         if size < 8 {
             return Ok(Executable::Malformed);
         }
-        let segment = match command {
-            MACHO_SEGMENT => header.fields(at, [(32, 4), (36, 4)])?,
-            MACHO_SEGMENT_64 => header.fields(at, [(40, 8), (48, 8)])?,
-            _ => Some([0, 0]),
-        };
-        let Some([offset, length]) = segment else {
-            return Ok(Executable::Malformed);
-        };
-        ends.push(offset.checked_add(length));
+        match command {
+            0x01 | 0x19 => {
+                if !macho_segment(header, at, command == 0x19, &mut ranges)? {
+                    return Ok(Executable::Malformed);
+                }
+            }
+            0x31 => {
+                let Some([offset, length]) = header.fields(at, [(24, 8), (32, 8)])? else {
+                    return Ok(Executable::Malformed);
+                };
+                ranges.push(FileRange::new("a Mach-O note", offset, length));
+            }
+            _ => match macho_command_ranges(command, wide) {
+                Some(MachoRanges::Pairs(what, pairs)) => {
+                    for &(offset, length) in pairs {
+                        let Some([offset, length]) =
+                            header.fields(at, [(offset, 4), (length, 4)])?
+                        else {
+                            return Ok(Executable::Malformed);
+                        };
+                        if length > 0 {
+                            ranges.push(FileRange::new(what, offset, length));
+                        }
+                    }
+                }
+                Some(MachoRanges::Tables(what, tables)) => {
+                    for &(offset, count, entry) in tables {
+                        let Some([offset, count]) = header.fields(at, [(offset, 4), (count, 4)])?
+                        else {
+                            return Ok(Executable::Malformed);
+                        };
+                        if count > 0 {
+                            ranges.push(FileRange::table(what, offset, entry, count));
+                        }
+                    }
+                }
+                None => {}
+            },
+        }
         at += size;
     }
-    Ok(furthest(ends))
+    Ok(Executable::Ranges(ranges))
 }
 
-fn fat_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
+fn fat_ranges(header: &mut Header, wide: bool) -> io::Result<Executable> {
     let Some([arches]) = header.fields(0, [(4, 4)])? else {
         return Ok(Executable::Malformed);
     };
@@ -1181,14 +1444,19 @@ fn fat_end(header: &mut Header, wide: bool) -> io::Result<Executable> {
     } else {
         (MACHO_FAT_ARCH, [(8, 4), (12, 4)])
     };
-    let mut ends = vec![Some(8 + arches * entry)];
+    let mut ranges = vec![FileRange::table(
+        "a fat Mach-O header",
+        0,
+        1,
+        8 + arches * entry,
+    )];
     for index in 0..arches {
         let Some([offset, size]) = header.fields(8 + index * entry, layout)? else {
             return Ok(Executable::Malformed);
         };
-        ends.push(offset.checked_add(size));
+        ranges.push(FileRange::new("a fat Mach-O slice", offset, size));
     }
-    Ok(furthest(ends))
+    Ok(Executable::Ranges(ranges))
 }
 
 fn executable_end(
@@ -1207,7 +1475,7 @@ fn executable_end(
         big_endian: false,
     };
     if head.starts_with(b"MZ") {
-        return pe_end(&mut header);
+        return pe_ranges(&mut header);
     }
     if head.starts_with(b"\x7FELF") && head.len() >= 7 && head[6] == 1 {
         header.big_endian = match head[5] {
@@ -1216,18 +1484,18 @@ fn executable_end(
             _ => return Ok(Executable::Malformed),
         };
         return match head[4] {
-            1 => elf_end(&mut header, false),
-            2 => elf_end(&mut header, true),
+            1 => elf_ranges(&mut header, false),
+            2 => elf_ranges(&mut header, true),
             _ => Ok(Executable::Malformed),
         };
     }
     if let Some(index) = MACHO_THIN.iter().position(|magic| head.starts_with(magic)) {
         header.big_endian = index < 2;
-        return macho_end(&mut header, index % 2 == 1);
+        return macho_ranges(&mut header, index % 2 == 1);
     }
     if head.starts_with(&MACHO_FAT) || head.starts_with(&MACHO_FAT_64) {
         header.big_endian = true;
-        return fat_end(&mut header, head.starts_with(&MACHO_FAT_64));
+        return fat_ranges(&mut header, head.starts_with(&MACHO_FAT_64));
     }
     Ok(Executable::Malformed)
 }
@@ -1279,11 +1547,30 @@ pub(crate) fn check_stub(
     if let Some((at, what, _)) = archive_signature_in(read_at, prefix, zip_records_count)? {
         return Ok(Stub::Holds { at, what });
     }
-    Ok(match executable_end(read_at, prefix)? {
-        Executable::Script => Stub::Accepted,
-        Executable::EndsAt(end) if end == prefix => Stub::Accepted,
-        Executable::EndsAt(end) => Stub::NotAtTheOverlay { end },
-        Executable::Malformed => Stub::NotAnExecutable,
+    let ranges = match executable_end(read_at, prefix)? {
+        Executable::Script => return Ok(Stub::Accepted),
+        Executable::Malformed => return Ok(Stub::NotAnExecutable),
+        Executable::Ranges(ranges) => ranges,
+    };
+    if let Some(range) = ranges
+        .iter()
+        .find(|range| range.end.is_none_or(|end| end > prefix))
+    {
+        return Ok(Stub::RangeReaches {
+            what: range.what,
+            start: range.start,
+            end: range.end,
+        });
+    }
+    let end = ranges
+        .iter()
+        .filter_map(|range| range.end)
+        .max()
+        .unwrap_or(0);
+    Ok(if end == prefix {
+        Stub::Accepted
+    } else {
+        Stub::NotAtTheOverlay { end }
     })
 }
 

@@ -913,7 +913,7 @@ fn decode_header(file: &mut ArchiveFile, streams: &Streams) -> Result<Vec<u8>> {
     Ok(decoded)
 }
 
-pub(crate) const EXECUTABLE_MAGICS: [&[u8]; 7] = [
+pub(crate) const EXECUTABLE_MAGICS: [&[u8]; 8] = [
     b"MZ",
     b"\x7FELF",
     b"\xFE\xED\xFA\xCE",
@@ -921,6 +921,7 @@ pub(crate) const EXECUTABLE_MAGICS: [&[u8]; 7] = [
     b"\xCE\xFA\xED\xFE",
     b"\xCF\xFA\xED\xFE",
     b"\xCA\xFE\xBA\xBE",
+    b"\xCA\xFE\xBA\xBF",
 ];
 // EXTERNAL(7-Zip): it finds a 7z signature after a stub only when the signature starts at offset 8 MiB or earlier.
 const STUB_SEARCH_LIMIT: u64 = 8 << 20;

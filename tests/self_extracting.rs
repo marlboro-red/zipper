@@ -176,14 +176,37 @@ fn stub(length: usize) -> Vec<u8> {
     put(&mut bytes, PE_POINTER, &(PE_HEADER as u32).to_le_bytes());
     put(&mut bytes, PE_HEADER, b"PE\0\0");
     put(&mut bytes, PE_HEADER + 6, &1u16.to_le_bytes());
-    let section = PE_HEADER + 24;
     put(
         &mut bytes,
-        section + 16,
+        PE_HEADER + 20,
+        &(PE_OPTIONAL as u16).to_le_bytes(),
+    );
+    put(&mut bytes, PE_OPTIONAL_START, &0x10Bu16.to_le_bytes());
+    put(&mut bytes, PE_DIRECTORIES - 4, &16u32.to_le_bytes());
+    put(
+        &mut bytes,
+        PE_SECTION + 8,
         &((length - PE_DATA) as u32).to_le_bytes(),
     );
-    put(&mut bytes, section + 20, &(PE_DATA as u32).to_le_bytes());
+    put(
+        &mut bytes,
+        PE_SECTION + 12,
+        &(PE_SECTION_ADDRESS as u32).to_le_bytes(),
+    );
+    put(
+        &mut bytes,
+        PE_SECTION + 16,
+        &((length - PE_DATA) as u32).to_le_bytes(),
+    );
+    put(&mut bytes, PE_SECTION + 20, &(PE_DATA as u32).to_le_bytes());
     bytes.truncate(length);
+    bytes
+}
+
+fn with_directory(mut bytes: Vec<u8>, directory: usize, address: usize, size: usize) -> Vec<u8> {
+    let at = PE_DIRECTORIES + directory * 8;
+    put(&mut bytes, at, &(address as u32).to_le_bytes());
+    put(&mut bytes, at + 4, &(size as u32).to_le_bytes());
     bytes
 }
 
@@ -196,6 +219,29 @@ fn elf_stub(length: usize) -> Vec<u8> {
     put(&mut bytes, 56, &1u16.to_le_bytes());
     put(&mut bytes, 64, &1u32.to_le_bytes());
     put(&mut bytes, 96, &(length as u64).to_le_bytes());
+    bytes
+}
+
+fn elf_stub_with_null_segment(length: usize, start: usize, size: usize) -> Vec<u8> {
+    let mut bytes = elf_stub(length);
+    put(&mut bytes, 56, &2u16.to_le_bytes());
+    let null = 64 + 56;
+    bytes[null..null + 56].fill(0);
+    put(&mut bytes, null + 8, &(start as u64).to_le_bytes());
+    put(&mut bytes, null + 32, &(size as u64).to_le_bytes());
+    bytes
+}
+
+fn macho_stub_with_symbols(length: usize, start: usize) -> Vec<u8> {
+    let mut bytes = macho_stub(length);
+    put(&mut bytes, 16, &2u32.to_le_bytes());
+    put(&mut bytes, 20, &(72u32 + 24).to_le_bytes());
+    let symtab = 32 + 72;
+    bytes[symtab..symtab + 24].fill(0);
+    put(&mut bytes, symtab, &2u32.to_le_bytes());
+    put(&mut bytes, symtab + 4, &24u32.to_le_bytes());
+    put(&mut bytes, symtab + 8, &(start as u32).to_le_bytes());
+    put(&mut bytes, symtab + 12, &2u32.to_le_bytes());
     bytes
 }
 
@@ -224,7 +270,14 @@ fn fat_stub(length: usize) -> Vec<u8> {
 const PE_POINTER: usize = 0x3C;
 const PE_HEADER: usize = 0x40;
 const PE_SIGNATURE_END: usize = PE_HEADER + 4;
-const PE_DATA: usize = PE_HEADER + 24 + 40;
+const PE_OPTIONAL_START: usize = PE_HEADER + 24;
+const PE_OPTIONAL: usize = 96 + 16 * 8;
+const PE_DIRECTORIES: usize = PE_OPTIONAL_START + 96;
+const PE_SECTION: usize = PE_OPTIONAL_START + PE_OPTIONAL;
+const PE_DATA: usize = PE_SECTION + 40;
+const PE_SECTION_ADDRESS: usize = 0x1000;
+const PE_CERTIFICATES: usize = 4;
+const PE_DEBUG: usize = 6;
 const ELF_DATA: usize = 64 + 56;
 const MACHO_DATA: usize = 32 + 72;
 const FAT_DATA: usize = 28;
@@ -642,6 +695,18 @@ fn a_stub_without_a_whole_executable_header_is_refused() {
     iso_with_mz[..2].copy_from_slice(b"MZ");
     for (label, prefix) in [
         ("MZ with no PE header", no_pe_signature),
+        ("two PE sections over the same bytes", {
+            let mut bytes = stub(1000);
+            put(&mut bytes, PE_HEADER + 6, &2u16.to_le_bytes());
+            let first = bytes[PE_SECTION..PE_SECTION + 40].to_vec();
+            put(&mut bytes, PE_SECTION + 40, &first);
+            bytes
+        }),
+        ("a PE optional header with no known magic", {
+            let mut bytes = stub(1000);
+            put(&mut bytes, PE_OPTIONAL_START, &0u16.to_le_bytes());
+            bytes
+        }),
         ("a PE with no sections", {
             let mut bytes = stub(1000);
             put(&mut bytes, PE_HEADER + 6, &0u16.to_le_bytes());
@@ -857,5 +922,78 @@ fn a_real_executable_stub_works_only_with_the_archive_at_its_end() {
         );
         let at = format!("ends at offset {}", stub.len());
         assert_refused(&padded, &[&at], &format!("padded {name}"));
+    }
+}
+
+#[test]
+fn a_header_range_that_reaches_the_archive_is_refused_by_name() {
+    let mut debug = with_directory(stub(1000), PE_DEBUG, PE_SECTION_ADDRESS + 100, 28);
+    put(&mut debug, PE_DATA + 100 + 16, &8u32.to_le_bytes());
+    put(&mut debug, PE_DATA + 100 + 24, &1000u32.to_le_bytes());
+    for (label, prefix, named) in [
+        (
+            "a certificate table over the archive",
+            with_directory(stub(1000), PE_CERTIFICATES, 1000, 8),
+            "PE certificate table at offset 1000",
+        ),
+        (
+            "a certificate table past the archive's start",
+            with_directory(stub(1000), PE_CERTIFICATES, 1001, 64),
+            "PE certificate table at offset 1001",
+        ),
+        (
+            "a debug entry over the archive",
+            debug,
+            "PE debug entry's raw data at offset 1000",
+        ),
+        (
+            "an ELF null segment over the archive",
+            elf_stub_with_null_segment(1000, 1000, 35),
+            "ELF segment at offset 1000",
+        ),
+        (
+            "Mach-O symbols over the archive",
+            macho_stub_with_symbols(1000, 1000),
+            "Mach-O symbol table at offset 1000",
+        ),
+    ] {
+        refused_before_a_zip_and_a_7z(&prefix, &[named], label);
+    }
+}
+
+#[test]
+fn header_ranges_that_end_inside_the_stub_are_accepted() {
+    let folder = tempfile::tempdir().unwrap();
+    let zip = fs::read(data("zip-corpus/infozip-default.zip")).unwrap();
+    for (label, prefix) in [
+        ("a certificate table at the stub's end", {
+            let mut bytes = stub(1064);
+            put(
+                &mut bytes,
+                PE_SECTION + 8,
+                &((1000 - PE_DATA) as u32).to_le_bytes(),
+            );
+            put(
+                &mut bytes,
+                PE_SECTION + 16,
+                &((1000 - PE_DATA) as u32).to_le_bytes(),
+            );
+            with_directory(bytes, PE_CERTIFICATES, 1000, 64)
+        }),
+        (
+            "an ELF null segment inside the stub",
+            elf_stub_with_null_segment(1000, 500, 35),
+        ),
+        (
+            "Mach-O symbols inside the stub",
+            macho_stub_with_symbols(1000, 500),
+        ),
+    ] {
+        let path = written(folder.path(), "inside.exe", &[&prefix[..], &zip].concat());
+        assert_eq!(
+            extracted_tree(&path),
+            extracted_tree(&data("zip-corpus/infozip-default.zip")),
+            "{label}"
+        );
     }
 }

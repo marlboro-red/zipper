@@ -270,14 +270,17 @@ fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T
     if says_nothing_about_the_volumes(&error) {
         return Err(error);
     }
-    let note = match (volumes.note(), lone_zip_is_another_format(archive)) {
-        (Some(note), Some(format)) => Some(format!(
-            "{note}; {} by itself is a {format} archive, so the .z01 volumes beside it may not belong to it; move them aside to read it alone",
-            archive.display()
-        )),
-        (note, _) => note,
-    };
-    match note {
+    if let (Some(note), Some(format)) = (volumes.note(), lone_zip_is_another_format(archive)) {
+        return Err(VolumeNote {
+            error: anyhow::anyhow!(
+                "{} by itself is a {format} archive, so the .z01 volumes beside it may not belong to it; move them aside to read it alone",
+                archive.display()
+            ),
+            note: format!("{}\n{note}", without_backend_advice(error)),
+        }
+        .into());
+    }
+    match volumes.note() {
         Some(note) => Err(VolumeNote {
             error: without_backend_advice(error),
             note,

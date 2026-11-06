@@ -91,6 +91,9 @@ def python_zip(target, source, method, seekable, zip64):
 STUB_SEED = 20261106
 PE_POINTER = 0x3C
 PE_HEADER = 0x40
+PE32_MAGIC = 0x10B
+PE_DIRECTORIES = 16
+PE_OPTIONAL = 96 + 8 * PE_DIRECTORIES
 
 
 def signature_free_exe_stub(length=4096):
@@ -99,11 +102,15 @@ def signature_free_exe_stub(length=4096):
     while len(data) < length:
         byte = rng.getrandbits(8)
         data.append(ord("Q") if byte in b"P7" else byte)
-    section = PE_HEADER + 24
+    optional = PE_HEADER + 24
+    section = optional + PE_OPTIONAL
     data[PE_HEADER:section + 40] = bytes(section + 40 - PE_HEADER)
     data[PE_POINTER:PE_POINTER + 4] = PE_HEADER.to_bytes(4, "little")
     data[PE_HEADER:PE_HEADER + 4] = b"PE\0\0"
     data[PE_HEADER + 6:PE_HEADER + 8] = (1).to_bytes(2, "little")
+    data[PE_HEADER + 20:PE_HEADER + 22] = PE_OPTIONAL.to_bytes(2, "little")
+    data[optional:optional + 2] = PE32_MAGIC.to_bytes(2, "little")
+    data[optional + 92:optional + 96] = PE_DIRECTORIES.to_bytes(4, "little")
     data[section + 16:section + 20] = (length - section - 40).to_bytes(4, "little")
     data[section + 20:section + 24] = (section + 40).to_bytes(4, "little")
     return bytes(data)
