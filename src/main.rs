@@ -644,6 +644,10 @@ mod stop_on_signal {
             }
             Self { previous }
         }
+
+        pub(super) fn keep_until_exit(self) {
+            std::mem::forget(self);
+        }
     }
 
     impl Drop for Catching {
@@ -682,11 +686,13 @@ fn no_signal_action() -> libc::sigaction {
 
 const COPY_CANCEL_POLL: std::time::Duration = std::time::Duration::from_millis(10);
 
-fn copy_to_standard_output_until_cancelled(mut from: std::fs::File) -> Result<()> {
+fn copy_until_cancelled(
+    mut from: impl std::io::Read + Send + 'static,
+    mut to: impl std::io::Write + Send + 'static,
+) -> Result<()> {
     let (done, finished) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let mut to = std::io::stdout().lock();
-        let copied = std::io::copy(&mut from, &mut to).and_then(|_| std::io::Write::flush(&mut to));
+        let copied = std::io::copy(&mut from, &mut to).and_then(|_| to.flush());
         let _ = done.send(copied);
     });
     loop {
@@ -696,7 +702,7 @@ fn copy_to_standard_output_until_cancelled(mut from: std::fs::File) -> Result<()
                 anyhow::ensure!(!ending_signal_received(), zipper::Cancelled);
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                anyhow::bail!("the copy to standard output stopped")
+                anyhow::bail!("the copy stopped")
             }
         }
     }
@@ -717,21 +723,21 @@ fn cancel_on_signal() -> Option<&'static std::sync::atomic::AtomicBool> {
 }
 
 #[cfg(unix)]
-fn catch_ending_signals(reader: &Reader) -> Option<stop_on_signal::Catching> {
-    matches!(
-        reader,
-        Reader::Zip { .. }
-            | Reader::Tar
-            | Reader::SevenZip
-            | Reader::Stream
-            | Reader::Backend { .. }
-    )
-    .then(stop_on_signal::Catching::start)
+fn catch_ending_signals() -> stop_on_signal::Catching {
+    stop_on_signal::Catching::start()
 }
 
 #[cfg(not(unix))]
-fn catch_ending_signals(_: &Reader) -> Option<()> {
-    None
+struct NoSignalsCaught;
+
+#[cfg(not(unix))]
+impl NoSignalsCaught {
+    fn keep_until_exit(self) {}
+}
+
+#[cfg(not(unix))]
+fn catch_ending_signals() -> NoSignalsCaught {
+    NoSignalsCaught
 }
 
 #[cfg(unix)]
@@ -832,6 +838,7 @@ fn run() -> Result<()> {
             existing,
             max_extracted_bytes,
         } => {
+            let catching = catch_ending_signals();
             let to_stdout = stdout.then(tempfile::tempdir).transpose()?;
             let output = match (&to_stdout, output) {
                 (Some(work), _) => work.path().join("out"),
@@ -841,10 +848,10 @@ fn run() -> Result<()> {
                 let folder = output
                     .parent()
                     .filter(|parent| !parent.as_os_str().is_empty());
-                let mut spool = tempfile::Builder::new()
+                let spool = tempfile::Builder::new()
                     .prefix(".zipper-stdin-")
                     .tempfile_in(folder.unwrap_or(std::path::Path::new(".")))?;
-                std::io::copy(&mut std::io::stdin().lock(), &mut spool)?;
+                copy_until_cancelled(std::io::stdin(), spool.as_file().try_clone()?)?;
                 Some(spool)
             } else {
                 None
@@ -852,8 +859,6 @@ fn run() -> Result<()> {
             let archive = spooled
                 .as_ref()
                 .map_or(archive, |spool| spool.path().to_owned());
-            let _catching =
-                catch_ending_signals(&zipper::choose_reader(cli.zip_engine.into(), &archive)?);
             with_password(password, |password| {
                 zipper::extract_archive(
                     &archive,
@@ -899,8 +904,9 @@ fn run() -> Result<()> {
                         files.len()
                     );
                 };
-                copy_to_standard_output_until_cancelled(std::fs::File::open(file)?)?;
+                copy_until_cancelled(std::fs::File::open(file)?, std::io::stdout())?;
             }
+            catching.keep_until_exit();
         }
         Command::List { archive } => {
             anyhow::ensure!(
@@ -931,7 +937,7 @@ fn run() -> Result<()> {
                     zipper::native_stream::ReadOptions::default(),
                 )?),
                 Reader::Backend { format } => {
-                    let _catching = catch_ending_signals(&Reader::Backend { format: None });
+                    let _catching = catch_ending_signals();
                     zipper::compat::run_until_cancelled(
                         "l",
                         &archive,
@@ -986,7 +992,7 @@ fn run() -> Result<()> {
                     zipper::native_stream::ReadOptions::default(),
                 )?),
                 Reader::Backend { format } => {
-                    let _catching = catch_ending_signals(&Reader::Backend { format: None });
+                    let _catching = catch_ending_signals();
                     zipper::compat::run_until_cancelled(
                         "t",
                         &archive,

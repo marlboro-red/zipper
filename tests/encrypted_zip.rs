@@ -2392,3 +2392,88 @@ fn a_signal_stops_7zip_listing_and_testing() {
         assert!(!running(), "{command}: 7-Zip was left running");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn a_signal_right_after_the_copy_to_standard_output_leaves_no_temporary_folder() {
+    use std::os::unix::process::ExitStatusExt;
+    const LARGE: usize = 256 << 20;
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("large.zip");
+    large_stored_zip(&archive, LARGE);
+    let temporary = work.path().join("tmp");
+    fs::create_dir(&temporary).unwrap();
+    let copy = work.path().join("copy.bin");
+    for trial in 0..16u64 {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .env("TMPDIR", &temporary)
+            .arg("extract")
+            .arg(&archive)
+            .arg("--stdout")
+            .stdin(Stdio::null())
+            .stdout(fs::File::create(&copy).unwrap())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        while fs::metadata(&copy).map_or(0, |metadata| metadata.len()) < LARGE as u64
+            && child.try_wait().unwrap().is_none()
+        {
+            std::thread::sleep(std::time::Duration::from_micros(500));
+        }
+        std::thread::sleep(std::time::Duration::from_micros(trial * 500));
+        let _ = Command::new("kill")
+            .arg("-TERM")
+            .arg(child.id().to_string())
+            .status();
+        let status = child.wait().unwrap();
+        let complete = fs::metadata(&copy).unwrap().len() == LARGE as u64;
+        assert_eq!(
+            listing(&temporary),
+            Vec::<String>::new(),
+            "trial {trial}: {status:?}"
+        );
+        assert!(
+            status.success() || (status.signal() == Some(15) && !complete),
+            "trial {trial}: a complete copy must exit with success: {status:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signal_while_standard_input_is_spooled_removes_the_spool() {
+    use std::io::Write;
+    use std::os::unix::process::ExitStatusExt;
+    let work = tempfile::tempdir().unwrap();
+    let output = work.path().join("out");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .arg("extract")
+        .arg("-")
+        .arg("-o")
+        .arg(&output)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    input.write_all(&vec![0x5a; 4 << 20]).unwrap();
+    input.flush().unwrap();
+    let spooled = || {
+        listing(work.path())
+            .iter()
+            .any(|name| name.starts_with(".zipper-stdin-"))
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !(spooled() && decrypted_bytes_on_disk(work.path()) >= 4 << 20)
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(spooled());
+    terminate(&child);
+    let status = wait_at_most(&mut child, 10);
+    drop(input);
+    assert_eq!(status.and_then(|status| status.signal()), Some(15));
+    assert_eq!(listing(work.path()), Vec::<String>::new());
+}
