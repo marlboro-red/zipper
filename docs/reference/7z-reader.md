@@ -53,7 +53,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 
 These options work the same way as in the other readers. [Usage](../usage.md#extract-into-an-existing-folder) shows them.
 
-- `Existing::Overwrite`, or `zipper extract --overwrite`, extracts into an existing folder.
+- `Existing::Overwrite`, or `zipper extract --overwrite`, extracts into an existing folder. A rename that fails undoes the ones before it, so the destination keeps what it held.
 - `paths`, `include` and `exclude`, or `--path`, `--include` and `--exclude`, select entries, as [usage](../usage.md#extract-selected-paths) describes. Only folders that hold a selected file decode, and each decodes completely, because 7z has no way to skip into a folder and its CRC covers all of it.
 - `strip`, or `--strip-prefix` and `--strip-components`, places a folder's contents at the destination root, as [usage](../usage.md#extract-a-folder-at-the-output-root) describes.
 - `metadata: Metadata::ContentOnly`, or `--content-only`, writes contents and the execute bit only, as [usage](../usage.md#extract-contents-only) describes.

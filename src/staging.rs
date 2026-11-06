@@ -1,5 +1,5 @@
 use crate::{Directory, parent};
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::HashSet,
     fs,
@@ -16,10 +16,14 @@ pub enum Existing {
     /// Extract into an existing directory, or the directory a symlink names.
     /// A failed decode replaces nothing. File and directory conflicts, and
     /// folders on another filesystem, fail before any replacement. Then each
-    /// archive file replaces the file of the same name by rename, so it is
-    /// wholly old or wholly new. A rename that fails partway leaves the
-    /// earlier files replaced. Existing directories keep their mode, and files
-    /// the archive does not name are left alone.
+    /// archive file replaces the file of the same name by rename. A rename
+    /// that fails, or a new folder's mode that cannot be set, undoes the
+    /// renames already made in reverse order, so the destination keeps every
+    /// file, link, folder and mode it had, and the error names the path that
+    /// failed. If an undo fails too, the error names each path left
+    /// changed and the staging folder that keeps the replaced files. Existing
+    /// directories keep their mode, and files the archive does not name are
+    /// left alone.
     Overwrite,
     /// Extract into an existing directory, leaving out every archive file
     /// whose path already exists there, as 7-Zip's `-aos` does. An archive
@@ -60,8 +64,28 @@ impl Step {
     }
 }
 
+type Identity = Option<(u64, u64)>;
+
+enum Done {
+    Moved {
+        from: PathBuf,
+        to: PathBuf,
+        moved: Identity,
+    },
+    #[cfg_attr(
+        not(any(target_os = "linux", target_os = "android", target_vendor = "apple")),
+        allow(dead_code)
+    )]
+    Swapped {
+        staged: PathBuf,
+        placed: PathBuf,
+        new: Identity,
+    },
+}
+
 pub(crate) struct Staging {
-    temp: tempfile::TempDir,
+    temp: std::sync::Mutex<Option<tempfile::TempDir>>,
+    root: PathBuf,
     destination: PathBuf,
     merge: bool,
     existing: Existing,
@@ -107,7 +131,8 @@ pub(crate) fn stage(
             ))
         })?;
     Ok(Staging {
-        temp,
+        root: temp.path().to_owned(),
+        temp: std::sync::Mutex::new(Some(temp)),
         destination: destination.to_owned(),
         merge,
         existing,
@@ -117,26 +142,26 @@ pub(crate) fn stage(
 
 impl Staging {
     pub(crate) fn path(&self) -> &Path {
-        self.temp.path()
+        &self.root
     }
 
     pub(crate) fn publish(&self, directories: &[Directory]) -> Result<()> {
         if let Some(zone) = &self.zone {
-            crate::ntfs_streams::mark_extracted_files(self.temp.path(), zone)?;
+            crate::ntfs_streams::mark_extracted_files(&self.root, zone)?;
         }
         if !self.merge {
-            return crate::publish(self.temp.path(), &self.destination, directories);
+            return crate::publish(&self.root, &self.destination, directories);
         }
         let mut steps = Vec::new();
         plan(
-            self.temp.path(),
+            &self.root,
             &self.destination,
             self.existing,
             Path::new(""),
             &mut HashSet::new(),
             &mut steps,
         )?;
-        ensure_links_stay_in_archive_paths(self.temp.path(), &self.destination, &steps)?;
+        ensure_links_stay_in_archive_paths(&self.root, &self.destination, &steps)?;
         let created: Vec<Directory> = directories
             .iter()
             .filter(|directory| {
@@ -149,32 +174,263 @@ impl Staging {
         #[cfg(unix)]
         let default = {
             use std::os::unix::fs::PermissionsExt;
-            fs::metadata(self.temp.path())?.permissions().mode() & 0o777
+            fs::metadata(&self.root)?.permissions().mode() & 0o777
         };
-        let staged = |path: &Path| self.temp.path().join(path);
-        let placed = |path: &Path| self.destination.join(path);
-        for step in &steps {
-            match step {
-                Step::Create(path) => rename_without_replacing(&staged(path), &placed(path))?,
-                Step::Replace(path) => {
-                    #[cfg(windows)]
-                    allow_replacing(&placed(path))?;
-                    fs::rename(staged(path), placed(path))?;
-                }
-                Step::CreateAs(path, name) => {
-                    rename_without_replacing(&staged(path), &placed(name))?
-                }
-                Step::SetAside(path, name) => {
-                    rename_without_replacing(&placed(path), &placed(name))?
-                }
-            }
+        let mut done = Vec::new();
+        let published = self.carry_out(&steps, &mut done, |_| {}).and_then(|()| {
+            #[cfg(unix)]
+            crate::unix_modes::apply_with_default(&self.destination, &created, default)
+                .inspect_err(|_| self.unlock_created(&steps))?;
+            Ok(())
+        });
+        if let Err(error) = published {
+            return Err(self.undo(&done, error));
         }
-        #[cfg(unix)]
-        crate::unix_modes::apply_with_default(&self.destination, &created, default)?;
         #[cfg(windows)]
         crate::restore_directory_times(&self.destination, &created);
         Ok(())
     }
+
+    fn carry_out(
+        &self,
+        steps: &[Step],
+        done: &mut Vec<Done>,
+        mut after_each: impl FnMut(&Step),
+    ) -> Result<()> {
+        let staged = |path: &Path| self.root.join(path);
+        let placed = |path: &Path| self.destination.join(path);
+        let mut aside = None;
+        let mut spellings = Spellings::new();
+        for (index, step) in steps.iter().enumerate() {
+            match step {
+                Step::Create(path) => Self::move_into_place(staged(path), placed(path), done)?,
+                Step::Replace(path) => {
+                    let (aside, swaps) = self.aside(&mut aside, index)?;
+                    let placed = placed(path);
+                    if swaps {
+                        Self::replace_by_swap(staged(path), placed, done)?
+                    } else {
+                        let old = spelled_on_disk(&placed, &mut spellings);
+                        Self::replace_in_two_moves(staged(path), placed, old, aside, done)?
+                    }
+                }
+                Step::CreateAs(path, name) => {
+                    Self::move_into_place(staged(path), placed(name), done)?
+                }
+                Step::SetAside(path, name) => {
+                    let old = spelled_on_disk(&placed(path), &mut spellings);
+                    Self::move_into_place(old, placed(name), done)?
+                }
+            }
+            after_each(step);
+        }
+        Ok(())
+    }
+
+    fn move_into_place(from: PathBuf, to: PathBuf, done: &mut Vec<Done>) -> Result<()> {
+        rename_without_replacing(&from, &to)?;
+        let moved = identity(&to);
+        done.push(Done::Moved { from, to, moved });
+        Ok(())
+    }
+
+    fn replace_by_swap(staged: PathBuf, placed: PathBuf, done: &mut Vec<Done>) -> Result<()> {
+        match swap(&staged, &placed) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Self::move_into_place(staged, placed, done);
+            }
+            Err(error) => {
+                return Err(error).with_context(|| format!("cannot replace {}", placed.display()));
+            }
+        }
+        ensure!(
+            fs::symlink_metadata(&staged).is_ok(),
+            "{} was replaced but not swapped, so its old file is lost",
+            placed.display()
+        );
+        done.push(Done::Swapped {
+            staged: staged.clone(),
+            new: identity(&placed),
+            placed: placed.clone(),
+        });
+        Self::ensure_replaced_no_folder(&staged, &placed)
+    }
+
+    fn replace_in_two_moves(
+        staged: PathBuf,
+        placed: PathBuf,
+        old: PathBuf,
+        aside: PathBuf,
+        done: &mut Vec<Done>,
+    ) -> Result<()> {
+        Self::move_into_place(old, aside.clone(), done)
+            .with_context(|| format!("cannot replace {}", placed.display()))?;
+        Self::ensure_replaced_no_folder(&aside, &placed)?;
+        Self::move_into_place(staged, placed, done)
+    }
+
+    fn ensure_replaced_no_folder(old: &Path, placed: &Path) -> Result<()> {
+        let old = fs::symlink_metadata(old)
+            .with_context(|| format!("cannot replace {}", placed.display()))?;
+        ensure!(
+            !old.is_dir(),
+            "{} became a directory during extraction",
+            placed.display()
+        );
+        Ok(())
+    }
+
+    fn aside(&self, folder: &mut Option<(PathBuf, bool)>, index: usize) -> Result<(PathBuf, bool)> {
+        let (folder, swaps) = match folder {
+            Some(folder) => folder,
+            None => {
+                let created = tempfile::Builder::new()
+                    .prefix(".zipper-")
+                    .tempdir_in(&self.root)
+                    .with_context(|| format!("cannot make a folder in {}", self.root.display()))?
+                    .keep();
+                let swaps = swap_works(&created);
+                folder.insert((created, swaps))
+            }
+        };
+        Ok((folder.join(index.to_string()), *swaps))
+    }
+
+    #[cfg(unix)]
+    fn unlock_created(&self, steps: &[Step]) {
+        for step in steps {
+            if let Step::Create(path) = step {
+                crate::unix_modes::unlock_tree_for_cleanup(&self.destination.join(path));
+            }
+        }
+    }
+
+    fn undo(&self, done: &[Done], error: anyhow::Error) -> anyhow::Error {
+        let left: Vec<String> = done
+            .iter()
+            .rev()
+            .filter_map(|step| {
+                let undone = match step {
+                    Done::Moved { from, to, moved } => ensure_unchanged(to, *moved)
+                        .and_then(|()| rename_without_replacing(to, from)),
+                    Done::Swapped {
+                        staged,
+                        placed,
+                        new,
+                    } => ensure_unchanged(placed, *new).and_then(|()| {
+                        swap(staged, placed)
+                            .with_context(|| format!("cannot swap {} back", placed.display()))
+                    }),
+                };
+                let describe = || match step {
+                    Done::Moved { from, to, .. } => {
+                        format!("{} moved from {}", to.display(), from.display())
+                    }
+                    Done::Swapped { staged, placed, .. } => {
+                        format!("{} swapped with {}", placed.display(), staged.display())
+                    }
+                };
+                undone
+                    .err()
+                    .map(|undo| format!("{} ({undo:#})", describe()))
+            })
+            .collect();
+        if left.is_empty() {
+            return error;
+        }
+        if let Some(temp) = self.temp.lock().ok().and_then(|mut temp| temp.take()) {
+            let _ = temp.keep();
+        }
+        error.context(format!(
+            "extraction failed and could not undo {}; {} keeps the files it replaced",
+            left.join(", "),
+            self.root.display()
+        ))
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
+fn swap(staged: &Path, placed: &Path) -> std::io::Result<()> {
+    rustix::fs::renameat_with(
+        rustix::fs::CWD,
+        staged,
+        rustix::fs::CWD,
+        placed,
+        rustix::fs::RenameFlags::EXCHANGE,
+    )
+    .map_err(std::io::Error::from)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android", target_vendor = "apple")))]
+fn swap(_: &Path, _: &Path) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+
+fn swap_works(folder: &Path) -> bool {
+    let (first, second) = (folder.join("first"), folder.join("second"));
+    let swapped = fs::write(&first, b"first").is_ok()
+        && fs::write(&second, b"second").is_ok()
+        && swap(&first, &second).is_ok()
+        && fs::read(&first).is_ok_and(|bytes| bytes == b"second")
+        && fs::read(&second).is_ok_and(|bytes| bytes == b"first");
+    let _ = fs::remove_file(first);
+    let _ = fs::remove_file(second);
+    swapped
+}
+
+#[cfg(unix)]
+fn identity(path: &Path) -> Identity {
+    use std::os::unix::fs::MetadataExt;
+    fs::symlink_metadata(path)
+        .ok()
+        .map(|metadata| (metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn identity(_: &Path) -> Identity {
+    None
+}
+
+fn ensure_unchanged(path: &Path, expected: Identity) -> Result<()> {
+    ensure!(
+        expected.is_none() || identity(path) == expected,
+        "{} changed during extraction",
+        path.display()
+    );
+    Ok(())
+}
+
+type Spellings =
+    std::collections::HashMap<PathBuf, std::collections::HashMap<u64, Vec<std::ffi::OsString>>>;
+
+#[cfg(unix)]
+fn spelled_on_disk(path: &Path, spellings: &mut Spellings) -> PathBuf {
+    use std::os::unix::fs::{DirEntryExt, MetadataExt};
+    let (Some(parent), Some(name), Ok(metadata)) =
+        (path.parent(), path.file_name(), fs::symlink_metadata(path))
+    else {
+        return path.to_owned();
+    };
+    let names = spellings.entry(parent.to_owned()).or_insert_with(|| {
+        let mut names = std::collections::HashMap::<u64, Vec<std::ffi::OsString>>::new();
+        for entry in fs::read_dir(parent).into_iter().flatten().flatten() {
+            names
+                .entry(entry.ino())
+                .or_default()
+                .push(entry.file_name());
+        }
+        names
+    });
+    match names.get(&metadata.ino()).map(Vec::as_slice) {
+        Some([only]) if only != name => parent.join(only),
+        _ => path.to_owned(),
+    }
+}
+
+#[cfg(not(unix))]
+fn spelled_on_disk(path: &Path, _: &mut Spellings) -> PathBuf {
+    path.to_owned()
 }
 
 fn rename_without_replacing(from: &Path, to: &Path) -> Result<()> {
@@ -342,23 +598,6 @@ fn ensure_links_stay_in_archive_paths(
     Ok(())
 }
 
-#[cfg(windows)]
-#[expect(
-    clippy::permissions_set_readonly_false,
-    reason = "Windows only, where it clears FILE_ATTRIBUTE_READONLY"
-)]
-fn allow_replacing(existing: &Path) -> Result<()> {
-    if let Ok(metadata) = fs::symlink_metadata(existing)
-        && metadata.is_file()
-        && metadata.permissions().readonly()
-    {
-        let mut permissions = metadata.permissions();
-        permissions.set_readonly(false);
-        fs::set_permissions(existing, permissions)?;
-    }
-    Ok(())
-}
-
 const LONGEST_NAME: usize = 255;
 
 pub(crate) fn numbered(name: &std::ffi::OsStr, number: u64) -> std::ffi::OsString {
@@ -412,7 +651,10 @@ fn plan(
     taken: &mut HashSet<PathBuf>,
     steps: &mut Vec<Step>,
 ) -> Result<()> {
-    for entry in fs::read_dir(staging.join(relative))? {
+    let folder = staging.join(relative);
+    for entry in
+        fs::read_dir(&folder).with_context(|| format!("cannot read {}", folder.display()))?
+    {
         let name = entry?.file_name();
         ensure!(
             Some(name.as_os_str()) != staging.file_name(),
@@ -424,7 +666,10 @@ fn plan(
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 steps.push(Step::Create(path))
             }
-            Err(error) => return Err(error.into()),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("cannot read {}", destination.join(&path).display()));
+            }
             Ok(existing) if staged.is_dir() && existing.is_dir() => {
                 ensure!(
                     same_filesystem(&staged, &existing),
@@ -533,5 +778,261 @@ mod tests {
         fs::remove_file(&to).unwrap();
         rename_without_replacing(&from, &to).unwrap();
         assert_eq!(fs::read(&to).unwrap(), b"archive");
+    }
+
+    #[cfg(unix)]
+    type Tree = std::collections::BTreeMap<PathBuf, (u32, Option<Vec<u8>>)>;
+
+    #[cfg(unix)]
+    fn tree(root: &Path, leave_out: &Path) -> Tree {
+        use std::os::unix::fs::PermissionsExt;
+        walkdir::WalkDir::new(root)
+            .min_depth(1)
+            .into_iter()
+            .filter_entry(|entry| entry.path() != leave_out)
+            .map(|entry| entry.unwrap())
+            .map(|entry| {
+                let metadata = entry.path().symlink_metadata().unwrap();
+                let content = metadata.is_file().then(|| fs::read(entry.path()).unwrap());
+                let path = entry.path().strip_prefix(root).unwrap().to_owned();
+                (path, (metadata.permissions().mode(), content))
+            })
+            .collect()
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    #[cfg(unix)]
+    struct Merge {
+        _root: tempfile::TempDir,
+        destination: PathBuf,
+        staging: Staging,
+        steps: Vec<Step>,
+    }
+
+    #[cfg(unix)]
+    fn merge() -> Merge {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("out");
+        fs::create_dir_all(destination.join("e")).unwrap();
+        fs::write(destination.join("x"), b"old x").unwrap();
+        set_mode(&destination.join("x"), 0o440);
+        fs::write(destination.join("kept"), b"kept").unwrap();
+        let staging = stage(
+            &root.path().join("archive"),
+            &destination,
+            Existing::Overwrite,
+            crate::Metadata::Restore,
+        )
+        .unwrap();
+        fs::create_dir_all(staging.path().join("d")).unwrap();
+        fs::create_dir_all(staging.path().join("e")).unwrap();
+        fs::write(staging.path().join("d/f"), b"new f").unwrap();
+        fs::write(staging.path().join("x"), b"new x").unwrap();
+        fs::write(staging.path().join("e/g"), b"new g").unwrap();
+        let steps = vec![
+            Step::Create("d".into()),
+            Step::Replace("x".into()),
+            Step::Create("e/g".into()),
+        ];
+        Merge {
+            _root: root,
+            destination,
+            staging,
+            steps,
+        }
+    }
+
+    #[cfg(unix)]
+    fn run(merge: &Merge, after_each: impl FnMut(&Step)) -> anyhow::Error {
+        let mut done = Vec::new();
+        let error = merge
+            .staging
+            .carry_out(&merge.steps, &mut done, after_each)
+            .unwrap_err();
+        merge.staging.undo(&done, error)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_replaced_by_a_file_during_publish_undoes_every_earlier_rename() {
+        let merge = merge();
+        let staged = tree(merge.staging.path(), Path::new(""));
+        let mut expected = tree(&merge.destination, merge.staging.path());
+        expected.retain(|path, _| path != Path::new("e"));
+        let error = run(&merge, |step| {
+            if matches!(step, Step::Replace(_)) {
+                fs::remove_dir(merge.destination.join("e")).unwrap();
+                fs::write(merge.destination.join("e"), b"another program").unwrap();
+            }
+        });
+        let message = format!("{error:#}");
+        assert!(
+            message.contains(&merge.destination.join("e/g").display().to_string()),
+            "{message}"
+        );
+        assert!(!message.contains("could not undo"), "{message}");
+        let mut after = tree(&merge.destination, merge.staging.path());
+        assert_eq!(
+            after.remove(Path::new("e")).unwrap().1.unwrap(),
+            b"another program"
+        );
+        assert_eq!(after, expected);
+        assert_eq!(after[Path::new("x")], (0o100440, Some(b"old x".to_vec())));
+        assert!(!after.contains_key(Path::new("d")));
+        let mut staged_after = tree(merge.staging.path(), Path::new(""));
+        staged_after.retain(|path, _| !path.to_string_lossy().starts_with(".zipper-"));
+        assert_eq!(staged_after, staged);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_replaced_by_a_folder_during_publish_is_swapped_back() {
+        let merge = merge();
+        let before = tree(&merge.destination, merge.staging.path());
+        let error = run(&merge, |step| {
+            if matches!(step, Step::Create(path) if path == Path::new("d")) {
+                fs::remove_file(merge.destination.join("x")).unwrap();
+                fs::create_dir(merge.destination.join("x")).unwrap();
+                fs::write(merge.destination.join("x/inner"), b"another program").unwrap();
+            }
+        });
+        let message = format!("{error:#}");
+        assert!(message.contains("became a directory"), "{message}");
+        assert!(!message.contains("could not undo"), "{message}");
+        let after = tree(&merge.destination, merge.staging.path());
+        assert_eq!(
+            after[Path::new("x/inner")].1.as_deref(),
+            Some(&b"another program"[..])
+        );
+        let mut unchanged = after.clone();
+        unchanged.retain(|path, _| !path.starts_with("x"));
+        let mut expected = before;
+        expected.retain(|path, _| !path.starts_with("x"));
+        assert_eq!(unchanged, expected);
+        assert_eq!(fs::read(merge.staging.path().join("x")).unwrap(), b"new x");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_undo_that_fails_names_what_it_left_and_keeps_the_staging_folder() {
+        let merge = merge();
+        let staging = merge.staging.path().to_owned();
+        let error = run(&merge, |step| {
+            if matches!(step, Step::Create(path) if path == Path::new("d")) {
+                set_mode(&merge.destination, 0o555);
+            }
+        });
+        let message = format!("{error:#}");
+        set_mode(&merge.destination, 0o755);
+        assert!(message.contains("could not undo"), "{message}");
+        assert!(
+            message.contains(&merge.destination.join("d").display().to_string()),
+            "{message}"
+        );
+        assert!(
+            message.contains(&merge.destination.join("x").display().to_string()),
+            "{message}"
+        );
+        drop(merge.staging);
+        assert!(staging.is_dir());
+        assert_eq!(fs::read(staging.join("x")).unwrap(), b"new x");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_replace_in_two_moves_is_undone_with_the_old_file_and_its_mode() {
+        let merge = merge();
+        let before = tree(&merge.destination, merge.staging.path());
+        let mut done = Vec::new();
+        let mut aside = None;
+        Staging::replace_in_two_moves(
+            merge.staging.path().join("x"),
+            merge.destination.join("x"),
+            merge.destination.join("x"),
+            merge.staging.aside(&mut aside, 1).unwrap().0,
+            &mut done,
+        )
+        .unwrap();
+        assert_eq!(fs::read(merge.destination.join("x")).unwrap(), b"new x");
+        let error = merge.staging.undo(&done, anyhow::anyhow!("later step"));
+        assert_eq!(format!("{error:#}"), "later step");
+        assert_eq!(tree(&merge.destination, merge.staging.path()), before);
+        assert_eq!(fs::read(merge.staging.path().join("x")).unwrap(), b"new x");
+        fs::remove_file(merge.destination.join("x")).unwrap();
+        fs::create_dir(merge.destination.join("x")).unwrap();
+        let mut done = Vec::new();
+        let error = Staging::replace_in_two_moves(
+            merge.staging.path().join("x"),
+            merge.destination.join("x"),
+            merge.destination.join("x"),
+            merge.staging.aside(&mut aside, 2).unwrap().0,
+            &mut done,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("became a directory"),
+            "{error:#}"
+        );
+        let error = merge.staging.undo(&done, error);
+        assert!(
+            !format!("{error:#}").contains("could not undo"),
+            "{error:#}"
+        );
+        assert!(merge.destination.join("x").is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_undo_never_moves_what_a_swapped_in_link_points_at() {
+        let merge = merge();
+        let victim = merge.destination.parent().unwrap().join("victim");
+        fs::create_dir(&victim).unwrap();
+        fs::write(victim.join("g"), b"outside").unwrap();
+        let steps = vec![Step::Create("e/g".into()), Step::Create("missing".into())];
+        let mut done = Vec::new();
+        let error = merge
+            .staging
+            .carry_out(&steps, &mut done, |step| {
+                if matches!(step, Step::Create(path) if path == Path::new("e/g")) {
+                    fs::rename(
+                        merge.destination.join("e"),
+                        merge.destination.join("e_moved"),
+                    )
+                    .unwrap();
+                    std::os::unix::fs::symlink(&victim, merge.destination.join("e")).unwrap();
+                }
+            })
+            .unwrap_err();
+        let message = format!("{:#}", merge.staging.undo(&done, error));
+        assert!(message.contains("changed during extraction"), "{message}");
+        assert_eq!(fs::read(victim.join("g")).unwrap(), b"outside");
+        assert_eq!(
+            fs::read(merge.destination.join("e_moved/g")).unwrap(),
+            b"new g"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_swap_probe_matches_the_filesystem() {
+        let folder = tempfile::tempdir().unwrap();
+        assert_eq!(
+            swap_works(folder.path()),
+            cfg!(any(
+                target_os = "linux",
+                target_os = "android",
+                target_vendor = "apple"
+            ))
+        );
+        assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 0);
+        let merge = merge();
+        let (aside, swaps) = merge.staging.aside(&mut None, 0).unwrap();
+        assert_eq!(swaps, swap_works(folder.path()));
+        assert_eq!(fs::read_dir(aside.parent().unwrap()).unwrap().count(), 0);
     }
 }

@@ -417,7 +417,7 @@ pub(crate) fn restore_directory_times(root: &Path, directories: &[Directory]) {
 #[cfg(unix)]
 pub(crate) mod unix_modes {
     use super::Directory;
-    use anyhow::Result;
+    use anyhow::{Context, Result};
     use rayon::prelude::*;
     use std::{
         fs::{self, File, Permissions},
@@ -464,10 +464,9 @@ pub(crate) mod unix_modes {
         // EXTERNAL(bsdtar): the umask limits restored modes. Info-ZIP unzip ignores it.
         for directory in directories {
             if let Some(mode) = directory.mode.filter(|mode| mode & default != default) {
-                fs::set_permissions(
-                    staging.join(directory.name),
-                    Permissions::from_mode(mode & default),
-                )?;
+                let path = staging.join(directory.name);
+                fs::set_permissions(&path, Permissions::from_mode(mode & default))
+                    .with_context(|| format!("cannot set the mode of {}", path.display()))?;
                 crate::counters::add(crate::counters::Counter::MetadataCalls, 1);
             }
         }

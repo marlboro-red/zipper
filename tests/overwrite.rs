@@ -547,3 +547,215 @@ fn archive_links_never_reach_a_kept_link_through_another_archive_link() {
         assert_eq!(snapshot(root.path()), before, "{existing:?} {layout}");
     }
 }
+
+#[cfg(unix)]
+type UnixTree = BTreeMap<PathBuf, (u32, Option<Vec<u8>>, Option<PathBuf>)>;
+
+#[cfg(unix)]
+fn unix_tree(root: &Path) -> UnixTree {
+    use std::os::unix::fs::PermissionsExt;
+    walkdir::WalkDir::new(root)
+        .min_depth(1)
+        .into_iter()
+        .map(|entry| entry.unwrap())
+        .map(|entry| {
+            let path = entry.path().strip_prefix(root).unwrap().to_owned();
+            let metadata = entry.path().symlink_metadata().unwrap();
+            let content = entry
+                .file_type()
+                .is_file()
+                .then(|| fs::read(entry.path()).unwrap());
+            let target = entry
+                .file_type()
+                .is_symlink()
+                .then(|| fs::read_link(entry.path()).unwrap());
+            (path, (metadata.permissions().mode(), content, target))
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+}
+
+#[cfg(unix)]
+const REPLACED: [&str; 10] = ["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9"];
+
+#[cfg(unix)]
+struct FailingRename {
+    name: &'static str,
+    members: &'static [Member<'static>],
+    prepare: fn(&Path),
+    at_fault: &'static str,
+}
+
+#[cfg(unix)]
+const FAILING_RENAMES: [FailingRename; 3] = [
+    FailingRename {
+        name: "a new file in a read-only folder",
+        members: &[
+            Member::Directory("d/", 0o555),
+            Member::File("d/f", b"f"),
+            Member::Directory("e/", 0o555),
+            Member::File("e/g", b"g"),
+        ],
+        prepare: |destination| {
+            fs::create_dir(destination.join("e")).unwrap();
+            set_mode(&destination.join("e"), 0o555);
+        },
+        at_fault: "e/g",
+    },
+    FailingRename {
+        name: "a new file in a read-only folder deep in the tree",
+        members: &[
+            Member::File("a/x", b"new x"),
+            Member::File("a/b/c/new", b"new"),
+            Member::File("z/new", b"new"),
+        ],
+        prepare: |destination| {
+            fs::create_dir_all(destination.join("a/b/c")).unwrap();
+            fs::write(destination.join("a/x"), b"old x").unwrap();
+            set_mode(&destination.join("a/b/c"), 0o555);
+        },
+        at_fault: "a/b/c/new",
+    },
+    FailingRename {
+        name: "a read-only file in a read-only folder",
+        members: &[
+            Member::File("a/x", b"new x"),
+            Member::File("a/locked/file", b"new"),
+        ],
+        prepare: |destination| {
+            fs::create_dir_all(destination.join("a/locked")).unwrap();
+            fs::write(destination.join("a/x"), b"old x").unwrap();
+            fs::write(destination.join("a/locked/file"), b"old").unwrap();
+            set_mode(&destination.join("a/locked/file"), 0o444);
+            set_mode(&destination.join("a/locked"), 0o555);
+        },
+        at_fault: "a/locked/file",
+    },
+];
+
+#[cfg(unix)]
+#[test]
+fn a_rename_that_fails_partway_leaves_the_destination_as_it_was() {
+    for format in &FORMATS {
+        for case in &FAILING_RENAMES {
+            let root = tempfile::tempdir().unwrap();
+            let archive = root.path().join(format!("a.{}", format.name));
+            let mut members: Vec<Member> = REPLACED
+                .iter()
+                .map(|name| Member::File(name, b"new"))
+                .collect();
+            members.extend(case.members.iter().map(|member| match *member {
+                Member::File(name, data) => Member::File(name, data),
+                Member::Directory(name, mode) => Member::Directory(name, mode),
+                Member::Symlink(name, target) => Member::Symlink(name, target),
+            }));
+            (format.write)(&archive, &members);
+            let destination = root.path().join("out");
+            fs::create_dir(&destination).unwrap();
+            for name in REPLACED {
+                fs::write(destination.join(name), format!("old {name}")).unwrap();
+            }
+            (case.prepare)(&destination);
+            let before = unix_tree(&destination);
+            let error = (format.extract)(&archive, &destination, Existing::Overwrite).unwrap_err();
+            let at_fault = destination.join(case.at_fault);
+            assert!(
+                format!("{error:#}").contains(&at_fault.display().to_string()),
+                "{} {}: {error:#}",
+                format.name,
+                case.name
+            );
+            assert_eq!(
+                unix_tree(&destination),
+                before,
+                "{} {}: {error:#}",
+                format.name,
+                case.name
+            );
+            common::make_tree_deletable(root.path());
+        }
+    }
+}
+
+#[test]
+fn a_read_only_file_in_a_writable_folder_is_replaced() {
+    for format in &FORMATS {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join(format!("a.{}", format.name));
+        (format.write)(&archive, &[Member::File("locked", b"new")]);
+        let destination = root.path().join("out");
+        fs::create_dir(&destination).unwrap();
+        let locked = destination.join("locked");
+        fs::write(&locked, b"old").unwrap();
+        let mut permissions = fs::metadata(&locked).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&locked, permissions).unwrap();
+        (format.extract)(&archive, &destination, Existing::Overwrite).unwrap();
+        let tree = snapshot(&destination);
+        assert_eq!(tree.len(), 1, "{}: {:?}", format.name, tree.keys());
+        assert_eq!(tree[Path::new("locked")].as_deref(), Some(&b"new"[..]));
+        let metadata = fs::metadata(&locked).unwrap();
+        assert!(!metadata.permissions().readonly(), "{}", format.name);
+        #[cfg(unix)]
+        assert_eq!(
+            std::os::unix::fs::PermissionsExt::mode(&metadata.permissions()) & 0o777,
+            0o644,
+            "{}",
+            format.name
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_rename_existing_keeps_the_spelling_the_destination_had() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.zip");
+    let upper: Vec<String> = REPLACED.iter().map(|name| name.to_uppercase()).collect();
+    let mut members: Vec<Member> = upper
+        .iter()
+        .map(|name| Member::File(name, b"new"))
+        .collect();
+    members.push(Member::File("cafe\u{301}.txt", b"new"));
+    members.push(Member::File("q/new", b"new"));
+    write_zip(&archive, &members);
+    let destination = root.path().join("out");
+    fs::create_dir_all(destination.join("q")).unwrap();
+    for name in REPLACED {
+        fs::write(destination.join(name), b"old").unwrap();
+    }
+    fs::write(destination.join("caf\u{e9}.txt"), b"old").unwrap();
+    set_mode(&destination.join("q"), 0o555);
+    let before = unix_tree(&destination);
+    let error = zip_reader(&archive, &destination, Existing::RenameExisting).unwrap_err();
+    let at_fault = destination.join("q/new").display().to_string();
+    assert!(format!("{error:#}").contains(&at_fault), "{error:#}");
+    assert_eq!(unix_tree(&destination), before, "{error:#}");
+    common::make_tree_deletable(root.path());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_destination_folder_that_cannot_be_read_is_named() {
+    for format in &FORMATS {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join(format!("a.{}", format.name));
+        (format.write)(&archive, &[Member::File("closed/f", b"new")]);
+        let destination = root.path().join("out");
+        fs::create_dir_all(destination.join("closed")).unwrap();
+        set_mode(&destination.join("closed"), 0o600);
+        let error = (format.extract)(&archive, &destination, Existing::Overwrite).unwrap_err();
+        let at_fault = destination.join("closed/f").display().to_string();
+        assert!(
+            format!("{error:#}").contains(&at_fault),
+            "{}: {error:#}",
+            format.name
+        );
+        common::make_tree_deletable(root.path());
+    }
+}
