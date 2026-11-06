@@ -1293,15 +1293,19 @@ fn the_password_prompt_restores_the_terminal_and_drops_unread_input_on_every_exi
     let pause = |_: ()| ("sleep", "0.4".to_owned());
     let long = [vec![b'L'; 1030], b"LEAKEDTAIL\n".to_vec()].concat();
     let cases: Vec<TerminalCase> = vec![
-        ("Ctrl-C", vec![wait.clone(), send(b"abc\x03")], "RC=130"),
+        (
+            "Ctrl-C",
+            vec![wait.clone(), send(b"Qz7typed\x03")],
+            "RC=130",
+        ),
         (
             "Ctrl-backslash",
-            vec![wait.clone(), send(b"abc\x1c")],
+            vec![wait.clone(), send(b"Qz7typed\x1c")],
             "RC=131",
         ),
         (
             "Ctrl-C, then more pasted input",
-            vec![wait.clone(), send(b"abc\x03SECRETTAIL\n")],
+            vec![wait.clone(), send(b"Qz7typed\x03SECRETTAIL\n")],
             "RC=130",
         ),
         ("Ctrl-D", vec![wait.clone(), send(b"\x04")], "RC=1"),
@@ -1339,7 +1343,7 @@ fn the_password_prompt_restores_the_terminal_and_drops_unread_input_on_every_exi
             signal,
             vec![
                 wait.clone(),
-                send(b"abc"),
+                send(b"Qz7typed"),
                 pause(()),
                 ("signal", signal.to_owned()),
                 pause(()),
@@ -1361,7 +1365,7 @@ fn the_password_prompt_restores_the_terminal_and_drops_unread_input_on_every_exi
         assert!(transcript.contains(exit), "{case}: {transcript}");
         assert_terminal_restored(case, &transcript);
         for hidden in [
-            "abc",
+            "Qz7typed",
             "nope",
             "zipper\r",
             "SECRETTAIL",
