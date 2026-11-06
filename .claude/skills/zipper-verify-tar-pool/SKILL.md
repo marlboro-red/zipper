@@ -31,7 +31,7 @@ Each rule is an invariant in `WriterPool.tla`. TLC also checks that no state is 
 | The `spare.pop()` in `InFlight::take`, or a new `vec![0; length]` | the `spare` and `allocated` updates in `DecoderTakesChunk` |
 | `Writers::send`, which counts, sends to a lane and calls `check` | `DecoderCountsJob`, `DecoderSendsJob` |
 | `Writers::drain`, `Writers::check`, `Writers::stopped` | `DecoderDrains`, the `failure` resets |
-| `Writers::close` | `DecoderClosesLanes` |
+| `Writers::close`, called by the `ClosesOnDrop` guard on every return from the scope | `DecoderClosesLanes` |
 | `Writers::work` and `write_job` | `WriterReceives`, `WriterWritesFirst`, `WriterWritesRest`, `WriterDropsJob` |
 | `Extraction::write_file`, including the local `stream` sender that drops on `?` | `DecoderTakesChunk` through `DecoderFinishesFile`, `DecoderFindsCorruptInput` |
 | The `thread::scope` block in `native_tar::read_archive` | `DecoderClosesLanes`, `DecoderJoins` |
