@@ -301,7 +301,12 @@ impl<'a> Selection<'a> {
             .iter()
             .map(|path| {
                 let path = path.trim_end_matches('/');
-                safe_path(path)?;
+                safe_path(path).map_err(|error| match path.strip_prefix("./") {
+                    Some(rest) => error.context(format!(
+                        "selected paths have no leading ./; select {rest:?}"
+                    )),
+                    None => error,
+                })?;
                 Ok(path)
             })
             .collect::<Result<_>>()?;

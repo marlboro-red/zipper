@@ -31,6 +31,8 @@ The reader checks the whole package before it publishes anything, and it publish
 - The signature header is padded to a multiple of 8 bytes.
 - The payload format and compressor tags appear at most once, are strings, and end with a NUL within 64 bytes and within the data store.
 - The payload starts with the signature of the compressor the header names. gzip starts with `1F 8B`, bzip2 with `BZh` and a level, xz with its six-byte magic and zstd with `28 B5 2F FD`. LZMA has no magic, so its first byte must be a properties byte below 225, the limit the LZMA decoder holds to.
+- Nothing follows the payload's compressed stream. The gzip, bzip2, xz and zstd decoders refuse trailing data, and the reader checks that an LZMA stream ends where the file ends, so a second cpio cannot hide after it.
+- An error from decoding the payload, such as a cut, a failed checksum or trailing data, says the RPM payload is damaged.
 - The payload passes every check of the [cpio reader](cpio-reader.md#safety-checks). Absolute names, `..`, backslashes and NUL bytes are rejected, symlinks must stay inside the destination, and the archive must end with its `TRAILER!!!` entry.
 
 The reader does not check header digests, payload digests or signatures. A damaged gzip, bzip2 or xz payload still fails its compressor's checksum, because the reader decodes the payload to its end. `rpmbuild` writes zstd payloads without a frame checksum, and an LZMA payload has none, so damage there is caught only when it breaks the stream or the cpio.
@@ -57,7 +59,7 @@ The reader keeps no header in memory. It reads the index one entry at a time, ke
 
 ## Extraction options
 
-`Existing`, `Control`, `paths`, `include`, `exclude`, `strip` and `metadata` work as in the [cpio reader](cpio-reader.md#extraction-options), on the payload's paths without their leading `./`. The leading `.` counts as one component for `strip`, as it does in the tar reader, so `--strip-components 3` writes `./usr/share/a.txt` as `a.txt`. The cancel flag is checked as the cpio reader checks it.
+`Existing`, `Control`, `paths`, `include`, `exclude`, `strip` and `metadata` work as in the [cpio reader](cpio-reader.md#extraction-options), on the payload's paths without their leading `./`. So select `./usr/share/a.txt` with `--path usr/share/a.txt`. A selected path that starts with `./` is refused, and the error gives the spelling to use. The leading `.` counts as one component for `strip`, as it does in the tar reader, so `--strip-components 3` writes `./usr/share/a.txt` as `a.txt`. The cancel flag is checked as the cpio reader checks it.
 
 ## Formal checks
 

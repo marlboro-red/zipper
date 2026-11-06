@@ -7,7 +7,7 @@ use crate::native_tar::Compression;
 use crate::{BadField, Entry, Field, field_check, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
-    io::{BufReader, Read},
+    io::{BufRead, BufReader, Read},
     path::Path,
 };
 
@@ -29,6 +29,7 @@ const MAX_TAG_TEXT: u32 = 64;
 const COMPRESSOR_HEAD: usize = 6;
 const LZMA_PROPERTIES_LIMIT: u8 = 225;
 const STRIPPED_CPIO: &[u8; 6] = b"07070X";
+const DAMAGED: &str = "RPM payload is damaged";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
@@ -347,7 +348,43 @@ fn payload(path: &Path) -> Result<Box<dyn Read + Send>> {
         "RPM payload does not start with the {compressor:?} signature its header names"
     );
     let input = std::io::Cursor::new(head).chain(package.reader);
-    crate::native_tar::decode(input, compressor.compression())
+    let decoder: Box<dyn Read + Send> = match compressor {
+        Compressor::Lzma => Box::new(LzmaToTheEnd {
+            decoder: liblzma::bufread::XzDecoder::new_stream(
+                input,
+                liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
+            ),
+        }),
+        _ => crate::native_tar::decode(input, compressor.compression())?,
+    };
+    Ok(Box::new(Damaged(decoder)))
+}
+
+struct LzmaToTheEnd<R: BufRead> {
+    decoder: liblzma::bufread::XzDecoder<R>,
+}
+
+impl<R: BufRead> Read for LzmaToTheEnd<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.decoder.read(buffer)?;
+        if read == 0 && !buffer.is_empty() && !self.decoder.get_mut().fill_buf()?.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "it has data after its LZMA stream",
+            ));
+        }
+        Ok(read)
+    }
+}
+
+struct Damaged<R>(R);
+
+impl<R: Read> Read for Damaged<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.0
+            .read(buffer)
+            .map_err(|error| std::io::Error::new(error.kind(), format!("{DAMAGED}: {error}")))
+    }
 }
 
 /// Verify and optionally extract the files an RPM package installs. It reads
@@ -363,9 +400,12 @@ pub fn read_archive(
 ) -> Result<Vec<Entry>> {
     let mut payload = payload(path)?;
     let mut magic = [0u8; 6];
-    payload
-        .read_exact(&mut magic)
-        .context("RPM payload ends before its first cpio header")?;
+    let mut filled = 0;
+    while filled < magic.len() {
+        let read = payload.read(&mut magic[filled..])?;
+        ensure!(read > 0, "{DAMAGED}: it ends before its first cpio header");
+        filled += read;
+    }
     if &magic == STRIPPED_CPIO {
         bail!(
             "RPM payload is the stripped cpio 07070X that rpm writes for files of 4 GiB or more and for version 6 packages, which Zipper and 7-Zip do not unpack; pass --zip-engine backend to write the payload's cpio"

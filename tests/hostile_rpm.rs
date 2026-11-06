@@ -872,3 +872,74 @@ fn selection_strip_and_limits_apply_to_the_payload_paths() {
     assert!(!destination.exists());
     drop(root);
 }
+
+fn fixture(name: &str) -> Vec<u8> {
+    fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/rpm")
+            .join(name),
+    )
+    .unwrap()
+}
+
+#[test]
+fn data_after_an_lzma_payload_is_rejected() {
+    for name in ["after-lzma-garbage.rpm", "after-lzma-hidden-cpio.rpm"] {
+        assert_rejected_saying(name, &fixture(name), "after its LZMA stream");
+    }
+    let payload = compress("lzma", &cpio(&sample()));
+    let hidden = compress("lzma", &cpio(&[file("./hidden", b"x")]));
+    for (case, tail) in [("garbage", b"junk".to_vec()), ("second stream", hidden)] {
+        let bytes = package_with(&main_tags(Some("lzma")), &[payload.clone(), tail].concat());
+        assert_rejected_saying(case, &bytes, "after its LZMA stream");
+    }
+}
+
+#[test]
+fn a_cut_or_trailing_garbage_in_the_payload_says_the_payload_is_damaged() {
+    for compressor in COMPRESSORS {
+        let payload = compress(compressor, &cpio(&sample()));
+        let good = package_with(&main_tags(Some(compressor)), &payload);
+        let start = good.len() - payload.len();
+        for cut in [start + 8, start + payload.len() / 2, good.len() - 1] {
+            let error = format!(
+                "{:#}",
+                extract_with(&good[..cut], ReadOptions::default())
+                    .2
+                    .unwrap_err()
+            );
+            assert!(
+                error.contains("RPM payload is damaged"),
+                "{compressor} cut at {cut}: {error}"
+            );
+        }
+        let short = package_with(&main_tags(Some(compressor)), &compress(compressor, b"0707"));
+        assert_rejected_saying(
+            &format!("{compressor} short"),
+            &short,
+            "RPM payload is damaged",
+        );
+        if compressor != "lzma" {
+            let garbage = [good, b"garbage!".to_vec()].concat();
+            assert_rejected_saying(
+                &format!("{compressor} garbage"),
+                &garbage,
+                "RPM payload is damaged",
+            );
+        }
+    }
+}
+
+#[test]
+fn a_selected_path_with_the_leading_dot_slash_says_how_to_select_it() {
+    let paths = ["./usr/share/a.txt".to_owned()];
+    let (_root, _destination, result) = extract_with(
+        &rpm("gzip", &sample()),
+        ReadOptions {
+            paths: &paths,
+            ..ReadOptions::default()
+        },
+    );
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(error.contains("\"usr/share/a.txt\""), "{error}");
+}
