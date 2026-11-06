@@ -2,7 +2,9 @@
 //! Info-ZIP `zip -A` adjusts a ZIP's offsets to count the stub, and a plain
 //! `cat stub a.zip` leaves them counting from the ZIP. Both must extract the
 //! tree the ZIP gives alone, the names Python `zipfile` lists and the tree
-//! 7-Zip extracts. A 7z whose signature starts at offset 8 MiB or earlier
+//! 7-Zip extracts. The archive must start exactly where the stub
+//! executable's own data ends, and no range its headers name may reach the
+//! archive. A 7z whose signature starts there, at offset 8 MiB or earlier,
 //! after a PE, ELF or Mach-O stub must extract as it does alone and as 7-Zip
 //! extracts it, and a start header that fails its CRC is skipped. A 7z past
 //! that offset or after a prefix that is no executable is not found. A prefix
