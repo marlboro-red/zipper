@@ -46,7 +46,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 - Names are safe archive paths, unique, and never used both as a file and as a folder. Symlink targets stay inside the destination and are created after every file.
 - Packed streams lie before the header and do not overflow. Folder and file sizes agree, and a folder holds no data beyond its files. A folder with no output is refused, because 7-Zip never writes one.
 - Counts are bounded by the bytes the header has left, and the header is at most 64 MiB, decoded or not. A header that lists the full 1,000,000 entries can still take a few hundred MiB of memory to hold.
-- An LZMA dictionary is cut to the size of the folder's output, so a hostile dictionary size does not allocate memory. Decoders running at once share a 2 GiB memory budget. An LZMA or LZMA2 decoder counts its window, its input buffer and its probability tables against it, and a filter chain counts its buffers too.
+- An LZMA dictionary is cut to the size of the folder's output, so a hostile dictionary size does not allocate memory. Decoders running at once share a 2 GiB memory budget. An LZMA or LZMA2 decoder counts its window, its input buffer and its probability tables against it, and a filter chain counts its buffers too. The 256 MiB dictionary limit of the [tar reader](tar-reader.md#limits) does not apply to 7z. This budget is the 7z reader's only dictionary limit, and a folder that needs more than all of it waits for the whole budget and decodes alone.
 
 `tests/hostile_7z.rs` crafts archives that break each check, and `tests/sevenz_fuzz.rs` mutates the corpus with repaired header CRCs.
 
