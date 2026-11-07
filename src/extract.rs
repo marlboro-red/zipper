@@ -1,6 +1,6 @@
 use crate::{
-    Control, Existing, compat, native_7z, native_ar, native_cab, native_cpio, native_rpm,
-    native_tar, native_xar, native_zip,
+    Control, Existing, compat, native_7z, native_ar, native_cab, native_cpio, native_msi,
+    native_rpm, native_tar, native_xar, native_zip,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -9,16 +9,17 @@ use std::{io::Read, path::Path};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Engine {
-    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, single compressed files,
-    /// unrecognized files, and 7z and CAB whose methods it decodes. 7-Zip for
-    /// other 7z and CAB, CAB cabinet sets, and the other formats whose
+    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, compound files such as MSI,
+    /// single compressed files, unrecognized files, and 7z and CAB whose
+    /// methods it decodes. 7-Zip for other 7z and CAB, CAB cabinet sets, an
+    /// MSI whose main stream is not a CAB, and the other formats whose
     /// signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
-    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, 7z and single compressed
-    /// files, and native ZIP for unrecognized files.
+    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, compound files, 7z and
+    /// single compressed files, and native ZIP for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -43,6 +44,9 @@ pub enum Reader {
     Xar,
     /// The native reader for CAB files with stored, MSZIP and LZX folders.
     Cab,
+    /// The native reader for compound files: Windows Installer packages and
+    /// documents such as `.doc`, `.xls` and `.msg`.
+    Msi,
     /// The native reader for one gzip, bzip2, xz, zstd or LZMA stream that
     /// holds no tar.
     Stream,
@@ -79,6 +83,10 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             }
         }
         _ if native_cab::sniff(archive)? => Reader::Cab,
+        Engine::Auto if native_msi::sniff(archive)? && native_msi::needs_backend(archive)? => {
+            Reader::Backend { format: None }
+        }
+        _ if native_msi::sniff(archive)? => Reader::Msi,
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
             Reader::Backend {
                 format: Some(compat::pinned_format(archive)?.unwrap_or_else(|| "-t7z".to_owned())),
@@ -413,12 +421,13 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 "--path, --include, --exclude, --strip-prefix, --strip-components and --content-only need an archive read in process"
             )
         }
-        Reader::Cpio | Reader::Ar | Reader::Rpm | Reader::Xar | Reader::Cab => {
+        Reader::Cpio | Reader::Ar | Reader::Rpm | Reader::Xar | Reader::Cab | Reader::Msi => {
             let read = match reader {
                 Reader::Cpio => native_cpio::read_archive,
                 Reader::Ar => native_ar::read_archive,
                 Reader::Xar => native_xar::read_archive,
                 Reader::Cab => native_cab::read_archive,
+                Reader::Msi => native_msi::read_archive,
                 _ => native_rpm::read_archive,
             };
             read(

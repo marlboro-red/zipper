@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 58 |
+| `native` | 59 |
 | `partial` | 2 |
-| `backend` | 47 |
+| `backend` | 46 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-41 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+40 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -37,7 +37,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `COFF` | `backend` |  | No proof yet. |
 | `Cab` | `partial` | Stored, MSZIP, Quantum and LZX folders read in process. Cabinet sets go to 7-Zip. | `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs` |
 | `Chm` | `backend` |  | No proof yet. |
-| `Compound` | `backend` |  | No proof yet. |
+| `Compound` | `native` | MSI, MSP, MSM and other compound files read in process, and an installer's one CAB through the CAB reader. An installer whose main stream is not a CAB goes to 7-Zip. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/msi_corpus.rs`, `generated_compound_files_extract_exactly_as_7zip_extracts_them` in `tests/msi_corpus.rs` |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
 | `CramFS` | `backend` |  | No proof yet. |
 | `Dmg` | `backend` |  | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg` |
