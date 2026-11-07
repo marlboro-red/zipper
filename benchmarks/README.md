@@ -29,6 +29,7 @@ All records are local measurements. Each one names its machine, revision, run co
 | Date | Experiment | Verdict |
 | --- | --- | --- |
 | 2026-11-07 | [7z branch and Delta filters on Zipper's own code](native-7z/own-filters/README.md) | Kept. Extraction time is unchanged on BCJ, ARM64, Delta and three-filter archives at one and four threads, with every range overlapping. The 7z reader no longer uses liblzma outside tests. |
+| 2026-11-08 | [7z write path with one CRC pass and no extra copy](native-7z/write-path/README.md) | Kept two changes of three. Solid Silesia extracts 1.25% faster at one thread. A window zeroed once raised memory 12 times on many small xz entries and was rejected. |
 | 2026-11-08 | [Parallel LZMA2 segments in 146 MiB](native-7z/segment-memory/README.md) | Kept. Peak memory on solid Silesia at default threads fell from 320 to 146 MiB, below 7-Zip's 257 MiB, and extraction got 0.7% faster. |
 | 2026-11-07 | [7z extraction switched to Zipper's own LZMA decoder](native-7z/own-decoder-shipped/README.md) | Kept. Silesia extracts 7 to 9% faster than with liblzma, and non-solid dependency sources 9 to 20% faster. 7-Zip still extracts one long LZMA stream about 8% faster at one thread. |
 | 2026-11-06 | [7z extraction with Zipper's own LZMA decoder](native-7z/own-lzma-decoder/README.md) | Held. Silesia extracts 5 to 8% slower than with liblzma, and non-solid dependency sources 11 to 13% faster. The swap waits for a faster decoder. |
