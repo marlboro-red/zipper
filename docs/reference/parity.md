@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 67 |
+| `native` | 71 |
 | `partial` | 1 |
-| `backend` | 39 |
+| `backend` | 35 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-36 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+32 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -33,7 +33,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `APM` | `backend` |  | `tests/data/parity/archives/apm.img.stored.xz` |
 | `Ar` | `native` |  | `tests/data/parity/archives/ar.a` |
 | `Arj` | `native` | Methods 0 to 4 read in process. Encrypted entries and multi-volume archives are refused. No ARJ tool is installed here, so the corpus comes from Zipper's own test writer. | `every_corpus_arj_extracts_the_tree_7zip_extracts` in `tests/arj_corpus.rs`, `generated_arj_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/arj_corpus.rs`, `token_streams_of_every_method_decode_as_7zip_decodes_them` in `tests/arj_corpus.rs`, `damaged_arj_are_refused_exactly_when_7zip_refuses_them` in `tests/arj_corpus.rs` |
-| `Base64` | `backend` |  | No proof yet. |
+| `Base64` | `native` | Files named `*.b64` read in process when their first 4 KiB pass 7-Zip's check. Data after the padding is refused, where 7-Zip warns past the first 4 KiB. | `generated_base64_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_base64_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
 | `COFF` | `backend` |  | No proof yet. |
 | `Cab` | `native` | Stored, MSZIP, Quantum and LZX folders and cabinet sets read in process. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set. | `tests/data/parity/archives/cab-set-1.cab`, `tests/data/parity/archives/cab.cab`, `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_sets_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/cab_sets.rs` |
 | `Chm` | `backend` |  | No proof yet. |
@@ -48,18 +48,18 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `GPT` | `backend` |  | `tests/data/parity/archives/gpt.img.stored.xz` |
 | `HFS` | `backend` |  | `tests/data/parity/archives/hfs.img.stored.xz` |
 | `Hxs` | `backend` |  | No proof yet. |
-| `IHex` | `backend` |  | No proof yet. |
+| `IHex` | `backend` | Left to 7-Zip. It decodes to one file for each block of addresses, which the single-stream reader does not do. | No proof yet. |
 | `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |
 | `LP` | `backend` |  | No proof yet. |
 | `Lzh` | `native` | Header levels 0 to 3 and the -lh0-, -lz4-, -lh4- to -lh7- and -lhd- methods read in process. Methods 7-Zip does not read either, such as -lh1- and -lz5-, are refused. | `every_corpus_lzh_extracts_the_tree_7zip_extracts_or_the_refusal_its_record_gives` in `tests/lzh_corpus.rs`, `generated_lzh_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/lzh_corpus.rs`, `token_streams_and_every_table_form_decode_as_7zip_decodes_them` in `tests/lzh_corpus.rs`, `damaged_lzh_are_refused_exactly_when_7zip_refuses_them` in `tests/lzh_corpus.rs` |
 | `MBR` | `backend` |  | `tests/data/parity/archives/mbr.img.stored.xz` |
 | `MachO` | `backend` |  | No proof yet. |
-| `MsLZ` | `backend` |  | No proof yet. |
+| `MsLZ` | `native` | SZDD files read in process, named as 7-Zip 26.05 names them. Files come from Zipper's own encoder, since no permissively licensed file from Microsoft's `compress.exe` was found. | `generated_szdd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_szdd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs`, `szdd_names_follow_7zip_and_stay_safe` in `tests/legacy_streams.rs` |
 | `Mub` | `backend` |  | No proof yet. |
 | `NTFS` | `backend` |  | No proof yet. |
 | `Nsis` | `backend` |  | No proof yet. |
 | `PE` | `backend` |  | No proof yet. |
-| `Ppmd` | `backend` |  | No proof yet. |
+| `Ppmd` | `native` | var.H and var.I files read in process. Files come from the `ppmd-rust` encoders. A file with data after its end marker is refused, where 7-Zip ignores the rest. | `generated_pmd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_pmd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
 | `QCOW` | `backend` |  | No proof yet. |
 | `Rar` | `backend` |  | No proof yet. |
 | `Rar5` | `backend` |  | No proof yet. |
@@ -82,7 +82,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `bzip2` | `native` |  | `tests/data/parity/archives/hello.txt.bz2`, `tests/data/parity/archives/tar.tar.bz2` |
 | `gzip` | `native` |  | `tests/data/parity/archives/hello.txt.gz`, `tests/data/parity/archives/tar.tar.gz` |
 | `lzma` | `native` |  | `tests/data/parity/archives/hello.txt.lzma` |
-| `lzma86` | `backend` |  | No proof yet. |
+| `lzma86` | `native` | Read in process with Zipper's own LZMA decoder and BCJ filter, from LZMA streams that 7-Zip and liblzma wrote. | `generated_lzma86_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_lzma86_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
 | `tar` | `native` |  | `tests/data/parity/archives/tar.tar` |
 | `wim` | `native` | WIM and ESD with stored, XPRESS, LZX and LZMS resources, solid or not. A split WIM goes to 7-Zip, and alternate data streams are refused. | `tests/data/parity/archives/wim.wim`, `every_corpus_wim_extracts_the_tree_7zip_extracts` in `tests/wim_corpus.rs`, `generated_wims_of_every_method_and_chunk_size_extract_byte_for_byte_as_7zip_extracts_them` in `tests/wim_corpus.rs`, `writer_wims_extract_as_7zip_extracts_them_in_every_layout` in `tests/wim_corpus.rs` |
 | `xz` | `native` |  | `tests/data/parity/archives/hello.txt.xz`, `tests/data/parity/archives/tar.tar.xz` |

@@ -23,7 +23,12 @@
       ]
     },
     "Base64": {
-      "status": "backend"
+      "status": "native",
+      "note": "Files named `*.b64` read in process when their first 4 KiB pass 7-Zip's check. Data after the padding is refused, where 7-Zip warns past the first 4 KiB.",
+      "tests": [
+        "tests/legacy_streams.rs::generated_base64_files_extract_exactly_as_7zip_extracts_them",
+        "tests/legacy_streams.rs::damaged_base64_files_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "COFF": {
       "status": "backend"
@@ -80,7 +85,8 @@
       "status": "backend"
     },
     "IHex": {
-      "status": "backend"
+      "status": "backend",
+      "note": "Left to 7-Zip. It decodes to one file for each block of addresses, which the single-stream reader does not do."
     },
     "Iso": {
       "status": "native",
@@ -110,7 +116,13 @@
       "status": "backend"
     },
     "MsLZ": {
-      "status": "backend"
+      "status": "native",
+      "note": "SZDD files read in process, named as 7-Zip 26.05 names them. Files come from Zipper's own encoder, since no permissively licensed file from Microsoft's `compress.exe` was found.",
+      "tests": [
+        "tests/legacy_streams.rs::generated_szdd_files_extract_exactly_as_7zip_extracts_them",
+        "tests/legacy_streams.rs::damaged_szdd_files_are_refused_exactly_when_7zip_refuses_them",
+        "tests/legacy_streams.rs::szdd_names_follow_7zip_and_stay_safe"
+      ]
     },
     "Mub": {
       "status": "backend"
@@ -125,7 +137,12 @@
       "status": "backend"
     },
     "Ppmd": {
-      "status": "backend"
+      "status": "native",
+      "note": "var.H and var.I files read in process. Files come from the `ppmd-rust` encoders. A file with data after its end marker is refused, where 7-Zip ignores the rest.",
+      "tests": [
+        "tests/legacy_streams.rs::generated_pmd_files_extract_exactly_as_7zip_extracts_them",
+        "tests/legacy_streams.rs::damaged_pmd_files_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "QCOW": {
       "status": "backend"
@@ -201,7 +218,12 @@
       "status": "native"
     },
     "lzma86": {
-      "status": "backend"
+      "status": "native",
+      "note": "Read in process with Zipper's own LZMA decoder and BCJ filter, from LZMA streams that 7-Zip and liblzma wrote.",
+      "tests": [
+        "tests/legacy_streams.rs::generated_lzma86_files_extract_exactly_as_7zip_extracts_them",
+        "tests/legacy_streams.rs::damaged_lzma86_files_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "tar": {
       "status": "native"

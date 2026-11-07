@@ -1,6 +1,6 @@
 # Single compressed file reader
 
-Zipper reads a file that holds one gzip, bzip2, xz, zstd, lzip, LZ4, `compress` (`.Z`) or LZMA stream, and no tar, with its own reader. `zipper extract notes.txt.gz -o out` writes `out/notes.txt`.
+Zipper reads a file that holds one gzip, bzip2, xz, zstd, lzip, LZ4, `compress` (`.Z`), LZMA, lzma86, PPMd, Microsoft SZDD or Base64 stream, and no tar, with its own reader. `zipper extract notes.txt.gz -o out` writes `out/notes.txt`.
 
 ## Supported files
 
@@ -13,10 +13,15 @@ Zipper reads a file that holds one gzip, bzip2, xz, zstd, lzip, LZ4, `compress` 
 - `compress` (`.Z`), in block mode and in the older mode without clear codes, at 9 to 16 bits, decoded by Zipper's own reader. The format has no checksum and no length, so a stream cut at a code boundary, or with data appended, cannot be told from a whole one, as with 7-Zip and gzip. A code the stream has not defined yet is refused.
 - zstd and LZ4 share their skippable frame. When a file starts with one, the reader skips up to 16 of them and lets the next frame decide. So `pzstd` output still reads as zstd, and an LZ4 file that starts with metadata reads as LZ4.
 - LZMA in its old `.lzma` form. It has no signature, so a file counts as LZMA only when its name ends in `.lzma`, its first byte is a valid properties byte, and no ZIP, tar or 7z reader claims it first.
+- lzma86, the format of 7-Zip's `lzma` tool, which is LZMA with an optional x86 BCJ filter, decoded by Zipper's own LZMA decoder and BCJ filter. It has no signature either. As in 7-Zip, a file of any name counts as lzma86 when its first 16 bytes hold a header 7-Zip accepts and a first LZMA byte of 0. That header has a filter byte of 0 or 1, a properties byte below 225, a dictionary of 1, 2 or 3 times a power of two, and a size below 2^56 or unknown. A known size of 1 or more also needs the next byte's top bit clear. Unlike 7-Zip, Zipper does not decode the start of the stream to decide. So a file such as firmware with a valid header fails with an LZMA error, where 7-Zip says it is not an archive. Several streams in a row decode in order, each with its own BCJ state. Each stream after the first must bring at least 4 KiB of output, as with bzip2.
+- PPMd `.pmd` files of var.H, version 7, and var.I, version 8, with the restart or cut-off restore method, decoded by the `ppmd-rust` crate. These are the variants 7-Zip decodes. The stream ends at its end marker with a clean range coder.
+- SZDD files from Microsoft's `compress.exe`, such as `SETUP.EX_`, decoded by Zipper's own LZSS decoder. The decoded size comes from the header, at most 2 GiB, the limit of 7-Zip 26.06 and of Windows. 7-Zip 26.05 accepts sizes up to 4 GiB. Zipper follows 7-Zip 26.05, which starts the 4 KiB window as spaces and refuses a copy longer than 16 bytes. 7-Zip 26.06 starts the window's last 16 bytes as zeros and accepts copies of 17 and 18 bytes. Neither case appears in files Microsoft's encoder writes. KWAJ files, the other `compress.exe` form, are not read, because 7-Zip does not read them either.
+- Base64 text named `*.b64`, in any letter case, decoded by Zipper's own decoder. As in 7-Zip, the name alone does not decide. The first 4 KiB must pass 7-Zip's check. When an `=` lies within them, the check refuses a space character after 1 to 19 symbols and before the `=`. It also refuses a first `=` that does not end a quad, and anything but spaces after the padding. Tab, line feed, carriage return, space and byte 0xA0 count as spaces anywhere. The stream ends at its `=` padding, or at the end of the file after a whole quad. A file that decodes to nothing is refused, as in 7-Zip. Base64 has no length or checksum, so a file cut after a whole quad cannot be told from a whole one, as with `compress`. For the same reason a Base64 file split into numbered volumes is refused, as a `compress` file is.
+- 7-Zip's Intel HEX reader stays with `--zip-engine backend`. Intel HEX decodes to one file for each block of addresses, which is not one stream.
 
-`tests/data/stream` holds the lzip and LZ4 files, which 7-Zip's parity corpus cannot hold. `scripts/make_stream_files.py` writes it with bsdtar and checks it with a second decoder.
+`tests/data/stream` holds the lzip and LZ4 files, which 7-Zip's parity corpus cannot hold. `scripts/make_stream_files.py` writes it with bsdtar and checks it with a second decoder. `tests/legacy_streams.rs` writes its lzma86, PPMd, SZDD and Base64 files itself and checks each against `7zz x`.
 
-The default engine sends a file here when it starts with one of these signatures and the [tar reader](tar-reader.md) finds no tar inside. A tar inside any of them goes to the tar reader, which extracts its files.
+The default engine sends a file here when it starts with one of these signatures and the [tar reader](tar-reader.md) finds no tar inside. A tar inside gzip, bzip2, xz, zstd, lzip, LZ4, `compress` or LZMA goes to the tar reader, which extracts its files. A tar inside lzma86, PPMd, SZDD or Base64 extracts as the `.tar` file, as with 7-Zip.
 
 ## Output name
 
@@ -27,17 +32,32 @@ The decoded file is named as 7-Zip names it:
 - Any other extension is dropped, and a name without one gains `~`. So the decoded file never takes the archive's own name, even in the archive's own folder.
 - `\` and `:` become `_`, and trailing spaces are dropped, with trailing dots too on Windows. A name left as `.` or `..` becomes `_`, and a name that is still not safe, such as `CON` on Windows, gains a leading `_`.
 
+lzma86 and Base64 drop the archive's last extension, or adds `~` to a name without one, as 7-Zip does for every format without its own rule.
+
+A PPMd file stores the decoded file's name, which may hold folders. Zipper names the file as 7-Zip 26.05 does. The name ends at its first NUL. Empty, `.` and `..` folders are dropped, and a last part that is empty, `.` or `..` becomes `_`. Each part then loses `\` and `:` as above, and on Windows its trailing spaces and dots. A name that is not UTF-8 has each bad sequence replaced with U+FFFD, where 7-Zip drops it. A file with no stored name takes the archive's name without its last extension.
+
+An SZDD file named with a trailing `_`, such as `SETUP.EX_`, is named as 7-Zip 26.05 names it. The `_` is dropped, and the byte the header stores takes its place when it is printable ASCII. A zero byte means the encoder left the last letter out, so `.bi`, `.dl`, `.ex`, `.km`, `.pd` and `.sy` gain `n`, `l`, `e`, `d`, `f` and `s`, in lower case only. A `/` the header stores becomes a folder whose file is named `_`, as in 7-Zip. Any other name takes the archive's name without its last extension.
+
+A name taken from a PPMd or SZDD header that equals the archive's own name, ignoring ASCII case, gains `~`, where 7-Zip would write over the archive in its own folder. A strip that would leave that name is refused.
+
 A name stored inside a gzip header is ignored, because it could hold a path. A file split into [volumes](zip-reader.md#split-volumes) is named from its first volume's name without `.001`.
 
 ## Safety checks
 
 - The output goes to a hidden staging folder and is published only when the whole stream decodes, as with every reader.
 - The decoded size must stay within free space, or within `--max-extracted-bytes`, checked while decoding.
-- Every decoder checks the checksum its format carries. gzip has a CRC-32, bzip2 has block and stream CRCs, and xz has its check. zstd has a frame checksum when the frame holds one, each lzip member has a CRC-32 and its sizes, and an LZ4 frame has the checksums above when its writer set them. LZMA has no checksum.
-- An xz, LZMA or lzip stream with a dictionary larger than the [tar reader's limit](tar-reader.md#limits), 256 MiB, is refused.
+- Every decoder checks the checksum its format carries. gzip has a CRC-32, bzip2 has block and stream CRCs, and xz has its check. zstd has a frame checksum when the frame holds one, each lzip member has a CRC-32 and its sizes, and an LZ4 frame has the checksums above when its writer set them. LZMA, lzma86, PPMd, SZDD and Base64 have no checksum.
+- An lzma86 or SZDD stream with a declared size must decode to exactly that size. A copy that would run past it is refused before any of it is written. An lzma86 stream may end with an end marker at its size, as 7-Zip allows.
+- An SZDD file must leave the flag bits after its last token clear, as 7-Zip 26.06 requires and 26.05 does not check.
+- A PPMd model takes the memory its header names, from 1 to 256 MiB, as the ZIP and 7z PPMd readers do. The `ppmd-rust` crate fills the whole model with zeros when decoding starts, so even a tiny file can use that much memory, where 7-Zip touches only the pages it uses.
+- A Base64 file with anything but spaces after its `=` padding is refused. 7-Zip extracts such a file with a warning when the extra data lies past the first 4 KiB.
+- A PPMd file with data after its end marker is refused. 7-Zip extracts the first file of such a file and ignores the rest, which may be a second file that PPMd itself wrote.
+- An xz, LZMA or lzip stream with a dictionary larger than the [tar reader's limit](tar-reader.md#limits), 256 MiB, is refused. An lzma86 stream is refused when its window, the dictionary or the declared size if smaller, is larger than 256 MiB.
 - A truncated stream is refused at every length, and data after the last stream is refused, except in `compress`, as above.
 - `--path`, `--include` and `--exclude` select the one decoded file by its output name.
 
 ## Tests
 
 `tests/hostile_stream.rs` truncates each corpus file at every length, appends trailing data, damages a gzip CRC and caps the output. `tests/parity.rs` checks each corpus file against the tree 7-Zip extracts.
+
+`tests/legacy_streams.rs` writes lzma86 files with 7-Zip's own LZMA and BCJ encoders and with liblzma, PPMd files with the `ppmd-rust` encoders, and SZDD and Base64 files with its own encoders. Each extracts through the default engine to the tree `7zz x` extracts, names included. Files with one damaged byte are refused exactly when 7-Zip refuses them, apart from the checks above that 7-Zip lacks. The test also cuts each format at every length and appends trailing data. `every_pseudo_random_stream_decodes_as_the_reference_does_at_every_split` in `src/mslz.rs` compares the SZDD decoder with a separate byte-at-a-time decoder on 20,000 streams, at four input and output splits. `every_pseudo_random_text_checks_and_decodes_as_the_reference_does_at_every_split` in `src/base64.rs` compares the Base64 check and decoder with a separate port of 7-Zip's on 50,000 texts. Kani proofs under `[legacy-streams]` in `verification/coverage.txt` cover the three header readers, the lzma86 and Base64 checks, the SZDD decoder's window indexing and the Base64 decoder's pending bytes from any state.

@@ -58,8 +58,8 @@ pub enum Reader {
     Iso,
     /// The native reader for WIM and ESD images.
     Wim,
-    /// The native reader for one gzip, bzip2, xz, zstd or LZMA stream that
-    /// holds no tar.
+    /// The native reader for one compressed stream that holds no tar, in a
+    /// format [`crate::native_stream::Format`] names.
     Stream,
     /// 7-Zip, with the format pinned when Zipper recognized its signature.
     Backend { format: Option<String> },
