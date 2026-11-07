@@ -1368,6 +1368,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [zip-legacy-methods]
+fingerprint = 8caebe2030c13956
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach zip-legacy-methods
 full-check = cargo kani --harness shrink::proofs:: --harness implode::proofs::
