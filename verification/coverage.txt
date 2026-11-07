@@ -1111,7 +1111,7 @@ item = src/lzx.rs | pub(crate) fn decoder_memory(
 
 [lzx]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 529d76f7b10b3227
+fingerprint = 41711cad547d03c8
 full-check = cargo test --release --lib lzx
 full-check = cargo test --release --test cab_corpus
 item = src/lzx.rs | pub(crate) const CHUNK:
