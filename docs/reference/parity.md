@@ -16,15 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-<<<<<<< HEAD
-| `native` | 66 |
+| `native` | 67 |
 | `partial` | 1 |
-| `backend` | 40 |
-=======
-| `native` | 61 |
-| `partial` | 1 |
-| `backend` | 45 |
->>>>>>> 0232a61 (M17: read WIM and ESD images in process)
+| `backend` | 39 |
 | `missing` | 3 |
 | `dropped` | 2 |
 

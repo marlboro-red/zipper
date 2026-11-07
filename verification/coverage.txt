@@ -1367,6 +1367,9 @@ item = src/udf.rs | fn udf_time_fields(
 item = src/udf.rs | fn decoded_name(
 item = src/udf.rs | mod field_tests {
 item = src/udf.rs | mod proofs {
+item = src/lib.rs | pub(crate) fn field_check(
+item = src/lib.rs | pub(crate) struct BadField(
+item = src/lib.rs | pub(crate) type Field<
 
 [wim-fields]
 fingerprint = 556434bd553ed653
