@@ -2559,8 +2559,12 @@ pub fn read_archive(
             Err(error) if encrypted => return Err(damaged(true, format!("{error:#}"))),
             Err(error) => return Err(error),
         };
-        let mut folder_crc = crc32fast::Hasher::new();
-        for &index in &by_folder[folder_index] {
+        let items = &by_folder[folder_index];
+        let folder_check = folder.crc.filter(|&expected| {
+            !matches!(items.as_slice(), [only] if archive.items[*only].crc == Some(expected))
+        });
+        let mut folder_crc = folder_check.map(|_| crc32fast::Hasher::new());
+        for &index in items {
             let item = &archive.items[index];
             let write = root.filter(|_| chosen[index]);
             let mut target = Vec::new();
@@ -2586,7 +2590,7 @@ pub fn read_archive(
                 }
                 _ => None,
             };
-            let mut crc = crc32fast::Hasher::new();
+            let mut crc = (item.crc.is_some() || folder_crc.is_some()).then(crc32fast::Hasher::new);
             let mut remaining = item.size;
             let mut held = 0u64;
             while remaining > 0 {
@@ -2599,8 +2603,9 @@ pub fn read_archive(
                     ));
                 }
                 let bytes = &buffer[..read];
-                crc.update(bytes);
-                folder_crc.update(bytes);
+                if let Some(crc) = &mut crc {
+                    crc.update(bytes);
+                }
                 remaining -= read as u64;
                 if let Some(output) = &mut output {
                     output.write_all(bytes)?;
@@ -2616,7 +2621,12 @@ pub fn read_archive(
                     tracker.add_bytes(std::mem::replace(&mut held, read as u64))?;
                 }
             }
-            if let Some(expected) = item.crc
+            if let Some(crc) = &crc
+                && let Some(folder_crc) = &mut folder_crc
+            {
+                folder_crc.combine(crc);
+            }
+            if let (Some(expected), Some(crc)) = (item.crc, crc)
                 && crc.finalize() != expected
             {
                 return Err(damaged(
@@ -2645,7 +2655,7 @@ pub fn read_archive(
                 "7z folder holds more data than its files".into(),
             ));
         }
-        if let Some(expected) = folder.crc
+        if let (Some(expected), Some(folder_crc)) = (folder_check, folder_crc)
             && folder_crc.finalize() != expected
         {
             return Err(damaged(encrypted, "7z folder CRC mismatch".into()));

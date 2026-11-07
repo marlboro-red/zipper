@@ -1467,3 +1467,183 @@ fn filter_archives_from_7zip_extract_byte_exact() {
         }
     }
 }
+
+fn solid_copy_archive(
+    files: &[(&str, Vec<u8>)],
+    folder_crc: Option<u32>,
+    file_crcs: bool,
+) -> Vec<u8> {
+    let packed: Vec<u8> = files.iter().flat_map(|(_, data)| data.clone()).collect();
+    let mut header = vec![1u8, 4, 6];
+    header.extend(number(0));
+    header.extend(number(1));
+    header.push(9);
+    header.extend(number(packed.len() as u64));
+    header.extend([0, 7, 11]);
+    header.extend(number(1));
+    header.extend([0, 1, 1, 0, 12]);
+    header.extend(number(packed.len() as u64));
+    if let Some(crc) = folder_crc {
+        header.extend([10, 1]);
+        header.extend_from_slice(&crc.to_le_bytes());
+    }
+    header.extend([0, 8, 13]);
+    header.extend(number(files.len() as u64));
+    header.push(9);
+    for (_, data) in &files[..files.len() - 1] {
+        header.extend(number(data.len() as u64));
+    }
+    if file_crcs {
+        header.extend([10, 1]);
+        for (_, data) in files {
+            header.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
+        }
+    }
+    header.extend([0, 0, 5]);
+    header.extend(number(files.len() as u64));
+    let mut names = vec![0u8];
+    for (name, _) in files {
+        for unit in name.encode_utf16().chain([0]) {
+            names.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+    header.extend(property(17, &names));
+    let mut attributes = vec![1u8, 0];
+    for _ in files {
+        attributes.extend_from_slice(&UNIX_FILE.to_le_bytes());
+    }
+    header.extend(property(21, &attributes));
+    header.extend([0, 0]);
+    let mut archive = b"7z\xBC\xAF\x27\x1C\x00\x04".to_vec();
+    let mut start = Vec::new();
+    start.extend_from_slice(&(packed.len() as u64).to_le_bytes());
+    start.extend_from_slice(&(header.len() as u64).to_le_bytes());
+    start.extend_from_slice(&crc32fast::hash(&header).to_le_bytes());
+    archive.extend_from_slice(&crc32fast::hash(&start).to_le_bytes());
+    archive.extend_from_slice(&start);
+    archive.extend_from_slice(&packed);
+    archive.extend_from_slice(&header);
+    archive
+}
+
+fn solid_files() -> Vec<(&'static str, Vec<u8>)> {
+    let pattern = |length: u32, seed: u32| -> Vec<u8> {
+        (0..length)
+            .map(|index| (index.wrapping_mul(2_654_435_761).wrapping_add(seed) >> 24) as u8)
+            .collect()
+    };
+    vec![
+        ("a", pattern(2_600_000, 1)),
+        ("b", b"beta".to_vec()),
+        ("c", pattern(1 << 20, 7)),
+        ("d", pattern(300_001, 9)),
+    ]
+}
+
+fn read_solid(
+    bytes: &[u8],
+    paths: &[String],
+    threads: usize,
+    write: bool,
+) -> (tempfile::TempDir, anyhow::Result<Vec<zipper::Entry>>) {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.7z");
+    fs::write(&archive, bytes).unwrap();
+    fs::create_dir(root.path().join("parent")).unwrap();
+    let destination = root.path().join("parent/out");
+    let result = read_archive(
+        &archive,
+        write.then_some(destination.as_path()),
+        ReadOptions {
+            threads: Some(threads),
+            paths,
+            ..ReadOptions::default()
+        },
+    );
+    (root, result)
+}
+
+#[test]
+fn a_solid_folder_crc_is_checked_whether_or_not_its_files_have_crcs() {
+    let files = solid_files();
+    let all: Vec<u8> = files.iter().flat_map(|(_, data)| data.clone()).collect();
+    let right = crc32fast::hash(&all);
+    let selected = ["c".to_string()];
+    for file_crcs in [true, false] {
+        for (case, folder_crc, accepted) in [
+            ("right folder CRC", Some(right), true),
+            ("wrong folder CRC", Some(right ^ 1), false),
+            ("no folder CRC", None, true),
+        ] {
+            let bytes = solid_copy_archive(&files, folder_crc, file_crcs);
+            for (paths, write) in [(&[][..], true), (&selected[..], true), (&[][..], false)] {
+                for threads in [1, 3] {
+                    let case = format!(
+                        "{case}, file CRCs {file_crcs}, paths {paths:?}, write {write}, {threads} threads"
+                    );
+                    let (root, result) = read_solid(&bytes, paths, threads, write);
+                    let out = root.path().join("parent/out");
+                    if accepted {
+                        result.unwrap_or_else(|error| panic!("{case}: {error:#}"));
+                        if write {
+                            for (name, data) in &files {
+                                let wanted = paths.is_empty() || paths.contains(&name.to_string());
+                                assert_eq!(out.join(name).exists(), wanted, "{case}: {name}");
+                                if wanted {
+                                    assert!(
+                                        fs::read(out.join(name)).unwrap() == *data,
+                                        "{case}: {name}"
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        let error = format!("{:#}", result.expect_err(&case));
+                        assert!(error.contains("7z folder CRC mismatch"), "{case}: {error}");
+                    }
+                    assert_eq!(
+                        fs::read_dir(root.path().join("parent")).unwrap().count(),
+                        usize::from(accepted && write),
+                        "{case}: output left behind"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn the_solid_builder_writes_archives_7zip_reads() {
+    let Some(seven_zip) = which("7zz") else {
+        return;
+    };
+    let files = solid_files();
+    let all: Vec<u8> = files.iter().flat_map(|(_, data)| data.clone()).collect();
+    for (folder_crc, file_crcs) in [
+        (Some(crc32fast::hash(&all)), false),
+        (None, true),
+        (Some(crc32fast::hash(&all)), true),
+    ] {
+        let bytes = solid_copy_archive(&files, folder_crc, file_crcs);
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("check.7z");
+        fs::write(&archive, &bytes).unwrap();
+        let output = std::process::Command::new(&seven_zip)
+            .args(["x", "-bd", "-y"])
+            .arg(format!("-o{}", root.path().join("out").display()))
+            .arg(&archive)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "7-Zip rejects {folder_crc:?} {file_crcs}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        for (name, data) in &files {
+            assert!(
+                fs::read(root.path().join("out").join(name)).unwrap() == *data,
+                "{name}"
+            );
+        }
+    }
+}
