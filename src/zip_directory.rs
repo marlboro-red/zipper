@@ -1344,6 +1344,18 @@ mod tests {
         Listed,
     }
 
+    // EXTERNAL(zip crate): without a sentinel it reads only the plain end record, so ZIP64 records
+    // before an empty directory look like a prefix. Python zipfile reads them as Zipper does.
+    fn the_zip_crate_reads_empty_zip64_records_as_a_prefix(
+        ours: &Directory,
+        theirs: &ZipCrateListing,
+    ) -> bool {
+        ours.entries.is_empty()
+            && theirs.entries.is_empty()
+            && ours.start == 0
+            && theirs.offset == (ZIP64_END_RECORD + ZIP64_LOCATOR) as u64
+    }
+
     fn compare(bytes: &[u8]) -> std::result::Result<Outcome, String> {
         let ours = read_directory(&mut Cursor::new(bytes), None);
         let theirs = listed_by_zip_crate(bytes);
@@ -1366,10 +1378,15 @@ mod tests {
                 let raw_count = listed.len();
                 let merged = merged_like_zip_crate(listed);
                 let repeated_names = merged.len() != raw_count;
-                if theirs.offset != 0 && theirs.offset != ours.archive_start {
+                let starts_differ_only_by_the_empty_zip64_records =
+                    the_zip_crate_reads_empty_zip64_records_as_a_prefix(&ours, &theirs);
+                if !starts_differ_only_by_the_empty_zip64_records
+                    && theirs.offset != 0
+                    && theirs.offset != ours.archive_start
+                {
                     return Err(format!("the zip crate finds offset {}", theirs.offset));
                 }
-                if ours.start != theirs.start {
+                if !starts_differ_only_by_the_empty_zip64_records && ours.start != theirs.start {
                     return Err(format!(
                         "directory start {} against {}",
                         ours.start, theirs.start
@@ -1906,6 +1923,11 @@ mod tests {
                 "an empty ZIP64 end",
                 vec![],
                 zip64_end([false, false, true]),
+            ),
+            (
+                "an empty ZIP64 end without sentinels",
+                vec![],
+                zip64_end([false, false, false]),
             ),
             (
                 "a ZIP64 end without sentinels",

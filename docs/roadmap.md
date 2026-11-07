@@ -477,7 +477,9 @@ Done so far, by 8 November 2026:
 - A differential test agrees with the `zip` crate on the corpora, the encrypted set, hand-built shapes and damaged archives, or both refuse. It also compares what `native_zip::list` gives, and lists the corpus split set against the same tree in one piece. Its ignored real-world case listed all 95 ZIPs of the real-world set the same.
 - The ten Kani proofs of `[zip-directory]`, run by `cargo xtask verify-sync zip-directory`.
 - Every test in `tests/hostile_zip.rs` and `tests/zip_fuzz.rs` passes.
-- Left are the scoreboard listing comparison and the adversarial review of the whole wired path.
+- An adversarial review of the wired path ran about 6,850 archives on `zipper list` and both engines. It confirmed no layout that the new path accepts and the `zip` crate refuses, and no listing that differs. Peak memory of `zipper list` stayed at or below the old build's on archives at the entry and metadata limits.
+- A run of 5,000 damaged copies of each archive found one empty archive of ZIP64 records without sentinels. Zipper and Python list it as empty at offset 0. The `zip` crate lists it as empty after a 76-byte prefix. The old reader refused it. The test now names this case.
+- Left is the scoreboard comparison of listing speed.
 
 ## M23. The LZMA decoder as its own crate
 
