@@ -174,7 +174,7 @@ Archive-level deduplication is not implemented yet.
 
 ## Read ZIP, 7z, and other existing formats
 
-`extract`, `list`, and `test` read ZIP, tar and most 7z archives in process and delegate other formats to `7zz` or `7z` on PATH. A 7z archive whose methods the [7z reader](reference/7z-reader.md) does not decode, such as PPMd, BCJ2 or a password, also goes to 7-Zip.
+`extract`, `list`, and `test` read ZIP, tar and most 7z archives in process and delegate other formats to `7zz` or `7z` on PATH. A 7z archive whose methods the [7z reader](reference/7z-reader.md) does not decode also goes to 7-Zip. Encrypted 7z archives decrypt in process.
 To use another executable, set `ZIPPER_7Z` to its path. To send ZIP archives to 7-Zip as well, pass `--zip-engine backend`.
 The installed backend decides which formats work and which extraction protections apply.
 This default path is an external compatibility bridge.
@@ -233,7 +233,7 @@ To give the password without a prompt, as a script must, pass `--password`. It t
 zipper --password 'correct horse' extract secret.zip -o restored
 ```
 
-When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so `extract` and `test` fail there when a selected entry is encrypted and no `--password` was given. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper refuses `--password` for archives it does not decrypt, such as tar and 7z, and the 7-Zip backend refuses it too. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
+When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so `extract` and `test` fail there when a selected entry is encrypted and no `--password` was given. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper decrypts ZIP and 7z archives. It refuses `--password` for archives it does not decrypt, such as tar, and the 7-Zip backend refuses it too. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
 
 ## Read tar archives in process
 

@@ -40,7 +40,7 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 
 Zipper reads archives; it does not create them.
 The native ZIP, tar and 7z readers restore files, folders, Unix permissions, modification times and symlinks that stay inside the destination. They do not restore owners, extended attributes or ACLs.
-Encrypted archives and some methods, such as BZip2 and PPMd in 7z, go to 7-Zip.
+Encrypted ZIP and 7z archives decrypt in process with `--password`. The few methods the readers do not decode go to 7-Zip.
 Extraction refuses archives that cannot fit in free space, or that exceed `--max-extracted-bytes`. The 7-Zip backend is not checked.
 Use private destination parents, because publication does not defend against concurrent filesystem changes by other users.
 The [ZIP](docs/reference/zip-reader.md), [tar](docs/reference/tar-reader.md) and [7z](docs/reference/7z-reader.md) reader references give the details.
