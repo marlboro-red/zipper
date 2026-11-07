@@ -6152,6 +6152,104 @@ pub(crate) mod lzma_file_and_lzip_tests {
 }
 
 #[cfg(test)]
+mod literal_paths {
+    use super::*;
+
+    struct Encoder {
+        low: u64,
+        range: u32,
+        cache: u8,
+        pending: usize,
+        out: Vec<u8>,
+    }
+
+    impl Encoder {
+        fn shift_low(&mut self) {
+            if (self.low as u32) < 0xFF00_0000 || self.low >> 32 != 0 {
+                let carry = (self.low >> 32) as u8;
+                let mut byte = self.cache;
+                for _ in 0..self.pending {
+                    self.out.push(byte.wrapping_add(carry));
+                    byte = 0xFF;
+                }
+                self.pending = 0;
+                self.cache = (self.low >> 24) as u8;
+            }
+            self.pending += 1;
+            self.low = (self.low & 0x00FF_FFFF) << 8;
+        }
+
+        fn bit(&mut self, probability: &mut u16, bit: usize) {
+            let bound = (self.range >> PROBABILITY_BITS) * u32::from(*probability);
+            if bit == 0 {
+                self.range = bound;
+                *probability += (PROBABILITY_ONE - *probability) >> MOVE_BITS;
+            } else {
+                self.low += u64::from(bound);
+                self.range -= bound;
+                *probability -= *probability >> MOVE_BITS;
+            }
+            while self.range < TOP {
+                self.range <<= 8;
+                self.shift_low();
+            }
+        }
+    }
+
+    fn encode_matched_literal(byte: u8, match_byte: u8, table: &mut [u16]) -> Vec<u8> {
+        let mut encoder = Encoder {
+            low: 0,
+            range: u32::MAX,
+            cache: 0,
+            pending: 1,
+            out: Vec::new(),
+        };
+        let mut matched = usize::from(match_byte);
+        let mut symbol = 1usize;
+        let mut following = true;
+        for shift in (0..8).rev() {
+            let bit = usize::from(byte >> shift & 1);
+            if following {
+                let match_bit = matched >> 7 & 1;
+                matched = matched << 1 & 0xFF;
+                encoder.bit(&mut table[((1 + match_bit) << 8) + symbol], bit);
+                following = match_bit == bit;
+            } else {
+                encoder.bit(&mut table[symbol], bit);
+            }
+            symbol = symbol << 1 | bit;
+        }
+        for _ in 0..5 {
+            encoder.shift_low();
+        }
+        encoder.out
+    }
+
+    #[test]
+    fn every_matched_literal_follows_the_specifications_probabilities_for_every_match_byte() {
+        for match_byte in 0..=u8::MAX {
+            for byte in 0..=u8::MAX {
+                let mut expected = [PROBABILITY_ONE / 2; LITERAL_CODER_STRIDE];
+                let mut input = encode_matched_literal(byte, match_byte, &mut expected);
+                input.resize(input.len() + SYMBOL_INPUT_MAX, 0);
+                let mut bits = Bits {
+                    input: &input,
+                    position: 5,
+                    end: input.len(),
+                    room: input.len(),
+                    range: u32::MAX,
+                    code: u32::from_be_bytes(input[1..5].try_into().unwrap()),
+                };
+                let mut table = [PROBABILITY_ONE / 2; LITERAL_CODER_STRIDE];
+                let symbol = bits.matched_literal(&mut table, match_byte);
+                assert_eq!(symbol, 0x100 | usize::from(byte), "{match_byte} {byte}");
+                assert!(table == expected, "match byte {match_byte}, byte {byte}");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod speed {
     use super::*;
 
