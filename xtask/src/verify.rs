@@ -571,15 +571,40 @@ mod tests {
     }
 
     #[test]
-    fn an_ar_header_edit_makes_stale_every_section_whose_proofs_reach_it() {
-        assert_eq!(
-            sections_made_stale_by(
+    fn each_parser_edit_makes_stale_only_the_section_whose_proofs_reach_it() {
+        let cases = [
+            (
                 "src/native_ar.rs",
                 "decimal(&bytes[48..58])",
-                "decimal(&bytes[47..58])"
+                "decimal(&bytes[47..58])",
+                "ar-fields",
             ),
-            BTreeSet::from(["ar-fields".to_owned(), "parsers".to_owned()])
-        );
+            (
+                "src/native_tar.rs",
+                "\"tar numeric field has bytes after its terminator\",",
+                "\"tar numeric field has bytes past its terminator\",",
+                "tar-numbers",
+            ),
+            (
+                "src/native_tar.rs",
+                "field_check(value >= i64::MIN >> 8, \"tar base-256 field overflows\")?;",
+                "field_check(value >= i64::MIN >> 7, \"tar base-256 field overflows\")?;",
+                "tar-numbers",
+            ),
+            (
+                "src/native_zip.rs",
+                "field_check(!seen, \"ZIP entry has two ZIP64 extra fields\")?;",
+                "field_check(seen, \"ZIP entry has two ZIP64 extra fields\")?;",
+                "zip64-extra-field",
+            ),
+        ];
+        for (file, old, new, section) in cases {
+            assert_eq!(
+                sections_made_stale_by(file, old, new),
+                BTreeSet::from([section.to_owned()]),
+                "editing {old:?} in {file}"
+            );
+        }
     }
 
     #[test]

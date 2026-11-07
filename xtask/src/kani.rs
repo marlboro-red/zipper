@@ -437,41 +437,72 @@ pub(crate) fn discover_harnesses(
     Ok((harnesses, problems))
 }
 
-fn parent(path: &str) -> &str {
-    path.rsplit_once("::").map_or("", |(parent, _)| parent)
-}
-
-fn harnesses_not_run_as_listed(checks: &[KaniCheck], harnesses: &[Harness]) -> Vec<String> {
+fn harnesses_not_run_as_listed(sections: &[Section], harnesses: &[Harness]) -> Vec<String> {
     let mut problems = Vec::new();
-    let mut exact_modules = BTreeSet::new();
-    for check in checks.iter().filter(|check| check.exact) {
-        for name in &check.filters {
-            if harnesses.iter().any(|harness| harness.path == *name) {
-                exact_modules.insert(parent(name));
-            } else {
-                problems.push(format!(
-                    "{MANIFEST} runs {name}, which is no #[kani::proof] in src/"
-                ));
+    for section in sections {
+        for check in &section.checks {
+            for filter in &check.filters {
+                let single = KaniCheck {
+                    base: check.base.clone(),
+                    filters: vec![filter],
+                    exact: check.exact,
+                };
+                if harnesses.iter().any(|harness| single.runs(harness)) {
+                    continue;
+                }
+                problems.push(if check.exact {
+                    format!(
+                        "{}: {MANIFEST} runs {filter}, which is no #[kani::proof] in src/ that its check can run",
+                        section.name
+                    )
+                } else {
+                    format!(
+                        "{}: the filter {filter} matches no #[kani::proof] in src/ that its check can run",
+                        section.name
+                    )
+                });
             }
         }
     }
     for harness in harnesses {
         let name = &harness.path;
-        let runs = checks.iter().filter(|check| check.runs(harness)).count();
-        if exact_modules.contains(parent(name)) && runs != 1 {
-            problems.push(format!(
-                "{name} is run by {runs} full-checks in {MANIFEST}; give it exactly one `cargo kani ... --harness {name} --exact`"
-            ));
-        } else if runs == 0 {
-            problems.push(format!(
+        let running: Vec<&str> = sections
+            .iter()
+            .flat_map(|section| {
+                section
+                    .checks
+                    .iter()
+                    .filter(|check| check.runs(harness))
+                    .map(|_| section.name)
+            })
+            .collect();
+        match running.len() {
+            0 => problems.push(format!(
                 "{name} ({}:{}) is run by no full-check in {MANIFEST}; add a `--harness` filter that matches it{}",
                 harness.file,
                 harness.line,
                 if harness.needs_tests { " with --tests" } else { "" }
-            ));
+            )),
+            1 => {}
+            runs => problems.push(format!(
+                "{name} is run by {runs} Kani full-checks in {MANIFEST}, in {}; narrow their `--harness` filters so exactly one runs it",
+                running.join(", ")
+            )),
         }
     }
     problems
+}
+
+fn kani_runs_split(name: &str, full_checks: &[String]) -> Option<String> {
+    let runs = full_checks
+        .iter()
+        .filter(|check| kani_check(check).is_some())
+        .count();
+    (runs > 1).then(|| {
+        format!(
+            "{name}: it runs Kani in {runs} full-checks; join their `--harness` filters into one `cargo kani` line, so its reach check, its run and its goto fingerprints share one build"
+        )
+    })
 }
 
 fn section_kani_checks(verification: &Verification) -> Vec<KaniCheck<'_>> {
@@ -701,13 +732,6 @@ fn kani_code_not_listed(
     Ok(problems)
 }
 
-fn all_kani_checks(all: &[crate::verify::Verification]) -> Vec<KaniCheck<'_>> {
-    all.iter()
-        .flat_map(|verification| &verification.full_checks)
-        .filter_map(|check| kani_check(check))
-        .collect()
-}
-
 fn workspace_harnesses(root: &Path) -> Result<(Vec<Harness>, Vec<String>)> {
     discover_harnesses(&sources(root)?, |path| read_source(root, path))
 }
@@ -715,10 +739,6 @@ fn workspace_harnesses(root: &Path) -> Result<(Vec<Harness>, Vec<String>)> {
 pub(crate) fn fail_on_harnesses_not_run_as_listed(root: &Path) -> Result<()> {
     let all = manifest(root)?;
     let (harnesses, mut problems) = workspace_harnesses(root)?;
-    problems.extend(harnesses_not_run_as_listed(
-        &all_kani_checks(&all),
-        &harnesses,
-    ));
     let sections: Vec<Section> = all
         .iter()
         .map(|verification| Section {
@@ -727,12 +747,17 @@ pub(crate) fn fail_on_harnesses_not_run_as_listed(root: &Path) -> Result<()> {
             items: &verification.items,
         })
         .collect();
+    problems.extend(harnesses_not_run_as_listed(&sections, &harnesses));
     problems.extend(kani_code_not_listed(&sections, &harnesses, |path| {
         read_source(root, path)
     })?);
     for verification in &all {
         problems.extend(goto_fingerprints_not_listed(verification, &harnesses));
         problems.extend(reach_check_missing(
+            &verification.name,
+            &verification.full_checks,
+        ));
+        problems.extend(kani_runs_split(
             &verification.name,
             &verification.full_checks,
         ));
@@ -1823,19 +1848,50 @@ fn without_crate_disambiguators(line: &str) -> String {
     out
 }
 
+fn codegen_words<'a>(check: &KaniCheck<'a>) -> Vec<&'a str> {
+    let mut words = check.base.clone();
+    words.push("--only-codegen");
+    for filter in &check.filters {
+        words.extend(["--harness", filter]);
+    }
+    if check.exact {
+        words.push("--exact");
+    }
+    words
+}
+
 fn codegen(root: &Path, name: &str, check: &KaniCheck, harnesses: &[String]) -> Result<SystemTime> {
     let started = SystemTime::now();
-    let mut codegen = Command::new(check.base[0]);
-    codegen.args(&check.base[1..]).arg("--only-codegen");
-    for harness in harnesses {
-        codegen.args(["--harness", harness, "--exact"]);
-    }
-    let codegen = codegen.current_dir(root).output()?;
+    let words = codegen_words(check);
+    let codegen = Command::new(words[0])
+        .args(&words[1..])
+        .current_dir(root)
+        .output()?;
     ensure!(
         codegen.status.success(),
         "{name}: Kani codegen failed:\n{}{}",
         String::from_utf8_lossy(&codegen.stdout),
         String::from_utf8_lossy(&codegen.stderr)
+    );
+    let mut rebuilt = 0;
+    for harness in harnesses {
+        let symbols = newest_file_ending(
+            &target_folder(root).join("kani"),
+            &format!("{}.symtab.out", mangled_path(harness)),
+        )?
+        .with_context(|| format!("Kani wrote no symbol table for {harness}"))?;
+        if symbols.0 >= started {
+            rebuilt += 1;
+        }
+    }
+    println!(
+        "{name}: `{}` {}",
+        words.join(" "),
+        if rebuilt == 0 {
+            "reused the build of the same filters".to_owned()
+        } else {
+            format!("compiled {rebuilt} of {} harnesses", harnesses.len())
+        }
     );
     Ok(started)
 }
@@ -2000,7 +2056,17 @@ fn target_folder(root: &Path) -> PathBuf {
 }
 
 fn newest_goto_program(folder: &Path, harness: &str, since: SystemTime) -> Result<PathBuf> {
-    let suffix = format!("{}.out", mangled_path(harness));
+    let (modified, path) = newest_file_ending(folder, &format!("{}.out", mangled_path(harness)))?
+        .with_context(|| format!("Kani wrote no goto program for {harness}"))?;
+    ensure!(
+        modified >= since,
+        "the goto program for {harness} predates this codegen run: {}",
+        path.display()
+    );
+    Ok(path)
+}
+
+fn newest_file_ending(folder: &Path, suffix: &str) -> Result<Option<(SystemTime, PathBuf)>> {
     let mut newest: Option<(SystemTime, PathBuf)> = None;
     let mut folders = vec![folder.to_path_buf()];
     while let Some(folder) = folders.pop() {
@@ -2010,7 +2076,7 @@ fn newest_goto_program(folder: &Path, harness: &str, since: SystemTime) -> Resul
             let path = entry?.path();
             if path.is_dir() {
                 folders.push(path);
-            } else if path.to_string_lossy().ends_with(&suffix) {
+            } else if path.to_string_lossy().ends_with(suffix) {
                 let modified = path.metadata()?.modified()?;
                 if newest.as_ref().is_none_or(|(time, _)| modified > *time) {
                     newest = Some((modified, path));
@@ -2018,14 +2084,7 @@ fn newest_goto_program(folder: &Path, harness: &str, since: SystemTime) -> Resul
             }
         }
     }
-    let (modified, path) =
-        newest.with_context(|| format!("Kani wrote no goto program for {harness}"))?;
-    ensure!(
-        modified >= since,
-        "the goto program for {harness} predates this codegen run: {}",
-        path.display()
-    );
-    Ok(path)
+    Ok(newest)
 }
 
 fn reached_lines(root: &Path, eloc: &str) -> BTreeSet<(String, usize)> {
@@ -2245,42 +2304,73 @@ mod off {
     }
 
     #[test]
-    fn every_harness_runs_somewhere_and_exactly_named_ones_run_once() {
+    fn every_harness_runs_in_exactly_one_kani_check_whatever_its_filters() {
         let harnesses = [
             harness("m::proofs::first", true),
             harness("m::proofs::second", true),
             harness("other::proofs::first", false),
             harness("other::proofs::second", false),
+            harness("other::proofs::m::proofs::nested", false),
         ];
         let problems = |checks: &[&str]| {
-            let parsed: Vec<KaniCheck> = checks.iter().filter_map(|c| kani_check(c)).collect();
-            harnesses_not_run_as_listed(&parsed, &harnesses)
+            let sections: Vec<Section> = checks
+                .iter()
+                .enumerate()
+                .map(|(index, check)| Section {
+                    name: ["s0", "s1", "s2", "s3", "s4"][index],
+                    checks: kani_check(check).into_iter().collect(),
+                    items: &[],
+                })
+                .collect();
+            harnesses_not_run_as_listed(&sections, &harnesses)
         };
         let first = "cargo kani --tests --harness m::proofs::first --exact";
         let second = "cargo kani --tests --exact --harness=m::proofs::second";
         let other = "cargo kani --harness other::proofs::";
+        let named = |problems: &[String], text: &str| {
+            problems.iter().filter(|p| p.contains(text)).count()
+        };
         assert!(problems(&[first, second, other, "cargo test --lib m"]).is_empty());
         assert!(problems(&[first, second, "cargo kani"]).is_empty());
-        assert!(problems(&[first, second, other, other]).is_empty());
+
+        let repeated = problems(&[first, second, other, other]);
+        assert_eq!(repeated.len(), 3, "{repeated:#?}");
+        assert_eq!(named(&repeated, "is run by 2 Kani full-checks"), 3);
+        assert_eq!(named(&repeated, "in s2, s3"), 3);
+
+        let overlapping = problems(&[
+            first,
+            second,
+            other,
+            "cargo kani --harness m::proofs:: --harness nowhere",
+        ]);
+        assert_eq!(overlapping.len(), 2, "{overlapping:#?}");
+        assert!(overlapping[0].starts_with("s3: the filter nowhere matches no"));
+        assert!(overlapping[1].starts_with(
+            "other::proofs::m::proofs::nested is run by 2 Kani full-checks in verification/coverage.txt, in s2, s3"
+        ));
+
         let unrun = problems(&[first, second, "cargo kani --harness=elsewhere::proofs::"]);
-        assert_eq!(unrun.len(), 2);
-        assert!(unrun[0].starts_with("other::proofs::first (src/m.rs:1) is run by no full-check"));
+        assert_eq!(unrun.len(), 4, "{unrun:#?}");
+        assert!(unrun[0].starts_with("s2: the filter elsewhere::proofs:: matches no"));
+        assert!(unrun[1].starts_with("other::proofs::first (src/m.rs:1) is run by no full-check"));
         let missing = problems(&[first, other]);
         assert_eq!(missing.len(), 1);
-        assert!(missing[0].starts_with("m::proofs::second is run by 0"));
+        assert!(missing[0].starts_with("m::proofs::second (src/m.rs:1) is run by no full-check"));
         let without_tests = problems(&[
             first,
             "cargo kani --harness m::proofs::second --exact",
             other,
         ]);
-        assert_eq!(without_tests.len(), 1);
+        assert_eq!(without_tests.len(), 2, "{without_tests:#?}");
+        assert_eq!(named(&without_tests, "that its check can run"), 1);
         let twice = problems(&[
             first,
             second,
             other,
             "cargo kani --tests --harness m::proofs::",
         ]);
-        assert_eq!(twice.len(), 2);
+        assert_eq!(twice.len(), 3, "{twice:#?}");
         let unknown = problems(&[
             first,
             second,
@@ -2289,6 +2379,48 @@ mod off {
         ]);
         assert_eq!(unknown.len(), 1);
         assert!(unknown[0].contains("m::proofs::helper, which is no #[kani::proof]"));
+    }
+
+    #[test]
+    fn a_section_runs_kani_in_one_line_and_its_codegen_repeats_that_line() {
+        let checks = |lines: &[&str]| {
+            lines
+                .iter()
+                .map(|line| (*line).to_owned())
+                .collect::<Vec<_>>()
+        };
+        let one = "cargo kani --tests --harness m::proofs::first --exact --harness=m::proofs::second";
+        assert!(kani_runs_split("m", &checks(&[one, "cargo test --lib m"])).is_none());
+        let split = kani_runs_split("m", &checks(&[one, "cargo kani --harness other::"]));
+        assert!(split.is_some_and(|problem| problem.contains("in 2 full-checks")));
+
+        let check = kani_check(one).unwrap();
+        let words = codegen_words(&check);
+        assert_eq!(
+            words,
+            [
+                "cargo",
+                "kani",
+                "--tests",
+                "--only-codegen",
+                "--harness",
+                "m::proofs::first",
+                "--harness",
+                "m::proofs::second",
+                "--exact"
+            ]
+        );
+        let again = words.join(" ");
+        let again = kani_check(&again).unwrap();
+        assert_eq!(again.filters, check.filters);
+        assert_eq!(again.exact, check.exact);
+        let base: Vec<&str> = again
+            .base
+            .iter()
+            .copied()
+            .filter(|word| *word != "--only-codegen")
+            .collect();
+        assert_eq!(base, check.base);
     }
 
     const KANI_ONLY: &str = "fn parse() {}
