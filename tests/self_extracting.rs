@@ -82,7 +82,7 @@ fn cpu_time() -> std::time::Duration {
         tv_nsec: 0,
     };
     // SAFETY: `now` is a valid, writable timespec for the duration of the call.
-    let status = unsafe { libc::clock_gettime(libc::CLOCK_PROCESS_CPUTIME_ID, &mut now) };
+    let status = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut now) };
     assert_eq!(status, 0, "clock_gettime failed");
     std::time::Duration::new(now.tv_sec as u64, now.tv_nsec as u32)
 }
@@ -1022,8 +1022,8 @@ fn header_bombs_are_refused_quickly() {
             assert_refused(&path, &[named], &format!("{label} before a {kind}"));
             let spent = cpu_time() - started;
             assert!(
-                spent < std::time::Duration::from_secs(1),
-                "{label} before a {kind} took {spent:?} of CPU time"
+                spent > std::time::Duration::ZERO && spent < std::time::Duration::from_secs(1),
+                "{label} before a {kind} took {spent:?} of this thread's CPU time"
             );
         }
     }
