@@ -69,6 +69,25 @@ impl<R: Read> RangeDecoder<R> {
         }
     }
 
+    fn holding(input: R, mut buffer: Vec<u8>, start: usize, end: usize) -> Self {
+        let length = end.max(INPUT_CHUNK) + SYMBOL_INPUT_MAX;
+        if buffer.len() < length {
+            buffer.resize(length, 0);
+        }
+        buffer[end..end + SYMBOL_INPUT_MAX].fill(0);
+        RangeDecoder {
+            input,
+            buffer,
+            start,
+            end,
+            ended: false,
+            taken: end as u64,
+            input_limit: u64::MAX,
+            range: u32::MAX,
+            code: 0,
+        }
+    }
+
     fn refill(&mut self) -> io::Result<()> {
         self.buffer.copy_within(self.start..self.end, 0);
         self.end -= self.start;
@@ -85,7 +104,7 @@ impl<R: Read> RangeDecoder<R> {
             self.end += read;
             self.taken += read as u64;
         }
-        self.buffer[self.end..].fill(0);
+        self.buffer[self.end..self.end + SYMBOL_INPUT_MAX].fill(0);
         Ok(())
     }
 
@@ -937,7 +956,7 @@ enum Lzma2Chunk {
 }
 
 pub(crate) struct Lzma2Reader<R> {
-    state: ChunkState,
+    state: Box<ChunkState>,
     range: RangeDecoder<R>,
     window: Window,
     chunk: Lzma2Chunk,
@@ -957,7 +976,7 @@ impl<R: Read> Lzma2Reader<R> {
             pb: 0,
         };
         Lzma2Reader {
-            state: ChunkState::new(properties, dictionary),
+            state: Box::new(ChunkState::new(properties, dictionary)),
             range: RangeDecoder::new(input),
             window: Window::new(dictionary),
             chunk: Lzma2Chunk::Control,
@@ -1120,7 +1139,68 @@ impl<R: Read> Read for Lzma2Reader<R> {
     }
 }
 
+#[derive(Default)]
+struct Lzma2Parts {
+    buffer: Vec<u8>,
+    window: Option<Window>,
+    state: Option<Box<ChunkState>>,
+}
+
+impl<R: Read> Lzma2Reader<R> {
+    fn resume(input: R, dictionary: u32, parts: Lzma2Parts, held: (usize, usize)) -> Self {
+        let dictionary = lzma2_window(dictionary);
+        let window = match parts.window {
+            Some(mut window) if window.size == dictionary.max(1) + COPY_CHUNK => {
+                window.reset();
+                window
+            }
+            _ => Window::new(dictionary),
+        };
+        let state = match parts.state {
+            Some(mut state) => {
+                state.dictionary = dictionary.max(DICTIONARY_MIN);
+                state
+            }
+            None => {
+                let properties = Properties {
+                    lc: 0,
+                    lp: 0,
+                    pb: 0,
+                };
+                Box::new(ChunkState::new(properties, dictionary))
+            }
+        };
+        Lzma2Reader {
+            state,
+            range: RangeDecoder::holding(input, parts.buffer, held.0, held.1),
+            window,
+            chunk: Lzma2Chunk::Control,
+            needs_dictionary_reset: true,
+            needs_properties: true,
+            pending: 0,
+            output_start: 0,
+            ends_at_the_input_end: false,
+        }
+    }
+}
+
 impl<R> Lzma2Reader<R> {
+    fn into_parts(self) -> (R, Lzma2Parts, (usize, usize)) {
+        let RangeDecoder {
+            input,
+            buffer,
+            start,
+            end,
+            ..
+        } = self.range;
+        let parts = Lzma2Parts {
+            buffer,
+            window: Some(self.window),
+            state: Some(self.state),
+        };
+        (input, parts, (start, end))
+    }
+
     pub(crate) fn into_input(self) -> (R, Vec<u8>) {
         let RangeDecoder {
             input,
@@ -1441,28 +1521,29 @@ struct XzInput<R> {
     inner: R,
     held: Vec<u8>,
     next: usize,
+    filled: usize,
     position: u64,
     limit: u64,
+    spare: Lzma2Parts,
 }
 
 impl<R: Read> XzInput<R> {
     fn peek(&mut self) -> io::Result<Option<u8>> {
-        if self.next == self.held.len() {
-            self.held.resize(XZ_INPUT_CHUNK, 0);
+        if self.next == self.filled {
+            if self.held.len() < XZ_INPUT_CHUNK {
+                self.held.resize(XZ_INPUT_CHUNK, 0);
+            }
             self.next = 0;
-            let read = loop {
-                match self.inner.read(&mut self.held) {
+            self.filled = 0;
+            self.filled = loop {
+                match self.inner.read(&mut self.held[..XZ_INPUT_CHUNK]) {
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                    Err(error) => {
-                        self.held.clear();
-                        return Err(error);
-                    }
+                    Err(error) => return Err(error),
                     Ok(read) => break read,
                 }
             };
-            self.held.truncate(read);
         }
-        Ok(self.held.get(self.next).copied())
+        Ok(self.held[..self.filled].get(self.next).copied())
     }
 
     fn byte(&mut self, truncated: &'static str) -> io::Result<u8> {
@@ -1479,10 +1560,33 @@ impl<R: Read> XzInput<R> {
         Ok(())
     }
 
-    fn unread(&mut self, bytes: &[u8]) {
-        self.held.splice(..self.next, bytes.iter().copied());
+    fn hand_over_held(&mut self) -> (Vec<u8>, (usize, usize)) {
+        let held = (self.next, self.filled);
+        self.position += (self.filled - self.next) as u64;
         self.next = 0;
-        self.position -= bytes.len() as u64;
+        self.filled = 0;
+        let spare = std::mem::take(&mut self.spare.buffer);
+        (std::mem::replace(&mut self.held, spare), held)
+    }
+
+    fn take_back(&mut self, mut buffer: Vec<u8>, (start, end): (usize, usize)) {
+        self.position -= (end - start) as u64;
+        if start == end {
+            self.spare.buffer = buffer;
+            return;
+        }
+        if self.next < self.filled {
+            buffer.truncate(end);
+            buffer.drain(..start);
+            buffer.extend_from_slice(&self.held[self.next..self.filled]);
+            self.next = 0;
+            self.filled = buffer.len();
+            self.spare.buffer = std::mem::replace(&mut self.held, buffer);
+            return;
+        }
+        self.spare.buffer = std::mem::replace(&mut self.held, buffer);
+        self.next = start;
+        self.filled = end;
     }
 }
 
@@ -1493,8 +1597,8 @@ impl<R: Read> Read for XzInput<R> {
         if buffer.is_empty() {
             return Ok(0);
         }
-        let read = if self.next < self.held.len() {
-            let run = buffer.len().min(self.held.len() - self.next);
+        let read = if self.next < self.filled {
+            let run = buffer.len().min(self.filled - self.next);
             buffer[..run].copy_from_slice(&self.held[self.next..self.next + run]);
             self.next += run;
             run
@@ -1572,8 +1676,10 @@ impl<R: Read> XzBlock<R> {
     }
 
     fn finish(self) -> io::Result<(XzInput<R>, XzStream)> {
-        let (mut input, unread) = self.decoder.into_input();
-        input.unread(&unread);
+        let (mut input, parts, held) = self.decoder.into_parts();
+        input.spare.window = parts.window;
+        input.spare.state = parts.state;
+        input.take_back(parts.buffer, held);
         input.limit = u64::MAX;
         let compressed = input.position - self.data_start;
         if self
@@ -1653,8 +1759,10 @@ impl<R: Read> XzReader<R> {
                     inner: input,
                     held: Vec::new(),
                     next: 0,
+                    filled: 0,
                     position: 0,
                     limit: u64::MAX,
+                    spare: Lzma2Parts::default(),
                 },
                 first: true,
             },
@@ -1734,11 +1842,21 @@ fn start_block<R: Read>(
         ));
     }
     let data_start = input.position;
-    if let Some(size) = declared.compressed {
-        input.limit = data_start + size;
-    }
+    let (buffer, held) = match declared.compressed {
+        Some(size) => {
+            input.limit = data_start + size;
+            (std::mem::take(&mut input.spare.buffer), (0, 0))
+        }
+        None => input.hand_over_held(),
+    };
+    let parts = Lzma2Parts {
+        buffer,
+        window: input.spare.window.take(),
+        state: input.spare.state.take(),
+    };
+    let window = declared.window_within_uncompressed_size();
     Ok(XzPart::Block(Box::new(XzBlock {
-        decoder: Lzma2Reader::new(input, declared.window_within_uncompressed_size()),
+        decoder: Lzma2Reader::resume(input, window, parts, held),
         filters: std::mem::take(&mut declared.filters),
         check: XzCheckState::new(stream.check),
         stream,
@@ -4714,6 +4832,64 @@ mod tests {
                     assert_single_stream_agrees_with_liblzma(&stream, what).is_none(),
                     "{what}"
                 );
+            }
+        }
+
+        fn block_starts(stream: &[u8]) -> Vec<(usize, usize, u64)> {
+            let rules = XzReader::new(stream).rules;
+            let mut part = XzReader::new(stream).part;
+            let mut starts = Vec::new();
+            loop {
+                part = next_part(part, rules).unwrap();
+                match &mut part {
+                    XzPart::Block(block) => {
+                        let range = &block.decoder.range;
+                        starts.push((
+                            block.decoder.window.buffer.len(),
+                            range.end - range.start,
+                            block.decoded,
+                        ));
+                        let mut sink = vec![0u8; 1 << 16];
+                        while block.read(&mut sink).unwrap() > 0 {}
+                    }
+                    XzPart::Done => return starts,
+                    _ => {}
+                }
+            }
+        }
+
+        #[test]
+        fn later_blocks_of_a_stream_start_with_the_earlier_window_and_read_ahead() {
+            for sized in [false, true] {
+                let blocks: Vec<Block> =
+                    [text(3_000, 93), Vec::new(), noise(94, 2_000), Vec::new()]
+                        .into_iter()
+                        .map(|data| {
+                            let block = Block::new(data, 6);
+                            if sized { block.sized() } else { block }
+                        })
+                        .collect();
+                let stream = Parts::new(&blocks, 0x04).bytes();
+                let starts = block_starts(&stream);
+                assert_eq!(starts.len(), 4, "sized {sized}");
+                for (index, &(window, held, decoded)) in starts.iter().enumerate().skip(1) {
+                    assert!(
+                        window > 0,
+                        "sized {sized}, block {index} starts with a new window"
+                    );
+                    if !sized {
+                        assert!(
+                            held > 0,
+                            "block {index} starts without the bytes read ahead"
+                        );
+                    }
+                    assert_eq!(decoded, 0);
+                }
+                let mut out = Vec::new();
+                XzReader::new(stream.as_slice())
+                    .read_to_end(&mut out)
+                    .unwrap();
+                assert_eq!(out, [text(3_000, 93), noise(94, 2_000)].concat());
             }
         }
 
