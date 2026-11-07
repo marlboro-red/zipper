@@ -4,7 +4,9 @@
 #[path = "common/iso_writer.rs"]
 mod iso_writer;
 
-use iso_writer::{Ads, Boot, Built, Disc, Item, SECTOR, Udf, dir, file, retag_in_place, symlink};
+use iso_writer::{
+    Ads, Boot, Built, Disc, Item, SECTOR, Udf, dir, file, retag_with_stored_crc_length, symlink,
+};
 use std::{collections::BTreeMap, fs, path::Path};
 type Damage = Box<dyn Fn(&mut Vec<u8>)>;
 
@@ -809,7 +811,7 @@ fn entry(built: &Built, path: &str) -> usize {
 fn point_fid_at(bytes: &mut [u8], at: usize, block_of: usize, built: &Built) {
     let block = ((block_of - built.layout.partition_start as usize * SECTOR) / SECTOR) as u32;
     put32(bytes, at + 24, block);
-    retag_in_place(bytes, at);
+    retag_with_stored_crc_length(bytes, at);
 }
 
 #[test]
@@ -840,7 +842,7 @@ fn udf_folders_that_loop_fall_back_or_are_refused() {
             &built,
         );
         shared[fid(&built, "hello.txt") + 18] = 2;
-        retag_in_place(&mut shared, fid(&built, "hello.txt"));
+        retag_with_stored_crc_length(&mut shared, fid(&built, "hello.txt"));
         assert_rejected_with("shared folder", &shared, "reached from two folders");
     }
 }
@@ -871,7 +873,7 @@ fn udf_structures_that_lie_are_refused() {
             "extent outside the partition",
             Box::new(move |b| {
                 put32(b, ad + 4, 1 << 20);
-                retag_in_place(b, data_entry);
+                retag_with_stored_crc_length(b, data_entry);
             }),
             "outside its partition",
         ),
@@ -879,7 +881,7 @@ fn udf_structures_that_lie_are_refused() {
             "unrecorded extent",
             Box::new(move |b| {
                 b[ad + 3] |= 0x40;
-                retag_in_place(b, data_entry);
+                retag_with_stored_crc_length(b, data_entry);
             }),
             "do not hold its size",
         ),
@@ -887,7 +889,7 @@ fn udf_structures_that_lie_are_refused() {
             "extents shorter than the file",
             Box::new(move |b| {
                 put32(b, ad, 100);
-                retag_in_place(b, data_entry);
+                retag_with_stored_crc_length(b, data_entry);
             }),
             "do not hold its size",
         ),
@@ -897,8 +899,8 @@ fn udf_structures_that_lie_are_refused() {
                 put32(b, partition + 192, u32::MAX / 4096);
                 let past = (b.len() / SECTOR) as u32;
                 put32(b, ad + 4, past);
-                retag_in_place(b, partition);
-                retag_in_place(b, data_entry);
+                retag_with_stored_crc_length(b, partition);
+                retag_with_stored_crc_length(b, data_entry);
             }),
             "past the end",
         ),
@@ -906,7 +908,7 @@ fn udf_structures_that_lie_are_refused() {
             "reserved descriptor type",
             Box::new(move |b| {
                 b[data_entry + 34] = 5;
-                retag_in_place(b, data_entry);
+                retag_with_stored_crc_length(b, data_entry);
             }),
             "reserved allocation",
         ),
@@ -970,15 +972,15 @@ fn udf_the_reader_does_not_open_goes_to_the_backend_by_name() {
     let terminator = lvd + SECTOR;
     two.copy_within(lvd..lvd + SECTOR, terminator);
     put32(&mut two, terminator + 12, (terminator / SECTOR) as u32);
-    retag_in_place(&mut two, terminator);
+    retag_with_stored_crc_length(&mut two, terminator);
     let anchor = built.layout.anchor.unwrap();
     put32(&mut two, anchor + 16, 5 * SECTOR as u32);
-    retag_in_place(&mut two, anchor);
+    retag_with_stored_crc_length(&mut two, anchor);
     let end = terminator + SECTOR;
     two[end..end + 16].copy_from_slice(&built.bytes[terminator..terminator + 16]);
     put32(&mut two, end + 12, (end / SECTOR) as u32);
     two[end + 10..end + 12].copy_from_slice(&496u16.to_le_bytes());
-    retag_in_place(&mut two, end);
+    retag_with_stored_crc_length(&mut two, end);
     assert_rejected_with("two logical volumes", &two, "several logical volumes");
 }
 
@@ -1171,7 +1173,7 @@ fn a_udf_folder_whose_extents_repeat_is_refused() {
     repeated[folder + 56..folder + 64].copy_from_slice(&(4 * size).to_le_bytes());
     let crc_length = 176 + 4 * length - 16;
     repeated[folder + 10..folder + 12].copy_from_slice(&(crc_length as u16).to_le_bytes());
-    retag_in_place(&mut repeated, folder);
+    retag_with_stored_crc_length(&mut repeated, folder);
     assert_rejected_with("one extent four times", &repeated, "overlap");
 }
 

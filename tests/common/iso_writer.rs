@@ -1,8 +1,4 @@
 #![allow(dead_code)]
-//! Writes ISO 9660 images with Joliet, Rock Ridge and El Torito, and UDF
-//! file systems beside or instead of them, for the differential and hostile
-//! tests. The layout records where each structure sits, so a test can damage
-//! one field and recompute the UDF tag around it.
 
 use std::collections::BTreeMap;
 
@@ -166,9 +162,7 @@ pub fn crc16(bytes: &[u8]) -> u16 {
     crc
 }
 
-/// Fill in the UDF tag at `at` for a descriptor of `length` bytes, with
-/// its identifier, version and location already written.
-pub fn retag(bytes: &mut [u8], at: usize, length: usize) {
+pub fn write_udf_tag(bytes: &mut [u8], at: usize, length: usize) {
     let crc_length = (length - 16) as u16;
     bytes[at + 10..at + 12].copy_from_slice(&crc_length.to_le_bytes());
     let crc = crc16(&bytes[at + 16..at + length]);
@@ -182,17 +176,16 @@ pub fn retag(bytes: &mut [u8], at: usize, length: usize) {
     bytes[at + 4] = sum;
 }
 
-/// Recompute the tag at `at` with the CRC length the tag already holds.
-pub fn retag_in_place(bytes: &mut [u8], at: usize) {
+pub fn retag_with_stored_crc_length(bytes: &mut [u8], at: usize) {
     let crc_length = u16::from_le_bytes([bytes[at + 10], bytes[at + 11]]) as usize;
-    retag(bytes, at, crc_length + 16);
+    write_udf_tag(bytes, at, crc_length + 16);
 }
 
 fn put_tag(bytes: &mut [u8], at: usize, id: u16, version: u16, location: u32, length: usize) {
     bytes[at..at + 2].copy_from_slice(&id.to_le_bytes());
     bytes[at + 2..at + 4].copy_from_slice(&version.to_le_bytes());
     bytes[at + 12..at + 16].copy_from_slice(&location.to_le_bytes());
-    retag(bytes, at, length);
+    write_udf_tag(bytes, at, length);
 }
 
 fn udf_time() -> [u8; 12] {
@@ -1162,7 +1155,7 @@ impl UdfPlan {
                     data[offset..offset + 2].copy_from_slice(&257u16.to_le_bytes());
                     data[offset + 2..offset + 4].copy_from_slice(&version.to_le_bytes());
                     data[offset + 12..offset + 16].copy_from_slice(&block.to_le_bytes());
-                    retag(&mut data, offset, length);
+                    write_udf_tag(&mut data, offset, length);
                     if !path.is_empty() {
                         let base_at = match dir_block {
                             Some((block, _)) => self.icb_at(layout, block),

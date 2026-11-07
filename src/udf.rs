@@ -1,6 +1,3 @@
-//! The UDF file system of a disc image, read into the catalog the ISO
-//! reader extracts. `docs/reference/iso-reader.md` gives the rules.
-
 use crate::{
     BadField, Field, field_check,
     native_cpio::tree::{BACKEND_HINT, MAX_ENTRIES},

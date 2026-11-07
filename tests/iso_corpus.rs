@@ -700,49 +700,49 @@ fn a_udf_tree_7zip_cannot_open_falls_back_to_iso_9660_as_7zip_does() {
             "extended allocation descriptors",
             Box::new(move |b| {
                 b[entry + 34] = 2;
-                iso_writer::retag_in_place(b, entry);
+                iso_writer::retag_with_stored_crc_length(b, entry);
             }),
         ),
         (
             "a link entry",
             Box::new(move |b| {
                 b[entry + 27] = 12;
-                iso_writer::retag_in_place(b, entry);
+                iso_writer::retag_with_stored_crc_length(b, entry);
             }),
         ),
         (
             "a folder entry named as a file",
             Box::new(move |b| {
                 b[folder + 27] = 5;
-                iso_writer::retag_in_place(b, folder);
+                iso_writer::retag_with_stored_crc_length(b, folder);
             }),
         ),
         (
             "a loop",
             Box::new(move |b| {
                 put32(b, fid + 24, folder_block);
-                iso_writer::retag_in_place(b, fid);
+                iso_writer::retag_with_stored_crc_length(b, fid);
             }),
         ),
         (
             "block size",
             Box::new(move |b| {
                 put32(b, lvd + 212, 512);
-                iso_writer::retag_in_place(b, lvd);
+                iso_writer::retag_with_stored_crc_length(b, lvd);
             }),
         ),
         (
             "unknown partition map",
             Box::new(move |b| {
                 b[lvd + 440] = 3;
-                iso_writer::retag_in_place(b, lvd);
+                iso_writer::retag_with_stored_crc_length(b, lvd);
             }),
         ),
         (
             "file identifier tag",
             Box::new(move |b| {
                 b[fid] = 9;
-                iso_writer::retag_in_place(b, fid);
+                iso_writer::retag_with_stored_crc_length(b, fid);
             }),
         ),
         (
@@ -750,7 +750,7 @@ fn a_udf_tree_7zip_cannot_open_falls_back_to_iso_9660_as_7zip_does() {
             Box::new(move |b| {
                 let terminator = lvd + iso_writer::SECTOR;
                 b[terminator] = 7;
-                iso_writer::retag_in_place(b, terminator);
+                iso_writer::retag_with_stored_crc_length(b, terminator);
             }),
         ),
         (
