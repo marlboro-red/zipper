@@ -584,8 +584,8 @@ mod tests {
                 &["lzma-lengths"],
             ),
             (
-                "let toward_zero = probability >> MOVE_BITS;",
-                "let toward_zero = probability >> (MOVE_BITS + 1);",
+                "(probability - (moved_away_from >> MOVE_BITS)) as u16",
+                "(probability - (moved_away_from >> (MOVE_BITS + 1))) as u16",
                 &["lzma", kani[0], kani[1], kani[2], kani[3], kani[4], kani[5]],
             ),
             (
