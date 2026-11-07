@@ -18,6 +18,8 @@ const SYMBOL_INPUT_MAX: usize = 64;
 const DICTIONARY_MIN: usize = 4096;
 const OUTPUT_CHUNK: usize = 64 * 1024;
 const COPY_CHUNK: usize = 16;
+const PLAIN_LITERAL_PROBABILITIES: usize = 0x100;
+const LITERAL_CODER_STRIDE: usize = 0x400;
 
 fn data_error(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
@@ -321,7 +323,7 @@ impl Bits<'_> {
     }
 
     #[inline(always)]
-    fn literal(&mut self, probabilities: &mut [u16]) -> usize {
+    fn literal(&mut self, probabilities: &mut [u16; PLAIN_LITERAL_PROBABILITIES]) -> usize {
         let mut symbol = 1usize;
         let mut probability = probabilities[symbol];
         while symbol < 0x80 {
@@ -338,27 +340,32 @@ impl Bits<'_> {
     }
 
     #[inline(always)]
-    fn matched_literal(&mut self, probabilities: &mut [u16], match_byte: u8) -> usize {
+    fn matched_literal(
+        &mut self,
+        probabilities: &mut [u16; LITERAL_CODER_STRIDE],
+        match_byte: u8,
+    ) -> usize {
         let mut symbol = 1usize;
         let mut matched = usize::from(match_byte) << 1;
         let mut offset = 0x100usize;
-        let mut index = matched_literal_index(offset, matched, symbol);
+        let mut index = offset + (matched & offset) + symbol;
         let mut probability = probabilities[index];
         while symbol < 0x80 {
             let match_bit = matched & offset;
             matched <<= 1;
-            let offset_zero = offset & !match_bit;
-            let offset_one = offset & match_bit;
-            let index_zero = matched_literal_index(offset_zero, matched, symbol << 1);
-            let index_one = matched_literal_index(offset_one, matched, symbol << 1 | 1);
+            let [index_zero, index_one] =
+                matched_literal_children(offset, match_bit, matched, symbol);
             let zero = probabilities[index_zero];
             let one = probabilities[index_one];
             let (bit, updated) = self.bit_value(probability);
             probabilities[index] = updated;
             symbol = symbol << 1 | bit as usize;
             offset &= match_bit ^ (bit as usize).wrapping_sub(1);
-            index = matched_literal_index(offset, matched, symbol);
-            probability = if bit == 0 { zero } else { one };
+            (index, probability) = if bit == 0 {
+                (index_zero, zero)
+            } else {
+                (index_one, one)
+            };
         }
         let (bit, updated) = self.bit_value(probability);
         probabilities[index] = updated;
@@ -384,8 +391,23 @@ fn adapted_probability(probability: u16, bit: u32) -> u16 {
 }
 
 #[inline(always)]
-fn matched_literal_index(offset: usize, matched: usize, symbol: usize) -> usize {
-    offset + (matched & offset) + symbol
+fn matched_literal_children(
+    offset: usize,
+    match_bit: usize,
+    matched: usize,
+    symbol: usize,
+) -> [usize; 2] {
+    let following = offset + (matched & offset);
+    let (zero, one) = if match_bit == 0 {
+        (following, 0)
+    } else {
+        (0, following)
+    };
+    let first = symbol << 1;
+    [
+        (zero + first) % LITERAL_CODER_STRIDE,
+        (one + first + 1) % LITERAL_CODER_STRIDE,
+    ]
 }
 
 struct LengthDecoder {
@@ -552,7 +574,7 @@ impl Window {
 
 pub(crate) struct ChunkState {
     properties: Properties,
-    literal: Vec<u16>,
+    literal: Vec<[u16; LITERAL_CODER_STRIDE]>,
     is_match: [[u16; POSITION_STATES_MAX]; STATES],
     is_rep: [u16; STATES],
     is_rep0: [u16; STATES],
@@ -597,8 +619,10 @@ impl ChunkState {
         let half = PROBABILITY_ONE / 2;
         self.properties = properties;
         self.literal.clear();
-        self.literal
-            .resize(0x300 << (properties.lc + properties.lp), half);
+        self.literal.resize(
+            1 << (properties.lc + properties.lp),
+            [half; LITERAL_CODER_STRIDE],
+        );
         for row in &mut self.is_match {
             row.fill(half);
         }
@@ -639,11 +663,12 @@ impl ChunkState {
 
     fn decode_literal(&mut self, range: &mut Bits, window: &mut Window) {
         let context = Self::literal_context(self.properties, window.total, window.last);
-        let probabilities = &mut self.literal[0x300 * context..0x300 * (context + 1)];
+        let coder = &mut self.literal[context];
         let symbol = if self.state >= 7 {
-            range.matched_literal(probabilities, window.back(self.reps[0] + 1))
+            range.matched_literal(coder, window.back(self.reps[0] + 1))
         } else {
-            range.literal(probabilities)
+            let (plain, _) = coder.split_first_chunk_mut().unwrap();
+            range.literal(plain)
         };
         window.put(symbol as u8);
         self.state = Self::literal_state_after(self.state);
@@ -687,7 +712,7 @@ fn lzma2_window(dictionary: u32) -> usize {
 }
 
 fn decoder_memory(window: usize, lc_plus_lp: u32) -> u64 {
-    let literal = 0x300usize << lc_plus_lp;
+    let literal = LITERAL_CODER_STRIDE << lc_plus_lp;
     (Window::allocation(window)
         + INPUT_CHUNK
         + SYMBOL_INPUT_MAX
@@ -2515,6 +2540,34 @@ mod tests {
                     masked,
                     "probability {probability}, bit {bit}"
                 );
+            }
+        }
+    }
+
+    fn allocated<R>(state: &ChunkState, range: &RangeDecoder<R>, window: &Window) -> u64 {
+        (std::mem::size_of::<ChunkState>()
+            + std::mem::size_of_val(&state.literal[..])
+            + range.buffer.capacity()
+            + window.buffer.capacity().max(window.size + COPY_CHUNK)) as u64
+    }
+
+    #[test]
+    fn the_memory_charge_covers_what_each_reader_allocates_for_every_literal_context() {
+        let dictionary = 1 << 16;
+        for (lc, lp) in (0..=8).flat_map(|lc| (0..=4).map(move |lp| (lc, lp))) {
+            let properties = Properties { lc, lp, pb: 0 };
+            for decoded_size in [0, 1, 5000, 1 << 20] {
+                let reader = RawLzmaReader::new(&[][..], properties, dictionary, decoded_size);
+                let charge = lzma_memory(properties, dictionary, decoded_size);
+                let used = allocated(&reader.state, &reader.range, &reader.window);
+                assert!(charge >= used, "lc {lc}, lp {lp}: {charge} < {used}");
+            }
+            if lc + lp <= LZMA2_LC_PLUS_LP_MAX {
+                let mut reader = Lzma2Reader::new(&[][..], dictionary);
+                reader.state.reset(properties);
+                let charge = lzma2_memory(dictionary);
+                let used = allocated(&reader.state, &reader.range, &reader.window);
+                assert!(charge >= used, "LZMA2 lc {lc}, lp {lp}: {charge} < {used}");
             }
         }
     }
@@ -6192,6 +6245,7 @@ mod proofs {
     const PROBABILITY_HIGHEST: u16 = 2017;
     const LENGTH_SYMBOLS: usize = 16 + 256;
     const DIRECT_BITS_MAX: u32 = 26;
+    const MATCHED_LITERAL_PROBABILITIES: usize = 0x300;
 
     fn reachable(probability: u16) -> bool {
         (PROBABILITY_LOWEST..=PROBABILITY_HIGHEST).contains(&probability)
@@ -6455,7 +6509,7 @@ mod proofs {
     #[kani::unwind(9)]
     fn plain_literals_stay_inside_the_first_quarter_of_their_coder() {
         let input: [u8; 8] = kani::any();
-        let mut probabilities: [u16; 0x100] = uniform_table();
+        let mut probabilities: [u16; PLAIN_LITERAL_PROBABILITIES] = uniform_table();
         let mut range = normalized(&input);
         let symbol = range.literal(&mut probabilities);
         assert!((0x100..0x200).contains(&symbol));
@@ -6475,7 +6529,7 @@ mod proofs {
     #[kani::unwind(9)]
     fn plain_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities() {
         let input: [u8; 8] = kani::any();
-        let probabilities: [u16; 0x100] = kani::any();
+        let probabilities: [u16; PLAIN_LITERAL_PROBABILITIES] = kani::any();
         let range = normalized(&input);
         let mut reference = Bits { ..range };
         let mut reference_table = probabilities;
@@ -6485,7 +6539,7 @@ mod proofs {
         assert_eq!(pipelined.literal(&mut pipelined_table), expected);
         assert_eq!(pipelined.parts(), reference.parts());
         let index: usize = kani::any();
-        kani::assume(index < 0x100);
+        kani::assume(index < PLAIN_LITERAL_PROBABILITIES);
         assert_eq!(pipelined_table[index], reference_table[index]);
     }
 
@@ -6493,11 +6547,15 @@ mod proofs {
     #[kani::unwind(9)]
     fn matched_literals_stay_inside_their_coder_for_every_match_byte() {
         let input: [u8; 8] = kani::any();
-        let mut probabilities: [u16; 0x300] = uniform_table();
+        let mut probabilities: [u16; LITERAL_CODER_STRIDE] = uniform_table();
+        let unused = probabilities[MATCHED_LITERAL_PROBABILITIES];
         let mut range = normalized(&input);
         let symbol = range.matched_literal(&mut probabilities, kani::any());
         assert!((0x100..0x200).contains(&symbol));
         assert!(range.range >= TOP);
+        let index: usize = kani::any();
+        kani::assume((MATCHED_LITERAL_PROBABILITIES..LITERAL_CODER_STRIDE).contains(&index));
+        assert_eq!(probabilities[index], unused);
     }
 
     fn reachable_matched_literal_one_bit_at_a_time(
@@ -6524,7 +6582,7 @@ mod proofs {
     #[kani::unwind(9)]
     fn matched_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities() {
         let input: [u8; 8] = kani::any();
-        let probabilities: [u16; 0x300] = kani::any();
+        let probabilities: [u16; LITERAL_CODER_STRIDE] = kani::any();
         let match_byte: u8 = kani::any();
         let range = normalized(&input);
         let mut reference = Bits { ..range };
@@ -6542,8 +6600,12 @@ mod proofs {
         );
         assert_eq!(pipelined.parts(), reference.parts());
         let index: usize = kani::any();
-        kani::assume(index < 0x300);
+        kani::assume(index < LITERAL_CODER_STRIDE);
         assert_eq!(pipelined_table[index], reference_table[index]);
+    }
+
+    fn matched_literal_index(offset: usize, matched: usize, symbol: usize) -> usize {
+        offset + (matched & offset) + symbol
     }
 
     #[kani::proof]
@@ -6553,16 +6615,17 @@ mod proofs {
         let offset = if kani::any() { 0x100 } else { 0 };
         let matched: usize = kani::any();
         let index = matched_literal_index(offset, matched, symbol);
-        assert!(index < 0x300);
+        assert!(index < MATCHED_LITERAL_PROBABILITIES);
         let match_bit = matched & offset;
-        let children = [
-            (offset & !match_bit, symbol << 1),
-            (offset & match_bit, symbol << 1 | 1),
+        let children = matched_literal_children(offset, match_bit, matched << 1, symbol);
+        let expected = [
+            matched_literal_index(offset & !match_bit, matched << 1, symbol << 1),
+            matched_literal_index(offset & match_bit, matched << 1, symbol << 1 | 1),
         ];
-        for (child_offset, child) in children {
-            let child_index = matched_literal_index(child_offset, matched << 1, child);
-            assert!(child_index < 0x300);
-            assert_ne!(child_index, index);
+        for (child, expected) in children.into_iter().zip(expected) {
+            assert_eq!(child, expected);
+            assert!(child < MATCHED_LITERAL_PROBABILITIES);
+            assert_ne!(child, index);
         }
     }
 

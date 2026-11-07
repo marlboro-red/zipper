@@ -2616,7 +2616,7 @@ mod tests {
         let narrow = decoder_memory(&folder, false);
         assert!(narrow > 1 << 20);
         assert!(
-            wide >= narrow + ((0x300 << 12) - (0x300 << 3)) * 2,
+            wide >= narrow + ((0x400 << 12) - (0x400 << 3)) * 2,
             "{wide} {narrow}"
         );
         folder.output_to_packed.insert(
