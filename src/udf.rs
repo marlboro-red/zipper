@@ -239,7 +239,7 @@ fn file_identifier(bytes: &[u8], crc_length: usize) -> Field<Fid> {
         "UDF file identifier padding is not zero",
     )?;
     field_check(
-        crc_length + TAG == length,
+        length - TAG == crc_length,
         "UDF file identifier tag does not cover it",
     )?;
     Ok(Fid {
