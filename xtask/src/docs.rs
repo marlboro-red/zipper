@@ -138,7 +138,6 @@ const XTASK_COMMANDS: &[&str] = &[
     "verify",
     "verify-sync",
     "kani-reach",
-    "goto-fingerprints",
     "bench",
 ];
 

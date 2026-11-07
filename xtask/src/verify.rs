@@ -11,7 +11,6 @@ pub(crate) struct Verification {
     slow: bool,
     pub(crate) full_checks: Vec<String>,
     pub(crate) items: Vec<(String, String)>,
-    pub(crate) goto_fingerprints: Vec<(String, String)>,
 }
 
 pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
@@ -37,7 +36,6 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
                 slow: false,
                 full_checks: Vec::new(),
                 items: Vec::new(),
-                goto_fingerprints: Vec::new(),
             });
             continue;
         }
@@ -58,14 +56,6 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
                 entry.slow = true;
             }
             "full-check" => entry.full_checks.push(value.to_owned()),
-            "goto-fingerprint" => {
-                let (harness, hash) = value.split_once(' ').with_context(|| {
-                    format!("{MANIFEST}:{number}: expected `goto-fingerprint = HARNESS HASH`")
-                })?;
-                entry
-                    .goto_fingerprints
-                    .push((harness.to_owned(), hash.to_owned()));
-            }
             "item" => {
                 let (path, opening) = value.split_once(" | ").with_context(|| {
                     format!("{MANIFEST}:{number}: expected `path | opening line`")
@@ -308,11 +298,6 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         current == checked,
         "{name}: the covered code changed while the check ran; nothing was synced"
     );
-    let goto = crate::kani::goto_fingerprints(root, verification)?;
-    ensure!(
-        fingerprint(root, verification)? == checked,
-        "{name}: the covered code changed while the goto programs were fingerprinted; nothing was synced"
-    );
     let text = fs::read_to_string(root.join(MANIFEST))?;
     let mut in_section = false;
     let mut updated = String::new();
@@ -320,14 +305,8 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         if line.starts_with('[') {
             in_section = line == format!("[{name}]");
         }
-        if in_section && line.starts_with("goto-fingerprint = ") {
-            continue;
-        }
         if in_section && line.starts_with("fingerprint = ") {
             updated.push_str(&format!("fingerprint = {current}\n"));
-            for (harness, hash) in &goto {
-                updated.push_str(&format!("goto-fingerprint = {harness} {hash}\n"));
-            }
         } else {
             updated.push_str(line);
             updated.push('\n');
