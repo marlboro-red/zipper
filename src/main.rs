@@ -971,11 +971,20 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_cab::ReadOptions::default(),
                     )?),
-                    Reader::Msi => print(zipper::native_msi::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_msi::ReadOptions::default(),
-                    )?),
+                    Reader::Msi => {
+                        let _catching = catch_ending_signals();
+                        print(zipper::native_msi::read_archive(
+                            &archive,
+                            None,
+                            zipper::native_msi::ReadOptions {
+                                control: zipper::Control {
+                                    cancel: cancel_on_signal(),
+                                    ..zipper::Control::default()
+                                },
+                                ..zipper::native_msi::ReadOptions::default()
+                            },
+                        )?)
+                    }
                     Reader::Backend { format } => {
                         let _catching = catch_ending_signals();
                         zipper::compat::run_until_cancelled(
@@ -1062,11 +1071,20 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_cab::ReadOptions::default(),
                     )?),
-                    Reader::Msi => report(zipper::native_msi::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_msi::ReadOptions::default(),
-                    )?),
+                    Reader::Msi => {
+                        let _catching = catch_ending_signals();
+                        report(zipper::native_msi::read_archive(
+                            &archive,
+                            None,
+                            zipper::native_msi::ReadOptions {
+                                control: zipper::Control {
+                                    cancel: cancel_on_signal(),
+                                    ..zipper::Control::default()
+                                },
+                                ..zipper::native_msi::ReadOptions::default()
+                            },
+                        )?)
+                    }
                     Reader::Backend { format } => {
                         let _catching = catch_ending_signals();
                         zipper::compat::run_until_cancelled(

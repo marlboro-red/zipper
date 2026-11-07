@@ -656,6 +656,11 @@ fn directories_that_lie_are_refused() {
                 "outside its directory tree",
             ),
             (
+                "used entries under a root without children",
+                with(version, |b| b.set_u32(field(0, CHILD), NO_ENTRY)),
+                "outside its directory tree",
+            ),
+            (
                 "a stream longer than its chain",
                 with(version, |b| {
                     b.set_u32(field(large, SIZE), 9000 + b.sector_size as u32)
@@ -745,6 +750,16 @@ fn unsafe_and_colliding_names_are_refused() {
         let compound = Compound::new(3, vec![cfb_writer::raw_stream(units, b"data")]);
         assert_rejected_without_leftovers(name, &compound.build().bytes);
     }
+    for name in [".", ".."] {
+        let dot = Compound::new(
+            3,
+            vec![
+                cfb_writer::stream("x", b"outer"),
+                cfb_writer::storage(name, vec![cfb_writer::stream("x", b"inner")]),
+            ],
+        );
+        assert_rejected_with(&format!("storage {name}"), &dot.build().bytes, "unsafe");
+    }
     let both = Compound::new(
         3,
         vec![
@@ -783,7 +798,11 @@ fn a_stream_cut_short_is_refused_before_anything_is_read() {
         let built = sample(version).build();
         let mut bytes = built.bytes.clone();
         bytes.truncate(bytes.len() - built.sector_size + 1);
-        assert_rejected_with(&format!("v{version} last sector cut"), &bytes, "past its end");
+        assert_rejected_with(
+            &format!("v{version} last sector cut"),
+            &bytes,
+            "past its end",
+        );
     }
 }
 
@@ -996,4 +1015,85 @@ fn write_a_directory_at_the_entry_limit() {
         .map(|index| cfb_writer::stream(&format!("stream{index:024}"), b""))
         .collect();
     fs::write(path, Compound::new(4, children).build().bytes).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn an_ending_signal_during_list_or_test_removes_the_cab_copy() {
+    let payload: Vec<u8> = (0..48 * 1024 * 1024u32)
+        .map(|index| (index % 251) as u8)
+        .collect();
+    let cab =
+        cab_writer::one_folder_in_order(&[("big.bin", &payload)], &cab_writer::Method::Stored)
+            .build();
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("big.msi");
+    fs::write(&archive, installer(4, "big.cab", &cab).build().bytes).unwrap();
+    for (command, signal) in [("test", libc::SIGTERM), ("list", libc::SIGINT)] {
+        let temporary = root.path().join(format!("tmp-{command}"));
+        fs::create_dir(&temporary).unwrap();
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_zipper"))
+            .arg(command)
+            .arg(&archive)
+            .env("TMPDIR", &temporary)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let copies = || fs::read_dir(&temporary).unwrap().count();
+        while copies() == 0 && child.try_wait().unwrap().is_none() {
+            std::thread::yield_now();
+        }
+        // SAFETY: kill takes the child's process id, which wait has not yet reaped, and a signal.
+        unsafe { libc::kill(child.id() as libc::pid_t, signal) };
+        let status = child.wait().unwrap();
+        assert!(!status.success(), "{command} finished before the signal");
+        assert_eq!(copies(), 0, "{command} left its CAB copy after a signal");
+    }
+}
+
+#[test]
+fn paths_much_longer_than_the_directory_are_refused_before_extraction() {
+    let long = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let named = |index: usize, children| Node::Storage {
+        name: cfb_writer::msi_name(&format!("{index:02}{}", &long[2..]), false),
+        children,
+        modified: 0,
+    };
+    let leaves = (0..3000)
+        .map(|leaf| cfb_writer::storage(&format!("leaf{leaf}"), Vec::new()))
+        .collect();
+    let mut node = named(0, leaves);
+    for level in 1..15 {
+        node = named(level, vec![node]);
+    }
+    let deep = Compound::new(3, vec![node]).build().bytes;
+    assert_rejected_with("deep long paths", &deep, "paths");
+    let mut node = named(0, vec![cfb_writer::stream("leaf", b"x")]);
+    for level in 1..15 {
+        node = named(level, vec![node]);
+    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.msi");
+    fs::write(&archive, Compound::new(3, vec![node]).build().bytes).unwrap();
+    assert_eq!(
+        read_archive(&archive, None, ReadOptions::default())
+            .unwrap()
+            .len(),
+        16
+    );
+}
+
+#[test]
+fn an_existing_destination_is_refused_before_the_cab_is_copied() {
+    let bytes = installer(3, "media1.cab", &embedded_cab()).build().bytes;
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.msi");
+    fs::write(&archive, bytes).unwrap();
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    let error = read_archive(&archive, Some(&destination), ReadOptions::default()).unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("must not exist"), "{message}");
+    assert!(!message.contains("CAB stream"), "copied first: {message}");
 }

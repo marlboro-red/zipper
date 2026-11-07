@@ -3,8 +3,9 @@
 //! where it is installed. Generated compound files of both versions, with
 //! mini and regular streams, nested storages, scattered sectors, a DIFAT and
 //! embedded CABs, extract exactly as `7zz x` extracts them. Without 7-Zip
-//! the differential tests are skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is
-//! set. `ZIPPER_MSI_SAMPLES` names a folder of further samples to compare.
+//! 26 or later the differential tests are skipped, unless
+//! `ZIPPER_PARITY_REQUIRE_7Z` is set. `ZIPPER_MSI_SAMPLES` names a folder of
+//! further samples to compare.
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
 #[path = "common/cfb_writer.rs"]
@@ -38,6 +39,8 @@ impl Random {
     }
 }
 
+const FIRST_7ZIP_THESE_FILES_WERE_CHECKED_AGAINST: u32 = 26;
+
 fn sevenzip() -> Option<PathBuf> {
     let found = ["7zz", "7z"]
         .into_iter()
@@ -47,12 +50,26 @@ fn sevenzip() -> Option<PathBuf> {
                 .output()
                 .is_ok_and(|output| output.status.success())
         })
-        .map(PathBuf::from);
+        .map(PathBuf::from)
+        .filter(|binary| {
+            major_version(binary)
+                .is_some_and(|major| major >= FIRST_7ZIP_THESE_FILES_WERE_CHECKED_AGAINST)
+        });
     assert!(
         found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip is installed"
+        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
     );
     found
+}
+
+fn major_version(binary: &Path) -> Option<u32> {
+    let banner = Command::new(binary).output().ok()?.stdout;
+    let banner = String::from_utf8_lossy(&banner);
+    let after = banner.split("7-Zip").nth(1)?;
+    let number = after
+        .split_whitespace()
+        .find(|word| word.chars().next().is_some_and(|c| c.is_ascii_digit()))?;
+    number.split('.').next()?.parse().ok()
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -101,6 +118,7 @@ fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> Option<BTreeMap<
         .args(["x", "-y"])
         .arg(flag)
         .arg(archive)
+        .stdin(std::process::Stdio::null())
         .output()
         .unwrap();
     run.status.success().then(|| tree(into))

@@ -1,6 +1,4 @@
 #![allow(dead_code)]
-//! Writes Compound File Binary files for tests, in versions 3 and 4, with
-//! the offsets of every table so a test can damage one field.
 
 pub const FREE: u32 = 0xFFFF_FFFF;
 pub const END_OF_CHAIN: u32 = 0xFFFF_FFFE;

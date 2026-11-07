@@ -14,7 +14,7 @@ Zipper extracts Windows Installer packages with its own Rust reader, in the tree
 That stream is the installer's main subfile, and `7zz x` extracts the archive inside it. Zipper does the same:
 
 - When the main subfile starts with the CAB signature, Zipper extracts that CAB with its [CAB reader](cab-reader.md). The files, folders, times and attributes are the CAB's.
-- When it does not, 7-Zip may open it as some other format. The default engine hands the file to 7-Zip, and `--zip-engine native` refuses it by name.
+- When it does not, 7-Zip tries to open it as another format, chosen by its contents and name. Some such files fail in 7-Zip, and others extract their streams. The default engine hands the file to 7-Zip, and `--zip-engine native` refuses it by name.
 - Every other compound file extracts its streams and storages. An installer with two CAB streams, or a CAB and an `exe` stream, is one of them, as in 7-Zip.
 
 Names follow 7-Zip's rules:
@@ -38,7 +38,7 @@ The reader checks the whole file before it writes anything, and publishes nothin
 - No two FAT links reach one sector, and no chain starts at a sector a link reaches. So every chain from a start ends without a cycle. The FAT state of each sector matches its use, and a sector past the end of the file is free.
 - Each stream's chain has exactly the sectors its size needs, then ends. Its bytes lie inside the file, and the bytes of a mini stream lie inside the mini stream. Two streams never share a mini sector.
 - The first directory entry is the root, and no other entry is. A stream has no children, and an empty stream starts no chain. An unused entry has no links and no data.
-- The directory tree reaches each used entry exactly once. A link outside the directory, a loop and a link to an unused entry are refused. Storages nest at most 256 deep.
+- The directory tree reaches each used entry exactly once. A link outside the directory, a loop and a link to an unused entry are refused. Storages nest at most 256 deep. A root with no children has no used entry at all.
 - Names pass the same checks as tar names after the decoding above. A name with `\`, `:` or NUL, `.` and `..` are refused, and so is an unpaired surrogate.
 - Of two entries of one name and kind in one storage, the second one written stays. A stream and a storage of one name are refused.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each stream is charged before its data is written.
@@ -48,14 +48,15 @@ The reader checks the whole file before it writes anything, and publishes nothin
 | Limit | Value |
 | --- | --- |
 | File size | the FAT's reach, as 7-Zip allows, and at most 2 GiB with 512-byte sectors |
-| Directory entries | at most 1,048,576 |
+| Directory entries | at most 1,048,576, of which at most 1,000,000 streams and storages |
+| Folder paths | all joined paths together at most twice the directory's size, within 1 MiB to 64 MiB |
 | Storage depth | 256 |
 | One stream | the 32-bit size of version 3, or the FAT's reach in version 4 |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
 The reader keeps the FAT, the mini FAT and the directory in memory. The FAT holds 4 bytes, with 1 more for its check, for each sector in the file, and the reader allocates no FAT entry past the end of the file. The mini FAT and the directory hold no more than the file's sectors for them. On a file of 999,999 empty streams, `zipper test` peaked at 366 MB of resident memory and `7zz t` at 174 MB. About 120 MB of that is the directory and its walk, and the rest is the shared tree the cpio and CAB readers also use. It writes each stream through a 1 MiB buffer and reads runs of adjacent sectors together, so memory does not grow with stream size. `--threads` has no effect on compound files.
 
-To extract an installer's CAB, the reader copies the CAB stream into a temporary file. That file sits beside the destination, or in the system temporary folder when Zipper only lists or tests. The copy must fit in free space there, and it is deleted when extraction ends. On Windows it carries the installer's Mark of the Web. The CAB reader then reads the copy, with every option the caller gave.
+To extract an installer's CAB, the reader copies the CAB stream into a temporary file. That file sits beside the destination, or in the system temporary folder when Zipper only lists or tests. The copy must fit in free space there, and it is deleted when extraction ends, also when a signal ends `zipper list`, `test` or `extract`. An existing destination is refused before the copy is made. `--max-extracted-bytes` does not count the copy, which is never larger than the installer. On Windows it carries the installer's Mark of the Web. The CAB reader then reads the copy, with every option the caller gave.
 
 ## Differences from 7-Zip
 
@@ -67,7 +68,9 @@ To extract an installer's CAB, the reader copies the CAB stream into a temporary
 - 7-Zip extracts an item nested more than 256 storages deep under a `[LONG_PATH]` folder. Zipper refuses the file.
 - 7-Zip extracts names with `\` or `:`, and replaces `.`, `..` and unpaired surrogates. Zipper refuses them.
 - 7-Zip sets a stream's file time to the zero time of 1601, which macOS shows as 1677. Zipper leaves the time it was written.
-- When the main subfile is a CAB that 7-Zip cannot open, 7-Zip extracts the streams instead. Zipper refuses the file with the CAB reader's error. A CAB the CAB reader refuses, such as a cabinet set, is refused too, and the error suggests `--zip-engine backend`.
+- A main subfile that the CAB reader refuses, such as a cabinet set, makes Zipper refuse the file, and the error suggests `--zip-engine backend`. 7-Zip reads cabinet sets.
+- 7-Zip extracts a compound file whose joined folder paths pass the limit above. Zipper refuses it, because the shared tree keeps several copies of each path.
+- 7-Zip accepts a root with no children beside used entries, and extracts nothing. Zipper refuses the file.
 
 ## Extraction options
 

@@ -31,9 +31,12 @@ const LAST_REGULAR: u32 = 0xFFFF_FFFA;
 const NO_ENTRY: u32 = 0xFFFF_FFFF;
 const NO_PARENT: u32 = u32::MAX;
 const MAX_ENTRIES: usize = 1 << 20;
-// EXTERNAL(7-Zip ComHandler): an item deeper than 256 storages gets a [LONG_PATH] folder
-// in place of its real path.
+// EXTERNAL(7-Zip ComHandler): an item below a storage at level 256 gets a [LONG_PATH]
+// folder in place of its real path, where the root's children are level 1.
 const MAX_LEVEL: u32 = 256;
+const PATH_BYTES_PER_DIRECTORY_BYTE: u64 = 2;
+const MIN_PATH_BYTES: u64 = 1024 * 1024;
+const MAX_PATH_BYTES: u64 = 64 * 1024 * 1024;
 const MSI_FIRST: u16 = 0x3800;
 const MSI_TABLE: u16 = 0x4840;
 const MSI_CHARACTERS: &[u8; 64] =
@@ -289,8 +292,7 @@ fn claim_start(used: &mut [Use], sector: u32) -> Field<()> {
     }
 }
 
-// EXTERNAL(7-Zip ComHandler): each link target is used once, so a chain from a start no
-// link reaches can never return to a sector it passed.
+// EXTERNAL(7-Zip ComHandler): CDatabase::Open refuses a FAT that links twice to one sector.
 fn claim_links(fat: &[u32], used: &mut [Use]) -> Field<()> {
     for (index, &next) in fat.iter().enumerate() {
         if next > LAST_REGULAR {
@@ -350,8 +352,8 @@ fn check_entry(entry: &DirectoryEntry, first: bool, used: &mut [Use]) -> Field<(
     }
     match entry.kind {
         Kind::Storage => Ok(()),
-        // EXTERNAL(7-Zip ComHandler): some MSI files hold empty entries with zero links and
-        // a start of 0, end of chain or free, and 7-Zip accepts them.
+        // EXTERNAL(7-Zip ComHandler): some compound files hold empty entries with zero links
+        // and a start of 0, end of chain or free, and 7-Zip accepts them.
         Kind::Empty => field_check(
             [0, FREE, END_OF_CHAIN].contains(&entry.start)
                 && [entry.left, entry.right, entry.child]
@@ -405,10 +407,11 @@ struct Ref {
 }
 
 // EXTERNAL(7-Zip ComHandler): CDatabase::AddNodes lists each tree in order, left subtree,
-// the entry, a storage's children, then the right subtree, and refuses any entry it meets
-// twice and any used entry it never meets.
+// the entry, a storage's children, then the right subtree.
 fn walk_directory<T>(entries: &[T], links: impl Fn(&T) -> Links) -> Field<Vec<Ref>> {
-    const STARTED: u8 = 3;
+    const UNSEEN: u8 = 0;
+    const LISTED: u8 = 2;
+    const DONE: u8 = 3;
     let count = entries.len();
     let Some(root) = entries.first().map(&links) else {
         return Err(BadField("compound file has no root entry"));
@@ -416,6 +419,10 @@ fn walk_directory<T>(entries: &[T], links: impl Fn(&T) -> Links) -> Field<Vec<Re
     let mut refs = Vec::new();
     let mut index = root.child;
     if index == NO_ENTRY {
+        field_check(
+            entries.iter().skip(1).all(|entry| links(entry).empty),
+            "compound file has a used entry outside its directory tree",
+        )?;
         return Ok(refs);
     }
     field_check(
@@ -425,21 +432,21 @@ fn walk_directory<T>(entries: &[T], links: impl Fn(&T) -> Links) -> Field<Vec<Re
     refs.reserve_exact(count - 1);
     let mut parents = vec![0u32; count];
     let mut states = vec![0u8; count];
-    states[0] = STARTED;
+    states[0] = DONE;
     let exit = 0u32;
     let mut level = 1u32;
-    let mut state = 0u8;
+    let mut state = UNSEEN;
     let mut parent = exit;
     let mut ref_parent = NO_PARENT;
     loop {
-        if state >= STARTED {
+        if state >= DONE {
             index = parent;
             if index == exit {
                 break;
             }
             parent = parents[index as usize];
             state = states[index as usize];
-            if state == 2 {
+            if state == LISTED {
                 ref_parent = refs
                     .get(ref_parent as usize)
                     .map(|reference: &Ref| reference.parent)
@@ -452,8 +459,12 @@ fn walk_directory<T>(entries: &[T], links: impl Fn(&T) -> Links) -> Field<Vec<Re
         field_check(!item.empty, "compound file directory links an unused entry")?;
         state += 1;
         states[index as usize] = state;
-        let next = if state != 2 {
-            if state < 2 { item.left } else { item.right }
+        let next = if state != LISTED {
+            if state < LISTED {
+                item.left
+            } else {
+                item.right
+            }
         } else {
             refs.push(Ref {
                 parent: ref_parent,
@@ -475,17 +486,17 @@ fn walk_directory<T>(entries: &[T], links: impl Fn(&T) -> Links) -> Field<Vec<Re
         };
         if next != NO_ENTRY {
             parents[index as usize] = parent;
-            state = 0;
+            state = UNSEEN;
             parent = index;
             index = next;
             field_check(
-                (index as usize) < count && states[index as usize] == 0,
+                (index as usize) < count && states[index as usize] == UNSEEN,
                 "compound file directory links outside itself or loops",
             )?;
         }
     }
     for (item, &state) in entries.iter().zip(&states) {
-        let expected = if links(item).empty { 0 } else { STARTED };
+        let expected = if links(item).empty { UNSEEN } else { DONE };
         field_check(
             state == expected,
             "compound file has a used entry outside its directory tree",
@@ -535,6 +546,10 @@ fn path_name(units: &[u16]) -> Result<String> {
     let name = String::from_utf16(&decoded_name(units))
         .context("compound file entry name holds an unpaired UTF-16 surrogate")?
         .replace('/', "_");
+    ensure!(
+        name != "." && name != "..",
+        "unsafe archive path: compound file entry {name:?}"
+    );
     Ok(if name.is_empty() {
         "[]".to_owned()
     } else {
@@ -638,7 +653,30 @@ impl Compound {
         ensure_every_sector_is_accounted_for(&compound.fat, &used)?;
         compound.check_streams()?;
         compound.refs = walk_directory(&compound.entries, |entry| Links::from(entry))?;
+        compound.ensure_paths_fit_their_budget()?;
         Ok(compound)
+    }
+
+    fn ensure_paths_fit_their_budget(&self) -> Result<()> {
+        let directory_bytes = (self.entries.len() * ENTRY) as u64;
+        let budget =
+            (PATH_BYTES_PER_DIRECTORY_BYTE * directory_bytes).clamp(MIN_PATH_BYTES, MAX_PATH_BYTES);
+        let mut lengths = Vec::with_capacity(self.refs.len());
+        let mut total = 0u64;
+        for reference in &self.refs {
+            let name = path_name(self.entry(reference).name())?.len() as u64;
+            let length = match lengths.get(reference.parent as usize) {
+                Some(&parent) => parent + 1 + name,
+                None => name,
+            };
+            lengths.push(length);
+            total += length;
+            ensure!(
+                total <= budget,
+                "compound file paths need more than {budget} bytes, twice its directory within 1 to 64 MiB"
+            );
+        }
+        Ok(())
     }
 
     fn read_sector(&mut self, index: u32, buffer: &mut [u8]) -> Result<()> {
@@ -1071,6 +1109,14 @@ fn read_embedded_cab(
     destination: Option<&Path>,
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
+    if let Some(destination) = destination
+        && options.existing == crate::Existing::Refuse
+        && std::fs::symlink_metadata(destination).is_ok()
+    {
+        bail!(crate::DestinationRefused(
+            "extraction destination must not exist".to_owned()
+        ));
+    }
     let name = compound.path(main)?;
     let size = compound.entry(&compound.refs[main]).size;
     let folder = match destination.and_then(Path::parent) {
@@ -1288,9 +1334,6 @@ mod field_tests {
             visit(entries, item.right, parent, level, seen, refs)
         }
         let root = entries.first()?;
-        if root.child == NO_ENTRY {
-            return Some(Vec::new());
-        }
         if root.child == 0 {
             return None;
         }
