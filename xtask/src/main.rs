@@ -261,7 +261,15 @@ fn gate(full: bool) -> Result<()> {
             ])
         }),
         ("test", || {
-            cargo(&["test", "--workspace", "--locked", "--profile", "ci"])
+            ensure_nextest()?;
+            cargo(&[
+                "nextest",
+                "run",
+                "--workspace",
+                "--locked",
+                "--cargo-profile",
+                "ci",
+            ])
         }),
         ("windows clippy", windows_clippy),
         ("release build", || {
@@ -317,6 +325,21 @@ fn gate(full: bool) -> Result<()> {
         failed == 0,
         "gate {} failed {failed} step(s)",
         if full { "full" } else { "fast" }
+    );
+    Ok(())
+}
+
+const NEXTEST_INSTALL: &str = "cargo install cargo-nextest --locked";
+
+fn ensure_nextest() -> Result<()> {
+    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let installed = Command::new(cargo)
+        .args(["nextest", "--version"])
+        .output()
+        .is_ok_and(|output| output.status.success());
+    ensure!(
+        installed,
+        "the gate runs its tests with cargo-nextest; install it with `{NEXTEST_INSTALL}`"
     );
     Ok(())
 }
