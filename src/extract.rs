@@ -10,10 +10,10 @@ use std::{io::Read, path::Path};
 #[non_exhaustive]
 pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, compound files such as MSI,
-    /// single compressed files, unrecognized files, and 7z and CAB whose
-    /// methods it decodes. 7-Zip for other 7z and CAB, CAB cabinet sets, an
-    /// MSI whose main stream is not a CAB, and the other formats whose
-    /// signature Zipper recognizes.
+    /// single compressed files, unrecognized files, CAB files and cabinet
+    /// sets, and 7z whose methods it decodes. 7-Zip for other 7z, an MSI
+    /// whose main stream is not a CAB, and the other formats whose signature
+    /// Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
@@ -42,7 +42,8 @@ pub enum Reader {
     Rpm,
     /// The native reader for xar archives and flat macOS packages.
     Xar,
-    /// The native reader for CAB files with stored, MSZIP and LZX folders.
+    /// The native reader for CAB files and cabinet sets with stored, MSZIP,
+    /// Quantum and LZX folders.
     Cab,
     /// The native reader for compound files: Windows Installer packages and
     /// documents such as `.doc`, `.xls` and `.msg`.
@@ -77,11 +78,6 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_ar::sniff(archive)? => Reader::Ar,
         _ if native_rpm::sniff(archive)? => Reader::Rpm,
         _ if native_xar::sniff(archive)? => Reader::Xar,
-        Engine::Auto if native_cab::sniff(archive)? && native_cab::needs_backend(archive)? => {
-            Reader::Backend {
-                format: compat::pinned_format(archive)?,
-            }
-        }
         _ if native_cab::sniff(archive)? => Reader::Cab,
         Engine::Auto if native_msi::sniff(archive)? && native_msi::needs_backend(archive)? => {
             Reader::Backend { format: None }

@@ -22,12 +22,13 @@
       "status": "backend"
     },
     "Cab": {
-      "status": "partial",
-      "note": "Stored, MSZIP, Quantum and LZX folders read in process. Cabinet sets go to 7-Zip.",
+      "status": "native",
+      "note": "Stored, MSZIP, Quantum and LZX folders and cabinet sets read in process. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set.",
       "tests": [
         "tests/cab_corpus.rs::every_corpus_cab_extracts_the_tree_7zip_extracts",
         "tests/cab_corpus.rs::generated_cabs_extract_exactly_as_7zip_extracts_them",
-        "tests/cab_corpus.rs::generated_quantum_cabs_extract_exactly_as_7zip_extracts_them"
+        "tests/cab_corpus.rs::generated_quantum_cabs_extract_exactly_as_7zip_extracts_them",
+        "tests/cab_sets.rs::generated_sets_extract_byte_for_byte_and_exactly_as_7zip_extracts_them"
       ]
     },
     "Chm": {

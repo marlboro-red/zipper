@@ -651,6 +651,19 @@ fn discovered(path: &Path) -> io::Result<Arc<Discovery>> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct Unchanged(Identity);
+
+pub(crate) fn open_alone(path: &Path) -> io::Result<(ArchiveFile, Unchanged)> {
+    let file = open_regular_file(path, None)?;
+    let identity = Identity::of(&file.metadata()?);
+    Ok((ArchiveFile::from(file), Unchanged(identity)))
+}
+
+pub(crate) fn reopen_unchanged(path: &Path, before: Unchanged) -> io::Result<ArchiveFile> {
+    Ok(ArchiveFile::from(open_regular_file(path, Some(before.0))?))
+}
+
 pub(crate) fn open(path: &Path) -> io::Result<ArchiveFile> {
     open_found(path, &discovered(path)?.found)
 }

@@ -394,17 +394,22 @@ fn layouts_that_lie_are_refused() {
         (
             "continued folder",
             build(&|c| c.files[0].folder = 0xFFFD),
-            "cabinet set",
+            "continues from a previous cabinet",
+        ),
+        (
+            "continued into a next cabinet",
+            build(&|c| c.files[0].folder = 0xFFFE),
+            "continues into a next cabinet",
         ),
         (
             "previous cabinet",
             build(&|c| c.previous = Some(("a.cab".into(), "disk".into()))),
-            "cabinet set",
+            "open the set's first cabinet",
         ),
         (
-            "next cabinet",
+            "missing next cabinet",
             build(&|c| c.next = Some(("b.cab".into(), "disk".into()))),
-            "cabinet set",
+            "cannot open cabinet b.cab",
         ),
         (
             "file past its folder",
@@ -790,7 +795,7 @@ fn read_only_attributes_times_and_options_apply() {
 }
 
 #[test]
-fn the_default_engine_reads_cabs_and_hands_sets_to_7zip() {
+fn the_default_engine_reads_cabs_and_cabinet_sets_in_process() {
     let root = tempfile::tempdir().unwrap();
     let write = |name: &str, bytes: Vec<u8>| {
         let path = root.path().join(name);
@@ -812,9 +817,7 @@ fn the_default_engine_reads_cabs_and_hands_sets_to_7zip() {
     let path = write("set.cab", set.build());
     assert_eq!(
         zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
-        zipper::Reader::Backend {
-            format: Some("-tcab".to_owned())
-        }
+        zipper::Reader::Cab
     );
     assert_eq!(
         zipper::choose_reader(zipper::Engine::Native, &path).unwrap(),
@@ -1125,7 +1128,7 @@ fn many_folders_of_alternating_lzx_windows_extract_and_reuse_one_decoder() {
 }
 
 #[test]
-fn cabinet_sets_whose_names_leave_their_folder_are_refused_before_7zip_sees_them() {
+fn cabinet_sets_whose_names_leave_their_folder_are_refused() {
     for name in [
         "../other.cab",
         "..\\other.cab",
@@ -1159,12 +1162,10 @@ fn cabinet_sets_whose_names_leave_their_folder_are_refused_before_7zip_sees_them
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("set.cab");
     fs::write(&path, disk.build()).unwrap();
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
-        zipper::Reader::Backend {
-            format: Some("-tcab".to_owned())
-        },
-        "a disk label is not a path"
+    let error = read_archive(&path, None, ReadOptions::default()).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("cannot open cabinet two.cab"),
+        "a disk label is not a path: {error:#}"
     );
 }
 

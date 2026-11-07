@@ -1,15 +1,15 @@
-//! In-process extraction of Microsoft Cabinet files with stored, MSZIP,
-//! Quantum and LZX folders. See `docs/reference/cab-reader.md` for what it accepts and
-//! restores.
+//! In-process extraction of Microsoft Cabinet files and cabinet sets with
+//! stored, MSZIP, Quantum and LZX folders. See `docs/reference/cab-reader.md`
+//! for what it accepts and restores.
 pub use crate::native_cpio::ReadOptions;
 use crate::native_cpio::tree::{self, BACKEND_HINT, MAX_NAME};
-use crate::volumes::ArchiveFile;
+use crate::volumes::{ArchiveFile, Unchanged};
 use crate::{BadField, Entry, Field, field_check, lzx, quantum};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader, Read, Seek},
-    path::Path,
+    path::{Path, PathBuf},
     time::SystemTime,
 };
 
@@ -23,7 +23,10 @@ const PREVIOUS_CABINET: u16 = 0x0001;
 const NEXT_CABINET: u16 = 0x0002;
 const RESERVE_PRESENT: u16 = 0x0004;
 const KNOWN_FLAGS: u16 = PREVIOUS_CABINET | NEXT_CABINET | RESERVE_PRESENT;
-const FIRST_CONTINUED_FOLDER: u16 = 0xFFFD;
+const CONTINUED_FROM_PREVIOUS: u16 = 0xFFFD;
+const CONTINUED_TO_NEXT: u16 = 0xFFFE;
+const CONTINUED_BOTH_WAYS: u16 = 0xFFFF;
+const MAX_SET_RECORDS: usize = u16::MAX as usize;
 const BLOCK: usize = 32 * 1024;
 // SPEC(MS-CAB CFDATA): a compressed block may grow by up to 6,144 bytes.
 const LARGEST_PACKED: usize = BLOCK + 6144;
@@ -48,6 +51,8 @@ struct Header {
     folders: u16,
     files: u16,
     flags: u16,
+    set_id: u16,
+    number: u16,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -70,6 +75,7 @@ struct Folder {
     data_offset: u32,
     blocks: u16,
     method: Method,
+    type_compress: u16,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +93,24 @@ struct DataHeader {
     checksum: u32,
     packed: u16,
     size: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Continued {
+    No,
+    FromPrevious,
+    ToNext,
+    BothWays,
+}
+
+impl Continued {
+    fn continues_from_previous(self) -> bool {
+        matches!(self, Continued::FromPrevious | Continued::BothWays)
+    }
+
+    fn continues_into_next(self) -> bool {
+        matches!(self, Continued::ToNext | Continued::BothWays)
+    }
 }
 
 fn u16_at(bytes: &[u8], at: usize) -> u16 {
@@ -121,7 +145,56 @@ fn header(bytes: &[u8; HEADER]) -> Field<Header> {
         folders: u16_at(bytes, 26),
         files: u16_at(bytes, 28),
         flags,
+        set_id: u16_at(bytes, 32),
+        number: u16_at(bytes, 34),
     })
+}
+
+// EXTERNAL(7-Zip CabHandler): a later cabinet must share the set ID and carry the next
+// cabinet number.
+fn follows_in_set(previous: &Header, next: &Header) -> Field<()> {
+    field_check(
+        next.set_id == previous.set_id,
+        "its set ID differs from the cabinet before it, so it belongs to another set",
+    )?;
+    field_check(
+        previous.number.checked_add(1) == Some(next.number),
+        "it is not numbered one after the cabinet that names it",
+    )?;
+    field_check(
+        next.flags & PREVIOUS_CABINET != 0,
+        "it names no previous cabinet, so it starts another set",
+    )
+}
+
+fn record_folder(field: u16, folders: u16) -> Field<(u16, Continued)> {
+    match field {
+        CONTINUED_FROM_PREVIOUS | CONTINUED_TO_NEXT => {
+            field_check(
+                folders > 0,
+                "it continues a folder its cabinet does not have",
+            )?;
+            Ok(if field == CONTINUED_TO_NEXT {
+                (folders - 1, Continued::ToNext)
+            } else {
+                (0, Continued::FromPrevious)
+            })
+        }
+        CONTINUED_BOTH_WAYS => {
+            field_check(
+                folders == 1,
+                "it continues both ways, so its cabinet must hold exactly one folder",
+            )?;
+            Ok((0, Continued::BothWays))
+        }
+        _ => {
+            field_check(
+                field < folders,
+                "it names a folder its cabinet does not have",
+            )?;
+            Ok((field, Continued::No))
+        }
+    }
 }
 
 fn reserve(bytes: &[u8; RESERVE_SIZES]) -> Reserve {
@@ -159,6 +232,7 @@ fn folder(bytes: &[u8; FOLDER]) -> Field<Folder> {
         data_offset: u32_at(bytes, 0),
         blocks: u16_at(bytes, 4),
         method,
+        type_compress: u16_at(bytes, 6),
     })
 }
 
@@ -179,16 +253,14 @@ impl FileRecord {
     }
 }
 
+// SPEC(MS-CAB CFDATA): cbUncomp is 0 in each part of a block that continues in the next
+// cabinet, and the part that ends the block gives its whole size.
 fn data_header(bytes: &[u8; DATA]) -> Field<DataHeader> {
     let header = DataHeader {
         checksum: u32_at(bytes, 0),
         packed: u16_at(bytes, 4),
         size: u16_at(bytes, 6),
     };
-    field_check(
-        header.size != 0,
-        "CAB data block continues in another cabinet",
-    )?;
     field_check(
         usize::from(header.size) <= BLOCK,
         "CAB data block holds more than 32 KiB",
@@ -198,6 +270,15 @@ fn data_header(bytes: &[u8; DATA]) -> Field<DataHeader> {
         "CAB data block has an impossible packed size",
     )?;
     Ok(header)
+}
+
+fn joined_packed(held: usize, part: u16) -> Field<std::ops::Range<usize>> {
+    let end = held.saturating_add(usize::from(part));
+    field_check(
+        end <= LARGEST_PACKED,
+        "CAB data block split across cabinets packs more than 38,912 bytes",
+    )?;
+    Ok(held..end)
 }
 
 // EXTERNAL(7-Zip CabBlockInStream): the checksum XORs little-endian words, and a short tail
@@ -309,14 +390,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(magic == SIGNATURE)
 }
 
-/// Returns whether the default engine hands this CAB to 7-Zip: it belongs
-/// to a cabinet set, which this reader does not read. A CAB this reader
-/// cannot parse stays with it, so the error comes from it.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    Ok(Tables::read(path, false)
-        .is_ok_and(|tables| tables.header.flags & (PREVIOUS_CABINET | NEXT_CABINET) != 0))
-}
-
 fn plain_cabinet_name(name: &[u8]) -> bool {
     !name.is_empty()
         && name != b"."
@@ -329,7 +402,9 @@ fn plain_cabinet_name(name: &[u8]) -> bool {
 struct Item {
     name: String,
     record: FileRecord,
-    index: usize,
+    cabinet: u16,
+    index: u16,
+    folder: u32,
 }
 
 impl Item {
@@ -338,72 +413,22 @@ impl Item {
     }
 }
 
-struct Tables {
+struct Source {
     reader: BufReader<ArchiveFile>,
-    header: Header,
-    reserve: Reserve,
-    folders: Vec<Folder>,
-    items: Vec<Item>,
-    claimed: BTreeMap<u64, u64>,
+    size: u64,
 }
 
-impl Tables {
-    fn read(path: &Path, with_files: bool) -> Result<Self> {
-        let file = crate::volumes::open(path)?;
-        let length = file.len()?;
-        let mut reader = BufReader::with_capacity(BUFFER, file);
-        let mut bytes = [0u8; HEADER];
-        reader
-            .read_exact(&mut bytes)
-            .context("truncated CAB header")?;
-        let header = header(&bytes)?;
-        ensure!(
-            u64::from(header.cabinet_size) <= length,
-            "truncated CAB file: the header gives {} bytes and the file has {length}",
-            header.cabinet_size
-        );
-        let mut tables = Tables {
-            reader,
-            header,
-            reserve: Reserve::default(),
-            folders: Vec::new(),
-            items: Vec::new(),
-            claimed: BTreeMap::new(),
-        };
-        let mut at = HEADER as u64;
-        if header.flags & RESERVE_PRESENT != 0 {
-            let mut sizes = [0u8; RESERVE_SIZES];
-            tables.exact(&mut sizes, &mut at, "reserve sizes")?;
-            tables.reserve = reserve(&sizes);
-            tables.skip(u64::from(tables.reserve.header), &mut at, "header reserve")?;
+impl Source {
+    fn new(file: ArchiveFile, size: u32) -> Self {
+        Source {
+            reader: BufReader::with_capacity(BUFFER, file),
+            size: u64::from(size),
         }
-        if header.flags & PREVIOUS_CABINET != 0 {
-            tables.check_set_names(&mut at, "previous")?;
-        }
-        if header.flags & NEXT_CABINET != 0 {
-            tables.check_set_names(&mut at, "next")?;
-        }
-        let record = FOLDER as u64 + u64::from(tables.reserve.folder);
-        ensure!(
-            u64::from(header.folders) * record <= u64::from(header.cabinet_size) - at,
-            "truncated CAB folder table"
-        );
-        tables.folders.reserve_exact(usize::from(header.folders));
-        for _ in 0..header.folders {
-            let mut bytes = [0u8; FOLDER];
-            tables.exact(&mut bytes, &mut at, "folder record")?;
-            tables.folders.push(folder(&bytes)?);
-            tables.skip(u64::from(tables.reserve.folder), &mut at, "folder reserve")?;
-        }
-        if with_files {
-            tables.read_files()?;
-        }
-        Ok(tables)
     }
 
     fn exact(&mut self, buffer: &mut [u8], at: &mut u64, what: &str) -> Result<()> {
         ensure!(
-            *at + buffer.len() as u64 <= u64::from(self.header.cabinet_size),
+            *at + buffer.len() as u64 <= self.size,
             "truncated CAB {what}"
         );
         self.reader
@@ -414,10 +439,7 @@ impl Tables {
     }
 
     fn skip(&mut self, count: u64, at: &mut u64, what: &str) -> Result<()> {
-        ensure!(
-            *at + count <= u64::from(self.header.cabinet_size),
-            "truncated CAB {what}"
-        );
+        ensure!(*at + count <= self.size, "truncated CAB {what}");
         self.reader.seek_relative(count as i64)?;
         *at += count;
         Ok(())
@@ -431,21 +453,10 @@ impl Tables {
         Ok(())
     }
 
-    fn check_set_names(&mut self, at: &mut u64, which: &str) -> Result<()> {
-        let cabinet = self.name(at)?;
-        ensure!(
-            plain_cabinet_name(&cabinet),
-            "CAB names its {which} cabinet {:?}, which is not a plain file name beside it",
-            String::from_utf8_lossy(&cabinet)
-        );
-        self.name(at)?;
-        Ok(())
-    }
-
     fn name(&mut self, at: &mut u64) -> Result<Vec<u8>> {
         let mut name = Vec::new();
         loop {
-            let left = u64::from(self.header.cabinet_size) - *at;
+            let left = self.size - *at;
             let buffer = self.reader.fill_buf()?;
             let window = &buffer[..buffer.len().min(left as usize)];
             ensure!(!window.is_empty(), "truncated CAB name");
@@ -467,35 +478,171 @@ impl Tables {
         }
     }
 
-    fn read_files(&mut self) -> Result<()> {
+    fn set_name(&mut self, at: &mut u64, which: &str) -> Result<Vec<u8>> {
+        let cabinet = self.name(at)?;
+        ensure!(
+            plain_cabinet_name(&cabinet),
+            "CAB names its {which} cabinet {:?}, which is not a plain file name beside it",
+            String::from_utf8_lossy(&cabinet)
+        );
+        self.name(at)?;
+        Ok(cabinet)
+    }
+}
+
+struct Cabinet {
+    path: PathBuf,
+    header: Header,
+    reserve: Reserve,
+    folders: Vec<Folder>,
+    previous: Option<Vec<u8>>,
+    next: Option<Vec<u8>>,
+    unchanged: Option<Unchanged>,
+    claimed: BTreeMap<u64, u64>,
+    from_previous: bool,
+    to_next: bool,
+}
+
+#[derive(Default)]
+struct Totals {
+    folders: usize,
+    name_bytes: usize,
+}
+
+fn label(path: &Path) -> String {
+    path.file_name()
+        .unwrap_or(path.as_os_str())
+        .to_string_lossy()
+        .into_owned()
+}
+
+impl Cabinet {
+    fn label(&self) -> String {
+        label(&self.path)
+    }
+
+    fn read(
+        path: PathBuf,
+        file: ArchiveFile,
+        index: usize,
+        before: Option<&Header>,
+        totals: &mut Totals,
+        items: &mut Vec<Item>,
+    ) -> Result<(Self, Source)> {
+        let length = file.len()?;
+        let mut source = Source::new(file, HEADER as u32);
+        let mut bytes = [0u8; HEADER];
+        source
+            .reader
+            .read_exact(&mut bytes)
+            .context("truncated CAB header")?;
+        let header = header(&bytes)?;
+        if let Some(before) = before {
+            follows_in_set(before, &header)?;
+        }
+        ensure!(
+            u64::from(header.cabinet_size) <= length,
+            "truncated CAB file: the header gives {} bytes and the file has {length}",
+            header.cabinet_size
+        );
+        source.size = u64::from(header.cabinet_size);
+        let mut cabinet = Cabinet {
+            path,
+            header,
+            reserve: Reserve::default(),
+            folders: Vec::new(),
+            previous: None,
+            next: None,
+            unchanged: None,
+            claimed: BTreeMap::new(),
+            from_previous: false,
+            to_next: false,
+        };
+        let mut at = HEADER as u64;
+        if header.flags & RESERVE_PRESENT != 0 {
+            let mut sizes = [0u8; RESERVE_SIZES];
+            source.exact(&mut sizes, &mut at, "reserve sizes")?;
+            cabinet.reserve = reserve(&sizes);
+            source.skip(u64::from(cabinet.reserve.header), &mut at, "header reserve")?;
+        }
+        if header.flags & PREVIOUS_CABINET != 0 {
+            let previous = source.set_name(&mut at, "previous")?;
+            totals.name_bytes += previous.len();
+            cabinet.previous = before.is_none().then_some(previous);
+        }
+        if header.flags & NEXT_CABINET != 0 {
+            let next = source.set_name(&mut at, "next")?;
+            totals.name_bytes += next.len();
+            cabinet.next = Some(next);
+        }
+        ensure!(
+            totals.name_bytes <= MAX_NAME_BYTES,
+            "CAB names exceed 64 MiB in total"
+        );
+        let record = FOLDER as u64 + u64::from(cabinet.reserve.folder);
+        ensure!(
+            u64::from(header.folders) * record <= u64::from(header.cabinet_size) - at,
+            "truncated CAB folder table"
+        );
+        totals.folders += usize::from(header.folders);
+        ensure!(
+            totals.folders <= MAX_SET_RECORDS,
+            "CAB set has more than {MAX_SET_RECORDS} folder records"
+        );
+        cabinet.folders.reserve_exact(usize::from(header.folders));
+        for _ in 0..header.folders {
+            let mut bytes = [0u8; FOLDER];
+            source.exact(&mut bytes, &mut at, "folder record")?;
+            cabinet.folders.push(folder(&bytes)?);
+            source.skip(u64::from(cabinet.reserve.folder), &mut at, "folder reserve")?;
+        }
+        cabinet.read_files(index, &mut source, totals, items)?;
+        Ok((cabinet, source))
+    }
+
+    fn read_files(
+        &mut self,
+        cabinet: usize,
+        source: &mut Source,
+        totals: &mut Totals,
+        items: &mut Vec<Item>,
+    ) -> Result<()> {
+        let cabinet = u16::try_from(cabinet).context("CAB set has more than 65,536 cabinets")?;
         let mut at = u64::from(self.header.files_offset);
-        self.seek_to(at)?;
+        source.seek_to(at)?;
         ensure!(
             u64::from(self.header.files) * FILE as u64 <= u64::from(self.header.cabinet_size) - at,
             "truncated CAB file table"
         );
-        self.items.reserve_exact(usize::from(self.header.files));
-        let mut name_bytes = 0usize;
-        for index in 0..usize::from(self.header.files) {
+        ensure!(
+            items.len() + usize::from(self.header.files) <= MAX_SET_RECORDS,
+            "CAB set has more than {MAX_SET_RECORDS} file records"
+        );
+        items.reserve_exact(usize::from(self.header.files));
+        for index in 0..self.header.files {
             let mut bytes = [0u8; FILE];
-            self.exact(&mut bytes, &mut at, "file record")?;
+            source.exact(&mut bytes, &mut at, "file record")?;
             let record = file_record(&bytes);
-            let raw = self.name(&mut at)?;
-            name_bytes += raw.len();
+            let raw = source.name(&mut at)?;
+            totals.name_bytes += raw.len();
             ensure!(
-                name_bytes <= MAX_NAME_BYTES,
+                totals.name_bytes <= MAX_NAME_BYTES,
                 "CAB names exceed 64 MiB in total"
             );
-            ensure!(
-                record.folder < FIRST_CONTINUED_FOLDER,
-                "CAB file {index} continues across a cabinet set, which Zipper does not read in process; {BACKEND_HINT}"
-            );
-            ensure!(
-                usize::from(record.folder) < self.folders.len(),
-                "CAB file {index} names folder {}, and the cabinet has {}",
-                record.folder,
-                self.folders.len()
-            );
+            let (folder, continued) =
+                record_folder(record.folder, self.header.folders).map_err(|error| {
+                    if record.folder < CONTINUED_FROM_PREVIOUS {
+                        anyhow::anyhow!(
+                            "CAB file {index} names folder {}, and the cabinet has {}",
+                            record.folder,
+                            self.folders.len()
+                        )
+                    } else {
+                        anyhow::anyhow!("CAB file {index} cannot be placed: {error}")
+                    }
+                })?;
+            self.from_previous |= continued.continues_from_previous();
+            self.to_next |= continued.continues_into_next();
             let name = String::from_utf8(raw).map_err(|_| {
                 let flagged = record.attributes & NAME_IS_UTF8 != 0;
                 anyhow::anyhow!(
@@ -507,12 +654,161 @@ impl Tables {
                     }
                 )
             })?;
-            self.items.push(Item {
+            items.push(Item {
                 name: name.replace('\\', "/"),
                 record,
+                cabinet,
                 index,
+                folder: u32::from(folder),
             });
         }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Segment {
+    cabinet: usize,
+    folder: Folder,
+}
+
+struct Set {
+    cabinets: Vec<Cabinet>,
+    folders: Vec<Vec<Segment>>,
+    items: Vec<Item>,
+    source: Source,
+    open: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Span {
+    FollowNames,
+    OneCabinet,
+}
+
+impl Set {
+    fn read(path: &Path, span: Span) -> Result<Self> {
+        let mut totals = Totals::default();
+        let mut items = Vec::new();
+        let file = crate::volumes::open(path)?;
+        let (first, source) =
+            Cabinet::read(path.to_owned(), file, 0, None, &mut totals, &mut items)?;
+        if let Some(previous) = &first.previous {
+            bail!(
+                "CAB file {} is cabinet {} of a set, after {:?}; open the set's first cabinet to read it",
+                first.label(),
+                first.header.number,
+                String::from_utf8_lossy(previous)
+            );
+        }
+        ensure!(
+            span == Span::FollowNames || first.next.is_none(),
+            "CAB file is part of a cabinet set, which Zipper reads only from cabinet files beside each other; {BACKEND_HINT}"
+        );
+        let mut set = Set {
+            cabinets: vec![first],
+            folders: Vec::new(),
+            items,
+            source,
+            open: 0,
+        };
+        while let Some(next) = set.cabinets.last_mut().and_then(|last| last.next.take()) {
+            let cabinet = set.open_next(&next, &mut totals)?;
+            set.cabinets.push(cabinet);
+        }
+        set.join_folders()?;
+        Ok(set)
+    }
+
+    fn open_next(&mut self, name: &[u8], totals: &mut Totals) -> Result<Cabinet> {
+        let last = self.cabinets.last().expect("a set has its first cabinet");
+        let name = std::str::from_utf8(name).with_context(|| {
+            format!(
+                "CAB cabinet {} names its next cabinet {:?}, which is not UTF-8",
+                last.label(),
+                String::from_utf8_lossy(name)
+            )
+        })?;
+        let path = last.path.with_file_name(name);
+        let named_by = || {
+            format!(
+                "cabinet {name}, which {} names as the next cabinet of its set",
+                last.label()
+            )
+        };
+        let (file, unchanged) = crate::volumes::open_alone(&path)
+            .with_context(|| format!("cannot open {}", named_by()))?;
+        let (mut cabinet, _) = Cabinet::read(
+            path.clone(),
+            file,
+            self.cabinets.len(),
+            Some(&last.header),
+            totals,
+            &mut self.items,
+        )
+        .with_context(|| format!("in {}", named_by()))?;
+        cabinet.unchanged = Some(unchanged);
+        Ok(cabinet)
+    }
+
+    // EXTERNAL(7-Zip CabIn): a cabinet's first folder continues the last folder of the
+    // cabinet before when one of its files continues from there, with the same typeCompress.
+    fn join_folders(&mut self) -> Result<()> {
+        let mut first_folder = Vec::with_capacity(self.cabinets.len());
+        let last = self.cabinets.len() - 1;
+        for (index, cabinet) in self.cabinets.iter().enumerate() {
+            let label = cabinet.label();
+            match index.checked_sub(1).map(|before| &self.cabinets[before]) {
+                None => ensure!(
+                    !cabinet.from_previous,
+                    "CAB cabinet {label} has a file that continues from a previous cabinet, and it is the first cabinet of its set"
+                ),
+                Some(before) => ensure!(
+                    before.to_next == cabinet.from_previous,
+                    "CAB cabinets {} and {label} disagree on whether a folder continues from one into the other",
+                    before.label()
+                ),
+            }
+            ensure!(
+                index < last || !cabinet.to_next,
+                "CAB cabinet {label} has a file that continues into a next cabinet, and it is the last cabinet of its set"
+            );
+            first_folder.push(self.folders.len() - usize::from(cabinet.from_previous));
+            for (local, &folder) in cabinet.folders.iter().enumerate() {
+                let segment = Segment {
+                    cabinet: index,
+                    folder,
+                };
+                match self.folders.last_mut() {
+                    Some(joined) if local == 0 && cabinet.from_previous => {
+                        ensure!(
+                            joined[0].folder.type_compress == folder.type_compress,
+                            "CAB cabinet {label} continues a folder with another compression method or window than the cabinet before it"
+                        );
+                        joined.push(segment);
+                    }
+                    _ => self.folders.push(vec![segment]),
+                }
+            }
+        }
+        for item in &mut self.items {
+            item.folder += first_folder[usize::from(item.cabinet)] as u32;
+        }
+        Ok(())
+    }
+
+    fn switch_to(&mut self, index: usize) -> Result<()> {
+        if self.open == index {
+            return Ok(());
+        }
+        let cabinet = &self.cabinets[index];
+        let unchanged = cabinet
+            .unchanged
+            .context("CAB set returns to its first cabinet")?;
+        let file = crate::volumes::reopen_unchanged(&cabinet.path, unchanged)
+            .with_context(|| format!("cannot reopen cabinet {}", cabinet.label()))?;
+        self.source = Source::new(file, cabinet.header.cabinet_size);
+        self.open = index;
         Ok(())
     }
 }
@@ -523,14 +819,15 @@ fn sort_items(items: &mut Vec<Item>) {
     items.sort_by_key(|item| {
         (
             !item.directory(),
-            item.record.folder,
+            item.folder,
             item.record.offset,
             item.record.size,
+            item.cabinet,
             item.index,
         )
     });
     items.dedup_by(|later, earlier| {
-        later.record.folder == earlier.record.folder
+        later.folder == earlier.folder
             && later.record.offset == earlier.record.offset
             && later.record.size == earlier.record.size
             && later.name == earlier.name
@@ -540,9 +837,7 @@ fn sort_items(items: &mut Vec<Item>) {
 fn ensure_files_do_not_overlap(items: &[Item]) -> Result<()> {
     let mut previous: Option<&Item> = None;
     for item in items.iter().filter(|item| !item.directory()) {
-        if let Some(earlier) =
-            previous.filter(|earlier| earlier.record.folder == item.record.folder)
-        {
+        if let Some(earlier) = previous.filter(|earlier| earlier.folder == item.folder) {
             ensure!(
                 u64::from(item.record.offset) >= earlier.record.end(),
                 "CAB files {:?} and {:?} share bytes of their folder, which Zipper does not extract",
@@ -634,7 +929,7 @@ impl Decoders {
             self.lzx = None;
         }
         if self.block.is_empty() {
-            self.block = vec![0; DATA + usize::from(u8::MAX) + LARGEST_PACKED];
+            self.block = vec![0; LARGEST_PACKED];
             self.output = vec![0; BLOCK + 1];
         }
         Ok(match method {
@@ -686,8 +981,10 @@ fn ensure_unclaimed(claimed: &BTreeMap<u64, u64>, start: u64, end: u64) -> Resul
 }
 
 struct FolderStream<'a> {
-    tables: &'a mut Tables,
+    set: &'a mut Set,
     decoders: &'a mut Decoders,
+    segments: Vec<Segment>,
+    segment: usize,
     method: Method,
     decoder: Option<Decoder>,
     blocks_left: u16,
@@ -700,52 +997,109 @@ struct FolderStream<'a> {
 }
 
 impl<'a> FolderStream<'a> {
-    fn open(tables: &'a mut Tables, folder: Folder, decoders: &'a mut Decoders) -> Result<Self> {
-        let at = u64::from(folder.data_offset);
-        tables.seek_to(at)?;
-        Ok(FolderStream {
-            tables,
+    fn open(set: &'a mut Set, index: usize, decoders: &'a mut Decoders) -> Result<Self> {
+        let segments = set.folders[index].clone();
+        let method = segments[0].folder.method;
+        let mut stream = FolderStream {
+            set,
             decoders,
-            method: folder.method,
+            segments,
+            segment: 0,
+            method,
             decoder: None,
-            blocks_left: folder.blocks,
-            first: at,
-            at,
+            blocks_left: 0,
+            first: 0,
+            at: 0,
             start: 0,
             end: 0,
             position: 0,
             short_block_read: false,
-        })
+        };
+        stream.enter(0)?;
+        Ok(stream)
+    }
+
+    fn enter(&mut self, segment: usize) -> Result<()> {
+        let Segment { cabinet, folder } = self.segments[segment];
+        self.set.switch_to(cabinet)?;
+        let at = u64::from(folder.data_offset);
+        self.set.source.seek_to(at)?;
+        self.segment = segment;
+        self.blocks_left = folder.blocks;
+        self.first = at;
+        self.at = at;
+        Ok(())
+    }
+
+    fn claim(&mut self) {
+        if self.at > self.first {
+            let cabinet = self.segments[self.segment].cabinet;
+            self.set.cabinets[cabinet]
+                .claimed
+                .insert(self.first, self.at);
+        }
     }
 
     fn next_block(&mut self) -> Result<bool> {
-        if self.blocks_left == 0 {
-            return Ok(false);
+        if self.set.cabinets.len() == 1 {
+            return self.next_block_in_set();
         }
-        ensure!(
-            !self.short_block_read,
-            "CAB folder has a block shorter than 32 KiB before its last block"
-        );
-        if self.decoder.is_none() {
-            self.decoder = Some(self.decoders.take(self.method)?);
-        }
-        let header_length = DATA + usize::from(self.tables.reserve.data);
-        let mut at = self.at;
-        let (header_bytes, rest) = self.decoders.block.split_at_mut(header_length);
-        self.tables
-            .exact(header_bytes, &mut at, "data block header")?;
-        let header = data_header(header_bytes[..DATA].try_into().unwrap())?;
-        let packed = &mut rest[..usize::from(header.packed)];
-        self.tables.exact(packed, &mut at, "data block")?;
-        ensure_unclaimed(&self.tables.claimed, self.at, at)?;
-        ensure!(
-            checksum_matches(header_bytes, packed),
-            "CAB data block fails its checksum"
-        );
-        self.at = at;
-        self.blocks_left -= 1;
-        let size = usize::from(header.size);
+        let cabinet = self.segments[self.segment].cabinet;
+        self.next_block_in_set().with_context(|| {
+            format!(
+                "in a folder of cabinet {}",
+                self.set.cabinets[cabinet].label()
+            )
+        })
+    }
+
+    fn next_block_in_set(&mut self) -> Result<bool> {
+        let mut held = 0;
+        let size = loop {
+            if self.blocks_left == 0 {
+                if self.segment + 1 == self.segments.len() {
+                    return Ok(false);
+                }
+                self.enter(self.segment + 1)?;
+                continue;
+            }
+            ensure!(
+                !self.short_block_read,
+                "CAB folder has a block shorter than 32 KiB before its last block"
+            );
+            if self.decoder.is_none() {
+                self.decoder = Some(self.decoders.take(self.method)?);
+            }
+            let Set {
+                cabinets, source, ..
+            } = &mut *self.set;
+            let cabinet = &cabinets[self.segments[self.segment].cabinet];
+            let mut header_bytes = [0u8; DATA + u8::MAX as usize];
+            let header_bytes = &mut header_bytes[..DATA + usize::from(cabinet.reserve.data)];
+            let mut at = self.at;
+            source.exact(header_bytes, &mut at, "data block header")?;
+            let header = data_header(header_bytes[..DATA].try_into().unwrap())?;
+            let range = joined_packed(held, header.packed)?;
+            let packed = &mut self.decoders.block[range.clone()];
+            source.exact(packed, &mut at, "data block")?;
+            ensure_unclaimed(&cabinet.claimed, self.at, at)?;
+            ensure!(
+                checksum_matches(header_bytes, packed),
+                "CAB data block fails its checksum"
+            );
+            self.at = at;
+            self.blocks_left -= 1;
+            held = range.end;
+            if header.size != 0 {
+                break usize::from(header.size);
+            }
+            ensure!(
+                self.blocks_left == 0 && self.segment + 1 < self.segments.len(),
+                "CAB data block continues in another cabinet, but its folder does not continue there"
+            );
+        };
         self.short_block_read = size < BLOCK;
+        let packed = &self.decoders.block[..held];
         let output = &mut self.decoders.output;
         match self.decoder.as_mut().expect("taken above") {
             Decoder::Stored => {
@@ -795,11 +1149,9 @@ impl<'a> FolderStream<'a> {
 
     // EXTERNAL(7-Zip CabHandler): a folder decodes only until its last file ends, so blocks
     // after it are neither decoded nor checked.
-    fn finish(self) {
-        if self.at > self.first {
-            self.tables.claimed.insert(self.first, self.at);
-        }
-        if let Some(decoder) = self.decoder {
+    fn finish(mut self) {
+        self.claim();
+        if let Some(decoder) = self.decoder.take() {
             self.decoders.give_back(decoder);
         }
     }
@@ -832,8 +1184,8 @@ fn file_mode(record: &FileRecord) -> u32 {
     }
 }
 
-fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
-    let mut items = std::mem::take(&mut tables.items).into_iter().peekable();
+fn parse(tree: &mut tree::Tree, set: &mut Set) -> Result<()> {
+    let mut items = std::mem::take(&mut set.items).into_iter().peekable();
     while let Some(item) = items.next_if(Item::directory) {
         tree.check()?;
         ensure!(
@@ -851,16 +1203,15 @@ fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
         block: Vec::new(),
         output: Vec::new(),
     };
-    for index in 0..tables.folders.len() {
+    for index in 0..set.folders.len() {
         if items
             .peek()
-            .is_none_or(|item| usize::from(item.record.folder) != index)
+            .is_none_or(|item| item.folder as usize != index)
         {
             continue;
         }
-        let folder = tables.folders[index];
-        let mut stream = FolderStream::open(tables, folder, &mut decoders)?;
-        while let Some(item) = items.next_if(|item| usize::from(item.record.folder) == index) {
+        let mut stream = FolderStream::open(set, index, &mut decoders)?;
+        while let Some(item) = items.next_if(|item| item.folder as usize == index) {
             tree.check()?;
             let record = item.record;
             while stream.position < u64::from(record.offset) {
@@ -882,26 +1233,39 @@ fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
     Ok(())
 }
 
+fn extract(
+    span: Span,
+    path: &Path,
+    destination: Option<&Path>,
+    options: ReadOptions,
+) -> Result<Vec<Entry>> {
+    let mut set = Set::read(path, span)?;
+    sort_items(&mut set.items);
+    ensure_files_do_not_overlap(&set.items)?;
+    tree::extract("CAB", path, destination, options, |tree| {
+        parse(tree, &mut set)
+    })
+}
+
 /// Verify and optionally extract a CAB file into a new directory. It reads
 /// stored, MSZIP, Quantum and LZX folders, restores each file's DOS time
-/// and its read-only attribute, and creates the folders its paths name. It
-/// refuses cabinet sets, which the default engine hands to 7-Zip.
+/// and its read-only attribute, and creates the folders its paths name. A
+/// cabinet that starts a set is read with the later cabinets it names,
+/// which must sit beside it; a later cabinet of a set is refused.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
-    let mut tables = Tables::read(path, true)?;
-    if tables.header.flags & (PREVIOUS_CABINET | NEXT_CABINET) != 0 {
-        bail!(
-            "CAB file is part of a cabinet set, which Zipper does not read in process; {BACKEND_HINT}"
-        );
-    }
-    sort_items(&mut tables.items);
-    ensure_files_do_not_overlap(&tables.items)?;
-    tree::extract("CAB", path, destination, options, |tree| {
-        parse(tree, &mut tables)
-    })
+    extract(Span::FollowNames, path, destination, options)
+}
+
+pub(crate) fn read_one_cabinet(
+    path: &Path,
+    destination: Option<&Path>,
+    options: ReadOptions,
+) -> Result<Vec<Entry>> {
+    extract(Span::OneCabinet, path, destination, options)
 }
 
 #[cfg(test)]
@@ -1039,8 +1403,65 @@ mod proofs {
     fn data_headers_never_panic_and_fit_the_block_buffers() {
         let bytes: [u8; DATA] = kani::any();
         if let Ok(header) = data_header(&bytes) {
-            assert!((1..=BLOCK).contains(&usize::from(header.size)));
+            assert!(usize::from(header.size) <= BLOCK);
             assert!((1..=LARGEST_PACKED).contains(&usize::from(header.packed)));
+        }
+    }
+
+    fn any_header() -> Header {
+        Header {
+            cabinet_size: kani::any(),
+            files_offset: kani::any(),
+            folders: kani::any(),
+            files: kani::any(),
+            flags: kani::any(),
+            set_id: kani::any(),
+            number: kani::any(),
+        }
+    }
+
+    #[kani::proof]
+    fn a_cabinet_follows_only_with_its_set_id_and_the_next_number() {
+        let (previous, next) = (any_header(), any_header());
+        if follows_in_set(&previous, &next).is_ok() {
+            assert!(next.set_id == previous.set_id);
+            assert!(previous.number < u16::MAX && next.number == previous.number + 1);
+            assert!(next.flags & PREVIOUS_CABINET != 0);
+        }
+    }
+
+    #[kani::proof]
+    fn every_record_folder_lies_inside_its_cabinet() {
+        let (field, folders): (u16, u16) = kani::any();
+        if let Ok((local, continued)) = record_folder(field, folders) {
+            assert!(local < folders);
+            match continued {
+                Continued::No => assert!(local == field && field < CONTINUED_FROM_PREVIOUS),
+                Continued::FromPrevious => assert!(field == CONTINUED_FROM_PREVIOUS && local == 0),
+                Continued::ToNext => assert!(field == CONTINUED_TO_NEXT && local == folders - 1),
+                Continued::BothWays => assert!(field == CONTINUED_BOTH_WAYS && folders == 1),
+            }
+            assert!(
+                continued.continues_from_previous()
+                    == (local == 0
+                        && field >= CONTINUED_FROM_PREVIOUS
+                        && field != CONTINUED_TO_NEXT)
+            );
+        } else {
+            assert!(field >= folders || field >= CONTINUED_FROM_PREVIOUS);
+        }
+    }
+
+    #[kani::proof]
+    fn split_blocks_stay_inside_the_block_buffer() {
+        let held: usize = kani::any();
+        kani::assume(held <= LARGEST_PACKED);
+        let part: u16 = kani::any();
+        if let Ok(range) = joined_packed(held, part) {
+            assert!(range.start == held && range.len() == usize::from(part));
+            assert!(range.end <= LARGEST_PACKED);
+        } else {
+            assert!(held + usize::from(part) > LARGEST_PACKED);
         }
     }
 

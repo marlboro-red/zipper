@@ -1,6 +1,6 @@
 # In-process CAB reader
 
-Zipper extracts Microsoft Cabinet files with its own Rust reader. The default engine sends a file here when it starts with the CAB signature `MSCF` and four zero bytes. A CAB that belongs to a cabinet set goes to 7-Zip instead, with `-tcab` pinned. A file that starts with a ZIP, tar, cpio, `ar` or RPM signature goes to that reader first. `--zip-engine native` reads every CAB in process and refuses a cabinet set by name. `--zip-engine backend` hands every CAB to 7-Zip.
+Zipper extracts Microsoft Cabinet files and cabinet sets with its own Rust reader. The default engine and `--zip-engine native` send a file here when it starts with the CAB signature `MSCF` and four zero bytes. A file that starts with a ZIP, tar, cpio, `ar` or RPM signature goes to that reader first. `--zip-engine backend` hands every CAB to 7-Zip.
 
 ## Supported cabinets
 
@@ -14,11 +14,34 @@ A cabinet is a header, a table of folders, a table of files and the data blocks 
 - Names with the UTF-8 flag. A name without the flag must be ASCII or valid UTF-8. A backslash separates folders, as Windows writes it.
 - Records with the folder attribute, which create folders.
 - Bytes after the end of the cabinet, where a signed cabinet keeps its signature. The reader ignores them, as 7-Zip does.
+- Cabinet sets, as the next section describes.
+
+## Cabinet sets
+
+A cabinet set is a chain of cabinets. Each header names the cabinet before it and the cabinet after it, and a folder may continue from the end of one cabinet into the start of the next. Open the set by its first cabinet, as `7zz x -tcab first.cab` does, with the other cabinets beside it. The reader then works as follows:
+
+- It opens each next cabinet by the name its previous cabinet gives, in the same folder as the first. It reads the header and tables of every cabinet before it writes anything.
+- Every cabinet must carry the set ID of the first and the cabinet number one above the cabinet before it, and must name a previous cabinet. A cabinet that names itself, or a chain that loops back, fails this check.
+- A file record with folder `0xFFFD` or `0xFFFF` lies in the first folder of its cabinet, and one with `0xFFFE` in the last. The first folder of a cabinet continues the last folder of the cabinet before exactly when a record says so, as 7-Zip reads it. It must use the same compression method and window.
+- A data block whose uncompressed size is 0 continues in the next cabinet. Its packed bytes are joined with the first block of the next part of its folder, and each part must pass its own checksum. The joined block packs at most 38,912 bytes.
+- A file that appears in two cabinets with the same folder, offset, size and name is extracted once.
+- One reader is open at a time. A cabinet is reopened only if its length, modification time and file identity are those it had when its tables were read. A rewrite in place that keeps all three is not detected.
+
+The reader refuses these sets, and publishes nothing:
+
+- A missing, unreadable or cut cabinet. The error names it.
+- A cabinet whose set ID or number does not follow, or that names no previous cabinet.
+- A file that continues from a cabinet before the first, or into a cabinet after the last.
+- Two cabinets that disagree on whether a folder continues from one into the other, or a continued folder with another method.
+- A record with folder `0xFFFF` in a cabinet with more than one folder.
+- A block of size 0 that is not the last block of its cabinet's part of a folder, or whose folder does not continue.
+- A cabinet other than the first, opened on its own. The error names the cabinet before it. 7-Zip reads the whole set from any cabinet in it.
+- A cabinet set inside an MSI. The MSI reader copies its CAB stream to a file beside the destination, and it does not open other files there.
 
 The reader refuses these cabinets:
 
-- A cabinet with the previous or next cabinet flag, or a file that continues into another cabinet.
-- In every engine, a cabinet set whose previous or next cabinet name is empty, `.` or `..`, or holds `/`, `\`, `:` or NUL. Such a set is refused before 7-Zip sees it, so 7-Zip never opens a cabinet outside the folder of the one named. 7-Zip runs with its standard input closed.
+- A cabinet set that the previous section refuses.
+- A cabinet whose previous or next cabinet name is empty, `.` or `..`, or holds `/`, `\`, `:` or NUL. So the reader opens no cabinet by a path outside the folder of the first. A symbolic link in that folder is followed, as 7-Zip follows it, and its target must still pass the set checks. A next cabinet name must also be UTF-8.
 - A Quantum folder whose window level is above 21, or a folder with a method above 3.
 - Two files that share bytes of their folder.
 - A name that is neither flagged UTF-8 nor ASCII or UTF-8. The error suggests `--zip-engine backend`.
@@ -54,9 +77,10 @@ The reader checks the whole cabinet before it publishes anything, and it publish
 
 | Limit | Value |
 | --- | --- |
-| Folders and files | at most 65,535 each, as the header's 16-bit counts allow |
+| Folders and files | at most 65,535 each, as the header's 16-bit counts allow, in one cabinet and in a whole set |
+| Cabinets in a set | at most 65,536, as the 16-bit cabinet numbers allow |
 | One name | at most 8,192 bytes |
-| All names | at most 64 MiB |
+| All names | at most 64 MiB, with the previous and next cabinet names of a set |
 | Data blocks in a folder | the 16-bit count the folder declares |
 | One data block | 32 KiB decoded, 38,912 bytes packed |
 | Decoder memory | at most 4 MiB, an LZX window of up to 2 MiB with 96 KiB of tables and buffers, or a Quantum window of 32 KiB to 2 MiB with 4 KiB of models |
@@ -73,7 +97,9 @@ The reader keeps the file table in memory, with each name, and frees each name o
 - 7-Zip reads data blocks past a folder's declared count, for folders of more than 65,535 blocks that some Microsoft cabinets hold. Zipper decodes exactly the declared count and refuses a file that needs more.
 - 7-Zip reads folders whose data blocks overlap. Zipper refuses them.
 - 7-Zip removes a leading `\` and `..` from a name and writes the file. Zipper refuses the cabinet.
-- 7-Zip reads a cabinet set across its files. The default engine hands it to 7-Zip, and `--zip-engine native` refuses it.
+- 7-Zip joins a data block of size 0 with the next block anywhere in a cabinet. Zipper joins it only across cabinets, at the end of a continued folder.
+- 7-Zip reads a whole cabinet set from any cabinet in it. Zipper reads a set only from its first cabinet.
+- 7-Zip warns about a missing cabinet and extracts what it can. Zipper refuses the set.
 
 ## Extraction options
 
@@ -81,7 +107,9 @@ The reader keeps the file table in memory, with each name, and frees each name o
 
 ## Formal checks
 
-Kani proves that the header, folder, file record and data block header readers never panic on any bytes. A header it accepts keeps the file table inside the cabinet. A Quantum or LZX folder it accepts has a window its decoder takes within the 4 MiB budget, and a data block it accepts fits the block buffers. It also proves that the checksum never panics on any short block and reserved area, and that the DOS time fields stay in range. The proofs are under `[cab-fields]` in `verification/coverage.txt`.
+Kani proves that the header, folder, file record and data block header readers never panic on any bytes. A header it accepts keeps the file table inside the cabinet. A Quantum or LZX folder it accepts has a window its decoder takes within the 4 MiB budget, and a data block it accepts fits the block buffers. It also proves that the checksum never panics on any short block and reserved area, and that the DOS time fields stay in range. For cabinet sets, Kani proves three more rules. A cabinet follows another only with its set ID, the next cabinet number without overflow and the previous cabinet flag. Every file record's folder field names a folder inside its cabinet, the first for a record continued from before and the last for one continued into the next. A block joined across cabinets stays inside the 38,912-byte block buffer. The proofs are under `[cab-fields]` in `verification/coverage.txt`.
+
+`tests/cab_sets.rs` writes cabinet sets with the test writer in `tests/common/cab_writer.rs`, since no CAB tool on macOS or Linux writes them. It cuts folders of every method at random packed bytes, at block boundaries and inside one block across three cabinets. Each of 172 sets must extract to its source files byte for byte and to the tree `7zz x -tcab` extracts from the first cabinet. It also extracts one file that spans cabinets alone, and it holds one case for each refusal in the cabinet set section. Each refused set must leave nothing beside the destination. Where 7-Zip reads the set, as with a block split inside one cabinet, the test records that 7-Zip extracts it.
 
 The LZX decoder is checked against 7-Zip under `[lzx]`. A test encoder in `tests/common/lzx_encoder.rs` writes verbatim, aligned and uncompressed blocks in a seeded random plan, and `tests/cab_corpus.rs` compares Zipper's output with 7-Zip's on each one. That includes blocks that end at a data block's end with their padding byte in either data block. Unit tests in `src/lzx.rs` decode every encoded plan back to its input. They decode every 1 and 2 byte chunk and 200,000 random chunks without a panic, and refuse every cut chunk. They also compare E8 translation with a separate signed reference, and check each refusal above with a crafted block, including a match past its block or before the stream.
 
@@ -91,4 +119,4 @@ The Quantum decoder has four Kani proofs under `[quantum]`. Each model picks a s
 
 `tests/data/cab-corpus/NOTICE.txt` names the source and license of the three samples taken from the `cab` and `lzxd` crates. The rest of the corpus comes from `write_the_generated_corpus` in `tests/cab_corpus.rs`, including one Quantum CAB for each window level from 10 to 21. No sample there comes from Microsoft's own `makecab`.
 
-No adversarial review has run crafted cabinets against this reader yet. Three attempts stopped before running anything, because a safety check blocked the scripts that build the cabinets. Two reviews read the code instead and raised eight points. `tests/hostile_cab.rs` settles each one with a test against the release reader and, where it applies, against 7-Zip. The review of the Quantum decoder did run crafted cabinets, built in Rust with the test helpers. It ran 4,358 damaged Quantum cabinets and 180 crafted ones against both engines and 7-Zip. It found two problems, and tests now cover both fixes. A Quantum and an LZX window could be held at once, past the budget, and Zipper refused windows below 2^10 that 7-Zip reads.
+No adversarial review has run crafted cabinets against this reader yet. Three attempts stopped before running anything, because a safety check blocked the scripts that build the cabinets. Two reviews read the code instead and raised eight points. `tests/hostile_cab.rs` settles each one with a test against the release reader and, where it applies, against 7-Zip. The review of the Quantum decoder did run crafted cabinets, built in Rust with the test helpers. It ran 4,358 damaged Quantum cabinets and 180 crafted ones against both engines and 7-Zip. It found two problems, and tests now cover both fixes. A Quantum and an LZX window could be held at once, past the budget, and Zipper refused windows below 2^10 that 7-Zip reads. The review of cabinet sets also built its cabinets in Rust. It ran about 30 crafted sets against both engines and 7-Zip, including split blocks, renamed and repeated halves, FIFOs, links, a cabinet replaced during extraction and 12,000 cabinets under a limit of 40 open files. It found one problem. Previous cabinet names were held without being counted toward the 64 MiB of names, and a test now covers the fix.

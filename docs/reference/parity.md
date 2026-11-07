@@ -16,8 +16,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 59 |
-| `partial` | 2 |
+| `native` | 60 |
+| `partial` | 1 |
 | `backend` | 46 |
 | `missing` | 3 |
 | `dropped` | 2 |
@@ -35,7 +35,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Arj` | `backend` |  | No proof yet. |
 | `Base64` | `backend` |  | No proof yet. |
 | `COFF` | `backend` |  | No proof yet. |
-| `Cab` | `partial` | Stored, MSZIP, Quantum and LZX folders read in process. Cabinet sets go to 7-Zip. | `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs` |
+| `Cab` | `native` | Stored, MSZIP, Quantum and LZX folders and cabinet sets read in process. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set. | `tests/data/parity/archives/cab-set-1.cab`, `tests/data/parity/archives/cab.cab`, `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_sets_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/cab_sets.rs` |
 | `Chm` | `backend` |  | No proof yet. |
 | `Compound` | `native` | MSI, MSP, MSM and other compound files read in process, and an installer's one CAB through the CAB reader. An installer whose main stream is not a CAB goes to 7-Zip. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/msi_corpus.rs`, `generated_compound_files_extract_exactly_as_7zip_extracts_them` in `tests/msi_corpus.rs` |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |

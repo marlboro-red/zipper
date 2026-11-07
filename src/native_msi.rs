@@ -1162,7 +1162,7 @@ fn read_embedded_cab(
     }
     #[cfg(not(windows))]
     let _ = archive;
-    crate::native_cab::read_archive(copy.path(), destination, options)
+    crate::native_cab::read_one_cabinet(copy.path(), destination, options)
         .with_context(|| format!("in the CAB stream {name:?} of the compound file"))
 }
 

@@ -440,6 +440,46 @@
         "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
       }
     },
+    "cab-set-1.cab": {
+      "files": [
+        "cab-set-1.cab",
+        "cab-set-2.cab",
+        "cab-set-3.cab"
+      ],
+      "row": [
+        "formats",
+        "Cab"
+      ],
+      "sha256": {
+        "cab-set-1.cab": "0f6ece896ee879e1891447eb13abf429cbc502fd34298445253544c4784b3d20",
+        "cab-set-2.cab": "a56dbbb00e6a3174d43f204d7288699ee2e4f0881c4a6c91a2a06b1594466bb9",
+        "cab-set-3.cab": "ae7573fdcb8ec74dcc2a37a9dfb9b2398b852237eb528a327a9a356810739271"
+      },
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
+    "cab.cab": {
+      "files": [
+        "cab.cab"
+      ],
+      "row": [
+        "formats",
+        "Cab"
+      ],
+      "sha256": {
+        "cab.cab": "fa0fa538b49c80c3fa9e65476b07966fecef15de54ae4a1b9b094d182f19fb6d"
+      },
+      "tree": {
+        "folder": "dir",
+        "folder/data.txt": "204ed709d89a68e5887ecc142870f5fd72fa380e38a3d42fee450a1145d61eb4",
+        "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "hello.txt": "dcdedba875307647ec450284877fa237a46d7183225141fd804f7a948d73119f"
+      }
+    },
     "cpio-bin.cpio": {
       "files": [
         "cpio-bin.cpio"

@@ -7,6 +7,10 @@ pub const DIRECTORY: u16 = 0x10;
 pub const NAME_IS_UTF8: u16 = 0x80;
 pub const DATE: u16 = (45 << 9) | (6 << 5) | 15;
 pub const TIME: u16 = (13 << 11) | (37 << 5) | 21;
+pub const SET_ID: u16 = 0x1234;
+pub const FROM_PREVIOUS: u16 = 0xFFFD;
+pub const TO_NEXT: u16 = 0xFFFE;
+pub const PREVIOUS_AND_NEXT: u16 = 0xFFFF;
 
 #[derive(Clone, Debug)]
 pub enum Method {
@@ -49,6 +53,7 @@ pub struct Cabinet {
     pub next: Option<(String, String)>,
     pub checksums: bool,
     pub trailing: Vec<u8>,
+    pub set: Option<(u16, u16)>,
 }
 
 pub fn mszip_blocks(data: &[u8]) -> Vec<Block> {
@@ -238,8 +243,9 @@ impl Cabinet {
         bytes.extend_from_slice(&(self.folders.len() as u16).to_le_bytes());
         bytes.extend_from_slice(&(self.files.len() as u16).to_le_bytes());
         bytes.extend_from_slice(&flags.to_le_bytes());
-        bytes.extend_from_slice(&0x1234u16.to_le_bytes());
-        bytes.extend_from_slice(&0u16.to_le_bytes());
+        let (set_id, number) = self.set.unwrap_or((SET_ID, 0));
+        bytes.extend_from_slice(&set_id.to_le_bytes());
+        bytes.extend_from_slice(&number.to_le_bytes());
         bytes.extend_from_slice(&head);
         bytes.extend_from_slice(&folder_table);
         bytes.extend_from_slice(&file_table);
@@ -248,4 +254,140 @@ impl Cabinet {
         bytes.extend_from_slice(&self.trailing);
         bytes
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Cut {
+    pub folder: usize,
+    pub block: usize,
+    pub at: usize,
+}
+
+fn packed_length(folder: &Folder) -> usize {
+    folder.blocks.iter().map(|block| block.packed.len()).sum()
+}
+
+pub fn cabinet_set(
+    folders: &[Folder],
+    files: &[(usize, File)],
+    cuts: &[Cut],
+    names: &[&str],
+) -> Vec<Cabinet> {
+    assert_eq!(names.len(), cuts.len() + 1);
+    let count = names.len();
+    let mut starts = Vec::new();
+    let mut total = 0;
+    for folder in folders {
+        starts.push(total);
+        total += packed_length(folder);
+    }
+    let mut bounds = vec![0];
+    bounds.extend(cuts.iter().map(|cut| {
+        let before: usize = folders[cut.folder].blocks[..cut.block]
+            .iter()
+            .map(|block| block.packed.len())
+            .sum();
+        starts[cut.folder] + before + cut.at
+    }));
+    bounds.push(total);
+    assert!(
+        bounds.windows(2).all(|pair| pair[0] <= pair[1]),
+        "cuts out of order"
+    );
+    let holder = |byte: usize| {
+        (0..count)
+            .rfind(|&cabinet| bounds[cabinet] <= byte)
+            .unwrap()
+    };
+    let mut cabinets: Vec<Cabinet> = (0..count)
+        .map(|index| Cabinet {
+            checksums: true,
+            set: Some((SET_ID, index as u16)),
+            previous: (index > 0).then(|| (names[index - 1].to_owned(), format!("disk {index}"))),
+            next: (index + 1 < count)
+                .then(|| (names[index + 1].to_owned(), format!("disk {}", index + 2))),
+            ..Cabinet::default()
+        })
+        .collect();
+    let mut locals: Vec<Vec<usize>> = vec![Vec::new(); count];
+    let mut spans_by: Vec<Vec<(usize, usize, usize, usize)>> = Vec::new();
+    for (index, folder) in folders.iter().enumerate() {
+        let (start, end) = (starts[index], starts[index] + packed_length(folder));
+        let mut parts: Vec<Vec<Block>> = vec![Vec::new(); count];
+        let mut spans = Vec::new();
+        let mut decoded = 0;
+        let mut at = start;
+        for block in &folder.blocks {
+            let block_end = at + block.packed.len();
+            for cabinet in 0..count {
+                let (low, high) = (bounds[cabinet].max(at), bounds[cabinet + 1].min(block_end));
+                if low < high {
+                    parts[cabinet].push(Block {
+                        packed: block.packed[low - at..high - at].to_vec(),
+                        size: if high == block_end { block.size } else { 0 },
+                    });
+                }
+            }
+            spans.push((
+                decoded,
+                decoded + block.size,
+                holder(at),
+                holder(block_end - 1),
+            ));
+            decoded += block.size;
+            at = block_end;
+        }
+        spans_by.push(spans);
+        let holding: Vec<usize> = if start == end {
+            vec![holder(start).min(count - 1)]
+        } else {
+            (holder(start)..=holder(end - 1)).collect()
+        };
+        for cabinet in holding {
+            locals[cabinet].push(index);
+            cabinets[cabinet].folders.push(Folder {
+                type_compress: folder.type_compress,
+                blocks: std::mem::take(&mut parts[cabinet]),
+                declared_blocks: None,
+            });
+        }
+    }
+    for (folder, record) in files {
+        let holding: Vec<usize> = (0..count)
+            .filter(|&cabinet| locals[cabinet].contains(folder))
+            .collect();
+        let (start, end) = (
+            record.offset as usize,
+            (record.offset + record.size) as usize,
+        );
+        let spans = &spans_by[*folder];
+        let touched: Vec<&(usize, usize, usize, usize)> = spans
+            .iter()
+            .filter(|(low, high, ..)| {
+                (*low < end && start < *high) || (start == end && *low <= start && start < *high)
+            })
+            .collect();
+        let listed: Vec<usize> = match (touched.first(), touched.last(), spans.last()) {
+            (Some(first), Some(last), _) => (first.2..=last.3).collect(),
+            (None, None, Some(last)) => vec![last.3],
+            _ => vec![holding[0]],
+        };
+        for &cabinet in &listed {
+            let from_previous = cabinet > 0 && listed.contains(&(cabinet - 1));
+            let to_next = listed.contains(&(cabinet + 1));
+            let local = locals[cabinet]
+                .iter()
+                .position(|index| index == folder)
+                .unwrap();
+            let mut copy = record.clone();
+            copy.folder = match (from_previous, to_next) {
+                (true, true) => PREVIOUS_AND_NEXT,
+                (true, false) => FROM_PREVIOUS,
+                (false, true) => TO_NEXT,
+                (false, false) => local as u16,
+            };
+            cabinets[cabinet].files.push(copy);
+        }
+    }
+    cabinets
 }

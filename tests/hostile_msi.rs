@@ -1099,3 +1099,34 @@ fn an_existing_destination_is_refused_before_the_cab_is_copied() {
     assert!(message.contains("must not exist"), "{message}");
     assert!(!message.contains("CAB stream"), "copied first: {message}");
 }
+
+#[test]
+fn an_embedded_cab_that_starts_a_set_never_reads_a_cabinet_beside_its_copy() {
+    let data: Vec<u8> = (0..20_000u32).flat_map(|word| word.to_le_bytes()).collect();
+    let set = cab_writer::cabinet_set(
+        &[cab_writer::folder(&cab_writer::Method::Stored, &data)],
+        &[(0, cab_writer::file("spans.bin", 0, 0, data.len() as u32))],
+        &[cab_writer::Cut {
+            folder: 0,
+            block: 1,
+            at: 7,
+        }],
+        &["media1.cab", "media2.cab"],
+    );
+    let bytes = installer(4, "media1.cab", &set[0].build()).build().bytes;
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.msi");
+    fs::write(&archive, &bytes).unwrap();
+    fs::write(root.path().join("media2.cab"), set[1].build()).unwrap();
+    for destination in [Some(root.path().join("out")), None] {
+        let error = read_archive(&archive, destination.as_deref(), ReadOptions::default())
+            .expect_err("read a cabinet beside the copy");
+        assert!(format!("{error:#}").contains("cabinet set"), "{error:#}");
+    }
+    let mut left: Vec<String> = fs::read_dir(root.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, ["case.msi", "media2.cab"]);
+}

@@ -3,6 +3,7 @@
 
     python3 scripts/parity.py capture   # record `7zz i` from the 7-Zip on PATH
     python3 scripts/parity.py corpus    # build one small archive per row this machine can make
+    python3 scripts/parity.py corpus NAME...   # rebuild only the named archives, keeping the rest
     python3 scripts/parity.py render    # write docs/reference/parity.md
     python3 scripts/parity.py check     # the gate step
 
@@ -138,6 +139,17 @@ def write_rpm(compressor):
     return build
 
 
+CAB_SET = "cab-set-1.cab"
+
+
+def write_cab_set(src, out):
+    """A set of three cabinets whose one MSZIP folder continues from each into the next, written
+    by Zipper's own test writer, since no CAB tool on macOS or Linux writes a cabinet set."""
+    environment = dict(os.environ, ZIPPER_CAB_SET_SOURCE=str(src), ZIPPER_CAB_SET_OUT=str(out.parent))
+    subprocess.run(["cargo", "test", "--release", "--test", "cab_sets", "write_the_parity_set",
+                    "--", "--ignored", "--exact"], cwd=ROOT, env=environment, check=True, capture_output=True)
+
+
 def run(command, cwd):
     subprocess.run(command, cwd=cwd, check=True, capture_output=True)
 
@@ -196,6 +208,9 @@ def builders(binary):
     for compressor in RPM_PAYLOADS:
         table.append((f"rpm-{compressor}.rpm", ("formats", "Rpm"), found("rpmbuild"), write_rpm(compressor)))
     table.append(("xar.xar", ("formats", "Xar"), found("xar"), lambda src, out: run(["xar", "-cf", str(out), "hello.txt", "folder"], src)))
+    table.append(("cab.cab", ("formats", "Cab"), found("gcab"), lambda src, out: run(
+        ["gcab", "-c", "-z", str(out), "hello.txt", "folder/data.txt", "folder/empty"], src)))
+    table.append((CAB_SET, ("formats", "Cab"), found("cargo"), write_cab_set))
     table.append(("split.7z.001", ("formats", "Split"), True, lambda src, out: run(
         [binary, "a", "-t7z", "-mx0", "-v4k", str(out.with_suffix("")), "hello.txt", "folder"], src)))
     if found("hdiutil"):
@@ -230,19 +245,26 @@ def extract_with_7zip(binary, archive, into):
     return tree(into)
 
 
-def corpus():
+def corpus(only):
     binary = sevenzip()
     if not binary:
         sys.exit("parity: no 7-Zip on PATH; set ZIPPER_7Z")
-    if CORPUS.exists():
-        shutil.rmtree(CORPUS)
-    CORPUS.mkdir(parents=True)
     records = {}
+    if only:
+        records = json.loads(ARCHIVES.read_text())["archives"]
+        for name in only:
+            for file in records.pop(name, {}).get("files", []):
+                (CORPUS / file).unlink()
+    elif CORPUS.exists():
+        shutil.rmtree(CORPUS)
+    CORPUS.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as work:
         work = Path(work)
         source = work / "source"
         write_source(source)
         for name, row, available, build in builders(binary):
+            if only and name not in only:
+                continue
             if not available:
                 print(f"parity: skipped {name}, its tool is not installed")
                 continue
@@ -253,7 +275,12 @@ def corpus():
             except subprocess.CalledProcessError as error:
                 print(f"parity: could not build {name}: {(error.stderr or b'').decode(errors='replace').strip()[:200]}")
                 continue
-            outputs = sorted(made.parent.glob(made.name[:-4] + ".*")) if name.endswith(".001") else [made]
+            if name.endswith(".001"):
+                outputs = sorted(made.parent.glob(made.name[:-4] + ".*"))
+            elif name == CAB_SET:
+                outputs = sorted(made.parent.glob(CAB_SET.replace("-1.", "-*.")))
+            else:
+                outputs = [made]
             try:
                 reference = extract_with_7zip(binary, outputs[0], work / "reference" / name)
             except subprocess.CalledProcessError as error:
@@ -381,7 +408,7 @@ def main():
     if action == "capture":
         capture()
     elif action == "corpus":
-        corpus()
+        corpus(sys.argv[2:])
     elif action == "render":
         PAGE.write_text(page(*load()))
         print(f"parity: wrote {PAGE.relative_to(ROOT)}")
