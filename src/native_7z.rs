@@ -1507,10 +1507,7 @@ struct LzmaReader<R> {
     start: usize,
     end: usize,
     input_done: bool,
-    end_marker_added: bool,
 }
-
-const LZMA2_END_MARKER: u8 = 0;
 
 impl<R: Read> Read for LzmaReader<R> {
     fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
@@ -1535,25 +1532,12 @@ impl<R: Read> Read for LzmaReader<R> {
                 return Ok(produced);
             }
             if self.input_done {
-                self.end_without_stream_end()?;
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "7z folder has a truncated LZMA stream",
+                ));
             }
         }
-    }
-}
-
-impl<R> LzmaReader<R> {
-    fn end_without_stream_end(&mut self) -> std::io::Result<()> {
-        if self.end_marker_added {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "7z folder has a truncated LZMA stream",
-            ));
-        }
-        // EXTERNAL(7-Zip): 7zz accepts a data folder whose LZMA2 stops after a whole chunk without its end marker.
-        self.end_marker_added = true;
-        self.buffer[0] = LZMA2_END_MARKER;
-        (self.start, self.end) = (0, 1);
-        Ok(())
     }
 }
 
@@ -1822,7 +1806,6 @@ fn raw_decoder<R: Read>(filters: &liblzma::stream::Filters, input: R) -> Result<
         start: 0,
         end: 0,
         input_done: false,
-        end_marker_added: false,
     })
 }
 
@@ -3682,9 +3665,10 @@ mod tests {
             properties: vec![18],
         };
         for cut in 0..=stream.len() {
-            let filter_chain_input = decoded(raw_decoder(&lzma2_only(), &stream[..cut]).unwrap());
+            let with_an_end_marker = (&stream[..cut]).chain(&[0u8][..]);
+            let liblzma = decoded(raw_decoder(&lzma2_only(), with_an_end_marker).unwrap());
             let own = decoded(own_decoder(&coder, &stream[..cut], whole.len() as u64));
-            for result in [filter_chain_input, own] {
+            for result in [liblzma, own] {
                 match chunk_ends.iter().find(|&&(end, _)| end == cut) {
                     Some(&(_, expected)) => assert_eq!(result.unwrap(), expected, "cut {cut}"),
                     None => assert!(result.is_err(), "cut {cut} of {}", stream.len()),
