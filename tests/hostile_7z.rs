@@ -1128,3 +1128,342 @@ fn bcj2_archives_from_7zip_extract_as_7zip_extracts_them() {
         }
     }
 }
+
+const FILTERS: [(&str, &[u8]); 9] = [
+    ("BCJ", &[0x03, 0x03, 0x01, 0x03]),
+    ("PPC", &[0x03, 0x03, 0x02, 0x05]),
+    ("IA64", &[0x03, 0x03, 0x04, 0x01]),
+    ("ARM", &[0x03, 0x03, 0x05, 0x01]),
+    ("ARMT", &[0x03, 0x03, 0x07, 0x01]),
+    ("SPARC", &[0x03, 0x03, 0x08, 0x05]),
+    ("ARM64", &[0x0A]),
+    ("RISCV", &[0x0B]),
+    ("Delta", &[0x03]),
+];
+
+fn filter_id(name: &str) -> &'static [u8] {
+    FILTERS
+        .iter()
+        .find(|(filter, _)| *filter == name)
+        .unwrap()
+        .1
+}
+
+fn stored_lzma2(data: &[u8]) -> Vec<u8> {
+    let mut stream = Vec::new();
+    for (index, chunk) in data.chunks(65_536).enumerate() {
+        stream.push(if index == 0 { 1 } else { 2 });
+        stream.extend_from_slice(&((chunk.len() - 1) as u16).to_be_bytes());
+        stream.extend_from_slice(chunk);
+    }
+    stream.push(0);
+    stream
+}
+
+fn filter_folder_archive(filters: &[(&[u8], &[u8])], stored: &[u8]) -> Vec<u8> {
+    let packed = stored_lzma2(stored);
+    let coder = |id: &[u8], properties: &[u8]| {
+        let mut bytes = vec![id.len() as u8 | 0x20];
+        bytes.extend_from_slice(id);
+        bytes.extend(number(properties.len() as u64));
+        bytes.extend_from_slice(properties);
+        bytes
+    };
+    let mut header = vec![1u8, 4, 6];
+    header.extend(number(0));
+    header.extend(number(1));
+    header.push(9);
+    header.extend(number(packed.len() as u64));
+    header.extend([0, 7, 11]);
+    header.extend(number(1));
+    header.push(0);
+    header.extend(number(filters.len() as u64 + 1));
+    for (id, properties) in filters {
+        header.extend(coder(id, properties));
+    }
+    header.extend(coder(&[0x21], &[18]));
+    for index in 0..filters.len() as u64 {
+        header.extend(number(index));
+        header.extend(number(index + 1));
+    }
+    header.push(12);
+    for _ in 0..=filters.len() {
+        header.extend(number(stored.len() as u64));
+    }
+    header.extend([0, 0, 5]);
+    header.extend(number(1));
+    let mut names = vec![0u8];
+    for unit in "a".encode_utf16().chain([0]) {
+        names.extend_from_slice(&unit.to_le_bytes());
+    }
+    header.extend(property(17, &names));
+    header.extend([0, 0]);
+    let mut archive = b"7z\xBC\xAF\x27\x1C\x00\x04".to_vec();
+    let mut start = Vec::new();
+    start.extend_from_slice(&(packed.len() as u64).to_le_bytes());
+    start.extend_from_slice(&(header.len() as u64).to_le_bytes());
+    start.extend_from_slice(&crc32fast::hash(&header).to_le_bytes());
+    archive.extend_from_slice(&crc32fast::hash(&start).to_le_bytes());
+    archive.extend_from_slice(&start);
+    archive.extend_from_slice(&packed);
+    archive.extend_from_slice(&header);
+    archive
+}
+
+fn seven_zip_extracts(seven_zip: &Path, bytes: &[u8]) -> Option<Vec<u8>> {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.7z");
+    fs::write(&archive, bytes).unwrap();
+    let status = std::process::Command::new(seven_zip)
+        .args(["x", "-bd", "-y"])
+        .arg(format!("-o{}", root.path().join("out").display()))
+        .arg(&archive)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    status
+        .success()
+        .then(|| fs::read(root.path().join("out/a")).unwrap())
+}
+
+fn zipper_extracts(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let (root, result) = extract(bytes);
+    match result {
+        Ok(_) => Ok(fs::read(root.path().join("parent/out/a")).unwrap()),
+        Err(error) => {
+            let left: Vec<_> = fs::read_dir(root.path().join("parent")).unwrap().collect();
+            assert!(left.is_empty(), "a refused filter archive left output");
+            Err(format!("{error:#}"))
+        }
+    }
+}
+
+fn code_like(name: &str, length: usize, seed: u32) -> Vec<u8> {
+    let mut state = seed.wrapping_mul(2_654_435_761) | 1;
+    let mut next = move || {
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        state.rotate_right(13)
+    };
+    let mut code = Vec::with_capacity(length + 16);
+    while code.len() < length {
+        let (pick, word) = (next(), next());
+        if pick % 5 == 0 {
+            code.push(word as u8);
+            continue;
+        }
+        let le = |value: u32| value.to_le_bytes().to_vec();
+        let be = |value: u32| value.to_be_bytes().to_vec();
+        code.extend(match name {
+            "BCJ" => {
+                let top = if pick & 0x40 == 0 { 0x00 } else { 0xFF };
+                [
+                    &[0xE8 | (pick >> 3 & 1) as u8],
+                    &word.to_le_bytes()[..3],
+                    &[top],
+                ]
+                .concat()
+            }
+            "PPC" => be(0x4800_0001 | (word & 0x03FF_FFFC)),
+            "IA64" => {
+                let mut bundle = [0x10u128, 0x12, 0x16, 0x18, 0x1C][pick as usize % 5];
+                for slot in 0..3 {
+                    let offset = u128::from(next() & 0x1F_FFFF);
+                    let instruction =
+                        (5u128 << 37) | ((offset >> 20) << 36) | ((offset & 0xF_FFFF) << 13);
+                    bundle |= instruction << (5 + 41 * slot);
+                }
+                bundle.to_le_bytes().to_vec()
+            }
+            "ARM" => le(0xEB00_0000 | (word & 0x00FF_FFFF)),
+            "ARMT" => le(0xF800_F000 | (word & 0x07FF_07FF)),
+            "SPARC" => be([0x4000_0000, 0x7FC0_0000][pick as usize & 1] | (word & 0x003F_FFFF)),
+            "ARM64" => le([
+                0x9400_0000 | (word & 0x03FF_FFFF),
+                0x9000_0000 | (word & 0x60FF_FFFF),
+            ][pick as usize & 1]),
+            "RISCV" => {
+                let rd = [1u32, 5, 2, 10][pick as usize % 4];
+                match pick >> 4 & 3 {
+                    0 => le(0xEF | (rd << 7) | (word & 0xFFFF_F000)),
+                    1 => [
+                        le(0x17 | (rd << 7) | (word & 0xFFFF_F000)),
+                        le(0x13 | (rd << 15) | (next() << 20)),
+                    ]
+                    .concat(),
+                    2 => [le(0x3117 | (word & 0xF800_0000)), le(next())].concat(),
+                    _ => vec![0x01, 0x00],
+                }
+            }
+            _ => (0..4)
+                .map(|step| (pick as u8).wrapping_add(step * (word as u8 & 7)))
+                .collect(),
+        });
+    }
+    code.truncate(length);
+    code
+}
+
+fn property_variants(name: &str) -> Vec<Vec<u8>> {
+    let mut variants = vec![
+        Vec::new(),
+        vec![0],
+        vec![1],
+        vec![0xFF],
+        vec![0, 0],
+        vec![0; 5],
+    ];
+    if name == "Delta" {
+        variants.extend([vec![3], vec![0x7F], vec![0xFE]]);
+    }
+    variants.extend(
+        [
+            0u32,
+            1,
+            2,
+            3,
+            4,
+            6,
+            0x1000,
+            0xFFFF_FFFC,
+            0xFFFF_FFFE,
+            u32::MAX,
+        ]
+        .map(|start| start.to_le_bytes().to_vec()),
+    );
+    variants
+}
+
+#[test]
+fn filters_decode_any_bytes_and_accept_properties_as_7zip_does() {
+    let Some(seven_zip) = which("7zz") else {
+        return;
+    };
+    let (mut same, mut both_refused) = (0, 0);
+    for (name, id) in FILTERS {
+        for properties in property_variants(name) {
+            for (index, length) in [1usize, 2, 3, 4, 5, 7, 8, 15, 16, 17, 33, 64, 65_537]
+                .into_iter()
+                .enumerate()
+            {
+                let mut data = code_like(name, length, length as u32);
+                if index % 2 == 1 {
+                    data.reverse();
+                }
+                let bytes = filter_folder_archive(&[(id, &properties)], &data);
+                let case = format!("{name} {properties:?} length {length}");
+                match (
+                    seven_zip_extracts(&seven_zip, &bytes),
+                    zipper_extracts(&bytes),
+                ) {
+                    (Some(theirs), Ok(ours)) => {
+                        assert!(theirs == ours, "{case}: the output differs from 7-Zip's");
+                        same += 1;
+                    }
+                    (None, Err(error)) => {
+                        assert!(
+                            error.contains("properties 7-Zip does not accept"),
+                            "{case}: {error}"
+                        );
+                        both_refused += 1;
+                    }
+                    (theirs, ours) => panic!(
+                        "{case}: 7-Zip {}, Zipper {}",
+                        if theirs.is_some() {
+                            "extracts"
+                        } else {
+                            "refuses"
+                        },
+                        ours.map_or_else(|error| error, |_| "extracts".into())
+                    ),
+                }
+            }
+        }
+    }
+    assert!(same >= (9 + 2 * 3) * 13, "{same} the same");
+    assert!(both_refused >= 6 * 15 * 13, "{both_refused} refused");
+}
+
+#[test]
+fn chains_of_four_filters_decode_as_7zip_decodes_them() {
+    let Some(seven_zip) = which("7zz") else {
+        return;
+    };
+    let chains: [&[(&str, &[u8])]; 3] = [
+        &[
+            ("Delta", &[1]),
+            ("BCJ", &[]),
+            ("ARM64", &[0, 0x10, 0, 0]),
+            ("SPARC", &[]),
+        ],
+        &[
+            ("RISCV", &[2, 0, 0, 0]),
+            ("ARMT", &[]),
+            ("PPC", &[]),
+            ("IA64", &[]),
+        ],
+        &[("BCJ", &[]), ("BCJ", &[]), ("Delta", &[255]), ("ARM", &[])],
+    ];
+    for chain in chains {
+        let coders: Vec<(&[u8], &[u8])> = chain
+            .iter()
+            .map(|&(name, properties)| (filter_id(name), properties))
+            .collect();
+        for length in [1, 6, 100, 70_001] {
+            let data: Vec<u8> = chain
+                .iter()
+                .flat_map(|(name, _)| code_like(name, length / 4 + 1, length as u32))
+                .take(length)
+                .collect();
+            let bytes = filter_folder_archive(&coders, &data);
+            let theirs = seven_zip_extracts(&seven_zip, &bytes).expect("7-Zip refuses the chain");
+            assert!(
+                zipper_extracts(&bytes).unwrap() == theirs,
+                "{chain:?} length {length}"
+            );
+        }
+    }
+}
+
+#[test]
+fn filter_archives_from_7zip_extract_byte_exact() {
+    let hostile = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/7z-hostile");
+    let archives: Vec<_> = fs::read_dir(hostile)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("filter-")
+        })
+        .collect();
+    assert!(archives.len() >= 9, "{} filter archives", archives.len());
+    let seven_zip = which("7zz");
+    for archive in archives {
+        let out = tempfile::tempdir().unwrap();
+        read_archive(
+            &archive,
+            Some(&out.path().join("out")),
+            ReadOptions::default(),
+        )
+        .unwrap_or_else(|error| panic!("{}: {error:#}", archive.display()));
+        let ours = files(&out.path().join("out"));
+        assert!(ours.len() >= 3, "{}", archive.display());
+        if let Some(seven_zip) = &seven_zip {
+            let status = std::process::Command::new(seven_zip)
+                .args(["x", "-bd", "-y"])
+                .arg(format!("-o{}", out.path().join("7zip").display()))
+                .arg(&archive)
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "7-Zip refuses {}", archive.display());
+            assert!(
+                ours == files(&out.path().join("7zip")),
+                "{}",
+                archive.display()
+            );
+        }
+    }
+}

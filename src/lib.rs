@@ -21,7 +21,6 @@ mod placement;
 mod progress;
 mod staging;
 mod volumes;
-#[cfg(test)]
 mod xz_filters;
 mod zip_crypto;
 mod zip_directory;

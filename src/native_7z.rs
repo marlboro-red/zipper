@@ -1,6 +1,7 @@
 //! In-process extraction of 7z archives whose folders use Copy, LZMA, LZMA2,
-//! Deflate and the liblzma branch and delta filters. See
+//! Deflate and the 7-Zip branch and delta filters. See
 //! `docs/reference/7z-reader.md` for what it accepts and restores.
+use crate::xz_filters::{self, BRANCH_BUFFER, DELTA_HISTORY, DeltaDecoder, Filter, read_through};
 use crate::{Entry, counters, progress::Tracker, safe_path, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
@@ -23,9 +24,7 @@ const MAX_ENTRIES: usize = 1_000_000;
 const MAX_CODERS: usize = 5;
 const MAX_HEADER_LAYERS: usize = 4;
 const COPY_BUFFER: usize = 1024 * 1024;
-const FILTER_CHAIN_BUFFERS: u64 = (COPY_BUFFER + STORED_CHUNK) as u64;
 const SWAP_BUFFER: usize = 64 * 1024;
-const LIBLZMA_CHAIN: usize = 4;
 const DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
 const BZIP2_DECODER_MEMORY: u64 = 4 * 1024 * 1024;
 const SEGMENT_BUDGET: u64 = 512 * 1024 * 1024;
@@ -1149,11 +1148,65 @@ enum Method {
     Lzma,
     Lzma2,
     Swap(usize),
-    Filter(fn(&mut liblzma::stream::Filters, &[u8]) -> Result<(), liblzma::stream::Error>),
+    Filter(FilterMethod),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FilterMethod {
+    Branch(xz_filters::Branch),
+    BranchWithStart(xz_filters::Branch),
+    Delta,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FilterSetting {
+    Branch {
+        branch: xz_filters::Branch,
+        start: u32,
+    },
+    Delta {
+        distance: usize,
+    },
+}
+
+impl FilterSetting {
+    fn buffer(self) -> u64 {
+        match self {
+            FilterSetting::Branch { .. } => BRANCH_BUFFER as u64,
+            FilterSetting::Delta { .. } => DELTA_HISTORY as u64,
+        }
+    }
+
+    fn filter(self) -> Filter {
+        match self {
+            FilterSetting::Branch { branch, start } => Filter::branch(branch, start),
+            FilterSetting::Delta { distance } => Filter::Delta(DeltaDecoder::new(distance)),
+        }
+    }
+}
+
+// EXTERNAL(7-Zip 7zDecode.cpp, BranchMisc.cpp, DeltaFilter.cpp): a coder without a properties
+// setter refuses any property byte, ARM64 and RISC-V take an aligned 4-byte start, and Delta
+// takes one byte, the distance less one.
+fn filter_setting(method: FilterMethod, properties: &[u8]) -> Option<FilterSetting> {
+    match (method, properties) {
+        (FilterMethod::Branch(branch), []) | (FilterMethod::BranchWithStart(branch), []) => {
+            Some(FilterSetting::Branch { branch, start: 0 })
+        }
+        (FilterMethod::BranchWithStart(branch), &[a, b, c, d]) => {
+            let start = u32::from_le_bytes([a, b, c, d]);
+            start
+                .is_multiple_of(branch.alignment())
+                .then_some(FilterSetting::Branch { branch, start })
+        }
+        (FilterMethod::Delta, &[distance]) => Some(FilterSetting::Delta {
+            distance: usize::from(distance) + 1,
+        }),
+        _ => None,
+    }
 }
 
 fn method(coder: &Coder) -> Result<Method> {
-    use liblzma::stream::Filters;
     Ok(match coder.id.as_slice() {
         [0x00] => Method::Copy,
         [0x04, 0x01, 0x08] => Method::Deflate,
@@ -1164,33 +1217,19 @@ fn method(coder: &Coder) -> Result<Method> {
         [0x21] => Method::Lzma2,
         [0x02, 0x03, 0x02] => Method::Swap(2),
         [0x02, 0x03, 0x04] => Method::Swap(4),
-        [0x03] => {
-            Method::Filter(|filters, properties| filters.delta_properties(properties).map(drop))
-        }
-        [0x03, 0x03, 0x01, 0x03] => {
-            Method::Filter(|filters, properties| filters.x86_properties(properties).map(drop))
-        }
+        [0x03] => Method::Filter(FilterMethod::Delta),
+        [0x03, 0x03, 0x01, 0x03] => Method::Filter(FilterMethod::Branch(xz_filters::Branch::X86)),
         [0x03, 0x03, 0x02, 0x05] => {
-            Method::Filter(|filters, properties| filters.powerpc_properties(properties).map(drop))
+            Method::Filter(FilterMethod::Branch(xz_filters::Branch::PowerPc))
         }
-        [0x03, 0x03, 0x04, 0x01] => {
-            Method::Filter(|filters, properties| filters.ia64_properties(properties).map(drop))
-        }
-        [0x03, 0x03, 0x05, 0x01] => {
-            Method::Filter(|filters, properties| filters.arm_properties(properties).map(drop))
-        }
+        [0x03, 0x03, 0x04, 0x01] => Method::Filter(FilterMethod::Branch(xz_filters::Branch::Ia64)),
+        [0x03, 0x03, 0x05, 0x01] => Method::Filter(FilterMethod::Branch(xz_filters::Branch::Arm)),
         [0x03, 0x03, 0x07, 0x01] => {
-            Method::Filter(|filters, properties| filters.arm_thumb_properties(properties).map(drop))
+            Method::Filter(FilterMethod::Branch(xz_filters::Branch::ArmThumb))
         }
-        [0x03, 0x03, 0x08, 0x05] => {
-            Method::Filter(|filters, properties| filters.sparc_properties(properties).map(drop))
-        }
-        [0x0A] => Method::Filter(|filters: &mut Filters, properties| {
-            filters.arm64_properties(properties).map(drop)
-        }),
-        [0x0B] => {
-            Method::Filter(|filters, properties| filters.riscv_properties(properties).map(drop))
-        }
+        [0x03, 0x03, 0x08, 0x05] => Method::Filter(FilterMethod::Branch(xz_filters::Branch::Sparc)),
+        [0x0A] => Method::Filter(FilterMethod::BranchWithStart(xz_filters::Branch::Arm64)),
+        [0x0B] => Method::Filter(FilterMethod::BranchWithStart(xz_filters::Branch::RiscV)),
         [0x06, 0xF1, 0x07, 0x01] => {
             return Err(unsupported(
                 "7z archive is encrypted, which is not supported".into(),
@@ -1274,14 +1313,8 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
                 .iter()
                 .all(|method| matches!(method, Method::Filter(_))) =>
         {
-            if methods.len() > LIBLZMA_CHAIN {
-                return Err(unsupported(format!(
-                    "7z folder chains {} coders, more than liblzma's {LIBLZMA_CHAIN}; {BACKEND_HINT}",
-                    methods.len()
-                )));
-            }
             let (filter_coders, last) = folder.output_to_packed.split_at(filters.len());
-            filter_chain(filter_coders, filters)?;
+            filter_settings(filter_coders)?;
             lzma_coder(&last[0], folder.size)?;
         }
         _ => {
@@ -1293,25 +1326,23 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
     Ok(methods)
 }
 
-fn filter_chain(coders: &[Coder], methods: &[Method]) -> Result<liblzma::stream::Filters> {
-    let mut chain = liblzma::stream::Filters::new();
-    for (coder, method) in coders.iter().zip(methods) {
-        let Method::Filter(add) = method else {
-            return Err(unsupported(format!(
-                "7z folder combines methods in a way that is not supported; {BACKEND_HINT}"
-            )));
-        };
-        add(&mut chain, &coder.properties).map_err(|error| {
-            unsupported(format!(
-                "7z method {} has properties liblzma does not accept ({error}); {BACKEND_HINT}",
-                hex(&coder.id)
-            ))
-        })?;
-    }
-    chain
-        .lzma2_properties(&[0])
-        .context("liblzma refuses stored LZMA2")?;
-    Ok(chain)
+fn filter_settings(coders: &[Coder]) -> Result<Vec<FilterSetting>> {
+    coders
+        .iter()
+        .map(|coder| {
+            let Method::Filter(filter) = method(coder)? else {
+                return Err(unsupported(format!(
+                    "7z folder combines methods in a way that is not supported; {BACKEND_HINT}"
+                )));
+            };
+            filter_setting(filter, &coder.properties).ok_or_else(|| {
+                unsupported(format!(
+                    "7z method {} has properties 7-Zip does not accept; {BACKEND_HINT}",
+                    hex(&coder.id)
+                ))
+            })
+        })
+        .collect()
 }
 
 enum LzmaCoder {
@@ -1446,11 +1477,10 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
     if let Ok(Some((_, swapped))) = byte_swapped(folder) {
         return decoder_memory(&swapped, segments_possible);
     }
-    let filter_buffers = if folder.output_to_packed.len() > 1 {
-        FILTER_CHAIN_BUFFERS
-    } else {
-        0
-    };
+    let filter_coders = &folder.output_to_packed[..folder.output_to_packed.len().saturating_sub(1)];
+    let filter_buffers = filter_settings(filter_coders).map_or(0, |settings| {
+        settings.iter().map(|setting| setting.buffer()).sum()
+    });
     let sequential = match folder
         .output_to_packed
         .last()
@@ -1497,47 +1527,6 @@ impl<R: Read> Read for PpmdFolder<R> {
         let read = self.decoder.read(&mut buffer[..wanted])?;
         self.remaining -= read as u64;
         Ok(read)
-    }
-}
-
-struct LzmaReader<R> {
-    stream: liblzma::stream::Stream,
-    input: R,
-    buffer: Vec<u8>,
-    start: usize,
-    end: usize,
-    input_done: bool,
-}
-
-impl<R: Read> Read for LzmaReader<R> {
-    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
-        loop {
-            if self.start == self.end && !self.input_done {
-                self.end = self.input.read(&mut self.buffer)?;
-                self.start = 0;
-                self.input_done = self.end == 0;
-            }
-            let (read, written) = (self.stream.total_in(), self.stream.total_out());
-            let status = counters::time(counters::Counter::DecodeNanos, || {
-                self.stream.process(
-                    &self.buffer[self.start..self.end],
-                    output,
-                    liblzma::stream::Action::Run,
-                )
-            })
-            .map_err(std::io::Error::other)?;
-            self.start += (self.stream.total_in() - read) as usize;
-            let produced = (self.stream.total_out() - written) as usize;
-            if produced > 0 || status == liblzma::stream::Status::StreamEnd {
-                return Ok(produced);
-            }
-            if self.input_done {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "7z folder has a truncated LZMA stream",
-                ));
-            }
-        }
     }
 }
 
@@ -1769,8 +1758,7 @@ fn folder_reader(
         if filters.is_empty() {
             return Ok(decoded);
         }
-        let chain = filter_chain(filter_coders, filters)?;
-        return Ok(Box::new(raw_decoder(&chain, StoredLzma2::new(decoded))?));
+        return filtered(filter_coders, decoded);
     }
     let packed = BufReader::with_capacity(COPY_BUFFER, packed).take(folder.pack_size);
     Ok(match methods.as_slice() {
@@ -1797,74 +1785,22 @@ fn folder_reader(
     })
 }
 
-fn raw_decoder<R: Read>(filters: &liblzma::stream::Filters, input: R) -> Result<LzmaReader<R>> {
-    Ok(LzmaReader {
-        stream: liblzma::stream::Stream::new_raw_decoder(filters)
-            .context("cannot start the 7z decoder")?,
-        input,
-        buffer: vec![0; COPY_BUFFER],
-        start: 0,
-        end: 0,
-        input_done: false,
-    })
+fn filtered(coders: &[Coder], decoded: Box<dyn Read + Send>) -> Result<Box<dyn Read + Send>> {
+    let filters = filter_settings(coders)?
+        .into_iter()
+        .map(FilterSetting::filter)
+        .collect();
+    Ok(Box::new(FilterChain { filters, decoded }))
 }
 
-const STORED_CHUNK: usize = 1 << 16;
-
-// EXTERNAL(liblzma lzma2_decoder.c): control 1 resets the dictionary and stores up to 64 KiB, its size less one big-endian; control 0 ends the stream.
-struct StoredLzma2<R> {
-    inner: R,
-    chunk: Vec<u8>,
-    start: usize,
-    finished: bool,
+struct FilterChain {
+    filters: Vec<Filter>,
+    decoded: Box<dyn Read + Send>,
 }
 
-impl<R: Read> StoredLzma2<R> {
-    fn new(inner: R) -> Self {
-        StoredLzma2 {
-            inner,
-            chunk: Vec::with_capacity(3 + STORED_CHUNK),
-            start: 0,
-            finished: false,
-        }
-    }
-
-    fn fill(&mut self) -> std::io::Result<()> {
-        self.chunk.clear();
-        self.start = 0;
-        self.chunk.extend_from_slice(&[1, 0, 0]);
-        let mut stored = 0;
-        while stored < STORED_CHUNK {
-            self.chunk.resize(3 + STORED_CHUNK, 0);
-            let read = self.inner.read(&mut self.chunk[3 + stored..])?;
-            if read == 0 {
-                break;
-            }
-            stored += read;
-        }
-        self.chunk.truncate(3 + stored);
-        if stored == 0 {
-            self.chunk = vec![0];
-            self.finished = true;
-        } else {
-            self.chunk[1..3].copy_from_slice(&((stored - 1) as u16).to_be_bytes());
-        }
-        Ok(())
-    }
-}
-
-impl<R: Read> Read for StoredLzma2<R> {
+impl Read for FilterChain {
     fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
-        if self.start == self.chunk.len() {
-            if self.finished {
-                return Ok(0);
-            }
-            self.fill()?;
-        }
-        let count = output.len().min(self.chunk.len() - self.start);
-        output[..count].copy_from_slice(&self.chunk[self.start..self.start + count]);
-        self.start += count;
-        Ok(count)
+        read_through(&mut self.filters, &mut self.decoded, output)
     }
 }
 
@@ -2690,10 +2626,135 @@ mod tests {
                 properties: Vec::new(),
             },
         );
-        assert_eq!(
-            decoder_memory(&folder, false),
-            narrow + (1 << 20) + (1 << 16)
+        assert_eq!(decoder_memory(&folder, false), narrow + (1 << 16));
+        folder.output_to_packed.insert(
+            0,
+            Coder {
+                id: vec![0x03],
+                properties: vec![0],
+            },
         );
+        assert_eq!(decoder_memory(&folder, false), narrow + (1 << 16) + 256);
+        folder.output_to_packed.insert(
+            0,
+            Coder {
+                id: vec![0x0A],
+                properties: vec![0x00, 0x10, 0x00, 0x00],
+            },
+        );
+        assert_eq!(decoder_memory(&folder, false), narrow + (2 << 16) + 256);
+    }
+
+    struct LzmaReader<R> {
+        stream: liblzma::stream::Stream,
+        input: R,
+        buffer: Vec<u8>,
+        start: usize,
+        end: usize,
+        input_done: bool,
+    }
+
+    impl<R: Read> Read for LzmaReader<R> {
+        fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+            loop {
+                if self.start == self.end && !self.input_done {
+                    self.end = self.input.read(&mut self.buffer)?;
+                    self.start = 0;
+                    self.input_done = self.end == 0;
+                }
+                let (read, written) = (self.stream.total_in(), self.stream.total_out());
+                let status = counters::time(counters::Counter::DecodeNanos, || {
+                    self.stream.process(
+                        &self.buffer[self.start..self.end],
+                        output,
+                        liblzma::stream::Action::Run,
+                    )
+                })
+                .map_err(std::io::Error::other)?;
+                self.start += (self.stream.total_in() - read) as usize;
+                let produced = (self.stream.total_out() - written) as usize;
+                if produced > 0 || status == liblzma::stream::Status::StreamEnd {
+                    return Ok(produced);
+                }
+                if self.input_done {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "7z folder has a truncated LZMA stream",
+                    ));
+                }
+            }
+        }
+    }
+
+    fn raw_decoder<R: Read>(filters: &liblzma::stream::Filters, input: R) -> Result<LzmaReader<R>> {
+        Ok(LzmaReader {
+            stream: liblzma::stream::Stream::new_raw_decoder(filters)
+                .context("cannot start the 7z decoder")?,
+            input,
+            buffer: vec![0; COPY_BUFFER],
+            start: 0,
+            end: 0,
+            input_done: false,
+        })
+    }
+
+    const STORED_CHUNK: usize = 1 << 16;
+
+    // EXTERNAL(liblzma lzma2_decoder.c): control 1 resets the dictionary and stores up to 64 KiB, its size less one big-endian; control 0 ends the stream.
+    struct StoredLzma2<R> {
+        inner: R,
+        chunk: Vec<u8>,
+        start: usize,
+        finished: bool,
+    }
+
+    impl<R: Read> StoredLzma2<R> {
+        fn new(inner: R) -> Self {
+            StoredLzma2 {
+                inner,
+                chunk: Vec::with_capacity(3 + STORED_CHUNK),
+                start: 0,
+                finished: false,
+            }
+        }
+
+        fn fill(&mut self) -> std::io::Result<()> {
+            self.chunk.clear();
+            self.start = 0;
+            self.chunk.extend_from_slice(&[1, 0, 0]);
+            let mut stored = 0;
+            while stored < STORED_CHUNK {
+                self.chunk.resize(3 + STORED_CHUNK, 0);
+                let read = self.inner.read(&mut self.chunk[3 + stored..])?;
+                if read == 0 {
+                    break;
+                }
+                stored += read;
+            }
+            self.chunk.truncate(3 + stored);
+            if stored == 0 {
+                self.chunk = vec![0];
+                self.finished = true;
+            } else {
+                self.chunk[1..3].copy_from_slice(&((stored - 1) as u16).to_be_bytes());
+            }
+            Ok(())
+        }
+    }
+
+    impl<R: Read> Read for StoredLzma2<R> {
+        fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+            if self.start == self.chunk.len() {
+                if self.finished {
+                    return Ok(0);
+                }
+                self.fill()?;
+            }
+            let count = output.len().min(self.chunk.len() - self.start);
+            output[..count].copy_from_slice(&self.chunk[self.start..self.start + count]);
+            self.start += count;
+            Ok(count)
+        }
     }
 
     fn liblzma_dictionary_capped_at_output(
@@ -2734,7 +2795,9 @@ mod tests {
             let properties =
                 liblzma_dictionary_capped_at_output(method, &coder.properties, folder.size);
             match method {
-                Method::Filter(add) => add(&mut filters, &properties),
+                Method::Filter(_) => {
+                    liblzma_filter(&mut filters, filter_name(&coder.id), &properties)
+                }
                 Method::Lzma => filters.lzma1_properties(&properties).map(drop),
                 Method::Lzma2 => filters.lzma2_properties(&properties).map(drop),
                 _ => bail!("not an LZMA folder"),
@@ -2767,10 +2830,8 @@ mod tests {
                 let decoded = raw_decoder(&liblzma_filters(&lzma_only, &[Method::Lzma])?, packed)?
                     .take(folder.size);
                 let mut chain = liblzma::stream::Filters::new();
-                for (coder, method) in filter_coders.iter().zip(filters) {
-                    if let Method::Filter(add) = method {
-                        add(&mut chain, &coder.properties)?;
-                    }
+                for coder in filter_coders {
+                    liblzma_filter(&mut chain, filter_name(&coder.id), &coder.properties)?;
                 }
                 chain.lzma2_properties(&[0])?;
                 Box::new(raw_decoder(&chain, StoredLzma2::new(decoded))?)
@@ -2939,6 +3000,7 @@ mod tests {
         liblzma_refuses_the_properties: usize,
         empty_lzma_left_to_7zip_tests: usize,
         refused_at_the_size_as_7zip_does: usize,
+        filtered_same_bytes: usize,
     }
 
     fn archive_file(path: &Path) -> ArchiveFile {
@@ -2969,6 +3031,11 @@ mod tests {
         {
             tally.refused_at_the_size_as_7zip_does += 1;
             return;
+        }
+        if folder.output_to_packed.len() > 1
+            && matches!((&old, &new), (Ok(old), Ok(new)) if old == new)
+        {
+            tally.filtered_same_bytes += 1;
         }
         tally_agreement(old, new, case, tally);
     }
@@ -3197,6 +3264,11 @@ mod tests {
         assert!(tally.liblzma_refuses_the_properties >= 1);
         assert!(tally.empty_lzma_left_to_7zip_tests >= 1);
         assert!(tally.refused_at_the_size_as_7zip_does >= 1);
+        assert!(
+            tally.filtered_same_bytes >= 60,
+            "{}",
+            tally.filtered_same_bytes
+        );
     }
 
     fn shape(
@@ -3423,71 +3495,7 @@ mod tests {
     }
 
     #[test]
-    fn stored_lzma2_returns_every_length_across_chunk_boundaries_and_flushes_branch_filters() {
-        let mut checked = 0;
-        for length in [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            STORED_CHUNK - 1,
-            STORED_CHUNK,
-            STORED_CHUNK + 1,
-            2 * STORED_CHUNK + 5,
-        ] {
-            let data: Vec<u8> = (0..length)
-                .map(|index| [0xE8, 0x10, 0x00, 0x41][index % 4])
-                .collect();
-            for most in [1, 3, STORED_CHUNK, usize::MAX] {
-                if most == 1 && length > 2 * STORED_CHUNK {
-                    continue;
-                }
-                let mut stored = Vec::new();
-                StoredLzma2::new(Trickle { data: &data, most })
-                    .read_to_end(&mut stored)
-                    .unwrap();
-                let mut plain = liblzma::stream::Filters::new();
-                plain.lzma2_properties(&[0]).unwrap();
-                let mut decoded = Vec::new();
-                raw_decoder(&plain, &stored[..])
-                    .unwrap()
-                    .read_to_end(&mut decoded)
-                    .unwrap();
-                assert_eq!(decoded, data, "length {length} most {most}");
-                let mut branch = liblzma::stream::Filters::new();
-                branch.x86_properties(&[]).unwrap();
-                branch.lzma2_properties(&[0]).unwrap();
-                let mut filtered = Vec::new();
-                raw_decoder(&branch, &stored[..])
-                    .unwrap()
-                    .read_to_end(&mut filtered)
-                    .unwrap();
-                let mut encoder = liblzma::stream::Filters::new();
-                encoder.lzma2(&liblzma::stream::LzmaOptions::new_preset(0).unwrap());
-                let mut compressed = Vec::new();
-                liblzma::read::XzEncoder::new_stream(
-                    &data[..],
-                    liblzma::stream::Stream::new_raw_encoder(&encoder).unwrap(),
-                )
-                .read_to_end(&mut compressed)
-                .unwrap();
-                let mut expected = Vec::new();
-                raw_decoder(&branch, &compressed[..])
-                    .unwrap()
-                    .read_to_end(&mut expected)
-                    .unwrap();
-                assert_eq!(expected.len(), length);
-                assert_eq!(filtered, expected, "x86 length {length} most {most}");
-                checked += 1;
-            }
-        }
-        assert!(checked >= 39, "{checked}");
-    }
-
-    #[test]
-    fn more_coders_than_liblzma_chains_go_to_7zip() {
+    fn four_filters_chain_in_front_of_lzma_and_a_filter_with_bad_properties_goes_to_7zip() {
         let coder = |id: &[u8], properties: &[u8]| Coder {
             id: id.to_vec(),
             properties: properties.to_vec(),
@@ -3499,26 +3507,31 @@ mod tests {
             coder(&[0x0A], &[]),
             coder(&[0x03, 0x03, 0x08, 0x05], &[]),
         ];
+        let folder = |coders: &[Coder]| Folder {
+            output_to_packed: [coders, std::slice::from_ref(&lzma)].concat(),
+            bcj2_branches: Vec::new(),
+            unsupported: None,
+            size: 1,
+            crc: None,
+            pack_offset: 0,
+            pack_size: 1,
+        };
         for count in 1..=4 {
-            let mut output_to_packed = filters[..count].to_vec();
-            output_to_packed.push(lzma.clone());
-            let folder = Folder {
-                output_to_packed,
-                bcj2_branches: Vec::new(),
-                unsupported: None,
-                size: 1,
-                crc: None,
-                pack_offset: 0,
-                pack_size: 1,
-            };
-            match check_methods(&folder) {
-                Ok(_) => assert!(count < 4, "{count} filters"),
-                Err(error) => assert!(
-                    count == 4 && error.is::<Unsupported>(),
-                    "{count} filters: {error}"
-                ),
-            }
+            check_methods(&folder(&filters[..count]))
+                .unwrap_or_else(|error| panic!("{count} filters: {error}"));
         }
+        let start_on_x86 = [
+            filters[0].clone(),
+            coder(&[0x03, 0x03, 0x01, 0x03], &[4, 0, 0, 0]),
+        ];
+        let error = check_methods(&folder(&start_on_x86)).err().unwrap();
+        assert!(error.is::<Unsupported>(), "{error}");
+        assert!(
+            error
+                .to_string()
+                .contains("properties 7-Zip does not accept"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -3734,6 +3747,523 @@ mod tests {
             );
         }
     }
+
+    const SEVEN_ZIP_FILTERS: [(&str, &[u8]); 9] = [
+        ("x86", &[0x03, 0x03, 0x01, 0x03]),
+        ("PowerPC", &[0x03, 0x03, 0x02, 0x05]),
+        ("IA-64", &[0x03, 0x03, 0x04, 0x01]),
+        ("ARM", &[0x03, 0x03, 0x05, 0x01]),
+        ("ARM Thumb", &[0x03, 0x03, 0x07, 0x01]),
+        ("SPARC", &[0x03, 0x03, 0x08, 0x05]),
+        ("ARM64", &[0x0A]),
+        ("RISC-V", &[0x0B]),
+        ("Delta", &[0x03]),
+    ];
+    const BRANCH_BUFFER: usize = 64 * 1024;
+
+    fn filter_name(id: &[u8]) -> &'static str {
+        SEVEN_ZIP_FILTERS
+            .iter()
+            .find(|(_, filter)| *filter == id)
+            .map(|(name, _)| *name)
+            .unwrap()
+    }
+
+    fn filter_coder(name: &str, properties: &[u8]) -> Coder {
+        let (_, id) = SEVEN_ZIP_FILTERS
+            .iter()
+            .find(|(filter, _)| *filter == name)
+            .unwrap();
+        Coder {
+            id: id.to_vec(),
+            properties: properties.to_vec(),
+        }
+    }
+
+    fn liblzma_filter(
+        filters: &mut liblzma::stream::Filters,
+        name: &str,
+        properties: &[u8],
+    ) -> std::result::Result<(), liblzma::stream::Error> {
+        match name {
+            "x86" => filters.x86_properties(properties),
+            "PowerPC" => filters.powerpc_properties(properties),
+            "IA-64" => filters.ia64_properties(properties),
+            "ARM" => filters.arm_properties(properties),
+            "ARM Thumb" => filters.arm_thumb_properties(properties),
+            "SPARC" => filters.sparc_properties(properties),
+            "ARM64" => filters.arm64_properties(properties),
+            "RISC-V" => filters.riscv_properties(properties),
+            _ => filters.delta_properties(properties),
+        }
+        .map(drop)
+    }
+
+    fn seven_zip_accepts_filter_properties(name: &str, properties: &[u8]) -> bool {
+        let start = <[u8; 4]>::try_from(properties).map(u32::from_le_bytes);
+        match name {
+            "Delta" => properties.len() == 1,
+            _ if properties.is_empty() => true,
+            "ARM64" => start.is_ok_and(|start| start % 4 == 0),
+            "RISC-V" => start.is_ok_and(|start| start % 2 == 0),
+            _ => false,
+        }
+    }
+
+    fn stored_lzma2(data: &[u8]) -> Vec<u8> {
+        let mut stored = Vec::with_capacity(data.len() + data.len() / STORED_CHUNK * 3 + 4);
+        StoredLzma2::new(data).read_to_end(&mut stored).unwrap();
+        stored
+    }
+
+    fn liblzma_unfiltered(coders: &[Coder], filtered: &[u8]) -> Vec<u8> {
+        let mut data = filtered.to_vec();
+        for coder in coders.iter().rev() {
+            let mut filters = liblzma::stream::Filters::new();
+            liblzma_filter(&mut filters, filter_name(&coder.id), &coder.properties).unwrap();
+            filters.lzma2_properties(&[0]).unwrap();
+            let mut stream = liblzma::stream::Stream::new_raw_decoder(&filters).unwrap();
+            let mut out = Vec::with_capacity(data.len() + 64);
+            let status = stream
+                .process_vec(
+                    &stored_lzma2(&data),
+                    &mut out,
+                    liblzma::stream::Action::Finish,
+                )
+                .unwrap();
+            assert_eq!(status, liblzma::stream::Status::StreamEnd);
+            data = out;
+        }
+        data
+    }
+
+    struct Reads {
+        data: Vec<u8>,
+        at: usize,
+        most: usize,
+        random: bool,
+        state: u32,
+    }
+
+    impl Reads {
+        fn new(data: Vec<u8>, most: usize, random: bool, seed: u32) -> Self {
+            Reads {
+                data,
+                at: 0,
+                most,
+                random,
+                state: seed | 1,
+            }
+        }
+
+        fn next_size(&mut self) -> usize {
+            if !self.random {
+                return self.most;
+            }
+            self.state = self.state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            1 + (self.state >> 8) as usize % self.most
+        }
+    }
+
+    impl Read for Reads {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let count = buffer
+                .len()
+                .min(self.next_size())
+                .min(self.data.len() - self.at);
+            buffer[..count].copy_from_slice(&self.data[self.at..self.at + count]);
+            self.at += count;
+            Ok(count)
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct Split {
+        input_most: usize,
+        output_most: usize,
+        random: bool,
+    }
+
+    fn ours_unfiltered(coders: &[Coder], filtered_data: &[u8], split: Split, seed: u32) -> Vec<u8> {
+        let input = Reads::new(filtered_data.to_vec(), split.input_most, split.random, seed);
+        let mut sizes = Reads::new(Vec::new(), split.output_most, split.random, !seed);
+        let mut reader = filtered(coders, Box::new(input)).unwrap();
+        let mut out = Vec::with_capacity(filtered_data.len());
+        let mut buffer = vec![0u8; split.output_most.min(1 << 20)];
+        loop {
+            let want = sizes.next_size().min(buffer.len());
+            match reader.read(&mut buffer[..want]).unwrap() {
+                0 => break,
+                read => out.extend_from_slice(&buffer[..read]),
+            }
+        }
+        assert_eq!(reader.read(&mut buffer).unwrap(), 0);
+        out
+    }
+
+    fn code_like(name: &str, length: usize, seed: u32) -> Vec<u8> {
+        let mut state = seed.wrapping_mul(2_654_435_761) | 1;
+        let mut next = move || {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            state.rotate_right(13)
+        };
+        let mut code = Vec::with_capacity(length + 16);
+        while code.len() < length {
+            let (pick, word) = (next(), next());
+            if pick % 5 == 0 {
+                code.push(word as u8);
+                continue;
+            }
+            match name {
+                "x86" => {
+                    let top = if word >> 31 == 0 { 0x00 } else { 0xFF };
+                    code.push(0xE8 | (pick >> 3 & 1) as u8);
+                    code.extend_from_slice(&word.to_le_bytes()[..3]);
+                    code.push(if pick & 0x40 == 0 { top } else { word as u8 });
+                }
+                "PowerPC" => {
+                    code.extend((0x4800_0001 | (word & 0x03FF_FFFC) | (pick & 2)).to_be_bytes())
+                }
+                "IA-64" => {
+                    let template = [0x10u128, 0x12, 0x16, 0x18, 0x1C, 0x11][pick as usize % 6];
+                    let mut bundle = template;
+                    for slot in 0..3 {
+                        let offset = u128::from(next() & 0x1F_FFFF);
+                        let btype = u128::from(next() % 3 == 0);
+                        let instruction = (5u128 << 37)
+                            | ((offset >> 20) << 36)
+                            | ((offset & 0xF_FFFF) << 13)
+                            | (btype << 9);
+                        bundle |= instruction << (5 + 41 * slot);
+                    }
+                    code.extend(bundle.to_le_bytes());
+                }
+                "ARM" => code.extend([word as u8, (word >> 8) as u8, (word >> 16) as u8, 0xEB]),
+                "ARM Thumb" => code.extend([
+                    word as u8,
+                    0xF0 | (word >> 8 & 7) as u8,
+                    (word >> 16) as u8,
+                    0xF8 | (word >> 24 & 7) as u8,
+                ]),
+                "SPARC" => {
+                    let call = if pick & 1 == 0 {
+                        0x4000_0000
+                    } else {
+                        0x7FC0_0000
+                    };
+                    code.extend((call | (word & 0x003F_FFFF)).to_be_bytes())
+                }
+                "ARM64" => {
+                    let instruction = if pick & 1 == 0 {
+                        0x9400_0000 | (word & 0x03FF_FFFF)
+                    } else {
+                        0x9000_0000 | (word & 0x60FF_FFFF)
+                    };
+                    code.extend(instruction.to_le_bytes())
+                }
+                "RISC-V" => {
+                    let rd = [1u32, 5, 2, 10][pick as usize % 4];
+                    match pick >> 4 & 3 {
+                        0 => code.extend((0xEF | (rd << 7) | (word & 0xFFFF_F000)).to_le_bytes()),
+                        1 => {
+                            code.extend((0x17 | (rd << 7) | (word & 0xFFFF_F000)).to_le_bytes());
+                            code.extend((0x13 | (rd << 15) | (next() << 20)).to_le_bytes());
+                        }
+                        2 => {
+                            code.extend((0x3117 | (word & 0xF800_0000)).to_le_bytes());
+                            code.extend(next().to_le_bytes());
+                        }
+                        _ => code.extend([0x01, 0x00]),
+                    }
+                }
+                _ => code
+                    .extend((0..4).map(|step| (pick as u8).wrapping_add(step * (word as u8 & 7)))),
+            }
+        }
+        code.truncate(length);
+        code
+    }
+
+    fn random_bytes(length: usize, seed: u32) -> Vec<u8> {
+        let mut state = seed | 1;
+        (0..length)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state as u8
+            })
+            .collect()
+    }
+
+    fn accepted_filter_properties(name: &str) -> Vec<Vec<u8>> {
+        let starts: &[u32] = match name {
+            "ARM64" => &[0, 4, 8, 0x1000, 0x1234_5678, 0x7FFF_FFFC, 0xFFFF_FFFC],
+            "RISC-V" => &[0, 2, 4, 6, 0x1000, 0x1234_5676, 0xFFFF_FFFE],
+            "Delta" => return (0..=255u8).map(|distance| vec![distance]).collect(),
+            _ => return vec![Vec::new()],
+        };
+        std::iter::once(Vec::new())
+            .chain(starts.iter().map(|start| start.to_le_bytes().to_vec()))
+            .collect()
+    }
+
+    fn short_splits() -> [Split; 3] {
+        [
+            Split {
+                input_most: 1,
+                output_most: 1,
+                random: false,
+            },
+            Split {
+                input_most: 7,
+                output_most: 9,
+                random: true,
+            },
+            Split {
+                input_most: usize::MAX,
+                output_most: 1 << 20,
+                random: false,
+            },
+        ]
+    }
+
+    #[test]
+    fn every_filter_decodes_every_short_input_as_liblzma_does_under_every_read_split() {
+        let mut checked = 0;
+        for (name, _) in SEVEN_ZIP_FILTERS {
+            for properties in accepted_filter_properties(name) {
+                let coders = [filter_coder(name, &properties)];
+                let splits: &[Split] = if name == "Delta" {
+                    &short_splits()[1..2]
+                } else {
+                    &short_splits()
+                };
+                for length in 0..=64 {
+                    for (pattern, data) in [
+                        ("code", code_like(name, length, length as u32)),
+                        ("random", random_bytes(length, length as u32 + 7)),
+                    ] {
+                        let expected = liblzma_unfiltered(&coders, &data);
+                        for &split in splits {
+                            let ours = ours_unfiltered(&coders, &data, split, length as u32);
+                            assert_eq!(
+                                ours, expected,
+                                "{name} {properties:?} {pattern} length {length} {split:?}"
+                            );
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 40_000, "{checked}");
+    }
+
+    #[test]
+    fn every_filter_decodes_inputs_around_its_buffer_as_liblzma_does() {
+        let mut checked = 0;
+        let splits = [
+            Split {
+                input_most: 1,
+                output_most: 70_000,
+                random: true,
+            },
+            Split {
+                input_most: 70_000,
+                output_most: 1,
+                random: false,
+            },
+            Split {
+                input_most: 100_003,
+                output_most: 65_537,
+                random: true,
+            },
+            Split {
+                input_most: usize::MAX,
+                output_most: 1 << 20,
+                random: false,
+            },
+        ];
+        for (name, _) in SEVEN_ZIP_FILTERS {
+            let all = accepted_filter_properties(name);
+            let properties: Vec<&Vec<u8>> = all
+                .iter()
+                .step_by(if name == "Delta" { 51 } else { 1 })
+                .collect();
+            for (index, properties) in properties.into_iter().enumerate() {
+                let coders = [filter_coder(name, properties)];
+                for length in [
+                    BRANCH_BUFFER - 9,
+                    BRANCH_BUFFER - 1,
+                    BRANCH_BUFFER,
+                    BRANCH_BUFFER + 1,
+                    BRANCH_BUFFER + 7,
+                    2 * BRANCH_BUFFER + 3,
+                    300_001,
+                ] {
+                    let seed = (length + index) as u32;
+                    let data = if length % 2 == 0 {
+                        code_like(name, length, seed)
+                    } else {
+                        [
+                            code_like(name, length / 2, seed),
+                            random_bytes(length - length / 2, seed),
+                        ]
+                        .concat()
+                    };
+                    let expected = liblzma_unfiltered(&coders, &data);
+                    let split = splits[(length + index) % splits.len()];
+                    assert_eq!(
+                        ours_unfiltered(&coders, &data, split, seed),
+                        expected,
+                        "{name} {properties:?} length {length} {split:?}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked >= 7 * 28, "{checked}");
+    }
+
+    #[test]
+    fn chains_of_up_to_four_filters_decode_as_liblzma_applied_in_turn() {
+        let names: Vec<&str> = SEVEN_ZIP_FILTERS.iter().map(|(name, _)| *name).collect();
+        let first_properties = |name: &str, pick: usize| {
+            let all = accepted_filter_properties(name);
+            all[pick % all.len()].clone()
+        };
+        let mut chains: Vec<Vec<Coder>> = Vec::new();
+        for (outer, &first) in names.iter().enumerate() {
+            for (inner, &second) in names.iter().enumerate() {
+                chains.push(vec![
+                    filter_coder(first, &first_properties(first, inner)),
+                    filter_coder(second, &first_properties(second, outer + 3)),
+                ]);
+            }
+        }
+        chains.push(vec![
+            filter_coder("ARM64", &0x1000u32.to_le_bytes()),
+            filter_coder("RISC-V", &[]),
+            filter_coder("Delta", &[0]),
+        ]);
+        chains.push(vec![
+            filter_coder("Delta", &[3]),
+            filter_coder("x86", &[]),
+            filter_coder("PowerPC", &[]),
+            filter_coder("SPARC", &[]),
+        ]);
+        chains.push(vec![
+            filter_coder("x86", &[]),
+            filter_coder("x86", &[]),
+            filter_coder("ARM Thumb", &[]),
+            filter_coder("IA-64", &[]),
+        ]);
+        let mut checked = 0;
+        for (index, chain) in chains.iter().enumerate() {
+            let methods = chain
+                .iter()
+                .map(method)
+                .collect::<Result<Vec<_>>>()
+                .unwrap();
+            let lzma2 = Coder {
+                id: vec![0x21],
+                properties: vec![18],
+            };
+            let folder = Folder {
+                output_to_packed: [chain.clone(), vec![lzma2]].concat(),
+                bcj2_branches: Vec::new(),
+                unsupported: None,
+                size: 1,
+                crc: None,
+                pack_offset: 0,
+                pack_size: 1,
+            };
+            check_methods(&folder).unwrap_or_else(|error| panic!("chain {index}: {error}"));
+            assert_eq!(methods.len(), chain.len());
+            for length in [0, 1, 5, 17, 64, BRANCH_BUFFER + 3, 150_001] {
+                let seed = (index * 31 + length) as u32;
+                let data: Vec<u8> = chain
+                    .iter()
+                    .flat_map(|coder| {
+                        code_like(filter_name(&coder.id), length / chain.len() + 1, seed)
+                    })
+                    .take(length)
+                    .collect();
+                let split = short_splits()[(index + length) % 3];
+                assert_eq!(
+                    ours_unfiltered(chain, &data, split, seed),
+                    liblzma_unfiltered(chain, &data),
+                    "chain {index} length {length}"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked >= 84 * 7, "{checked}");
+    }
+
+    fn filter_property_variants() -> Vec<Vec<u8>> {
+        let mut variants: Vec<Vec<u8>> = vec![Vec::new(), vec![0, 0], vec![0; 5], vec![1, 0, 0]];
+        variants.extend((0..=255u8).map(|byte| vec![byte]));
+        variants.extend(
+            [
+                0u32,
+                1,
+                2,
+                3,
+                4,
+                6,
+                16,
+                0x1000,
+                0x1001,
+                0xFFFF_FFFC,
+                0xFFFF_FFFE,
+                u32::MAX,
+            ]
+            .map(|start| start.to_le_bytes().to_vec()),
+        );
+        variants
+    }
+
+    #[test]
+    fn filter_properties_are_accepted_exactly_as_7zip_accepts_them() {
+        let lzma2 = Coder {
+            id: vec![0x21],
+            properties: vec![18],
+        };
+        let (mut accepted, mut refused) = (0, 0);
+        for (name, _) in SEVEN_ZIP_FILTERS {
+            for properties in filter_property_variants() {
+                let coder = filter_coder(name, &properties);
+                let folder = Folder {
+                    output_to_packed: vec![coder.clone(), lzma2.clone()],
+                    bcj2_branches: Vec::new(),
+                    unsupported: None,
+                    size: 1,
+                    crc: None,
+                    pack_offset: 0,
+                    pack_size: 1,
+                };
+                let checked = check_methods(&folder);
+                let built = filtered(&[coder], Box::new(std::io::empty()));
+                let case = format!("{name} {properties:?}");
+                if seven_zip_accepts_filter_properties(name, &properties) {
+                    checked.unwrap_or_else(|error| panic!("{case}: {error}"));
+                    built.unwrap_or_else(|error| panic!("{case}: {error}"));
+                    accepted += 1;
+                } else {
+                    let error = checked
+                        .err()
+                        .unwrap_or_else(|| panic!("{case} is accepted"));
+                    assert!(error.is::<Unsupported>(), "{case}: {error}");
+                    assert!(built.is_err(), "{case} builds");
+                    refused += 1;
+                }
+            }
+        }
+        assert!(accepted >= 256 + 6 + 2 * 6, "{accepted}");
+        assert!(refused >= 2000, "{refused}");
+    }
 }
 
 #[cfg(kani)]
@@ -3789,6 +4319,42 @@ mod proofs {
             assert_eq!(chunk.header == 6, control >= 0xC0);
         } else {
             assert!(control == 0 || (3..0x80).contains(&control));
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(7)]
+    fn filter_properties_are_read_as_7zip_reads_them() {
+        use xz_filters::Branch::*;
+        let branches = [X86, PowerPc, Ia64, Arm, ArmThumb, Sparc, Arm64, RiscV];
+        let branch = branches[kani::any::<usize>() % branches.len()];
+        let method = match kani::any::<u8>() % 3 {
+            0 => FilterMethod::Branch(branch),
+            1 => FilterMethod::BranchWithStart(branch),
+            _ => FilterMethod::Delta,
+        };
+        let bytes: [u8; 5] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= bytes.len());
+        let properties = &bytes[..length];
+        let start = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let expected = match method {
+            FilterMethod::Delta if length == 1 => Some(FilterSetting::Delta {
+                distance: usize::from(bytes[0]) + 1,
+            }),
+            FilterMethod::Delta => None,
+            FilterMethod::Branch(_) | FilterMethod::BranchWithStart(_) if length == 0 => {
+                Some(FilterSetting::Branch { branch, start: 0 })
+            }
+            FilterMethod::BranchWithStart(_) if length == 4 && start % branch.alignment() == 0 => {
+                Some(FilterSetting::Branch { branch, start })
+            }
+            _ => None,
+        };
+        let setting = filter_setting(method, properties);
+        assert!(setting == expected);
+        if let Some(setting) = setting {
+            assert!(setting.buffer() <= BRANCH_BUFFER as u64);
         }
     }
 

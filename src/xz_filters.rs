@@ -1,16 +1,25 @@
 use std::io::{self, Read};
 
+#[cfg(test)]
 const FILTER_DELTA: u64 = 0x03;
+#[cfg(test)]
 const FILTER_X86: u64 = 0x04;
+#[cfg(test)]
 const FILTER_POWERPC: u64 = 0x05;
+#[cfg(test)]
 const FILTER_IA64: u64 = 0x06;
+#[cfg(test)]
 const FILTER_ARM: u64 = 0x07;
+#[cfg(test)]
 const FILTER_ARM_THUMB: u64 = 0x08;
+#[cfg(test)]
 const FILTER_SPARC: u64 = 0x09;
+#[cfg(test)]
 const FILTER_ARM64: u64 = 0x0A;
+#[cfg(test)]
 const FILTER_RISCV: u64 = 0x0B;
-const DELTA_HISTORY: usize = 256;
-const BRANCH_BUFFER: usize = 64 * 1024;
+pub(crate) const DELTA_HISTORY: usize = 256;
+pub(crate) const BRANCH_BUFFER: usize = 64 * 1024;
 const X86_INSTRUCTION: usize = 5;
 const IA64_BUNDLE: usize = 16;
 const RISCV_PAIR: usize = 8;
@@ -30,7 +39,7 @@ pub(crate) enum Branch {
 impl Branch {
     // SPEC(xz-file-format.txt 5.3.2): a start offset must be a multiple of the filter's
     // alignment, or the decoder must report an error.
-    fn alignment(self) -> u32 {
+    pub(crate) fn alignment(self) -> u32 {
         match self {
             Branch::X86 => 1,
             Branch::ArmThumb | Branch::RiscV => 2,
@@ -480,6 +489,7 @@ impl Filter {
     }
 }
 
+#[cfg(test)]
 // SPEC(xz-file-format.txt 5.3.2 and 5.3.3): Branch/Call/Jump filters take no properties or a
 // 4-byte little-endian start offset; Delta takes one byte, the distance less one.
 pub(crate) fn xz_filter(id: u64, properties: &[u8]) -> Result<Filter, &'static str> {
@@ -1168,6 +1178,105 @@ mod tests {
         for (id, data) in tails {
             assert_eq!(liblzma_decode(id, &[], data), data, "{id:#x}");
             assert_eq!(ours_from(id, &[], data, &[], 1, 1), data, "{id:#x}");
+        }
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    fn converts_a_prefix_and_leaves_the_rest<const LONGEST: usize>(branch: Branch, unit: usize) {
+        let mut buffer: [u8; LONGEST] = kani::any();
+        let original = buffer;
+        let length: usize = kani::any();
+        let first_end: usize = kani::any();
+        kani::assume(first_end <= length && length <= LONGEST);
+        let start: u32 = kani::any();
+        let mut decoder = BranchDecoder::new(branch, start);
+        let first = decoder.convert_final_prefix(&mut buffer[..first_end]);
+        assert!(first <= first_end);
+        assert!(buffer[first..] == original[first..]);
+        if unit > 0 {
+            assert!(first == first_end - first_end % unit);
+        }
+        let carried = buffer;
+        let second = decoder.convert_final_prefix(&mut buffer[first..length]);
+        let done = first + second;
+        assert!(done <= length);
+        assert!(buffer[done..] == carried[done..]);
+        assert!(decoder.position == start.wrapping_add(done as u32));
+        if unit > 0 {
+            assert!(done == length - length % unit);
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn x86_converts_a_prefix_and_leaves_the_rest() {
+        converts_a_prefix_and_leaves_the_rest::<12>(Branch::X86, 0);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn powerpc_converts_whole_words_and_leaves_the_rest() {
+        converts_a_prefix_and_leaves_the_rest::<12>(Branch::PowerPc, 4);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn ia64_converts_whole_bundles_and_leaves_the_rest() {
+        converts_a_prefix_and_leaves_the_rest::<17>(Branch::Ia64, IA64_BUNDLE);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn arm_converts_whole_words_and_leaves_the_rest() {
+        converts_a_prefix_and_leaves_the_rest::<12>(Branch::Arm, 4);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn arm_thumb_converts_a_prefix_and_leaves_the_rest() {
+        converts_a_prefix_and_leaves_the_rest::<12>(Branch::ArmThumb, 0);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn sparc_converts_whole_words_and_leaves_the_rest() {
+        converts_a_prefix_and_leaves_the_rest::<12>(Branch::Sparc, 4);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn arm64_converts_whole_words_and_leaves_the_rest() {
+        converts_a_prefix_and_leaves_the_rest::<12>(Branch::Arm64, 4);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn riscv_converts_a_prefix_and_leaves_the_rest() {
+        converts_a_prefix_and_leaves_the_rest::<12>(Branch::RiscV, 0);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn delta_adds_the_byte_its_distance_back_for_every_distance() {
+        let distance: usize = kani::any();
+        kani::assume((1..=DELTA_HISTORY).contains(&distance));
+        let mut decoder = DeltaDecoder::new(distance);
+        decoder.position = kani::any();
+        decoder.history = Box::new(kani::any());
+        let first_back = (distance + usize::from(decoder.position)) % DELTA_HISTORY;
+        let added = decoder.history[first_back];
+        let mut buffer: [u8; 6] = kani::any();
+        let original = buffer;
+        let length: usize = kani::any();
+        kani::assume(length <= buffer.len());
+        decoder.convert(&mut buffer[..length]);
+        assert!(buffer[length..] == original[length..]);
+        if length > 0 {
+            assert!(buffer[0] == original[0].wrapping_add(added));
         }
     }
 }
