@@ -13,6 +13,7 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 The reader supports these features:
 
 - Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
+- XZ entries decode with Zipper's own xz reader, as [tar's xz](tar-reader.md#supported-archives) does. An entry holds exactly one xz stream, so stream padding or a second stream after it is refused.
 - Split sets, `name.z01` and on with `name.zip` last, as [ZIP split sets](#zip-split-sets) describes, and an archive that starts with the spanning signature, as Info-ZIP `zip -s` writes one that fits in one piece.
 - Self-extracting archives, a stub followed by a ZIP, whether `zip -A` adjusted the offsets or not, as [self-extracting ZIP](#self-extracting-zip) describes.
 - Conventional ZIP64. Info-ZIP also writes a ZIP64 end record when its input is piped, even when the regular end record holds every value. The reader then requires both records to agree. With ZIP64, every end record value that is not a sentinel must equal its ZIP64 value.

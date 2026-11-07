@@ -1130,7 +1130,7 @@ fn method_decoder<'a>(
     Ok(match item.method {
         BZIP2 => Box::new(bzip2::bufread::BzDecoder::new(input)),
         ZSTANDARD => Box::new(zstd::stream::read::Decoder::with_buffer(input)?.single_frame()),
-        XZ => Box::new(liblzma::bufread::XzDecoder::new(input)),
+        XZ => Box::new(crate::lzma::XzReader::new(input).single_stream()),
         LZMA => {
             let mut prefix = [0u8; 9];
             input

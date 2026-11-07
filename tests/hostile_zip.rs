@@ -1258,6 +1258,11 @@ fn other_methods_decode_exactly_and_refuse_damage() {
             &format!("{method_name} with data after its stream"),
             &[compressed("f", &data, method, trailing)],
         );
+        let padded = [payload.as_slice(), &[0; 4]].concat();
+        assert_rejected_without_leftovers(
+            &format!("{method_name} with zero bytes after its stream"),
+            &[compressed("f", &data, method, padded)],
+        );
         assert_rejected_without_leftovers(
             &format!("{method_name} with a wrong CRC"),
             &[Raw {

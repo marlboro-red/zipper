@@ -9,6 +9,7 @@ A tar the reader rejects is never handed to 7-Zip. A compressed empty tar holds 
 The reader supports these features:
 
 - Plain tar, and tar inside gzip, including several gzip members, zstd, including the skippable frame `pzstd` writes first, xz, bzip2, lzip, LZ4 and `compress` (`.tar.Z`).
+- xz through Zipper's own reader in `src/lzma.rs`, not liblzma. It reads several streams in a row with zero padding between them, blocks with or without sizes in their headers, and the branch and Delta filters before LZMA2. It checks the CRC-32, CRC-64 or SHA-256 each block carries, and the index of each stream. liblzma decodes a stream whose check type it does not know without checking it. This reader refuses such a stream, which no xz writer produces.
 - POSIX ustar with its name prefix, pax extended headers, GNU long names and long link targets, and old tar without the `ustar` marker.
 - Base-256 sizes and times, as GNU tar writes for large values.
 - Files, directories, symlinks that stay inside the destination on Unix, and hard links to an earlier file in the same archive.
@@ -58,7 +59,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 | Largest xz, LZMA or lzip dictionary | 256 MiB, four times the 64 MiB of `xz -9e` |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-An LZMA or lzip stream whose header declares a larger dictionary is refused before decoding, with its size in the error. An xz stream is refused when one of its blocks needs a larger dictionary. Each error names the largest dictionary accepted and points at `--zip-engine backend`.
+An LZMA or lzip stream whose header declares a larger dictionary is refused before decoding, with its size in the error. An xz stream is refused when one of its block headers declares a larger dictionary, before that block's dictionary is allocated. The xz limit falls between the same two dictionary sizes as liblzma's 272 MiB memory limit did, so the same streams pass. Each error names the largest dictionary accepted and points at `--zip-engine backend`.
 
 One thread decodes and checks the stream. Four writer threads create and write the files, or the number `--threads` sets. A file larger than 1 MiB streams to one writer in order. On Windows, all files of one folder go to the same writer, because creating files in one folder from several threads is slower there. At most 16 MiB of file data waits between the decoder and the writers, so memory does not grow with file size or writer count. A repeated file name waits for every pending write before it replaces the file. A TLA+ model in `verification/tar-writer-pool/` checks every order of these steps, within a bound, for hangs, budget overruns, leaked chunks and lost write failures. The `zipper-verify-tar-pool` skill in `.claude/skills/` runs it.
 

@@ -1,4 +1,3 @@
-#[cfg(test)]
 use crate::xz_filters::{Filter, read_through, xz_filter};
 use std::io::{self, Read};
 
@@ -1122,52 +1121,31 @@ impl<R> Lzma2Reader<R> {
     }
 }
 
-#[cfg(test)]
 const XZ_MAGIC: [u8; 6] = [0xFD, b'7', b'z', b'X', b'Z', 0x00];
-#[cfg(test)]
 const XZ_FOOTER_MAGIC: [u8; 2] = *b"YZ";
-#[cfg(test)]
 const XZ_STREAM_EDGE: usize = 12;
-#[cfg(test)]
 const XZ_INDEX_INDICATOR: u8 = 0x00;
-#[cfg(test)]
 const XZ_RESERVED_CHECK_BITS: u8 = 0xF0;
-#[cfg(test)]
 const XZ_BLOCK_RESERVED_FLAGS: u8 = 0x3C;
-#[cfg(test)]
 const XZ_BLOCK_HAS_COMPRESSED_SIZE: u8 = 0x40;
-#[cfg(test)]
 const XZ_BLOCK_HAS_UNCOMPRESSED_SIZE: u8 = 0x80;
-#[cfg(test)]
 const XZ_BLOCK_FILTER_COUNT: u8 = 0x03;
-#[cfg(test)]
 const XZ_FILTER_LZMA2: u64 = 0x21;
-#[cfg(test)]
 const XZ_FILTER_RESERVED_START: u64 = 1 << 62;
-#[cfg(test)]
 const XZ_LZMA2_DICTIONARY_LARGEST: u8 = 40;
-#[cfg(test)]
 const XZ_VLI_BYTES_MAX: usize = 9;
-#[cfg(test)]
 const XZ_VLI_MAX: u64 = u64::MAX >> 1;
-#[cfg(test)]
 const XZ_UNPADDED_SIZE_MIN: u64 = 5;
-#[cfg(test)]
 const XZ_UNPADDED_SIZE_MAX: u64 = XZ_VLI_MAX & !3;
-#[cfg(test)]
 const XZ_ALIGN: u64 = 4;
-#[cfg(test)]
 const XZ_CHECK_SIZE_MAX: usize = 32;
-#[cfg(test)]
 const XZ_INPUT_CHUNK: usize = 4096;
-#[cfg(test)]
 const CRC64_POLYNOMIAL: u64 = 0xC96C_5795_D787_0F42;
-#[cfg(test)]
-const CRC64_TABLE: [u64; 256] = crc64_table();
+const CRC64_SLICES: usize = 8;
+const CRC64_TABLES: [[u64; 256]; CRC64_SLICES] = crc64_tables();
 
-#[cfg(test)]
-const fn crc64_table() -> [u64; 256] {
-    let mut table = [0; 256];
+const fn crc64_tables() -> [[u64; 256]; CRC64_SLICES] {
+    let mut tables = [[0; 256]; CRC64_SLICES];
     let mut index = 0;
     while index < 256 {
         let mut crc = index as u64;
@@ -1180,25 +1158,219 @@ const fn crc64_table() -> [u64; 256] {
             };
             bit += 1;
         }
-        table[index] = crc;
+        tables[0][index] = crc;
         index += 1;
     }
-    table
+    let mut slice = 1;
+    while slice < CRC64_SLICES {
+        let mut index = 0;
+        while index < 256 {
+            let previous = tables[slice - 1][index];
+            tables[slice][index] = (previous >> 8) ^ tables[0][(previous & 0xFF) as usize];
+            index += 1;
+        }
+        slice += 1;
+    }
+    tables
 }
 
-#[cfg(test)]
 fn crc64(crc: u64, bytes: &[u8]) -> u64 {
-    !bytes.iter().fold(!crc, |crc, &byte| {
-        CRC64_TABLE[usize::from(crc as u8 ^ byte)] ^ (crc >> 8)
+    let mut crc = !crc;
+    let mut words = bytes.chunks_exact(CRC64_SLICES);
+    for word in &mut words {
+        let value = crc ^ u64::from_le_bytes(word.try_into().unwrap());
+        crc = (0..CRC64_SLICES).fold(0, |crc, byte| {
+            crc ^ CRC64_TABLES[CRC64_SLICES - 1 - byte][usize::from((value >> (8 * byte)) as u8)]
+        });
+    }
+    !words.remainder().iter().fold(crc, |crc, &byte| {
+        CRC64_TABLES[0][usize::from(crc as u8 ^ byte)] ^ (crc >> 8)
     })
 }
 
-#[cfg(test)]
+// SPEC(FIPS 180-4 5.3.3 and 4.2.2): the initial hash value and the 64 round constants.
+const SHA256_INITIAL: [u32; 8] = [
+    0x6a09_e667,
+    0xbb67_ae85,
+    0x3c6e_f372,
+    0xa54f_f53a,
+    0x510e_527f,
+    0x9b05_688c,
+    0x1f83_d9ab,
+    0x5be0_cd19,
+];
+const SHA256_ROUNDS: [u32; 64] = [
+    0x428a_2f98,
+    0x7137_4491,
+    0xb5c0_fbcf,
+    0xe9b5_dba5,
+    0x3956_c25b,
+    0x59f1_11f1,
+    0x923f_82a4,
+    0xab1c_5ed5,
+    0xd807_aa98,
+    0x1283_5b01,
+    0x2431_85be,
+    0x550c_7dc3,
+    0x72be_5d74,
+    0x80de_b1fe,
+    0x9bdc_06a7,
+    0xc19b_f174,
+    0xe49b_69c1,
+    0xefbe_4786,
+    0x0fc1_9dc6,
+    0x240c_a1cc,
+    0x2de9_2c6f,
+    0x4a74_84aa,
+    0x5cb0_a9dc,
+    0x76f9_88da,
+    0x983e_5152,
+    0xa831_c66d,
+    0xb003_27c8,
+    0xbf59_7fc7,
+    0xc6e0_0bf3,
+    0xd5a7_9147,
+    0x06ca_6351,
+    0x1429_2967,
+    0x27b7_0a85,
+    0x2e1b_2138,
+    0x4d2c_6dfc,
+    0x5338_0d13,
+    0x650a_7354,
+    0x766a_0abb,
+    0x81c2_c92e,
+    0x9272_2c85,
+    0xa2bf_e8a1,
+    0xa81a_664b,
+    0xc24b_8b70,
+    0xc76c_51a3,
+    0xd192_e819,
+    0xd699_0624,
+    0xf40e_3585,
+    0x106a_a070,
+    0x19a4_c116,
+    0x1e37_6c08,
+    0x2748_774c,
+    0x34b0_bcb5,
+    0x391c_0cb3,
+    0x4ed8_aa4a,
+    0x5b9c_ca4f,
+    0x682e_6ff3,
+    0x748f_82ee,
+    0x78a5_636f,
+    0x84c8_7814,
+    0x8cc7_0208,
+    0x90be_fffa,
+    0xa450_6ceb,
+    0xbef9_a3f7,
+    0xc671_78f2,
+];
+const SHA256_BLOCK: usize = 64;
+const SHA256_LENGTH_FIELD: usize = 8;
+
+struct Sha256 {
+    state: [u32; 8],
+    block: [u8; SHA256_BLOCK],
+    filled: usize,
+    length: u64,
+}
+
+impl Default for Sha256 {
+    fn default() -> Self {
+        Sha256 {
+            state: SHA256_INITIAL,
+            block: [0; SHA256_BLOCK],
+            filled: 0,
+            length: 0,
+        }
+    }
+}
+
+impl Sha256 {
+    fn update(&mut self, mut bytes: &[u8]) {
+        self.length = self.length.wrapping_add(bytes.len() as u64);
+        if self.filled > 0 {
+            let take = (SHA256_BLOCK - self.filled).min(bytes.len());
+            self.block[self.filled..self.filled + take].copy_from_slice(&bytes[..take]);
+            self.filled += take;
+            bytes = &bytes[take..];
+            if self.filled < SHA256_BLOCK {
+                return;
+            }
+            let block = self.block;
+            sha256_compress(&mut self.state, &block);
+            self.filled = 0;
+        }
+        let mut blocks = bytes.chunks_exact(SHA256_BLOCK);
+        for block in &mut blocks {
+            sha256_compress(&mut self.state, block.try_into().unwrap());
+        }
+        let rest = blocks.remainder();
+        self.block[..rest.len()].copy_from_slice(rest);
+        self.filled = rest.len();
+    }
+
+    fn finish(mut self) -> [u8; 32] {
+        let bits = self.length.wrapping_mul(8);
+        self.update(&[0x80]);
+        while self.filled != SHA256_BLOCK - SHA256_LENGTH_FIELD {
+            self.update(&[0]);
+        }
+        self.update(&bits.to_be_bytes());
+        let mut digest = [0; 32];
+        for (out, word) in digest.chunks_exact_mut(4).zip(self.state) {
+            out.copy_from_slice(&word.to_be_bytes());
+        }
+        digest
+    }
+}
+
+// SPEC(FIPS 180-4 6.2.2): the message schedule and the 64 rounds of one block.
+fn sha256_compress(state: &mut [u32; 8], block: &[u8; SHA256_BLOCK]) {
+    let mut schedule = [0u32; 64];
+    for (word, bytes) in schedule.iter_mut().zip(block.chunks_exact(4)) {
+        *word = u32::from_be_bytes(bytes.try_into().unwrap());
+    }
+    for at in 16..64 {
+        let early = schedule[at - 15];
+        let late = schedule[at - 2];
+        let sigma0 = early.rotate_right(7) ^ early.rotate_right(18) ^ (early >> 3);
+        let sigma1 = late.rotate_right(17) ^ late.rotate_right(19) ^ (late >> 10);
+        schedule[at] = schedule[at - 16]
+            .wrapping_add(sigma0)
+            .wrapping_add(schedule[at - 7])
+            .wrapping_add(sigma1);
+    }
+    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *state;
+    for (&round, &word) in SHA256_ROUNDS.iter().zip(&schedule) {
+        let sum1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+        let choice = (e & f) ^ (!e & g);
+        let first = h
+            .wrapping_add(sum1)
+            .wrapping_add(choice)
+            .wrapping_add(round)
+            .wrapping_add(word);
+        let sum0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+        let majority = (a & b) ^ (a & c) ^ (b & c);
+        let second = sum0.wrapping_add(majority);
+        h = g;
+        g = f;
+        f = e;
+        e = d.wrapping_add(first);
+        d = c;
+        c = b;
+        b = a;
+        a = first.wrapping_add(second);
+    }
+    for (word, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
+        *word = word.wrapping_add(value);
+    }
+}
+
 fn padding_to_align(length: u64) -> u64 {
     length.wrapping_neg() % XZ_ALIGN
 }
 
-#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum XzCheck {
     None,
@@ -1207,7 +1379,6 @@ enum XzCheck {
     Sha256,
 }
 
-#[cfg(test)]
 impl XzCheck {
     fn size(self) -> usize {
         match self {
@@ -1219,22 +1390,20 @@ impl XzCheck {
     }
 }
 
-#[cfg(test)]
 enum XzCheckState {
     None,
     Crc32(crc32fast::Hasher),
     Crc64(u64),
-    Sha256(sha2::Sha256),
+    Sha256(Sha256),
 }
 
-#[cfg(test)]
 impl XzCheckState {
     fn new(check: XzCheck) -> Self {
         match check {
             XzCheck::None => XzCheckState::None,
             XzCheck::Crc32 => XzCheckState::Crc32(crc32fast::Hasher::new()),
             XzCheck::Crc64 => XzCheckState::Crc64(0),
-            XzCheck::Sha256 => XzCheckState::Sha256(sha2::Digest::new()),
+            XzCheck::Sha256 => XzCheckState::Sha256(Sha256::default()),
         }
     }
 
@@ -1243,7 +1412,7 @@ impl XzCheckState {
             XzCheckState::None => {}
             XzCheckState::Crc32(hasher) => hasher.update(bytes),
             XzCheckState::Crc64(crc) => *crc = crc64(*crc, bytes),
-            XzCheckState::Sha256(hasher) => sha2::Digest::update(hasher, bytes),
+            XzCheckState::Sha256(hasher) => hasher.update(bytes),
         }
     }
 
@@ -1252,14 +1421,13 @@ impl XzCheckState {
             XzCheckState::None => stored.is_empty(),
             XzCheckState::Crc32(hasher) => stored == hasher.finalize().to_le_bytes(),
             XzCheckState::Crc64(crc) => stored == crc.to_le_bytes(),
-            XzCheckState::Sha256(hasher) => stored == sha2::Digest::finalize(hasher).as_slice(),
+            XzCheckState::Sha256(hasher) => stored == hasher.finish(),
         }
     }
 }
 
 // SPEC(xz-file-format.txt 1.2 Multibyte Integers): seven bits a byte, low first, at most nine
 // bytes, and no zero byte after the first.
-#[cfg(test)]
 fn xz_integer(mut next: impl FnMut() -> io::Result<u8>) -> io::Result<u64> {
     let mut value = 0;
     for index in 0..XZ_VLI_BYTES_MAX {
@@ -1275,7 +1443,6 @@ fn xz_integer(mut next: impl FnMut() -> io::Result<u8>) -> io::Result<u64> {
     Err(data_error("xz integer is longer than nine bytes"))
 }
 
-#[cfg(test)]
 fn xz_header_integer(fields: &[u8], at: &mut usize) -> io::Result<u64> {
     xz_integer(|| {
         let byte = fields
@@ -1289,7 +1456,6 @@ fn xz_header_integer(fields: &[u8], at: &mut usize) -> io::Result<u64> {
 
 // SPEC(xz-file-format.txt 2.1.1.2 Stream Flags): the first byte and the high four bits of the
 // second are reserved, and the low four bits name the check.
-#[cfg(test)]
 fn xz_stream_flags(flags: [u8; 2]) -> io::Result<XzCheck> {
     if flags[0] != 0 || flags[1] & XZ_RESERVED_CHECK_BITS != 0 {
         return Err(data_error("xz stream flags set reserved bits"));
@@ -1299,7 +1465,6 @@ fn xz_stream_flags(flags: [u8; 2]) -> io::Result<XzCheck> {
 
 // SPEC(xz-file-format.txt 2.1.1.2 Stream Flags): a decoder that cannot verify a check should
 // warn or refuse; liblzma warns, and this reader refuses.
-#[cfg(test)]
 fn supported_xz_check(id: u8) -> io::Result<XzCheck> {
     match id {
         0x00 => Ok(XzCheck::None),
@@ -1310,7 +1475,6 @@ fn supported_xz_check(id: u8) -> io::Result<XzCheck> {
     }
 }
 
-#[cfg(test)]
 fn xz_stream_header(header: &[u8; XZ_STREAM_EDGE]) -> io::Result<([u8; 2], XzCheck)> {
     if header[..6] != XZ_MAGIC {
         return Err(data_error("xz stream header has no xz magic"));
@@ -1322,7 +1486,6 @@ fn xz_stream_header(header: &[u8; XZ_STREAM_EDGE]) -> io::Result<([u8; 2], XzChe
     Ok((flags, xz_stream_flags(flags)?))
 }
 
-#[cfg(test)]
 fn xz_stream_footer(footer: &[u8; XZ_STREAM_EDGE]) -> io::Result<(u64, [u8; 2])> {
     if footer[10..] != XZ_FOOTER_MAGIC {
         return Err(data_error("xz stream footer has no footer magic"));
@@ -1337,7 +1500,6 @@ fn xz_stream_footer(footer: &[u8; XZ_STREAM_EDGE]) -> io::Result<(u64, [u8; 2])>
     Ok(((u64::from(stored) + 1) * XZ_ALIGN, flags))
 }
 
-#[cfg(test)]
 #[derive(Debug)]
 struct XzBlockHeader {
     compressed: Option<u64>,
@@ -1346,7 +1508,6 @@ struct XzBlockHeader {
     filters: Vec<Filter>,
 }
 
-#[cfg(test)]
 impl XzBlockHeader {
     fn window_within_uncompressed_size(&self) -> u32 {
         self.uncompressed.map_or(self.dictionary, |size| {
@@ -1357,7 +1518,6 @@ impl XzBlockHeader {
 
 // SPEC(xz-file-format.txt 5.3.1 to 5.3.3): LZMA2 is allowed only as the last filter, and the
 // branch filters and Delta only before it.
-#[cfg(test)]
 fn xz_non_last_filter(id: u64, properties: &[u8]) -> io::Result<Filter> {
     if id == XZ_FILTER_LZMA2 {
         return Err(data_error(
@@ -1367,7 +1527,6 @@ fn xz_non_last_filter(id: u64, properties: &[u8]) -> io::Result<Filter> {
     xz_filter(id, properties).map_err(data_error)
 }
 
-#[cfg(test)]
 fn xz_last_filter(id: u64, properties: &[u8]) -> io::Result<u32> {
     if id == XZ_FILTER_LZMA2 {
         return xz_lzma2_dictionary(properties);
@@ -1378,7 +1537,6 @@ fn xz_last_filter(id: u64, properties: &[u8]) -> io::Result<u32> {
 
 // SPEC(xz-file-format.txt 5.3.1 LZMA2): one property byte; 40 means 4 GiB less one, and below
 // it the dictionary is 2 or 3 times a power of two from 4 KiB.
-#[cfg(test)]
 fn xz_lzma2_dictionary(properties: &[u8]) -> io::Result<u32> {
     match *properties {
         [byte] if byte < XZ_LZMA2_DICTIONARY_LARGEST => {
@@ -1389,7 +1547,6 @@ fn xz_lzma2_dictionary(properties: &[u8]) -> io::Result<u32> {
     }
 }
 
-#[cfg(test)]
 fn xz_block_header(header: &[u8], check: XzCheck) -> io::Result<XzBlockHeader> {
     let (fields, stored) = header.split_at(header.len() - 4);
     if crc32fast::hash(fields).to_le_bytes() != stored {
@@ -1445,7 +1602,6 @@ fn xz_block_header(header: &[u8], check: XzCheck) -> io::Result<XzBlockHeader> {
     })
 }
 
-#[cfg(test)]
 struct XzInput<R> {
     inner: R,
     held: Vec<u8>,
@@ -1454,7 +1610,6 @@ struct XzInput<R> {
     limit: u64,
 }
 
-#[cfg(test)]
 impl<R: Read> XzInput<R> {
     fn peek(&mut self) -> io::Result<Option<u8>> {
         if self.next == self.held.len() {
@@ -1496,7 +1651,6 @@ impl<R: Read> XzInput<R> {
     }
 }
 
-#[cfg(test)]
 impl<R: Read> Read for XzInput<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let room = (self.limit - self.position).min(buffer.len() as u64) as usize;
@@ -1517,16 +1671,14 @@ impl<R: Read> Read for XzInput<R> {
     }
 }
 
-#[cfg(test)]
 #[derive(Default)]
 struct XzRecords {
     count: u64,
     blocks_size: u64,
     uncompressed: u64,
-    digest: sha2::Sha256,
+    digest: Sha256,
 }
 
-#[cfg(test)]
 impl XzRecords {
     fn add(&mut self, unpadded: u64, uncompressed: u64) -> io::Result<()> {
         let too_large = || data_error("xz stream sizes pass the largest xz integer");
@@ -1541,25 +1693,27 @@ impl XzRecords {
             .checked_add(uncompressed)
             .filter(|&size| size <= XZ_VLI_MAX)
             .ok_or_else(too_large)?;
-        sha2::Digest::update(&mut self.digest, unpadded.to_le_bytes());
-        sha2::Digest::update(&mut self.digest, uncompressed.to_le_bytes());
+        self.digest.update(&unpadded.to_le_bytes());
+        self.digest.update(&uncompressed.to_le_bytes());
         Ok(())
     }
 
     fn summary(self) -> (u64, u64, u64, [u8; 32]) {
-        let digest = sha2::Digest::finalize(self.digest).into();
-        (self.count, self.blocks_size, self.uncompressed, digest)
+        (
+            self.count,
+            self.blocks_size,
+            self.uncompressed,
+            self.digest.finish(),
+        )
     }
 }
 
-#[cfg(test)]
 struct XzStream {
     flags: [u8; 2],
     check: XzCheck,
     blocks: XzRecords,
 }
 
-#[cfg(test)]
 struct XzBlock<R> {
     decoder: Lzma2Reader<XzInput<R>>,
     filters: Vec<Filter>,
@@ -1571,7 +1725,6 @@ struct XzBlock<R> {
     check: XzCheckState,
 }
 
-#[cfg(test)]
 impl<R: Read> XzBlock<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let read = read_through(&mut self.filters, &mut self.decoder, buffer)?;
@@ -1631,7 +1784,6 @@ impl<R: Read> XzBlock<R> {
     }
 }
 
-#[cfg(test)]
 enum XzPart<R> {
     BeforeStream { input: XzInput<R>, first: bool },
     InStream { input: XzInput<R>, stream: XzStream },
@@ -1640,12 +1792,28 @@ enum XzPart<R> {
     Failed,
 }
 
-#[cfg(test)]
-pub(crate) struct XzReader<R> {
-    part: XzPart<R>,
+#[derive(Clone, Copy)]
+struct XzRules {
+    concatenated: bool,
+    dictionary_limit: u64,
 }
 
-#[cfg(test)]
+pub(crate) struct XzReader<R> {
+    part: XzPart<R>,
+    rules: XzRules,
+}
+
+#[derive(Debug)]
+pub(crate) struct DictionaryOverLimit;
+
+impl std::fmt::Display for DictionaryOverLimit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("xz block needs a dictionary larger than the decoder's limit")
+    }
+}
+
+impl std::error::Error for DictionaryOverLimit {}
+
 impl<R: Read> XzReader<R> {
     pub(crate) fn new(input: R) -> Self {
         XzReader {
@@ -1659,14 +1827,37 @@ impl<R: Read> XzReader<R> {
                 },
                 first: true,
             },
+            rules: XzRules {
+                concatenated: true,
+                dictionary_limit: u64::MAX,
+            },
         }
+    }
+
+    pub(crate) fn single_stream(mut self) -> Self {
+        self.rules.concatenated = false;
+        self
+    }
+
+    pub(crate) fn with_dictionary_limit(mut self, limit: u64) -> Self {
+        self.rules.dictionary_limit = limit;
+        self
     }
 }
 
 // SPEC(xz-file-format.txt 2.2 Stream Padding): streams may follow one another, separated by
 // zero bytes in groups of four.
-#[cfg(test)]
-fn start_stream<R: Read>(mut input: XzInput<R>, first: bool) -> io::Result<XzPart<R>> {
+fn start_stream<R: Read>(
+    mut input: XzInput<R>,
+    first: bool,
+    rules: XzRules,
+) -> io::Result<XzPart<R>> {
+    if !first && !rules.concatenated {
+        if input.peek()?.is_some() {
+            return Err(data_error("xz stream has data after its end"));
+        }
+        return Ok(XzPart::Done);
+    }
     if !first {
         let mut padding = 0u64;
         while input.peek()? == Some(0) {
@@ -1695,16 +1886,22 @@ fn start_stream<R: Read>(mut input: XzInput<R>, first: bool) -> io::Result<XzPar
     })
 }
 
-#[cfg(test)]
 fn start_block<R: Read>(
     mut input: XzInput<R>,
     stream: XzStream,
     size_byte: u8,
+    rules: XzRules,
 ) -> io::Result<XzPart<R>> {
     let header_size = (usize::from(size_byte) + 1) * XZ_ALIGN as usize;
     let mut header = vec![size_byte; header_size];
     input.exact(&mut header[1..], "truncated xz block header")?;
     let mut declared = xz_block_header(&header, stream.check)?;
+    if u64::from(declared.dictionary) > rules.dictionary_limit {
+        return Err(io::Error::new(
+            io::ErrorKind::OutOfMemory,
+            DictionaryOverLimit,
+        ));
+    }
     let data_start = input.position;
     if let Some(size) = declared.compressed {
         input.limit = data_start + size;
@@ -1721,14 +1918,12 @@ fn start_block<R: Read>(
     })))
 }
 
-#[cfg(test)]
 struct XzIndex<'a, R> {
     input: &'a mut XzInput<R>,
     crc: crc32fast::Hasher,
     size: u64,
 }
 
-#[cfg(test)]
 impl<R: Read> XzIndex<'_, R> {
     fn byte(&mut self) -> io::Result<u8> {
         let byte = self.input.byte("truncated xz index")?;
@@ -1742,7 +1937,6 @@ impl<R: Read> XzIndex<'_, R> {
     }
 }
 
-#[cfg(test)]
 fn read_xz_index<R: Read>(input: &mut XzInput<R>) -> io::Result<(XzRecords, u64)> {
     let mut index = XzIndex {
         input,
@@ -1774,7 +1968,6 @@ fn read_xz_index<R: Read>(input: &mut XzInput<R>) -> io::Result<(XzRecords, u64)
     Ok((records, size + stored.len() as u64))
 }
 
-#[cfg(test)]
 fn read_xz_stream_footer<R: Read>(
     input: &mut XzInput<R>,
     index_size: u64,
@@ -1792,7 +1985,6 @@ fn read_xz_stream_footer<R: Read>(
     Ok(())
 }
 
-#[cfg(test)]
 fn finish_stream<R: Read>(mut input: XzInput<R>, stream: XzStream) -> io::Result<XzPart<R>> {
     let (records, index_size) = read_xz_index(&mut input)?;
     if records.summary() != stream.blocks.summary() {
@@ -1805,14 +1997,13 @@ fn finish_stream<R: Read>(mut input: XzInput<R>, stream: XzStream) -> io::Result
     })
 }
 
-#[cfg(test)]
-fn next_part<R: Read>(part: XzPart<R>) -> io::Result<XzPart<R>> {
+fn next_part<R: Read>(part: XzPart<R>, rules: XzRules) -> io::Result<XzPart<R>> {
     match part {
-        XzPart::BeforeStream { input, first } => start_stream(input, first),
+        XzPart::BeforeStream { input, first } => start_stream(input, first, rules),
         XzPart::InStream { mut input, stream } => {
             match input.byte("xz stream ends before its index")? {
                 XZ_INDEX_INDICATOR => finish_stream(input, stream),
-                size_byte => start_block(input, stream, size_byte),
+                size_byte => start_block(input, stream, size_byte, rules),
             }
         }
         XzPart::Block(block) => {
@@ -1824,7 +2015,6 @@ fn next_part<R: Read>(part: XzPart<R>) -> io::Result<XzPart<R>> {
     }
 }
 
-#[cfg(test)]
 impl<R: Read> Read for XzReader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         if buffer.is_empty() {
@@ -1844,7 +2034,7 @@ impl<R: Read> Read for XzReader<R> {
                 _ => {}
             }
             let part = std::mem::replace(&mut self.part, XzPart::Failed);
-            self.part = next_part(part)?;
+            self.part = next_part(part, self.rules)?;
         }
     }
 }
@@ -4358,6 +4548,441 @@ mod tests {
                 }
             }
             assert!(outcomes[0] > 2_000, "{outcomes:?}");
+        }
+
+        fn liblzma_single_xz(stream: &[u8]) -> Option<Vec<u8>> {
+            let mut decoder = Stream::new_stream_decoder(u64::MAX, TELL_UNSUPPORTED_CHECK).unwrap();
+            let mut out = Vec::new();
+            loop {
+                out.reserve(1 << 16);
+                let before = (decoder.total_in(), decoder.total_out());
+                let rest = &stream[decoder.total_in() as usize..];
+                match decoder.process_vec(rest, &mut out, Action::Finish) {
+                    Ok(Status::StreamEnd) => {
+                        return (decoder.total_in() == stream.len() as u64).then_some(out);
+                    }
+                    Ok(_) if (decoder.total_in(), decoder.total_out()) != before => {}
+                    _ => return None,
+                }
+            }
+        }
+
+        struct Jagged<'a> {
+            data: &'a [u8],
+            state: u32,
+        }
+
+        fn next_random(state: &mut u32) -> usize {
+            *state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (*state >> 8) as usize
+        }
+
+        impl Read for Jagged<'_> {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                let piece = 1 + next_random(&mut self.state) % 9_000;
+                let count = buffer.len().min(piece).min(self.data.len());
+                buffer[..count].copy_from_slice(&self.data[..count]);
+                self.data = &self.data[count..];
+                Ok(count)
+            }
+        }
+
+        fn decode_jagged(mut reader: impl Read, seed: u32) -> Option<Vec<u8>> {
+            let mut state = seed;
+            let mut out = Vec::new();
+            let mut buffer = vec![0u8; 70_000];
+            loop {
+                let want = 1 + next_random(&mut state) % buffer.len();
+                match reader.read(&mut buffer[..want]) {
+                    Ok(0) => return Some(out),
+                    Ok(read) => out.extend_from_slice(&buffer[..read]),
+                    Err(_) => return None,
+                }
+            }
+        }
+
+        fn assert_jagged_reads_agree(
+            stream: &[u8],
+            single: bool,
+            expected: &Option<Vec<u8>>,
+            what: &str,
+        ) {
+            for seed in 1..4 {
+                let input = Jagged {
+                    data: stream,
+                    state: seed * 7,
+                };
+                let reader = XzReader::new(input);
+                let reader = if single {
+                    reader.single_stream()
+                } else {
+                    reader
+                };
+                let ours = decode_jagged(reader, seed);
+                assert!(
+                    &ours == expected,
+                    "{what}, jagged reads {seed}: zipper {}, liblzma {}",
+                    describe(&ours),
+                    describe(expected)
+                );
+            }
+        }
+
+        fn decode_single_xz(stream: &[u8], piece: usize, chunk: usize) -> Option<Vec<u8>> {
+            let mut reader = XzReader::new(Trickle {
+                data: stream,
+                piece,
+            })
+            .single_stream();
+            let mut out = Vec::new();
+            let mut buffer = vec![0u8; chunk];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => return Some(out),
+                    Ok(read) => out.extend_from_slice(&buffer[..read]),
+                    Err(_) => return None,
+                }
+            }
+        }
+
+        fn assert_single_stream_agrees_with_liblzma(stream: &[u8], what: &str) -> Option<Vec<u8>> {
+            let theirs = liblzma_single_xz(stream);
+            for &(piece, chunk) in &READS {
+                let ours = decode_single_xz(stream, piece, chunk);
+                assert!(
+                    ours == theirs,
+                    "{what}, one stream, input pieces of {piece}, reads of {chunk}: zipper {}, liblzma {}",
+                    describe(&ours),
+                    describe(&theirs)
+                );
+            }
+            assert_jagged_reads_agree(stream, true, &theirs, what);
+            theirs
+        }
+
+        fn corpus_files(folder: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(folder).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    corpus_files(&path, found);
+                } else {
+                    found.push(path);
+                }
+            }
+        }
+
+        fn zip_xz_entries(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+            let Ok(mut archive) = zip::ZipArchive::new(io::Cursor::new(bytes)) else {
+                return Vec::new();
+            };
+            let mut entries = Vec::new();
+            for index in 0..archive.len() {
+                let mut entry = archive.by_index_raw(index).unwrap();
+                if entry.compression() == zip::CompressionMethod::XZ && !entry.encrypted() {
+                    let mut raw = Vec::new();
+                    entry.read_to_end(&mut raw).unwrap();
+                    entries.push((entry.name().unwrap().to_string(), raw));
+                }
+            }
+            entries
+        }
+
+        #[test]
+        fn every_xz_stream_in_the_corpora_decodes_as_liblzma_does() {
+            let mut files = Vec::new();
+            corpus_files(
+                &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data"),
+                &mut files,
+            );
+            files.sort();
+            let (mut streams, mut zip_entries, mut payloads) = (0, 0, 0);
+            for path in files {
+                let bytes = std::fs::read(&path).unwrap();
+                let what = path.display().to_string();
+                let extension = path.extension().and_then(|extension| extension.to_str());
+                if bytes.starts_with(&XZ_MAGIC) {
+                    let decoded = assert_xz_agrees_with_liblzma(&bytes, &what);
+                    let named_xz = matches!(extension, Some("xz" | "txz"));
+                    assert!(decoded.is_some() || !named_xz, "{what}: liblzma refused");
+                    assert_jagged_reads_agree(&bytes, false, &decoded, &what);
+                    streams += 1;
+                } else if extension == Some("zip") {
+                    for (name, raw) in zip_xz_entries(&bytes) {
+                        let what = format!("{what} entry {name}");
+                        let decoded = assert_single_stream_agrees_with_liblzma(&raw, &what);
+                        assert!(decoded.is_some(), "{what}: liblzma refused");
+                        zip_entries += 1;
+                    }
+                } else if extension == Some("rpm")
+                    && let Some(at) = bytes.windows(6).position(|window| window == XZ_MAGIC)
+                {
+                    let payload = &bytes[at..];
+                    let decoded = assert_xz_agrees_with_liblzma(payload, &what);
+                    assert!(decoded.is_some(), "{what}: liblzma refused");
+                    assert_jagged_reads_agree(payload, false, &decoded, &what);
+                    payloads += 1;
+                }
+            }
+            assert!(streams >= 14, "{streams} xz files");
+            assert!(zip_entries >= 1, "{zip_entries} ZIP XZ entries");
+            assert!(payloads >= 1, "{payloads} RPM xz payloads");
+        }
+
+        #[test]
+        fn extreme_presets_decode_as_liblzma_does_in_jagged_reads() {
+            let inputs = [Vec::new(), text(70_000, 81), noise(82, 20_000), mixed()];
+            for preset in (0..=9).map(|preset| preset | liblzma::stream::PRESET_EXTREME) {
+                for (index, &(check, _)) in CHECKS.iter().enumerate() {
+                    for (number, data) in inputs.iter().enumerate() {
+                        let stream = encode_xz(data, preset, check, 40_000);
+                        let what =
+                            format!("extreme preset {preset:#x}, check {index}, input {number}");
+                        let decoded = assert_xz_agrees_with_liblzma_in(&stream, &READS[1..], &what);
+                        assert!(decoded.as_ref() == Some(data), "{what}: other bytes");
+                        assert_jagged_reads_agree(&stream, false, &decoded, &what);
+                    }
+                }
+            }
+        }
+
+        fn stream_boundaries(stream: &[u8]) -> Vec<usize> {
+            let footer = stream.len() - XZ_STREAM_EDGE;
+            let stored = u32::from_le_bytes(stream[footer + 4..footer + 8].try_into().unwrap());
+            let index = footer - (stored as usize + 1) * 4;
+            let check = CHECK_SIZES[usize::from(stream[7] & 0x0F)];
+            let mut at = index + 1;
+            let count = xz_header_integer(stream, &mut at).unwrap();
+            let mut boundaries = vec![0, XZ_STREAM_EDGE];
+            let mut block = XZ_STREAM_EDGE;
+            for _ in 0..count {
+                let unpadded = xz_header_integer(stream, &mut at).unwrap() as usize;
+                xz_header_integer(stream, &mut at).unwrap();
+                let header = (usize::from(stream[block]) + 1) * 4;
+                let data_end = block + unpadded - check;
+                let padded_end = block + unpadded.next_multiple_of(4);
+                boundaries.extend([
+                    block + 1,
+                    block + header,
+                    data_end,
+                    padded_end - check,
+                    padded_end,
+                ]);
+                block = padded_end;
+            }
+            boundaries.extend([
+                index,
+                index + 1,
+                at,
+                footer,
+                footer + 4,
+                footer + 10,
+                stream.len(),
+            ]);
+            boundaries
+        }
+
+        fn boundary_streams() -> Vec<(Vec<u8>, Vec<usize>)> {
+            let filtered = encode_chain(
+                &[(DELTA, vec![3]), (X86, Vec::new())],
+                &[machine_code(83, 9_000), text(3_000, 84)].concat(),
+                4_000,
+            );
+            let (built, _) = multi_block_stream();
+            let empty = Parts::new(&[], 0x01).bytes();
+            let mut sized = Block::new(text(1_500, 85), 6).sized();
+            sized.filters = [filter_flags(DELTA, &[0]), lzma2_filter(DICTIONARY_1_MIB)].concat();
+            sized.filter_count = 2;
+            sized.lzma2 = encode_lzma2(&delta_encoded(&sized.data, 1), 3, 0, 2, 1 << 20, 6);
+            let sized = Parts::new(&[sized, Block::new(noise(86, 900), 6)], 0x04).bytes();
+            let parts = [filtered, vec![0; 4], built, vec![0; 8], empty, sized];
+            let mut whole = Vec::new();
+            let mut boundaries = Vec::new();
+            let mut streams = Vec::new();
+            for part in &parts {
+                if part.iter().any(|&byte| byte != 0) {
+                    let own = stream_boundaries(part);
+                    boundaries.extend(own.iter().map(|&at| whole.len() + at));
+                    streams.push((part.clone(), own));
+                }
+                whole.extend_from_slice(part);
+            }
+            boundaries.sort_unstable();
+            boundaries.dedup();
+            streams.push((whole, boundaries));
+            streams
+        }
+
+        fn delta_encoded(data: &[u8], distance: usize) -> Vec<u8> {
+            (0..data.len())
+                .map(|at| {
+                    data[at].wrapping_sub(if at >= distance {
+                        data[at - distance]
+                    } else {
+                        0
+                    })
+                })
+                .collect()
+        }
+
+        #[test]
+        fn cuts_and_bit_flips_at_every_boundary_agree_with_liblzma() {
+            let streams = boundary_streams();
+            let (single, _) = &streams[0];
+            assert!(assert_single_stream_agrees_with_liblzma(single, "one stream").is_some());
+            assert!(
+                assert_single_stream_agrees_with_liblzma(
+                    &[single.clone(), vec![0; 4]].concat(),
+                    "padding after one stream"
+                )
+                .is_none()
+            );
+            let mut outcomes = [0, 0];
+            for (stream, boundaries) in &streams {
+                assert!(assert_xz_agrees_with_liblzma(stream, "whole").is_some());
+                let mut offsets: Vec<usize> = boundaries
+                    .iter()
+                    .flat_map(|&at| at.saturating_sub(2)..=at + 2)
+                    .filter(|&at| at <= stream.len())
+                    .collect();
+                offsets.sort_unstable();
+                offsets.dedup();
+                for &at in &offsets {
+                    let cut = &stream[..at];
+                    let decoded =
+                        assert_xz_agrees_with_liblzma_in(cut, &READS[..4], &format!("cut at {at}"));
+                    outcomes[usize::from(decoded.is_some())] += 1;
+                    if at == stream.len() {
+                        continue;
+                    }
+                    for bit in 0..8 {
+                        let mut flipped = stream.clone();
+                        flipped[at] ^= 1 << bit;
+                        let what = format!("bit {bit} of byte {at} of {}", stream.len());
+                        let decoded =
+                            assert_xz_agrees_with_liblzma_in(&flipped, &READS[2..4], &what);
+                        outcomes[usize::from(decoded.is_some())] += 1;
+                    }
+                }
+            }
+            assert!(outcomes[0] > 1_000 && outcomes[1] > 0, "{outcomes:?}");
+        }
+
+        #[test]
+        fn a_single_stream_reader_refuses_what_follows_its_stream() {
+            let one = valid_parts().bytes();
+            let other = encode_xz(&text(2_000, 87), 6, Check::Crc64, SINGLE_BLOCK);
+            assert!(assert_single_stream_agrees_with_liblzma(&one, "one stream").is_some());
+            for (stream, what) in [
+                ([one.clone(), vec![0; 4]].concat(), "padding"),
+                ([one.clone(), other.clone()].concat(), "a second stream"),
+                ([one.clone(), vec![1]].concat(), "a garbage byte"),
+                (one[..one.len() - 1].to_vec(), "a cut footer"),
+            ] {
+                assert!(
+                    assert_single_stream_agrees_with_liblzma(&stream, what).is_none(),
+                    "{what}"
+                );
+            }
+        }
+
+        #[test]
+        fn a_dictionary_over_the_limit_is_refused_before_its_block_decodes() {
+            let data = text(3_000, 88);
+            for byte in 0..=XZ_LZMA2_DICTIONARY_LARGEST {
+                let mut block = Block::new(data.clone(), 6);
+                block.filters = lzma2_filter(byte);
+                let stream = Parts::new(&[block], 0x01).bytes();
+                let dictionary = xz_lzma2_dictionary(&[byte]).unwrap();
+                for limit in [1 << 20, 256 << 20] {
+                    let mut reader = XzReader::new(stream.as_slice()).with_dictionary_limit(limit);
+                    let mut out = Vec::new();
+                    let result = reader.read_to_end(&mut out);
+                    if u64::from(dictionary) > limit {
+                        let error = result.unwrap_err();
+                        assert_eq!(error.kind(), io::ErrorKind::OutOfMemory, "byte {byte}");
+                        assert!(
+                            error
+                                .get_ref()
+                                .is_some_and(|inner| inner.is::<DictionaryOverLimit>()),
+                            "byte {byte}: {error}"
+                        );
+                        assert!(out.is_empty(), "byte {byte}");
+                    } else {
+                        assert_eq!(out, data, "byte {byte}, limit {limit}: {result:?}");
+                    }
+                }
+            }
+        }
+
+        fn sha256_one_byte_at_a_time(data: &[u8]) -> [u8; 32] {
+            let mut hasher = Sha256::default();
+            for &byte in data {
+                hasher.update(&[byte]);
+            }
+            hasher.finish()
+        }
+
+        #[test]
+        fn sha256_matches_the_sha2_crate_at_every_length_and_split() {
+            let data = noise(89, 300);
+            for length in 0..=data.len() {
+                let expected: [u8; 32] =
+                    <sha2::Sha256 as sha2::Digest>::digest(&data[..length]).into();
+                assert_eq!(
+                    sha256_one_byte_at_a_time(&data[..length]),
+                    expected,
+                    "length {length}"
+                );
+                for split in [
+                    0,
+                    length.min(1),
+                    length / 3,
+                    length / 2,
+                    length.saturating_sub(1),
+                    length,
+                ] {
+                    let mut hasher = Sha256::default();
+                    hasher.update(&data[..split]);
+                    hasher.update(&data[split..length]);
+                    assert_eq!(hasher.finish(), expected, "length {length}, split {split}");
+                }
+            }
+            let large = noise(90, 1 << 20);
+            let expected: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(&large).into();
+            let mut hasher = Sha256::default();
+            hasher.update(&large);
+            assert_eq!(hasher.finish(), expected);
+        }
+
+        fn crc64_one_byte_at_a_time(crc: u64, data: &[u8]) -> u64 {
+            let mut crc = !crc;
+            for &byte in data {
+                crc ^= u64::from(byte);
+                for _ in 0..8 {
+                    crc = if crc & 1 == 1 {
+                        (crc >> 1) ^ 0xC96C_5795_D787_0F42
+                    } else {
+                        crc >> 1
+                    };
+                }
+            }
+            !crc
+        }
+
+        #[test]
+        fn crc64_matches_a_bit_at_a_time_crc_at_every_length_start_and_seed() {
+            let data = noise(91, 200);
+            for start in 0..8 {
+                for end in start..=data.len() {
+                    for seed in [0, 1, u64::MAX, 0x0123_4567_89AB_CDEF] {
+                        assert_eq!(
+                            crc64(seed, &data[start..end]),
+                            crc64_one_byte_at_a_time(seed, &data[start..end]),
+                            "bytes {start}..{end}, seed {seed:#x}"
+                        );
+                    }
+                }
+            }
         }
     }
 }

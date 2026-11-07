@@ -431,13 +431,9 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
         Compression::None => Box::new(input),
         Compression::Gzip => Box::new(flate2::bufread::MultiGzDecoder::new(input)),
         Compression::Zstd => Box::new(zstd::stream::read::Decoder::with_buffer(input)?),
-        Compression::Xz => Box::new(DecoderMemory(liblzma::bufread::XzDecoder::new_stream(
-            input,
-            liblzma::stream::Stream::new_auto_decoder(
-                DECODER_MEMORY,
-                liblzma::stream::CONCATENATED,
-            )?,
-        ))),
+        Compression::Xz => Box::new(DecoderMemory(
+            crate::lzma::XzReader::new(input).with_dictionary_limit(LARGEST_DICTIONARY),
+        )),
         Compression::Bzip2 => Box::new(Bzip2Streams {
             decoder: Some(bzip2::bufread::BzDecoder::new(input)),
             streams: 1,
@@ -501,10 +497,12 @@ pub(crate) struct DecoderMemory<R>(pub(crate) R);
 impl<R: Read> Read for DecoderMemory<R> {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         self.0.read(buffer).map_err(|error| {
-            let over = error
-                .get_ref()
-                .and_then(|inner| inner.downcast_ref::<liblzma::stream::Error>())
-                .is_some_and(|inner| matches!(inner, liblzma::stream::Error::MemLimit));
+            let over = error.get_ref().is_some_and(|inner| {
+                inner.is::<crate::lzma::DictionaryOverLimit>()
+                    || inner
+                        .downcast_ref::<liblzma::stream::Error>()
+                        .is_some_and(|inner| matches!(inner, liblzma::stream::Error::MemLimit))
+            });
             if over {
                 std::io::Error::new(
                     std::io::ErrorKind::OutOfMemory,
@@ -1848,5 +1846,113 @@ mod lzip_tests {
         ] {
             assert_eq!(lzip_dictionary(coded), size, "{coded:#x}");
         }
+    }
+}
+
+#[cfg(test)]
+mod xz_tests {
+    use super::*;
+    use liblzma::stream::{Action, Check, Filters, LzmaOptions, Status, Stream};
+
+    fn encode(chain: &[(u64, Vec<u8>)], data: &[u8], check: Check) -> Vec<u8> {
+        let mut filters = Filters::new();
+        for (id, properties) in chain {
+            match *id {
+                0x03 => filters.delta_properties(properties),
+                0x04 => filters.x86_properties(properties),
+                other => panic!("not a filter here: {other:#x}"),
+            }
+            .unwrap();
+        }
+        filters.lzma2(&LzmaOptions::new_preset(0).unwrap());
+        let mut encoder = Stream::new_stream_encoder(&filters, check).unwrap();
+        let mut out = Vec::with_capacity(data.len() + 4096);
+        encoder.process_vec(data, &mut out, Action::Run).unwrap();
+        while encoder.process_vec(&[], &mut out, Action::Finish).unwrap() != Status::StreamEnd {
+            out.reserve(4096);
+        }
+        out
+    }
+
+    fn with_dictionary_byte(mut stream: Vec<u8>, byte: u8) -> Vec<u8> {
+        let block = 12;
+        let size = (usize::from(stream[block]) + 1) * 4;
+        let filter = (block..block + size)
+            .find(|&at| stream[at..at + 2] == [0x21, 0x01])
+            .unwrap();
+        stream[filter + 2] = byte;
+        let check = crc32fast::hash(&stream[block..block + size - 4]);
+        stream[block + size - 4..block + size].copy_from_slice(&check.to_le_bytes());
+        stream
+    }
+
+    fn ours(stream: &[u8]) -> std::io::Result<Vec<u8>> {
+        let mut out = Vec::new();
+        decode(std::io::Cursor::new(stream.to_vec()), Compression::Xz)
+            .unwrap()
+            .read_to_end(&mut out)
+            .map(|_| out)
+    }
+
+    fn liblzma_over_limit(stream: &[u8]) -> bool {
+        let mut decoder = liblzma::bufread::XzDecoder::new_stream(
+            stream,
+            Stream::new_auto_decoder(DECODER_MEMORY, liblzma::stream::CONCATENATED).unwrap(),
+        );
+        let error = decoder.read_to_end(&mut Vec::new()).err();
+        error.is_some_and(|error| {
+            error
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<liblzma::stream::Error>())
+                .is_some_and(|inner| matches!(inner, liblzma::stream::Error::MemLimit))
+        })
+    }
+
+    #[test]
+    fn xz_dictionaries_reach_the_memory_limit_exactly_where_liblzma_does() {
+        let data = b"tar member bytes ".repeat(64);
+        for chain in [
+            Vec::new(),
+            vec![(0x03, vec![3])],
+            vec![(0x04, Vec::new()), (0x03, vec![0])],
+        ] {
+            for byte in 0..=40 {
+                let stream = with_dictionary_byte(encode(&chain, &data, Check::Crc64), byte);
+                let result = ours(&stream);
+                let over = result
+                    .as_ref()
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::OutOfMemory);
+                assert_eq!(over, liblzma_over_limit(&stream), "{chain:?}, byte {byte}");
+                match result {
+                    Err(error) if over => assert!(
+                        error.to_string().contains(&format!(
+                            "the stream needs a dictionary larger than {}; {BACKEND_HINT}",
+                            largest_dictionary()
+                        )),
+                        "{chain:?}, byte {byte}: {error}"
+                    ),
+                    result => assert_eq!(result.unwrap(), data, "{chain:?}, byte {byte}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_xz_check_zipper_cannot_verify_is_refused() {
+        let data = b"checked bytes".repeat(10);
+        let mut stream = encode(&[], &data, Check::Crc32);
+        let unverifiable = 0x02;
+        stream[7] = unverifiable;
+        let header_check = crc32fast::hash(&stream[6..8]);
+        stream[8..12].copy_from_slice(&header_check.to_le_bytes());
+        let footer = stream.len() - 12;
+        stream[footer + 9] = unverifiable;
+        let footer_check = crc32fast::hash(&stream[footer + 4..footer + 10]);
+        stream[footer..footer + 4].copy_from_slice(&footer_check.to_le_bytes());
+        let error = ours(&stream).unwrap_err();
+        assert!(
+            error.to_string().contains("xz check type is not supported"),
+            "{error}"
+        );
     }
 }
