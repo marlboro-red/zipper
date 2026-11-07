@@ -396,6 +396,16 @@ item = src/zip_directory.rs | struct DirectoryBytes<
 item = src/zip_directory.rs | struct Extent {
 item = src/zip_directory.rs | struct Record<
 item = src/zip_directory.rs | type Walk<
+item = src/native_7z.rs |     const BRANCH_BUFFER:
+item = src/native_7z.rs |     fn buffer(
+item = src/native_7z.rs | enum FilterMethod {
+item = src/native_7z.rs | enum FilterSetting {
+item = src/native_7z.rs | fn filter_setting(
+item = src/native_7z.rs | struct Exact<
+item = src/native_7z.rs | type Branch = Exact<Box<dyn Read + Send>>;
+item = src/xz_filters.rs |     pub(crate) fn alignment(
+item = src/xz_filters.rs | pub(crate) const DELTA_HISTORY:
+item = src/xz_filters.rs | pub(crate) enum Branch {
 
 [7z-bcj2-graph]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
@@ -416,6 +426,7 @@ item = src/native_7z.rs | impl<R: Read> Read for ByteSwap<R> {
 [7z-filters]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = e6851866055b9d37
+full-check = cargo xtask kani-reach 7z-filters
 full-check = cargo kani --harness xz_filters::proofs::
 full-check = cargo kani --harness native_7z::proofs::filter_properties_
 full-check = cargo test --release --lib filter
@@ -446,6 +457,23 @@ item = src/xz_filters.rs | impl DeltaDecoder {
 item = src/xz_filters.rs | impl BranchStage {
 item = src/xz_filters.rs | impl Filter {
 item = src/xz_filters.rs | pub(crate) fn read_through<
+item = src/xz_filters.rs | mod proofs {
+item = src/native_7z.rs |     fn filter_properties_are_read_as_7zip_reads_them(
+item = src/native_7z.rs |     const BRANCH_BUFFER:
+item = src/native_7z.rs | struct Exact<
+item = src/native_7z.rs | type Branch = Exact<Box<dyn Read + Send>>;
+item = src/xz_filters.rs | const IA64_BUNDLE:
+item = src/xz_filters.rs | const RISCV_PAIR:
+item = src/xz_filters.rs | const X86_INSTRUCTION:
+item = src/xz_filters.rs | fn is_x86_address_top(
+item = src/xz_filters.rs | fn not_auipc_pair(
+item = src/xz_filters.rs | fn not_special_auipc(
+item = src/xz_filters.rs | fn whole_words(
+item = src/xz_filters.rs | fn word_at(
+item = src/xz_filters.rs | pub(crate) enum Branch {
+item = src/xz_filters.rs | pub(crate) struct BranchDecoder {
+item = src/xz_filters.rs | pub(crate) struct DeltaDecoder {
+item = src/xz_filters.rs | struct X86State {
 
 [strip]
 skill = .claude/skills/zipper-verify-strip/SKILL.md

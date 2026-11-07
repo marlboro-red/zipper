@@ -1625,22 +1625,43 @@ fn reach_not_listed(
                     .is_some_and(|model| model.has_variant(&name, &segments[1]))
                 {
                     targets.push((file, name));
+                } else if module_files(&target.join("::"))
+                    .iter()
+                    .any(|file| load(file))
+                {
+                    let mut full = target.clone();
+                    full.extend(segments[1..].iter().cloned());
+                    let (enum_path, variant) = full.split_at(full.len() - 1);
+                    let enum_target =
+                        match resolve_crate_path(enum_path, &mut |file| load(file), &defines) {
+                            Ok(Target::Here(file, name))
+                                if models.borrow()[&file]
+                                    .as_ref()
+                                    .is_some_and(|model| model.has_variant(&name, &variant[0])) =>
+                            {
+                                Some((file, name))
+                            }
+                            _ => None,
+                        };
+                    match enum_target {
+                        Some(target) => targets.push(target),
+                        None => match resolve_crate_path(&full, &mut |file| load(file), &defines) {
+                            Ok(Target::Here(file, name)) => targets.push((file, name)),
+                            Ok(Target::Nothing) => {}
+                            Err(why) => refuse(
+                                &mut problems,
+                                format!("{why} (imported at line {binding_line})"),
+                            ),
+                        },
+                    }
                 } else {
-                    let module_exists = module_files(&target.join("::"))
-                        .iter()
-                        .any(|file| load(file));
-                    let why = if module_exists {
-                        format!(
-                            "`{}` goes through the module imported at line {binding_line}, which the reach check does not follow",
-                            segments.join("::")
-                        )
-                    } else {
+                    refuse(
+                        &mut problems,
                         format!(
                             "`{}` names an item of `{first}`, imported at line {binding_line} from another file, which the reach check does not follow",
                             segments.join("::")
-                        )
-                    };
-                    refuse(&mut problems, why);
+                        ),
+                    );
                 }
             } else {
                 if segments.len() > 1 && !local && !EXTERNAL_ROOTS.contains(&first) {
@@ -2541,8 +2562,8 @@ mod proofs {
         let cases = [
             (
                 "use crate::memory;",
-                "memory::READ_CHUNK",
-                "src/m.rs:5: `memory::READ_CHUNK` goes through the module imported at line 1",
+                "memory::ReadChunk::BYTES",
+                "crate::memory::ReadChunk::BYTES is an associated item of a type in src/memory.rs, which the reach check does not follow (imported at line 1)",
             ),
             (
                 "use crate::memory::ReadChunk;",
@@ -2587,6 +2608,32 @@ mod proofs {
                 "{imports} / {value}: {problems:#?}"
             );
         }
+    }
+
+    #[test]
+    fn a_path_through_an_imported_module_needs_its_definition() {
+        assert_eq!(
+            reach_through("use crate::memory;", "memory::READ_CHUNK"),
+            ["item = src/memory.rs | pub(crate) const READ_CHUNK:"]
+        );
+        assert!(refused(
+            &reach_through("use crate::memory;", "memory::MISSING"),
+            "crate::memory::MISSING resolves to no definition (imported at line 1)"
+        ));
+        let other = "pub(crate) enum Extra {\n    Absent,\n}\n";
+        let m = format!("use crate::other;\n{STEP}const TOP: u32 = other::Extra::Absent as u32;\n");
+        let files = [("src/m.rs", m.as_str()), ("src/other.rs", other)];
+        assert_eq!(
+            unlisted_in(&files, &STEP_ITEMS, &[3]),
+            ["item = src/other.rs | pub(crate) enum Extra {"]
+        );
+        let unknown =
+            format!("use crate::other;\n{STEP}const TOP: u32 = other::Extra::Gone as u32;\n");
+        let files = [("src/m.rs", unknown.as_str()), ("src/other.rs", other)];
+        assert!(refused(
+            &unlisted_in(&files, &STEP_ITEMS, &[3]),
+            "crate::other::Extra::Gone is an associated item of a type in src/other.rs"
+        ));
     }
 
     #[test]
