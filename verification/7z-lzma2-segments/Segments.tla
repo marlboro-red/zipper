@@ -9,10 +9,13 @@
 (* within `Budget`. A thread holds its segment's whole output and          *)
 (* dictionary until the reader takes it, in order, from the thread's own   *)
 (* channel. A segment too large for a thread waits until it is the front,  *)
-(* then streams. The reader can be dropped at any time, after an error     *)
-(* elsewhere or a cancel; a decoder that finishes then finds no receiver   *)
-(* and exits. After an error or a drop, the reader stops its decoders and  *)
-(* joins them, so its caller returns only once no decoder thread is left.  *)
+(* then streams, even past the budget. Freed memory can stay resident in   *)
+(* the allocator's cache, so threads leave room for the largest front      *)
+(* dictionary of the folder. The reader can be dropped at any time, after  *)
+(* an error elsewhere or a cancel; a decoder that finishes then finds no   *)
+(* receiver and exits. After an error or a drop, the reader stops its      *)
+(* decoders and joins them, so its caller returns only once no decoder     *)
+(* thread is left.                                                         *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences
 
@@ -27,24 +30,26 @@ CONSTANTS
 N == Len(Sizes)
 Segments == 1..N
 
-ASSUME \A s \in Segments : Streamed[s] <= Budget
-
 VARIABLES
     next,       \* next segment to start
-    state,      \* segment -> "waiting", "streaming", "decoding", "ready", "failed", "taken" or "abandoned"
+    state,      \* segment -> "waiting", "streaming", "decoding", "ready", "failed", "drained", "taken" or "abandoned"
     charge,     \* segment -> units it holds once started
     held,       \* units started and not yet taken or freed
+    bufferedPeak, \* ghost: most units thread segments have held at once
+    streamedPeak, \* ghost: largest dictionary any front has streamed with
     emitted,    \* segments whose bytes the consumer has passed on, in order
     rpc,        \* consumer: "reading", "ok", "error", "dropped" or "returned"
     threads     \* decoder threads alive
 
-vars == <<next, state, charge, held, emitted, rpc, threads>>
+vars == <<next, state, charge, held, bufferedPeak, streamedPeak, emitted, rpc, threads>>
 
 Init ==
     /\ next = 1
     /\ state = [s \in Segments |-> "waiting"]
     /\ charge = [s \in Segments |-> 0]
     /\ held = 0
+    /\ bufferedPeak = 0
+    /\ streamedPeak = 0
     /\ emitted = <<>>
     /\ rpc = "reading"
     /\ threads = 0
@@ -52,6 +57,14 @@ Init ==
 Front == Len(emitted) + 1
 
 Streaming == IF Front <= N /\ state[Front] = "streaming" THEN 1 ELSE 0
+
+Max(a, b) == IF a > b THEN a ELSE b
+
+LargestStreamed == CHOOSE m \in {Streamed[s] : s \in Segments} :
+                       \A s \in Segments : Streamed[s] <= m
+
+\* `buffered_held`: what the thread segments hold, without the streaming front.
+BufferedHeld == held - (IF Streaming = 1 THEN charge[Front] ELSE 0)
 
 \* `stream_front`: no thread is queued, so the next segment is the front,
 \* and the reader decodes it itself.
@@ -62,23 +75,26 @@ ReaderStreamsFront ==
     /\ state' = [state EXCEPT ![next] = "streaming"]
     /\ charge' = [charge EXCEPT ![next] = Streamed[next]]
     /\ held' = held + Streamed[next]
+    /\ streamedPeak' = Max(streamedPeak, Streamed[next])
     /\ next' = next + 1
-    /\ UNCHANGED <<emitted, rpc, threads>>
+    /\ UNCHANGED <<bufferedPeak, emitted, rpc, threads>>
 
 \* `start_segments`: behind the front, start a thread for the next segment
-\* while the window and the budget allow.
+\* while the window allows and the thread segments, this one and the
+\* largest front dictionary fit the budget.
 ReaderStartsSegment ==
     /\ rpc = "reading"
     /\ next <= N
     /\ next > Front
     /\ threads + Streaming < Window
-    /\ held + Sizes[next] <= Budget
+    /\ BufferedHeld + LargestStreamed + Sizes[next] <= Budget
     /\ state' = [state EXCEPT ![next] = "decoding"]
     /\ charge' = [charge EXCEPT ![next] = Sizes[next]]
     /\ held' = held + Sizes[next]
+    /\ bufferedPeak' = Max(bufferedPeak, BufferedHeld + Sizes[next])
     /\ threads' = threads + 1
     /\ next' = next + 1
-    /\ UNCHANGED <<emitted, rpc>>
+    /\ UNCHANGED <<streamedPeak, emitted, rpc>>
 
 \* A decoder thread finishes its segment and sends the result, then exits.
 DecoderFinishes(s) ==
@@ -86,7 +102,7 @@ DecoderFinishes(s) ==
     /\ \/ state' = [state EXCEPT ![s] = "ready"]
        \/ DecodeCanFail /\ state' = [state EXCEPT ![s] = "failed"]
     /\ threads' = threads - 1
-    /\ UNCHANGED <<next, charge, held, emitted, rpc>>
+    /\ UNCHANGED <<next, charge, held, bufferedPeak, streamedPeak, emitted, rpc>>
 
 \* `SegmentDecoder::read` on the streaming front, to its end: its bytes go
 \* out in order and its dictionary is freed, or the decode fails.
@@ -95,14 +111,14 @@ ReaderDecodesFront ==
     /\ Front <= N
     /\ state[Front] = "streaming"
     /\ \/ /\ emitted' = Append(emitted, Front)
-          /\ state' = [state EXCEPT ![Front] = "taken"]
+          /\ state' = [state EXCEPT ![Front] = "drained"]
           /\ held' = held - charge[Front]
           /\ rpc' = IF Front = N THEN "ok" ELSE "reading"
        \/ /\ DecodeCanFail
           /\ state' = [state EXCEPT ![Front] = "failed"]
           /\ rpc' = "error"
           /\ UNCHANGED <<emitted, held>>
-    /\ UNCHANGED <<next, charge, threads>>
+    /\ UNCHANGED <<next, charge, bufferedPeak, streamedPeak, threads>>
 
 \* `recv()` on the front thread's channel: its bytes go out in order and
 \* its memory is freed; a failed segment becomes the reader's error.
@@ -117,14 +133,14 @@ ReaderTakesFront ==
             /\ rpc' = IF Front = N THEN "ok" ELSE "reading"
        ELSE /\ rpc' = "error"
             /\ UNCHANGED <<emitted, state, held>>
-    /\ UNCHANGED <<next, charge, threads>>
+    /\ UNCHANGED <<next, charge, bufferedPeak, streamedPeak, threads>>
 
 \* The folder worker stops reading and drops the reader.
 ReaderDropped ==
     /\ ReaderCanDrop
     /\ rpc = "reading"
     /\ rpc' = "dropped"
-    /\ UNCHANGED <<next, state, charge, held, emitted, threads>>
+    /\ UNCHANGED <<next, state, charge, held, bufferedPeak, streamedPeak, emitted, threads>>
 
 \* Once the reader is gone, results it never took and the front it was
 \* streaming are freed.
@@ -133,7 +149,7 @@ ResultFreed(s) ==
     /\ state[s] \in {"ready", "failed", "streaming"}
     /\ state' = [state EXCEPT ![s] = "abandoned"]
     /\ held' = held - charge[s]
-    /\ UNCHANGED <<next, charge, emitted, rpc, threads>>
+    /\ UNCHANGED <<next, charge, bufferedPeak, streamedPeak, emitted, rpc, threads>>
 
 \* Dropping the reader joins every decoder thread it started, and only
 \* then does the folder worker return.
@@ -141,7 +157,7 @@ ReaderReturns ==
     /\ rpc \in {"error", "dropped"}
     /\ threads = 0
     /\ rpc' = "returned"
-    /\ UNCHANGED <<next, state, charge, held, emitted, threads>>
+    /\ UNCHANGED <<next, state, charge, held, bufferedPeak, streamedPeak, emitted, threads>>
 
 Holding == {"streaming", "decoding", "ready", "failed"}
 
@@ -176,11 +192,15 @@ OkIsComplete == rpc = "ok" => Len(emitted) = N
 \* A corrupt segment never ends in a complete read.
 FailureIsReported == (rpc = "ok") => \A s \in Segments : state[s] /= "failed"
 
-\* What the started segments hold stays within the budget, and the reader's
-\* count matches it. A thread's segment holds its whole output and its
-\* dictionary, and the streaming front only its dictionary.
+\* The reader's count matches what the started segments hold: a thread's
+\* segment its whole output and dictionary, the streaming front only its
+\* dictionary. Even if no freed byte left the process, the most the thread
+\* segments ever held plus the largest front dictionary stay within the
+\* budget once any thread ran. Without threads only one front is held,
+\* which may pass the budget by itself.
 MemoryBounded ==
-    /\ held <= Budget
+    /\ bufferedPeak > 0 => bufferedPeak + streamedPeak <= Budget
+    /\ held <= Max(Budget, LargestStreamed)
     /\ held = SumOf({s \in Segments : state[s] \in Holding})
     /\ \A s \in Segments :
          /\ state[s] = "streaming" => charge[s] = Streamed[s]

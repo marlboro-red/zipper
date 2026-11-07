@@ -1867,6 +1867,7 @@ fn folder_reader(
             input: file,
             pack_start: SIGNATURE_HEADER + folder.pack_offset,
             properties,
+            largest_front: largest_front(&segments, properties),
             segments,
             window: window.min(SEGMENT_WINDOW_MAX),
             budget: SEGMENT_BUDGET,
@@ -2105,6 +2106,7 @@ struct ParallelLzma2 {
     input: ArchiveFile,
     pack_start: u64,
     properties: u8,
+    largest_front: u64,
     segments: Vec<Segment>,
     window: usize,
     budget: u64,
@@ -2154,7 +2156,22 @@ impl SegmentThread {
     }
 }
 
+fn largest_front(segments: &[Segment], properties: u8) -> u64 {
+    segments
+        .iter()
+        .map(|segment| segment.streamed(properties))
+        .max()
+        .unwrap_or(0)
+}
+
 impl ParallelLzma2 {
+    fn buffered_held(&self) -> u64 {
+        match self.front {
+            Front::Streaming { held, .. } => self.held - held,
+            _ => self.held,
+        }
+    }
+
     fn decoders(&self) -> usize {
         self.queue.len() + usize::from(matches!(self.front, Front::Streaming { .. }))
     }
@@ -2181,7 +2198,8 @@ impl ParallelLzma2 {
     fn start_segments(&mut self) -> std::io::Result<()> {
         while let Some(segment) = self.segments.get(self.next)
             && self.decoders() < self.window
-            && self.held + segment.buffered(self.properties) <= self.budget
+            && self.buffered_held() + self.largest_front + segment.buffered(self.properties)
+                <= self.budget
         {
             let (sender, receiver) = sync_channel(1);
             let input = self.input.reopen(&self.path)?;
@@ -3495,10 +3513,14 @@ mod tests {
     }
 
     fn segmented_lzma2(scratch: &Path) -> (PathBuf, Vec<Folder>) {
+        segmented_lzma2_of(scratch, &[150_000; 3])
+    }
+
+    fn segmented_lzma2_of(scratch: &Path, sizes: &[u32]) -> (PathBuf, Vec<Folder>) {
         let mut packed = Vec::new();
         let mut data = Vec::new();
-        for part in 0..3u32 {
-            let plain: Vec<u8> = (0..150_000u32)
+        for (part, &size) in sizes.iter().enumerate() {
+            let plain: Vec<u8> = (0..size)
                 .map(|index| {
                     b"segment text "[(index % 13) as usize]
                         ^ (index.wrapping_mul(2_654_435_761) >> 29) as u8
@@ -3548,6 +3570,7 @@ mod tests {
             input: archive_file(path),
             pack_start: SIGNATURE_HEADER + folder.pack_offset,
             properties: 18,
+            largest_front: largest_front(&segments, 18),
             segments,
             window,
             budget,
@@ -3602,6 +3625,48 @@ mod tests {
                 folder.crc,
                 "{window} {budget}"
             );
+        }
+    }
+
+    #[test]
+    fn threads_leave_room_for_the_largest_front_dictionary_before_or_after_them() {
+        let scratch = tempfile::tempdir().unwrap();
+        let small = [150_000; 4];
+        for (case, sizes) in [
+            ("large front first", [&[1_200_000][..], &small].concat()),
+            ("large front last", [&small[..], &[1_200_000]].concat()),
+        ] {
+            let (path, folders) = segmented_lzma2_of(scratch.path(), &sizes);
+            let folder = &folders[0];
+            let segments = independent_lzma2_segments(&mut archive_file(&path), folder, 1)
+                .unwrap()
+                .unwrap();
+            assert_eq!(segments.len(), 5, "{case}");
+            let front = largest_front(&segments, 18);
+            let behind = segments.iter().map(|s| s.buffered(18)).min().unwrap();
+            assert!(front > 2 * behind, "{case}: {front} {behind}");
+            let budget = front + 2 * behind;
+            let mut reader = capped_reader(&path, folder, 8, budget);
+            let (mut decoded, mut buffer) = (Vec::new(), vec![0u8; 65_536]);
+            let (mut most_buffered, mut largest_streamed, mut most_threads) = (0, 0, 0);
+            loop {
+                let read = reader.read(&mut buffer).unwrap();
+                if let Front::Streaming { held, .. } = &reader.front {
+                    largest_streamed = u64::max(largest_streamed, *held);
+                }
+                most_buffered = most_buffered.max(reader.buffered_held());
+                most_threads = most_threads.max(reader.queue.len());
+                assert!(
+                    most_buffered == 0 || most_buffered + largest_streamed <= budget,
+                    "{case}: {most_buffered} buffered and a {largest_streamed} front against {budget}"
+                );
+                if read == 0 {
+                    break;
+                }
+                decoded.extend_from_slice(&buffer[..read]);
+            }
+            assert_eq!(most_threads, 2, "{case}");
+            assert_eq!(Some(crc32fast::hash(&decoded)), folder.crc, "{case}");
         }
     }
 

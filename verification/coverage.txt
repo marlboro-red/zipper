@@ -104,7 +104,7 @@ item = src/lib.rs | fn ensure_link_stays_inside(
 [7z-lzma2-segments]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
 fingerprint = 5daa6ca3b3d591a6
-full-check = python3 scripts/check_model.py verification/7z-lzma2-segments MCSegments.tla:segments.cfg MCSegments.tla:undropped.cfg
+full-check = python3 scripts/check_model.py verification/7z-lzma2-segments MCSegments.tla:segments.cfg MCSegments.tla:undropped.cfg MCHugeFront.tla:segments.cfg
 item = src/native_7z.rs | const SEGMENT_BUDGET:
 item = src/native_7z.rs | const PARALLEL_FOLDER_MIN:
 item = src/native_7z.rs | struct ParallelLzma2 {
@@ -118,6 +118,7 @@ item = src/native_7z.rs | enum Front {
 item = src/native_7z.rs | impl Front {
 item = src/native_7z.rs | struct SegmentDecoder {
 item = src/native_7z.rs | impl SegmentDecoder {
+item = src/native_7z.rs | fn largest_front(
 
 [7z-header-numbers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
@@ -135,7 +136,7 @@ item = src/native_7z.rs |     fn header_readers_never_panic(
 
 [7z-lzma2-chunks]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 16c2894db981c643
+fingerprint = b1d5291458f58475
 full-check = cargo xtask kani-reach 7z-lzma2-chunks
 full-check = cargo kani --exact --harness native_7z::proofs::chunk_headers_stay_within_lzma2_limits
 full-check = cargo test --release --lib segment_plans
