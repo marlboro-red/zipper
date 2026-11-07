@@ -1202,185 +1202,6 @@ fn crc64(crc: u64, bytes: &[u8]) -> u64 {
     })
 }
 
-// SPEC(FIPS 180-4 5.3.3 and 4.2.2): the initial hash value and the 64 round constants.
-const SHA256_INITIAL: [u32; 8] = [
-    0x6a09_e667,
-    0xbb67_ae85,
-    0x3c6e_f372,
-    0xa54f_f53a,
-    0x510e_527f,
-    0x9b05_688c,
-    0x1f83_d9ab,
-    0x5be0_cd19,
-];
-const SHA256_ROUNDS: [u32; 64] = [
-    0x428a_2f98,
-    0x7137_4491,
-    0xb5c0_fbcf,
-    0xe9b5_dba5,
-    0x3956_c25b,
-    0x59f1_11f1,
-    0x923f_82a4,
-    0xab1c_5ed5,
-    0xd807_aa98,
-    0x1283_5b01,
-    0x2431_85be,
-    0x550c_7dc3,
-    0x72be_5d74,
-    0x80de_b1fe,
-    0x9bdc_06a7,
-    0xc19b_f174,
-    0xe49b_69c1,
-    0xefbe_4786,
-    0x0fc1_9dc6,
-    0x240c_a1cc,
-    0x2de9_2c6f,
-    0x4a74_84aa,
-    0x5cb0_a9dc,
-    0x76f9_88da,
-    0x983e_5152,
-    0xa831_c66d,
-    0xb003_27c8,
-    0xbf59_7fc7,
-    0xc6e0_0bf3,
-    0xd5a7_9147,
-    0x06ca_6351,
-    0x1429_2967,
-    0x27b7_0a85,
-    0x2e1b_2138,
-    0x4d2c_6dfc,
-    0x5338_0d13,
-    0x650a_7354,
-    0x766a_0abb,
-    0x81c2_c92e,
-    0x9272_2c85,
-    0xa2bf_e8a1,
-    0xa81a_664b,
-    0xc24b_8b70,
-    0xc76c_51a3,
-    0xd192_e819,
-    0xd699_0624,
-    0xf40e_3585,
-    0x106a_a070,
-    0x19a4_c116,
-    0x1e37_6c08,
-    0x2748_774c,
-    0x34b0_bcb5,
-    0x391c_0cb3,
-    0x4ed8_aa4a,
-    0x5b9c_ca4f,
-    0x682e_6ff3,
-    0x748f_82ee,
-    0x78a5_636f,
-    0x84c8_7814,
-    0x8cc7_0208,
-    0x90be_fffa,
-    0xa450_6ceb,
-    0xbef9_a3f7,
-    0xc671_78f2,
-];
-const SHA256_BLOCK: usize = 64;
-const SHA256_LENGTH_FIELD: usize = 8;
-
-struct Sha256 {
-    state: [u32; 8],
-    block: [u8; SHA256_BLOCK],
-    filled: usize,
-    length: u64,
-}
-
-impl Default for Sha256 {
-    fn default() -> Self {
-        Sha256 {
-            state: SHA256_INITIAL,
-            block: [0; SHA256_BLOCK],
-            filled: 0,
-            length: 0,
-        }
-    }
-}
-
-impl Sha256 {
-    fn update(&mut self, mut bytes: &[u8]) {
-        self.length = self.length.wrapping_add(bytes.len() as u64);
-        if self.filled > 0 {
-            let take = (SHA256_BLOCK - self.filled).min(bytes.len());
-            self.block[self.filled..self.filled + take].copy_from_slice(&bytes[..take]);
-            self.filled += take;
-            bytes = &bytes[take..];
-            if self.filled < SHA256_BLOCK {
-                return;
-            }
-            let block = self.block;
-            sha256_compress(&mut self.state, &block);
-            self.filled = 0;
-        }
-        let mut blocks = bytes.chunks_exact(SHA256_BLOCK);
-        for block in &mut blocks {
-            sha256_compress(&mut self.state, block.try_into().unwrap());
-        }
-        let rest = blocks.remainder();
-        self.block[..rest.len()].copy_from_slice(rest);
-        self.filled = rest.len();
-    }
-
-    fn finish(mut self) -> [u8; 32] {
-        let bits = self.length.wrapping_mul(8);
-        self.update(&[0x80]);
-        while self.filled != SHA256_BLOCK - SHA256_LENGTH_FIELD {
-            self.update(&[0]);
-        }
-        self.update(&bits.to_be_bytes());
-        let mut digest = [0; 32];
-        for (out, word) in digest.chunks_exact_mut(4).zip(self.state) {
-            out.copy_from_slice(&word.to_be_bytes());
-        }
-        digest
-    }
-}
-
-// SPEC(FIPS 180-4 6.2.2): the message schedule and the 64 rounds of one block.
-fn sha256_compress(state: &mut [u32; 8], block: &[u8; SHA256_BLOCK]) {
-    let mut schedule = [0u32; 64];
-    for (word, bytes) in schedule.iter_mut().zip(block.chunks_exact(4)) {
-        *word = u32::from_be_bytes(bytes.try_into().unwrap());
-    }
-    for at in 16..64 {
-        let early = schedule[at - 15];
-        let late = schedule[at - 2];
-        let sigma0 = early.rotate_right(7) ^ early.rotate_right(18) ^ (early >> 3);
-        let sigma1 = late.rotate_right(17) ^ late.rotate_right(19) ^ (late >> 10);
-        schedule[at] = schedule[at - 16]
-            .wrapping_add(sigma0)
-            .wrapping_add(schedule[at - 7])
-            .wrapping_add(sigma1);
-    }
-    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *state;
-    for (&round, &word) in SHA256_ROUNDS.iter().zip(&schedule) {
-        let sum1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-        let choice = (e & f) ^ (!e & g);
-        let first = h
-            .wrapping_add(sum1)
-            .wrapping_add(choice)
-            .wrapping_add(round)
-            .wrapping_add(word);
-        let sum0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-        let majority = (a & b) ^ (a & c) ^ (b & c);
-        let second = sum0.wrapping_add(majority);
-        h = g;
-        g = f;
-        f = e;
-        e = d.wrapping_add(first);
-        d = c;
-        c = b;
-        b = a;
-        a = first.wrapping_add(second);
-    }
-    for (word, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
-        *word = word.wrapping_add(value);
-    }
-}
-
 fn padding_to_align(length: u64) -> u64 {
     length.wrapping_neg() % XZ_ALIGN
 }
@@ -1408,7 +1229,7 @@ enum XzCheckState {
     None,
     Crc32(crc32fast::Hasher),
     Crc64(u64),
-    Sha256(Sha256),
+    Sha256(sha2::Sha256),
 }
 
 impl XzCheckState {
@@ -1417,7 +1238,7 @@ impl XzCheckState {
             XzCheck::None => XzCheckState::None,
             XzCheck::Crc32 => XzCheckState::Crc32(crc32fast::Hasher::new()),
             XzCheck::Crc64 => XzCheckState::Crc64(0),
-            XzCheck::Sha256 => XzCheckState::Sha256(Sha256::default()),
+            XzCheck::Sha256 => XzCheckState::Sha256(sha2::Digest::new()),
         }
     }
 
@@ -1426,7 +1247,7 @@ impl XzCheckState {
             XzCheckState::None => {}
             XzCheckState::Crc32(hasher) => hasher.update(bytes),
             XzCheckState::Crc64(crc) => *crc = crc64(*crc, bytes),
-            XzCheckState::Sha256(hasher) => hasher.update(bytes),
+            XzCheckState::Sha256(hasher) => sha2::Digest::update(hasher, bytes),
         }
     }
 
@@ -1435,7 +1256,7 @@ impl XzCheckState {
             XzCheckState::None => stored.is_empty(),
             XzCheckState::Crc32(hasher) => stored == hasher.finalize().to_le_bytes(),
             XzCheckState::Crc64(crc) => stored == crc.to_le_bytes(),
-            XzCheckState::Sha256(hasher) => stored == hasher.finish(),
+            XzCheckState::Sha256(hasher) => stored == sha2::Digest::finalize(hasher).as_slice(),
         }
     }
 }
@@ -1690,7 +1511,7 @@ struct XzRecords {
     count: u64,
     blocks_size: u64,
     uncompressed: u64,
-    digest: Sha256,
+    digest: sha2::Sha256,
 }
 
 impl XzRecords {
@@ -1707,18 +1528,14 @@ impl XzRecords {
             .checked_add(uncompressed)
             .filter(|&size| size <= XZ_VLI_MAX)
             .ok_or_else(too_large)?;
-        self.digest.update(&unpadded.to_le_bytes());
-        self.digest.update(&uncompressed.to_le_bytes());
+        sha2::Digest::update(&mut self.digest, unpadded.to_le_bytes());
+        sha2::Digest::update(&mut self.digest, uncompressed.to_le_bytes());
         Ok(())
     }
 
     fn summary(self) -> (u64, u64, u64, [u8; 32]) {
-        (
-            self.count,
-            self.blocks_size,
-            self.uncompressed,
-            self.digest.finish(),
-        )
+        let digest = sha2::Digest::finalize(self.digest).into();
+        (self.count, self.blocks_size, self.uncompressed, digest)
     }
 }
 
@@ -4957,46 +4774,6 @@ mod tests {
                     }
                 }
             }
-        }
-
-        fn sha256_one_byte_at_a_time(data: &[u8]) -> [u8; 32] {
-            let mut hasher = Sha256::default();
-            for &byte in data {
-                hasher.update(&[byte]);
-            }
-            hasher.finish()
-        }
-
-        #[test]
-        fn sha256_matches_the_sha2_crate_at_every_length_and_split() {
-            let data = noise(89, 300);
-            for length in 0..=data.len() {
-                let expected: [u8; 32] =
-                    <sha2::Sha256 as sha2::Digest>::digest(&data[..length]).into();
-                assert_eq!(
-                    sha256_one_byte_at_a_time(&data[..length]),
-                    expected,
-                    "length {length}"
-                );
-                for split in [
-                    0,
-                    length.min(1),
-                    length / 3,
-                    length / 2,
-                    length.saturating_sub(1),
-                    length,
-                ] {
-                    let mut hasher = Sha256::default();
-                    hasher.update(&data[..split]);
-                    hasher.update(&data[split..length]);
-                    assert_eq!(hasher.finish(), expected, "length {length}, split {split}");
-                }
-            }
-            let large = noise(90, 1 << 20);
-            let expected: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(&large).into();
-            let mut hasher = Sha256::default();
-            hasher.update(&large);
-            assert_eq!(hasher.finish(), expected);
         }
 
         fn crc64_one_byte_at_a_time(crc: u64, data: &[u8]) -> u64 {
