@@ -1075,6 +1075,26 @@ for kind, value in steps:
         for child, ppid, _ in processes():
             if ppid == pid:
                 os.kill(child, getattr(signal, value))
+    elif kind == "grown":
+        folder, size, skip = value.split("|", 2)
+        def written():
+            total = 0
+            for base, _, names in os.walk(folder):
+                for name in names:
+                    if name != skip:
+                        try:
+                            total += os.path.getsize(os.path.join(base, name))
+                        except OSError:
+                            pass
+            return total
+        deadline = time.time() + 30
+        while written() < int(size) and time.time() < deadline:
+            time.sleep(0.005)
+        if written() >= int(size):
+            seen += b"GROWN"
+pump(20, b"RC=")
+if b"RC=" in seen:
+    os.write(terminal, b"END\n")
 pump(20, b"LEFT=")
 pump(0.3)
 deadline = time.time() + 10
@@ -1095,7 +1115,7 @@ pid, terminal = pty.fork()
 if pid == 0:
     env = dict(os.environ, PS1="PROMPT$ ", HISTFILE=history)
     os.execve("/bin/bash", ["bash", "--norc", "--noprofile", "-i"], env)
-pump(1)
+pump(15, b"PROMPT$ ")
 for kind, value in steps:
     if kind == "type":
         os.write(terminal, value.encode() + b"\r")
@@ -1121,7 +1141,7 @@ for kind, value in steps:
             if marker in command:
                 os.kill(target, getattr(signal, name))
 os.write(terminal, b"exit\r")
-pump(1)
+pump(5)
 kill_tree(pid)
 os.waitpid(pid, 0)
 sys.stdout.write(seen.decode("latin1"))
@@ -1204,7 +1224,7 @@ fn drive(body: &str, arguments: &[&std::ffi::OsStr]) -> String {
 #[cfg(unix)]
 fn on_a_terminal(command: &str, steps: &[(&str, String)]) -> String {
     let script = format!(
-        "trap : INT QUIT; {command}; echo RC=$?; stty -a; IFS= read -t 2 -r rest; echo \"LEFT=[$rest]\""
+        "trap : INT QUIT; {command}; echo RC=$?; stty -a; IFS= read -r rest; echo \"LEFT=[${{rest%END}}]\""
     );
     let steps = serde_json::to_string(steps).unwrap();
     drive(PTY_DRIVER, &[script.as_ref(), steps.as_ref()])
@@ -2144,6 +2164,12 @@ fn large_zip_crypto_archive(path: &Path, password: &[u8], size: usize) {
 }
 
 #[cfg(unix)]
+const PLAINTEXT_BEFORE_THE_SIGNAL: u64 = 8 << 20;
+
+#[cfg(unix)]
+const SIGNALLED_ENTRY: usize = 64 << 20;
+
+#[cfg(unix)]
 fn decrypted_bytes_on_disk(folder: &Path) -> u64 {
     walkdir::WalkDir::new(folder)
         .into_iter()
@@ -2159,10 +2185,9 @@ fn decrypted_bytes_on_disk(folder: &Path) -> u64 {
 fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
     use std::io::Read;
     use std::os::unix::process::ExitStatusExt;
-    const LARGE: usize = 512 << 20;
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("large.zip");
-    large_zip_crypto_archive(&archive, b"hunter2", LARGE);
+    large_zip_crypto_archive(&archive, b"hunter2", SIGNALLED_ENTRY);
     for (name, number) in [("INT", 2), ("TERM", 15), ("HUP", 1), ("QUIT", 3)] {
         let output = work.path().join("out");
         let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
@@ -2171,13 +2196,14 @@ fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
             .arg("-o")
             .arg(&output)
             .arg("--max-extracted-bytes")
-            .arg(LARGE.to_string())
+            .arg(SIGNALLED_ENTRY.to_string())
             .stdin(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        while decrypted_bytes_on_disk(work.path()) < 8 << 20 && std::time::Instant::now() < deadline
+        while decrypted_bytes_on_disk(work.path()) < PLAINTEXT_BEFORE_THE_SIGNAL
+            && std::time::Instant::now() < deadline
         {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -2219,11 +2245,10 @@ fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
 fn ctrl_c_during_decryption_after_the_prompt_leaves_no_plaintext() {
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("large.zip");
-    const LARGE: usize = 512 << 20;
-    large_zip_crypto_archive(&archive, b"hunter2", LARGE);
+    large_zip_crypto_archive(&archive, b"hunter2", SIGNALLED_ENTRY);
     let output = work.path().join("out");
     let command = format!(
-        "{} extract {} -o {} --max-extracted-bytes {LARGE}",
+        "{} extract {} -o {} --max-extracted-bytes {SIGNALLED_ENTRY}",
         shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
         shell_quoted(&archive),
         shell_quoted(&output)
@@ -2231,11 +2256,21 @@ fn ctrl_c_during_decryption_after_the_prompt_leaves_no_plaintext() {
     let steps = [
         ("wait", "Password: ".to_owned()),
         ("send", hex(b"hunter2\r")),
-        ("sleep", "0.3".to_owned()),
+        (
+            "grown",
+            format!(
+                "{}|{PLAINTEXT_BEFORE_THE_SIGNAL}|large.zip",
+                work.path().display()
+            ),
+        ),
         ("send", hex(b"\x03")),
         ("sleep", "1".to_owned()),
     ];
     let transcript = on_a_terminal(&command, &steps);
+    assert!(
+        transcript.contains("GROWN"),
+        "no plaintext reached the disk before Ctrl-C: {transcript}"
+    );
     assert!(transcript.contains("RC=130"), "{transcript}");
     assert_terminal_restored("Ctrl-C while decrypting", &transcript);
     assert_eq!(listing(work.path()), ["large.zip"], "{transcript}");
@@ -2288,7 +2323,7 @@ fn signal_once_output_grows(
     arguments: &[&std::ffi::OsStr],
     signal: &str,
 ) -> std::process::Output {
-    let child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
         .args(arguments)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -2305,9 +2340,13 @@ fn signal_once_output_grows(
             .sum::<u64>()
     };
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-    while written() < 8 << 20 && std::time::Instant::now() < deadline {
+    while written() < PLAINTEXT_BEFORE_THE_SIGNAL && std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "Zipper ended before SIG{signal}"
+    );
     assert!(
         Command::new("kill")
             .arg(format!("-{signal}"))
@@ -2329,7 +2368,7 @@ fn a_signal_during_a_7zip_extraction_stops_the_child_and_removes_staging() {
     }
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("large.zip");
-    large_stored_zip(&archive, 512 << 20);
+    large_stored_zip(&archive, SIGNALLED_ENTRY);
     let output = work.path().join("out");
     for (signal, number) in [("TERM", 15), ("INT", 2)] {
         let run = signal_once_output_grows(
@@ -2378,7 +2417,7 @@ fn a_signal_during_a_single_stream_extraction_removes_staging() {
         flate2::Compression::fast(),
     );
     let zeros = vec![0u8; 1 << 20];
-    for _ in 0..512 {
+    for _ in 0..SIGNALLED_ENTRY >> 20 {
         encoder.write_all(&zeros).unwrap();
     }
     encoder.finish().unwrap();
@@ -2432,10 +2471,9 @@ fn terminate(child: &std::process::Child) {
 fn a_signal_stops_a_copy_to_standard_output() {
     use std::io::Read;
     use std::os::unix::process::ExitStatusExt;
-    const LARGE: usize = 256 << 20;
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("large.zip");
-    large_stored_zip(&archive, LARGE);
+    large_stored_zip(&archive, SIGNALLED_ENTRY);
     for slow_reader in [false, true] {
         let temporary = work.path().join("tmp");
         fs::create_dir_all(&temporary).unwrap();
@@ -2473,7 +2511,7 @@ fn a_signal_stops_a_copy_to_standard_output() {
             if slow_reader {
                 copied.load(std::sync::atomic::Ordering::SeqCst) > 4 << 20
             } else {
-                decrypted_bytes_on_disk(&temporary) >= LARGE as u64
+                decrypted_bytes_on_disk(&temporary) >= SIGNALLED_ENTRY as u64
             }
         };
         while !copying() && std::time::Instant::now() < deadline {
@@ -2484,7 +2522,7 @@ fn a_signal_stops_a_copy_to_standard_output() {
         let status = wait_at_most(&mut child, 10);
         if let Some(reader) = reader {
             reader.join().unwrap();
-            assert!(copied.load(std::sync::atomic::Ordering::SeqCst) < LARGE);
+            assert!(copied.load(std::sync::atomic::Ordering::SeqCst) < SIGNALLED_ENTRY);
         }
         let case = if slow_reader {
             "a slow reader"
@@ -2552,10 +2590,9 @@ fn a_signal_stops_7zip_listing_and_testing() {
 #[test]
 fn a_signal_right_after_the_copy_to_standard_output_leaves_no_temporary_folder() {
     use std::os::unix::process::ExitStatusExt;
-    const LARGE: usize = 256 << 20;
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("large.zip");
-    large_stored_zip(&archive, LARGE);
+    large_stored_zip(&archive, SIGNALLED_ENTRY);
     let temporary = work.path().join("tmp");
     fs::create_dir(&temporary).unwrap();
     let copy = work.path().join("copy.bin");
@@ -2570,7 +2607,7 @@ fn a_signal_right_after_the_copy_to_standard_output_leaves_no_temporary_folder()
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        while fs::metadata(&copy).map_or(0, |metadata| metadata.len()) < LARGE as u64
+        while fs::metadata(&copy).map_or(0, |metadata| metadata.len()) < SIGNALLED_ENTRY as u64
             && child.try_wait().unwrap().is_none()
         {
             std::thread::sleep(std::time::Duration::from_micros(500));
@@ -2581,7 +2618,7 @@ fn a_signal_right_after_the_copy_to_standard_output_leaves_no_temporary_folder()
             .arg(child.id().to_string())
             .status();
         let status = child.wait().unwrap();
-        let complete = fs::metadata(&copy).unwrap().len() == LARGE as u64;
+        let complete = fs::metadata(&copy).unwrap().len() == SIGNALLED_ENTRY as u64;
         assert_eq!(
             listing(&temporary),
             Vec::<String>::new(),
