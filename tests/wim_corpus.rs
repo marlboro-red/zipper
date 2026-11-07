@@ -422,6 +422,72 @@ fn the_read_only_attribute_becomes_mode_0o444() {
     common::make_tree_deletable(root.path());
 }
 
+#[test]
+fn a_damaged_chunk_is_refused_exactly_when_7zip_refuses_it() {
+    let Some(binary) = sevenzip() else {
+        return;
+    };
+    let mut cases = 0;
+    for name in [
+        "xpress.wim",
+        "xpress-4k.wim",
+        "lzx.wim",
+        "lzx-128k.wim",
+        "lzms.wim",
+        "solid.esd",
+        "solid-lzx.wim",
+    ] {
+        let wim = fs::read(Path::new(CORPUS).join(name)).unwrap();
+        let table = u64::from_le_bytes(wim[56..64].try_into().unwrap()) as usize;
+        for at in (wim_writer::HEADER..table).step_by(97) {
+            let mut damaged = wim.clone();
+            damaged[at] ^= 1 << (at % 8);
+            agrees_with_7zip(&binary, name, &damaged, &format!("byte {at}"));
+            cases += 1;
+        }
+    }
+    assert!(cases > 1000, "{cases} cases");
+}
+
+fn agrees_with_7zip(binary: &Path, name: &str, damaged: &[u8], what: &str) {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join(name);
+    fs::write(&archive, damaged).unwrap();
+    let ours = zipper_tree(&archive, &root.path().join("zipper"));
+    let theirs = sevenzip_tree(binary, &archive, &root.path().join("7zip"));
+    match (&ours, &theirs) {
+        (Ok(ours), Some(theirs)) => assert_eq!(ours, theirs, "{name} {what}"),
+        (Err(_), None) => {}
+        _ => panic!(
+            "{name} {what}: Zipper {:?}, 7-Zip {}",
+            ours.as_ref().map(|_| "accepts"),
+            if theirs.is_some() {
+                "accepts"
+            } else {
+                "refuses"
+            }
+        ),
+    }
+    common::make_tree_deletable(root.path());
+}
+
+#[test]
+fn every_bit_of_a_one_chunk_lzms_image_is_refused_exactly_when_7zip_refuses_it() {
+    let Some(binary) = sevenzip() else {
+        return;
+    };
+    let name = "lzms-one-chunk.wim";
+    let wim = fs::read(Path::new(CORPUS).join(name)).unwrap();
+    let table = u64::from_le_bytes(wim[56..64].try_into().unwrap()) as usize;
+    for at in wim_writer::HEADER..table {
+        for bit in 0..8 {
+            let mut damaged = wim.clone();
+            damaged[at] ^= 1 << bit;
+            agrees_with_7zip(&binary, name, &damaged, &format!("byte {at} bit {bit}"));
+        }
+    }
+}
+
 #[cfg(unix)]
 fn write_corpus_tree(root: &Path, seed: u64, links: bool) {
     let mut random = Random(seed);
@@ -453,10 +519,14 @@ fn write_the_corpus() {
     let wimlib = wimlib().expect("wimlib-imagex writes the corpus");
     let binary = sevenzip().expect("7-Zip records the corpus trees");
     let root = tempfile::tempdir().unwrap();
-    let [plain, linked, second] = ["plain", "linked", "second"].map(|name| root.path().join(name));
+    let [plain, linked, second, small] =
+        ["plain", "linked", "second", "small"].map(|name| root.path().join(name));
     write_corpus_tree(&plain, 1, false);
     write_corpus_tree(&linked, 2, true);
     write_corpus_tree(&second, 3, false);
+    fs::create_dir_all(&small).unwrap();
+    let mut random = Random(4);
+    fs::write(small.join("small.bin"), sample(&mut random, 400)).unwrap();
     let shapes: &[(&str, &Path, &[&str])] = &[
         ("stored.wim", &plain, &["--compress=none"]),
         ("xpress.wim", &plain, &["--compress=xpress"]),
@@ -486,6 +556,7 @@ fn write_the_corpus() {
         ("links.wim", &linked, &["--compress=lzx"]),
         ("two-images.wim", &plain, &["--compress=xpress"]),
         ("checked.wim", &plain, &["--compress=lzx", "--check"]),
+        ("lzms-one-chunk.wim", &small, &["--compress=lzms"]),
     ];
     let run = |arguments: &[&std::ffi::OsStr]| {
         let output = Command::new(&wimlib).args(arguments).output().unwrap();

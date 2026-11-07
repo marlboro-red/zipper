@@ -257,6 +257,8 @@ mod tests {
             }
         }
 
+        // EXTERNAL(7-Zip XpressDecoder): an extra length byte follows the last 16-bit word the
+        // decoder has loaded, and it keeps one word loaded past the bits it has consumed.
         fn bytes(&mut self, bytes: &[u8]) {
             let last_loaded = self.words.len() + usize::from(self.count > 0);
             self.extra.push((last_loaded.max(1), bytes.to_vec()));
@@ -268,9 +270,11 @@ mod tests {
         Match { length: usize, distance: usize },
     }
 
-    // EXTERNAL(7-Zip XpressDecoder): an extra length byte follows the last 16-bit word the
-    // decoder has loaded, and it keeps one word loaded past the bits it has consumed.
     fn encode(tokens: &[Token]) -> Vec<u8> {
+        encode_ending(tokens, Some(END_OF_DATA))
+    }
+
+    fn encode_ending(tokens: &[Token], last: Option<usize>) -> Vec<u8> {
         let mut writer = Writer {
             words: Vec::new(),
             extra: Vec::new(),
@@ -299,7 +303,9 @@ mod tests {
                 }
             }
         }
-        writer.bits(END_OF_DATA as u32, 9);
+        if let Some(last) = last {
+            writer.bits(last as u32, 9);
+        }
         while writer.count != 0 {
             writer.bits(0, 1);
         }
@@ -415,6 +421,22 @@ mod tests {
                 let _ = decode(&mut huffman, &damaged, &mut output);
             }
         }
+    }
+
+    #[test]
+    fn a_chunk_must_end_with_the_end_symbol_after_its_last_byte() {
+        let mut huffman = Huffman::new();
+        let tokens = [Token::Literal(b'a'), Token::Literal(b'b')];
+        let mut output = vec![0; 2];
+        decode(&mut huffman, &encode(&tokens), &mut output).unwrap();
+        assert_eq!(output, b"ab");
+        for last in [b'c' as usize, END_OF_DATA + 1] {
+            let other = encode_ending(&tokens, Some(last));
+            assert!(decode(&mut huffman, &other, &mut output).is_err(), "{last}");
+        }
+        let mut longer = encode(&tokens);
+        longer.extend([0, 0]);
+        assert!(decode(&mut huffman, &longer, &mut output).is_err());
     }
 
     #[test]

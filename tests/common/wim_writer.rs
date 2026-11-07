@@ -1,9 +1,4 @@
 #![allow(dead_code)]
-//! A small WIM writer for tests. It writes stored resources, or chunked
-//! resources whose chunks are stored or XPRESS-coded with a flat code, and
-//! can put every file's data in one solid resource. Hooks change the
-//! metadata before its hash is taken and the finished file afterwards, so
-//! a test can build any layout.
 use sha1::Digest;
 
 pub const HEADER: usize = 0xD0;
@@ -52,9 +47,7 @@ pub fn utf16(text: &str) -> Vec<u8> {
     text.encode_utf16().flat_map(u16::to_le_bytes).collect()
 }
 
-/// Reparse data of a symbolic link, as `IO_REPARSE_TAG_SYMLINK` stores it
-/// after its 8-byte header.
-pub fn symlink_data(target: &str, relative: bool) -> Vec<u8> {
+pub fn symlink_reparse_body(target: &str, relative: bool) -> Vec<u8> {
     let name = utf16(target);
     let mut data = Vec::new();
     for value in [
@@ -75,7 +68,7 @@ pub fn symlink(name: &str, target: &str, relative: bool) -> Node {
     Node::Reparse {
         name: name.to_owned(),
         tag: 0xA000_000C,
-        data: symlink_data(target, relative),
+        data: symlink_reparse_body(target, relative),
         directory: false,
     }
 }
@@ -109,7 +102,6 @@ impl Default for Options {
     }
 }
 
-/// Where the writer put each part, for hooks that damage them.
 #[derive(Clone, Debug, Default)]
 pub struct Layout {
     pub blob_table: usize,
@@ -139,9 +131,7 @@ impl Bits {
     }
 }
 
-/// One XPRESS chunk with every code 9 bits long, using matches at distance
-/// 1 for runs of a repeated byte.
-pub fn xpress_chunk(data: &[u8]) -> Vec<u8> {
+pub fn flat_code_xpress_chunk(data: &[u8]) -> Vec<u8> {
     let mut bits = Bits {
         words: Vec::new(),
         value: 0,
@@ -189,7 +179,7 @@ fn chunked(data: &[u8], chunk_size: usize) -> Vec<u8> {
     let chunks: Vec<Vec<u8>> = data
         .chunks(chunk_size)
         .map(|chunk| {
-            let coded = xpress_chunk(chunk);
+            let coded = flat_code_xpress_chunk(chunk);
             if coded.len() < chunk.len() {
                 coded
             } else {
@@ -380,7 +370,6 @@ fn xml(images: usize) -> Vec<u8> {
     bytes
 }
 
-/// Writes a WIM with one image per entry of `images`.
 pub fn write(images: &[Vec<Node>], options: &Options) -> Vec<u8> {
     let mut out = vec![0u8; HEADER];
     let mut layout = Layout::default();
@@ -497,20 +486,4 @@ pub fn write(images: &[Vec<Node>], options: &Options) -> Vec<u8> {
         hook(&mut out, &layout);
     }
     out
-}
-
-/// Rewrites the hash of every metadata resource after a test changed the
-/// stored metadata bytes, so the change reaches the directory parser.
-pub fn rehash_metadata(wim: &mut [u8], layout: &Layout) {
-    let table = layout.blob_table;
-    for entry in 0..layout.blob_table_entries {
-        let at = table + entry * 50;
-        if wim[at + 7] & 2 == 0 {
-            continue;
-        }
-        let offset = u64::from_le_bytes(wim[at + 8..at + 16].try_into().unwrap()) as usize;
-        let size = u64::from_le_bytes(wim[at + 16..at + 24].try_into().unwrap()) as usize;
-        let hash = sha1(&wim[offset..offset + size]);
-        wim[at + 30..at + 50].copy_from_slice(&hash);
-    }
 }

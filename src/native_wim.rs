@@ -8,7 +8,7 @@ use crate::{BadField, Entry, Field, field_check, lzms, lzx, xpress};
 use anyhow::{Context, Result, bail, ensure};
 use sha1::Digest;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     io::Read,
     ops::Range,
     path::Path,
@@ -166,8 +166,6 @@ fn chunk_bits(chunk_size: u32) -> Field<u32> {
     Ok(chunk_size.trailing_zeros())
 }
 
-// SPEC(wimlib header.c): a 208-byte header gives the version, flags, chunk size, part
-// numbers and the blob table, XML, boot metadata and integrity resources.
 fn header(bytes: &[u8; HEADER]) -> Field<Header> {
     field_check(&bytes[..8] == SIGNATURE, "not a WIM file")?;
     field_check(
@@ -236,7 +234,7 @@ struct ChunkTable {
     table_bytes: u64,
 }
 
-// SPEC(wimlib resource.c): a compressed resource starts with one offset per chunk after the
+// EXTERNAL(7-Zip WimIn): a compressed resource starts with one offset per chunk after the
 // first, 8 bytes each when the resource is 4 GiB or more and 4 bytes otherwise.
 fn chunk_table(size: u64, packed: u64, chunk_bits: u32) -> Field<ChunkTable> {
     field_check(
@@ -273,8 +271,8 @@ struct SolidHeader {
     chunks: u64,
 }
 
-// SPEC(wimlib resource.c): a solid resource starts with its size, chunk size and method,
-// then the packed size of every chunk.
+// EXTERNAL(7-Zip WimIn): a solid resource starts with its size, chunk size and method,
+// then a 4-byte packed size for every chunk.
 fn solid_header(bytes: &[u8; SOLID_HEADER], packed: u64) -> Field<SolidHeader> {
     let size = u64_at(bytes, 0);
     field_check(
@@ -306,7 +304,7 @@ fn solid_header(bytes: &[u8; SOLID_HEADER], packed: u64) -> Field<SolidHeader> {
 }
 
 // EXTERNAL(7-Zip WimIn): security data is a total length, a count and one 8-byte size per
-// descriptor, and directory entries start at the total rounded up to 8 bytes.
+// descriptor; entries start at the total rounded up to 8, or at 8 when the total is 0.
 fn security_end(prefix: &[u8], meta_len: usize) -> Field<usize> {
     field_check(
         prefix.len() >= 8 && meta_len >= prefix.len(),
@@ -370,7 +368,7 @@ fn record_fits(record: &[u8], at: usize, meta_len: usize, longest: usize) -> boo
     at <= meta_len && record.len() == (meta_len - at).min(longest)
 }
 
-// SPEC(wimlib dentry.c): a directory entry is at least 102 bytes, aligned to 8, and holds
+// EXTERNAL(7-Zip WimIn): a directory entry is at least 102 bytes, aligned to 8, and holds
 // its name and short name in UTF-16, each followed by a NUL when present.
 fn dentry(record: &[u8], at: usize, meta_len: usize) -> Field<Option<DentryFields>> {
     field_check(
@@ -434,7 +432,7 @@ struct StreamFields {
     name: Range<usize>,
 }
 
-// SPEC(wimlib dentry.c): an extra stream entry is at least 38 bytes, aligned to 8, with
+// EXTERNAL(7-Zip WimIn): an extra stream entry is at least 38 bytes, aligned to 8, with
 // its hash and its UTF-16 name followed by a NUL.
 fn stream_entry(record: &[u8], at: usize, meta_len: usize) -> Field<StreamFields> {
     field_check(
@@ -514,7 +512,10 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
     }
     Ok(match header(&bytes) {
         Ok(header) => header.parts != 1,
-        Err(_) => u32_at(&bytes, 8) != HEADER as u32 || u32_at(&bytes, 12) < VERSION,
+        Err(_) => {
+            let version = u32_at(&bytes, 12);
+            u32_at(&bytes, 8) != HEADER as u32 || version < VERSION && version != SOLID_VERSION
+        }
     })
 }
 
@@ -695,7 +696,7 @@ impl Archive {
             "WIM blob table is larger than {MAX_BLOB_TABLE} bytes"
         );
         ensure!(
-            table.size % BLOB as u64 == 0,
+            table.size.is_multiple_of(BLOB as u64),
             "WIM blob table is not a whole number of 50-byte entries"
         );
         let source = Blob {
@@ -783,8 +784,7 @@ impl Archive {
             }
         }
         self.finish_group(&mut pending_small, group_start)?;
-        self.blobs
-            .sort_unstable_by(|first, second| first.hash.cmp(&second.hash));
+        self.blobs.sort_unstable_by_key(|blob| blob.hash);
         ensure!(
             self.blobs
                 .windows(2)
@@ -1074,19 +1074,20 @@ impl<'a> BlobReader<'a> {
             method.chunk_bits().contains(&chunk_bits),
             "WIM {method:?} chunks of 2^{chunk_bits} bytes are outside what Zipper decodes; {BACKEND_HINT}"
         );
+        let stored = packed == size;
+        ensure!(
+            stored || packed < 1 << chunk_bits,
+            "WIM chunk packs to {packed} bytes, no less than its chunk size"
+        );
         let size = size as usize;
         self.decoders.packed.resize(packed as usize, 0);
         read_exact_at(&self.archive.file, &mut self.decoders.packed, at)
             .context("truncated WIM chunk")?;
         self.decoders.chunk.resize(size, 0);
-        if packed as usize == size {
+        if stored {
             let Decoders { packed, chunk, .. } = &mut *self.decoders;
             chunk.copy_from_slice(packed);
         } else {
-            ensure!(
-                packed < 1 << chunk_bits,
-                "WIM chunk packs to {packed} bytes, no less than its chunk size"
-            );
             self.decoders
                 .decode(method, chunk_bits, size)
                 .map_err(|error| anyhow::anyhow!("damaged WIM {method:?} chunk: {error}"))?;
@@ -1235,8 +1236,6 @@ fn piece_hash(bytes: &[u8]) -> [u8; HASH] {
 }
 
 impl<'a> Metadata<'a> {
-    // EXTERNAL(macOS libmalloc): a freed block this large stays in the process footprint, so
-    // metadata is hashed in one pass and read through a window, never held whole.
     fn open(archive: &'a Archive, blob: Blob) -> Result<Self> {
         ensure!(
             blob.size <= MAX_METADATA,
@@ -1446,6 +1445,11 @@ struct Writer<'o> {
     placement: crate::placement::Placement<'o>,
     leaders: HashMap<(u32, u64), String>,
     decoders: Decoders,
+    name_keys: std::hash::RandomState,
+}
+
+fn name_key(keys: &std::hash::RandomState, name: &str) -> u64 {
+    std::hash::BuildHasher::hash_one(keys, name)
 }
 
 impl Writer<'_> {
@@ -1503,8 +1507,7 @@ impl Writer<'_> {
         Ok(())
     }
 
-    // EXTERNAL(7-Zip WimIn): the root list holds one unnamed folder, and every list after it
-    // is reached from a folder's subdirectory offset.
+    // EXTERNAL(7-Zip WimIn): from WIM 1.12 the root list holds only one folder with an empty name.
     fn parse_image(
         &mut self,
         tree: &mut tree::Tree,
@@ -1553,6 +1556,7 @@ impl Writer<'_> {
         }
         while let Some((mut at, parent)) = lists.pop_front() {
             ensure!(at >= start, "WIM folder list lies inside the security data");
+            let mut names_here = HashSet::new();
             while let Some((fields, name)) = read_dentry(meta, at)? {
                 used.claim(at, fields.length)?;
                 entries += 1;
@@ -1567,6 +1571,15 @@ impl Writer<'_> {
                 ensure!(
                     !name.is_empty(),
                     "WIM directory entry other than the root has no name"
+                );
+                ensure!(
+                    name != "." && name != "..",
+                    "unsafe archive path: WIM entry named {name:?}"
+                );
+                ensure!(
+                    names_here.insert(name_key(&self.name_keys, &name)),
+                    "WIM folder {:?} holds two entries named {name:?}",
+                    image.path_to(parent, "")
                 );
                 let (parent_length, depth) = match parent {
                     None => (image.prefix.len(), 0),
@@ -1661,8 +1674,10 @@ impl Writer<'_> {
         } else {
             String::new()
         };
+        self.leaders.clear();
         let mut image = self.parse_image(tree, &mut meta, archive, prefix)?;
         drop(meta);
+        self.leaders.clear();
         let mut with_data = std::mem::take(&mut image.with_data);
         with_data.sort_by_key(|&index| {
             let blob = &archive.blobs[image.nodes[index as usize].blob as usize];
@@ -1672,7 +1687,13 @@ impl Writer<'_> {
             };
             (order, index)
         });
+        let mut run = NO_BLOB;
         for index in with_data {
+            let blob = image.nodes[index as usize].blob;
+            if blob != run {
+                self.leaders.clear();
+                run = blob;
+            }
             let path = image.path(index);
             self.file(tree, archive, &image.nodes[index as usize], path)?;
         }
@@ -1686,6 +1707,7 @@ fn parse(tree: &mut tree::Tree, archive: &Archive, options: ReadOptions) -> Resu
         placement: crate::placement::Placement::new(options.strip)?,
         leaders: HashMap::new(),
         decoders: Decoders::default(),
+        name_keys: std::hash::RandomState::new(),
     };
     let many = archive.images.len() > 1;
     for number in 0..archive.images.len() {

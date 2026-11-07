@@ -1,6 +1,5 @@
 //! Crafted and damaged WIMs, each refused with nothing published, or read
-//! to exactly the bytes the archive stores. They come from the test writer
-//! in `tests/common/wim_writer.rs`, which hooks let damage at any step.
+//! to exactly the bytes the archive stores.
 #[path = "common/mod.rs"]
 mod common;
 #[path = "common/wim_writer.rs"]
@@ -284,6 +283,97 @@ fn a_name_with_a_slash_becomes_one_name_with_an_underscore() {
 }
 
 #[test]
+fn folders_named_dot_and_names_repeated_in_one_folder_are_refused() {
+    for name in [".", ".."] {
+        let images = vec![vec![dir(name, vec![file("x", b"x")])]];
+        refused(
+            &wim_writer::write(&images, &options()),
+            "unsafe archive path",
+        );
+    }
+    let images = vec![vec![
+        file("x", b"outer"),
+        dir(".", vec![file("x", b"inner")]),
+    ]];
+    refused(
+        &wim_writer::write(&images, &options()),
+        "unsafe archive path",
+    );
+    for images in [
+        vec![vec![file("same", b"one"), file("same", b"two")]],
+        vec![vec![file("a/b", b"one"), file("a_b", b"two")]],
+        vec![vec![dir("d", Vec::new()), dir("d", vec![file("x", b"x")])]],
+    ] {
+        refused(&wim_writer::write(&images, &options()), "two entries named");
+    }
+}
+
+fn linked(name: &str, data: &[u8], group: u64) -> Node {
+    Node::File {
+        name: name.to_owned(),
+        data: data.to_vec(),
+        attributes: 0x80,
+        link_group: group,
+        streams: Vec::new(),
+    }
+}
+
+#[test]
+fn a_hard_link_never_names_a_file_that_a_later_entry_replaced() {
+    let whole = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd";
+    let images = vec![vec![
+        linked("a", whole, 7),
+        file("a", &whole[..10]),
+        linked("b", whole, 7),
+    ]];
+    let solid = Options {
+        solid: true,
+        ..options()
+    };
+    let wim = with_file(&images, solid, |wim, layout| {
+        let shorter = blob_entry(layout, 2);
+        put_u64(wim, shorter + 8, 0);
+    });
+    refused(&wim, "two entries named \"a\"");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chunk_that_packs_more_than_its_chunk_size_is_refused_before_it_is_read() {
+    let images = vec![vec![file("z", &[b'z'; 3000])]];
+    let xpress = Options {
+        compression: Compression::Xpress,
+        chunk_size: 4096,
+        ..options()
+    };
+    let huge = 1u64 << 40;
+    let wim = with_file(&images, xpress, move |wim, layout| {
+        let entry = blob_entry(layout, 0);
+        let end = wim.len() as u64;
+        put_u64(wim, entry + 8, end);
+        wim[entry..entry + 7].copy_from_slice(&huge.to_le_bytes()[..7]);
+    });
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("sparse.wim");
+    fs::write(&archive, &wim).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&archive)
+        .unwrap()
+        .set_len(wim.len() as u64 + huge)
+        .unwrap();
+    let into = root.path().join("out");
+    for destination in [Some(into.as_path()), None] {
+        let error = read_archive(&archive, destination, ReadOptions::default()).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("no less than its chunk size"),
+            "{error:#}"
+        );
+    }
+    assert!(!into.exists());
+}
+
+#[test]
 fn links_that_leave_the_image_are_refused_and_links_inside_are_created() {
     for (target, relative) in [
         ("..\\..\\outside", true),
@@ -315,7 +405,7 @@ fn links_that_leave_the_image_are_refused_and_links_inside_are_created() {
 
 #[test]
 fn junctions_and_wsl_links_inside_the_image_are_created_and_other_reparse_points_are_refused() {
-    let mut junction = wim_writer::symlink_data("\\??\\C:\\folder", false);
+    let mut junction = wim_writer::symlink_reparse_body("\\??\\C:\\folder", false);
     junction.drain(8..12);
     let mut wsl = 2u32.to_le_bytes().to_vec();
     wsl.extend(b"folder/x");
@@ -367,7 +457,7 @@ fn a_link_folder_with_entries_under_it_is_refused() {
         Node::Reparse {
             name: "linked".into(),
             tag: 0xA000_000C,
-            data: wim_writer::symlink_data("real", true),
+            data: wim_writer::symlink_reparse_body("real", true),
             directory: true,
         },
     ]];
@@ -555,6 +645,20 @@ fn split_wims_are_refused_in_process_and_go_to_7zip_by_default() {
     );
     wim[40] = 2;
     refused(&wim, "part number outside its part count");
+    let mut esd = wim_writer::write(
+        &sample_images(),
+        &Options {
+            solid: true,
+            ..options()
+        },
+    );
+    esd[16..20].copy_from_slice(&(0x2u32 | 1 << 20).to_le_bytes());
+    fs::write(&archive, &esd).unwrap();
+    assert_eq!(
+        zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
+        zipper::Reader::Wim,
+        "a damaged ESD header stays with the WIM reader"
+    );
 }
 
 #[test]
@@ -728,14 +832,14 @@ fn write_limit_image(
     folders: usize,
     files: usize,
     name: impl Fn(usize) -> String,
-    data: impl Fn(usize) -> Vec<u8>,
+    entry: impl Fn(&str, usize) -> Node,
 ) {
     let root: Vec<Node> = (0..folders)
         .map(|folder| {
             let children = (0..files)
                 .map(|index| {
                     let number = folder * files + index;
-                    file(&name(number), &data(number))
+                    entry(&name(number), number)
                 })
                 .collect();
             dir(&format!("d{folder:04}"), children)
@@ -754,13 +858,27 @@ fn write_wims_at_the_documented_limits() {
         1_000,
         998,
         |number| format!("{number:08}-{}", "n".repeat(48)),
-        |_| Vec::new(),
+        |name, _| file(name, b""),
+    );
+    write_limit_image(
+        &out.join("folders.wim"),
+        1_000,
+        999,
+        |number| format!("{number:08}-{}", "n".repeat(48)),
+        |name, _| dir(name, Vec::new()),
+    );
+    write_limit_image(
+        &out.join("groups.wim"),
+        1_000,
+        670,
+        |number| format!("{number:07}"),
+        |name, number| linked(name, &(number as u64).to_le_bytes(), number as u64 + 1),
     );
     write_limit_image(
         &out.join("blobs.wim"),
         1_000,
         670,
         |number| format!("{number:07}"),
-        |number| (number as u64).to_le_bytes().to_vec(),
+        |name, number| file(name, &(number as u64).to_le_bytes()),
     );
 }

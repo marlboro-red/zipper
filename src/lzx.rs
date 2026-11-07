@@ -23,7 +23,7 @@ const SLOTS_BELOW_LONGEST_EXTRA: usize = 36;
 const LONGEST_EXTRA: u32 = 17;
 const TRANSLATION_LIMIT: u32 = 1 << 30;
 const TRANSLATION_RESIDUE: usize = 10;
-// SPEC(wimlib lzx_decompress): a WIM chunk always translates E8 calls with this size.
+// EXTERNAL(7-Zip LzxDecoder): a WIM chunk always translates E8 calls with this size.
 const WIM_TRANSLATION: u32 = 12_000_000;
 const WIM_DEFAULT_BLOCK: u32 = 32 * 1024;
 const WIM_LONG_BLOCK_BITS: u8 = 16;
@@ -1059,6 +1059,44 @@ mod tests {
             decode(3, &far, 3).is_err(),
             "the match reaches before the stream"
         );
+    }
+
+    fn wim_uncompressed_chunk(size: Option<u32>, long: bool, data: &[u8]) -> Vec<u8> {
+        let words: Vec<u16> = match (size, long) {
+            (None, _) => vec![0x7000],
+            (Some(size), false) => vec![0x6000 | (size >> 4) as u16, ((size & 0xF) << 12) as u16],
+            (Some(size), true) => vec![0x6000 | (size >> 12) as u16, ((size & 0xFFF) << 4) as u16],
+        };
+        let mut bytes: Vec<u8> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+        for _ in 0..REPEAT_SLOTS {
+            bytes.extend(1u32.to_le_bytes());
+        }
+        bytes.extend(data);
+        bytes
+    }
+
+    #[test]
+    fn a_wim_block_has_its_short_size_forms_and_ends_with_its_chunk() {
+        let data = [b'a'; 100];
+        let mut lzx = Lzx::wim(15).unwrap();
+        let chunk = wim_uncompressed_chunk(Some(100), false, &data);
+        assert_eq!(lzx.chunk(&chunk, 100).unwrap(), data);
+        let past = wim_uncompressed_chunk(Some(102), false, &data);
+        assert!(lzx.chunk(&past, 100).is_err());
+        let full = vec![b'b'; CHUNK];
+        let default = wim_uncompressed_chunk(None, false, &full);
+        assert_eq!(lzx.chunk(&default, CHUNK).unwrap(), full);
+        let mut wide = Lzx::wim(16).unwrap();
+        let long = wim_uncompressed_chunk(Some(100), true, &data);
+        assert_eq!(wide.chunk(&long, 100).unwrap(), data);
+        assert!(lzx.chunk(&long, 100).is_err());
+        let mut e8 = data.to_vec();
+        e8[10..15].copy_from_slice(&[E8, 0x10, 0, 0, 0]);
+        let mut expected = e8.clone();
+        translate_e8(&mut expected, 0, WIM_TRANSLATION);
+        let translated = wim_uncompressed_chunk(Some(100), false, &e8);
+        assert_eq!(lzx.chunk(&translated, 100).unwrap(), expected);
+        assert_ne!(expected, e8);
     }
 
     #[test]

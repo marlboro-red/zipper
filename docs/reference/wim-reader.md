@@ -21,7 +21,7 @@ The reader writes each image as `7zz x` writes it on macOS and Linux:
 
 - One image is written at the top of the destination. Several images are written as folders `1`, `2` and so on, with the XML description beside them as `[1].xml`, as the file stores it in UTF-16.
 - Names are read from UTF-16. A `/` in a name becomes `_`, as 7-Zip writes it.
-- Files of one hard link group that share their data are hard linked, as `7zz x` links them. Files that share data without a link group are written as separate files.
+- Files of one image that share a hard link group and their data are hard linked, as `7zz x` links them. Files that share data without a link group are written as separate files.
 - A symbolic link whose reparse data says it is relative becomes a symbolic link, with its backslashes turned into slashes. An absolute symbolic link or a junction is read against the root of its image and written as a relative link to the same place. A WSL link becomes a symbolic link to its target. Each link must stay inside the destination.
 - Files get their modification time. A file with the read-only attribute gets mode `0o444`, and every other file `0o644`. The umask limits both. Folders get mode `0o755` and their time, applied after all files are written.
 
@@ -46,7 +46,7 @@ The reader checks the whole layout before it publishes anything, and it publishe
 - The security data fills its declared length. Each directory entry and stream entry is aligned to 8 bytes, has a length that fits the metadata and holds its names. A name has no NUL inside it and ends with one.
 - Each 8-byte unit of metadata is claimed by at most one directory entry, stream entry or list end. So a folder list that points back at an earlier list, or two folders that share a list, are refused, and the walk cannot loop.
 - The root list holds one unnamed folder, as WIM 1.13 writes it. A link folder with entries under it is refused.
-- Names pass the same checks as tar names. `..`, `.`, empty names, backslashes, `:` and NUL are refused, and so is a name that is not valid UTF-16.
+- Names pass the same checks as tar names. `..`, `.`, empty names, backslashes, `:` and NUL are refused, and so is a name that is not valid UTF-16. A folder that holds two entries of one name, after a `/` becomes `_`, is refused.
 - Every file names data that the blob table holds. 7-Zip writes such a file empty. Zipper refuses the WIM.
 - An encrypted ESD is refused.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
@@ -67,7 +67,16 @@ The reader checks the whole layout before it publishes anything, and it publishe
 
 The reader never holds an image's whole metadata. It reads the metadata once to check its SHA-1, keeping a SHA-1 of each 64 KiB piece, and then parses it through a 1 MiB window that checks each piece it reads again. So metadata that changes on disk between the two reads is refused. The blob table is read in batches of 1,024 entries and kept as one list sorted by hash. Folders, links and empty files reach the shared tree as they are parsed. Only folders and files with data are kept, with their names in one buffer. Files with data are written in the order of their data in the file, so a solid resource is decoded once.
 
-On an image of 998,000 empty files and 1,000 folders whose paths total 63 MB, with 223 MB of metadata, `zipper list` peaked at 316 MB of resident memory and `7zz l` at 413 MB. The shared tree alone took 312 MB for the same paths in a cpio archive. On an image of 670,000 files with 8 bytes of data each and a 33.5 MB blob table, `zipper list` peaked at 237 MB and `7zz l` at 271 MB. `--threads` has no effect on WIM.
+Peak resident memory on images that fill the limits, written by `write_wims_at_the_documented_limits` in `tests/hostile_wim.rs`, is in this table. Each path is about 63 bytes, and each of the first two images holds 223 MB of metadata.
+
+| Image | `zipper list` | `zipper extract` | `7zz l` | Shared tree alone |
+| --- | ---: | ---: | ---: | ---: |
+| 998,000 empty files in 1,000 folders | 317 MB | | 413 MB | 312 MB |
+| 999,000 empty folders in 1,000 folders | 744 MB | 941 MB | 414 MB | 629 MB |
+| 670,000 files of 8 bytes, 33.5 MB blob table | 237 MB | | 271 MB | |
+| The same, each file in its own hard link group | 237 MB | 224 MB | 271 MB | |
+
+The last column is `zipper list` on a cpio archive of the same paths, which uses the same shared tree. The tree keeps several copies of each folder's path, so on a folder-heavy image Zipper peaks near twice what 7-Zip does. The WIM reader's own share there is about 115 MB. `--threads` has no effect on WIM.
 
 ## Differences from 7-Zip
 
@@ -77,13 +86,15 @@ On an image of 998,000 empty files and 1,000 folders whose paths total 63 MB, wi
 - 7-Zip writes an empty file `name:_` beside each link that wimlib stores. Zipper does not write it.
 - 7-Zip refuses a relative link with `..` in it, such as `../hello.txt`, and writes an empty file in its place. Zipper creates the link when it stays inside the destination.
 - 7-Zip writes an absolute link as an absolute path into the destination, from the destination's root even when the WIM holds several images. Zipper writes a relative link to the same name inside the image's own folder.
+- 7-Zip links files of one hard link group across images. Zipper links them only within one image, and writes each image's own copy.
+- 7-Zip extracts a folder named `.` into its parent, and a second entry of one name over the first. Zipper refuses both.
 - 7-Zip writes a file whose data the blob table lacks as an empty file, and lists unreferenced data under `[DELETED]`. Zipper refuses a file without its data, and ignores data that no file names.
 - 7-Zip extracts a root list with more than one entry, an older WIM version and a split WIM. Zipper refuses each, and the default engine sends the last two to 7-Zip.
 - 7-Zip fixes a name without its terminating NUL and extracts it with a warning. Zipper refuses it.
 
 ## Extraction options
 
-`Existing`, `Control`, `paths`, `include`, `exclude`, `strip` and `metadata` work as in the [cpio reader](cpio-reader.md#extraction-options), on the paths `7zz x` writes, with the image folder first when there are several images. A hard link whose first name the selection or strip leaves out is written from the next selected name of its group. Progress counts each file and its bytes as they are written. The cancel flag is checked between entries and while a file's data is written.
+`Existing`, `Control`, `paths`, `include`, `exclude`, `strip` and `metadata` work as in the [cpio reader](cpio-reader.md#extraction-options), on the paths `7zz x` writes, with the image folder first when there are several images. A hard link whose first name the selection or strip leaves out is written from the next selected name of its group. An absolute link is made relative for its place before the strip, so a strip that moves it can make it point outside the destination, and then the WIM is refused. Progress counts each file and its bytes as they are written. The cancel flag is checked between entries and while a file's data is written.
 
 ## Formal checks
 
@@ -99,5 +110,9 @@ Kani proves these rules under `[wim-fields]` in `verification/coverage.txt`:
 Unit tests in `src/xpress.rs` decode 400 encoded token streams of every match length form back to their tokens. They refuse each stream cut by 1 to 3 bytes or decoded to a size one byte off, and decode every flipped byte without a panic. Unit tests in `src/lzms.rs` check that every Huffman code built from 3,000 frequency sets is complete within 15 bits. They check that the x86 filter matches a separate byte-at-a-time version on 20,000 inputs, and that 20,000 random chunks decode or are refused without a panic. The LZX WIM mode is checked under `[lzx]`, and LZMS under `[lzms]`.
 
 `tests/hostile_wim.rs` builds its WIMs with the test writer in `tests/common/wim_writer.rs`, since no tool here writes damaged images. It holds one case per refusal in the safety checks above, each of which must leave nothing beside the destination, both when extracting and when only verifying. It cuts a stored and an XPRESS WIM at every byte, and flips a bit in every byte outside the file data and in every 37th byte of it. A flipped WIM must be refused or extract exactly the files it stores.
+
+`tests/wim_corpus.rs` also flips one bit in every 97th byte of the data of seven corpus WIMs, and every bit of a one-chunk LZMS image. Zipper must refuse each one exactly when 7-Zip refuses it, and must otherwise extract the same tree.
+
+An adversarial review built crafted WIMs in Rust with the test writer and ran them against both native engines and 7-Zip. It found three problems, each fixed with a test that failed first. A chunk table could name a packed size of up to 2^50 bytes in a sparse file, and the reader allocated it before it checked the size, which crashed the process. A second file with the name of a hard link's first file could replace it, so the link carried the other file's bytes. A link group per file kept one path per group in memory. It also found that a folder named `.` was merged into its parent. 38,000 random mutations of wimlib images caused no panic.
 
 `tests/data/wim-corpus/NOTICE.txt` names the source of the corpus. Every WIM there was written by `wimlib-imagex` 1.14.5 on macOS from seeded trees, through `write_the_corpus` in `tests/wim_corpus.rs`. No sample there comes from Microsoft's own tools.

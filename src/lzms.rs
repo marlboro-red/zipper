@@ -28,13 +28,14 @@ const X86_SHORTEST_FILTERED: usize = 17;
 const X86_TAIL: usize = 16;
 const X86_OPERAND: usize = 4;
 
-// SPEC(wimlib lzms_common): runs of position slots that share a count of direct bits.
+// EXTERNAL(7-Zip LzmsDecoder): k_PosRuns, the runs of position slots that share a count of
+// direct bits.
 const POSITION_RUNS: [u8; 31] = [
     8, 0, 9, 7, 10, 15, 15, 20, 20, 30, 33, 40, 42, 45, 60, 73, 80, 85, 95, 105, 6, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 1,
 ];
 
-// SPEC(wimlib lzms_common): direct bits of each length slot.
+// EXTERNAL(7-Zip LzmsDecoder): the same table as k_LenDirectBits.
 const LENGTH_DIRECT_BITS: [u8; LENGTH_SYMBOLS] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2,
     2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 6, 7, 8, 9, 10, 16, 30,
@@ -200,8 +201,8 @@ impl Backward<'_> {
     }
 }
 
-// SPEC(wimlib compress_common): leaves sort by frequency then symbol, the tree merges the
-// two lightest nodes preferring a leaf on a tie, and no code exceeds 15 bits.
+// EXTERNAL(7-Zip HuffEnc.c): leaves sort by frequency then symbol, a tie takes the leaf first,
+// and a node below level 14 moves up to the deepest level that still holds a leaf.
 fn lengths_from_frequencies(frequencies: &[u32], lengths: &mut [u8], work: &mut Work) {
     let count = frequencies.len();
     work.order.clear();
@@ -406,8 +407,6 @@ impl Lzms {
         Ok(POSITION_BASE[slot] + extra)
     }
 
-    // EXTERNAL(7-Zip LzmsDecoder): a repeated match right after a match of its own kind
-    // takes the repeat one further back, since that match has not yet entered the list.
     fn decode_symbols(&mut self, input: &[u8], output: &mut [u8]) -> Field<()> {
         field_check(
             input.len() >= 8 && input.len().is_multiple_of(2),
@@ -451,6 +450,8 @@ impl Lzms {
                     distance
                 } else {
                     let index = range.repeat(&mut models.lz_states, &mut models.lz)?;
+                    // EXTERNAL(7-Zip LzmsDecoder): a repeated match right after a match of its own kind
+                    // takes the repeat one further back.
                     bring_forward(&mut lz_recent, index + usize::from(previous == Item::Lz))
                 } as usize;
                 let length = self.length(&mut bits, &range)?;
@@ -668,6 +669,16 @@ mod tests {
         assert!(lzms.decode(&[0; 7], &mut output).is_err());
         assert!(lzms.decode(&[0; 9], &mut output).is_err());
         assert!(lzms.decode(&[0xFF; 8], &mut output).is_err());
+    }
+
+    #[test]
+    fn a_last_range_coder_word_inside_the_bit_stream_is_refused() {
+        let mut lzms = Lzms::new();
+        let mut output = vec![9; 40];
+        lzms.decode(&[0; 46], &mut output).unwrap();
+        assert_eq!(output, [0; 40]);
+        let error = lzms.decode(&[0; 44], &mut output).unwrap_err();
+        assert!(error.0.contains("overlap"), "{error}");
     }
 
     fn reference_x86(data: &mut [u8]) {
