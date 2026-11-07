@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::lzx_encoder;
+use crate::{lzx_encoder, quantum_encoder};
 
 pub const BLOCK: usize = 32 * 1024;
 pub const READ_ONLY: u16 = 0x01;
@@ -12,6 +12,7 @@ pub const TIME: u16 = (13 << 11) | (37 << 5) | 21;
 pub enum Method {
     Stored,
     Mszip,
+    Quantum(quantum_encoder::Options),
     Lzx(lzx_encoder::Options),
 }
 
@@ -90,6 +91,17 @@ pub fn folder(method: &Method, data: &[u8]) -> Folder {
         Method::Mszip => Folder {
             type_compress: 1,
             blocks: mszip_blocks(data),
+            declared_blocks: None,
+        },
+        Method::Quantum(options) => Folder {
+            type_compress: 2 | (4 << 4) | (u16::from(options.window_bits) << 8),
+            blocks: quantum_encoder::encode(data, options)
+                .into_iter()
+                .map(|chunk| Block {
+                    packed: chunk.bytes,
+                    size: chunk.size,
+                })
+                .collect(),
             declared_blocks: None,
         },
         Method::Lzx(options) => Folder {

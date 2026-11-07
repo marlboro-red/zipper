@@ -1,10 +1,10 @@
-//! In-process extraction of Microsoft Cabinet files with stored, MSZIP and
-//! LZX folders. See `docs/reference/cab-reader.md` for what it accepts and
+//! In-process extraction of Microsoft Cabinet files with stored, MSZIP,
+//! Quantum and LZX folders. See `docs/reference/cab-reader.md` for what it accepts and
 //! restores.
 pub use crate::native_cpio::ReadOptions;
 use crate::native_cpio::tree::{self, BACKEND_HINT, MAX_NAME};
 use crate::volumes::ArchiveFile;
-use crate::{BadField, Entry, Field, field_check, lzx};
+use crate::{BadField, Entry, Field, field_check, lzx, quantum};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::BTreeMap,
@@ -61,7 +61,7 @@ struct Reserve {
 enum Method {
     Stored,
     Mszip,
-    Quantum { level: u8, window_bits: u8 },
+    Quantum { window_bits: u8 },
     Lzx { window_bits: u8 },
 }
 
@@ -139,10 +139,13 @@ fn folder(bytes: &[u8; FOLDER]) -> Field<Folder> {
     let method = match bytes[6] & METHOD_MASK {
         0 => Method::Stored,
         1 => Method::Mszip,
-        2 => Method::Quantum {
-            level: bytes[6] >> 4,
-            window_bits: minor,
-        },
+        2 => {
+            field_check(
+                minor <= quantum::MAX_WINDOW_BITS,
+                "CAB Quantum window is larger than 2^21 bytes",
+            )?;
+            Method::Quantum { window_bits: minor }
+        }
         3 => {
             field_check(
                 (lzx::MIN_WINDOW_BITS..=lzx::MAX_WINDOW_BITS).contains(&minor),
@@ -307,17 +310,11 @@ pub fn sniff(path: &Path) -> Result<bool> {
 }
 
 /// Returns whether the default engine hands this CAB to 7-Zip: it belongs
-/// to a cabinet set or holds a Quantum folder, which this reader does not
-/// decode. A CAB this reader cannot parse stays with it, so the error comes
-/// from it.
+/// to a cabinet set, which this reader does not read. A CAB this reader
+/// cannot parse stays with it, so the error comes from it.
 pub fn needs_backend(path: &Path) -> Result<bool> {
-    Ok(Tables::read(path, false).is_ok_and(|tables| {
-        tables.header.flags & (PREVIOUS_CABINET | NEXT_CABINET) != 0
-            || tables
-                .folders
-                .iter()
-                .any(|folder| matches!(folder.method, Method::Quantum { .. }))
-    }))
+    Ok(Tables::read(path, false)
+        .is_ok_and(|tables| tables.header.flags & (PREVIOUS_CABINET | NEXT_CABINET) != 0))
 }
 
 fn plain_cabinet_name(name: &[u8]) -> bool {
@@ -563,7 +560,7 @@ fn decoder_memory(method: Method) -> u64 {
         Method::Stored => 0,
         Method::Mszip => MSZIP_DECODER_MEMORY,
         Method::Lzx { window_bits } => lzx::decoder_memory(window_bits),
-        Method::Quantum { window_bits, .. } => 1u64 << window_bits.min(63),
+        Method::Quantum { window_bits } => quantum::decoder_memory(window_bits),
     }
 }
 
@@ -611,11 +608,13 @@ impl Mszip {
 enum Decoder {
     Stored,
     Mszip(Box<Mszip>),
+    Quantum(Box<quantum::Quantum>),
     Lzx(Box<lzx::Lzx>),
 }
 
 struct Decoders {
     mszip: Option<Box<Mszip>>,
+    quantum: Option<Box<quantum::Quantum>>,
     lzx: Option<Box<lzx::Lzx>>,
     block: Vec<u8>,
     output: Vec<u8>,
@@ -623,14 +622,17 @@ struct Decoders {
 
 impl Decoders {
     fn take(&mut self, method: Method) -> Result<Decoder> {
-        if let Method::Quantum { .. } = method {
-            bail!("CAB Quantum folders are not read in process yet; {BACKEND_HINT}");
-        }
         let need = decoder_memory(method);
         ensure!(
             need <= DECODER_MEMORY,
             "CAB folder decoder needs {need} bytes, more than the {DECODER_MEMORY}-byte decoder budget"
         );
+        if !matches!(method, Method::Quantum { .. }) {
+            self.quantum = None;
+        }
+        if !matches!(method, Method::Lzx { .. }) {
+            self.lzx = None;
+        }
         if self.block.is_empty() {
             self.block = vec![0; DATA + usize::from(u8::MAX) + LARGEST_PACKED];
             self.output = vec![0; BLOCK + 1];
@@ -654,13 +656,20 @@ impl Decoders {
                 }
                 None => Box::new(lzx::Lzx::new(window_bits, None)?),
             }),
-            Method::Quantum { .. } => unreachable!("refused above"),
+            Method::Quantum { window_bits } => Decoder::Quantum(match self.quantum.take() {
+                Some(mut quantum) => {
+                    quantum.reset_to_window(window_bits)?;
+                    quantum
+                }
+                None => Box::new(quantum::Quantum::new(window_bits)?),
+            }),
         })
     }
 
     fn give_back(&mut self, decoder: Decoder) {
         match decoder {
             Decoder::Mszip(mszip) => self.mszip = Some(mszip),
+            Decoder::Quantum(quantum) => self.quantum = Some(quantum),
             Decoder::Lzx(lzx) => self.lzx = Some(lzx),
             Decoder::Stored => {}
         }
@@ -748,6 +757,12 @@ impl<'a> FolderStream<'a> {
                 output[..size].copy_from_slice(packed);
             }
             Decoder::Mszip(mszip) => mszip.block(packed, output, size)?,
+            Decoder::Quantum(quantum) => {
+                let decoded = quantum
+                    .chunk(packed, size)
+                    .map_err(|error| anyhow::anyhow!("damaged CAB Quantum block: {error}"))?;
+                output[..size].copy_from_slice(decoded);
+            }
             Decoder::Lzx(lzx) => {
                 let decoded = lzx
                     .chunk(packed, size)
@@ -831,6 +846,7 @@ fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
     }
     let mut decoders = Decoders {
         mszip: None,
+        quantum: None,
         lzx: None,
         block: Vec::new(),
         output: Vec::new(),
@@ -867,10 +883,9 @@ fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
 }
 
 /// Verify and optionally extract a CAB file into a new directory. It reads
-/// stored, MSZIP and LZX folders, restores each file's DOS time and its
-/// read-only attribute, and creates the folders its paths name. It refuses
-/// cabinet sets and Quantum folders, which the default engine hands to
-/// 7-Zip.
+/// stored, MSZIP, Quantum and LZX folders, restores each file's DOS time
+/// and its read-only attribute, and creates the folders its paths name. It
+/// refuses cabinet sets, which the default engine hands to 7-Zip.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,
@@ -927,6 +942,41 @@ mod field_tests {
     }
 
     #[test]
+    fn decoders_hold_at_most_one_window_between_folders() {
+        let mut decoders = Decoders {
+            mszip: None,
+            quantum: None,
+            lzx: None,
+            block: Vec::new(),
+            output: Vec::new(),
+        };
+        let largest_quantum = Method::Quantum { window_bits: 21 };
+        let largest_lzx = Method::Lzx { window_bits: 21 };
+        for (first, second) in [
+            (largest_quantum, largest_lzx),
+            (largest_lzx, largest_quantum),
+            (Method::Mszip, largest_lzx),
+        ] {
+            let decoder = decoders.take(first).unwrap();
+            decoders.give_back(decoder);
+            let decoder = decoders.take(second).unwrap();
+            let held = [first, second]
+                .iter()
+                .filter(|method| match method {
+                    Method::Quantum { .. } => decoders.quantum.is_some(),
+                    Method::Lzx { .. } => decoders.lzx.is_some(),
+                    _ => false,
+                })
+                .count();
+            assert_eq!(held, 0, "{first:?} then {second:?}");
+            let windows =
+                u64::from(decoders.mszip.is_some()) * MSZIP_DECODER_MEMORY + decoder_memory(second);
+            assert!(windows <= DECODER_MEMORY, "{first:?} then {second:?}");
+            decoders.give_back(decoder);
+        }
+    }
+
+    #[test]
     fn every_dos_date_and_time_has_fields_in_range_or_none() {
         for date in 0..=u16::MAX {
             for time in [0u16, 1, 0x7FFF, 0xBF7D, 0xBF7E, 0xC000, u16::MAX] {
@@ -958,7 +1008,7 @@ mod proofs {
     }
 
     #[kani::proof]
-    fn folders_never_panic_and_give_lzx_windows_the_decoder_accepts() {
+    fn folders_never_panic_and_give_windows_the_decoders_accept() {
         let bytes: [u8; FOLDER] = kani::any();
         if let Ok(folder) = folder(&bytes) {
             match folder.method {
@@ -966,7 +1016,10 @@ mod proofs {
                     assert!((lzx::MIN_WINDOW_BITS..=lzx::MAX_WINDOW_BITS).contains(&window_bits));
                     assert!(decoder_memory(folder.method) <= DECODER_MEMORY);
                 }
-                Method::Quantum { level, .. } => assert!(level < 16),
+                Method::Quantum { window_bits } => {
+                    assert!(window_bits <= quantum::MAX_WINDOW_BITS);
+                    assert!(decoder_memory(folder.method) <= DECODER_MEMORY);
+                }
                 Method::Stored | Method::Mszip => {
                     assert!(decoder_memory(folder.method) <= DECODER_MEMORY)
                 }

@@ -1,12 +1,17 @@
 //! Every CAB in `tests/data/cab-corpus` extracts to the tree 7-Zip extracted
 //! when the corpus was written, and to the tree 7-Zip extracts now where it
-//! is installed. Generated CABs of every method, LZX window, block mix and
-//! E8 setting extract exactly as 7-Zip extracts them. Without 7-Zip the
+//! is installed. Generated CABs of every method, Quantum and LZX window,
+//! block mix and E8 setting extract exactly as 7-Zip extracts them, and a
+//! damaged Quantum CAB is refused exactly when 7-Zip refuses it. Without 7-Zip the
 //! differential test is skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
 #[path = "common/lzx_encoder.rs"]
 mod lzx_encoder;
+#[path = "common/quantum_encoder.rs"]
+mod quantum_encoder;
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 
 use cab_writer::{Cabinet, Method};
 use std::{
@@ -252,6 +257,133 @@ fn generated_cabs_extract_exactly_as_7zip_extracts_them() {
     }
 }
 
+fn files_over(random: &mut Random, length: usize) -> Vec<(String, usize, usize)> {
+    let mut files = Vec::new();
+    let mut start = 0;
+    while start < length {
+        let size = (1 + random.below(length / 3 + 1)).min(length - start);
+        files.push((
+            format!("dir{}/file{}.bin", files.len() % 3, files.len()),
+            start,
+            size,
+        ));
+        start += size;
+    }
+    files
+}
+
+#[test]
+fn generated_quantum_cabs_extract_exactly_as_7zip_extracts_them() {
+    let Some(binary) = sevenzip::sevenzip() else {
+        eprintln!("skipped: no 7-Zip 26 or later");
+        return;
+    };
+    let mut random = Random(0x00c0_ffee_0a17_0001);
+    let root = tempfile::tempdir().unwrap();
+    for case in 0..220 {
+        let window_bits = (case % 22) as u8;
+        let options = quantum_encoder::Options::random(&mut || random.next(), window_bits);
+        let window = 1usize << window_bits.max(15);
+        let length = match random.below(4) {
+            0 => 1 + random.below(100),
+            1 => 1 + random.below(cab_writer::BLOCK * 3),
+            2 => cab_writer::BLOCK * (1 + random.below(4)),
+            _ => 1 + random.below(2 * window + cab_writer::BLOCK).min(3 << 20),
+        };
+        let mut data = sample(&mut random, length);
+        let files = files_over(&mut random, data.len());
+        let (cabinet, description) = generated_with(Method::Quantum(options), &mut data, files);
+        let archive = root.path().join(format!("quantum{case}.cab"));
+        fs::write(&archive, cabinet.build()).unwrap();
+        let theirs = sevenzip_tree(&binary, &archive, &root.path().join(format!("7zip{case}")))
+            .unwrap_or_else(|| panic!("7-Zip refused case {case}: {description}"));
+        let ours = zipper_tree(&archive, &root.path().join(format!("zipper{case}")))
+            .unwrap_or_else(|error| panic!("Zipper refused case {case}: {error:#}; {description}"));
+        assert_eq!(ours, theirs, "case {case}: {description}");
+        fs::remove_file(&archive).unwrap();
+        for side in ["7zip", "zipper"] {
+            fs::remove_dir_all(root.path().join(format!("{side}{case}"))).unwrap();
+        }
+    }
+}
+
+#[test]
+fn damaged_quantum_cabs_are_refused_exactly_when_7zip_refuses_them() {
+    let Some(binary) = sevenzip::sevenzip() else {
+        eprintln!("skipped: no 7-Zip 26 or later");
+        return;
+    };
+    let mut random = Random(0x0bad_0a17_0000_0003);
+    let root = tempfile::tempdir().unwrap();
+    let (mut both_read, mut both_refused) = (0, 0);
+    for case in 0..660 {
+        let window_bits = (case % 22) as u8;
+        let options = quantum_encoder::Options::random(&mut || random.next(), window_bits);
+        let length = 1 + random.below(3 * cab_writer::BLOCK);
+        let data = sample(&mut random, length);
+        let mut cabinet =
+            cab_writer::one_folder_in_order(&[("a.bin", &data)], &Method::Quantum(options));
+        cabinet.checksums = false;
+        let blocks = &mut cabinet.folders[0].blocks;
+        let block = random.below(blocks.len());
+        let packed = &mut blocks[block].packed;
+        let damage = match random.below(5) {
+            0 | 1 => {
+                let at = random.below(packed.len());
+                let bit = random.below(8);
+                packed[at] ^= 1 << bit;
+                format!("flip bit {bit} of byte {at}")
+            }
+            2 => {
+                let at = random.below(packed.len());
+                packed.truncate(at.max(1));
+                format!("cut at {}", at.max(1))
+            }
+            3 => {
+                let byte = [0, 0, 0xFF][random.below(3)];
+                packed.push(byte);
+                format!("append {byte:#x}")
+            }
+            _ => {
+                let size = &mut blocks[block].size;
+                let old = *size;
+                *size = if old > 1 && random.below(2) == 0 {
+                    old - 1
+                } else {
+                    (old + 1).min(cab_writer::BLOCK)
+                };
+                format!("size {old} to {size}")
+            }
+        };
+        let archive = root.path().join(format!("damaged{case}.cab"));
+        fs::write(&archive, cabinet.build()).unwrap();
+        let theirs = sevenzip_tree(&binary, &archive, &root.path().join(format!("7zip{case}")));
+        let ours = zipper_tree(&archive, &root.path().join(format!("zipper{case}")));
+        match (&ours, &theirs) {
+            (Ok(ours), Some(theirs)) => {
+                assert_eq!(ours, theirs, "case {case}: block {block}, {damage}");
+                both_read += 1;
+            }
+            (Err(_), None) => both_refused += 1,
+            _ => panic!(
+                "case {case}: block {block}, {damage}: Zipper {:?}, 7-Zip read it: {}",
+                ours.as_ref()
+                    .map(|_| ())
+                    .map_err(|error| format!("{error:#}")),
+                theirs.is_some()
+            ),
+        }
+        fs::remove_file(&archive).unwrap();
+        for side in ["7zip", "zipper"] {
+            let _ = fs::remove_dir_all(root.path().join(format!("{side}{case}")));
+        }
+    }
+    assert!(
+        both_read > 0 && both_refused > 0,
+        "{both_read} read, {both_refused} refused"
+    );
+}
+
 #[test]
 fn lzx_block_edges_at_chunk_ends_extract_as_7zip_extracts_them() {
     use lzx_encoder::Kind::{Aligned, Uncompressed, Verbatim};
@@ -390,6 +522,16 @@ fn write_the_generated_corpus() {
     folders.files[0].attributes |= cab_writer::READ_ONLY;
     folders.reserve = Some((vec![7; 20], vec![1, 2, 3], vec![9; 5]));
     cabinets.push(("folders-and-reserves.cab".into(), folders));
+    let mut quantum_random = Random(0x0c0f_fee0_0a17_0042);
+    for window_bits in 10..=21u8 {
+        let mut options =
+            quantum_encoder::Options::random(&mut || quantum_random.next(), window_bits);
+        options.literal_odds = options.literal_odds.min(5);
+        cabinets.push((
+            format!("quantum-{window_bits}.cab"),
+            cab_writer::one_folder_in_order(&files, &Method::Quantum(options)),
+        ));
+    }
     let mut recorded = recorded_trees();
     let root = tempfile::tempdir().unwrap();
     for (name, cabinet) in cabinets {

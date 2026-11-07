@@ -35,7 +35,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Arj` | `backend` |  | No proof yet. |
 | `Base64` | `backend` |  | No proof yet. |
 | `COFF` | `backend` |  | No proof yet. |
-| `Cab` | `partial` | Stored, MSZIP and LZX folders read in process. Quantum folders and cabinet sets go to 7-Zip. | `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs` |
+| `Cab` | `partial` | Stored, MSZIP, Quantum and LZX folders read in process. Cabinet sets go to 7-Zip. | `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs` |
 | `Chm` | `backend` |  | No proof yet. |
 | `Compound` | `backend` |  | No proof yet. |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |

@@ -82,6 +82,102 @@
     "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
     "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
   },
+  "quantum-10.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-11.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-12.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-13.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-14.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-15.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-16.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-17.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-18.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-19.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-20.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
+  "quantum-21.cab": {
+    "bin": "dir",
+    "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",
+    "docs": "dir",
+    "docs/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/manual.txt": "0bfe1d1fa4335e69701a56a96db122b44a1ca722ba07dc45a441c8e944ec768d",
+    "readme.txt": "a55cfe84324af0cd33da16d5d06051e1880bf882fe73d4f1db92d4f090ed39a9"
+  },
   "stored.cab": {
     "bin": "dir",
     "bin/tool.exe": "d5ebe5cf6c9b19b1605716576b13fc2efddfbcf96397bfad62483cafd559cfc3",

@@ -1,10 +1,14 @@
-//! The CAB reader extracts stored, MSZIP and LZX folders byte for byte,
+//! The CAB reader extracts stored, MSZIP, Quantum and LZX folders byte for byte,
 //! rejects each hostile layout with nothing left behind, and honours the
 //! options the other readers take.
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
 #[path = "common/lzx_encoder.rs"]
 mod lzx_encoder;
+#[path = "common/quantum_encoder.rs"]
+mod quantum_encoder;
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 
 use cab_writer::{Block, Cabinet, Method};
 use std::{
@@ -134,9 +138,13 @@ fn methods() -> Vec<(&'static str, Method)> {
     ];
     lzx.longest_block = 9000;
     lzx.translation = Some(100_000);
+    let mut quantum = quantum_encoder::Options::plain(16);
+    quantum.literal_odds = 5;
+    quantum.shorten_odds = 20;
     vec![
         ("stored", Method::Stored),
         ("mszip", Method::Mszip),
+        ("quantum", Method::Quantum(quantum)),
         ("lzx", Method::Lzx(lzx)),
     ]
 }
@@ -420,9 +428,14 @@ fn layouts_that_lie_are_refused() {
             "unknown compression method",
         ),
         (
-            "quantum",
-            build(&|c| c.folders[0].type_compress = 2 | (4 << 4) | (21 << 8)),
-            "Quantum",
+            "Quantum window 22",
+            build(&|c| c.folders[0].type_compress = 2 | (4 << 4) | (22 << 8)),
+            "CAB Quantum window",
+        ),
+        (
+            "Quantum window 255",
+            build(&|c| c.folders[0].type_compress = 2 | (255 << 8)),
+            "CAB Quantum window",
         ),
         (
             "LZX window 22",
@@ -569,6 +582,88 @@ fn lzx_streams_that_lie_are_refused() {
     assert_rejected_without_leftovers("chunks out of order", &swapped.build());
 }
 
+fn quantum_cab(window_bits: u8, chunks: &[Vec<quantum_encoder::Token>]) -> Cabinet {
+    let blocks: Vec<Block> = quantum_encoder::encode_tokens(window_bits, chunks)
+        .into_iter()
+        .map(|chunk| Block {
+            packed: chunk.bytes,
+            size: chunk.size,
+        })
+        .collect();
+    let size = blocks.iter().map(|block| block.size as u32).sum();
+    Cabinet {
+        folders: vec![cab_writer::Folder {
+            type_compress: 2 | (4 << 4) | (u16::from(window_bits) << 8),
+            blocks,
+            declared_blocks: None,
+        }],
+        files: vec![cab_writer::file("a", 0, 0, size)],
+        checksums: true,
+        ..Cabinet::default()
+    }
+}
+
+#[test]
+fn quantum_windows_below_2_10_extract_as_7zip_reads_them() {
+    let data = text(3000);
+    for window_bits in [0u8, 1, 5, 9] {
+        let method = Method::Quantum(quantum_encoder::Options::plain(window_bits));
+        let bytes = cab_writer::one_folder_in_order(&[("a.txt", &data)], &method).build();
+        let (_root, destination, result) = extract_with(&bytes, ReadOptions::default());
+        result.unwrap_or_else(|error| panic!("window {window_bits}: {error:#}"));
+        assert_eq!(fs::read(destination.join("a.txt")).unwrap(), data);
+    }
+}
+
+#[test]
+fn quantum_streams_that_lie_are_refused() {
+    use quantum_encoder::Token::{Literal, Match};
+    let literals = vec![Literal(b'q'); cab_writer::BLOCK];
+    let reach = |length, distance| Match { length, distance };
+    let before_start = quantum_cab(16, &[vec![Literal(1), reach(3, 2)]]);
+    assert_rejected_with(
+        "match before the start",
+        &before_start.build(),
+        "before the start",
+    );
+    let across = quantum_cab(
+        16,
+        &[literals.clone(), vec![reach(259, cab_writer::BLOCK + 1)]],
+    );
+    assert_rejected_with(
+        "match before the start of a second block",
+        &across.build(),
+        "before the start",
+    );
+    let fine = quantum_cab(16, &[literals.clone(), vec![reach(259, cab_writer::BLOCK)]]);
+    let (_root, destination, result) = extract_with(&fine.build(), ReadOptions::default());
+    result.unwrap();
+    assert_eq!(
+        fs::read(destination.join("a")).unwrap(),
+        vec![b'q'; cab_writer::BLOCK + 259]
+    );
+    let mut past_block = quantum_cab(16, &[vec![Literal(1), reach(5, 1)]]);
+    past_block.folders[0].blocks[0].size = 4;
+    past_block.files[0].size = 4;
+    assert_rejected_with(
+        "match past its block",
+        &past_block.build(),
+        "past the end of its block",
+    );
+    let mut padded = quantum_cab(16, &[vec![Literal(1); 9]]);
+    padded.folders[0].blocks[0].packed.push(0);
+    assert_rejected_with("byte after a block", &padded.build(), "after its data");
+    let mut marked = quantum_cab(16, &[vec![Literal(1); 9]]);
+    *marked.folders[0].blocks[0].packed.last_mut().unwrap() |= 1;
+    assert_rejected_with("padding that is not zero", &marked.build(), "not zero");
+    let mut one_byte = quantum_cab(16, &[vec![Literal(1)]]);
+    one_byte.folders[0].blocks[0].packed.truncate(1);
+    assert_rejected_with("one-byte block", &one_byte.build(), "truncated Quantum");
+    let mut smaller_window = quantum_cab(21, &[literals, vec![reach(259, 40_000)]]);
+    smaller_window.folders[0].type_compress = 2 | (15 << 8);
+    assert_rejected_without_leftovers("window smaller than its matches", &smaller_window.build());
+}
+
 #[test]
 fn output_limit_is_enforced_before_writing() {
     let large = text(5000);
@@ -695,7 +790,7 @@ fn read_only_attributes_times_and_options_apply() {
 }
 
 #[test]
-fn the_default_engine_reads_cabs_and_hands_quantum_and_sets_to_7zip() {
+fn the_default_engine_reads_cabs_and_hands_sets_to_7zip() {
     let root = tempfile::tempdir().unwrap();
     let write = |name: &str, bytes: Vec<u8>| {
         let path = root.path().join(name);
@@ -712,24 +807,19 @@ fn the_default_engine_reads_cabs_and_hands_quantum_and_sets_to_7zip() {
             );
         }
     }
-    let mut quantum = small(&Method::Stored);
-    quantum.folders[0].type_compress = 2 | (4 << 4) | (16 << 8);
     let mut set = small(&Method::Stored);
     set.next = Some(("two.cab".into(), "disk 2".into()));
-    for (name, cabinet) in [("quantum.cab", quantum), ("set.cab", set)] {
-        let path = write(name, cabinet.build());
-        assert_eq!(
-            zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
-            zipper::Reader::Backend {
-                format: Some("-tcab".to_owned())
-            },
-            "{name}"
-        );
-        assert_eq!(
-            zipper::choose_reader(zipper::Engine::Native, &path).unwrap(),
-            zipper::Reader::Cab
-        );
-    }
+    let path = write("set.cab", set.build());
+    assert_eq!(
+        zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
+        zipper::Reader::Backend {
+            format: Some("-tcab".to_owned())
+        }
+    );
+    assert_eq!(
+        zipper::choose_reader(zipper::Engine::Native, &path).unwrap(),
+        zipper::Reader::Cab
+    );
     let broken = write("broken.cab", b"MSCF\0\0\0\0garbage".to_vec());
     assert_eq!(
         zipper::choose_reader(zipper::Engine::Auto, &broken).unwrap(),
@@ -788,36 +878,8 @@ fn folders_that_share_data_blocks_are_refused_before_their_blocks_are_decoded_tw
     assert_rejected_with("shared blocks", &bytes, "share data blocks");
 }
 
-const FIRST_7ZIP_THESE_CABS_WERE_CHECKED_AGAINST: u32 = 26;
-
-fn sevenzip() -> Option<PathBuf> {
-    ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            std::process::Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from)
-        .filter(|binary| {
-            major_version(binary)
-                .is_some_and(|major| major >= FIRST_7ZIP_THESE_CABS_WERE_CHECKED_AGAINST)
-        })
-}
-
-fn major_version(binary: &std::path::Path) -> Option<u32> {
-    let banner = std::process::Command::new(binary).output().ok()?.stdout;
-    let banner = String::from_utf8_lossy(&banner);
-    let after = banner.split("7-Zip").nth(1)?;
-    let number = after
-        .split_whitespace()
-        .find(|word| word.chars().next().is_some_and(|c| c.is_ascii_digit()))?;
-    number.split('.').next()?.parse().ok()
-}
-
 fn sevenzip_tree(bytes: &[u8]) -> Option<Option<BTreeMap<String, Vec<u8>>>> {
-    let binary = sevenzip()?;
+    let binary = sevenzip::sevenzip()?;
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("case.cab");
     fs::write(&archive, bytes).unwrap();
