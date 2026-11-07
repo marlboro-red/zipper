@@ -493,6 +493,22 @@ fn harnesses_not_run_as_listed(sections: &[Section], harnesses: &[Harness]) -> V
     problems
 }
 
+const KANI_FLAGS_THAT_KEEP_EVERY_CHECK: &[&str] = &["--tests"];
+
+fn kani_flags_refused(name: &str, full_checks: &[String]) -> Vec<String> {
+    full_checks
+        .iter()
+        .filter_map(|check| kani_check(check))
+        .flat_map(|check| check.base.into_iter().skip(2))
+        .filter(|flag| !KANI_FLAGS_THAT_KEEP_EVERY_CHECK.contains(flag))
+        .map(|flag| {
+            format!(
+                "{name}: its Kani full-check passes {flag}, which may skip or weaken a check; pass only --tests, --exact and --harness"
+            )
+        })
+        .collect()
+}
+
 fn kani_runs_split(name: &str, full_checks: &[String]) -> Option<String> {
     let runs = full_checks
         .iter()
@@ -758,6 +774,10 @@ pub(crate) fn fail_on_harnesses_not_run_as_listed(root: &Path) -> Result<()> {
             &verification.full_checks,
         ));
         problems.extend(kani_runs_split(
+            &verification.name,
+            &verification.full_checks,
+        ));
+        problems.extend(kani_flags_refused(
             &verification.name,
             &verification.full_checks,
         ));
@@ -1293,9 +1313,91 @@ fn parse_use_tree(
     }
 }
 
+struct InlineModule {
+    start: usize,
+    end: usize,
+    name: String,
+}
+
+fn inline_modules(code: &str) -> Vec<InlineModule> {
+    let mut found = Vec::new();
+    let mut offset = 0;
+    for line in code.split_inclusive('\n') {
+        let words: Vec<&str> = without_visibility(line.trim_start())
+            .split_whitespace()
+            .collect();
+        if words.first() == Some(&"mod") && line.trim_end().ends_with('{') {
+            found.push(InlineModule {
+                start: offset,
+                end: offset + end_of_braced_body_or_semicolon(&code[offset..]),
+                name: identifiers(words.get(1).copied().unwrap_or_default())
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned(),
+            });
+        }
+        offset += line.len();
+    }
+    found
+}
+
+enum UseRoot {
+    Crate(Vec<String>),
+    ThisFile,
+    External,
+    AboveTheCrate,
+}
+
+fn use_root(
+    file_module: &[String],
+    modules: &[InlineModule],
+    at: usize,
+    path: &[String],
+) -> UseRoot {
+    let mut module: Vec<String> = file_module.to_vec();
+    module.extend(
+        modules
+            .iter()
+            .filter(|inline| inline.start < at && at < inline.end)
+            .map(|inline| inline.name.clone()),
+    );
+    let mut rest = path;
+    match rest.first().map(String::as_str) {
+        Some("crate") => return UseRoot::Crate(rest[1..].to_vec()),
+        Some("self" | "super") => {}
+        _ => return UseRoot::External,
+    }
+    while let Some(first) = rest.first().map(String::as_str) {
+        match first {
+            "self" => {}
+            "super" if module.pop().is_none() => return UseRoot::AboveTheCrate,
+            "super" => {}
+            _ => break,
+        }
+        rest = &rest[1..];
+    }
+    module.extend(rest.iter().cloned());
+    let inside = module.len() >= file_module.len() && module[..file_module.len()] == *file_module;
+    let below = &module[file_module.len().min(module.len())..];
+    let in_this_file =
+        inside && (below.len() <= 1 || modules.iter().any(|inline| inline.name == below[0]));
+    if in_this_file {
+        UseRoot::ThisFile
+    } else {
+        UseRoot::Crate(module)
+    }
+}
+
 fn use_bindings(path: &str, code: &str, offsets: &[usize]) -> (Vec<Binding>, Vec<String>) {
     let mut bindings = Vec::new();
     let mut refusals = Vec::new();
+    let file_module: Vec<String> = file_module(path)
+        .unwrap_or_default()
+        .split("::")
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let modules = inline_modules(code);
     for (start, end) in use_statements(code) {
         let line = line_of(offsets, start);
         let line_start = code[..start].rfind('\n').map_or(0, |at| at + 1);
@@ -1315,31 +1417,37 @@ fn use_bindings(path: &str, code: &str, offsets: &[usize]) -> (Vec<Binding>, Vec
             continue;
         }
         for tree in trees {
-            match tree {
-                UseTree::Glob(prefix) => {
-                    if prefix.first().map(String::as_str) == Some("crate") {
-                        refusals.push(format!(
-                            "{path}:{line}: `use {}::*` imports names the reach check cannot list",
-                            prefix.join("::")
-                        ));
-                    }
+            let (written, glob, alias) = match tree {
+                UseTree::Glob(prefix) => (prefix, true, None),
+                UseTree::Leaf { path, alias } => (path, false, alias),
+            };
+            let shown = format!("{}{}", written.join("::"), if glob { "::*" } else { "" });
+            let target = match use_root(&file_module, &modules, start, &written) {
+                UseRoot::Crate(target) => target,
+                UseRoot::ThisFile | UseRoot::External => continue,
+                UseRoot::AboveTheCrate => {
+                    refusals.push(format!(
+                        "{path}:{line}: `use {shown}` climbs out of the crate"
+                    ));
+                    continue;
                 }
-                UseTree::Leaf {
-                    path: target,
-                    alias,
-                } => {
-                    if target.first().map(String::as_str) != Some("crate") || target.len() < 2 {
-                        continue;
-                    }
-                    let name = alias.unwrap_or_else(|| target.last().cloned().unwrap_or_default());
-                    bindings.push(Binding {
-                        name,
-                        path: target[1..].to_vec(),
-                        line,
-                        exported,
-                    });
-                }
+            };
+            if glob {
+                refusals.push(format!(
+                    "{path}:{line}: `use {shown}` imports names the reach check cannot list"
+                ));
+                continue;
             }
+            if target.is_empty() {
+                continue;
+            }
+            let name = alias.unwrap_or_else(|| written.last().cloned().unwrap_or_default());
+            bindings.push(Binding {
+                name,
+                path: target,
+                line,
+                exported,
+            });
         }
     }
     (bindings, refusals)
@@ -2327,9 +2435,8 @@ mod off {
         let first = "cargo kani --tests --harness m::proofs::first --exact";
         let second = "cargo kani --tests --exact --harness=m::proofs::second";
         let other = "cargo kani --harness other::proofs::";
-        let named = |problems: &[String], text: &str| {
-            problems.iter().filter(|p| p.contains(text)).count()
-        };
+        let named =
+            |problems: &[String], text: &str| problems.iter().filter(|p| p.contains(text)).count();
         assert!(problems(&[first, second, other, "cargo test --lib m"]).is_empty());
         assert!(problems(&[first, second, "cargo kani"]).is_empty());
 
@@ -2389,7 +2496,8 @@ mod off {
                 .map(|line| (*line).to_owned())
                 .collect::<Vec<_>>()
         };
-        let one = "cargo kani --tests --harness m::proofs::first --exact --harness=m::proofs::second";
+        let one =
+            "cargo kani --tests --harness m::proofs::first --exact --harness=m::proofs::second";
         assert!(kani_runs_split("m", &checks(&[one, "cargo test --lib m"])).is_none());
         let split = kani_runs_split("m", &checks(&[one, "cargo kani --harness other::"]));
         assert!(split.is_some_and(|problem| problem.contains("in 2 full-checks")));
@@ -2669,6 +2777,71 @@ mod proofs {
             reach_through("", "crate::memory::NARROW"),
             ["item = src/memory.rs | pub(in crate::m) const NARROW:"]
         );
+    }
+
+    #[test]
+    fn imports_through_super_and_self_resolve_from_the_module_they_sit_in() {
+        assert_eq!(
+            reach_through("use super::memory::READ_CHUNK;", "READ_CHUNK"),
+            ["item = src/memory.rs | pub(crate) const READ_CHUNK:"]
+        );
+        assert_eq!(
+            reach_through("use super::{memory::READ_SLACK as SLACK};", "SLACK"),
+            ["item = src/memory.rs | pub(crate) const READ_SLACK:"]
+        );
+        assert!(refused(
+            &reach_through("use super::memory::*;", "READ_CHUNK"),
+            "src/m.rs:1: `use super::memory::*` imports names"
+        ));
+        assert!(refused(
+            &reach_through("use super::super::memory::READ_CHUNK;", "READ_CHUNK"),
+            "src/m.rs:1: `use super::super::memory::READ_CHUNK` climbs out of the crate"
+        ));
+        let inner = "fn step() -> u32 {\n    TOP\n}\nconst TOP: u32 = 1;\nmod proofs {\n    use super::*;\n    use self::super::super::memory::READ_CHUNK;\n    fn helper() -> usize {\n        READ_CHUNK\n    }\n}\n";
+        let items = [STEP_ITEMS[0], STEP_ITEMS[1], ("src/m.rs", "    fn helper(")];
+        let files = [("src/m.rs", inner), ("src/memory.rs", MEMORY)];
+        assert_eq!(
+            unlisted_in(&files, &items, &[9]),
+            ["item = src/memory.rs | pub(crate) const READ_CHUNK:"]
+        );
+    }
+
+    #[test]
+    fn a_kani_check_may_pass_no_flag_that_changes_what_kani_proves() {
+        let checks = |lines: &[&str]| {
+            lines
+                .iter()
+                .map(|line| (*line).to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            kani_flags_refused(
+                "m",
+                &checks(&[
+                    "cargo kani --tests --exact --harness m::proofs::a --harness=m::proofs::b",
+                    "cargo test --release --lib m",
+                ])
+            )
+            .is_empty()
+        );
+        for flag in [
+            "--only-codegen",
+            "--no-default-checks",
+            "--no-unwinding-checks",
+            "--default-unwind",
+            "-Z",
+            "--cbmc-args",
+        ] {
+            let problems = kani_flags_refused(
+                "m",
+                &checks(&[&format!("cargo kani {flag} --harness m::proofs::")]),
+            );
+            assert_eq!(problems.len(), 1, "{flag}: {problems:#?}");
+            assert!(
+                problems[0].starts_with(&format!("m: its Kani full-check passes {flag},")),
+                "{problems:#?}"
+            );
+        }
     }
 
     fn refused(problems: &[String], text: &str) -> bool {

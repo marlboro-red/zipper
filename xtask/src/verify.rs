@@ -74,12 +74,28 @@ fn item_spans_starting_with<'a>(source: &'a str, opening: &str) -> Vec<&'a str> 
     let mut offset = 0;
     for line in source.split_inclusive('\n') {
         if line.starts_with(opening) {
-            found
-                .push(&source[offset..offset + end_of_braced_body_or_semicolon(&source[offset..])]);
+            let end = offset + end_of_braced_body_or_semicolon(&source[offset..]);
+            found.push(&source[start_of_kani_attributes_above(source, offset)..end]);
         }
         offset += line.len();
     }
     found
+}
+
+fn start_of_kani_attributes_above(source: &str, item: usize) -> usize {
+    let mut start = item;
+    let mut kani = item;
+    for line in source[..item].split_inclusive('\n').rev() {
+        let code = line.trim();
+        if code.is_empty() || code.ends_with(['{', '}', ';']) && !code.starts_with("#[") {
+            break;
+        }
+        start -= line.len();
+        if code.starts_with("#[kani::") {
+            kani = start;
+        }
+    }
+    if kani < item { start } else { item }
 }
 
 pub(crate) fn end_of_braced_body_or_semicolon(text: &str) -> usize {
@@ -441,6 +457,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn an_item_starts_at_the_kani_attributes_above_it() {
+        let source = "fn a() {}\n\n    #[kani::proof]\n    #[kani::stub(\n        f,\n        g\n    )]\n    #[kani::unwind(8)]\n    fn p() {\n    }\n#[derive(Debug)]\nstruct S {}\n";
+        assert_eq!(
+            item_spans_starting_with(source, "    fn p("),
+            [
+                "    #[kani::proof]\n    #[kani::stub(\n        f,\n        g\n    )]\n    #[kani::unwind(8)]\n    fn p() {\n    }"
+            ]
+        );
+        assert_eq!(
+            item_spans_starting_with(source, "struct S"),
+            ["struct S {}"]
+        );
+        assert_eq!(item_spans_starting_with(source, "fn a("), ["fn a() {}"]);
+    }
+
     fn workspace() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -596,6 +628,12 @@ mod tests {
                 "field_check(!seen, \"ZIP entry has two ZIP64 extra fields\")?;",
                 "field_check(seen, \"ZIP entry has two ZIP64 extra fields\")?;",
                 "zip64-extra-field",
+            ),
+            (
+                "src/native_7z.rs",
+                "#[kani::unwind(8)]\n    fn ppmd_properties_read_only_five_bytes",
+                "#[kani::unwind(2)]\n    fn ppmd_properties_read_only_five_bytes",
+                "7z-ppmd-properties",
             ),
         ];
         for (file, old, new, section) in cases {
