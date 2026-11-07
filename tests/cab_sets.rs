@@ -576,6 +576,81 @@ fn continued_folders_whose_halves_disagree_are_refused() {
 }
 
 #[test]
+fn windows_device_names_are_refused_as_cabinet_names_on_every_system() {
+    let (source, cabinets, _) = two_cabinet_stored_set();
+    let devices = [
+        "CON",
+        "con",
+        "Prn",
+        "aux",
+        "NUL",
+        "nul.cab",
+        "con.cab",
+        "COM1.txt",
+        "com0",
+        "COM9",
+        "lpt0.cab",
+        "LPT9",
+        "COM¹",
+        "com².cab",
+        "LPT³",
+        "CONIN$",
+        "conout$.cab",
+        "con.",
+        "CON ",
+        "nul . ",
+        "aux .cab",
+        "COM1.cab.",
+        "lpt1...",
+    ];
+    for name in devices {
+        for previous in [false, true] {
+            let mut cabinet = cabinets[usize::from(previous)].clone();
+            let names = Some((name.to_owned(), "disk".to_owned()));
+            if previous {
+                cabinet.previous = names;
+            } else {
+                cabinet.next = names;
+            }
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("case.cab");
+            fs::write(&path, cabinet.build()).unwrap();
+            assert_refused(
+                &format!("{name:?} as previous {previous}"),
+                root.path(),
+                &path,
+                &["not a plain file name"],
+            );
+        }
+    }
+    for name in [
+        "CONSOLE.cab",
+        "COM10.cab",
+        "com.cab",
+        "LPT.cab",
+        "aux1.cab",
+        "nul-1.cab",
+        "xcon.cab",
+        "COM1x.cab",
+        "lpt¹¹.cab",
+    ] {
+        let mut set = cabinets.clone();
+        set[0].next = Some((name.to_owned(), "disk 2".into()));
+        let root = tempfile::tempdir().unwrap();
+        let first = write_set(
+            root.path(),
+            &set,
+            &["disk1.cab".to_owned(), name.to_owned()],
+        );
+        assert_eq!(
+            zipper_tree(&first).unwrap_or_else(|error| panic!("{name:?}: {error:#}")),
+            source.tree,
+            "{name:?}"
+        );
+    }
+}
+
+#[test]
 fn cabinet_names_that_leave_the_folder_are_refused_before_anything_beside_is_opened() {
     let (_, cabinets, _) = two_cabinet_stored_set();
     for name in [
