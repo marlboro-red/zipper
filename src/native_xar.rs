@@ -82,7 +82,8 @@ fn be_u64(bytes: &[u8]) -> u64 {
     u64::from_be_bytes(bytes.try_into().expect("eight bytes"))
 }
 
-// SPEC(xar header.h): magic, header size, version, compressed and uncompressed TOC length, checksum algorithm.
+// SPEC(xar include/xar.h.in, struct xar_header): magic, header size, version, compressed and
+// uncompressed TOC length, checksum algorithm.
 fn header(bytes: &[u8; HEADER]) -> Field<Header> {
     field_check(bytes[..4] == MAGIC, "not a xar archive")?;
     let header = Header {
@@ -110,7 +111,8 @@ fn header(bytes: &[u8; HEADER]) -> Field<Header> {
     Ok(header)
 }
 
-// SPEC(xar header.h): 0 none, 1 SHA-1, 2 MD5, 3 SHA-256 or a named algorithm after the header, 4 SHA-512.
+// EXTERNAL(Apple xar and mackyle xar): 0 none, 1 SHA-1, 2 MD5. Code 3 is SHA-256 in Apple's xar
+// and, in mackyle's, the algorithm named after the 28 bytes. Code 4 is Apple's SHA-512.
 fn algorithm(code: u32, extra: &[u8]) -> Field<Algorithm> {
     Ok(match code {
         0 => Algorithm::None,
@@ -483,6 +485,9 @@ impl Toc {
     }
 
     fn open(&mut self, parent: Frame, element: &BytesStart) -> Result<Frame> {
+        for attribute in element.attributes() {
+            attribute.context("xar table of contents has a malformed or repeated attribute")?;
+        }
         let name = element.name();
         let name: &str = name.as_ref();
         Ok(match (parent, name) {
@@ -1116,13 +1121,19 @@ fn file_data(
 }
 
 fn data_extents(toc: &Toc, archive: &Archive, checksum: Extent) -> Result<Vec<Extent>> {
-    let mut extents = vec![checksum];
+    let mut extents = Vec::new();
     for record in &toc.records {
         let Some(data) = record.data.as_deref() else {
             continue;
         };
         if let (Some(offset), Some(length)) = (data.offset, data.length) {
-            extents.push(extent(archive.heap, offset, length, archive.length)?);
+            let extent = extent(archive.heap, offset, length, archive.length)?;
+            let apart = extent.end <= checksum.start || checksum.end <= extent.start;
+            ensure!(
+                apart || extent.start == extent.end,
+                "xar data overlaps the table of contents checksum"
+            );
+            extents.push(extent);
         }
     }
     Ok(extents)
@@ -1250,10 +1261,13 @@ fn extract(tree: &mut Tree, archive: &mut Archive) -> Result<()> {
                 .expect("a link target keeps its path"),
         )?;
     }
-    let toc_file_named = toc
-        .records
-        .iter()
-        .any(|record| record.parent.is_none() && record.name.as_deref() == Some(TOC_FILE));
+    let toc_file_named = toc.records.iter().any(|record| {
+        record.parent.is_none()
+            && record
+                .name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case(TOC_FILE))
+    });
     if !toc_file_named {
         let declared = archive.header.toc_uncompressed;
         let digest = RefCell::new(None);

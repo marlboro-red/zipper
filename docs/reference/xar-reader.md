@@ -25,7 +25,7 @@ The reader does not support these features:
 
 The reader restores permission bits and times the way the [cpio reader](cpio-reader.md#metadata) does. Each file and directory gets its `<mode>`, masked to `0o777`, and its `<mtime>` in whole seconds. A time that is not of the form `2026-11-07T14:12:25Z` is ignored. A file without a mode gets `0o644`, and a directory `0o755`. The reader never restores owners or the inode numbers the archive stores.
 
-Like 7-Zip, the reader also writes the table of contents, inflated, as `[TOC].xml` at the top of the destination. An archive entry of that name takes its place.
+Like 7-Zip, the reader also writes the table of contents, inflated, as `[TOC].xml` at the top of the destination. A top-level archive entry of that name, in any case, takes its place.
 
 ## Safety checks
 
@@ -35,7 +35,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 - The table of contents inflates to exactly the length the header gives. It is checked during inflation, so a longer stream stops at the limit.
 - The checksum of the compressed table of contents matches the one in the heap, and its `<checksum>` element names the header's algorithm and its digest length. An archive without a header algorithm may have no `<checksum>` element.
 - The table of contents is well-formed XML with one `<xar>` root and one `<toc>`. A document type declaration, an entity XML does not define, a token longer than 1 MiB, a field longer than 8,192 bytes and nesting deeper than 256 elements are refused.
-- A field given twice with different values, and a second `<data>`, are refused.
+- A field given twice with different values, a second `<data>` and an attribute given twice on one element are refused. Apple's `xar` refuses a repeated attribute too.
 - Every data range lies inside the file. Two ranges either match exactly or do not overlap, and none overlaps the checksum. `xar` stores identical files once, so files may share one range.
 - Each file decodes to exactly its declared size, checked during decoding. Its archived checksum covers every byte of its range, and its extracted checksum covers its decoded bytes. A stored file's length equals its size.
 - A name is one path segment. Empty names, `.`, `..`, `/` and NUL are refused, and the joined path passes the same checks as tar names. No entry sits inside a file or a link.
@@ -52,7 +52,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 | One XML token | at most 1 MiB |
 | One field, such as a name or a checksum | at most 8,192 bytes |
 | Nesting | at most 256 elements |
-| Entries | at most 1,000,000 |
+| Entries | at most 1,000,000, though the record budget below refuses 515,000 minimal entries and accepts 450,000 |
 | Entry records, names, link targets and the paths of folders and linked files | at most 128 MiB, counting each record at twice its size |
 | One path | at most 4,096 bytes |
 | One symlink target | at most 4,096 bytes |
@@ -67,7 +67,7 @@ The reader inflates and parses the table of contents in one pass and never holds
 `tests/xar_corpus.rs` requires the trees of real archives from `xar`, `pkgbuild` and `productbuild` to match `7zz x -txar` and `xar -x`. `tests/hostile_xar.rs` compares archives it writes with 7-Zip where it is installed. The reader differs from 7-Zip 26.05 in these cases:
 
 - For a component package, `7zz x` without `-txar` opens the `Payload` and writes its cpio, decompressed, as `Payload~`. Zipper writes the package's files, as `7zz x -txar` does.
-- 7-Zip writes every name of a hard link group empty. Zipper gives each name the data, as `xar -x` does.
+- 7-Zip hard links the files that share an `<inode>` number, so they share one file's data. In a `xar` hard link group, every name then comes out empty. Apple's signed packages give every file inode 0, so 7-Zip writes `Payload` under the names `Bom` and `PackageInfo` too. Zipper links only the files whose type says `hardlink`, as `xar -x` does.
 - 7-Zip refuses `application/x-xz` and `application/x-lzma` data as an unsupported method. Zipper decodes it.
 - 7-Zip writes a device, FIFO or socket as an empty file. Zipper refuses the archive.
 - 7-Zip writes a symlink that leaves the destination as an empty file and reports an error. Zipper refuses the archive.

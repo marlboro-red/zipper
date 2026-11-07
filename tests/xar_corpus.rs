@@ -107,9 +107,7 @@ fn write_package_source(root: &Path) {
     .unwrap();
 }
 
-/// Build every corpus archive the installed tools can write, and return
-/// their paths.
-fn build(work: &Path) -> Vec<PathBuf> {
+fn build_corpus_with_installed_tools(work: &Path) -> Vec<PathBuf> {
     let source = work.join("source");
     write_source(&source);
     let mut made = Vec::new();
@@ -226,7 +224,7 @@ fn freshly_built_archives_match_7zip_and_xar() {
         return;
     }
     let work = tempfile::tempdir().unwrap();
-    let archives = build(work.path());
+    let archives = build_corpus_with_installed_tools(work.path());
     assert!(!archives.is_empty(), "no corpus tool is installed");
     let mut records = serde_json::Map::new();
     for archive in &archives {

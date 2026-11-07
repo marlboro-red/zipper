@@ -1,6 +1,3 @@
-//! A small xar writer for tests: zlib table of contents, SHA-1 checksums by
-//! default, and each file's data in one of the encodings xar names. Hostile
-//! cases edit the table of contents text or the finished bytes.
 #![allow(dead_code)]
 use sha2::Digest;
 use std::io::Write;
@@ -114,7 +111,6 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// The heap, with room for the table of contents checksum at offset 0.
 pub struct Heap {
     pub bytes: Vec<u8>,
     pub toc_sum: Sum,
@@ -130,16 +126,14 @@ impl Heap {
         }
     }
 
-    /// Store `data` and return its `<data>` element.
-    pub fn data(&mut self, encoding: Encoding, data: &[u8]) -> String {
+    pub fn store_data_element(&mut self, encoding: Encoding, data: &[u8]) -> String {
         let archived = encoding.encode(data);
         let offset = self.bytes.len();
         self.bytes.extend_from_slice(&archived);
-        self.data_at(encoding, offset, &archived, data)
+        self.data_element_at(encoding, offset, &archived, data)
     }
 
-    /// A `<data>` element for bytes already in the heap at `offset`.
-    pub fn data_at(
+    pub fn data_element_at(
         &self,
         encoding: Encoding,
         offset: usize,
@@ -207,9 +201,7 @@ pub fn hard_link(id: u32, name: &str, target: u32) -> String {
     )
 }
 
-/// The table of contents around `files`, with the checksum element its
-/// heap needs.
-pub fn toc(heap: &Heap, files: &str) -> String {
+pub fn toc_with_checksum_element(heap: &Heap, files: &str) -> String {
     let checksum = if heap.toc_sum == Sum::None {
         String::new()
     } else {
@@ -228,8 +220,6 @@ pub fn zlib(bytes: &[u8]) -> Vec<u8> {
     Encoding::Zlib.encode(bytes)
 }
 
-/// Assemble a xar from the table of contents text and the heap, writing
-/// the table of contents checksum into the heap.
 pub fn assemble(toc: &str, mut heap: Heap) -> Vec<u8> {
     let compressed = zlib(toc.as_bytes());
     let code = heap.toc_sum.code();
@@ -251,10 +241,9 @@ pub fn assemble_raw(compressed: &[u8], uncompressed: u64, heap: &mut Heap, code:
     bytes
 }
 
-/// A xar of `files` built with `build`, which gets the heap to store data.
 pub fn xar(toc_sum: Sum, file_sum: Sum, build: impl FnOnce(&mut Heap) -> String) -> Vec<u8> {
     let mut heap = Heap::new(toc_sum, file_sum);
     let files = build(&mut heap);
-    let toc = toc(&heap, &files);
+    let toc = toc_with_checksum_element(&heap, &files);
     assemble(&toc, heap)
 }

@@ -110,9 +110,9 @@ fn big() -> Vec<u8> {
 
 fn sample(encoding: Encoding, toc_sum: Sum, file_sum: Sum) -> Vec<u8> {
     xar(toc_sum, file_sum, |heap| {
-        let alpha = heap.data(encoding, b"alpha\n");
-        let large = heap.data(encoding, &big());
-        let odd = heap.data(encoding, b"x");
+        let alpha = heap.store_data_element(encoding, b"alpha\n");
+        let large = heap.store_data_element(encoding, &big());
+        let odd = heap.store_data_element(encoding, b"x");
         let mut files = directory(
             1,
             "folder",
@@ -211,8 +211,8 @@ fn every_encoding_and_checksum_extracts_byte_for_byte() {
 #[test]
 fn the_table_of_contents_is_written_as_7zip_writes_it() {
     let mut heap = Heap::new(Sum::Sha1, Sum::Sha1);
-    let data = heap.data(Encoding::Zlib, b"hi");
-    let text = toc(&heap, &file(1, "a", "0644", &data));
+    let data = heap.store_data_element(Encoding::Zlib, b"hi");
+    let text = toc_with_checksum_element(&heap, &file(1, "a", "0644", &data));
     let bytes = assemble(&text, heap);
     let (_root, destination, result) = extract_with(&bytes, ReadOptions::default());
     result.unwrap();
@@ -225,18 +225,50 @@ fn the_table_of_contents_is_written_as_7zip_writes_it() {
 #[test]
 fn an_entry_named_like_the_table_of_contents_wins() {
     let bytes = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"mine");
+        let data = heap.store_data_element(Encoding::Stored, b"mine");
         file(1, TOC_FILE, "0644", &data)
     });
     let (_root, destination, result) = extract_with(&bytes, ReadOptions::default());
     result.unwrap();
     assert_eq!(fs::read(destination.join(TOC_FILE)).unwrap(), b"mine");
+    let other_case = xar(Sum::Sha1, Sum::Sha1, |heap| {
+        let data = heap.store_data_element(Encoding::Stored, b"mine");
+        file(1, "[toc].XML", "0644", &data)
+    });
+    let (_root, destination, result) = extract_with(&other_case, ReadOptions::default());
+    result.unwrap();
+    assert_eq!(fs::read(destination.join("[toc].XML")).unwrap(), b"mine");
+}
+
+#[test]
+fn repeated_attributes_are_refused_as_xar_refuses_them() {
+    let link = xar(Sum::Sha1, Sum::Sha1, |heap| {
+        let first = heap.store_data_element(Encoding::Stored, b"AAAA");
+        let second = heap.store_data_element(Encoding::Stored, b"CCCC");
+        original(1, "a", &first)
+            + &original(2, "c", &second)
+            + "<file id=\"3\"><type link=\"1\" link=\"2\">hardlink</type><name>b</name></file>"
+    });
+    assert_rejected_saying("two link attributes", &link, "attribute");
+    let id = xar(Sum::Sha1, Sum::Sha1, |heap| {
+        let data = heap.store_data_element(Encoding::Stored, b"x");
+        file(1, "a", "0644", &data).replace("<file id=\"1\">", "<file id=\"1\" id=\"2\">")
+    });
+    assert_rejected_saying("two ids", &id, "attribute");
+    let ignored = xar(Sum::Sha1, Sum::Sha1, |_| {
+        "<other a=\"1\" a=\"2\"/>".to_owned()
+    });
+    assert_rejected_saying(
+        "two attributes on an ignored element",
+        &ignored,
+        "attribute",
+    );
 }
 
 #[test]
 fn hard_links_share_the_original_data() {
     let bytes = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Zlib, b"shared\n");
+        let data = heap.store_data_element(Encoding::Zlib, b"shared\n");
         hard_link(1, "first", 2)
             + &original(2, "second", &data)
             + &directory(3, "d", &hard_link(4, "third", 2))
@@ -262,8 +294,8 @@ fn hard_links_share_the_original_data() {
 #[test]
 fn identical_data_ranges_may_be_shared() {
     let mut heap = Heap::new(Sum::Sha1, Sum::Sha1);
-    let data = heap.data(Encoding::Zlib, b"same bytes");
-    let text = toc(
+    let data = heap.store_data_element(Encoding::Zlib, b"same bytes");
+    let text = toc_with_checksum_element(
         &heap,
         &(file(1, "a", "0644", &data) + &file(2, "b", "0644", &data)),
     );
@@ -275,13 +307,35 @@ fn identical_data_ranges_may_be_shared() {
 #[test]
 fn repeated_fields_that_agree_are_read_as_productbuild_writes_them() {
     let bytes = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Zlib, b"bom");
+        let data = heap.store_data_element(Encoding::Zlib, b"bom");
         file(1, "Bom", "0644", &data)
             .replace("<name>Bom</name>", "<name>Bom</name><name>Bom</name>")
     });
     let (_root, destination, result) = extract_with(&bytes, ReadOptions::default());
     result.unwrap();
     assert_eq!(fs::read(destination.join("Bom")).unwrap(), b"bom");
+}
+
+#[test]
+fn files_that_share_an_inode_keep_their_own_data_as_apple_signed_packages_need() {
+    let bytes = xar(Sum::Sha1, Sum::Sha1, |heap| {
+        ["Payload", "Bom", "PackageInfo"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, name)| {
+                let data = heap.store_data_element(Encoding::Stored, name.as_bytes());
+                format!(
+                    "<file id=\"{}\">{data}<inode>0</inode><type>file</type><name>{name}</name></file>",
+                    index + 1
+                )
+            })
+            .collect()
+    });
+    let (_root, destination, result) = extract_with(&bytes, ReadOptions::default());
+    result.unwrap();
+    for name in ["Payload", "Bom", "PackageInfo"] {
+        assert_eq!(fs::read(destination.join(name)).unwrap(), name.as_bytes());
+    }
 }
 
 #[test]
@@ -308,7 +362,7 @@ fn selection_and_strip_apply_to_xar_paths() {
 
 fn simple(name_xml: &str) -> Vec<u8> {
     xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"x");
+        let data = heap.store_data_element(Encoding::Stored, b"x");
         format!("<file id=\"1\">{name_xml}<type>file</type>{data}</file>")
     })
 }
@@ -361,7 +415,7 @@ fn links_that_leave_the_destination_are_refused() {
     });
     assert_rejected_saying("no target", &no_target, "has no target");
     let inside_link = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"x");
+        let data = heap.store_data_element(Encoding::Stored, b"x");
         format!(
             "<file id=\"1\"><name>d</name><type>symlink</type><link>.</link><file id=\"2\"><name>x</name><type>file</type>{data}</file></file>"
         )
@@ -372,7 +426,7 @@ fn links_that_leave_the_destination_are_refused() {
         "inside a file or link",
     );
     let inside_file = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"x");
+        let data = heap.store_data_element(Encoding::Stored, b"x");
         format!(
             "<file id=\"1\"><name>f</name><type>file</type><file id=\"2\"><name>x</name><type>file</type>{data}</file></file>"
         )
@@ -384,7 +438,7 @@ fn links_that_leave_the_destination_are_refused() {
 fn hard_links_that_name_no_file_are_refused() {
     let to = |target: u32| {
         xar(Sum::Sha1, Sum::Sha1, |heap| {
-            let data = heap.data(Encoding::Stored, b"x");
+            let data = heap.store_data_element(Encoding::Stored, b"x");
             original(1, "file", &data) + &directory(2, "folder", "") + &hard_link(3, "link", target)
         })
     };
@@ -396,13 +450,13 @@ fn hard_links_that_name_no_file_are_refused() {
     });
     assert_rejected_saying("no link attribute", &no_attribute, "no link attribute");
     let same_id = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"x");
+        let data = heap.store_data_element(Encoding::Stored, b"x");
         file(1, "a", "0644", &data) + &file(1, "b", "0644", &data)
     });
     assert_rejected_saying("same id", &same_id, "same id");
     let replaced = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let first = heap.data(Encoding::Stored, b"linked");
-        let second = heap.data(Encoding::Stored, b"other");
+        let first = heap.store_data_element(Encoding::Stored, b"linked");
+        let second = heap.store_data_element(Encoding::Stored, b"other");
         original(1, "file", &first) + &file(2, "file", "0644", &second) + &hard_link(3, "link", 1)
     });
     assert_rejected_saying("linked file replaced", &replaced, "hard link names");
@@ -416,7 +470,7 @@ fn bad_checksums_are_refused() {
     assert_rejected_saying("table of contents checksum", &bytes, "fails its checksum");
 
     let flip_extracted = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Zlib, b"alpha");
+        let data = heap.store_data_element(Encoding::Zlib, b"alpha");
         let good = hex(&Sum::Sha1.digest(b"alpha"));
         file(
             1,
@@ -433,7 +487,7 @@ fn bad_checksums_are_refused() {
 
     let flip_archived = xar(Sum::Sha1, Sum::Sha1, |heap| {
         let archived = Encoding::Zlib.encode(b"alpha");
-        let data = heap.data(Encoding::Zlib, b"alpha");
+        let data = heap.store_data_element(Encoding::Zlib, b"alpha");
         let good = hex(&Sum::Sha1.digest(&archived));
         file(
             1,
@@ -453,24 +507,43 @@ fn bad_checksums_are_refused() {
     archived.extend_from_slice(b"trailing");
     let offset = heap.bytes.len();
     heap.bytes.extend_from_slice(&archived);
-    let mut data = heap.data_at(Encoding::Zlib, offset, &archived, b"alpha");
+    let mut data = heap.data_element_at(Encoding::Zlib, offset, &archived, b"alpha");
     let trailing_sum = hex(&Sum::Sha1.digest(&archived));
     data = data.replace(
         &trailing_sum,
         &hex(&Sum::Sha1.digest(&archived[..archived.len() - 8])),
     );
-    let text = toc(&heap, &file(1, "a", "0644", &data));
+    let text = toc_with_checksum_element(&heap, &file(1, "a", "0644", &data));
     assert_rejected_saying(
         "trailing bytes outside the checksum",
         &assemble(&text, heap),
         "fails its archived checksum",
     );
+
+    let mut heap = Heap::new(Sum::Sha1, Sum::Sha1);
+    let mut archived = Encoding::Zlib.encode(b"alpha");
+    archived.resize(3 * 1024 * 1024, 0x5A);
+    let offset = heap.bytes.len();
+    heap.bytes.extend_from_slice(&archived);
+    let data = heap.data_element_at(Encoding::Zlib, offset, &archived, b"alpha");
+    for prefix in [1024 * 1024, 2 * 1024 * 1024] {
+        let sum = hex(&Sum::Sha1.digest(&archived[..prefix]));
+        let fooled = data.replace(&hex(&Sum::Sha1.digest(&archived)), &sum);
+        let text = toc_with_checksum_element(&heap, &file(1, "a", "0644", &fooled));
+        let mut copy = Heap::new(Sum::Sha1, Sum::Sha1);
+        copy.bytes = heap.bytes.clone();
+        assert_rejected_saying(
+            "a checksum of the range read before the stream ended",
+            &assemble(&text, copy),
+            "fails its archived checksum",
+        );
+    }
 }
 
 #[test]
 fn bad_sizes_are_refused() {
     let larger = xar(Sum::Sha1, Sum::None, |heap| {
-        let data = heap.data(Encoding::Zlib, b"alpha");
+        let data = heap.store_data_element(Encoding::Zlib, b"alpha");
         file(
             1,
             "a",
@@ -480,7 +553,7 @@ fn bad_sizes_are_refused() {
     });
     assert_rejected_saying("size past the data", &larger, "truncated");
     let smaller = xar(Sum::Sha1, Sum::None, |heap| {
-        let data = heap.data(Encoding::Zlib, b"alpha");
+        let data = heap.store_data_element(Encoding::Zlib, b"alpha");
         file(
             1,
             "a",
@@ -490,7 +563,7 @@ fn bad_sizes_are_refused() {
     });
     assert_rejected_saying("size short of the data", &smaller, "decodes past its size");
     let stored = xar(Sum::Sha1, Sum::None, |heap| {
-        let data = heap.data(Encoding::Stored, b"alpha");
+        let data = heap.store_data_element(Encoding::Stored, b"alpha");
         file(
             1,
             "a",
@@ -500,7 +573,7 @@ fn bad_sizes_are_refused() {
     });
     assert_rejected_saying("stored length", &stored, "length other than its size");
     let huge = xar(Sum::Sha1, Sum::None, |heap| {
-        let data = heap.data(Encoding::Zlib, b"alpha");
+        let data = heap.store_data_element(Encoding::Zlib, b"alpha");
         file(
             1,
             "a",
@@ -522,7 +595,7 @@ fn bad_sizes_are_refused() {
 fn data_outside_the_heap_or_overlapping_is_refused() {
     let at = |offset: &str, length: &str| {
         xar(Sum::Sha1, Sum::None, |heap| {
-            let data = heap.data(Encoding::Stored, b"alpha");
+            let data = heap.store_data_element(Encoding::Stored, b"alpha");
             let data = data
                 .replace("<offset>20</offset>", &format!("<offset>{offset}</offset>"))
                 .replace("<length>5</length>", &format!("<length>{length}</length>"));
@@ -541,8 +614,17 @@ fn data_outside_the_heap_or_overlapping_is_refused() {
         "outside the heap",
     );
     assert_rejected_saying("over the checksum", &at("19", "5"), "overlap");
+    let checksum_as_data = xar(Sum::Sha1, Sum::None, |heap| {
+        let data = heap.store_data_element(Encoding::Stored, b"alpha");
+        let data = data
+            .replace("<offset>20</offset>", "<offset>0</offset>")
+            .replace("<size>5</size>", "<size>20</size>")
+            .replace("<length>5</length>", "<length>20</length>");
+        file(1, "sum", "0644", &data)
+    });
+    assert_rejected_saying("the checksum itself", &checksum_as_data, "checksum");
     let overlapping = xar(Sum::Sha1, Sum::None, |heap| {
-        let first = heap.data(Encoding::Stored, b"abcdef");
+        let first = heap.store_data_element(Encoding::Stored, b"abcdef");
         let second = first
             .replace("<offset>20</offset>", "<offset>22</offset>")
             .replace("<size>6</size>", "<size>4</size>")
@@ -555,7 +637,7 @@ fn data_outside_the_heap_or_overlapping_is_refused() {
 #[test]
 fn hostile_tables_of_contents_are_refused() {
     let mut heap = Heap::new(Sum::Sha1, Sum::Sha1);
-    let text = toc(&heap, "");
+    let text = toc_with_checksum_element(&heap, "");
     let compressed = zlib(text.as_bytes());
     let huge = assemble_raw(&compressed, 256 * 1024 * 1024 + 1, &mut heap, 1);
     assert_rejected_saying("huge declared size", &huge, "larger than 256 MiB");
@@ -621,7 +703,7 @@ fn hostile_tables_of_contents_are_refused() {
     );
 
     let mut heap = Heap::new(Sum::Sha1, Sum::Sha1);
-    let text = toc(&heap, "");
+    let text = toc_with_checksum_element(&heap, "");
     let mismatch = assemble_raw(&zlib(text.as_bytes()), text.len() as u64, &mut heap, 4);
     assert_rejected_saying(
         "header names another checksum",
@@ -629,14 +711,14 @@ fn hostile_tables_of_contents_are_refused() {
         "not the one its header names",
     );
     let mut heap = Heap::new(Sum::Sha1, Sum::Sha1);
-    let text = toc(&heap, "").replace(
+    let text = toc_with_checksum_element(&heap, "").replace(
         "<checksum style=\"sha1\"><size>20</size><offset>0</offset></checksum>",
         "",
     );
     let missing = assemble_raw(&zlib(text.as_bytes()), text.len() as u64, &mut heap, 1);
     assert_rejected_saying("checksum missing", &missing, "has no checksum");
     let mut heap = Heap::new(Sum::Sha1, Sum::Sha1);
-    let text = toc(&heap, "").replace("<size>20</size>", "<size>19</size>");
+    let text = toc_with_checksum_element(&heap, "").replace("<size>20</size>", "<size>19</size>");
     let wrong_size = assemble_raw(&zlib(text.as_bytes()), text.len() as u64, &mut heap, 1);
     assert_rejected_saying("checksum size", &wrong_size, "wrong size");
 }
@@ -654,7 +736,7 @@ fn unsupported_entries_and_encodings_are_refused() {
     });
     assert_rejected_saying("unknown type", &unknown, "unknown type");
     let directory_data = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"x");
+        let data = heap.store_data_element(Encoding::Stored, b"x");
         format!("<file id=\"1\"><name>d</name><type>directory</type>{data}</file>")
     });
     assert_rejected_saying(
@@ -663,7 +745,7 @@ fn unsupported_entries_and_encodings_are_refused() {
         "carries data but is not a file",
     );
     let encoding = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"x");
+        let data = heap.store_data_element(Encoding::Stored, b"x");
         file(
             1,
             "a",
@@ -673,7 +755,7 @@ fn unsupported_entries_and_encodings_are_refused() {
     });
     assert_rejected_saying("unknown encoding", &encoding, "not one Zipper reads");
     let style = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"x");
+        let data = heap.store_data_element(Encoding::Stored, b"x");
         file(
             1,
             "a",
@@ -683,7 +765,7 @@ fn unsupported_entries_and_encodings_are_refused() {
     });
     assert_rejected_saying("unknown checksum", &style, "not one Zipper knows");
     let two_data = xar(Sum::Sha1, Sum::Sha1, |heap| {
-        let data = heap.data(Encoding::Stored, b"x");
+        let data = heap.store_data_element(Encoding::Stored, b"x");
         file(1, "a", "0644", &(data.clone() + &data))
     });
     assert_rejected_saying("two data", &two_data, "twice");
