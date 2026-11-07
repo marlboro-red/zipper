@@ -1,6 +1,5 @@
 use crate::verify::{
-    ItemEnd, MANIFEST, Verification, end_of_braced_body_or_semicolon, manifest, read_source,
-    sources,
+    MANIFEST, Verification, end_of_braced_body_or_semicolon, manifest, read_source, sources,
 };
 use anyhow::{Context, Result, ensure};
 use std::{
@@ -475,6 +474,233 @@ fn harnesses_not_run_as_listed(checks: &[KaniCheck], harnesses: &[Harness]) -> V
     problems
 }
 
+fn section_kani_checks(verification: &Verification) -> Vec<KaniCheck<'_>> {
+    verification
+        .full_checks
+        .iter()
+        .filter_map(|check| kani_check(check))
+        .collect()
+}
+
+fn harness_names(check: &KaniCheck, harnesses: &[Harness]) -> Vec<String> {
+    if check.exact {
+        return check
+            .filters
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect();
+    }
+    harnesses
+        .iter()
+        .filter(|harness| check.runs(harness))
+        .map(|harness| harness.path.clone())
+        .collect()
+}
+
+fn names_a_kani_cfg(attribute: &str) -> bool {
+    attribute.starts_with("#[cfg(")
+        && !attribute.contains("not(")
+        && identifiers(attribute).any(|name| name == "kani")
+}
+
+fn opens_impl(code_line: &str) -> bool {
+    let line = without_visibility(code_line.trim_start());
+    line.starts_with("impl ") || line.starts_with("impl<")
+}
+
+struct KaniCode {
+    first: usize,
+    opening: String,
+    scope: Lines,
+    module: Option<String>,
+}
+
+fn kani_code(path: &str, source: &str) -> Vec<KaniCode> {
+    let model = FileModel::new(path, source.to_owned(), &[]);
+    let whole_file = Lines {
+        first: 1,
+        last: model.line_count(),
+    };
+    let member = |first: usize| -> Option<(KaniCode, Lines)> {
+        let code_line = model.code_line(first);
+        let opening = match definition(code_line) {
+            Some((name, Kind::Function | Kind::ConstFunction)) => {
+                model.opening_for(first, &format!("fn {name}"))
+            }
+            Some((name, _)) => model.opening_for(first, name),
+            None if opens_impl(code_line) => model.line(first).trim_end().to_owned(),
+            None => return None,
+        };
+        let span = model.item_at(first);
+        Some((
+            KaniCode {
+                first,
+                opening,
+                scope: whole_file,
+                module: None,
+            },
+            span,
+        ))
+    };
+    let mut found = Vec::new();
+    let mut pending: Vec<String> = Vec::new();
+    let mut open_attribute: Option<String> = None;
+    let mut number = 1;
+    while number <= model.line_count() {
+        let trimmed = model.code_line(number).trim();
+        let attribute_text = match open_attribute.take() {
+            Some(mut text) => {
+                text.push_str(trimmed);
+                Some(text)
+            }
+            None if trimmed.starts_with("#[") => Some(trimmed.to_owned()),
+            None => None,
+        };
+        if let Some(text) = attribute_text {
+            if bracket_balance(&text) > 0 {
+                open_attribute = Some(text);
+            } else {
+                pending.push(unspaced(&text));
+            }
+            number += 1;
+            continue;
+        }
+        if trimmed.is_empty() {
+            number += 1;
+            continue;
+        }
+        let under_kani = pending.iter().any(|attribute| names_a_kani_cfg(attribute));
+        pending.clear();
+        let words: Vec<&str> = without_visibility(trimmed).split_whitespace().collect();
+        if under_kani && words.first() == Some(&"mod") && trimmed.ends_with('{') {
+            let module = model.item_at(number);
+            let module_opening = model.line(number).trim_end().to_owned();
+            let mut inner = number + 1;
+            while inner < module.last {
+                match member(inner) {
+                    Some((mut code, span)) => {
+                        code.scope = module;
+                        code.module = Some(module_opening.clone());
+                        found.push(code);
+                        inner = span.last + 1;
+                    }
+                    None => inner += 1,
+                }
+            }
+            number = module.last + 1;
+            continue;
+        }
+        if under_kani && let Some((code, span)) = member(number) {
+            found.push(code);
+            number = span.last + 1;
+            continue;
+        }
+        number += 1;
+    }
+    found
+}
+
+struct Section<'a> {
+    name: &'a str,
+    checks: Vec<KaniCheck<'a>>,
+    items: &'a [(String, String)],
+}
+
+impl Section<'_> {
+    fn runs(&self, harness: &Harness) -> bool {
+        self.checks.iter().any(|check| check.runs(harness))
+    }
+}
+
+fn kani_code_not_listed(
+    sections: &[Section],
+    harnesses: &[Harness],
+    source_of: impl Fn(&str) -> Result<String>,
+) -> Result<Vec<String>> {
+    let files: BTreeSet<&str> = harnesses
+        .iter()
+        .map(|harness| harness.file.as_str())
+        .collect();
+    let mut problems = Vec::new();
+    for file in files {
+        let source = source_of(file)?;
+        let listed_by: Vec<FileModel> = sections
+            .iter()
+            .map(|section| {
+                let openings: Vec<&str> = section
+                    .items
+                    .iter()
+                    .filter(|(path, _)| path == file)
+                    .map(|(_, opening)| opening.as_str())
+                    .collect();
+                FileModel::new(file, source.clone(), &openings)
+            })
+            .collect();
+        let lists = |section: usize, line: usize| listed_by[section].covered(line);
+        for code in kani_code(file, &source) {
+            let in_scope: Vec<&Harness> = harnesses
+                .iter()
+                .filter(|harness| harness.file == file && code.scope.contains(harness.line))
+                .collect();
+            let add = |index: usize| {
+                let item = format!("`item = {file} | {}`", code.opening);
+                match &code.module {
+                    Some(module)
+                        if in_scope.iter().all(|harness| sections[index].runs(harness)) =>
+                    {
+                        format!("{item}, or `item = {file} | {module}` for the whole module")
+                    }
+                    _ => item,
+                }
+            };
+            if let Some(harness) = in_scope.iter().find(|harness| harness.line == code.first) {
+                for (index, section) in sections.iter().enumerate() {
+                    if section.runs(harness) && !lists(index, code.first) {
+                        problems.push(format!(
+                            "{}: it runs {}, which no item of the section lists; add {}",
+                            section.name,
+                            harness.path,
+                            add(index)
+                        ));
+                    }
+                }
+                continue;
+            }
+            let running: Vec<usize> = (0..sections.len())
+                .filter(|&index| in_scope.iter().any(|harness| sections[index].runs(harness)))
+                .collect();
+            let running_all: Vec<usize> = running
+                .iter()
+                .copied()
+                .filter(|&index| in_scope.iter().all(|harness| sections[index].runs(harness)))
+                .collect();
+            for &index in &running_all {
+                if !lists(index, code.first) {
+                    problems.push(format!(
+                        "{}: it runs every proof that may use the Kani-only code at {file}:{}, which no item of the section lists; add {}",
+                        sections[index].name,
+                        code.first,
+                        add(index)
+                    ));
+                }
+            }
+            if running_all.is_empty()
+                && let Some(&first) = running.first()
+                && !running.iter().any(|&index| lists(index, code.first))
+            {
+                let names: Vec<&str> = running.iter().map(|&index| sections[index].name).collect();
+                problems.push(format!(
+                    "{file}:{} is Kani-only code that no section running its proofs lists; add {} to whichever of {} has proofs that use it",
+                    code.first,
+                    add(first),
+                    names.join(", ")
+                ));
+            }
+        }
+    }
+    Ok(problems)
+}
+
 fn all_kani_checks(all: &[crate::verify::Verification]) -> Vec<KaniCheck<'_>> {
     all.iter()
         .flat_map(|verification| &verification.full_checks)
@@ -493,8 +719,23 @@ pub(crate) fn fail_on_harnesses_not_run_as_listed(root: &Path) -> Result<()> {
         &all_kani_checks(&all),
         &harnesses,
     ));
+    let sections: Vec<Section> = all
+        .iter()
+        .map(|verification| Section {
+            name: &verification.name,
+            checks: section_kani_checks(verification),
+            items: &verification.items,
+        })
+        .collect();
+    problems.extend(kani_code_not_listed(&sections, &harnesses, |path| {
+        read_source(root, path)
+    })?);
     for verification in &all {
-        problems.extend(goto_fingerprints_not_listed(verification));
+        problems.extend(goto_fingerprints_not_listed(verification, &harnesses));
+        problems.extend(reach_check_missing(
+            &verification.name,
+            &verification.full_checks,
+        ));
     }
     ensure!(problems.is_empty(), "{}", problems.join("\n"));
     Ok(())
@@ -594,7 +835,7 @@ impl Lines {
     }
 }
 
-fn blank_strings_and_comments(source: &str) -> String {
+pub(crate) fn blank_strings_and_comments(source: &str) -> String {
     let original = source.as_bytes();
     let mut bytes = original.to_vec();
     let mut index = 0;
@@ -761,8 +1002,7 @@ impl FileModel {
 
     fn item_at(&self, first: usize) -> Lines {
         let rest = &self.source[self.offsets[first - 1]..];
-        let body =
-            &rest[..end_of_braced_body_or_semicolon(rest, ItemEnd::SemicolonOutsideBrackets)];
+        let body = &rest[..end_of_braced_body_or_semicolon(rest)];
         Lines {
             first,
             last: first + body.trim_end_matches('\n').matches('\n').count(),
@@ -783,6 +1023,56 @@ impl FileModel {
 
     fn defines(&self, name: &str) -> bool {
         self.definitions.contains_key(name)
+    }
+
+    fn item_owning(&self, line: usize) -> Option<(usize, &str, Kind)> {
+        if !self.code_line(line).trim_start().starts_with("#[") {
+            return self
+                .definitions
+                .iter()
+                .flat_map(|(name, spans)| spans.iter().map(move |(span, kind)| (name, span, kind)))
+                .filter(|(_, span, _)| span.contains(line))
+                .max_by_key(|(_, span, _)| span.first)
+                .map(|(name, span, kind)| (span.first, name.as_str(), *kind));
+        }
+        let mut below = line + 1;
+        while below <= self.line_count() {
+            let code = self.code_line(below).trim();
+            if !(code.is_empty() || code.starts_with("#[")) {
+                return definition(self.code_line(below)).map(|(name, kind)| (below, name, kind));
+            }
+            below += 1;
+        }
+        None
+    }
+
+    fn item_opening(&self, first: usize, name: &str, kind: Kind) -> String {
+        match kind {
+            Kind::Function | Kind::ConstFunction => self.opening_for(first, &format!("fn {name}")),
+            _ => self.opening_for(first, name),
+        }
+    }
+
+    fn has_variant(&self, name: &str, variant: &str) -> bool {
+        self.definitions
+            .get(name)
+            .into_iter()
+            .flatten()
+            .filter(|(span, kind)| {
+                *kind == Kind::Type
+                    && without_visibility(self.code_line(span.first).trim_start())
+                        .starts_with("enum ")
+            })
+            .any(|(span, _)| {
+                (span.first + 1..=span.last).any(|line| {
+                    self.code_line(line)
+                        .trim_start()
+                        .strip_prefix(variant)
+                        .is_some_and(|rest| {
+                            !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                        })
+                })
+            })
     }
 
     fn opening_for(&self, first: usize, name: &str) -> String {
@@ -1218,6 +1508,15 @@ fn reach_not_listed(
                         model.opening_for(span.first, &format!("fn {name}"))
                     ));
                 }
+                None if model.item_owning(*line).is_some() => {
+                    let (first, name, kind) = model.item_owning(*line).expect("checked");
+                    if !model.covered(first) {
+                        problems.insert(format!(
+                            "item = {path} | {}",
+                            model.item_opening(first, name, kind)
+                        ));
+                    }
+                }
                 None => {
                     let above = model
                         .functions
@@ -1233,6 +1532,11 @@ fn reach_not_listed(
                     });
                 }
             }
+        }
+        if function.is_none()
+            && let Some((first, _, kind)) = model.item_owning(*line)
+        {
+            work.push((path.clone(), model.item_at(first), kind != Kind::Function));
         }
         if let Some(span) = function {
             let compile_time = definition(model.code_line(span.first))
@@ -1313,6 +1617,14 @@ fn reach_not_listed(
                             format!("{why} (imported at line {binding_line})"),
                         ),
                     }
+                } else if let (2, Ok(Target::Here(file, name))) = (
+                    segments.len(),
+                    resolve_crate_path(&target, &mut |file| load(file), &defines),
+                ) && models.borrow()[&file]
+                    .as_ref()
+                    .is_some_and(|model| model.has_variant(&name, &segments[1]))
+                {
+                    targets.push((file, name));
                 } else {
                     let module_exists = module_files(&target.join("::"))
                         .iter()
@@ -1393,18 +1705,19 @@ fn reach_not_listed(
     Ok(problems)
 }
 
-fn exact_harnesses(verification: &Verification) -> Vec<String> {
-    verification
-        .full_checks
-        .iter()
-        .filter_map(|check| kani_check(check))
-        .filter(|check| check.exact)
-        .flat_map(|check| check.filters.into_iter().map(str::to_owned))
-        .collect()
+fn reach_check_missing(name: &str, full_checks: &[String]) -> Option<String> {
+    let reach = format!("cargo xtask kani-reach {name}");
+    let runs_kani = full_checks.iter().any(|check| kani_check(check).is_some());
+    (runs_kani && !full_checks.contains(&reach)).then(|| {
+        format!("{name}: it runs Kani, so it needs `full-check = {reach}` to keep its items honest")
+    })
 }
 
-fn goto_fingerprints_not_listed(verification: &Verification) -> Vec<String> {
-    let expected: BTreeSet<String> = exact_harnesses(verification).into_iter().collect();
+fn goto_fingerprints_not_listed(verification: &Verification, harnesses: &[Harness]) -> Vec<String> {
+    let expected: BTreeSet<String> = section_kani_checks(verification)
+        .iter()
+        .flat_map(|check| harness_names(check, harnesses))
+        .collect();
     let recorded: Vec<&String> = verification
         .goto_fingerprints
         .iter()
@@ -1414,7 +1727,7 @@ fn goto_fingerprints_not_listed(verification: &Verification) -> Vec<String> {
     let mut problems = Vec::new();
     if recorded.len() != recorded_set.len() || recorded_set != expected {
         problems.push(format!(
-            "{}: its goto-fingerprint lines must name exactly its --exact harnesses, once each; run `cargo xtask verify-sync {}`",
+            "{}: its goto-fingerprint lines must name exactly the harnesses its Kani checks run, once each; run `cargo xtask verify-sync {}`",
             verification.name, verification.name
         ));
     }
@@ -1489,11 +1802,11 @@ fn without_crate_disambiguators(line: &str) -> String {
     out
 }
 
-fn codegen(root: &Path, name: &str, check: &KaniCheck) -> Result<SystemTime> {
+fn codegen(root: &Path, name: &str, check: &KaniCheck, harnesses: &[String]) -> Result<SystemTime> {
     let started = SystemTime::now();
     let mut codegen = Command::new(check.base[0]);
     codegen.args(&check.base[1..]).arg("--only-codegen");
-    for harness in &check.filters {
+    for harness in harnesses {
         codegen.args(["--harness", harness, "--exact"]);
     }
     let codegen = codegen.current_dir(root).output()?;
@@ -1510,20 +1823,24 @@ pub(crate) fn goto_fingerprints(
     root: &Path,
     verification: &Verification,
 ) -> Result<Vec<(String, String)>> {
-    let checks: Vec<KaniCheck> = verification
-        .full_checks
-        .iter()
-        .filter_map(|check| kani_check(check))
-        .filter(|check| check.exact)
-        .collect();
+    let checks = section_kani_checks(verification);
     if checks.is_empty() {
         return Ok(Vec::new());
     }
+    let (harnesses, _) = workspace_harnesses(root)?;
     let goto_instrument = kani_tool("goto-instrument")?;
     let mut found = Vec::new();
+    let mut seen = BTreeSet::new();
     for check in &checks {
-        let started = codegen(root, &verification.name, check)?;
-        for harness in &check.filters {
+        let names: Vec<String> = harness_names(check, &harnesses)
+            .into_iter()
+            .filter(|name| seen.insert(name.clone()))
+            .collect();
+        if names.is_empty() {
+            continue;
+        }
+        let started = codegen(root, &verification.name, check, &names)?;
+        for harness in &names {
             let program = newest_goto_program(&target_folder(root).join("kani"), harness, started)?;
             let shown = Command::new(&goto_instrument)
                 .arg("--show-goto-functions")
@@ -1540,7 +1857,7 @@ pub(crate) fn goto_fingerprints(
                 harness_attributes(&program, harness)?
             );
             found.push((
-                (*harness).to_owned(),
+                harness.clone(),
                 normalized_goto_fingerprint(&format!(
                     "{settings}{}",
                     String::from_utf8_lossy(&shown.stdout)
@@ -1605,8 +1922,9 @@ pub(crate) fn print_goto_fingerprints(root: &Path, name: &str) -> Result<()> {
 
 pub(crate) fn fail_on_goto_fingerprint_drift(root: &Path) -> Result<()> {
     let mut problems = Vec::new();
+    let (harnesses, _) = workspace_harnesses(root)?;
     for verification in manifest(root)? {
-        problems.extend(goto_fingerprints_not_listed(&verification));
+        problems.extend(goto_fingerprints_not_listed(&verification, &harnesses));
         let recorded: BTreeMap<&String, &String> = verification
             .goto_fingerprints
             .iter()
@@ -1707,24 +2025,19 @@ pub(crate) fn fail_on_unlisted_kani_reach(root: &Path, name: &str) -> Result<()>
         .iter()
         .find(|verification| verification.name == name)
         .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
-    let checks: Vec<KaniCheck> = verification
-        .full_checks
-        .iter()
-        .filter_map(|check| kani_check(check))
-        .collect();
-    ensure!(
-        !checks.is_empty() && checks.iter().all(|check| check.exact),
-        "{name}: every Kani full-check must name its harnesses with --exact"
-    );
-    ensure!(
-        verification.item_end == ItemEnd::SemicolonOutsideBrackets,
-        "{name}: set `item-end = semicolon outside brackets`, so each item it checks is fingerprinted whole"
-    );
+    let checks = section_kani_checks(verification);
+    ensure!(!checks.is_empty(), "{name}: it has no Kani full-check");
+    let (harnesses, _) = workspace_harnesses(root)?;
     let goto_instrument = kani_tool("goto-instrument")?;
     let mut problems = BTreeSet::new();
     for check in &checks {
-        let started = codegen(root, name, check)?;
-        for harness in &check.filters {
+        let names = harness_names(check, &harnesses);
+        ensure!(
+            !names.is_empty(),
+            "{name}: a Kani full-check runs no harness"
+        );
+        let started = codegen(root, name, check, &names)?;
+        for harness in &names {
             let program = newest_goto_program(&target_folder(root).join("kani"), harness, started)?;
             let eloc = Command::new(&goto_instrument)
                 .arg("--list-eloc")
@@ -1955,6 +2268,131 @@ mod off {
         ]);
         assert_eq!(unknown.len(), 1);
         assert!(unknown[0].contains("m::proofs::helper, which is no #[kani::proof]"));
+    }
+
+    const KANI_ONLY: &str = "fn parse() {}
+#[cfg(kani)]
+fn stand_in() {}
+#[cfg(kani)]
+mod proofs {
+    const BOUND: usize = 2;
+    fn helper() {}
+    #[kani::proof]
+    fn first() {
+        helper();
+    }
+    #[kani::proof]
+    #[kani::unwind(3)]
+    fn second() {}
+}
+";
+
+    fn kani_code_problems(sections: &[(&str, &str, &[&str])]) -> Vec<String> {
+        let files = [("src/lib.rs", "mod m;\n"), ("src/m.rs", KANI_ONLY)];
+        let paths: Vec<String> = files.iter().map(|(path, _)| (*path).to_owned()).collect();
+        let (harnesses, problems) = discover_harnesses(&paths, sources(&files)).unwrap();
+        assert!(problems.is_empty(), "{problems:#?}");
+        let items: Vec<Vec<(String, String)>> = sections
+            .iter()
+            .map(|(_, _, openings)| {
+                openings
+                    .iter()
+                    .map(|opening| ("src/m.rs".to_owned(), (*opening).to_owned()))
+                    .collect()
+            })
+            .collect();
+        let sections: Vec<Section> = sections
+            .iter()
+            .zip(&items)
+            .map(|((name, check, _), items)| Section {
+                name,
+                checks: kani_check(check).into_iter().collect(),
+                items,
+            })
+            .collect();
+        kani_code_not_listed(&sections, &harnesses, sources(&files)).unwrap()
+    }
+
+    #[test]
+    fn a_section_that_runs_kani_needs_its_reach_check() {
+        let checks = |lines: &[&str]| {
+            lines
+                .iter()
+                .map(|line| (*line).to_owned())
+                .collect::<Vec<_>>()
+        };
+        let kani = "cargo kani --harness m::proofs::";
+        assert!(reach_check_missing("m", &checks(&["cargo xtask kani-reach m", kani])).is_none());
+        assert!(reach_check_missing("m", &checks(&["cargo test --lib m"])).is_none());
+        let missing = reach_check_missing("m", &checks(&[kani, "cargo xtask kani-reach other"]));
+        assert!(
+            missing
+                .is_some_and(|problem| problem.contains("`full-check = cargo xtask kani-reach m`"))
+        );
+    }
+
+    #[test]
+    fn every_proof_and_kani_only_item_is_listed_by_a_section_that_runs_it() {
+        let whole = "cargo kani --harness m::proofs::";
+        assert!(
+            kani_code_problems(&[("all", whole, &["mod proofs {", "fn stand_in("])]).is_empty()
+        );
+        let problems = kani_code_problems(&[("all", whole, &["    fn first("])]);
+        let named = |text: &str| problems.iter().filter(|p| p.contains(text)).count();
+        assert_eq!(named("all: it runs m::proofs::second"), 1, "{problems:#?}");
+        assert_eq!(
+            named("`item = src/m.rs |     const BOUND:`"),
+            1,
+            "{problems:#?}"
+        );
+        assert_eq!(
+            named("`item = src/m.rs |     fn helper(`"),
+            1,
+            "{problems:#?}"
+        );
+        assert_eq!(
+            named("`item = src/m.rs | fn stand_in(`"),
+            1,
+            "{problems:#?}"
+        );
+        assert_eq!(
+            named("or `item = src/m.rs | mod proofs {`"),
+            3,
+            "{problems:#?}"
+        );
+        assert_eq!(problems.len(), 4, "{problems:#?}");
+
+        let first = "cargo kani --exact --harness m::proofs::first";
+        let second = "cargo kani --exact --harness m::proofs::second";
+        let split = |a: &'static [&'static str], b: &'static [&'static str]| {
+            kani_code_problems(&[("a", first, a), ("b", second, b)])
+        };
+        assert!(
+            split(
+                &["    fn first(", "    fn helper(", "    const BOUND:"],
+                &["    fn second(", "fn stand_in("]
+            )
+            .is_empty()
+        );
+        let unlisted = split(
+            &["    fn first(", "    const BOUND:"],
+            &["    fn second(", "fn stand_in("],
+        );
+        assert_eq!(unlisted.len(), 1, "{unlisted:#?}");
+        assert!(
+            unlisted[0].contains("add `item = src/m.rs |     fn helper(` to whichever of a, b"),
+            "{unlisted:#?}"
+        );
+        let unproved = split(
+            &["    fn helper(", "    const BOUND:"],
+            &["    fn second(", "fn stand_in("],
+        );
+        assert_eq!(unproved.len(), 1, "{unproved:#?}");
+        assert!(
+            unproved[0].starts_with("a: it runs m::proofs::first"),
+            "{unproved:#?}"
+        );
+        assert!(kani_code_problems(&[("tests", "cargo test --lib m", &[])]).is_empty());
     }
 
     #[test]
@@ -2199,6 +2637,50 @@ mod off {
         let files = [("src/m.rs", source)];
         let items = [("src/m.rs", "fn step("), ("src/m.rs", "struct Table {")];
         assert!(unlisted_in(&files, &items, &[2]).is_empty());
+    }
+
+    #[test]
+    fn derived_code_needs_the_item_it_is_derived_for() {
+        let source = "#[derive(Clone, Copy, PartialEq)]\n#[repr(u8)]\nenum Kind {\n    One(Width),\n}\nstruct Width(u8);\n";
+        let files = [("src/m.rs", source)];
+        for line in [1, 4] {
+            assert_eq!(
+                unlisted_in(&files, &[], &[line]),
+                [
+                    "item = src/m.rs | enum Kind {",
+                    "item = src/m.rs | struct Width("
+                ],
+                "line {line}"
+            );
+            let listed = [("src/m.rs", "enum Kind {"), ("src/m.rs", "struct Width(")];
+            assert!(unlisted_in(&files, &listed, &[line]).is_empty());
+        }
+    }
+
+    #[test]
+    fn a_variant_of_an_enum_imported_from_another_file_needs_the_enum() {
+        let other = "pub(crate) enum Extra {\n    Absent,\n    Present(u8),\n}\nimpl Extra {\n    pub(crate) const NONE: u8 = 0;\n}\n";
+        let m = format!(
+            "use crate::other::Extra;\n{STEP}const TOP: u32 = match Extra::Present(1) {{\n    Extra::Absent => 0,\n    _ => 1,\n}};\n"
+        );
+        let files = [("src/m.rs", m.as_str()), ("src/other.rs", other)];
+        assert_eq!(
+            unlisted_in(&files, &STEP_ITEMS, &[3]),
+            ["item = src/other.rs | pub(crate) enum Extra {"]
+        );
+        let listed = [
+            STEP_ITEMS[0],
+            STEP_ITEMS[1],
+            ("src/other.rs", "pub(crate) enum Extra {"),
+        ];
+        assert!(unlisted_in(&files, &listed, &[3]).is_empty());
+        let associated =
+            format!("use crate::other::Extra;\n{STEP}const TOP: u32 = Extra::NONE as u32;\n");
+        let files = [("src/m.rs", associated.as_str()), ("src/other.rs", other)];
+        assert!(refused(
+            &unlisted_in(&files, &listed, &[3]),
+            "`Extra::NONE` names an item of `Extra`, imported at line 1 from another file"
+        ));
     }
 
     #[test]

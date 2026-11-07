@@ -10,14 +10,7 @@ pub(crate) struct Verification {
     fingerprint: String,
     pub(crate) full_checks: Vec<String>,
     pub(crate) items: Vec<(String, String)>,
-    pub(crate) item_end: ItemEnd,
     pub(crate) goto_fingerprints: Vec<(String, String)>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ItemEnd {
-    FirstSemicolon,
-    SemicolonOutsideBrackets,
 }
 
 pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
@@ -42,7 +35,6 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
                 fingerprint: String::new(),
                 full_checks: Vec::new(),
                 items: Vec::new(),
-                item_end: ItemEnd::FirstSemicolon,
                 goto_fingerprints: Vec::new(),
             });
             continue;
@@ -65,9 +57,6 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
                     .goto_fingerprints
                     .push((harness.to_owned(), hash.to_owned()));
             }
-            "item-end" if value == "semicolon outside brackets" => {
-                entry.item_end = ItemEnd::SemicolonOutsideBrackets;
-            }
             "item" => {
                 let (path, opening) = value.split_once(" | ").with_context(|| {
                     format!("{MANIFEST}:{number}: expected `path | opening line`")
@@ -80,21 +69,20 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
     Ok(all)
 }
 
-fn item_spans_starting_with<'a>(source: &'a str, opening: &str, end: ItemEnd) -> Vec<&'a str> {
+fn item_spans_starting_with<'a>(source: &'a str, opening: &str) -> Vec<&'a str> {
     let mut found = Vec::new();
     let mut offset = 0;
     for line in source.split_inclusive('\n') {
         if line.starts_with(opening) {
-            found.push(
-                &source[offset..offset + end_of_braced_body_or_semicolon(&source[offset..], end)],
-            );
+            found
+                .push(&source[offset..offset + end_of_braced_body_or_semicolon(&source[offset..])]);
         }
         offset += line.len();
     }
     found
 }
 
-pub(crate) fn end_of_braced_body_or_semicolon(text: &str, end: ItemEnd) -> usize {
+pub(crate) fn end_of_braced_body_or_semicolon(text: &str) -> usize {
     let bytes = text.as_bytes();
     let mut depth = 0usize;
     let mut brackets = 0usize;
@@ -128,7 +116,7 @@ pub(crate) fn end_of_braced_body_or_semicolon(text: &str, end: ItemEnd) -> usize
             }
             b'[' | b'(' if depth == 0 => brackets += 1,
             b']' | b')' if depth == 0 => brackets = brackets.saturating_sub(1),
-            b';' if depth == 0 && (brackets == 0 || end == ItemEnd::FirstSemicolon) => {
+            b';' if depth == 0 && brackets == 0 => {
                 return index + 1;
             }
             _ => {}
@@ -160,7 +148,7 @@ fn fingerprint_of(
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for (path, opening) in &verification.items {
         let source = source_of(path)?;
-        let texts = item_spans_starting_with(&source, opening, verification.item_end);
+        let texts = item_spans_starting_with(&source, opening);
         ensure!(
             !texts.is_empty(),
             "{}: no line in {path} starts with {opening:?}; update {MANIFEST} and the model",
@@ -430,52 +418,27 @@ mod tests {
     }
 
     #[test]
-    fn items_end_at_their_closing_brace_or_semicolon() {
+    fn items_end_at_their_closing_brace_or_a_semicolon_outside_brackets() {
         let source = "const A: u8 = 1;\nfn f() {\n    let s = \"}{\";\n    let c = '}';\n    // }\n    if x { y }\n}\nfn g() {}\n";
         assert_eq!(
-            item_spans_starting_with(source, "const A", ItemEnd::FirstSemicolon),
+            item_spans_starting_with(source, "const A"),
             ["const A: u8 = 1;"]
         );
         assert_eq!(
-            item_spans_starting_with(source, "fn f(", ItemEnd::FirstSemicolon),
+            item_spans_starting_with(source, "fn f("),
             ["fn f() {\n    let s = \"}{\";\n    let c = '}';\n    // }\n    if x { y }\n}"]
         );
-        assert!(item_spans_starting_with(source, "fn missing", ItemEnd::FirstSemicolon).is_empty());
+        assert!(item_spans_starting_with(source, "fn missing").is_empty());
         let bracketed =
             "fn t<const N: usize>(x: [u8; N]) -> u8 {\n    x[0]\n}\nconst M: [u8; 2] = [1; 2];\n";
-        let outside = ItemEnd::SemicolonOutsideBrackets;
         assert_eq!(
-            item_spans_starting_with(bracketed, "fn t<", outside),
+            item_spans_starting_with(bracketed, "fn t<"),
             ["fn t<const N: usize>(x: [u8; N]) -> u8 {\n    x[0]\n}"]
         );
         assert_eq!(
-            item_spans_starting_with(bracketed, "const M", outside),
+            item_spans_starting_with(bracketed, "const M"),
             ["const M: [u8; 2] = [1; 2];"]
         );
-        assert_eq!(
-            item_spans_starting_with(bracketed, "fn t<", ItemEnd::FirstSemicolon),
-            ["fn t<const N: usize>(x: [u8;"]
-        );
-    }
-
-    #[test]
-    #[ignore = "prints the items a first-semicolon section cuts short, to move it to the bracket-aware end"]
-    fn print_items_cut_short_at_a_bracketed_semicolon() {
-        let root = workspace();
-        for verification in manifest(&root).unwrap() {
-            if verification.item_end != ItemEnd::FirstSemicolon {
-                continue;
-            }
-            for (path, opening) in &verification.items {
-                let source = read_source(&root, path).unwrap();
-                let cut = item_spans_starting_with(&source, opening, ItemEnd::FirstSemicolon);
-                let whole =
-                    item_spans_starting_with(&source, opening, ItemEnd::SemicolonOutsideBrackets);
-                if cut != whole {
-                    println!("{}: {path} | {opening}", verification.name);
-                }
-            }
-        }
     }
 
     fn workspace() -> PathBuf {
@@ -485,17 +448,18 @@ mod tests {
             .to_path_buf()
     }
 
-    fn lzma_sections_made_stale_by(old: &str, new: &str) -> BTreeSet<String> {
+    fn sections_made_stale_by(file: &str, old: &str, new: &str) -> BTreeSet<String> {
         let root = workspace();
-        let original = read_source(&root, "src/lzma.rs").unwrap();
+        let original = read_source(&root, file).unwrap();
         assert_eq!(original.matches(old).count(), 1, "{old:?} must occur once");
         let edited = original.replacen(old, new, 1);
-        let with = |lzma: &str| {
-            let lzma = lzma.to_owned();
+        let with = |text: &str| {
+            let text = text.to_owned();
             let root = root.clone();
+            let file = file.to_owned();
             move |path: &str| {
-                if path == "src/lzma.rs" {
-                    Ok(lzma.clone())
+                if path == file {
+                    Ok(text.clone())
                 } else {
                     read_source(&root, path)
                 }
@@ -504,12 +468,7 @@ mod tests {
         manifest(&root)
             .unwrap()
             .into_iter()
-            .filter(|verification| {
-                verification
-                    .items
-                    .iter()
-                    .any(|(path, _)| path == "src/lzma.rs")
-            })
+            .filter(|verification| verification.items.iter().any(|(path, _)| path == file))
             .filter(|verification| {
                 fingerprint_of(verification, with(&original)).unwrap()
                     != fingerprint_of(verification, with(&edited)).unwrap()
@@ -604,10 +563,42 @@ mod tests {
             let expected: BTreeSet<String> =
                 expected.iter().map(|name| (*name).to_owned()).collect();
             assert_eq!(
-                lzma_sections_made_stale_by(old, new),
+                sections_made_stale_by("src/lzma.rs", old, new),
                 expected,
                 "editing {old:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_ar_header_edit_makes_stale_every_section_whose_proofs_reach_it() {
+        assert_eq!(
+            sections_made_stale_by(
+                "src/native_ar.rs",
+                "decimal(&bytes[48..58])",
+                "decimal(&bytes[47..58])"
+            ),
+            BTreeSet::from(["ar-fields".to_owned(), "parsers".to_owned()])
+        );
+    }
+
+    #[test]
+    fn every_manifest_item_is_fingerprinted_to_its_end() {
+        let root = workspace();
+        let mut cut = Vec::new();
+        for verification in manifest(&root).unwrap() {
+            for (path, opening) in &verification.items {
+                let source = read_source(&root, path).unwrap();
+                for text in item_spans_starting_with(&source, opening) {
+                    let code = crate::kani::blank_strings_and_comments(text);
+                    let open = code.matches(['[', '(']).count();
+                    let close = code.matches([']', ')']).count();
+                    if open != close {
+                        cut.push(format!("{}: {path} | {opening}", verification.name));
+                    }
+                }
+            }
+        }
+        assert!(cut.is_empty(), "items cut short:\n{}", cut.join("\n"));
     }
 }
