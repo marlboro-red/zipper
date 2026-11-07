@@ -22,7 +22,12 @@
       "status": "backend"
     },
     "Cab": {
-      "status": "backend"
+      "status": "partial",
+      "note": "Stored, MSZIP and LZX folders read in process. Quantum folders and cabinet sets go to 7-Zip.",
+      "tests": [
+        "tests/cab_corpus.rs::every_corpus_cab_extracts_the_tree_7zip_extracts",
+        "tests/cab_corpus.rs::generated_cabs_extract_exactly_as_7zip_extracts_them"
+      ]
     },
     "Chm": {
       "status": "backend"

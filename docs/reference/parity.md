@@ -17,12 +17,12 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | Status | Rows |
 | --- | ---: |
 | `native` | 58 |
-| `partial` | 1 |
-| `backend` | 48 |
+| `partial` | 2 |
+| `backend` | 47 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-42 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+41 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -35,7 +35,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Arj` | `backend` |  | No proof yet. |
 | `Base64` | `backend` |  | No proof yet. |
 | `COFF` | `backend` |  | No proof yet. |
-| `Cab` | `backend` |  | No proof yet. |
+| `Cab` | `partial` | Stored, MSZIP and LZX folders read in process. Quantum folders and cabinet sets go to 7-Zip. | `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs` |
 | `Chm` | `backend` |  | No proof yet. |
 | `Compound` | `backend` |  | No proof yet. |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |

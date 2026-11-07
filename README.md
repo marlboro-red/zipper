@@ -30,6 +30,7 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [cpio reader reference](docs/reference/cpio-reader.md) lists the cpio forms, hard link handling and safety checks.
 - [ar reader reference](docs/reference/ar-reader.md) covers static libraries, Debian packages and how they differ from 7-Zip.
 - [RPM reader reference](docs/reference/rpm-reader.md) covers RPM packages, their payload compressors and how they differ from 7-Zip.
+- [CAB reader reference](docs/reference/cab-reader.md) covers Microsoft Cabinet files with stored, MSZIP and LZX folders, and how they differ from 7-Zip.
 - [Single compressed file reference](docs/reference/stream-reader.md) covers gzip, bzip2, xz, zstd and LZMA files that hold no tar.
 - [7-Zip parity](docs/reference/parity.md) lists every format, method and switch 7-Zip extracts with, and how Zipper handles each.
 - [Duplicate-checking reference](docs/reference/duplicates.md) describes the `duplicates` command.
