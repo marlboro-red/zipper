@@ -468,7 +468,7 @@ item = src/xz_filters.rs | pub(crate) fn xz_filter(
 
 [lzma]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = ab0117c0b067f975
+fingerprint = 62cdfc636f47be55
 full-check = cargo test --release --lib lzma
 item = src/lzma.rs | const PROBABILITY_BITS:
 item = src/lzma.rs | const PROBABILITY_ONE:
@@ -576,7 +576,7 @@ item = src/lzma.rs | impl<R: Read> Read for LzipReader<R> {
 
 [lzma-bits]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 6e96b45169c6c90b
+fingerprint = 96f0f770ef864c7d
 full-check = cargo xtask kani-reach lzma-bits
 full-check = cargo kani --tests --exact --harness lzma::proofs::both_bit_decoders_agree_and_keep_the_coder_in_range --harness lzma::proofs::branching_bits_normalized_in_each_arm_match_one_normalization_after_both --harness lzma::proofs::direct_bits_fit_their_count_and_keep_the_range_normalized
 item = src/lzma.rs | const PROBABILITY_BITS:
@@ -642,7 +642,7 @@ item = src/lzma.rs |     fn reverse_trees_decode_as_one_bit_at_a_time_reading_no
 
 [lzma-lengths]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = eb7ad56dc7f51bfe
+fingerprint = 436812a57c96fb0e
 full-check = cargo xtask kani-reach lzma-lengths
 full-check = cargo kani --tests --exact --harness lzma::proofs::lengths_stay_below_the_longest_match_at_every_position_state
 item = src/lzma.rs | const PROBABILITY_BITS:
