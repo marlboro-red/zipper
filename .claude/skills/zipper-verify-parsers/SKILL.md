@@ -28,6 +28,13 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[lz4-blocks]` | `decoding_any_short_block_never_panics_or_passes_its_limit` | 136 s |
 | `[zip-directory]` | the ten `zip_directory` proofs | 706 s |
 | `[zip-crypto]`, `[split-volumes]`, `[cpio-fields]`, `[ar-fields]`, `[rpm-fields]` | each module's whole `proofs` | unchanged |
+| `[xar-header]`, `[msi-fields]` | each module's whole `proofs` | a few seconds each |
+| `[quantum]` | the `quantum` proofs, with the CAB corpus and hostile tests | a few seconds |
+| `[iso-fields]` | the `native_iso` and `udf` proofs | a few seconds each |
+| `[wim-fields]` | the `native_wim` and `xpress` proofs, with the WIM corpus and hostile tests | a few seconds each |
+| `[lzms]` | no Kani proof; `cargo test --release --lib lzms` and the 7-Zip differential in `tests/wim_corpus.rs` | tests only |
+| `[lzh-arj-fields]` | the `lzh` and `native_arj` proofs | a few seconds each |
+| `[legacy-streams]` | the `mslz`, `lzma86`, `pmd` and `base64` proofs; marked `speed = slow` | 343 s for the SZDD decoder |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
 Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jobs.
