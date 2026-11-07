@@ -311,6 +311,44 @@ impl Reference {
     }
 }
 
+pub fn reference_unshrink(codes: &[(u32, u32)]) -> Option<Vec<u8>> {
+    let mut table = Reference {
+        prefix: vec![0; CODES],
+        suffix: vec![0; CODES],
+        used: (0..CODES).map(|code| code < 256).collect(),
+        lowest_free: 257,
+    };
+    let mut data = Vec::new();
+    let mut previous: Option<(usize, u8)> = None;
+    let mut codes = codes.iter().map(|&(code, _)| code as usize);
+    while let Some(code) = codes.next() {
+        if code == 256 {
+            if codes.next()? == 2 {
+                table.clear();
+            }
+            continue;
+        }
+        let mut reserved = None;
+        if let Some((prefix, first)) = previous {
+            while table.lowest_free < CODES && table.used[table.lowest_free] {
+                table.lowest_free += 1;
+            }
+            let slot = *(table.lowest_free < CODES).then_some(&table.lowest_free)?;
+            table.prefix[slot] = prefix;
+            table.suffix[slot] = first;
+            table.used[slot] = true;
+            reserved = Some(slot);
+        }
+        let string = table.string(code)?;
+        if let Some(slot) = reserved {
+            table.suffix[slot] = string[0];
+        }
+        data.extend_from_slice(&string);
+        previous = Some((code, string[0]));
+    }
+    Some(data)
+}
+
 pub fn random_shrink(rng: &mut Rng, steps: usize) -> RandomShrink {
     let mut table = Reference {
         prefix: vec![0; CODES],

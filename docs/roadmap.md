@@ -456,7 +456,7 @@ Exit checks:
 
 Done so far, by 8 November 2026:
 
-- ZIP Shrink and Implode read in process, with Zipper's own decoders in `src/shrink.rs` and `src/implode.rs`. Test encoders build the streams, and Info-ZIP `unzip` and 7-Zip check each one first. The [legacy methods](reference/zip-reader.md#legacy-methods) section gives the rules. A partial clear can make a Shrink entry its own prefix. Such an entry is refused only when a code names it, as both tools do. Where `unzip` and 7-Zip disagree, after a clear on a table that is not full, Zipper reads as 7-Zip does.
+- ZIP Shrink and Implode read in process, with Zipper's own decoders in `src/shrink.rs` and `src/implode.rs`. Test encoders build the streams, and Info-ZIP `unzip` and 7-Zip check each one first. The [legacy methods](reference/zip-reader.md#legacy-methods) section gives the rules. A partial clear can make a Shrink entry its own prefix. Such an entry is refused only when a code names it, as both tools do. Where `unzip` and 7-Zip disagree on which leaves a partial clear frees, Zipper reads as 7-Zip does, and no real PKZIP archive yet shows which one PKZIP matches.
 - ZIP Reduce (methods 2 to 5) is dropped. 7-Zip does not read it and the macOS `unzip` is built without it, so no oracle could check a decoder. The M10 matrix has no Reduce row, because 7-Zip lists no such method.
 
 ## M20. Zipper without 7-Zip

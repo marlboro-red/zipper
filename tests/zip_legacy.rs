@@ -171,6 +171,55 @@ fn shrink_entries_that_clear_at_any_time_extract_as_7zip_reads_them() {
 }
 
 #[test]
+fn clears_of_a_full_table_can_still_split_unzip_from_7zip_after_a_reused_entry_survives() {
+    let mut codes = vec![
+        (97, 9),
+        (256, 9),
+        (1, 9),
+        (256, 10),
+        (1, 10),
+        (256, 11),
+        (1, 11),
+    ];
+    codes.extend([(256, 12), (1, 12)]);
+    let run =
+        |codes: &mut Vec<(u32, u32)>, count| codes.extend(std::iter::repeat_n((97, 13), count));
+    let clear = |codes: &mut Vec<(u32, u32)>| codes.extend([(256, 13), (2, 13)]);
+    run(&mut codes, 7934);
+    codes.push((8191, 13));
+    clear(&mut codes);
+    codes.push((98, 13));
+    run(&mut codes, 7933);
+    codes.push((99, 13));
+    clear(&mut codes);
+    codes.push((100, 13));
+    run(&mut codes, 7933);
+    clear(&mut codes);
+    codes.push((98, 13));
+    run(&mut codes, 7934);
+    let data = legacy_encoder::reference_unshrink(&codes).unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("full-clears.zip");
+    let name = "data.bin".to_owned();
+    fs::write(
+        &archive,
+        zip(&[Entry::new(&name, SHRINK, 0, &data, shrink_codes(&codes))]),
+    )
+    .unwrap();
+    assert_every_reader_extracts(
+        &archive,
+        &[(name.clone(), data.clone())],
+        Oracles::SevenZipOnly,
+    );
+    if let Some(result) = unzip_reads(&archive, &name) {
+        assert!(
+            result.as_ref() != Ok(&data),
+            "unzip now frees leaves past its free-code pointer; compare Shrink with it on every stream"
+        );
+    }
+}
+
+#[test]
 fn a_partial_clear_frees_leaves_across_the_whole_table_as_7zip_does_where_unzip_scans_less() {
     let lit = |byte: u8| (u32::from(byte), 9);
     let (escape, clear) = ((256, 9), (2, 9));
