@@ -385,6 +385,7 @@ item = src/lzw.rs | impl<R: BufRead> Unlzw<R> {
 item = src/lzw.rs | impl<R: BufRead> Read for Unlzw<R> {
 
 [zip-directory]
+speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = cb4e1dee907f1d17
 goto-fingerprint = zip_directory::proofs::extra_fields_never_panic_and_keep_every_value_without_a_sentinel 2785d2c7f209a264
@@ -606,6 +607,7 @@ item = src/lzma.rs |     fn branching_bits_normalized_in_each_arm_match_one_norm
 item = src/lzma.rs |     fn direct_bits_fit_their_count_and_keep_the_range_normalized(
 
 [lzma-trees]
+speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = e8f53fbad075f32c
 goto-fingerprint = lzma::proofs::every_bit_tree_size_stays_inside_its_table 11c9fcb2f8de4362
@@ -672,6 +674,7 @@ item = src/lzma.rs |     fn uniform_table<
 item = src/lzma.rs |     fn lengths_stay_below_the_longest_match_at_every_position_state(
 
 [lzma-literal]
+speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = db1aa65e89757e03
 goto-fingerprint = lzma::proofs::literal_contexts_stay_inside_the_literal_table_for_every_property_byte 7aa1160dcc64eebc
@@ -713,6 +716,7 @@ item = src/lzma.rs |     fn reachable_literal_one_bit_at_a_time(
 item = src/lzma.rs |     fn plain_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities(
 
 [lzma-matched-literal]
+speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 092cf1be2a17c738
 goto-fingerprint = lzma::proofs::matched_literals_stay_inside_their_coder_for_every_match_byte 8d164564665d4138
@@ -743,6 +747,7 @@ item = src/lzma.rs |     fn matched_literals_decode_as_one_bit_at_a_time_with_an
 item = src/lzma.rs |     fn matched_literal_children_stay_in_their_coder_apart_from_the_entry_they_follow(
 
 [lzma-distances]
+speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = e0198e2a6b2bce47
 goto-fingerprint = lzma::proofs::short_distances_stay_inside_the_special_probabilities af15173e6b802721
@@ -915,6 +920,7 @@ item = src/native_cpio.rs | enum Form {
 item = src/native_cpio.rs | struct Inode {
 
 [ar-fields]
+speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 8a7817266bd1fedf
 goto-fingerprint = native_ar::proofs::headers_never_panic_and_their_sizes_fit_ten_digits 469842359ee91113

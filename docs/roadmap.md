@@ -496,5 +496,6 @@ Exit checks:
 ## Close a milestone
 
 1. Confirm every exit check with its gate step, test or record.
-2. Set the milestone's status to Done in this page.
-3. Run the `zipper-reflect` skill and commit what it encodes.
+2. Run every owed slow sync that `cargo xtask verify --owed` lists.
+3. Set the milestone's status to Done in this page.
+4. Run the `zipper-reflect` skill and commit what it encodes.

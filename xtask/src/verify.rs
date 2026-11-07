@@ -8,6 +8,7 @@ pub(crate) struct Verification {
     pub(crate) name: String,
     skill: String,
     fingerprint: String,
+    slow: bool,
     pub(crate) full_checks: Vec<String>,
     pub(crate) items: Vec<(String, String)>,
     pub(crate) goto_fingerprints: Vec<(String, String)>,
@@ -33,6 +34,7 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
                 name: name.to_owned(),
                 skill: String::new(),
                 fingerprint: String::new(),
+                slow: false,
                 full_checks: Vec::new(),
                 items: Vec::new(),
                 goto_fingerprints: Vec::new(),
@@ -48,6 +50,13 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
         match key {
             "skill" => entry.skill = value.to_owned(),
             "fingerprint" => entry.fingerprint = value.to_owned(),
+            "speed" => {
+                ensure!(
+                    value == "slow",
+                    "{MANIFEST}:{number}: `speed` takes only `slow`"
+                );
+                entry.slow = true;
+            }
             "full-check" => entry.full_checks.push(value.to_owned()),
             "goto-fingerprint" => {
                 let (harness, hash) = value.split_once(' ').with_context(|| {
@@ -194,17 +203,37 @@ fn fail_on_interrupted_plants(root: &Path) -> Result<()> {
 }
 
 pub fn fail_on_stale_fingerprints(root: &Path) -> Result<()> {
+    fail_on_stale(root, Owed::Allowed)
+}
+
+pub fn fail_on_owed_slow_checks(root: &Path) -> Result<()> {
+    fail_on_stale(root, Owed::Refused)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Owed {
+    Allowed,
+    Refused,
+}
+
+fn fail_on_stale(root: &Path, owed: Owed) -> Result<()> {
     fail_on_interrupted_plants(root)?;
     fail_on_unclassified_sources(root)?;
     crate::kani::fail_on_harnesses_not_run_as_listed(root)?;
     let mut stale = Vec::new();
     for verification in manifest(root)? {
         let current = fingerprint(root, &verification)?;
-        if current != verification.fingerprint {
-            stale.push(format!(
-                "{}: follow {}, then run `cargo xtask verify-sync {}`",
-                verification.name, verification.skill, verification.name
-            ));
+        if current == verification.fingerprint {
+            continue;
+        }
+        let instruction = format!(
+            "{}: follow {}, then run `cargo xtask verify-sync {}`",
+            verification.name, verification.skill, verification.name
+        );
+        if verification.slow && owed == Owed::Allowed {
+            eprintln!("owed before a release or milestone close: {instruction}");
+        } else {
+            stale.push(instruction);
         }
     }
     ensure!(
