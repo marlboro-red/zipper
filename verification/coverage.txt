@@ -1421,6 +1421,7 @@ item = src/implode.rs | mod tests {
 item = src/implode.rs | mod proofs {
 
 [lzh-arj-fields]
+fingerprint = 235cccc4059caabb
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach lzh-arj-fields
 full-check = cargo kani --harness lzh::proofs:: --harness native_arj::proofs::
@@ -1430,6 +1431,8 @@ item = src/lzh.rs | pub(crate) const LONGEST_CODE:
 item = src/lzh.rs | pub(crate) struct Huffman<
 item = src/lzh.rs | impl<const N: usize> Huffman<N> {
 item = src/lzh.rs | pub(crate) struct Lzss {
+item = src/lzh.rs | pub(crate) struct Bits<
+item = src/lzh.rs | pub(crate) struct Window {
 item = src/lzh.rs | mod proofs {
 item = src/native_lzh.rs | const COMMON:
 item = src/native_lzh.rs | const SHORT_FIXED:
@@ -1471,6 +1474,7 @@ item = src/native_arj.rs | fn u32_at(
 item = src/native_arj.rs | fn string_end(
 item = src/native_arj.rs | fn header(
 item = src/native_arj.rs | fn method(
+item = src/native_arj.rs | struct Fastest<
 item = src/native_arj.rs | mod proofs {
 item = src/lib.rs | pub(crate) type Field<
 item = src/lib.rs | pub(crate) fn field_check(
