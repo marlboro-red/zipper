@@ -247,11 +247,7 @@ impl Bits<'_> {
         let mask = 0u32.wrapping_sub(bit);
         self.range = (bound & !mask) | (self.range.wrapping_sub(bound) & mask);
         self.code -= bound & mask;
-        let toward_zero = probability >> MOVE_BITS;
-        let toward_one = (PROBABILITY_ONE - probability) >> MOVE_BITS;
-        let updated = probability
-            .wrapping_add(toward_one & !(mask as u16))
-            .wrapping_sub(toward_zero & mask as u16);
+        let updated = adapted_probability(probability, bit);
         self.normalize();
         (bit, updated)
     }
@@ -261,13 +257,13 @@ impl Bits<'_> {
         let bound = (self.range >> PROBABILITY_BITS) * u32::from(*probability);
         if self.code < bound {
             self.range = bound;
-            *probability += (PROBABILITY_ONE - *probability) >> MOVE_BITS;
+            *probability = adapted_probability(*probability, 0);
             self.normalize();
             0
         } else {
             self.range -= bound;
             self.code -= bound;
-            *probability -= *probability >> MOVE_BITS;
+            *probability = adapted_probability(*probability, 1);
             self.normalize();
             1
         }
@@ -372,6 +368,19 @@ impl Bits<'_> {
     fn finished_cleanly(&self) -> bool {
         self.code == 0
     }
+}
+
+const BIT_ZERO_TARGET_OFFSET: i32 = PROBABILITY_ONE as i32 - (1 << MOVE_BITS) + 1;
+
+#[inline(always)]
+fn adapted_probability(probability: u16, bit: u32) -> u16 {
+    let probability = i32::from(probability);
+    let moved_away_from = if bit == 1 {
+        probability
+    } else {
+        probability - BIT_ZERO_TARGET_OFFSET
+    };
+    (probability - (moved_away_from >> MOVE_BITS)) as u16
 }
 
 #[inline(always)]
@@ -2489,6 +2498,25 @@ mod tests {
                 .map(|index| b"the quick brown fox "[index % 20] ^ (next() & 1))
                 .collect(),
         ]
+    }
+
+    #[test]
+    fn the_offset_update_equals_the_masked_update_for_every_probability_and_bit() {
+        for probability in 0..=PROBABILITY_ONE {
+            for bit in 0..=1u32 {
+                let mask = 0u32.wrapping_sub(bit) as u16;
+                let toward_zero = probability >> MOVE_BITS;
+                let toward_one = (PROBABILITY_ONE - probability) >> MOVE_BITS;
+                let masked = probability
+                    .wrapping_add(toward_one & !mask)
+                    .wrapping_sub(toward_zero & mask);
+                assert_eq!(
+                    adapted_probability(probability, bit),
+                    masked,
+                    "probability {probability}, bit {bit}"
+                );
+            }
+        }
     }
 
     #[test]
