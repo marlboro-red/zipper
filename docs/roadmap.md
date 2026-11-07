@@ -35,6 +35,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M19. Legacy formats](#m19-legacy-formats) | Planned | M13 |
 | [M20. Zipper without 7-Zip](#m20-zipper-without-7-zip) | Planned | M11 to M19, M21 |
 | [M22. Zipper's own ZIP directory reader](#m22-zippers-own-zip-directory-reader) | In progress | M21 |
+| [M23. The LZMA decoder as its own crate](#m23-the-lzma-decoder-as-its-own-crate) | Planned | M21 |
 
 M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../benchmarks/cross-platform/windows-folder-cap/README.md) shows the default beating default bsdtar on every workload on all three platforms. M5 deferred two items, parallel decoding of one Deflate entry and memory-mapped input, because the measured gain left for them is about 10 ms on one workload. M7 closed on 2 November 2026. The default engine reads plain, gzip, zstd and xz tar in process, with one decoding thread and four writers. Plain tar beats default bsdtar on every workload on macOS and Linux and on five of seven on Windows. The [Linux and Windows tar rows](../benchmarks/cross-platform/tar-scoreboard/README.md) leave one open item. On those platforms the zlib-rs decoder loses the large gzip entries to bsdtar, by up to 1.59× on Windows. A faster streaming inflate there, such as zlib-ng, is the next experiment. M8 closed on 3 November 2026. Applications can call `zipper::extract_archive` to extract into an existing folder, select ZIP paths, follow progress and cancel. Four adversarial reviews found five issues, each fixed with a test that failed first. The 7-Zip backend reports no progress yet. M9 closed the same day. The default engine reads 7z in process with all of these options, and sends BCJ2, PPMd, BZip2, encrypted and split 7z archives to 7-Zip. An early timing on one Mac shows the reader faster than 7-Zip on non-solid archives and 1.85× slower on solid Silesia, where 7-Zip decodes the two LZMA2 blocks at once. Splitting LZMA2 at its dictionary resets is the next experiment. M10 and M11 closed on 4 November 2026. `docs/reference/parity.md` lists 112 rows of 7-Zip extraction, and the gate fails when a row loses its proof. On Windows every reader now copies the archive's Mark of the Web, restores read-only, hidden and system attributes, and creates links that stay inside. 7-Zip stores NTFS alternate streams only in WIM, so they move to M17. Two adversarial reviews found no escape in the links. M12 closed the same day. `--existing` takes 7-Zip's skip and rename modes, `--include` and `--exclude` select in every native reader, tar included, and `--flat`, `-` and `--stdout` cover `7z e`, `-si` and `-so`. Two adversarial reviews found a race that replaced files written during extraction and two link escapes through links the destination keeps, all fixed with tests. Their shared formal checks were added afterwards, on 4 November 2026. An exhaustive check follows every published link on disk across 25,200 runs. The ZIP decoder budget has a TLA+ model, and the new header parsers have Kani proofs. Every stream end is tested at every truncation and padding.
 
@@ -464,6 +465,25 @@ Done so far, by 5 November 2026:
 
 - The reader in `src/zip_directory.rs`, written by a builder agent and used only by tests so far. A differential test agrees with the `zip` crate on the corpora, 34 hand-built shapes and 198,100 damaged archives, or both refuse. It refuses more than the `zip` crate does wherever the native reader's own checks already refuse.
 - Four Kani proofs of its extra fields, central records and end records, run by `cargo xtask verify-sync zip-directory`.
+
+## M23. The LZMA decoder as its own crate
+
+Zipper's LZMA, LZMA2 and xz decoder is published on crates.io as a crate of its own, so other Rust programs can read these formats without liblzma.
+
+The [tree-preload record](../benchmarks/lzma/tree-preload/README.md) shows the decoder taking 350.0 ms on the probe stream against 398.4 ms for liblzma in the same runs. That is one Mac and one stream. The crate is worth publishing only if the speed holds on other machines and every use M21 covers.
+
+Scope:
+
+- `src/lzma.rs` and `src/xz_filters.rs` move into a crate in this workspace, with Zipper depending on it. Its proofs, tests and coverage entries stay in this repository's gate.
+- A public API of `Read` adapters for raw LZMA, LZMA2 and xz, with a memory limit, documented as a public contract.
+- liblzma stays a test dependency of the crate, as the oracle for its differential tests.
+
+Exit checks:
+
+1. M21 is done, so Zipper itself reads every LZMA format with the crate and the release build has no liblzma.
+2. A benchmark record compares the crate with liblzma on Linux x86-64, macOS arm64 and Windows, on the probe stream and on xz files of Silesia, with ranges apart or the verdict stated as a tie.
+3. A fuzzing run of the public API on every format finds no panic, hang or memory beyond the limit, and its corpus is kept.
+4. `cargo publish --dry-run` passes, and the crate's README states what it checks and what it does not.
 
 ## Close a milestone
 
