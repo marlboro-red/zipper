@@ -167,6 +167,7 @@ fn ship() -> Result<()> {
         output("git", &["status", "--porcelain"])?.is_empty(),
         "commit or stash every change before shipping"
     );
+    commits::lint_unpushed(&root())?;
     let head = output("git", &["rev-parse", "HEAD"])?;
     let branch = format!("ci/{}", &head[..12]);
     let push = |args: &[&str]| -> Result<()> {
@@ -181,7 +182,12 @@ fn ship() -> Result<()> {
         );
         Ok(())
     };
-    push(&["push", "origin", &format!("HEAD:refs/heads/{branch}")])?;
+    push(&[
+        "push",
+        "--no-verify",
+        "origin",
+        &format!("HEAD:refs/heads/{branch}"),
+    ])?;
     let run = ci_run(&head)?;
     let checked = watch_ci_run(&run, &head).or_else(|failure| {
         let host = match env::consts::OS {
