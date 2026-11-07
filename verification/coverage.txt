@@ -1223,6 +1223,7 @@ item = src/native_cab.rs | impl<'a> FolderStream<'a> {
 
 [msi-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = b56e40f09dd5e560
 full-check = cargo xtask kani-reach msi-fields
 full-check = cargo kani --harness native_msi::proofs::
 full-check = cargo test --release --lib native_msi
@@ -1266,7 +1267,7 @@ item = src/native_msi.rs | fn check_entry(
 item = src/native_msi.rs | struct Links {
 item = src/native_msi.rs | impl From<&DirectoryEntry> for Links {
 item = src/native_msi.rs | struct Ref {
-item = src/native_msi.rs | fn walk_directory(
+item = src/native_msi.rs | fn walk_directory<
 item = src/native_msi.rs | fn decoded_name(
 item = src/native_msi.rs | fn path_name(
 item = src/native_msi.rs | fn filetime(
