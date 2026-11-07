@@ -1288,7 +1288,7 @@ item = src/lib.rs | pub(crate) type Field<
 
 [iso-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0000000000000000
+fingerprint = 3451b11fdf303a34
 full-check = cargo xtask kani-reach iso-fields
 full-check = cargo kani --harness native_iso::proofs:: --harness udf::proofs::
 full-check = cargo test --release --lib native_iso
