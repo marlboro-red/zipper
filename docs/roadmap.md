@@ -330,6 +330,10 @@ Done by 7 November 2026:
 - tar, the ZIP XZ method and RPM decode xz with Zipper's own reader. Silesia `.tar.xz` extracts 11 to 15% faster than with liblzma, as the [xz record](../benchmarks/xz/own-decoder/README.md) shows.
 - `.lzma`, lzip, the ZIP LZMA method and RPM's LZMA payloads decode with Zipper's own readers, and liblzma is only a test dependency, as the [lzip and `.lzma` record](../benchmarks/xz/lzip-lzma-zip/README.md) shows. The release build no longer links liblzma.
 
+Decided, on 8 November 2026:
+
+- The hot loop may be hand-written assembly for arm64 and x86-64, as 7-Zip's is, after every safe-Rust change tried left 7-Zip about 10% faster. The user chose it. The safe-Rust decoder stays the reference and the fallback on other targets. A differential test must show the same bytes or the same refusal as the Rust decoder on every corpus stream and on damaged and random streams.
+
 ## M14. Encrypted archives
 
 Zipper extracts encrypted archives when given the password, and never writes a byte decrypted with a wrong one.
@@ -413,7 +417,7 @@ Scope:
 - ISO 9660 with Joliet and Rock Ridge, and UDF, choosing the same tree 7-Zip chooses.
 - WIM with XPRESS, LZX and LZMS, and the NTFS alternate streams it stores, written on Windows behind an option.
 - VHD and VHDX disks holding FAT or NTFS.
-- DMG with its UDIF compression. **Decision before work starts:** whether to read the HFS+ and APFS file systems inside, which is the largest single item in this roadmap, or to leave them to 7-Zip.
+- DMG with its UDIF compression, and the HFS+ and APFS file systems inside, read by Zipper's own code. The user decided this on 8 November 2026, choosing it over leaving them to 7-Zip.
 
 Exit checks:
 
