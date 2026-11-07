@@ -1058,7 +1058,7 @@ item = src/lib.rs | pub(crate) type Field<
 
 [cab-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 39b45c1ee118a705
+fingerprint = f847ff69eabc1068
 full-check = cargo xtask kani-reach cab-fields
 full-check = cargo kani --harness native_cab::proofs::
 full-check = cargo test --release --lib native_cab
@@ -1118,7 +1118,7 @@ item = src/quantum.rs | pub(crate) fn decoder_memory(
 
 [lzx]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 8acd012b69157385
+fingerprint = 240cfa24eb3f36be
 full-check = cargo test --release --lib lzx
 full-check = cargo test --release --test cab_corpus
 full-check = cargo test --release --test cab_sets
@@ -1173,7 +1173,7 @@ item = src/native_cab.rs | impl Read for FolderStream<'_> {
 
 [quantum]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = e57764cc34e64c05
+fingerprint = fe81a07d33e8b5ba
 full-check = cargo xtask kani-reach quantum
 full-check = cargo kani --harness quantum::proofs::
 full-check = cargo test --release --lib quantum
