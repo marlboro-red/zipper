@@ -14,6 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-08 | [LZMA output limit stopped at the window end](lzma/window-end-limit/README.md) | Reverted. 1.8% fewer instructions and no change in probe time, ranges overlapping. |
 | 2026-11-08 | [LZMA kernel changes from a study of 7-Zip's decoder](lzma/7zip-study-kernel/README.md) | Kept two changes of three. 7z Silesia extracts about 3.5% faster. Holding the loop's state in locals was 19.5% slower and was reverted. 7-Zip is still about 11% faster at one thread. |
 | 2026-11-07 | [LZMA bit trees with both children loaded early](lzma/tree-preload/README.md) | Kept four changes of five. Zipper's decoder takes 350.0 ms on the probe stream against 398.4 ms for liblzma, a ratio of 0.878. It builds only for tests, so no extraction is faster yet. |
 | 2026-11-07 | [Parallel staging cleanup after an overwrite](overwrite/parallel-cleanup/README.md) | Reverted both. Emptying staging on Rayon left `--overwrite` wall time unchanged and raised CPU time by about half. One `lstat` fewer showed no difference. |
@@ -45,6 +46,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-08 | [ZIP listing with Zipper's own directory reader](native-zip/own-directory-listing/README.md) | Kept. Listing takes the same time as with the `zip` crate on six archives, every range overlapping, and lists a 100,000-entry archive the old path refused. |
 | 2026-11-05 | [Patience for ZIP decoder memory](native-zip/decoder-memory-patience/README.md) | Kept a 1 s wait before an entry is recorded for another pass. A PPMd archive ran 9.50 s against 9.36 s at `80af2b5`, overlapping. Without the wait it took 1.3 times as long. |
 | 2026-11-05 | [One entry per Rayon task](native-zip/one-entry-per-task/README.md) | Kept. Two Rust build folders extract 1.40× to 1.76× faster at four threads on Windows. Tiny-file workloads are unchanged. One machine only. |
 | 2026-11-02 | [Larger streaming steps](native-zip/stream-steps/README.md) | Kept. The 256 MiB random entry extracts 1.30× faster at one thread. Other large rows improved in median but overlap their ranges. |

@@ -1,0 +1,114 @@
+[
+ {
+  "round": 0,
+  "warmup": true,
+  "binary": "before",
+  "seconds": 0.005438958000000001,
+  "lines": 2019
+ },
+ {
+  "round": 0,
+  "warmup": true,
+  "binary": "after",
+  "seconds": 0.004763375,
+  "lines": 2019
+ },
+ {
+  "round": 1,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.0047393750000000005,
+  "lines": 2019
+ },
+ {
+  "round": 1,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004609999999999996,
+  "lines": 2019
+ },
+ {
+  "round": 2,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004849583999999997,
+  "lines": 2019
+ },
+ {
+  "round": 2,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.004550584000000003,
+  "lines": 2019
+ },
+ {
+  "round": 3,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.0045888330000000005,
+  "lines": 2019
+ },
+ {
+  "round": 3,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004947958000000002,
+  "lines": 2019
+ },
+ {
+  "round": 4,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004774750000000001,
+  "lines": 2019
+ },
+ {
+  "round": 4,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.004601707999999996,
+  "lines": 2019
+ },
+ {
+  "round": 5,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.004568125000000006,
+  "lines": 2019
+ },
+ {
+  "round": 5,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004655083000000004,
+  "lines": 2019
+ },
+ {
+  "round": 6,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004902167000000013,
+  "lines": 2019
+ },
+ {
+  "round": 6,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.004636958999999996,
+  "lines": 2019
+ },
+ {
+  "round": 7,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.00451725,
+  "lines": 2019
+ },
+ {
+  "round": 7,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004667833999999996,
+  "lines": 2019
+ }
+]

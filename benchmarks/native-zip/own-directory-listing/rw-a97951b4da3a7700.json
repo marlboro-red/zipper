@@ -1,0 +1,114 @@
+[
+ {
+  "round": 0,
+  "warmup": true,
+  "binary": "before",
+  "seconds": 0.0037553329999999996,
+  "lines": 487
+ },
+ {
+  "round": 0,
+  "warmup": true,
+  "binary": "after",
+  "seconds": 0.003383250000000001,
+  "lines": 487
+ },
+ {
+  "round": 1,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.0033112920000000004,
+  "lines": 487
+ },
+ {
+  "round": 1,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.003187500000000003,
+  "lines": 487
+ },
+ {
+  "round": 2,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.0033074160000000005,
+  "lines": 487
+ },
+ {
+  "round": 2,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.003265000000000004,
+  "lines": 487
+ },
+ {
+  "round": 3,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.003211582999999997,
+  "lines": 487
+ },
+ {
+  "round": 3,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.0031341250000000015,
+  "lines": 487
+ },
+ {
+  "round": 4,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.003121415999999995,
+  "lines": 487
+ },
+ {
+  "round": 4,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.0032242919999999967,
+  "lines": 487
+ },
+ {
+  "round": 5,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.003273999999999999,
+  "lines": 487
+ },
+ {
+  "round": 5,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.0032032499999999978,
+  "lines": 487
+ },
+ {
+  "round": 6,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.003007333000000001,
+  "lines": 487
+ },
+ {
+  "round": 6,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.003123083999999998,
+  "lines": 487
+ },
+ {
+  "round": 7,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.003259791000000005,
+  "lines": 487
+ },
+ {
+  "round": 7,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.0034208750000000038,
+  "lines": 487
+ }
+]

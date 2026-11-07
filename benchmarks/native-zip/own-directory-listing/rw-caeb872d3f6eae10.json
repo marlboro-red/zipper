@@ -1,0 +1,114 @@
+[
+ {
+  "round": 0,
+  "warmup": true,
+  "binary": "before",
+  "seconds": 0.0069203749999999994,
+  "lines": 1045
+ },
+ {
+  "round": 0,
+  "warmup": true,
+  "binary": "after",
+  "seconds": 0.29383358400000004,
+  "lines": 1045
+ },
+ {
+  "round": 1,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.013756042000000024,
+  "lines": 1045
+ },
+ {
+  "round": 1,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.012149500000000035,
+  "lines": 1045
+ },
+ {
+  "round": 2,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.008862166000000005,
+  "lines": 1045
+ },
+ {
+  "round": 2,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.007631333000000018,
+  "lines": 1045
+ },
+ {
+  "round": 3,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.006531750000000003,
+  "lines": 1045
+ },
+ {
+  "round": 3,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.00594633299999997,
+  "lines": 1045
+ },
+ {
+  "round": 4,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.005265999999999993,
+  "lines": 1045
+ },
+ {
+  "round": 4,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.004869249999999992,
+  "lines": 1045
+ },
+ {
+  "round": 5,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.00485658299999997,
+  "lines": 1045
+ },
+ {
+  "round": 5,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.0043697919999999835,
+  "lines": 1045
+ },
+ {
+  "round": 6,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004373791000000016,
+  "lines": 1045
+ },
+ {
+  "round": 6,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.004147084000000023,
+  "lines": 1045
+ },
+ {
+  "round": 7,
+  "warmup": false,
+  "binary": "after",
+  "seconds": 0.003912625000000003,
+  "lines": 1045
+ },
+ {
+  "round": 7,
+  "warmup": false,
+  "binary": "before",
+  "seconds": 0.004021207999999998,
+  "lines": 1045
+ }
+]
