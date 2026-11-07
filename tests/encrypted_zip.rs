@@ -2157,6 +2157,7 @@ fn decrypted_bytes_on_disk(folder: &Path) -> u64 {
 #[cfg(unix)]
 #[test]
 fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
+    use std::io::Read;
     use std::os::unix::process::ExitStatusExt;
     const LARGE: usize = 512 << 20;
     let work = tempfile::tempdir().unwrap();
@@ -2169,14 +2170,26 @@ fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
             .arg(&archive)
             .arg("-o")
             .arg(&output)
+            .arg("--max-extracted-bytes")
+            .arg(LARGE.to_string())
             .stdin(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while decrypted_bytes_on_disk(work.path()) < 8 << 20 && std::time::Instant::now() < deadline
         {
             std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let mut said = String::new();
+        if let Some(status) = child.try_wait().unwrap() {
+            child
+                .stderr
+                .take()
+                .unwrap()
+                .read_to_string(&mut said)
+                .unwrap();
+            panic!("SIG{name}: Zipper ended before the signal with {status:?}: {said}");
         }
         let sent = Command::new("kill")
             .arg(format!("-{name}"))
@@ -2185,7 +2198,17 @@ fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
             .unwrap();
         assert!(sent.success());
         let status = child.wait().unwrap();
-        assert_eq!(status.signal(), Some(number), "SIG{name}: {status:?}");
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut said)
+            .unwrap();
+        assert_eq!(
+            status.signal(),
+            Some(number),
+            "SIG{name}: {status:?}: {said}"
+        );
         assert_eq!(listing(work.path()), ["large.zip"], "SIG{name}");
         assert_eq!(decrypted_bytes_on_disk(work.path()), 0, "SIG{name}");
     }
@@ -2196,10 +2219,11 @@ fn a_signal_during_decryption_leaves_no_plaintext_and_ends_by_that_signal() {
 fn ctrl_c_during_decryption_after_the_prompt_leaves_no_plaintext() {
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("large.zip");
-    large_zip_crypto_archive(&archive, b"hunter2", 512 << 20);
+    const LARGE: usize = 512 << 20;
+    large_zip_crypto_archive(&archive, b"hunter2", LARGE);
     let output = work.path().join("out");
     let command = format!(
-        "{} extract {} -o {}",
+        "{} extract {} -o {} --max-extracted-bytes {LARGE}",
         shell_quoted(Path::new(env!("CARGO_BIN_EXE_zipper"))),
         shell_quoted(&archive),
         shell_quoted(&output)
