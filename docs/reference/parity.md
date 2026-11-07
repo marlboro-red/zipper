@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 64 |
+| `native` | 66 |
 | `partial` | 1 |
-| `backend` | 42 |
+| `backend` | 40 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-38 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+36 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
