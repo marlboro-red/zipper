@@ -12,6 +12,8 @@ mod cab_writer;
 mod cfb_writer;
 #[path = "common/lzx_encoder.rs"]
 mod lzx_encoder;
+#[path = "common/quantum_encoder.rs"]
+mod quantum_encoder;
 
 use cfb_writer::{Compound, Node};
 use std::{
