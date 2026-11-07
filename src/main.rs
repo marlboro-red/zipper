@@ -971,6 +971,16 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_cab::ReadOptions::default(),
                     )?),
+                    Reader::Lzh => print(zipper::native_lzh::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_lzh::ReadOptions::default(),
+                    )?),
+                    Reader::Arj => print(zipper::native_arj::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_arj::ReadOptions::default(),
+                    )?),
                     Reader::Iso => print(zipper::native_iso::read_archive(
                         &archive,
                         None,
@@ -1075,6 +1085,16 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_cab::ReadOptions::default(),
+                    )?),
+                    Reader::Lzh => report(zipper::native_lzh::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_lzh::ReadOptions::default(),
+                    )?),
+                    Reader::Arj => report(zipper::native_arj::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_arj::ReadOptions::default(),
                     )?),
                     Reader::Iso => report(zipper::native_iso::read_archive(
                         &archive,

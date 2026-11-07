@@ -13,7 +13,14 @@
       "status": "native"
     },
     "Arj": {
-      "status": "backend"
+      "status": "native",
+      "note": "Methods 0 to 4 read in process. Encrypted entries and multi-volume archives are refused. No ARJ tool is installed here, so the corpus comes from Zipper's own test writer.",
+      "tests": [
+        "tests/arj_corpus.rs::every_corpus_arj_extracts_the_tree_7zip_extracts",
+        "tests/arj_corpus.rs::generated_arj_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
+        "tests/arj_corpus.rs::token_streams_of_every_method_decode_as_7zip_decodes_them",
+        "tests/arj_corpus.rs::damaged_arj_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "Base64": {
       "status": "backend"
@@ -87,7 +94,14 @@
       "status": "backend"
     },
     "Lzh": {
-      "status": "backend"
+      "status": "native",
+      "note": "Header levels 0 to 3 and the -lh0-, -lz4-, -lh4- to -lh7- and -lhd- methods read in process. Methods 7-Zip does not read either, such as -lh1- and -lz5-, are refused.",
+      "tests": [
+        "tests/lzh_corpus.rs::every_corpus_lzh_extracts_the_tree_7zip_extracts_or_the_refusal_its_record_gives",
+        "tests/lzh_corpus.rs::generated_lzh_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
+        "tests/lzh_corpus.rs::token_streams_and_every_table_form_decode_as_7zip_decodes_them",
+        "tests/lzh_corpus.rs::damaged_lzh_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "MBR": {
       "status": "backend"

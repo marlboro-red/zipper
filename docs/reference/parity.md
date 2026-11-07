@@ -32,7 +32,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `APFS` | `backend` |  | `tests/data/parity/archives/apfs.img.stored.xz` |
 | `APM` | `backend` |  | `tests/data/parity/archives/apm.img.stored.xz` |
 | `Ar` | `native` |  | `tests/data/parity/archives/ar.a` |
-| `Arj` | `backend` |  | No proof yet. |
+| `Arj` | `native` | Methods 0 to 4 read in process. Encrypted entries and multi-volume archives are refused. No ARJ tool is installed here, so the corpus comes from Zipper's own test writer. | `every_corpus_arj_extracts_the_tree_7zip_extracts` in `tests/arj_corpus.rs`, `generated_arj_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/arj_corpus.rs`, `token_streams_of_every_method_decode_as_7zip_decodes_them` in `tests/arj_corpus.rs`, `damaged_arj_are_refused_exactly_when_7zip_refuses_them` in `tests/arj_corpus.rs` |
 | `Base64` | `backend` |  | No proof yet. |
 | `COFF` | `backend` |  | No proof yet. |
 | `Cab` | `native` | Stored, MSZIP, Quantum and LZX folders and cabinet sets read in process. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set. | `tests/data/parity/archives/cab-set-1.cab`, `tests/data/parity/archives/cab.cab`, `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_sets_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/cab_sets.rs` |
@@ -51,7 +51,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `IHex` | `backend` |  | No proof yet. |
 | `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |
 | `LP` | `backend` |  | No proof yet. |
-| `Lzh` | `backend` |  | No proof yet. |
+| `Lzh` | `native` | Header levels 0 to 3 and the -lh0-, -lz4-, -lh4- to -lh7- and -lhd- methods read in process. Methods 7-Zip does not read either, such as -lh1- and -lz5-, are refused. | `every_corpus_lzh_extracts_the_tree_7zip_extracts_or_the_refusal_its_record_gives` in `tests/lzh_corpus.rs`, `generated_lzh_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/lzh_corpus.rs`, `token_streams_and_every_table_form_decode_as_7zip_decodes_them` in `tests/lzh_corpus.rs`, `damaged_lzh_are_refused_exactly_when_7zip_refuses_them` in `tests/lzh_corpus.rs` |
 | `MBR` | `backend` |  | `tests/data/parity/archives/mbr.img.stored.xz` |
 | `MachO` | `backend` |  | No proof yet. |
 | `MsLZ` | `backend` |  | No proof yet. |

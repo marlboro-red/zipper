@@ -31,6 +31,8 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [ar reader reference](docs/reference/ar-reader.md) covers static libraries, Debian packages and how they differ from 7-Zip.
 - [RPM reader reference](docs/reference/rpm-reader.md) covers RPM packages, their payload compressors and how they differ from 7-Zip.
 - [CAB reader reference](docs/reference/cab-reader.md) covers Microsoft Cabinet files with stored, MSZIP and LZX folders, and how they differ from 7-Zip.
+- [LZH reader reference](docs/reference/lzh-reader.md) covers LZH archives of every header level, the LZSS methods that ARJ shares, and how they differ from 7-Zip.
+- [ARJ reader reference](docs/reference/arj-reader.md) covers ARJ archives with methods 0 to 4, and how they differ from 7-Zip.
 - [MSI reader reference](docs/reference/msi-reader.md) covers Windows Installer packages and other compound files, and how they differ from 7-Zip.
 - [ISO reader reference](docs/reference/iso-reader.md) covers ISO 9660, Joliet, Rock Ridge, El Torito and UDF disc images, which tree a hybrid disc gives, and how they differ from 7-Zip.
 - [Single compressed file reference](docs/reference/stream-reader.md) covers gzip, bzip2, xz, zstd and LZMA files that hold no tar.

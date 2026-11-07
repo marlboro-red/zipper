@@ -458,6 +458,7 @@ Done so far, by 8 November 2026:
 
 - ZIP Shrink and Implode read in process, with Zipper's own decoders in `src/shrink.rs` and `src/implode.rs`. Test encoders build the streams, and Info-ZIP `unzip` and 7-Zip check each one first. The [legacy methods](reference/zip-reader.md#legacy-methods) section gives the rules. A partial clear can make a Shrink entry its own prefix. Such an entry is refused only when a code names it, as both tools do. Where `unzip` and 7-Zip disagree on which leaves a partial clear frees, Zipper reads as 7-Zip does, and no real PKZIP archive yet shows which one PKZIP matches.
 - ZIP Reduce (methods 2 to 5) is dropped. 7-Zip does not read it and the macOS `unzip` is built without it, so no oracle could check a decoder. The M10 matrix has no Reduce row, because 7-Zip lists no such method.
+- LZH archives of header levels 0 to 3 read in process, with the stored, `-lh4-` to `-lh7-` and folder methods. So do ARJ archives with methods 0 to 4. The [LZH reader reference](reference/lzh-reader.md) and the [ARJ reader reference](reference/arj-reader.md) describe them. Both use Zipper's own LZSS and Huffman decoder. LHa for UNIX archives, 30 archives from Lhasa's test suite and generated LZH and ARJ of every method extract as `7zz x` extracts them. Damaged streams are refused exactly when 7-Zip refuses them. No ARJ tool was installed, so every ARJ came from Zipper's own test writer.
 
 ## M20. Zipper without 7-Zip
 

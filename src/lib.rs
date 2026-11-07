@@ -5,6 +5,7 @@ pub mod duplicates;
 mod extract;
 mod implode;
 mod lz4;
+mod lzh;
 mod lzma;
 mod lzw;
 mod lzx;
@@ -12,9 +13,11 @@ mod memory;
 mod metadata;
 pub mod native_7z;
 pub mod native_ar;
+pub mod native_arj;
 pub mod native_cab;
 pub mod native_cpio;
 pub mod native_iso;
+pub mod native_lzh;
 pub mod native_msi;
 pub mod native_rpm;
 pub mod native_stream;
@@ -147,6 +150,84 @@ impl<R: std::io::Read> std::io::Read for EndWatched<R> {
         self.ran_out |= read == 0 && !buffer.is_empty();
         Ok(read)
     }
+}
+
+pub(crate) fn dos_local_time(date: u16, time: u16) -> Option<std::time::SystemTime> {
+    let fields = [
+        1980 + i64::from(date >> 9),
+        i64::from((date >> 5) & 15),
+        i64::from(date & 31),
+        i64::from(time >> 11),
+        i64::from((time >> 5) & 63),
+        i64::from(time & 31) * 2,
+    ];
+    let [_, month, day, hour, minute, second] = fields;
+    let valid = (1..=12).contains(&month) && day >= 1 && hour <= 23 && minute <= 59 && second <= 59;
+    let seconds = local_seconds(valid.then_some(fields)?)?;
+    let offset = std::time::Duration::from_secs(seconds.unsigned_abs());
+    if seconds >= 0 {
+        std::time::UNIX_EPOCH.checked_add(offset)
+    } else {
+        std::time::UNIX_EPOCH.checked_sub(offset)
+    }
+}
+
+#[cfg(unix)]
+fn local_seconds([year, month, day, hour, minute, second]: [i64; 6]) -> Option<i64> {
+    // SAFETY: tm is plain data, and zeroed is a valid value for every field.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    tm.tm_year = (year - 1900) as i32;
+    tm.tm_mon = (month - 1) as i32;
+    tm.tm_mday = day as i32;
+    tm.tm_hour = hour as i32;
+    tm.tm_min = minute as i32;
+    tm.tm_sec = second as i32;
+    tm.tm_isdst = -1;
+    // SAFETY: mktime reads and normalizes the tm value it is given.
+    let seconds = unsafe { libc::mktime(&mut tm) };
+    (seconds != -1).then_some(seconds as i64)
+}
+
+#[cfg(windows)]
+fn local_seconds([year, month, day, hour, minute, second]: [i64; 6]) -> Option<i64> {
+    use windows_sys::Win32::{
+        Foundation::SYSTEMTIME, System::Time::TzSpecificLocalTimeToSystemTimeEx,
+    };
+    let field = |value: i64| u16::try_from(value).ok();
+    let local = SYSTEMTIME {
+        wYear: field(year)?,
+        wMonth: field(month)?,
+        wDayOfWeek: 0,
+        wDay: field(day)?,
+        wHour: field(hour)?,
+        wMinute: field(minute)?,
+        wSecond: field(second)?,
+        wMilliseconds: 0,
+    };
+    let mut utc = SYSTEMTIME::default();
+    // SAFETY: both pointers refer to live SYSTEMTIME values for the call, and
+    // a null time zone pointer is allowed and selects the current zone.
+    let converted =
+        unsafe { TzSpecificLocalTimeToSystemTimeEx(std::ptr::null(), &local, &mut utc) };
+    (converted != 0).then(|| {
+        let (year, month) = (i64::from(utc.wYear), i64::from(utc.wMonth));
+        let year = if month <= 2 { year - 1 } else { year };
+        let era = year.div_euclid(400);
+        let year_of_era = year - era * 400;
+        let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + i64::from(utc.wDay) - 1;
+        let days = era * 146_097 + year_of_era * 365 + year_of_era / 4 - year_of_era / 100
+            + day_of_year
+            - 719_468;
+        days * 86_400
+            + i64::from(utc.wHour) * 3_600
+            + i64::from(utc.wMinute) * 60
+            + i64::from(utc.wSecond)
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn local_seconds(_: [i64; 6]) -> Option<i64> {
+    None
 }
 
 fn parent(path: &Path) -> &Path {

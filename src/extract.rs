@@ -1,6 +1,6 @@
 use crate::{
-    Control, Existing, compat, native_7z, native_ar, native_cab, native_cpio, native_iso,
-    native_msi, native_rpm, native_tar, native_xar, native_zip,
+    Control, Existing, compat, native_7z, native_ar, native_arj, native_cab, native_cpio,
+    native_iso, native_lzh, native_msi, native_rpm, native_tar, native_xar, native_zip,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -11,15 +11,15 @@ use std::{io::Read, path::Path};
 pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, compound files such as MSI,
     /// ISO and UDF disc images, single compressed files, unrecognized files,
-    /// CAB files and cabinet sets, and 7z whose methods it decodes. 7-Zip for
+    /// CAB files and cabinet sets, LZH, ARJ, and 7z whose methods it decodes. 7-Zip for
     /// other 7z, an MSI whose main stream is not a CAB, and the other formats
     /// whose signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
-    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, compound files, disc
-    /// images, 7z and single compressed files, and native ZIP for unrecognized files.
+    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
+    /// files, disc images, 7z and single compressed files, and native ZIP for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -45,6 +45,10 @@ pub enum Reader {
     /// The native reader for CAB files and cabinet sets with stored, MSZIP,
     /// Quantum and LZX folders.
     Cab,
+    /// The native reader for LZH (LHA) archives.
+    Lzh,
+    /// The native reader for ARJ archives.
+    Arj,
     /// The native reader for compound files: Windows Installer packages and
     /// documents such as `.doc`, `.xls` and `.msg`.
     Msi,
@@ -81,6 +85,8 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_rpm::sniff(archive)? => Reader::Rpm,
         _ if native_xar::sniff(archive)? => Reader::Xar,
         _ if native_cab::sniff(archive)? => Reader::Cab,
+        _ if native_lzh::sniff(archive)? => Reader::Lzh,
+        _ if native_arj::sniff(archive)? => Reader::Arj,
         Engine::Auto if native_msi::sniff(archive)? && native_msi::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
@@ -425,6 +431,8 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         | Reader::Rpm
         | Reader::Xar
         | Reader::Cab
+        | Reader::Lzh
+        | Reader::Arj
         | Reader::Msi
         | Reader::Iso => {
             let read = match reader {
@@ -432,6 +440,8 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 Reader::Ar => native_ar::read_archive,
                 Reader::Xar => native_xar::read_archive,
                 Reader::Cab => native_cab::read_archive,
+                Reader::Lzh => native_lzh::read_archive,
+                Reader::Arj => native_arj::read_archive,
                 Reader::Msi => native_msi::read_archive,
                 Reader::Iso => native_iso::read_archive,
                 _ => native_rpm::read_archive,

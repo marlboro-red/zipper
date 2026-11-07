@@ -1,0 +1,295 @@
+{
+  "lha-h0-5.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h0-6.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h0-7.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h1-5.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h1-6.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h1-7.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h1-z.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h2-5.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h2-6.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lha-h2-7.lzh": {
+    "tree": {
+      "dir": "dir",
+      "dir/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "dir/sub": "dir",
+      "dir/sub/noise.bin": "24e51a5fab5761d3665a94a1a291a8a69251397aa79c0e861ad8f08905d83bde",
+      "dir/sub/runs.bin": "4f772cad45a568461aeb93ed8e3451422e5ba92d94c01a3355cb02e75c4b387e",
+      "dir/text.txt": "43fea8c1d278dc45b7b262da0ae9f3e9a89cb76cef0e33e1c641b3c41cacd803",
+      "hello.txt": "88adb83d5155398eea2e1923e92133b6f8f8f910b9a9bfa03d1b26146cbe14a2"
+    }
+  },
+  "lhasa-explzh_723-h0_lh5.lzh": {
+    "tree": {
+      "gpl-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-explzh_723-h1_lh6.lzh": {
+    "tree": {
+      "gpl-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-explzh_723-h2_lh7.lzh": {
+    "tree": {
+      "gpl-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-explzh_723-h2_subdir.lzh": {
+    "tree": {
+      "subdir": "dir",
+      "subdir/subdir2": "dir",
+      "subdir/subdir2/hello.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
+    }
+  },
+  "lhasa-lengths-lh1-1.lzh": {
+    "tree": {
+      "1.BIN": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+    }
+  },
+  "lhasa-lha213-lh5.lzh": {
+    "tree": {
+      "GPL-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-lha_amiga_122-lh0_dirs_bug.lzh": {
+    "tree": {
+      "MainDir": "dir",
+      "MainDir/00_File.txt": "b81c5fd8c33901fa9d65e88d01fac74be043c7055eb5247d5d1663c3c46d4985",
+      "MainDir/01_Dir": "dir",
+      "MainDir/01_Dir/File01.txt": "b81c5fd8c33901fa9d65e88d01fac74be043c7055eb5247d5d1663c3c46d4985",
+      "MainDir/02_EmptyDir": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "MainDir/03_Dir": "dir",
+      "MainDir/03_Dir/File01.txt": "b81c5fd8c33901fa9d65e88d01fac74be043c7055eb5247d5d1663c3c46d4985",
+      "MainDir/04_File.txt": "b81c5fd8c33901fa9d65e88d01fac74be043c7055eb5247d5d1663c3c46d4985"
+    }
+  },
+  "lhasa-lha_amiga_122-lh4.lzh": {
+    "tree": {
+      "gpl-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-lha_amiga_212-lh6.lzh": {
+    "tree": {
+      "gpl-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-lha_os2_208-h3_lh5.lzh": {
+    "tree": null,
+    "zipper_tree": {
+      "GPL-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-lha_os2_208-h3_subdir.lzh": {
+    "tree": null,
+    "zipper_tree": {
+      "subdir": "dir",
+      "subdir/subdir2": "dir",
+      "subdir/subdir2/HELLO.TXT": "13dd7774cadfb09f8732ec2cc183916c9d0304dc6e7fa6640f6cefefae4cba12"
+    }
+  },
+  "lhasa-lha_os2_208-lfn.lzh": {
+    "tree": {
+      "Long Filename.txt": "13dd7774cadfb09f8732ec2cc183916c9d0304dc6e7fa6640f6cefefae4cba12"
+    }
+  },
+  "lhasa-lha_os9_211c-h2_lh0.lzh": {
+    "tree": null,
+    "zipper_tree": {
+      "gpl2.gz": "5c423e9bdf915d23972369959f5a71bfbcc1d32d09fb8d7198755861d289966e"
+    }
+  },
+  "lhasa-lha_osk_201-h0_subdir.lzh": {
+    "tree": {
+      "hello.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
+    }
+  },
+  "lhasa-lha_osk_201-h2_lh5.lzh": {
+    "tree": {
+      "gpl-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-lha_unix114i-h1_lh7.lzh": {
+    "tree": {
+      "gpl-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-lha_unix114i-h1_symlink3.lzh": {
+    "tree": {
+      "subdir": "dir",
+      "subdir/symlink|": "dir",
+      "subdir/symlink|/absolute": "dir",
+      "subdir/symlink|/absolute/path": "dir"
+    },
+    "zipper": "LZH symlink \"subdir/symlink\" has an unsafe target"
+  },
+  "lhasa-lha_unix114i-h2_symlink2.lzh": {
+    "tree": {
+      "symlink|path": "dir",
+      "symlink|path/to": "dir",
+      "symlink|path/to/target": "dir"
+    },
+    "zipper_tree": {
+      "symlink": "link:path/to/target"
+    }
+  },
+  "lhasa-lha_x68k_213-h1_lh5.lzh": {
+    "tree": {
+      "GPL-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-lharc_atari_313a-h1_lz5.lzh": {
+    "tree": null,
+    "zipper": "LZH method -lz5- is not one Zipper reads"
+  },
+  "lhasa-lhark04d-lh7.lzh": {
+    "tree": null,
+    "zipper": "cannot read the LZH archive: LZH Huffman table is incomplete"
+  },
+  "lhasa-lhmelt_16536-h2_subdir.lzh": {
+    "tree": {
+      "subdir": "dir",
+      "subdir/subdir2": "dir",
+      "subdir/subdir2/hello.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
+    },
+    "zipper": "unsafe archive path: \"/subdir/subdir2/hello.txt\""
+  },
+  "lhasa-maclha_224-l2_lh5.lzh": {
+    "tree": {
+      "gpl-2": "08b05120143644fa5c5d0d9824d0408f2ca57aaec364080a4888542e82ed9528"
+    }
+  },
+  "lhasa-morphos_lha_2717-h2_huge.lzh": {
+    "tree": null,
+    "zipper": "LZH 64-bit sizes are not supported"
+  },
+  "lhasa-regression-dotdot.lzh": {
+    "tree": {
+      "evil1.txt": "9230f33ce6f02b858dcbd0cae37788586df05b082d6606fedabb7cd14dc6d201",
+      "foo": "dir",
+      "foo/evil2.txt": "6c794acffdbab033a7e16c2adbe6786495529d85cc4720e51a8cb0a1bba2b8eb"
+    },
+    "zipper": "unsafe archive path: \"../evil1.txt\""
+  },
+  "lhasa-regression-symlink2.lzh": {
+    "tree": {
+      "etc": "dir",
+      "etc/passwd": "6e7e135302035bf82ff24c1adb44fcd6a59c4467c95322c594ae8d634053bf21",
+      "etc|..": "dir",
+      "etc|../etc": "dir"
+    },
+    "zipper": "LZH symlink \"etc\" points outside the destination"
+  },
+  "lhasa-regression-symlink3.lzh": {
+    "tree": {
+      "etc": "dir",
+      "etc/passwd": "6e7e135302035bf82ff24c1adb44fcd6a59c4467c95322c594ae8d634053bf21",
+      "etc|": "dir",
+      "etc|/tmp": "dir"
+    },
+    "zipper": "LZH symlink \"etc\" has an unsafe target"
+  },
+  "lhasa-regression-truncated.lzh": {
+    "tree": null,
+    "zipper": "truncated LZH entry"
+  },
+  "lhasa-tascal_lha_051h-lh5.lzh": {
+    "tree": {
+      "Mounted Volume": "dir",
+      "Mounted Volume/gpl-2": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    }
+  },
+  "lhasa-unlha32-lh2.lzh": {
+    "tree": null,
+    "zipper": "LZH method -lh2- is not one Zipper reads"
+  }
+}

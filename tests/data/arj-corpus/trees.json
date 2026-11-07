@@ -1,0 +1,42 @@
+{
+  "method-0.arj": {
+    "folder": "dir",
+    "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "folder/sub": "dir",
+    "folder/sub/noise.bin": "18d14f9cb3e6f4ca842e8f9028540d3381026401845f59ab9ffd18cd3283dcca",
+    "folder/text.txt": "363aef570540b149e3e573d180d251e3698feb934420130b7d60f19b42389ae3",
+    "hello.txt": "c650875a73c2e5609fed0ddd329d5615b9d701e496e559f00ffbaa0e0b815529"
+  },
+  "method-1.arj": {
+    "folder": "dir",
+    "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "folder/sub": "dir",
+    "folder/sub/noise.bin": "18d14f9cb3e6f4ca842e8f9028540d3381026401845f59ab9ffd18cd3283dcca",
+    "folder/text.txt": "363aef570540b149e3e573d180d251e3698feb934420130b7d60f19b42389ae3",
+    "hello.txt": "c650875a73c2e5609fed0ddd329d5615b9d701e496e559f00ffbaa0e0b815529"
+  },
+  "method-2.arj": {
+    "folder": "dir",
+    "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "folder/sub": "dir",
+    "folder/sub/noise.bin": "18d14f9cb3e6f4ca842e8f9028540d3381026401845f59ab9ffd18cd3283dcca",
+    "folder/text.txt": "363aef570540b149e3e573d180d251e3698feb934420130b7d60f19b42389ae3",
+    "hello.txt": "c650875a73c2e5609fed0ddd329d5615b9d701e496e559f00ffbaa0e0b815529"
+  },
+  "method-3.arj": {
+    "folder": "dir",
+    "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "folder/sub": "dir",
+    "folder/sub/noise.bin": "18d14f9cb3e6f4ca842e8f9028540d3381026401845f59ab9ffd18cd3283dcca",
+    "folder/text.txt": "363aef570540b149e3e573d180d251e3698feb934420130b7d60f19b42389ae3",
+    "hello.txt": "c650875a73c2e5609fed0ddd329d5615b9d701e496e559f00ffbaa0e0b815529"
+  },
+  "method-4.arj": {
+    "folder": "dir",
+    "folder/empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "folder/sub": "dir",
+    "folder/sub/noise.bin": "18d14f9cb3e6f4ca842e8f9028540d3381026401845f59ab9ffd18cd3283dcca",
+    "folder/text.txt": "363aef570540b149e3e573d180d251e3698feb934420130b7d60f19b42389ae3",
+    "hello.txt": "c650875a73c2e5609fed0ddd329d5615b9d701e496e559f00ffbaa0e0b815529"
+  }
+}
