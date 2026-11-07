@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   test:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
@@ -27,7 +28,8 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           prefix-key: rust-1.96.0
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: gate
+          save-if: false
       - name: Install 7-Zip for the parity archives
         shell: bash
         run: |
@@ -40,3 +42,25 @@ jobs:
         env:
           ZIPPER_PARITY_REQUIRE_7Z: "1"
         run: cargo +1.96.0 xtask gate full
+
+  warm-cache:
+    name: Refresh the build cache for a main that passed the full gate on its ci/ branch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install Rust
+        run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-gnu
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: nextest@0.9.149
+      - name: Restore the Cargo registry and build outputs
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          prefix-key: rust-1.96.0
+          shared-key: gate
+          save-if: true
+      - name: Build what the gate builds, without running it
+        run: cargo +1.96.0 xtask warm-cache

@@ -15,7 +15,7 @@ mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | warm-cache | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -36,6 +36,7 @@ fn main() -> ExitCode {
         ["install-hooks"] => install_hooks(),
         ["ci-wait"] => ci_wait(),
         ["ship"] => ship(),
+        ["warm-cache"] => warm_cache(),
         ["release-checks"] => release_checks(),
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
         ["lint-commits"] => commits::lint_unpushed(&root()),
@@ -246,6 +247,57 @@ fn ensure_system_zlib() -> Result<()> {
 
 type Step = fn() -> Result<()>;
 
+const CLIPPY: &[&str] = &[
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--locked",
+    "--",
+    "-D",
+    "warnings",
+];
+const CI_TESTS: &[&str] = &[
+    "nextest",
+    "run",
+    "--workspace",
+    "--locked",
+    "--cargo-profile",
+    "ci",
+];
+const RELEASE_BUILD: &[&str] = &["build", "--release", "--locked", "--package", "zipper"];
+const COUNTERS_CLIPPY: &[&str] = &[
+    "clippy",
+    "--package",
+    "zipper",
+    "--all-targets",
+    "--features",
+    "counters",
+    "--locked",
+    "--",
+    "-D",
+    "warnings",
+];
+const COUNTERS_TEST: &[&str] = &[
+    "test",
+    "--package",
+    "zipper",
+    "--features",
+    "counters",
+    "--locked",
+    "--test",
+    "counters",
+];
+
+fn warm_cache() -> Result<()> {
+    cargo(CLIPPY)?;
+    windows_clippy()?;
+    ensure_nextest()?;
+    cargo(&[CI_TESTS, &["--no-run"]].concat())?;
+    cargo(RELEASE_BUILD)?;
+    cargo(COUNTERS_CLIPPY)?;
+    cargo(&[COUNTERS_TEST, &["--no-run"]].concat())
+}
+
 fn gate(full: bool) -> Result<()> {
     let mut steps: Vec<(&str, Step)> = vec![
         ("fmt", || cargo(&["fmt", "--all", "--check"])),
@@ -255,59 +307,22 @@ fn gate(full: bool) -> Result<()> {
         ("hooks", hook_tests),
         ("verify", || verify::fail_on_stale_fingerprints(&root())),
         ("parity", || python_script("scripts/parity.py", &["check"])),
-        ("clippy", || {
-            cargo(&[
-                "clippy",
-                "--workspace",
-                "--all-targets",
-                "--locked",
-                "--",
-                "-D",
-                "warnings",
-            ])
-        }),
+        ("clippy", || cargo(CLIPPY)),
         ("test", || {
             ensure_nextest()?;
-            cargo(&[
-                "nextest",
-                "run",
-                "--workspace",
-                "--locked",
-                "--cargo-profile",
-                "ci",
-            ])
+            cargo(CI_TESTS)
         }),
         ("windows clippy", windows_clippy),
         ("release build", || {
-            cargo(&["build", "--release", "--locked", "--package", "zipper"])?;
+            cargo(RELEASE_BUILD)?;
             ensure_system_zlib()
         }),
         ("release round trip", round_trip),
     ];
     if full {
         steps.push(("counters", || {
-            cargo(&[
-                "clippy",
-                "--package",
-                "zipper",
-                "--all-targets",
-                "--features",
-                "counters",
-                "--locked",
-                "--",
-                "-D",
-                "warnings",
-            ])?;
-            cargo(&[
-                "test",
-                "--package",
-                "zipper",
-                "--features",
-                "counters",
-                "--locked",
-                "--test",
-                "counters",
-            ])
+            cargo(COUNTERS_CLIPPY)?;
+            cargo(COUNTERS_TEST)
         }));
         steps.push(("benchmark smoke", benchmark_smoke));
     }
@@ -600,7 +615,7 @@ fn scoreboard(args: &[&str]) -> Result<()> {
 }
 
 fn bench(args: &[&str]) -> Result<()> {
-    cargo(&["build", "--release", "--locked", "--package", "zipper"])?;
+    cargo(RELEASE_BUILD)?;
     cargo(&[
         "build",
         "--release",
