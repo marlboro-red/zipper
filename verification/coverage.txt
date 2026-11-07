@@ -1059,12 +1059,6 @@ item = src/lib.rs | pub(crate) type Field<
 [cab-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 0a6d1a13db654792
-goto-fingerprint = native_cab::proofs::headers_never_panic_and_keep_the_file_records_inside_the_cabinet 456ac031357748bf
-goto-fingerprint = native_cab::proofs::folders_never_panic_and_give_lzx_windows_the_decoder_accepts a746d4f915846d1e
-goto-fingerprint = native_cab::proofs::file_records_never_panic_and_end_inside_33_bits 19d44077265046b7
-goto-fingerprint = native_cab::proofs::data_headers_never_panic_and_fit_the_block_buffers 9140599aacfdb655
-goto-fingerprint = native_cab::proofs::checksums_never_panic_on_any_short_block bbef6b11e4975de6
-goto-fingerprint = native_cab::proofs::dos_fields_never_overflow_and_stay_in_range 4a3edb60fccf48cc
 full-check = cargo xtask kani-reach cab-fields
 full-check = cargo kani --harness native_cab::proofs::
 full-check = cargo test --release --lib native_cab
