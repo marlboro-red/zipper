@@ -1118,7 +1118,7 @@ item = src/quantum.rs | pub(crate) fn decoder_memory(
 
 [lzx]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 240cfa24eb3f36be
+fingerprint = f00bef5a8a14a64a
 full-check = cargo test --release --lib lzx
 full-check = cargo test --release --test cab_corpus
 full-check = cargo test --release --test cab_sets
@@ -1369,6 +1369,7 @@ item = src/udf.rs | mod field_tests {
 item = src/udf.rs | mod proofs {
 
 [wim-fields]
+fingerprint = 556434bd553ed653
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach wim-fields
 full-check = cargo kani --harness native_wim::proofs:: --harness xpress::proofs::
@@ -1576,6 +1577,7 @@ item = src/lib.rs | pub(crate) fn field_check(
 item = src/lib.rs | pub(crate) struct BadField(
 
 [lzms]
+fingerprint = 6a9cce20c53a607b
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo test --release --lib lzms
 full-check = cargo test --release --test wim_corpus
