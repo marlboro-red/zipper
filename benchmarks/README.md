@@ -14,6 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-08 | [LZMA kernel changes from a study of 7-Zip's decoder](lzma/7zip-study-kernel/README.md) | Kept two changes of three. 7z Silesia extracts about 3.5% faster. Holding the loop's state in locals was 19.5% slower and was reverted. 7-Zip is still about 11% faster at one thread. |
 | 2026-11-07 | [LZMA bit trees with both children loaded early](lzma/tree-preload/README.md) | Kept four changes of five. Zipper's decoder takes 350.0 ms on the probe stream against 398.4 ms for liblzma, a ratio of 0.878. It builds only for tests, so no extraction is faster yet. |
 | 2026-11-07 | [Parallel staging cleanup after an overwrite](overwrite/parallel-cleanup/README.md) | Reverted both. Emptying staging on Rayon left `--overwrite` wall time unchanged and raised CPU time by about half. One `lstat` fewer showed no difference. |
 | 2026-11-07 | [Cost of undoing a failed overwrite](overwrite/rollback-cost/README.md) | Kept. The undo journal slows `--overwrite` on dependency sources from 0.710 to 0.851 s, ranges apart. Extraction into a new folder is unchanged. |

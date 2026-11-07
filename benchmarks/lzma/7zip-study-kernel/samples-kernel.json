@@ -1,0 +1,1382 @@
+[
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 454.067791,
+  "liblzma": 506.37075,
+  "busy": [
+   "27.8 /sbin/launchd",
+   "108.6 /usr/libexec/dasd",
+   "28.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 453.2945,
+  "liblzma": 502.940125,
+  "busy": [
+   "27.8 /sbin/launchd",
+   "108.6 /usr/libexec/dasd",
+   "28.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 455.852292,
+  "liblzma": 504.312334,
+  "busy": [
+   "27.8 /sbin/launchd",
+   "108.6 /usr/libexec/dasd",
+   "28.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 455.185458,
+  "liblzma": 508.850458,
+  "busy": [
+   "28.8 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "25.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 447.354083,
+  "liblzma": 503.464,
+  "busy": [
+   "28.8 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "25.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 447.406542,
+  "liblzma": 542.129833,
+  "busy": [
+   "28.8 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "25.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 441.551333,
+  "liblzma": 506.98825,
+  "busy": [
+   "56.3 /usr/libexec/dasd",
+   "26.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+   "45.8 /usr/libexec/searchpartyd",
+   "34.9 /System/Library/CoreServices/talagentd",
+   "67.6 /usr/libexec/duetexpertd",
+   "81.8 /System/Applications/System Settings.app/Contents/MacOS/System Settings"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 442.720166,
+  "liblzma": 509.067458,
+  "busy": [
+   "56.3 /usr/libexec/dasd",
+   "26.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+   "45.8 /usr/libexec/searchpartyd",
+   "34.9 /System/Library/CoreServices/talagentd",
+   "67.6 /usr/libexec/duetexpertd",
+   "81.8 /System/Applications/System Settings.app/Contents/MacOS/System Settings"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 439.331542,
+  "liblzma": 502.906333,
+  "busy": [
+   "56.3 /usr/libexec/dasd",
+   "26.0 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+   "45.8 /usr/libexec/searchpartyd",
+   "34.9 /System/Library/CoreServices/talagentd",
+   "67.6 /usr/libexec/duetexpertd",
+   "81.8 /System/Applications/System Settings.app/Contents/MacOS/System Settings"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 548.769625,
+  "liblzma": 508.066,
+  "busy": [
+   "25.4 /sbin/launchd",
+   "110.0 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 527.256917,
+  "liblzma": 512.737625,
+  "busy": [
+   "25.4 /sbin/launchd",
+   "110.0 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": true,
+  "round": 0,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 526.24525,
+  "liblzma": 504.815709,
+  "busy": [
+   "25.4 /sbin/launchd",
+   "110.0 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 449.133,
+  "liblzma": 507.015584,
+  "busy": [
+   "26.0 /sbin/launchd",
+   "104.8 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 445.696792,
+  "liblzma": 502.959083,
+  "busy": [
+   "26.0 /sbin/launchd",
+   "104.8 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 446.183042,
+  "liblzma": 502.736917,
+  "busy": [
+   "26.0 /sbin/launchd",
+   "104.8 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 441.309166,
+  "liblzma": 508.295458,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.7 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 439.706917,
+  "liblzma": 503.125625,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.7 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 440.01925,
+  "liblzma": 503.045958,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.7 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 529.623375,
+  "liblzma": 509.27,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.5 /usr/libexec/dasd",
+   "27.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 524.508542,
+  "liblzma": 502.707041,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.5 /usr/libexec/dasd",
+   "27.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 525.000625,
+  "liblzma": 502.695667,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.5 /usr/libexec/dasd",
+   "27.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 455.991583,
+  "liblzma": 508.647583,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "109.7 /usr/libexec/dasd",
+   "30.5 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 452.222958,
+  "liblzma": 503.352167,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "109.7 /usr/libexec/dasd",
+   "30.5 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 1,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 452.186875,
+  "liblzma": 502.691125,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "109.7 /usr/libexec/dasd",
+   "30.5 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 442.819625,
+  "liblzma": 510.066875,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "111.4 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 439.305875,
+  "liblzma": 503.184041,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "111.4 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 439.47,
+  "liblzma": 503.120458,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "111.4 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 528.137333,
+  "liblzma": 509.224166,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.8 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 525.973334,
+  "liblzma": 502.936709,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.8 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 525.429459,
+  "liblzma": 502.608041,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "111.8 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 456.749375,
+  "liblzma": 509.062083,
+  "busy": [
+   "26.1 /sbin/launchd",
+   "111.8 /usr/libexec/dasd",
+   "25.0 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 452.500416,
+  "liblzma": 502.803334,
+  "busy": [
+   "26.1 /sbin/launchd",
+   "111.8 /usr/libexec/dasd",
+   "25.0 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 453.167667,
+  "liblzma": 503.059625,
+  "busy": [
+   "26.1 /sbin/launchd",
+   "111.8 /usr/libexec/dasd",
+   "25.0 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 448.734416,
+  "liblzma": 509.165958,
+  "busy": [
+   "25.6 /sbin/launchd",
+   "110.9 /usr/libexec/dasd",
+   "27.9 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 445.885667,
+  "liblzma": 503.211458,
+  "busy": [
+   "25.6 /sbin/launchd",
+   "110.9 /usr/libexec/dasd",
+   "27.9 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 2,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 445.731916,
+  "liblzma": 503.059584,
+  "busy": [
+   "25.6 /sbin/launchd",
+   "110.9 /usr/libexec/dasd",
+   "27.9 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 527.256125,
+  "liblzma": 508.952458,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "112.2 /usr/libexec/dasd",
+   "25.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 526.083791,
+  "liblzma": 503.05425,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "112.2 /usr/libexec/dasd",
+   "25.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 525.87025,
+  "liblzma": 503.451958,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "112.2 /usr/libexec/dasd",
+   "25.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 455.845333,
+  "liblzma": 508.130875,
+  "busy": [
+   "106.4 /usr/libexec/dasd",
+   "30.8 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 452.470875,
+  "liblzma": 503.317583,
+  "busy": [
+   "106.4 /usr/libexec/dasd",
+   "30.8 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 453.284375,
+  "liblzma": 502.949125,
+  "busy": [
+   "106.4 /usr/libexec/dasd",
+   "30.8 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 446.917167,
+  "liblzma": 509.798875,
+  "busy": [
+   "26.2 /sbin/launchd",
+   "110.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 446.695458,
+  "liblzma": 503.270125,
+  "busy": [
+   "26.2 /sbin/launchd",
+   "110.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 445.9935,
+  "liblzma": 503.199625,
+  "busy": [
+   "26.2 /sbin/launchd",
+   "110.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 440.612166,
+  "liblzma": 509.542542,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "109.8 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 439.766625,
+  "liblzma": 502.839792,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "109.8 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 3,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 439.167208,
+  "liblzma": 502.952875,
+  "busy": [
+   "25.8 /sbin/launchd",
+   "109.8 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 453.344708,
+  "liblzma": 508.699708,
+  "busy": [
+   "26.0 /sbin/launchd",
+   "110.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 453.057875,
+  "liblzma": 503.00925,
+  "busy": [
+   "26.0 /sbin/launchd",
+   "110.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 453.33525,
+  "liblzma": 502.985875,
+  "busy": [
+   "26.0 /sbin/launchd",
+   "110.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 446.314459,
+  "liblzma": 507.668792,
+  "busy": [
+   "25.2 /sbin/launchd",
+   "111.1 /usr/libexec/dasd",
+   "25.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 446.512958,
+  "liblzma": 502.805416,
+  "busy": [
+   "25.2 /sbin/launchd",
+   "111.1 /usr/libexec/dasd",
+   "25.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 445.787417,
+  "liblzma": 503.06575,
+  "busy": [
+   "25.2 /sbin/launchd",
+   "111.1 /usr/libexec/dasd",
+   "25.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 440.993875,
+  "liblzma": 509.83,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "110.4 /usr/libexec/dasd",
+   "27.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 440.815833,
+  "liblzma": 503.42,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "110.4 /usr/libexec/dasd",
+   "27.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 440.070542,
+  "liblzma": 503.175167,
+  "busy": [
+   "25.7 /sbin/launchd",
+   "110.4 /usr/libexec/dasd",
+   "27.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 527.1035,
+  "liblzma": 506.462041,
+  "busy": [
+   "27.2 /sbin/launchd",
+   "108.2 /usr/libexec/dasd",
+   "27.2 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 527.297417,
+  "liblzma": 504.283375,
+  "busy": [
+   "27.2 /sbin/launchd",
+   "108.2 /usr/libexec/dasd",
+   "27.2 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 4,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 525.684875,
+  "liblzma": 502.958875,
+  "busy": [
+   "27.2 /sbin/launchd",
+   "108.2 /usr/libexec/dasd",
+   "27.2 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 446.938375,
+  "liblzma": 509.249792,
+  "busy": [
+   "28.7 /sbin/launchd",
+   "108.4 /usr/libexec/dasd",
+   "25.6 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 446.834458,
+  "liblzma": 503.357333,
+  "busy": [
+   "28.7 /sbin/launchd",
+   "108.4 /usr/libexec/dasd",
+   "25.6 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 445.963084,
+  "liblzma": 502.679458,
+  "busy": [
+   "28.7 /sbin/launchd",
+   "108.4 /usr/libexec/dasd",
+   "25.6 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 441.006833,
+  "liblzma": 508.740042,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "108.9 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 441.220708,
+  "liblzma": 503.382667,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "108.9 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 440.120333,
+  "liblzma": 503.007,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "108.9 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 526.895292,
+  "liblzma": 506.342792,
+  "busy": [
+   "28.6 /sbin/launchd",
+   "109.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 526.670583,
+  "liblzma": 503.922334,
+  "busy": [
+   "28.6 /sbin/launchd",
+   "109.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 525.630375,
+  "liblzma": 502.598792,
+  "busy": [
+   "28.6 /sbin/launchd",
+   "109.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 453.598916,
+  "liblzma": 509.441459,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "26.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 454.320291,
+  "liblzma": 502.884208,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "26.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 5,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 453.304166,
+  "liblzma": 502.615125,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "26.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 440.311042,
+  "liblzma": 508.883334,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "109.6 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 440.89875,
+  "liblzma": 503.163792,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "109.6 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 440.363334,
+  "liblzma": 502.947042,
+  "busy": [
+   "28.5 /sbin/launchd",
+   "109.6 /usr/libexec/dasd",
+   "27.3 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 531.261458,
+  "liblzma": 525.278667,
+  "busy": [
+   "28.9 /sbin/launchd",
+   "108.8 /usr/libexec/dasd",
+   "27.2 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 534.755334,
+  "liblzma": 513.427959,
+  "busy": [
+   "28.9 /sbin/launchd",
+   "108.8 /usr/libexec/dasd",
+   "27.2 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 527.331708,
+  "liblzma": 504.225667,
+  "busy": [
+   "28.9 /sbin/launchd",
+   "108.8 /usr/libexec/dasd",
+   "27.2 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 453.10675,
+  "liblzma": 506.406625,
+  "busy": [
+   "33.1 /usr/libexec/duetexpertd",
+   "41.5 /System/Applications/Siri AI.app/Contents/MacOS/Siri AI",
+   "147.2 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+   "110.6 /usr/libexec/spotlightknowledged.updater"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 453.848542,
+  "liblzma": 502.917417,
+  "busy": [
+   "33.1 /usr/libexec/duetexpertd",
+   "41.5 /System/Applications/Siri AI.app/Contents/MacOS/Siri AI",
+   "147.2 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+   "110.6 /usr/libexec/spotlightknowledged.updater"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 453.381042,
+  "liblzma": 506.080292,
+  "busy": [
+   "33.1 /usr/libexec/duetexpertd",
+   "41.5 /System/Applications/Siri AI.app/Contents/MacOS/Siri AI",
+   "147.2 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+   "110.6 /usr/libexec/spotlightknowledged.updater"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 447.012625,
+  "liblzma": 506.533917,
+  "busy": [
+   "28.0 /sbin/launchd",
+   "108.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 446.511667,
+  "liblzma": 502.988834,
+  "busy": [
+   "28.0 /sbin/launchd",
+   "108.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 6,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 446.401792,
+  "liblzma": 505.512791,
+  "busy": [
+   "28.0 /sbin/launchd",
+   "108.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 526.164167,
+  "liblzma": 506.137125,
+  "busy": [
+   "28.3 /sbin/launchd",
+   "109.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 524.658792,
+  "liblzma": 502.888291,
+  "busy": [
+   "28.3 /sbin/launchd",
+   "109.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 525.488208,
+  "liblzma": 505.946666,
+  "busy": [
+   "28.3 /sbin/launchd",
+   "109.3 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 453.563084,
+  "liblzma": 506.265584,
+  "busy": [
+   "28.1 /sbin/launchd",
+   "109.1 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 453.05325,
+  "liblzma": 502.927083,
+  "busy": [
+   "28.1 /sbin/launchd",
+   "109.1 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 453.4085,
+  "liblzma": 507.414125,
+  "busy": [
+   "28.1 /sbin/launchd",
+   "109.1 /usr/libexec/dasd"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 446.691041,
+  "liblzma": 506.4435,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "26.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 446.206042,
+  "liblzma": 502.835833,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "26.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 446.141959,
+  "liblzma": 505.805958,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "109.4 /usr/libexec/dasd",
+   "26.4 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 440.913542,
+  "liblzma": 506.575459,
+  "busy": [
+   "28.2 /sbin/launchd",
+   "109.2 /usr/libexec/dasd",
+   "26.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 440.005208,
+  "liblzma": 503.082833,
+  "busy": [
+   "28.2 /sbin/launchd",
+   "109.2 /usr/libexec/dasd",
+   "26.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 7,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 439.826667,
+  "liblzma": 505.834792,
+  "busy": [
+   "28.2 /sbin/launchd",
+   "109.2 /usr/libexec/dasd",
+   "26.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "9802d0b",
+  "inner": 0,
+  "zipper": 453.020291,
+  "liblzma": 506.469583,
+  "busy": [
+   "28.1 /sbin/launchd",
+   "109.6 /usr/libexec/dasd",
+   "27.0 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "9802d0b",
+  "inner": 1,
+  "zipper": 452.989292,
+  "liblzma": 503.146167,
+  "busy": [
+   "28.1 /sbin/launchd",
+   "109.6 /usr/libexec/dasd",
+   "27.0 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "9802d0b",
+  "inner": 2,
+  "zipper": 453.588667,
+  "liblzma": 505.949417,
+  "busy": [
+   "28.1 /sbin/launchd",
+   "109.6 /usr/libexec/dasd",
+   "27.0 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "f179ddb",
+  "inner": 0,
+  "zipper": 446.651667,
+  "liblzma": 506.927666,
+  "busy": [
+   "28.0 /sbin/launchd",
+   "109.1 /usr/libexec/dasd",
+   "26.5 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "f179ddb",
+  "inner": 1,
+  "zipper": 446.576083,
+  "liblzma": 503.064625,
+  "busy": [
+   "28.0 /sbin/launchd",
+   "109.1 /usr/libexec/dasd",
+   "26.5 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "f179ddb",
+  "inner": 2,
+  "zipper": 446.557708,
+  "liblzma": 505.838916,
+  "busy": [
+   "28.0 /sbin/launchd",
+   "109.1 /usr/libexec/dasd",
+   "26.5 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "2d61052",
+  "inner": 0,
+  "zipper": 440.460375,
+  "liblzma": 506.706209,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "108.8 /usr/libexec/dasd",
+   "25.8 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "2d61052",
+  "inner": 1,
+  "zipper": 439.115917,
+  "liblzma": 503.314459,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "108.8 /usr/libexec/dasd",
+   "25.8 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "2d61052",
+  "inner": 2,
+  "zipper": 439.394333,
+  "liblzma": 506.291125,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "108.8 /usr/libexec/dasd",
+   "25.8 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "2be258a",
+  "inner": 0,
+  "zipper": 526.542625,
+  "liblzma": 506.030417,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "108.6 /usr/libexec/dasd",
+   "27.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "2be258a",
+  "inner": 1,
+  "zipper": 525.382292,
+  "liblzma": 502.748958,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "108.6 /usr/libexec/dasd",
+   "27.1 /usr/libexec/PerfPowerServices"
+  ]
+ },
+ {
+  "warmup": false,
+  "round": 8,
+  "sha": "2be258a",
+  "inner": 2,
+  "zipper": 525.498833,
+  "liblzma": 505.963625,
+  "busy": [
+   "27.9 /sbin/launchd",
+   "108.6 /usr/libexec/dasd",
+   "27.1 /usr/libexec/PerfPowerServices"
+  ]
+ }
+]
