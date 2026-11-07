@@ -14,6 +14,7 @@ pub mod native_cpio;
 pub mod native_rpm;
 pub mod native_stream;
 pub mod native_tar;
+pub mod native_xar;
 pub mod native_zip;
 mod ntfs_streams;
 mod pattern;

@@ -1,0 +1,88 @@
+{
+  "bzip2.xar": {
+    "[TOC].xml": "427836cef8c539c1d01561fd984b00b4c44732be0e49a67ffefac38a0ee006b8",
+    "a.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "empty folder": "dir",
+    "folder": "dir",
+    "folder/deeper": "dir",
+    "folder/deeper/text.txt": "eb9a05b9bcef3c1e00d6c31bbadb00269b347a8bcfeaf0e13a7e7f53c9cc6838",
+    "folder/hard": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "folder/noise.bin": "0259a04d68a6273d2929003db507ce2909737a6b4ed94322b41b06c9cb783329",
+    "folder/run.sh": "299001868fb8c02fd431c336c6d058f5558c5dff5b5af5e6fe04b870a6a9cbba",
+    "link": "link:a.txt",
+    "names": "dir",
+    "names/odd & <name> é.txt": "80a3ef2f5539b0a6b5ee045e2a1de83bfb38550da54aa4d60dc1b9526b4b0805"
+  },
+  "component.pkg": {
+    "Bom": "c4fdf65bb5f121b6a812eca66ca7684f74dfec6bb71909f2b75248e5ae4dc4df",
+    "PackageInfo": "dece2c453dab6211987feea7e71f03c203eabe4049b230384570d711c1be8649",
+    "Payload": "f607bc7b32cfefde58a21b681916b7b39ab1420642641913718fcb3347b42d09",
+    "[TOC].xml": "316239c6d68f0991b64b1e888fff42258230f6d757ebecec601dcc84e3fb64c1"
+  },
+  "gzip-sha256.xar": {
+    "[TOC].xml": "3a619727c30f64fa5f847d3d8af0e66d48bb2758dacdd8413608142c6f80a6fe",
+    "a.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "empty folder": "dir",
+    "folder": "dir",
+    "folder/deeper": "dir",
+    "folder/deeper/text.txt": "eb9a05b9bcef3c1e00d6c31bbadb00269b347a8bcfeaf0e13a7e7f53c9cc6838",
+    "folder/hard": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "folder/noise.bin": "0259a04d68a6273d2929003db507ce2909737a6b4ed94322b41b06c9cb783329",
+    "folder/run.sh": "299001868fb8c02fd431c336c6d058f5558c5dff5b5af5e6fe04b870a6a9cbba",
+    "link": "link:a.txt",
+    "names": "dir",
+    "names/odd & <name> é.txt": "80a3ef2f5539b0a6b5ee045e2a1de83bfb38550da54aa4d60dc1b9526b4b0805"
+  },
+  "gzip.xar": {
+    "[TOC].xml": "f0c1e5db76a35ccb72f759dea95487b7e29104d4cd9b3bb98f52d5c1419d3a96",
+    "a.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "empty folder": "dir",
+    "folder": "dir",
+    "folder/deeper": "dir",
+    "folder/deeper/text.txt": "eb9a05b9bcef3c1e00d6c31bbadb00269b347a8bcfeaf0e13a7e7f53c9cc6838",
+    "folder/hard": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "folder/noise.bin": "0259a04d68a6273d2929003db507ce2909737a6b4ed94322b41b06c9cb783329",
+    "folder/run.sh": "299001868fb8c02fd431c336c6d058f5558c5dff5b5af5e6fe04b870a6a9cbba",
+    "link": "link:a.txt",
+    "names": "dir",
+    "names/odd & <name> é.txt": "80a3ef2f5539b0a6b5ee045e2a1de83bfb38550da54aa4d60dc1b9526b4b0805"
+  },
+  "product.pkg": {
+    "Distribution": "eaba4239896ef7ee330e728d36ef43ef4304242de08425b226cd6f8959d224bc",
+    "[TOC].xml": "4e38bc1d9f212613cd7c4bc5cbb1addaaee8c1b6bcf8ca8f41600584ed189427",
+    "component.pkg": "dir",
+    "component.pkg/Bom": "c4fdf65bb5f121b6a812eca66ca7684f74dfec6bb71909f2b75248e5ae4dc4df",
+    "component.pkg/PackageInfo": "dece2c453dab6211987feea7e71f03c203eabe4049b230384570d711c1be8649",
+    "component.pkg/Payload": "f607bc7b32cfefde58a21b681916b7b39ab1420642641913718fcb3347b42d09",
+    "scripted.pkg": "dir",
+    "scripted.pkg/Bom": "c4fdf65bb5f121b6a812eca66ca7684f74dfec6bb71909f2b75248e5ae4dc4df",
+    "scripted.pkg/PackageInfo": "6171f9ebae6cff28f213413e5ec728e6459df0de0341c413c4762f50874bf778",
+    "scripted.pkg/Payload": "117afacc8e9bc82ce627cf063d665286d215959f0dd0384f956a61f6da9c7746",
+    "scripted.pkg/Scripts": "d8b4543c83ae353373ff2fdebd03bf4acd41343f0e8551775ec857fa4bad3913"
+  },
+  "scripted.pkg": {
+    "Bom": "c4fdf65bb5f121b6a812eca66ca7684f74dfec6bb71909f2b75248e5ae4dc4df",
+    "PackageInfo": "6171f9ebae6cff28f213413e5ec728e6459df0de0341c413c4762f50874bf778",
+    "Payload": "117afacc8e9bc82ce627cf063d665286d215959f0dd0384f956a61f6da9c7746",
+    "Scripts": "d8b4543c83ae353373ff2fdebd03bf4acd41343f0e8551775ec857fa4bad3913",
+    "[TOC].xml": "c0c27d2375cce76b30f8cc7fa0a636d5a12cff8211b57ffa88929271bc9d9767"
+  },
+  "stored-sha512.xar": {
+    "[TOC].xml": "8e192af71898ea345512306766133c6705f5538a0e50c38fff06d369ba8f71b8",
+    "a.txt": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "empty folder": "dir",
+    "folder": "dir",
+    "folder/deeper": "dir",
+    "folder/deeper/text.txt": "eb9a05b9bcef3c1e00d6c31bbadb00269b347a8bcfeaf0e13a7e7f53c9cc6838",
+    "folder/hard": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+    "folder/noise.bin": "0259a04d68a6273d2929003db507ce2909737a6b4ed94322b41b06c9cb783329",
+    "folder/run.sh": "299001868fb8c02fd431c336c6d058f5558c5dff5b5af5e6fe04b870a6a9cbba",
+    "link": "link:a.txt",
+    "names": "dir",
+    "names/odd & <name> é.txt": "80a3ef2f5539b0a6b5ee045e2a1de83bfb38550da54aa4d60dc1b9526b4b0805"
+  }
+}

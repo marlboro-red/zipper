@@ -7,7 +7,7 @@ use zipper::Reader;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar and RPM archives"
+    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM and xar archives"
 )]
 struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers).
@@ -35,7 +35,7 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Native for ZIP, tar, cpio, ar, RPM, single compressed files, unrecognized files and 7z it decodes; 7-Zip for other recognized formats.
+    /// Native for ZIP, tar, cpio, ar, RPM, xar, single compressed files, unrecognized files and 7z it decodes; 7-Zip for other recognized formats.
     Auto,
     /// 7-Zip for every archive.
     Backend,
@@ -954,6 +954,11 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_rpm::ReadOptions::default(),
                     )?),
+                    Reader::Xar => print(zipper::native_xar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_xar::ReadOptions::default(),
+                    )?),
                     Reader::Backend { format } => {
                         let _catching = catch_ending_signals();
                         zipper::compat::run_until_cancelled(
@@ -1026,6 +1031,11 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_rpm::ReadOptions::default(),
+                    )?),
+                    Reader::Xar => report(zipper::native_xar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_xar::ReadOptions::default(),
                     )?),
                     Reader::Backend { format } => {
                         let _catching = catch_ending_signals();

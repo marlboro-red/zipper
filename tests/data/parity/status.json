@@ -149,7 +149,8 @@
       "status": "backend"
     },
     "Xar": {
-      "status": "backend"
+      "note": "xar archives and flat macOS packages, written as `7zz x -txar` and `xar -x` write them. For a component package, `7zz x` instead writes its Payload decompressed as `Payload~`.",
+      "status": "native"
     },
     "Z": {
       "status": "native"

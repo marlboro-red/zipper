@@ -390,6 +390,7 @@ Exit checks:
 Done so far, by 6 November 2026:
 
 - cpio in its binary, odc and newc forms, `ar` in its System V, GNU and BSD forms, and Debian packages read in process, as `docs/reference/cpio-reader.md` and `docs/reference/ar-reader.md` describe. Six adversarial reviews found wrong-inode hard links, memory charges below real use and a second header pass that a rewritten archive could fool, each fixed with a test that failed first.
+- xar archives and flat macOS packages read in process, as the [xar reader reference](reference/xar-reader.md) describes. Real archives from `xar`, `pkgbuild` and `productbuild` extract to the trees `7zz x -txar` and `xar -x` write.
 
 ## M17. Disc and disk images
 

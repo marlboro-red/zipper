@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 55 |
+| `native` | 56 |
 | `partial` | 1 |
-| `backend` | 49 |
+| `backend` | 48 |
 | `missing` | 5 |
 | `dropped` | 2 |
 
@@ -77,7 +77,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `VHD` | `backend` |  | No proof yet. |
 | `VHDX` | `backend` |  | No proof yet. |
 | `VMDK` | `backend` |  | No proof yet. |
-| `Xar` | `backend` |  | `tests/data/parity/archives/xar.xar` |
+| `Xar` | `native` | xar archives and flat macOS packages, written as `7zz x -txar` and `xar -x` write them. For a component package, `7zz x` instead writes its Payload decompressed as `Payload~`. | `tests/data/parity/archives/xar.xar` |
 | `Z` | `native` |  | `tests/data/parity/archives/hello.txt.Z`, `tests/data/parity/archives/tar.tar.Z` |
 | `bzip2` | `native` |  | `tests/data/parity/archives/hello.txt.bz2`, `tests/data/parity/archives/tar.tar.bz2` |
 | `gzip` | `native` |  | `tests/data/parity/archives/hello.txt.gz`, `tests/data/parity/archives/tar.tar.gz` |
