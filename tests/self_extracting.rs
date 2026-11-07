@@ -75,6 +75,25 @@ fn extracted_tree(archive: &Path) -> BTreeMap<String, String> {
     tree(&root.path().join("out"))
 }
 
+#[cfg(unix)]
+fn cpu_time() -> std::time::Duration {
+    let mut now = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: `now` is a valid, writable timespec for the duration of the call.
+    let status = unsafe { libc::clock_gettime(libc::CLOCK_PROCESS_CPUTIME_ID, &mut now) };
+    assert_eq!(status, 0, "clock_gettime failed");
+    std::time::Duration::new(now.tv_sec as u64, now.tv_nsec as u32)
+}
+
+#[cfg(not(unix))]
+fn cpu_time() -> std::time::Duration {
+    use std::sync::OnceLock;
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed()
+}
+
 fn assert_refused(archive: &Path, names: &[&str], label: &str) -> String {
     let (root, result) = extract(archive);
     let error = match result {
@@ -999,12 +1018,12 @@ fn header_bombs_are_refused_quickly() {
     ] {
         for (kind, archive) in [("ZIP", &zip), ("7z", &seven)] {
             let path = written(folder.path(), "bomb.exe", &[&prefix[..], archive].concat());
-            let started = std::time::Instant::now();
+            let started = cpu_time();
             assert_refused(&path, &[named], &format!("{label} before a {kind}"));
-            let elapsed = started.elapsed();
+            let spent = cpu_time() - started;
             assert!(
-                elapsed < std::time::Duration::from_secs(1),
-                "{label} before a {kind} took {elapsed:?}"
+                spent < std::time::Duration::from_secs(1),
+                "{label} before a {kind} took {spent:?} of CPU time"
             );
         }
     }
