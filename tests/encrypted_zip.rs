@@ -2168,6 +2168,8 @@ const PLAINTEXT_BEFORE_THE_SIGNAL: u64 = 8 << 20;
 
 #[cfg(unix)]
 const SIGNALLED_ENTRY: usize = 64 << 20;
+#[cfg(unix)]
+const ZEROS_GZIP_OUTLASTING_THE_SIGNAL: usize = 512 << 20;
 
 #[cfg(unix)]
 fn decrypted_bytes_on_disk(folder: &Path) -> u64 {
@@ -2417,7 +2419,7 @@ fn a_signal_during_a_single_stream_extraction_removes_staging() {
         flate2::Compression::fast(),
     );
     let zeros = vec![0u8; 1 << 20];
-    for _ in 0..SIGNALLED_ENTRY >> 20 {
+    for _ in 0..ZEROS_GZIP_OUTLASTING_THE_SIGNAL >> 20 {
         encoder.write_all(&zeros).unwrap();
     }
     encoder.finish().unwrap();
