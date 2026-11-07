@@ -448,7 +448,16 @@ fn modes_times_and_options_apply() {
     let mut unix = Entry::stored("keep/run", b"#!/bin/sh\n");
     unix.host = arj_writer::HOST_UNIX;
     unix.mode = 0o100755;
-    let bytes = arj_writer::archive(&[read_only, unix, Entry::stored("drop/c.txt", b"c")]);
+    let mut read_only_folder = Entry::directory("keep/locked");
+    read_only_folder.mode = 0x11;
+    let inside = Entry::stored("keep/locked/inside.txt", b"inside");
+    let bytes = arj_writer::archive(&[
+        read_only,
+        unix,
+        read_only_folder,
+        inside,
+        Entry::stored("drop/c.txt", b"c"),
+    ]);
     let (_root, destination, result) = extract_with(&bytes, ReadOptions::default());
     result.unwrap();
     let seconds = fs::metadata(destination.join("drop/c.txt"))
@@ -474,6 +483,15 @@ fn modes_times_and_options_apply() {
         };
         assert_eq!(mode("keep/ro.txt") & 0o222, 0);
         assert_eq!(mode("keep/run") & 0o100, 0o100);
+        assert_eq!(
+            mode("keep/locked") & 0o700,
+            0o700,
+            "a read-only DOS folder stays enterable"
+        );
+        assert_eq!(
+            fs::read(destination.join("keep/locked/inside.txt")).unwrap(),
+            b"inside"
+        );
     }
     let selected = ["keep".to_owned()];
     let (_root, destination, result) = extract_with(
@@ -487,7 +505,7 @@ fn modes_times_and_options_apply() {
     result.unwrap();
     assert_eq!(
         tree(&destination).keys().collect::<Vec<_>>(),
-        ["ro.txt", "run"]
+        ["locked", "locked/inside.txt", "ro.txt", "run"]
     );
     let (_root, destination, result) = extract_with(
         &bytes,

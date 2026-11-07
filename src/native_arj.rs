@@ -130,7 +130,11 @@ fn file_mode(header: &Header) -> u32 {
     };
     match header.host {
         HOST_UNIX => u32::from(header.mode) & 0o777,
-        HOST_MS_DOS | HOST_WINDOWS_95 if header.mode & READ_ONLY != 0 => READ_ONLY_MODE,
+        HOST_MS_DOS | HOST_WINDOWS_95
+            if header.mode & READ_ONLY != 0 && header.kind != Kind::Directory =>
+        {
+            READ_ONLY_MODE
+        }
         _ => default,
     }
 }

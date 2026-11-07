@@ -25,7 +25,7 @@ A name may use `/` or `\` between folders. ARJ for MS-DOS writes `\`, and ARJ wr
 ## Metadata
 
 - A file gets its DOS time, read as local time, in two-second steps. A date or time that is out of range leaves the file's time as it was written. A folder gets its time after all files are written.
-- An entry written on MS-DOS or Windows with the read-only attribute gets mode `0o444`, and every other file `0o644`. An entry written on Unix gets the permission bits of its access mode. A folder gets `0o755` unless a Unix access mode gives another. The umask limits all of them.
+- A file written on MS-DOS or Windows with the read-only attribute gets mode `0o444`, and every other file `0o644`. A folder's read-only attribute is ignored, as Windows ignores it. An entry written on Unix gets the permission bits of its access mode. A folder gets `0o755` unless a Unix access mode gives another. The umask limits all of them.
 
 The reader never restores owners or the hidden, system or archive attributes.
 
@@ -47,7 +47,7 @@ The reader checks every entry before it publishes anything, and it publishes not
 | --- | --- |
 | Entries | at most 1,000,000 |
 | One header | 30 to 2,600 bytes, as ARJ allows |
-| One name | at most 8,192 bytes, though a header holds at most 2,600 |
+| One name | at most 2,600 bytes, as a header holds |
 | All names | at most 64 MiB |
 | One file | 4 GiB less one byte, as the 32-bit size fields allow |
 | Decoder memory | a window of at most 32 KiB, with a 64 KiB input buffer and the tables |

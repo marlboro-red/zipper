@@ -44,7 +44,7 @@ The reader checks every entry before it publishes anything, and it publishes not
 | Limit | Value |
 | --- | --- |
 | Entries | at most 1,000,000 |
-| One name | at most 8,192 bytes, with its folder |
+| One name | at most 4,096 bytes, with its folder, as for tar names |
 | All names | at most 64 MiB, with link targets |
 | Extended headers | at most 256 per entry, each at most 64 KiB |
 | One file | 4 GiB less one byte, as the 32-bit size fields allow |
