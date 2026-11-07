@@ -103,7 +103,7 @@ item = src/lib.rs | fn ensure_link_stays_inside(
 
 [7z-lzma2-segments]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 5daa6ca3b3d591a6
+fingerprint = 44d15ab85943f994
 full-check = python3 scripts/check_model.py verification/7z-lzma2-segments MCSegments.tla:segments.cfg MCSegments.tla:undropped.cfg MCHugeFront.tla:segments.cfg
 item = src/native_7z.rs | const SEGMENT_BUDGET:
 item = src/native_7z.rs | const PARALLEL_FOLDER_MIN:
