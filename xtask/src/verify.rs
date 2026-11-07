@@ -551,7 +551,7 @@ mod tests {
             (
                 "let byte = u32::from(byte);",
                 "let byte = u32::from(byte) % 225;",
-                &["lzma", "lzma-literal"],
+                &["lzma", "lzma-headers", "lzma-literal"],
             ),
             (
                 "(index << 1 | bit as usize) as u32 - (1 << bits)",
