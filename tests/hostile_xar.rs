@@ -807,12 +807,33 @@ fn sevenzip() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+fn major_version(binary: &Path) -> Option<u32> {
+    let banner = Command::new(binary).output().ok()?.stdout;
+    let banner = String::from_utf8_lossy(&banner);
+    let after = banner.split("7-Zip").nth(1)?;
+    let number = after
+        .split_whitespace()
+        .find(|word| word.chars().next().is_some_and(|c| c.is_ascii_digit()))?;
+    number.split('.').next()?.parse().ok()
+}
+
+const FIRST_7ZIP_READING_THESE_XARS: u32 = 26;
+
 #[test]
 fn every_encoding_7zip_reads_extracts_the_tree_7zip_extracts() {
     let Some(binary) = sevenzip() else {
         eprintln!("7-Zip is not installed; skipped");
         return;
     };
+    match major_version(&binary) {
+        Some(major) if major >= FIRST_7ZIP_READING_THESE_XARS => {}
+        found => {
+            eprintln!(
+                "7-Zip {found:?} predates {FIRST_7ZIP_READING_THESE_XARS}, which these xars were checked against; skipped"
+            );
+            return;
+        }
+    }
     for encoding in [Encoding::Stored, Encoding::Zlib, Encoding::Bzip2] {
         for (toc_sum, file_sum) in [
             (Sum::Sha1, Sum::Sha1),
