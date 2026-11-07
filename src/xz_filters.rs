@@ -1,22 +1,13 @@
 use std::io::{self, Read};
 
-#[cfg(test)]
 const FILTER_DELTA: u64 = 0x03;
-#[cfg(test)]
 const FILTER_X86: u64 = 0x04;
-#[cfg(test)]
 const FILTER_POWERPC: u64 = 0x05;
-#[cfg(test)]
 const FILTER_IA64: u64 = 0x06;
-#[cfg(test)]
 const FILTER_ARM: u64 = 0x07;
-#[cfg(test)]
 const FILTER_ARM_THUMB: u64 = 0x08;
-#[cfg(test)]
 const FILTER_SPARC: u64 = 0x09;
-#[cfg(test)]
 const FILTER_ARM64: u64 = 0x0A;
-#[cfg(test)]
 const FILTER_RISCV: u64 = 0x0B;
 pub(crate) const DELTA_HISTORY: usize = 256;
 pub(crate) const BRANCH_BUFFER: usize = 64 * 1024;
@@ -489,7 +480,6 @@ impl Filter {
     }
 }
 
-#[cfg(test)]
 // SPEC(xz-file-format.txt 5.3.2 and 5.3.3): Branch/Call/Jump filters take no properties or a
 // 4-byte little-endian start offset; Delta takes one byte, the distance less one.
 pub(crate) fn xz_filter(id: u64, properties: &[u8]) -> Result<Filter, &'static str> {
