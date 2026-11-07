@@ -325,7 +325,8 @@ Done by 7 November 2026:
 - The decoder takes 0.878 times liblzma's time on the probe stream, as the [tree-preload record](../benchmarks/lzma/tree-preload/README.md) shows.
 - 7z decodes LZMA and LZMA2 with it, and the `lc=8` corpus archive reads natively. Silesia extracts 7 to 9% faster than with liblzma, and 7-Zip is still about 8% faster at one thread, as the [switch record](../benchmarks/native-7z/own-decoder-shipped/README.md) shows. Exit check 4 is not met yet.
 - 7z decodes its branch and Delta filters with `src/xz_filters.rs`, at unchanged speed, as the [filters record](../benchmarks/native-7z/own-filters/README.md) shows. The 7z reader no longer uses liblzma outside tests.
-- liblzma still runs xz and `.lzma` in tar, the ZIP XZ and LZMA methods, lzip and RPM. Those move to Zipper's code next, so that liblzma leaves the release build.
+- tar, the ZIP XZ method and RPM decode xz with Zipper's own reader. Silesia `.tar.xz` extracts 11 to 15% faster than with liblzma, as the [xz record](../benchmarks/xz/own-decoder/README.md) shows.
+- liblzma still runs `.lzma` in tar, the ZIP LZMA method, lzip and RPM's LZMA payloads. Those move to Zipper's code next, so that liblzma leaves the release build.
 
 ## M14. Encrypted archives
 
