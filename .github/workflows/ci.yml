@@ -34,7 +34,13 @@ jobs:
         shell: bash
         run: |
           case "$RUNNER_OS" in
-            Linux) sudo apt-get update && sudo apt-get install -y 7zip ;;
+            Linux)
+              curl -fsSL -o /tmp/7z.tar.xz https://github.com/ip7z/7zip/releases/download/26.05/7z2605-linux-x64.tar.xz
+              echo "22cf82fcc6eb7474f1d5bb4f02c0f8ebd573a718089d6833dc30f8350a3b232e  /tmp/7z.tar.xz" | sha256sum -c -
+              mkdir -p "$HOME/.local/bin"
+              tar -xJf /tmp/7z.tar.xz -C "$HOME/.local/bin" 7zz
+              echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+              "$HOME/.local/bin/7zz" | sed -n 2p ;;
             macOS) command -v 7zz || brew install sevenzip ;;
             Windows) echo 'ZIPPER_7Z=C:/Program Files/7-Zip/7z.exe' >> "$GITHUB_ENV" ;;
           esac
