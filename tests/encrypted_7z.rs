@@ -1182,3 +1182,119 @@ fn write_fixtures() {
     )
     .unwrap();
 }
+
+fn encrypted_solid(
+    built: &Built,
+    files: &[(&str, Vec<u8>)],
+    folder_crc: bool,
+    file_crcs: bool,
+) -> Vec<u8> {
+    let plain: Vec<u8> = files.iter().flat_map(|(_, data)| data.clone()).collect();
+    let (packed, mut streams) = encrypted_folder(built, &plain, None, 0, folder_crc);
+    assert_eq!(
+        streams.pop(),
+        Some(0x00),
+        "streams info ends with its end byte"
+    );
+    streams.extend([0x08, 0x0D]);
+    streams.extend(number(files.len() as u64));
+    streams.push(0x09);
+    for (_, data) in &files[..files.len() - 1] {
+        streams.extend(number(data.len() as u64));
+    }
+    if file_crcs {
+        streams.extend([0x0A, 0x01]);
+        for (_, data) in files {
+            streams.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
+        }
+    }
+    streams.extend([0x00, 0x00]);
+    let mut header = vec![0x01, 0x04];
+    header.extend(streams);
+    header.push(0x05);
+    header.extend(number(files.len() as u64));
+    let mut names = vec![0u8];
+    for (name, _) in files {
+        for unit in name.encode_utf16().chain([0]) {
+            names.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+    header.push(0x11);
+    header.extend(number(names.len() as u64));
+    header.extend(names);
+    header.extend([0x00, 0x00]);
+    let mut start = Vec::new();
+    start.extend_from_slice(&(packed.len() as u64).to_le_bytes());
+    start.extend_from_slice(&(header.len() as u64).to_le_bytes());
+    start.extend_from_slice(&crc32fast::hash(&header).to_le_bytes());
+    let mut archive = b"7z\xBC\xAF\x27\x1C\x00\x04".to_vec();
+    archive.extend_from_slice(&crc32fast::hash(&start).to_le_bytes());
+    archive.extend(start);
+    archive.extend(packed);
+    archive.extend(header);
+    archive
+}
+
+#[test]
+fn a_wrong_password_on_an_encrypted_solid_folder_is_refused_by_whichever_crc_it_declares() {
+    let files = [
+        ("a.txt", noise(1_500_000, 3)),
+        ("b.txt", b"beta".to_vec()),
+        ("c.txt", noise(70_000, 5)),
+    ];
+    let selected = ["c.txt".to_string()];
+    for (folder_crc, file_crcs) in [(true, false), (false, true), (true, true)] {
+        let case = format!("folder CRC {folder_crc}, file CRCs {file_crcs}");
+        let right = encrypted_solid(&built(b""), &files, folder_crc, file_crcs);
+        let work = tempfile::tempdir().unwrap();
+        let file = work.path().join("right.7z");
+        fs::write(&file, &right).unwrap();
+        let output = work.path().join("out");
+        extract(
+            &file,
+            &output,
+            Some(PASSWORD),
+            Existing::Refuse,
+            &[],
+            Some(1),
+        )
+        .unwrap_or_else(|error| panic!("{case}: {error:#}"));
+        for (name, data) in &files {
+            assert!(
+                fs::read(output.join(name)).unwrap() == *data,
+                "{case}: {name}"
+            );
+        }
+        let mut other_key = built(b"");
+        other_key.password = WRONG;
+        let wrong = encrypted_solid(&other_key, &files, folder_crc, file_crcs);
+        let errors = assert_fails_cleanly(&wrong, Some(PASSWORD), &case);
+        assert_all_say(
+            &errors,
+            "the password is wrong or the 7z data is damaged",
+            &case,
+        );
+        let file = work.path().join("wrong.7z");
+        fs::write(&file, &wrong).unwrap();
+        for threads in [Some(1), Some(3)] {
+            let output = work.path().join(format!("selected-{threads:?}"));
+            let error = extract(
+                &file,
+                &output,
+                Some(PASSWORD),
+                Existing::Refuse,
+                &selected,
+                threads,
+            )
+            .expect_err(&format!("{case}: selected path with {threads:?} threads"));
+            assert!(
+                format!("{error:#}").contains("the password is wrong or the 7z data is damaged"),
+                "{case}: {error:#}"
+            );
+            assert!(!output.exists(), "{case}: selected output left");
+        }
+    }
+    let neither = encrypted_solid(&built(b""), &files, false, false);
+    let errors = assert_fails_cleanly(&neither, Some(PASSWORD), "no CRC at all");
+    assert_all_say(&errors, "encrypted without a CRC", "no CRC at all");
+}
