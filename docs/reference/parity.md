@@ -16,9 +16,15 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
+<<<<<<< HEAD
 | `native` | 66 |
 | `partial` | 1 |
 | `backend` | 40 |
+=======
+| `native` | 61 |
+| `partial` | 1 |
+| `backend` | 45 |
+>>>>>>> 0232a61 (M17: read WIM and ESD images in process)
 | `missing` | 3 |
 | `dropped` | 2 |
 
@@ -84,7 +90,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `lzma` | `native` |  | `tests/data/parity/archives/hello.txt.lzma` |
 | `lzma86` | `backend` |  | No proof yet. |
 | `tar` | `native` |  | `tests/data/parity/archives/tar.tar` |
-| `wim` | `backend` |  | `tests/data/parity/archives/wim.wim` |
+| `wim` | `native` | WIM and ESD with stored, XPRESS, LZX and LZMS resources, solid or not. A split WIM goes to 7-Zip, and alternate data streams are refused. | `tests/data/parity/archives/wim.wim`, `every_corpus_wim_extracts_the_tree_7zip_extracts` in `tests/wim_corpus.rs`, `generated_wims_of_every_method_and_chunk_size_extract_byte_for_byte_as_7zip_extracts_them` in `tests/wim_corpus.rs`, `writer_wims_extract_as_7zip_extracts_them_in_every_layout` in `tests/wim_corpus.rs` |
 | `xz` | `native` |  | `tests/data/parity/archives/hello.txt.xz`, `tests/data/parity/archives/tar.tar.xz` |
 | `zip` | `native` |  | `tests/data/parity/archives/zip.zip` |
 | `zstd` | `native` |  | `tests/data/parity/archives/hello.txt.zst`, `tests/data/parity/archives/tar.tar.zst` |
@@ -150,8 +156,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `-si` | `native` | An archive named `-`. | `archives_come_from_standard_input_and_one_file_goes_to_standard_output` in `tests/cli.rs` |
 | `-so` | `native` | `--stdout`, for one selected file. | `archives_come_from_standard_input_and_one_file_goes_to_standard_output` in `tests/cli.rs` |
 | `-snl` | `native` | Links that stay inside the destination are created. Windows needs Developer Mode or administrator rights. | `symlinks_inside_the_destination_are_created_after_files` in `tests/hostile_zip.rs`, `symlinks_must_stay_inside_the_destination` in `tests/hostile_zip.rs` |
-| `-snh` | `partial` | Tar hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs` |
+| `-snh` | `partial` | Tar and WIM hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs`, `hard_links_stay_linked_as_7zip_links_them` in `tests/wim_corpus.rs` |
 | `-sni` | `missing` |  | No proof yet. |
-| `-sns` | `missing` | 7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader in M17 adds them. | No proof yet. |
+| `-sns` | `missing` | 7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader refuses them, because the shared name check refuses `:`. | No proof yet. |
 | `-snz` | `native` | On Windows, every reader copies the archive's mark onto each extracted file. | `extracted_files_carry_the_archives_mark_of_the_web` in `tests/zone.rs` |
 | `-spf` | `dropped` | Absolute paths are refused, because they write outside the destination. | `unsafe_names_never_escape` in `tests/hostile_zip.rs` |

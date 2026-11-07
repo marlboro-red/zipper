@@ -35,6 +35,7 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [ARJ reader reference](docs/reference/arj-reader.md) covers ARJ archives with methods 0 to 4, and how they differ from 7-Zip.
 - [MSI reader reference](docs/reference/msi-reader.md) covers Windows Installer packages and other compound files, and how they differ from 7-Zip.
 - [ISO reader reference](docs/reference/iso-reader.md) covers ISO 9660, Joliet, Rock Ridge, El Torito and UDF disc images, which tree a hybrid disc gives, and how they differ from 7-Zip.
+- [WIM reader reference](docs/reference/wim-reader.md) covers Windows Imaging files and ESD images with XPRESS, LZX and LZMS, and how they differ from 7-Zip.
 - [Single compressed file reference](docs/reference/stream-reader.md) covers gzip, bzip2, xz, zstd and LZMA files that hold no tar.
 - [7-Zip parity](docs/reference/parity.md) lists every format, method and switch 7-Zip extracts with, and how Zipper handles each.
 - [Duplicate-checking reference](docs/reference/duplicates.md) describes the `duplicates` command.

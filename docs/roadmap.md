@@ -423,6 +423,7 @@ Exit checks:
 Done so far, by 8 November 2026:
 
 - ISO 9660 with Joliet, Rock Ridge and El Torito, and UDF 1.02 to 2.60 with metadata partitions, read in process in the tree 7-Zip chooses, as the [ISO reader reference](reference/iso-reader.md) describes. A UDF tree 7-Zip opens wins, then the last Joliet volume, then the primary volume. Every `hdiutil` image in the corpus and every generated disc extract as `7zz x` extracts them, modes included. `xorriso` and `mkisofs` were not installed, so no image from them was compared. The reader keeps one node for each entry and reads one folder at a time, so its memory follows the folders, not the data.
+- WIM and ESD images read in process, with Zipper's own XPRESS and LZMS decoders and the LZX decoder in its WIM mode, as the [WIM reader reference](reference/wim-reader.md) describes. Every corpus WIM from `wimlib-imagex` and 36 generated ones of every method and chunk size extract as `7zz x` extracts them, with hard links and links. A split WIM goes to 7-Zip. Alternate data streams are refused, because the shared name check refuses `:`, and the Windows option that writes them as NTFS streams is not built yet.
 
 ## M18. RAR
 

@@ -1,6 +1,6 @@
 use crate::{
     Control, Existing, compat, native_7z, native_ar, native_arj, native_cab, native_cpio,
-    native_iso, native_lzh, native_msi, native_rpm, native_tar, native_xar, native_zip,
+    native_iso, native_lzh, native_msi, native_rpm, native_tar, native_wim, native_xar, native_zip,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -11,15 +11,17 @@ use std::{io::Read, path::Path};
 pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, compound files such as MSI,
     /// ISO and UDF disc images, single compressed files, unrecognized files,
-    /// CAB files and cabinet sets, LZH, ARJ, and 7z whose methods it decodes. 7-Zip for
-    /// other 7z, an MSI whose main stream is not a CAB, and the other formats
-    /// whose signature Zipper recognizes.
+    /// CAB files and cabinet sets, LZH, ARJ, WIM and ESD images, and 7z whose
+    /// methods it decodes. 7-Zip for other 7z, an MSI whose main stream is not
+    /// a CAB, a split or pre-1.13 WIM, and the other formats whose signature
+    /// Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
-    /// files, disc images, 7z and single compressed files, and native ZIP for unrecognized files.
+    /// files, disc images, WIM, 7z and single compressed files, and native ZIP
+    /// for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -54,6 +56,8 @@ pub enum Reader {
     Msi,
     /// The native reader for ISO 9660 and UDF disc images.
     Iso,
+    /// The native reader for WIM and ESD images.
+    Wim,
     /// The native reader for one gzip, bzip2, xz, zstd or LZMA stream that
     /// holds no tar.
     Stream,
@@ -91,6 +95,10 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             Reader::Backend { format: None }
         }
         _ if native_msi::sniff(archive)? => Reader::Msi,
+        Engine::Auto if native_wim::sniff(archive)? && native_wim::needs_backend(archive)? => {
+            Reader::Backend { format: None }
+        }
+        _ if native_wim::sniff(archive)? => Reader::Wim,
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
             Reader::Backend {
                 format: Some(compat::pinned_format(archive)?.unwrap_or_else(|| "-t7z".to_owned())),
@@ -434,7 +442,8 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         | Reader::Lzh
         | Reader::Arj
         | Reader::Msi
-        | Reader::Iso => {
+        | Reader::Iso
+        | Reader::Wim => {
             let read = match reader {
                 Reader::Cpio => native_cpio::read_archive,
                 Reader::Ar => native_ar::read_archive,
@@ -444,6 +453,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 Reader::Arj => native_arj::read_archive,
                 Reader::Msi => native_msi::read_archive,
                 Reader::Iso => native_iso::read_archive,
+                Reader::Wim => native_wim::read_archive,
                 _ => native_rpm::read_archive,
             };
             read(

@@ -23,6 +23,10 @@ const SLOTS_BELOW_LONGEST_EXTRA: usize = 36;
 const LONGEST_EXTRA: u32 = 17;
 const TRANSLATION_LIMIT: u32 = 1 << 30;
 const TRANSLATION_RESIDUE: usize = 10;
+// SPEC(wimlib lzx_decompress): a WIM chunk always translates E8 calls with this size.
+const WIM_TRANSLATION: u32 = 12_000_000;
+const WIM_DEFAULT_BLOCK: u32 = 32 * 1024;
+const WIM_LONG_BLOCK_BITS: u8 = 16;
 const E8: u8 = 0xE8;
 const DELTA_BASE: u8 = 17;
 const ZERO_RUN: usize = 17;
@@ -380,6 +384,7 @@ pub(crate) fn translate_e8(data: &mut [u8], processed: u32, translation: u32) {
 pub(crate) struct Lzx {
     window: Vec<u8>,
     window_size: usize,
+    wim: bool,
     slots: usize,
     position: usize,
     wrapped: bool,
@@ -414,6 +419,7 @@ impl Lzx {
         let mut lzx = Lzx {
             window: vec![0; 1 << window_bits],
             window_size: 1 << window_bits,
+            wim: false,
             slots: position_slots(window_bits),
             position: 0,
             wrapped: false,
@@ -435,6 +441,14 @@ impl Lzx {
             output: Vec::with_capacity(CHUNK),
         };
         lzx.reset();
+        Ok(lzx)
+    }
+
+    // EXTERNAL(7-Zip LzxDecoder): a WIM chunk is its own LZX stream with a window of the
+    // chunk size, no E8 header and a block size that is 32 KiB when its first bit is set.
+    pub(crate) fn wim(window_bits: u8) -> Field<Self> {
+        let mut lzx = Lzx::new(window_bits, None)?;
+        lzx.wim = true;
         Ok(lzx)
     }
 
@@ -464,12 +478,13 @@ impl Lzx {
     }
 
     pub(crate) fn chunk(&mut self, data: &[u8], size: usize) -> Field<&[u8]> {
+        let largest = if self.wim { self.window_size } else { CHUNK };
         field_check(
-            (1..=CHUNK).contains(&size),
+            (1..=largest).contains(&size),
             "LZX chunk is empty or larger than 32 KiB",
         )?;
         field_check(!data.is_empty(), "LZX chunk has no input")?;
-        if self.reset_interval == Some(self.chunks) {
+        if self.wim || self.reset_interval == Some(self.chunks) {
             self.reset();
         }
         if self.fresh {
@@ -486,7 +501,9 @@ impl Lzx {
         let mut input = Input::new(data, !self.fresh && self.kind == Kind::Uncompressed);
         if self.fresh {
             self.fresh = false;
-            self.translation = if input.bits.read(1) == 1 {
+            self.translation = if self.wim {
+                WIM_TRANSLATION
+            } else if input.bits.read(1) == 1 {
                 (input.bits.read(16) << 16) | input.bits.read(16)
             } else {
                 0
@@ -521,6 +538,10 @@ impl Lzx {
             self.padding = false;
         }
         input.finish()?;
+        field_check(
+            !self.wim || self.remaining == 0,
+            "LZX block in a WIM chunk runs past the end of the chunk",
+        )?;
         self.chunks += 1;
         if self.translation == 0 {
             return Ok(&self.window[start..end]);
@@ -550,8 +571,17 @@ impl Lzx {
             3 => Kind::Uncompressed,
             _ => return Err(BadField("LZX block type is not 1, 2 or 3")),
         };
-        let high = bits.read(16);
-        self.remaining = (high << 8) | bits.read(8);
+        self.remaining = if !self.wim {
+            let high = bits.read(16);
+            (high << 8) | bits.read(8)
+        } else if bits.read(1) == 1 {
+            WIM_DEFAULT_BLOCK
+        } else if self.window_size >= 1 << WIM_LONG_BLOCK_BITS {
+            let high = bits.read(16);
+            (high << 8) | bits.read(8)
+        } else {
+            bits.read(16)
+        };
         self.kind = kind;
         bits.ensure_in_input()?;
         if kind == Kind::Uncompressed {

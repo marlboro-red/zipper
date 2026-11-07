@@ -1,0 +1,5 @@
+Every WIM and ESD file in this folder was written by wimlib-imagex 1.14.5
+on macOS through write_the_corpus in tests/wim_corpus.rs, from trees of
+seeded pseudo-random and repeated data that the test generates. No file
+holds third-party content. trees.json records the tree 7zz 26.05 extracted
+from each one, without the empty name:_ file it writes beside each link.

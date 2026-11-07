@@ -207,7 +207,13 @@
       "status": "native"
     },
     "wim": {
-      "status": "backend"
+      "status": "native",
+      "note": "WIM and ESD with stored, XPRESS, LZX and LZMS resources, solid or not. A split WIM goes to 7-Zip, and alternate data streams are refused.",
+      "tests": [
+        "tests/wim_corpus.rs::every_corpus_wim_extracts_the_tree_7zip_extracts",
+        "tests/wim_corpus.rs::generated_wims_of_every_method_and_chunk_size_extract_byte_for_byte_as_7zip_extracts_them",
+        "tests/wim_corpus.rs::writer_wims_extract_as_7zip_extracts_them_in_every_layout"
+      ]
     },
     "xz": {
       "status": "native"
@@ -433,7 +439,7 @@
     },
     "-sns": {
       "status": "missing",
-      "note": "7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader in M17 adds them."
+      "note": "7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader refuses them, because the shared name check refuses `:`."
     },
     "-snz": {
       "status": "native",
@@ -459,9 +465,10 @@
     },
     "-snh": {
       "status": "partial",
-      "note": "Tar hard links are created. The other native readers meet none.",
+      "note": "Tar and WIM hard links are created. The other native readers meet none.",
       "tests": [
-        "tests/hostile_tar.rs::links_stay_inside_and_never_carry_writes"
+        "tests/hostile_tar.rs::links_stay_inside_and_never_carry_writes",
+        "tests/wim_corpus.rs::hard_links_stay_linked_as_7zip_links_them"
       ]
     },
     "-spf": {

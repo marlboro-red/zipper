@@ -7,7 +7,7 @@ use zipper::Reader;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM, xar, CAB, MSI and ISO archives"
+    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM, xar, CAB, MSI, ISO and WIM archives"
 )]
 struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers).
@@ -35,7 +35,7 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Native for ZIP, tar, cpio, ar, RPM, xar, ISO and UDF images, single compressed files, unrecognized files, and 7z, CAB and MSI it decodes; 7-Zip for other recognized formats.
+    /// Native for ZIP, tar, cpio, ar, RPM, xar, ISO and UDF images, single compressed files, unrecognized files, and 7z, CAB, MSI and WIM it decodes; 7-Zip for other recognized formats.
     Auto,
     /// 7-Zip for every archive.
     Backend,
@@ -986,6 +986,11 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_iso::ReadOptions::default(),
                     )?),
+                    Reader::Wim => print(zipper::native_wim::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_wim::ReadOptions::default(),
+                    )?),
                     Reader::Msi => {
                         let _catching = catch_ending_signals();
                         print(zipper::native_msi::read_archive(
@@ -1100,6 +1105,11 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_iso::ReadOptions::default(),
+                    )?),
+                    Reader::Wim => report(zipper::native_wim::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_wim::ReadOptions::default(),
                     )?),
                     Reader::Msi => {
                         let _catching = catch_ending_signals();
