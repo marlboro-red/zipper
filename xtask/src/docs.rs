@@ -135,6 +135,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "release-checks",
     "lint-commit-msg",
     "lint-commits",
+    "verify",
     "verify-sync",
     "kani-reach",
     "bench",

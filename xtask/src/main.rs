@@ -10,11 +10,12 @@ use std::{
 mod comments;
 mod commits;
 mod docs;
+mod kani;
 mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | lint-commit-msg FILE | lint-commits | verify-sync NAME | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | lint-commit-msg FILE | lint-commits | verify | verify-sync NAME | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -39,7 +40,8 @@ fn main() -> ExitCode {
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
         ["lint-commits"] => commits::lint_unpushed(&root()),
         ["verify-sync", name] => verify::record_checked_fingerprint(&root(), name),
-        ["kani-reach", name] => verify::fail_on_unlisted_kani_reach(&root(), name),
+        ["verify"] => verify::fail_on_stale_fingerprints(&root()),
+        ["kani-reach", name] => kani::fail_on_unlisted_kani_reach(&root(), name),
         ["bench", ref rest @ ..] => bench(rest),
         _ => Err(anyhow::anyhow!(USAGE)),
     };
@@ -154,6 +156,7 @@ fn watch_ci_run(run: &str, head: &str) -> Result<()> {
 
 fn release_checks() -> Result<()> {
     verify::run_every_full_check(&root())?;
+    kani::fail_on_kani_list_mismatch(&root())?;
     gate(true)
 }
 
