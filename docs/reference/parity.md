@@ -16,9 +16,9 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 60 |
+| `native` | 62 |
 | `partial` | 1 |
-| `backend` | 46 |
+| `backend` | 44 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
@@ -49,7 +49,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `HFS` | `backend` |  | `tests/data/parity/archives/hfs.img.stored.xz` |
 | `Hxs` | `backend` |  | No proof yet. |
 | `IHex` | `backend` |  | No proof yet. |
-| `Iso` | `backend` |  | `tests/data/parity/archives/iso.iso.stored.xz` |
+| `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |
 | `LP` | `backend` |  | No proof yet. |
 | `Lzh` | `backend` |  | No proof yet. |
 | `MBR` | `backend` |  | `tests/data/parity/archives/mbr.img.stored.xz` |
@@ -72,7 +72,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `TE` | `backend` |  | No proof yet. |
 | `UEFIc` | `backend` |  | No proof yet. |
 | `UEFIf` | `backend` |  | No proof yet. |
-| `Udf` | `backend` |  | `tests/data/parity/archives/udf.iso.stored.xz` |
+| `Udf` | `native` | UDF 1.02 to 2.60 with metadata partitions read in process. A UDF tree 7-Zip cannot open gives way to ISO 9660, as in 7-Zip. | `tests/data/parity/archives/udf.iso.stored.xz`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs`, `a_udf_tree_7zip_cannot_open_falls_back_to_iso_9660_as_7zip_does` in `tests/iso_corpus.rs` |
 | `VDI` | `backend` |  | No proof yet. |
 | `VHD` | `backend` |  | No proof yet. |
 | `VHDX` | `backend` |  | No proof yet. |

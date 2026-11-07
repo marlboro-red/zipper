@@ -76,7 +76,12 @@
       "status": "backend"
     },
     "Iso": {
-      "status": "backend"
+      "status": "native",
+      "note": "ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses.",
+      "tests": [
+        "tests/iso_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/iso_corpus.rs::generated_discs_extract_exactly_as_7zip_extracts_them"
+      ]
     },
     "LP": {
       "status": "backend"
@@ -146,7 +151,12 @@
       "status": "backend"
     },
     "Udf": {
-      "status": "backend"
+      "status": "native",
+      "note": "UDF 1.02 to 2.60 with metadata partitions read in process. A UDF tree 7-Zip cannot open gives way to ISO 9660, as in 7-Zip.",
+      "tests": [
+        "tests/iso_corpus.rs::generated_discs_extract_exactly_as_7zip_extracts_them",
+        "tests/iso_corpus.rs::a_udf_tree_7zip_cannot_open_falls_back_to_iso_9660_as_7zip_does"
+      ]
     },
     "VDI": {
       "status": "backend"

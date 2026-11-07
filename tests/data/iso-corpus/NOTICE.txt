@@ -1,0 +1,25 @@
+Every image here was written for Zipper's tests by `hdiutil makehybrid` on
+macOS 26, from a folder of small files written for the purpose, and then
+compressed with `xz -9`. No file in them comes from a third party.
+
+The folder holds `hello.txt`, `folder/data.txt`, an empty `folder/empty`,
+5,000 random bytes in `folder/random.bin`, `folder/sub/A Long Name With
+Spaces and lowercase.text`, `café ünïcödé.txt`, and `linked/target.txt`
+with a symlink `linked/near` to it. The images without `link` in their
+name were made from a copy without the symlink.
+
+| Image | Options |
+| --- | --- |
+| hdiutil-iso.iso | -iso |
+| hdiutil-iso-joliet.iso | -iso -joliet |
+| hdiutil-udf.iso | -udf |
+| hdiutil-udf-150.iso | -udf -udf-version 1.50 |
+| hdiutil-iso-udf.iso | -iso -udf |
+| hdiutil-iso-joliet-udf.iso | -iso -joliet -udf |
+| hdiutil-iso-joliet-udf-link.iso | -iso -joliet -udf, with the symlink |
+| hdiutil-iso-joliet-boot.iso | -iso -joliet -eltorito-boot boot.img -no-emul-boot |
+
+`trees.json` holds the tree `7zz x` 26.05 extracted from each image when it
+was written. `ZIPPER_ISO_WRITE_TREES=1 cargo test --test iso_corpus`
+rewrites it from Zipper's own extraction, which the same test compares
+with 7-Zip where it is installed.
