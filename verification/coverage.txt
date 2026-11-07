@@ -117,12 +117,13 @@ item = src/native_7z.rs | fn decode_segment(
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = bc0d00124fc0cc12
+fingerprint = 7764ab4dde79995d
 goto-fingerprint = bcj2::proofs::decoding_any_short_streams_never_panics 487311f4b3bed069
 goto-fingerprint = lz4::proofs::decoding_any_short_block_never_panics_or_passes_its_limit 0eca27e483f9fd34
 goto-fingerprint = native_7z::proofs::number_never_panics_and_fits_its_length 55d9336a04d8debf
-goto-fingerprint = native_7z::proofs::header_readers_never_panic 14b02384483b5ca4
+goto-fingerprint = native_7z::proofs::header_readers_never_panic e7602544eb514780
 goto-fingerprint = native_7z::proofs::chunk_headers_stay_within_lzma2_limits 504e923ca28d83ac
+goto-fingerprint = native_7z::proofs::filter_properties_are_read_as_7zip_reads_them 50f1f49f9f5725cd
 goto-fingerprint = native_7z::proofs::ppmd_properties_read_only_five_bytes 6df9457017ed4fae
 goto-fingerprint = native_ar::proofs::headers_never_panic_and_their_sizes_fit_ten_digits 469842359ee91113
 goto-fingerprint = native_ar::proofs::names_never_panic_and_long_name_lengths_fit_their_field 04e6900601037edd
@@ -425,7 +426,17 @@ item = src/native_7z.rs | impl<R: Read> Read for ByteSwap<R> {
 
 [7z-filters]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = e6851866055b9d37
+fingerprint = 2387c94ce7b5659e
+goto-fingerprint = xz_filters::proofs::x86_converts_a_prefix_and_leaves_the_rest 2bcaa295342793ba
+goto-fingerprint = xz_filters::proofs::powerpc_converts_whole_words_and_leaves_the_rest a8ad505b45e560da
+goto-fingerprint = xz_filters::proofs::ia64_converts_whole_bundles_and_leaves_the_rest 5af1426eac4794dc
+goto-fingerprint = xz_filters::proofs::arm_converts_whole_words_and_leaves_the_rest 2efea912944e8744
+goto-fingerprint = xz_filters::proofs::arm_thumb_converts_a_prefix_and_leaves_the_rest 680028b6850e5fb2
+goto-fingerprint = xz_filters::proofs::sparc_converts_whole_words_and_leaves_the_rest e168e1bf7232c165
+goto-fingerprint = xz_filters::proofs::arm64_converts_whole_words_and_leaves_the_rest 22dc7a8bc5b351dc
+goto-fingerprint = xz_filters::proofs::riscv_converts_a_prefix_and_leaves_the_rest 38e8f6af1790dabf
+goto-fingerprint = xz_filters::proofs::delta_adds_the_byte_its_distance_back_for_every_distance 60e70e208cee46a0
+goto-fingerprint = native_7z::proofs::filter_properties_are_read_as_7zip_reads_them 50f1f49f9f5725cd
 full-check = cargo xtask kani-reach 7z-filters
 full-check = cargo kani --harness xz_filters::proofs::
 full-check = cargo kani --harness native_7z::proofs::filter_properties_
