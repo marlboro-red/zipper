@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, VecDeque},
     fs,
-    io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
+    io::{BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -2586,7 +2586,7 @@ pub fn read_archive(
                                 }
                             })?;
                     counters::add(counters::Counter::FilesCreated, 1);
-                    Some(BufWriter::with_capacity(COPY_BUFFER, file))
+                    Some(file)
                 }
                 _ => None,
             };
@@ -2595,12 +2595,16 @@ pub fn read_archive(
             let mut held = 0u64;
             while remaining > 0 {
                 let want = remaining.min(buffer.len() as u64) as usize;
-                let read = reader.read(&mut buffer[..want])?;
-                if read == 0 {
-                    return Err(damaged(
-                        encrypted,
-                        "7z folder ends before its files do".into(),
-                    ));
+                let mut read = 0;
+                while read < want {
+                    let more = reader.read(&mut buffer[read..want])?;
+                    if more == 0 {
+                        return Err(damaged(
+                            encrypted,
+                            "7z folder ends before its files do".into(),
+                        ));
+                    }
+                    read += more;
                 }
                 let bytes = &buffer[..read];
                 if let Some(crc) = &mut crc {
@@ -2634,12 +2638,10 @@ pub fn read_archive(
                     format!("7z CRC mismatch in {:?}", item.name),
                 ));
             }
-            if let Some(mut output) = output {
-                output.flush()?;
-                let file = output.into_inner().map_err(|error| error.into_error())?;
-                if let Some(time) = item.modified {
-                    crate::set_modified_best_effort(&file, time);
-                }
+            if let Some(file) = output
+                && let Some(time) = item.modified
+            {
+                crate::set_modified_best_effort(&file, time);
             }
             if write.is_some() && item.kind == Kind::Symlink {
                 targets.lock().unwrap().push((index, target));

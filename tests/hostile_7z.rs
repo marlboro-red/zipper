@@ -1647,3 +1647,30 @@ fn the_solid_builder_writes_archives_7zip_reads() {
         }
     }
 }
+
+#[test]
+fn a_folder_that_decodes_short_of_its_files_is_refused() {
+    let data: Vec<u8> = (0..3_000_000u32)
+        .map(|index| (index.wrapping_mul(2_654_435_761) >> 24) as u8)
+        .collect();
+    let (packed, property) = lzma2_segments(std::slice::from_ref(&data));
+    for short in [1i64, 1 << 20, 2_500_000] {
+        let bytes = copy_folder_archive(
+            &[Member {
+                data: Some(packed.clone()),
+                ..file("big", b"")
+            }],
+            HeaderDamage {
+                coder: Some((vec![0x21], vec![property])),
+                unpack_size_delta: data.len() as i64 + short - packed.len() as i64,
+                crc: Some(crc32fast::hash(&data)),
+                ..HeaderDamage::default()
+            },
+        );
+        assert_refused(
+            &format!("{short} bytes short"),
+            &bytes,
+            "7z folder ends before its files do",
+        );
+    }
+}
