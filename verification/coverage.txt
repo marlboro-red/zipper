@@ -117,7 +117,54 @@ item = src/native_7z.rs | fn decode_segment(
 
 [parsers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 7326861c0e89df17
+fingerprint = bc0d00124fc0cc12
+goto-fingerprint = bcj2::proofs::decoding_any_short_streams_never_panics 487311f4b3bed069
+goto-fingerprint = lz4::proofs::decoding_any_short_block_never_panics_or_passes_its_limit 0eca27e483f9fd34
+goto-fingerprint = native_7z::proofs::number_never_panics_and_fits_its_length 55d9336a04d8debf
+goto-fingerprint = native_7z::proofs::header_readers_never_panic 14b02384483b5ca4
+goto-fingerprint = native_7z::proofs::chunk_headers_stay_within_lzma2_limits 504e923ca28d83ac
+goto-fingerprint = native_7z::proofs::ppmd_properties_read_only_five_bytes 6df9457017ed4fae
+goto-fingerprint = native_ar::proofs::headers_never_panic_and_their_sizes_fit_ten_digits 469842359ee91113
+goto-fingerprint = native_ar::proofs::names_never_panic_and_long_name_lengths_fit_their_field 04e6900601037edd
+goto-fingerprint = native_ar::proofs::every_size_reads_back_from_its_decimal_field 70e6e2e8be8fd327
+goto-fingerprint = native_cpio::proofs::hex_and_octal_fields_never_panic_and_read_back_their_values f281cdbd255ae562
+goto-fingerprint = native_cpio::proofs::eleven_octal_digits_read_back_every_value_below_their_limit e0780fcb2f9c2020
+goto-fingerprint = native_cpio::proofs::padding_aligns_every_length_of_every_form 2c1c7267ddd333ea
+goto-fingerprint = native_cpio::proofs::newc_headers_never_panic_and_fit_their_fields a7909c088fbc8e4f
+goto-fingerprint = native_cpio::proofs::odc_headers_never_panic_and_fit_their_fields ff92a2f191747efe
+goto-fingerprint = native_cpio::proofs::binary_headers_never_panic_and_fit_their_fields 64af11a2002676fc
+goto-fingerprint = native_rpm::proofs::leads_never_panic c2656802f36d41b2
+goto-fingerprint = native_rpm::proofs::header_intros_stay_within_the_limits_and_their_length_fits 00e9947b46ac296c
+goto-fingerprint = native_rpm::proofs::every_accepted_index_entry_lies_inside_the_data_store 5029f6000788cbe5
+goto-fingerprint = native_rpm::proofs::tag_text_never_panics_and_stays_inside_its_window 6e16c1e12d0168e9
+goto-fingerprint = native_rpm::proofs::compressor_heads_never_panic 846730ae8989e571
+goto-fingerprint = native_rpm::proofs::signature_padding_aligns_every_store 6c9c09bee682f457
+goto-fingerprint = native_tar::proofs::numeric_fields_never_panic_on_any_bytes a1b8a13f347b5734
+goto-fingerprint = native_tar::proofs::every_value_reads_back_from_its_encoding e0f16c403d66ee4d
+goto-fingerprint = native_tar::proofs::base_256_fields_have_one_spelling 2682b60897a4ed5c
+goto-fingerprint = native_zip::proofs::time_fields_never_panic_on_any_extra_field 229227f9130f51ef
+goto-fingerprint = native_zip::proofs::dos_time_arithmetic_never_overflows 23d6b48501951401
+goto-fingerprint = native_zip::proofs::zip64_fields_never_panic_and_fit_their_field c4d1bac17b55b5c9
+goto-fingerprint = native_zip::proofs::every_descriptor_layout_reads_exactly_its_bytes 30ad259f3181f3be
+goto-fingerprint = native_zip::proofs::lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need eb1bafa58c9e6a89
+goto-fingerprint = native_zip::proofs::ppmd_headers_stay_inside_the_decoders_bounds 5f0fc8bbb4bae8c0
+goto-fingerprint = volumes::proofs::a_layout_exists_exactly_when_its_total_fits 8d29920746817154
+goto-fingerprint = volumes::proofs::every_offset_in_uneven_volumes_maps_to_the_volume_that_holds_it 280fe1be6b16889b
+goto-fingerprint = volumes::proofs::every_offset_maps_to_the_one_volume_and_position_that_hold_it 78579caedab42935
+goto-fingerprint = zip_crypto::proofs::aes_fields_never_panic_and_keep_only_documented_values a4e1bab703ae6aa6
+goto-fingerprint = zip_crypto::proofs::the_payload_and_the_encryption_overhead_add_up_to_the_entry a9ea25c6774dcebc
+goto-fingerprint = zip_crypto::proofs::aes_extras_never_panic_and_find_a_whole_field 1341d02d587b3a79
+goto-fingerprint = zip_crypto::proofs::zip_crypto_key_steps_never_panic 60c8a89f0e432375
+goto-fingerprint = zip_directory::proofs::extra_fields_never_panic_and_keep_every_value_without_a_sentinel 2785d2c7f209a264
+goto-fingerprint = zip_directory::proofs::central_records_never_panic_and_end_inside_the_directory 1b5a506f9cbbe214
+goto-fingerprint = zip_directory::proofs::end_records_and_zip64_records_end_where_their_directory_ends b29d76cdc93e25cf
+goto-fingerprint = zip_directory::proofs::a_zip64_end_replaces_only_the_values_an_end_record_leaves_to_it bc4467cf75825dcd
+goto-fingerprint = zip_directory::proofs::directory_bytes_stay_inside_the_directory_and_the_record 56cca0663742c6f7
+goto-fingerprint = zip_directory::proofs::unicode_names_never_panic_and_rename_only_when_the_checksum_matches a61c1eb3c29c9155
+goto-fingerprint = zip_directory::proofs::unix_modes_never_panic_or_keep_special_bits ff183027631b3f6d
+goto-fingerprint = zip_directory::proofs::the_record_walk_reads_exactly_the_directory_or_refuses dc8670fffbba6278
+goto-fingerprint = zip_directory::proofs::every_short_record_becomes_an_entry_or_a_refusal a2cc82ed9fdbb614
+goto-fingerprint = zip_directory::proofs::the_end_record_is_the_last_signature_and_reaches_the_end 9a16537b006e8490
 full-check = cargo xtask kani-reach parsers
 full-check = cargo kani --harness native_7z::proofs:: --harness native_zip::proofs:: --harness native_tar::proofs:: --harness bcj2::proofs:: --harness lz4::proofs:: --harness zip_directory::proofs:: --harness zip_crypto::proofs:: --harness volumes::proofs:: --harness native_cpio::proofs:: --harness native_ar::proofs:: --harness native_rpm::proofs::
 item = src/native_7z.rs | struct Malformed {
@@ -425,7 +472,17 @@ item = src/lzw.rs | impl<R: BufRead> Read for Unlzw<R> {
 
 [zip-directory]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 7f32137ee9bfb8ee
+fingerprint = cb4e1dee907f1d17
+goto-fingerprint = zip_directory::proofs::extra_fields_never_panic_and_keep_every_value_without_a_sentinel 2785d2c7f209a264
+goto-fingerprint = zip_directory::proofs::central_records_never_panic_and_end_inside_the_directory 1b5a506f9cbbe214
+goto-fingerprint = zip_directory::proofs::end_records_and_zip64_records_end_where_their_directory_ends b29d76cdc93e25cf
+goto-fingerprint = zip_directory::proofs::a_zip64_end_replaces_only_the_values_an_end_record_leaves_to_it bc4467cf75825dcd
+goto-fingerprint = zip_directory::proofs::directory_bytes_stay_inside_the_directory_and_the_record 56cca0663742c6f7
+goto-fingerprint = zip_directory::proofs::unicode_names_never_panic_and_rename_only_when_the_checksum_matches a61c1eb3c29c9155
+goto-fingerprint = zip_directory::proofs::unix_modes_never_panic_or_keep_special_bits ff183027631b3f6d
+goto-fingerprint = zip_directory::proofs::the_record_walk_reads_exactly_the_directory_or_refuses dc8670fffbba6278
+goto-fingerprint = zip_directory::proofs::every_short_record_becomes_an_entry_or_a_refusal a2cc82ed9fdbb614
+goto-fingerprint = zip_directory::proofs::the_end_record_is_the_last_signature_and_reaches_the_end 9a16537b006e8490
 full-check = cargo xtask kani-reach zip-directory
 full-check = cargo kani --harness zip_directory::proofs::
 item = src/zip_directory.rs | fn fixed<
@@ -819,7 +876,11 @@ item = src/lzma.rs |     fn input_limits_keep_every_symbol_inside_the_buffer_and
 
 [zip-crypto]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 00c21bee29774faa
+fingerprint = 0c0da67683517453
+goto-fingerprint = zip_crypto::proofs::aes_fields_never_panic_and_keep_only_documented_values a4e1bab703ae6aa6
+goto-fingerprint = zip_crypto::proofs::the_payload_and_the_encryption_overhead_add_up_to_the_entry a9ea25c6774dcebc
+goto-fingerprint = zip_crypto::proofs::aes_extras_never_panic_and_find_a_whole_field 1341d02d587b3a79
+goto-fingerprint = zip_crypto::proofs::zip_crypto_key_steps_never_panic 60c8a89f0e432375
 full-check = cargo xtask kani-reach zip-crypto
 full-check = cargo kani --harness zip_crypto::proofs::
 full-check = cargo test --release --lib zip_crypto
@@ -869,7 +930,10 @@ item = src/zip_directory.rs | fn extra_fields(
 
 [split-volumes]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0300a8aeafbfdde2
+fingerprint = dea4d51e2a23715a
+goto-fingerprint = volumes::proofs::a_layout_exists_exactly_when_its_total_fits 8d29920746817154
+goto-fingerprint = volumes::proofs::every_offset_in_uneven_volumes_maps_to_the_volume_that_holds_it 280fe1be6b16889b
+goto-fingerprint = volumes::proofs::every_offset_maps_to_the_one_volume_and_position_that_hold_it 78579caedab42935
 full-check = cargo xtask kani-reach split-volumes
 full-check = cargo kani --harness volumes::proofs::
 full-check = cargo test --release --lib volumes
@@ -889,7 +953,13 @@ item = src/volumes.rs | mod proofs {
 
 [cpio-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 7a10f3e7d6f07f5b
+fingerprint = bfc58d27dc7ab6cf
+goto-fingerprint = native_cpio::proofs::hex_and_octal_fields_never_panic_and_read_back_their_values f281cdbd255ae562
+goto-fingerprint = native_cpio::proofs::eleven_octal_digits_read_back_every_value_below_their_limit e0780fcb2f9c2020
+goto-fingerprint = native_cpio::proofs::padding_aligns_every_length_of_every_form 2c1c7267ddd333ea
+goto-fingerprint = native_cpio::proofs::newc_headers_never_panic_and_fit_their_fields a7909c088fbc8e4f
+goto-fingerprint = native_cpio::proofs::odc_headers_never_panic_and_fit_their_fields ff92a2f191747efe
+goto-fingerprint = native_cpio::proofs::binary_headers_never_panic_and_fit_their_fields 64af11a2002676fc
 full-check = cargo xtask kani-reach cpio-fields
 full-check = cargo kani --harness native_cpio::proofs::
 full-check = cargo test --release --lib native_cpio
@@ -915,7 +985,10 @@ item = src/native_cpio.rs | struct Inode {
 
 [ar-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 1709c5f751dd16d5
+fingerprint = 8a7817266bd1fedf
+goto-fingerprint = native_ar::proofs::headers_never_panic_and_their_sizes_fit_ten_digits 469842359ee91113
+goto-fingerprint = native_ar::proofs::names_never_panic_and_long_name_lengths_fit_their_field 04e6900601037edd
+goto-fingerprint = native_ar::proofs::every_size_reads_back_from_its_decimal_field 70e6e2e8be8fd327
 full-check = cargo xtask kani-reach ar-fields
 full-check = cargo kani --harness native_ar::proofs::
 full-check = cargo test --release --lib native_ar
@@ -935,7 +1008,13 @@ item = src/lib.rs | pub(crate) struct BadField(
 
 [rpm-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 7cb31b09e9513850
+fingerprint = 0a883ccf1e6c5c2c
+goto-fingerprint = native_rpm::proofs::leads_never_panic c2656802f36d41b2
+goto-fingerprint = native_rpm::proofs::header_intros_stay_within_the_limits_and_their_length_fits 00e9947b46ac296c
+goto-fingerprint = native_rpm::proofs::every_accepted_index_entry_lies_inside_the_data_store 5029f6000788cbe5
+goto-fingerprint = native_rpm::proofs::tag_text_never_panics_and_stays_inside_its_window 6e16c1e12d0168e9
+goto-fingerprint = native_rpm::proofs::compressor_heads_never_panic 846730ae8989e571
+goto-fingerprint = native_rpm::proofs::signature_padding_aligns_every_store 6c9c09bee682f457
 full-check = cargo xtask kani-reach rpm-fields
 full-check = cargo kani --harness native_rpm::proofs::
 full-check = cargo test --release --lib native_rpm
