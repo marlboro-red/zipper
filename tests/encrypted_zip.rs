@@ -2170,6 +2170,8 @@ const PLAINTEXT_BEFORE_THE_SIGNAL: u64 = 8 << 20;
 const SIGNALLED_ENTRY: usize = 64 << 20;
 #[cfg(unix)]
 const ZEROS_GZIP_OUTLASTING_THE_SIGNAL: usize = 512 << 20;
+#[cfg(unix)]
+const STORED_ZIP_OUTLASTING_7ZIP: usize = 512 << 20;
 
 #[cfg(unix)]
 fn decrypted_bytes_on_disk(folder: &Path) -> u64 {
@@ -2370,7 +2372,7 @@ fn a_signal_during_a_7zip_extraction_stops_the_child_and_removes_staging() {
     }
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("large.zip");
-    large_stored_zip(&archive, SIGNALLED_ENTRY);
+    large_stored_zip(&archive, STORED_ZIP_OUTLASTING_7ZIP);
     let output = work.path().join("out");
     for (signal, number) in [("TERM", 15), ("INT", 2)] {
         let run = signal_once_output_grows(
