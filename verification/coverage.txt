@@ -117,7 +117,9 @@ item = src/native_7z.rs | fn decode_segment(
 
 [7z-header-numbers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 552abd46bb4dd7b4
+goto-fingerprint = native_7z::proofs::number_never_panics_and_fits_its_length 55d9336a04d8debf
+goto-fingerprint = native_7z::proofs::header_readers_never_panic e7602544eb514780
 full-check = cargo xtask kani-reach 7z-header-numbers
 full-check = cargo kani --exact --harness native_7z::proofs::number_never_panics_and_fits_its_length --harness native_7z::proofs::header_readers_never_panic
 item = src/native_7z.rs | struct Malformed {
@@ -131,7 +133,8 @@ item = src/native_7z.rs |     fn header_readers_never_panic(
 
 [7z-lzma2-chunks]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 16c2894db981c643
+goto-fingerprint = native_7z::proofs::chunk_headers_stay_within_lzma2_limits 504e923ca28d83ac
 full-check = cargo xtask kani-reach 7z-lzma2-chunks
 full-check = cargo kani --exact --harness native_7z::proofs::chunk_headers_stay_within_lzma2_limits
 full-check = cargo test --release --lib segment_plans
@@ -143,7 +146,8 @@ item = src/native_7z.rs |     fn chunk_headers_stay_within_lzma2_limits(
 
 [7z-ppmd-properties]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 19fd820a33ea64ad
+goto-fingerprint = native_7z::proofs::ppmd_properties_read_only_five_bytes 6df9457017ed4fae
 full-check = cargo xtask kani-reach 7z-ppmd-properties
 full-check = cargo kani --exact --harness native_7z::proofs::ppmd_properties_read_only_five_bytes
 item = src/native_7z.rs | fn ppmd7_fields(
@@ -151,7 +155,8 @@ item = src/native_7z.rs |     fn ppmd_properties_read_only_five_bytes(
 
 [zip-extra-times]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 967f4909738f546d
+goto-fingerprint = native_zip::proofs::time_fields_never_panic_on_any_extra_field 229227f9130f51ef
 full-check = cargo xtask kani-reach zip-extra-times
 full-check = cargo kani --exact --harness native_zip::proofs::time_fields_never_panic_on_any_extra_field
 item = src/native_zip.rs | fn exact_time(
@@ -168,7 +173,8 @@ item = src/native_zip.rs |     fn time_fields_never_panic_on_any_extra_field(
 
 [zip-dos-times]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = b50b9d1ca0bb3f39
+goto-fingerprint = native_zip::proofs::dos_time_arithmetic_never_overflows 23d6b48501951401
 full-check = cargo xtask kani-reach zip-dos-times
 full-check = cargo kani --exact --harness native_zip::proofs::dos_time_arithmetic_never_overflows
 item = src/native_zip.rs | fn dos_fields(
@@ -178,7 +184,8 @@ item = src/native_zip.rs |     fn dos_time_arithmetic_never_overflows(
 
 [zip64-extra-field]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 9d60367c0b4e2a0f
+goto-fingerprint = native_zip::proofs::zip64_fields_never_panic_and_fit_their_field c4d1bac17b55b5c9
 full-check = cargo xtask kani-reach zip64-extra-field
 full-check = cargo kani --exact --harness native_zip::proofs::zip64_fields_never_panic_and_fit_their_field
 item = src/native_zip.rs | fn single_zip64_field(
@@ -190,7 +197,8 @@ item = src/lib.rs | pub(crate) type Field<
 
 [zip-data-descriptors]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 0187a8c3a14b23fb
+goto-fingerprint = native_zip::proofs::every_descriptor_layout_reads_exactly_its_bytes 30ad259f3181f3be
 full-check = cargo xtask kani-reach zip-data-descriptors
 full-check = cargo kani --exact --harness native_zip::proofs::every_descriptor_layout_reads_exactly_its_bytes
 item = src/native_zip.rs | fn descriptor_layout(
@@ -203,7 +211,8 @@ item = src/lib.rs | pub(crate) type Field<
 
 [zip-lzma-headers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 4d0178aa29783f5d
+goto-fingerprint = native_zip::proofs::lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need eb1bafa58c9e6a89
 full-check = cargo xtask kani-reach zip-lzma-headers
 full-check = cargo kani --exact --harness native_zip::proofs::lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need
 item = src/native_zip.rs | fn lzma_alone_header(
@@ -215,7 +224,8 @@ item = src/lib.rs | pub(crate) type Field<
 
 [zip-ppmd-headers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = b9326cde4bde819b
+goto-fingerprint = native_zip::proofs::ppmd_headers_stay_inside_the_decoders_bounds 5f0fc8bbb4bae8c0
 full-check = cargo xtask kani-reach zip-ppmd-headers
 full-check = cargo kani --exact --harness native_zip::proofs::ppmd_headers_stay_inside_the_decoders_bounds
 item = src/native_zip.rs | fn ppmd8_fields(
@@ -227,7 +237,10 @@ item = src/lib.rs | pub(crate) type Field<
 
 [tar-numbers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 3329b15b33241e1c
+goto-fingerprint = native_tar::proofs::numeric_fields_never_panic_on_any_bytes a1b8a13f347b5734
+goto-fingerprint = native_tar::proofs::every_value_reads_back_from_its_encoding e0f16c403d66ee4d
+goto-fingerprint = native_tar::proofs::base_256_fields_have_one_spelling 2682b60897a4ed5c
 full-check = cargo xtask kani-reach tar-numbers
 full-check = cargo kani --harness native_tar::proofs::
 item = src/native_tar.rs | fn octal(
@@ -240,7 +253,8 @@ item = src/lib.rs | pub(crate) type Field<
 
 [bcj2-decoder]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = b72fa87c2e35bea5
+goto-fingerprint = bcj2::proofs::decoding_any_short_streams_never_panics 487311f4b3bed069
 full-check = cargo xtask kani-reach bcj2-decoder
 full-check = cargo kani --harness bcj2::proofs::
 item = src/bcj2.rs | pub(crate) struct Bcj2<
@@ -261,7 +275,8 @@ item = src/bcj2.rs | mod proofs {
 
 [lz4-blocks]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = unsynced
+fingerprint = 6574afa11bd8e9e3
+goto-fingerprint = lz4::proofs::decoding_any_short_block_never_panics_or_passes_its_limit 0eca27e483f9fd34
 full-check = cargo xtask kani-reach lz4-blocks
 full-check = cargo kani --harness lz4::proofs::
 item = src/lz4.rs | pub(crate) fn decode_block(
@@ -287,7 +302,8 @@ item = src/native_7z.rs | impl<R: Read> Read for ByteSwap<R> {
 
 [7z-filters]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 2387c94ce7b5659e
+fingerprint = d8ea98c198bbcac1
+goto-fingerprint = native_7z::proofs::filter_properties_are_read_as_7zip_reads_them 50f1f49f9f5725cd
 goto-fingerprint = xz_filters::proofs::x86_converts_a_prefix_and_leaves_the_rest 2bcaa295342793ba
 goto-fingerprint = xz_filters::proofs::powerpc_converts_whole_words_and_leaves_the_rest a8ad505b45e560da
 goto-fingerprint = xz_filters::proofs::ia64_converts_whole_bundles_and_leaves_the_rest 5af1426eac4794dc
@@ -297,7 +313,6 @@ goto-fingerprint = xz_filters::proofs::sparc_converts_whole_words_and_leaves_the
 goto-fingerprint = xz_filters::proofs::arm64_converts_whole_words_and_leaves_the_rest 22dc7a8bc5b351dc
 goto-fingerprint = xz_filters::proofs::riscv_converts_a_prefix_and_leaves_the_rest 38e8f6af1790dabf
 goto-fingerprint = xz_filters::proofs::delta_adds_the_byte_its_distance_back_for_every_distance 60e70e208cee46a0
-goto-fingerprint = native_7z::proofs::filter_properties_are_read_as_7zip_reads_them 50f1f49f9f5725cd
 full-check = cargo xtask kani-reach 7z-filters
 full-check = cargo kani --harness xz_filters::proofs:: --harness native_7z::proofs::filter_properties_
 full-check = cargo test --release --lib filter
@@ -562,7 +577,7 @@ item = src/lzma.rs | impl<R: Read> Read for XzReader<R> {
 
 [lzma-bits]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = e9290b6f8e489725
+fingerprint = 6e96b45169c6c90b
 goto-fingerprint = lzma::proofs::both_bit_decoders_agree_and_keep_the_coder_in_range 6695e9152ebec67c
 goto-fingerprint = lzma::proofs::branching_bits_normalized_in_each_arm_match_one_normalization_after_both 3bc7f0739496dbad
 goto-fingerprint = lzma::proofs::direct_bits_fit_their_count_and_keep_the_range_normalized 7e129315a922fe4d
@@ -592,7 +607,7 @@ item = src/lzma.rs |     fn direct_bits_fit_their_count_and_keep_the_range_norma
 
 [lzma-trees]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 8af6c0cd6c4c3c42
+fingerprint = e8f53fbad075f32c
 goto-fingerprint = lzma::proofs::every_bit_tree_size_stays_inside_its_table 11c9fcb2f8de4362
 goto-fingerprint = lzma::proofs::length_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities 666b4db5ec5c12c3
 goto-fingerprint = lzma::proofs::slot_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities 63cf88c13c4be9fa
@@ -631,7 +646,7 @@ item = src/lzma.rs |     fn reverse_trees_decode_as_one_bit_at_a_time_reading_no
 
 [lzma-lengths]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 2c8def54cc40f871
+fingerprint = eb7ad56dc7f51bfe
 goto-fingerprint = lzma::proofs::lengths_stay_below_the_longest_match_at_every_position_state 41e4c30998a6b4d1
 full-check = cargo xtask kani-reach lzma-lengths
 full-check = cargo kani --tests --exact --harness lzma::proofs::lengths_stay_below_the_longest_match_at_every_position_state
@@ -658,7 +673,7 @@ item = src/lzma.rs |     fn lengths_stay_below_the_longest_match_at_every_positi
 
 [lzma-literal]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = e5acb540c8fe7965
+fingerprint = db1aa65e89757e03
 goto-fingerprint = lzma::proofs::literal_contexts_stay_inside_the_literal_table_for_every_property_byte 7aa1160dcc64eebc
 goto-fingerprint = lzma::proofs::plain_literals_stay_inside_the_first_quarter_of_their_coder bfe1a149237d3ebe
 goto-fingerprint = lzma::proofs::plain_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities 6ed940842cc9c398
@@ -699,7 +714,7 @@ item = src/lzma.rs |     fn plain_literals_decode_as_one_bit_at_a_time_with_any_
 
 [lzma-matched-literal]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 8f64d78c6c2d44dc
+fingerprint = 092cf1be2a17c738
 goto-fingerprint = lzma::proofs::matched_literals_stay_inside_their_coder_for_every_match_byte 8d164564665d4138
 goto-fingerprint = lzma::proofs::matched_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities a1675c48104fbe9e
 goto-fingerprint = lzma::proofs::matched_literal_children_stay_in_their_coder_apart_from_the_entry_they_follow 43c4fdf8e12d7649
@@ -729,7 +744,7 @@ item = src/lzma.rs |     fn matched_literal_children_stay_in_their_coder_apart_f
 
 [lzma-distances]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 7814041e137ad245
+fingerprint = e0198e2a6b2bce47
 goto-fingerprint = lzma::proofs::short_distances_stay_inside_the_special_probabilities af15173e6b802721
 goto-fingerprint = lzma::proofs::long_distances_fit_32_bits 9c0bda8efd2de37b
 full-check = cargo xtask kani-reach lzma-distances
@@ -770,7 +785,7 @@ item = src/lzma.rs |     fn long_distances_fit_32_bits(
 
 [lzma-input]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = bcef1d4e126cb716
+fingerprint = 575760e0f7550192
 goto-fingerprint = lzma::proofs::input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk cca1b35c0110e2b4
 full-check = cargo xtask kani-reach lzma-input
 full-check = cargo kani --tests --exact --harness lzma::proofs::input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk
