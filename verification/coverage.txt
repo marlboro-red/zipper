@@ -36,7 +36,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 719a6adb44700e5d
+fingerprint = c6c9e38ed6b15111
 full-check = python3 scripts/check_model.py verification/7z-folder-workers MCWorkers.tla:workers.cfg
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
@@ -148,6 +148,37 @@ full-check = cargo xtask kani-reach 7z-ppmd-properties
 full-check = cargo kani --exact --harness native_7z::proofs::ppmd_properties_read_only_five_bytes
 item = src/native_7z.rs | fn ppmd7_fields(
 item = src/native_7z.rs |     fn ppmd_properties_read_only_five_bytes(
+
+[7z-aes-properties]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 7dbbe2788278d673
+full-check = cargo xtask kani-reach 7z-aes-properties
+full-check = cargo kani --harness sevenz_crypto::proofs::
+full-check = cargo test --release --lib sevenz_crypto
+full-check = cargo test --release --test encrypted_7z
+item = src/sevenz_crypto.rs | pub(crate) fn properties(
+item = src/sevenz_crypto.rs | pub(crate) struct Properties {
+item = src/sevenz_crypto.rs | impl Properties {
+item = src/sevenz_crypto.rs | pub(crate) enum BadProperties {
+item = src/sevenz_crypto.rs | const LONGEST_SALT:
+item = src/sevenz_crypto.rs | const IV_BYTES:
+item = src/sevenz_crypto.rs | pub(crate) const MOST_CYCLES_POWER:
+item = src/sevenz_crypto.rs | const UNHASHED_KEY:
+item = src/sevenz_crypto.rs | const IV_EXTRA:
+item = src/sevenz_crypto.rs | const POWER_MASK:
+item = src/sevenz_crypto.rs | const SALT_EXTRA:
+item = src/sevenz_crypto.rs | fn stream_size(
+item = src/sevenz_crypto.rs | mod proofs {
+item = src/sevenz_crypto.rs | fn derive_key(
+item = src/sevenz_crypto.rs | impl Keys {
+item = src/sevenz_crypto.rs | impl<R: Read> CbcReader<R> {
+item = src/sevenz_crypto.rs | impl<R: Read> Read for CbcReader<R> {
+item = src/native_7z.rs | fn split_encryption(
+item = src/native_7z.rs | fn aes_properties(
+item = src/native_7z.rs | fn unlock(
+item = src/native_7z.rs | fn check_encryption(
+item = src/native_7z.rs | fn packed_stream(
+item = src/native_7z.rs | fn decode_header(
 
 [zip-extra-times]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md

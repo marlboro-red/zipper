@@ -20,6 +20,7 @@ mod ntfs_streams;
 mod pattern;
 mod placement;
 mod progress;
+mod sevenz_crypto;
 mod staging;
 mod volumes;
 mod xz_filters;

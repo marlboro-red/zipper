@@ -1,0 +1,234 @@
+{
+  "arm64.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "bcj-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "bcj2-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "bcj2-nonsolid.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "bzip2.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "copy-nonsolid.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "copy-uncompressed-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "deflate.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "deflate64-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "delta-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "empty-password-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "large-copy-header.7z": {
+    "large.bin": "00859a86c90dc6bac9e5ad1b400664af64fe1c06a93331df943684da34911696"
+  },
+  "large-lzma2.7z": {
+    "large.bin": "00859a86c90dc6bac9e5ad1b400664af64fe1c06a93331df943684da34911696"
+  },
+  "lzma-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "lzma2-mx1-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "lzma2-mx5.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "lzma2-mx9-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "lzma2-nonsolid-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "lzma2-solid-per-2-files-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "ppmd-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "ppmd.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "swap4.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "tiny-header.7z": {
+    "secret.txt": "4e8803396cacc79c25865cf06f9572380e0e081332332905c74a5a63e43d30eb"
+  },
+  "tiny.7z": {
+    "secret.txt": "4e8803396cacc79c25865cf06f9572380e0e081332332905c74a5a63e43d30eb"
+  },
+  "unicode-password-header.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  },
+  "unicode-password.7z": {
+    "a.txt": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+    "empty": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "link": "link:a.txt",
+    "sub": "dir",
+    "sub/random.bin": "b96b84bbd21174e415a2eb04c50d36325db611f3e52121abb44695e9e7f5086d",
+    "sub/text.txt": "69d3d96cd89274ffdb556769c9e765b68dba1147a03522601695ab671fa60864",
+    "ünï": "dir",
+    "ünï/日本.txt": "a28b76d748930ad704bfea0d41ddadf0d0a75e229ec5e4f5b643e2ca63fb25e2"
+  }
+}

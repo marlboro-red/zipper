@@ -35,7 +35,7 @@ fn native_reader_matches_the_reference_readers() {
 }
 
 #[test]
-fn unsupported_methods_are_refused_by_name_and_routed_to_7zip() {
+fn refused_archives_fail_by_name_and_only_encrypted_ones_stay_in_process() {
     let refused = std::fs::read_to_string(corpus().join("refused.tsv")).unwrap();
     assert!(refused.lines().count() >= 1);
     for line in refused.lines() {
@@ -48,10 +48,24 @@ fn unsupported_methods_are_refused_by_name_and_routed_to_7zip() {
             .to_string();
         assert!(failure.contains(error), "{name}: {failure}");
         assert_eq!(std::fs::read_dir(work.path()).unwrap().count(), 0, "{name}");
-        assert!(matches!(
-            zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
-            zipper::Reader::Backend { format: Some(_) }
-        ));
+        let reader = zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap();
+        if error == "encrypted" {
+            assert!(matches!(reader, zipper::Reader::SevenZip), "{name}");
+            read_archive(
+                &archive,
+                Some(&destination),
+                ReadOptions {
+                    password: Some(b"zipper"),
+                    ..ReadOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        } else {
+            assert!(
+                matches!(reader, zipper::Reader::Backend { format: Some(_) }),
+                "{name}"
+            );
+        }
     }
 }
 

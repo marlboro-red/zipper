@@ -131,10 +131,12 @@ pub struct ExtractOptions<'a> {
     /// first, and the rename modes number the others `name_1.ext` and on.
     /// An archive with links is refused.
     pub flat: bool,
-    /// Password for ZipCrypto and WinZip AES entries in a ZIP read in
-    /// process. A selected encrypted entry without it fails with
-    /// [`crate::native_zip::PasswordNeeded`]. The tar, 7z and single-file
-    /// readers and the 7-Zip backend refuse it.
+    /// Password for ZipCrypto and WinZip AES entries in a ZIP, and for 7z
+    /// AES-256, read in process. A selected encrypted entry without it fails
+    /// with [`crate::native_zip::PasswordNeeded`] or
+    /// [`crate::native_7z::PasswordNeeded`], as does a 7z whose header is
+    /// encrypted. The tar and single-file readers and the 7-Zip backend
+    /// refuse it.
     pub password: Option<&'a [u8]>,
 }
 
@@ -325,8 +327,12 @@ pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Resu
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     let reader = choose_reader(options.engine, archive)?;
     ensure!(
-        options.password.is_none() || matches!(reader, Reader::Zip { .. } | Reader::Backend { .. }),
-        "--password applies only to ZIP archives, and Zipper does not decrypt {}",
+        options.password.is_none()
+            || matches!(
+                reader,
+                Reader::Zip { .. } | Reader::SevenZip | Reader::Backend { .. }
+            ),
+        "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
         archive.display()
     );
     match reader {
@@ -364,6 +370,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                     strip: options.strip,
                     metadata: options.metadata,
                     control: options.control,
+                    password: options.password,
                 },
             )?;
         }
@@ -384,7 +391,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
             )?;
         }
         Reader::Backend { .. } if options.password.is_some() => {
-            bail!("--password needs a ZIP archive read in process")
+            bail!("--password needs a ZIP or 7z archive read in process")
         }
         Reader::Backend { .. }
             if !(options.paths.is_empty()

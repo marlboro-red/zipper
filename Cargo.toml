@@ -23,7 +23,7 @@ ppmd-rust = "1.5.2"
 quick-xml = "0.42.0"
 rayon = "1.12.0"
 sha1 = { version = "0.11.0", default-features = false, features = ["zeroize"] }
-sha2 = { version = "0.11.1", default-features = false }
+sha2 = { version = "0.11.1", default-features = false, features = ["zeroize"] }
 tempfile = "3.27.0"
 walkdir = "2.5.0"
 zeroize = "1.9.1"

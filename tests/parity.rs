@@ -185,7 +185,7 @@ fn every_parity_archive_extracts_as_its_row_says() {
                     Some("native"),
                     corpus["password"]
                         .as_str()
-                        .filter(|_| name.ends_with(".zip")),
+                        .filter(|_| name.ends_with(".zip") || name.ends_with(".7z")),
                     &archive,
                     &output,
                 );

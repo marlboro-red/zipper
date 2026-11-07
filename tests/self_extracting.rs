@@ -815,8 +815,26 @@ fn a_self_extracting_zip_that_stores_a_7z_reads_as_the_zip() {
 }
 
 #[cfg(unix)]
+fn with_an_unknown_method(archive: &[u8]) -> Vec<u8> {
+    let mut patched = archive.to_vec();
+    let header_start = 32 + u64::from_le_bytes(patched[12..20].try_into().unwrap()) as usize;
+    let coder = header_start
+        + patched[header_start..]
+            .windows(4)
+            .position(|window| window == [0x01, 0x21, 0x21, 0x01])
+            .unwrap();
+    patched[coder + 2] = 0x7F;
+    let header_crc = crc32fast::hash(&patched[header_start..]);
+    patched[28..32].copy_from_slice(&header_crc.to_le_bytes());
+    let start_crc = crc32fast::hash(&patched[12..32]);
+    patched[8..12].copy_from_slice(&start_crc.to_le_bytes());
+    patched
+}
+
+#[cfg(unix)]
 #[test]
-fn an_encrypted_7z_after_a_stub_reaches_7zip_pinned_as_7z_and_only_after_its_stub_passes() {
+fn a_7z_zipper_does_not_decode_after_a_stub_reaches_7zip_pinned_as_7z_and_only_after_its_stub_passes()
+ {
     use std::os::unix::fs::PermissionsExt;
     let folder = tempfile::tempdir().unwrap();
     let backend = folder.path().join("backend");
@@ -826,10 +844,11 @@ fn an_encrypted_7z_after_a_stub_reaches_7zip_pinned_as_7z_and_only_after_its_stu
     )
     .unwrap();
     fs::set_permissions(&backend, fs::Permissions::from_mode(0o700)).unwrap();
-    let encrypted = fs::read(data("parity/archives/7z-7zaes.7z")).unwrap();
+    let undecoded =
+        with_an_unknown_method(&fs::read(data("7z-corpus/7zip-plain-header-short.7z")).unwrap());
     let cab = [&stub(1000)[..], b"MSCF\0\0\0\0", &noise(600)[2..]].concat();
     for (name, prefix, reaches) in [("clean.exe", stub(1000), true), ("cab.exe", cab, false)] {
-        let path = written(folder.path(), name, &[&prefix[..], &encrypted].concat());
+        let path = written(folder.path(), name, &[&prefix[..], &undecoded].concat());
         let log = folder.path().join("backend.log");
         let _ = fs::remove_file(&log);
         let output = Command::new(env!("CARGO_BIN_EXE_zipper"))

@@ -246,12 +246,14 @@
       "status": "native"
     },
     "7zAES": {
-      "status": "missing",
-      "note": "Zipper has no password option, so 7-Zip cannot decrypt it either."
+      "status": "native",
+      "tests": [
+        "tests/encrypted_7z.rs::every_fixture_extracts_to_the_tree_7zip_gave_in_process"
+      ]
     },
     "AES256CBC": {
       "status": "missing",
-      "note": "Zipper has no password option, so 7-Zip cannot decrypt it either."
+      "note": "7-Zip lists it as a codec but writes 7zAES into 7z archives, so no archive uses it."
     }
   },
   "zip methods": {
@@ -359,7 +361,12 @@
       ]
     },
     "-p": {
-      "status": "missing"
+      "status": "native",
+      "note": "`--password`, or the prompt on Unix, for ZIP and 7z.",
+      "tests": [
+        "tests/encrypted_7z.rs::the_command_line_decrypts_lists_and_tests_with_a_password",
+        "tests/encrypted_zip.rs::the_command_line_takes_a_password_and_refuses_to_ask_without_a_terminal"
+      ]
     },
     "-si": {
       "status": "native",

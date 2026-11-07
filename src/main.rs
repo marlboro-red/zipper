@@ -20,9 +20,9 @@ struct Cli {
     /// Metadata, worker state and verification archive cache are additional.
     #[arg(long, global = true, value_parser = clap::value_parser!(u32).range(0..=4096))]
     zip_buffer_mib: Option<u32>,
-    /// Password for encrypted ZIP entries in extract and test. Other users can see it in the process list.
-    /// Without it, Zipper asks on Unix when a selected entry is encrypted and standard
-    /// input is a terminal, and fails otherwise.
+    /// Password for encrypted ZIP entries and 7z archives in extract and test, and for a 7z header in list.
+    /// Other users can see it in the process list. Without it, Zipper asks on Unix when a selected
+    /// entry or a 7z header is encrypted and standard input is a terminal, and fails otherwise.
     #[arg(
         long,
         global = true,
@@ -147,7 +147,13 @@ fn with_password<T>(
     mut run: impl FnMut(Option<&[u8]>) -> Result<T>,
 ) -> Result<T> {
     let needed = match run(given) {
-        Err(error) if given.is_none() && error.is::<zipper::native_zip::PasswordNeeded>() => error,
+        Err(error)
+            if given.is_none()
+                && (error.is::<zipper::native_zip::PasswordNeeded>()
+                    || error.is::<zipper::native_7z::PasswordNeeded>()) =>
+        {
+            error
+        }
         other => return other,
     };
     anyhow::ensure!(
@@ -911,10 +917,6 @@ fn run() -> Result<()> {
             catching.keep_until_exit();
         }
         Command::List { archive } => {
-            anyhow::ensure!(
-                password.is_none(),
-                "list reads no encrypted data, so it takes no --password"
-            );
             let print = |entries: Vec<zipper::Entry>| {
                 for e in entries {
                     println!(
@@ -927,8 +929,13 @@ fn run() -> Result<()> {
             };
             zipper::read_volumes(&archive, || {
                 match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
+                    Reader::SevenZip => print(with_password(password, |password| {
+                        zipper::native_7z::list_with_password(&archive, password)
+                    })?),
+                    _ if password.is_some() => anyhow::bail!(
+                        "list reads no encrypted data outside a 7z header, so it takes no --password"
+                    ),
                     Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
-                    Reader::SevenZip => print(zipper::native_7z::list(&archive)?),
                     Reader::Tar => print(zipper::native_tar::read_archive(
                         &archive,
                         None,
@@ -980,8 +987,8 @@ fn run() -> Result<()> {
             zipper::read_volumes(&archive, || {
                 let reader = zipper::choose_reader(cli.zip_engine.into(), &archive)?;
                 anyhow::ensure!(
-                    password.is_none() || matches!(reader, Reader::Zip { .. }),
-                    "--password applies only to ZIP archives, and Zipper does not decrypt {}",
+                    password.is_none() || matches!(reader, Reader::Zip { .. } | Reader::SevenZip),
+                    "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
                     archive.display()
                 );
                 match reader {
@@ -999,14 +1006,17 @@ fn run() -> Result<()> {
                             },
                         )
                     })?),
-                    Reader::SevenZip => report(zipper::native_7z::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_7z::ReadOptions {
-                            threads: cli.threads,
-                            ..Default::default()
-                        },
-                    )?),
+                    Reader::SevenZip => report(with_password(password, |password| {
+                        zipper::native_7z::read_archive(
+                            &archive,
+                            None,
+                            zipper::native_7z::ReadOptions {
+                                threads: cli.threads,
+                                password,
+                                ..Default::default()
+                            },
+                        )
+                    })?),
                     Reader::Tar => report(zipper::native_tar::read_archive(
                         &archive,
                         None,

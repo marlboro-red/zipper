@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 56 |
+| `native` | 58 |
 | `partial` | 1 |
 | `backend` | 48 |
-| `missing` | 5 |
+| `missing` | 3 |
 | `dropped` | 2 |
 
-43 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+42 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -113,8 +113,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `LZMA2` | `native` |  | `tests/data/parity/archives/7z-lzma2.7z` |
 | `LZMA` | `native` |  | `tests/data/parity/archives/7z-lzma.7z` |
 | `PPMD` | `native` |  | `tests/data/parity/archives/7z-ppmd.7z` |
-| `7zAES` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | `tests/data/parity/archives/7z-7zaes.7z` |
-| `AES256CBC` | `missing` | Zipper has no password option, so 7-Zip cannot decrypt it either. | No proof yet. |
+| `7zAES` | `native` |  | `tests/data/parity/archives/7z-7zaes.7z`, `every_fixture_extracts_to_the_tree_7zip_gave_in_process` in `tests/encrypted_7z.rs` |
+| `AES256CBC` | `missing` | 7-Zip lists it as a codec but writes 7zAES into 7z archives, so no archive uses it. | No proof yet. |
 
 ## ZIP methods
 
@@ -146,7 +146,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `-aou` | `native` | `--existing rename-new`. | `skip_and_rename_modes_match_their_contracts_on_every_small_tree_pair` in `tests/overwrite_exhaustive.rs` |
 | `-i` | `native` | `--include` and `--path`, for ZIP, tar and 7z. | `include_and_exclude_patterns_select_the_same_files_in_every_format` in `tests/selection.rs` |
 | `-x` | `native` | `--exclude`, for ZIP, tar and 7z. | `include_and_exclude_patterns_select_the_same_files_in_every_format` in `tests/selection.rs` |
-| `-p` | `missing` |  | No proof yet. |
+| `-p` | `native` | `--password`, or the prompt on Unix, for ZIP and 7z. | `the_command_line_decrypts_lists_and_tests_with_a_password` in `tests/encrypted_7z.rs`, `the_command_line_takes_a_password_and_refuses_to_ask_without_a_terminal` in `tests/encrypted_zip.rs` |
 | `-si` | `native` | An archive named `-`. | `archives_come_from_standard_input_and_one_file_goes_to_standard_output` in `tests/cli.rs` |
 | `-so` | `native` | `--stdout`, for one selected file. | `archives_come_from_standard_input_and_one_file_goes_to_standard_output` in `tests/cli.rs` |
 | `-snl` | `native` | Links that stay inside the destination are created. Windows needs Developer Mode or administrator rights. | `symlinks_inside_the_destination_are_created_after_files` in `tests/hostile_zip.rs`, `symlinks_must_stay_inside_the_destination` in `tests/hostile_zip.rs` |

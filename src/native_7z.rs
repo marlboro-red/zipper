@@ -1,6 +1,7 @@
 //! In-process extraction of 7z archives whose folders use Copy, LZMA, LZMA2,
 //! Deflate and the 7-Zip branch and delta filters. See
 //! `docs/reference/7z-reader.md` for what it accepts and restores.
+use crate::sevenz_crypto::{self, AES_BUFFER, AES_METHOD, BLOCK, CbcReader, KeyError, Keys};
 use crate::xz_filters::{self, BRANCH_BUFFER, DELTA_HISTORY, DeltaDecoder, Filter, read_through};
 use crate::{Entry, counters, progress::Tracker, safe_path, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
@@ -21,7 +22,9 @@ const SIGNATURE: &[u8; 6] = b"7z\xBC\xAF\x27\x1C";
 const SIGNATURE_HEADER: u64 = 32;
 const MAX_HEADER: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 1_000_000;
-const MAX_CODERS: usize = 5;
+// EXTERNAL(7-Zip 7zEncode.cpp, 7zUpdate.cpp AddBcj2Methods): an encrypted BCJ2 folder has BCJ2,
+// its three coders and one AES coder on each of its four packed streams.
+const MAX_CODERS: usize = 8;
 const MAX_HEADER_LAYERS: usize = 4;
 const COPY_BUFFER: usize = 1024 * 1024;
 const SWAP_BUFFER: usize = 64 * 1024;
@@ -33,6 +36,7 @@ const SEGMENT_MIN_OUTPUT: u64 = 8 * 1024 * 1024;
 const SEGMENT_WINDOW_MAX: usize = 64;
 const SEGMENT_DECODE_STEP: usize = 8 * 1024 * 1024;
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
+const WRONG_PASSWORD: &str = "the password is wrong or the 7z data is damaged";
 
 const END: u8 = 0;
 const HEADER: u8 = 1;
@@ -89,7 +93,30 @@ pub struct ReadOptions<'a> {
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
+    /// Password for AES-256 encrypted folders and headers, as UTF-8. A
+    /// selected encrypted entry, or an encrypted header, without it fails with
+    /// [`PasswordNeeded`]. Zipper keeps no copy of it after the read.
+    pub password: Option<&'a [u8]>,
 }
+
+/// The error when a 7z archive needs a password and none was given.
+#[derive(Debug)]
+pub struct PasswordNeeded {
+    /// Whether the header is encrypted, so that even the names need it.
+    pub header: bool,
+}
+
+impl std::fmt::Display for PasswordNeeded {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(if self.header {
+            "7z archive has an encrypted header; give its password with --password"
+        } else {
+            "7z archive is encrypted; give its password with --password"
+        })
+    }
+}
+
+impl std::error::Error for PasswordNeeded {}
 
 // EXTERNAL(Kani 0.68): building an anyhow error reaches catch_unwind, which crashes Kani's
 // compiler, so the readers Kani proves return this type and convert at the boundary.
@@ -226,10 +253,18 @@ struct Coder {
 }
 
 #[derive(Clone, Debug)]
+struct Encryption {
+    properties: Vec<u8>,
+    size: u64,
+    key: Option<Arc<sevenz_crypto::Key>>,
+}
+
+#[derive(Clone, Debug)]
 struct Folder {
     output_to_packed: Vec<Coder>,
     bcj2_branches: Vec<Folder>,
     unsupported: Option<String>,
+    encryption: Option<Box<Encryption>>,
     size: u64,
     crc: Option<u32>,
     pack_offset: u64,
@@ -441,6 +476,21 @@ fn chain(coders: Vec<Coder>, bind_pairs: &[(u64, u64)], packed: u64) -> Result<V
         .collect())
 }
 
+fn split_encryption(coders: &mut Vec<Coder>, decrypted: u64) -> Option<Box<Encryption>> {
+    let aes = coders.pop_if(|coder| coder.id == AES_METHOD);
+    if coders.is_empty() {
+        coders.push(Coder {
+            id: vec![0x00],
+            properties: Vec::new(),
+        });
+    }
+    Some(Box::new(Encryption {
+        properties: aes?.properties,
+        size: decrypted,
+        key: None,
+    }))
+}
+
 fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
     let mut pack_position = 0;
     let mut pack_sizes = Vec::new();
@@ -498,8 +548,10 @@ fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
                     .context("7z packed streams overflow")?;
             }
             let mut bcj2_branches = Vec::new();
-            let (output_to_packed, unsupported) = match (bcj2_plan(&shape)?, &shape.several_streams)
-            {
+            let (output_to_packed, unsupported, encryption) = match (
+                bcj2_plan(&shape)?,
+                &shape.several_streams,
+            ) {
                 (Some(plan), _) => {
                     let mut offsets = Vec::with_capacity(packed_sizes.len());
                     let mut offset = pack_offset;
@@ -508,22 +560,21 @@ fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
                         offset += size;
                     }
                     for branch in plan {
-                        let coders = if branch.coders.is_empty() {
-                            vec![Coder {
-                                id: vec![0x00],
-                                properties: Vec::new(),
-                            }]
-                        } else {
-                            branch
-                                .coders
-                                .iter()
-                                .map(|&index| shape.coders[index].clone())
-                                .collect()
-                        };
+                        let mut coders: Vec<Coder> = branch
+                            .coders
+                            .iter()
+                            .map(|&index| shape.coders[index].clone())
+                            .collect();
+                        let decrypted = branch
+                            .coders
+                            .last()
+                            .map_or(0, |&last| sizes[shape.output_starts[last] as usize]);
+                        let encryption = split_encryption(&mut coders, decrypted);
                         bcj2_branches.push(Folder {
                             output_to_packed: coders,
                             bcj2_branches: Vec::new(),
                             unsupported: None,
+                            encryption,
                             size: branch
                                 .output
                                 .map_or(packed_sizes[branch.packed], |output| sizes[output]),
@@ -538,6 +589,7 @@ fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
                             properties: Vec::new(),
                         }],
                         None,
+                        None,
                     )
                 }
                 (None, Some(id)) => (
@@ -546,16 +598,20 @@ fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
                         "7z coder {} has several streams in a layout that is not supported; {BACKEND_HINT}",
                         hex(id)
                     )),
-                ),
-                (None, None) => (
-                    chain(shape.coders, &shape.bind_pairs, shape.packed_inputs[0])?,
                     None,
                 ),
+                (None, None) => {
+                    let packed = shape.packed_inputs[0];
+                    let mut coders = chain(shape.coders, &shape.bind_pairs, packed)?;
+                    let encryption = split_encryption(&mut coders, sizes[packed as usize]);
+                    (coders, None, encryption)
+                }
             };
             streams.folders.push(Folder {
                 output_to_packed,
                 bcj2_branches,
                 unsupported,
+                encryption,
                 size,
                 crc: None,
                 pack_offset,
@@ -892,25 +948,89 @@ struct Archive {
     items: Vec<Item>,
 }
 
-fn decode_header(file: &mut ArchiveFile, streams: &Streams) -> Result<Vec<u8>> {
+fn decode_header(file: &mut ArchiveFile, streams: &Streams, keys: &mut Keys) -> Result<Vec<u8>> {
     ensure!(
         streams.folders.len() == 1 && streams.files_by_folder[0].len() == 1,
         "7z encoded header must be one folder"
     );
-    let folder = &streams.folders[0];
+    let mut folder = streams.folders[0].clone();
     ensure!(folder.size <= MAX_HEADER, "7z header is larger than 64 MiB");
-    let mut decoded = Vec::with_capacity(folder.size as usize);
-    folder_reader(file.try_clone()?, folder, None)?
-        .take(folder.size + 1)
-        .read_to_end(&mut decoded)?;
-    ensure!(
-        decoded.len() as u64 == folder.size,
-        "7z header has the wrong size"
-    );
-    if let Some(crc) = folder.crc.or(streams.files_by_folder[0][0].1) {
-        ensure!(crc32fast::hash(&decoded) == crc, "7z header CRC mismatch");
+    let crc = folder.crc.or(streams.files_by_folder[0][0].1);
+    let encrypted = encrypted(&folder);
+    check_methods(&folder)?;
+    if encrypted {
+        ensure!(
+            crc.is_some(),
+            "7z header is encrypted without a CRC, so a wrong password could not be detected"
+        );
+        unlock(&mut folder, keys, true)?;
     }
-    Ok(decoded)
+    let decoded = (|| -> Result<Vec<u8>> {
+        let mut decoded = Vec::with_capacity(folder.size as usize);
+        folder_reader(file.try_clone()?, &folder, None)?
+            .take(folder.size + 1)
+            .read_to_end(&mut decoded)?;
+        ensure!(
+            decoded.len() as u64 == folder.size,
+            "7z header has the wrong size"
+        );
+        if let Some(crc) = crc {
+            ensure!(crc32fast::hash(&decoded) == crc, "7z header CRC mismatch");
+        }
+        Ok(decoded)
+    })();
+    decoded.map_err(|error| {
+        if encrypted {
+            anyhow::anyhow!("the password is wrong or the 7z header is damaged: {error:#}")
+        } else {
+            error
+        }
+    })
+}
+
+fn encrypted(folder: &Folder) -> bool {
+    folder.encryption.is_some() || folder.bcj2_branches.iter().any(encrypted)
+}
+
+fn aes_properties(properties: &[u8]) -> Result<sevenz_crypto::Properties> {
+    sevenz_crypto::properties(properties).map_err(|bad| match bad {
+        sevenz_crypto::BadProperties::Malformed => anyhow::anyhow!("7z AES properties are malformed"),
+        sevenz_crypto::BadProperties::TooManyCycles(power) => anyhow::anyhow!(
+            "7z AES key derivation asks for 2^{power} SHA-256 rounds, more than the 2^{} that 7-Zip derives",
+            sevenz_crypto::MOST_CYCLES_POWER
+        ),
+    })
+}
+
+fn unlock(folder: &mut Folder, keys: &mut Keys, header: bool) -> Result<()> {
+    for branch in &mut folder.bcj2_branches {
+        unlock(branch, keys, header)?;
+    }
+    if let Some(encryption) = &mut folder.encryption {
+        let properties = aes_properties(&encryption.properties)?;
+        let key = keys.key(&properties).map_err(|error| match error {
+            KeyError::Needed => anyhow::Error::from(PasswordNeeded { header }),
+            KeyError::NotUtf8 => {
+                anyhow::anyhow!("a 7z password is UTF-16, so Zipper needs it given as UTF-8")
+            }
+        })?;
+        encryption.key = Some(key);
+    }
+    Ok(())
+}
+
+fn check_encryption(folder: &Folder) -> Result<()> {
+    let Some(encryption) = &folder.encryption else {
+        return Ok(());
+    };
+    aes_properties(&encryption.properties)?;
+    ensure!(
+        encryption.size.div_ceil(BLOCK).checked_mul(BLOCK) == Some(folder.pack_size),
+        "7z encrypted stream of {} bytes does not hold its {} decrypted bytes in whole AES blocks",
+        folder.pack_size,
+        encryption.size
+    );
+    Ok(())
 }
 
 pub(crate) const EXECUTABLE_MAGICS: [&[u8]; 8] = [
@@ -1023,7 +1143,7 @@ fn ensure_no_zip_ends_the_file(file: &ArchiveFile, base: u64) -> Result<()> {
     Ok(())
 }
 
-fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
+fn open(path: &Path, keys: &mut Keys) -> Result<(ArchiveFile, Archive)> {
     let file = crate::volumes::open(path)?;
     let base = archive_start(&file)?.unwrap_or(0);
     if base > 0 {
@@ -1069,7 +1189,7 @@ fn open(path: &Path) -> Result<(ArchiveFile, Archive)> {
             ENCODED_HEADER => {
                 let streams = read_streams(&mut bytes)?;
                 check_packs(&streams.folders, header_start)?;
-                header = decode_header(&mut file, &streams)?;
+                header = decode_header(&mut file, &streams, keys)?;
             }
             HEADER => {
                 let archive = read_header(&mut bytes)?;
@@ -1231,9 +1351,9 @@ fn method(coder: &Coder) -> Result<Method> {
         [0x0A] => Method::Filter(FilterMethod::BranchWithStart(xz_filters::Branch::Arm64)),
         [0x0B] => Method::Filter(FilterMethod::BranchWithStart(xz_filters::Branch::RiscV)),
         [0x06, 0xF1, 0x07, 0x01] => {
-            return Err(unsupported(
-                "7z archive is encrypted, which is not supported".into(),
-            ));
+            return Err(unsupported(format!(
+                "7z AES is not the coder next to the packed stream, a layout this reader does not decode; {BACKEND_HINT}"
+            )));
         }
         id => {
             return Err(unsupported(format!(
@@ -1265,7 +1385,7 @@ fn unsupported(message: String) -> anyhow::Error {
 /// reader does not decode. A damaged or unsafe archive returns false, so the
 /// reader refuses it rather than 7-Zip extracting it.
 pub fn needs_backend(path: &Path) -> Result<bool> {
-    let error = match open(path) {
+    let error = match open(path, &mut Keys::new(None)) {
         Ok((_, archive)) => match archive
             .folders
             .iter()
@@ -1283,6 +1403,7 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
     if let Some(reason) = &folder.unsupported {
         return Err(unsupported(reason.clone()));
     }
+    check_encryption(folder)?;
     if !folder.bcj2_branches.is_empty() {
         for branch in &folder.bcj2_branches {
             check_methods(branch)?;
@@ -1477,6 +1598,11 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
     if let Ok(Some((_, swapped))) = byte_swapped(folder) {
         return decoder_memory(&swapped, segments_possible);
     }
+    let decryption = if folder.encryption.is_some() {
+        AES_BUFFER as u64
+    } else {
+        0
+    };
     let filter_coders = &folder.output_to_packed[..folder.output_to_packed.len().saturating_sub(1)];
     let filter_buffers = filter_settings(filter_coders).map_or(0, |settings| {
         settings.iter().map(|setting| setting.buffer()).sum()
@@ -1494,12 +1620,17 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
         }
         _ => 0,
     }
-    .max(64 * 1024);
+    .max(64 * 1024)
+        + decryption;
     let lzma2_only = matches!(
         folder.output_to_packed.as_slice(),
         [coder] if coder.id == [0x21]
     );
-    if segments_possible && lzma2_only && folder.size >= PARALLEL_FOLDER_MIN {
+    if segments_possible
+        && lzma2_only
+        && folder.encryption.is_none()
+        && folder.size >= PARALLEL_FOLDER_MIN
+    {
         return sequential.max(SEGMENT_BUDGET);
     }
     sequential
@@ -1725,6 +1856,7 @@ fn folder_reader(
         )));
     }
     if let ([Method::Lzma2], [coder]) = (methods.as_slice(), folder.output_to_packed.as_slice())
+        && folder.encryption.is_none()
         && let Some((path, window)) = segment_threads.filter(|&(_, window)| window > 1)
         && folder.size >= PARALLEL_FOLDER_MIN
         && let Some(&properties) = coder.properties.first()
@@ -1747,20 +1879,16 @@ fn folder_reader(
             position: 0,
         }));
     }
-    let packed = ReadAt {
-        file,
-        position: SIGNATURE_HEADER + folder.pack_offset,
-    };
+    let (packed, packed_size) = packed_stream(file, folder)?;
     if let [filters @ .., Method::Lzma | Method::Lzma2] = methods.as_slice() {
         let (filter_coders, last) = folder.output_to_packed.split_at(filters.len());
-        let decoded =
-            lzma_coder(&last[0], folder.size)?.reader(packed.take(folder.pack_size), folder.size);
+        let decoded = lzma_coder(&last[0], folder.size)?.reader(packed, folder.size);
         if filters.is_empty() {
             return Ok(decoded);
         }
         return filtered(filter_coders, decoded);
     }
-    let packed = BufReader::with_capacity(COPY_BUFFER, packed).take(folder.pack_size);
+    let packed = BufReader::with_capacity(COPY_BUFFER, packed).take(packed_size);
     Ok(match methods.as_slice() {
         [Method::Copy] => Box::new(packed),
         [Method::Deflate] => Box::new(flate2::read::DeflateDecoder::new(packed)),
@@ -1783,6 +1911,44 @@ fn folder_reader(
         }
         _ => bail!("7z folder combines methods in a way that is not supported"),
     })
+}
+
+fn packed_stream(file: ArchiveFile, folder: &Folder) -> Result<(Box<dyn Read + Send>, u64)> {
+    let packed = ReadAt {
+        file,
+        position: SIGNATURE_HEADER + folder.pack_offset,
+    }
+    .take(folder.pack_size);
+    let Some(encryption) = &folder.encryption else {
+        return Ok((Box::new(packed), folder.pack_size));
+    };
+    let key = encryption
+        .key
+        .as_ref()
+        .context("7z encrypted folder was read before its key was derived")?;
+    let iv = aes_properties(&encryption.properties)?.iv;
+    Ok((
+        Box::new(CbcReader::new(packed, key, iv).take(encryption.size)),
+        encryption.size,
+    ))
+}
+
+struct Decrypted<R>(R);
+
+impl<R: Read> Read for Decrypted<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buffer).map_err(|error| {
+            std::io::Error::new(error.kind(), format!("{WRONG_PASSWORD}: {error}"))
+        })
+    }
+}
+
+fn damaged(encrypted: bool, message: String) -> anyhow::Error {
+    if encrypted {
+        anyhow::anyhow!("{WRONG_PASSWORD}: {message}")
+    } else {
+        anyhow::anyhow!(message)
+    }
 }
 
 fn filtered(coders: &[Coder], decoded: Box<dyn Read + Send>) -> Result<Box<dyn Read + Send>> {
@@ -2079,7 +2245,13 @@ fn decode_segment(
 
 /// List the entries the 7z header describes. Payload CRCs are not checked.
 pub fn list(path: &Path) -> Result<Vec<Entry>> {
-    let (_, archive) = open(path)?;
+    list_with_password(path, None)
+}
+
+/// Like [`list`], with the password an encrypted header needs. Without it,
+/// such an archive fails with [`PasswordNeeded`].
+pub fn list_with_password(path: &Path, password: Option<&[u8]>) -> Result<Vec<Entry>> {
+    let (_, archive) = open(path, &mut Keys::new(password))?;
     Ok(archive.items.iter().map(entry).collect())
 }
 
@@ -2106,7 +2278,8 @@ pub fn read_archive(
             .is_none_or(|threads| (1..=64).contains(&threads)),
         "7z threads must be 1..64"
     );
-    let (file, mut archive) = open(path)?;
+    let mut keys = Keys::new(options.password);
+    let (file, mut archive) = open(path, &mut keys)?;
     for folder in &archive.folders {
         check_methods(folder)?;
     }
@@ -2144,6 +2317,28 @@ pub fn read_archive(
                 .map(|(item, _)| (item.name.as_str(), item.kind == Kind::Directory)),
         )?;
     }
+    let mut needed = vec![destination.is_none(); archive.folders.len()];
+    let mut without_crc: Vec<Option<&str>> = vec![None; archive.folders.len()];
+    for (item, &chosen) in archive.items.iter().zip(&chosen) {
+        if let Some((folder, _)) = item.stream {
+            needed[folder] |= chosen;
+            if item.crc.is_none() {
+                without_crc[folder].get_or_insert(&item.name);
+            }
+        }
+    }
+    for (index, folder) in archive.folders.iter_mut().enumerate() {
+        if !(needed[index] && encrypted(folder)) {
+            continue;
+        }
+        if let Some(name) = without_crc[index].filter(|_| folder.crc.is_none()) {
+            bail!(
+                "7z entry {name:?} is encrypted without a CRC, so a wrong password could not be detected"
+            );
+        }
+        unlock(folder, &mut keys, false)?;
+    }
+    drop(keys);
     let metadata = options.metadata;
     for item in &mut archive.items {
         item.mode = if item.kind == Kind::Directory {
@@ -2215,7 +2410,14 @@ pub fn read_archive(
         tracker.check()?;
         let folder = &archive.folders[folder_index];
         let _reservation = memory.reserve(decoder_memory(folder, segment_threads > 1));
-        let mut reader = folder_reader(file.reopen(path)?, folder, Some((path, segment_threads)))?;
+        let encrypted = encrypted(folder);
+        let started = folder_reader(file.reopen(path)?, folder, Some((path, segment_threads)));
+        let mut reader = match started {
+            Ok(reader) if encrypted => Box::new(Decrypted(reader)),
+            Ok(reader) => reader,
+            Err(error) if encrypted => return Err(damaged(true, format!("{error:#}"))),
+            Err(error) => return Err(error),
+        };
         let mut folder_crc = crc32fast::Hasher::new();
         for &index in &by_folder[folder_index] {
             let item = &archive.items[index];
@@ -2249,7 +2451,12 @@ pub fn read_archive(
             while remaining > 0 {
                 let want = remaining.min(buffer.len() as u64) as usize;
                 let read = reader.read(&mut buffer[..want])?;
-                ensure!(read > 0, "7z folder ends before its files do");
+                if read == 0 {
+                    return Err(damaged(
+                        encrypted,
+                        "7z folder ends before its files do".into(),
+                    ));
+                }
                 let bytes = &buffer[..read];
                 crc.update(bytes);
                 folder_crc.update(bytes);
@@ -2268,12 +2475,13 @@ pub fn read_archive(
                     tracker.add_bytes(std::mem::replace(&mut held, read as u64))?;
                 }
             }
-            if let Some(expected) = item.crc {
-                ensure!(
-                    crc.finalize() == expected,
-                    "7z CRC mismatch in {:?}",
-                    item.name
-                );
+            if let Some(expected) = item.crc
+                && crc.finalize() != expected
+            {
+                return Err(damaged(
+                    encrypted,
+                    format!("7z CRC mismatch in {:?}", item.name),
+                ));
             }
             if let Some(mut output) = output {
                 output.flush()?;
@@ -2290,12 +2498,16 @@ pub fn read_archive(
                 tracker.file_done()?;
             }
         }
-        ensure!(
-            reader.read(&mut buffer[..1])? == 0,
-            "7z folder holds more data than its files"
-        );
-        if let Some(expected) = folder.crc {
-            ensure!(folder_crc.finalize() == expected, "7z folder CRC mismatch");
+        if reader.read(&mut buffer[..1])? != 0 {
+            return Err(damaged(
+                encrypted,
+                "7z folder holds more data than its files".into(),
+            ));
+        }
+        if let Some(expected) = folder.crc
+            && folder_crc.finalize() != expected
+        {
+            return Err(damaged(encrypted, "7z folder CRC mismatch".into()));
         }
         Ok(())
     };
@@ -2451,6 +2663,7 @@ mod tests {
                 properties: vec![18],
             }],
             unsupported: None,
+            encryption: None,
             size: (chunks * chunk) as u64,
             crc: None,
             pack_offset: 0,
@@ -2522,6 +2735,40 @@ mod tests {
     }
 
     #[test]
+    fn an_encrypted_folder_charges_its_decryption_buffer_and_takes_no_segments() {
+        let (_, folder) = uncompressed_lzma2(400, 65_536);
+        let encrypted = Folder {
+            encryption: Some(Box::new(Encryption {
+                properties: vec![19],
+                size: folder.pack_size,
+                key: None,
+            })),
+            ..folder.clone()
+        };
+        let plain = decoder_memory(&folder, false);
+        assert_eq!(decoder_memory(&encrypted, false), plain + AES_BUFFER as u64);
+        assert_eq!(decoder_memory(&encrypted, true), plain + AES_BUFFER as u64);
+        let branches = |encryption: Option<Box<Encryption>>| Folder {
+            output_to_packed: vec![Coder {
+                id: BCJ2.to_vec(),
+                properties: Vec::new(),
+            }],
+            bcj2_branches: vec![
+                Folder {
+                    encryption,
+                    ..folder.clone()
+                };
+                BCJ2_INPUTS
+            ],
+            ..folder.clone()
+        };
+        assert_eq!(
+            decoder_memory(&branches(encrypted.encryption.clone()), true),
+            decoder_memory(&branches(None), true) + BCJ2_INPUTS as u64 * AES_BUFFER as u64
+        );
+    }
+
+    #[test]
     fn segment_plans_start_at_resets_and_cover_the_folder_for_every_short_stream() {
         let kinds: Vec<Chunk> = [1u8, 2, 0x80, 0xA0, 0xC0, 0xE0]
             .iter()
@@ -2551,6 +2798,7 @@ mod tests {
                             output_to_packed: Vec::new(),
                             bcj2_branches: Vec::new(),
                             unsupported: None,
+                            encryption: None,
                             size,
                             crc: None,
                             pack_offset: 0,
@@ -3168,6 +3416,7 @@ mod tests {
                 properties: vec![18],
             }],
             unsupported: None,
+            encryption: None,
             size: data.len() as u64,
             crc: Some(crc32fast::hash(&data)),
             pack_offset: 0,
@@ -3188,7 +3437,7 @@ mod tests {
         let mut sources: Vec<(PathBuf, Vec<Folder>)> = corpus_archives()
             .into_iter()
             .filter_map(|archive| {
-                let (_, parsed) = open(&archive).ok()?;
+                let (_, parsed) = open(&archive, &mut Keys::new(None)).ok()?;
                 let mut found = Vec::new();
                 for folder in &parsed.folders {
                     lzma_folders(folder, &mut found);
@@ -3480,6 +3729,7 @@ mod tests {
             output_to_packed: vec![coder(&[0x02, 0x03, 0x02], &[]), coder(&[0x21], &[16])],
             bcj2_branches: Vec::new(),
             unsupported: None,
+            encryption: None,
             size: PARALLEL_FOLDER_MIN,
             crc: None,
             pack_offset: 0,
@@ -3511,6 +3761,7 @@ mod tests {
             output_to_packed: [coders, std::slice::from_ref(&lzma)].concat(),
             bcj2_branches: Vec::new(),
             unsupported: None,
+            encryption: None,
             size: 1,
             crc: None,
             pack_offset: 0,
@@ -3546,6 +3797,7 @@ mod tests {
                 }],
                 bcj2_branches: Vec::new(),
                 unsupported: None,
+                encryption: None,
                 size: 1,
                 crc: None,
                 pack_offset: 0,
@@ -3559,6 +3811,7 @@ mod tests {
             }],
             bcj2_branches: vec![ppmd(memory), ppmd(memory), ppmd(1 << 20), ppmd(1 << 20)],
             unsupported: None,
+            encryption: None,
             size: 1,
             crc: None,
             pack_offset: 0,
@@ -3700,6 +3953,7 @@ mod tests {
                 properties,
             }],
             unsupported: None,
+            encryption: None,
             size,
             crc: None,
             pack_offset: 0,
@@ -4174,6 +4428,7 @@ mod tests {
                 output_to_packed: [chain.clone(), vec![lzma2]].concat(),
                 bcj2_branches: Vec::new(),
                 unsupported: None,
+                encryption: None,
                 size: 1,
                 crc: None,
                 pack_offset: 0,
@@ -4239,6 +4494,7 @@ mod tests {
                     output_to_packed: vec![coder.clone(), lzma2.clone()],
                     bcj2_branches: Vec::new(),
                     unsupported: None,
+                    encryption: None,
                     size: 1,
                     crc: None,
                     pack_offset: 0,
