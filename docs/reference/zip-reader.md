@@ -120,7 +120,7 @@ The header fields of an entry are not covered by the AES code. Suppose someone c
 
 ## Legacy methods
 
-`src/shrink.rs` decodes Shrink and `src/implode.rs` decodes Implode, as APPNOTE 5.1 and 5.3 define them. Each holds a fixed table. Shrink keeps 8,192 entries and Implode an 8 KiB window, so neither takes decoder memory from the shared budget. Each stops at the entry's declared size, and the CRC and staging rules are the same as for other methods.
+`src/shrink.rs` decodes Shrink and `src/implode.rs` decodes Implode, as APPNOTE 5.1 and 5.3 define them. Each holds a fixed table. Shrink keeps 8,192 entries and Implode an 8 KiB window, so neither takes decoder memory from the shared budget. A Shrink partial clear frees only the entries that are leaves, from a list kept as entries are added, so a stream of clears costs no more than the codes that built the table. Each stops at the entry's declared size, and the CRC and staging rules are the same as for other methods.
 
 A Shrink stream follows 7-Zip's rules where Info-ZIP `unzip` and 7-Zip differ:
 
@@ -139,7 +139,7 @@ An Implode entry reads its two or three Shannon-Fano trees, as general purpose b
 Both native ZIP modes run these checks before publishing any output:
 
 - Decoded lengths and CRCs match the central directory.
-- Each local header's name, method, CRC and sizes match its central-directory entry. With a data descriptor, a local CRC or size may be zero or `0xFFFFFFFF` instead.
+- Each local header's name, method, CRC and sizes match its central-directory entry. For Implode, so do the general purpose bits that choose the window and the tree count, which `unzip` and 7-Zip read from the local header. With a data descriptor, a local CRC or size may be zero or `0xFFFFFFFF` instead.
 - Local records tile the archive. The first starts at offset 0, and each ends exactly where the next record or the central directory starts.
 - With a data descriptor, the bytes after the data are exactly one descriptor of 12, 16, 20 or 24 bytes, and its CRC and sizes match the central directory.
 - The local encryption flag matches the central one, and any local ZIP64 sizes match the central directory.

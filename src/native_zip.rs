@@ -745,6 +745,10 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
         item.stored_name_is(&name) && read16(8) == item.stored_method(),
         "ZIP local header disagrees with central directory"
     );
+    ensure!(
+        item.method != IMPLODE || flags & IMPLODE_OPTIONS == item.flags & IMPLODE_OPTIONS,
+        "ZIP local header Implode options disagree with central directory"
+    );
     if let Some(Encryption::Aes(field)) = item.encryption {
         ensure!(
             crate::zip_directory::aes_extra(&extra) == AesExtra::Present(field),
@@ -1001,6 +1005,8 @@ fn write_behind(
 const STORED: u16 = 0;
 const SHRINK: u16 = 1;
 const IMPLODE: u16 = 6;
+// SPEC(APPNOTE 4.4.4): bits 1 and 2 choose the Implode window and tree count.
+const IMPLODE_OPTIONS: u16 = 0b110;
 const DEFLATE: u16 = 8;
 const DEFLATE64: u16 = 9;
 const BZIP2: u16 = 12;

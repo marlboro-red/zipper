@@ -1,15 +1,17 @@
 //! ZIP's legacy Shrink (method 1) and Implode (method 6) entries extract in
 //! process. No current tool writes them, so test encoders in
 //! `tests/common/legacy_encoder.rs` build the streams, and Info-ZIP `unzip`
-//! and 7-Zip 26 or later check each archive before Zipper reads it.
+//! or 7-Zip 26 or later, as each test names, checks each archive before
+//! Zipper reads it.
 #[path = "common/legacy_encoder.rs"]
 mod legacy_encoder;
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
 
 use legacy_encoder::{
-    Bits, Code, EIGHT_K_WINDOW, Entry, IMPLODE, ImplodeTrees, LITERAL_TREE, Rng, SHRINK, Token,
-    implode, implode_tokens, random_shrink, random_tokens, shrink, shrink_codes, shrink_trace, zip,
+    Bits, Clears, Code, EIGHT_K_WINDOW, Ending, Entry, IMPLODE, ImplodeTrees, LITERAL_TREE, Rng,
+    SHRINK, Token, implode, implode_tokens, random_shrink, random_tokens, shrink, shrink_codes,
+    shrink_trace, zip,
 };
 use std::{
     fs,
@@ -133,20 +135,14 @@ fn samples() -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
-fn assert_shrink_samples_extract(clears: &[Option<usize>], oracles: Oracles) {
+fn assert_shrink_samples_extract(schedules: &[Clears], oracles: Oracles) {
     let work = tempfile::tempdir().unwrap();
     let mut entries = Vec::new();
     let mut expected = Vec::new();
     for (label, data) in samples() {
-        for &clear_every in clears {
-            let name = format!("{label}-{clear_every:?}.bin");
-            entries.push(Entry::new(
-                &name,
-                SHRINK,
-                0,
-                &data,
-                shrink(&data, clear_every),
-            ));
+        for &clears in schedules {
+            let name = format!("{label}-{clears:?}.bin");
+            entries.push(Entry::new(&name, SHRINK, 0, &data, shrink(&data, clears)));
             expected.push((name, data.clone()));
         }
     }
@@ -158,18 +154,18 @@ fn assert_shrink_samples_extract(clears: &[Option<usize>], oracles: Oracles) {
 #[test]
 fn shrink_entries_that_clear_a_full_table_extract_as_unzip_and_7zip_read_them() {
     let clears_a_full_table = |data: &Vec<u8>| {
-        shrink_trace(data, None)
+        shrink_trace(data, Clears::WhenFull)
             .windows(2)
             .any(|pair| pair[0].0 == 256 && pair[1].0 == 2)
     };
     assert!(samples().iter().any(|(_, data)| clears_a_full_table(data)));
-    assert_shrink_samples_extract(&[None], Oracles::Both);
+    assert_shrink_samples_extract(&[Clears::WhenFull], Oracles::Both);
 }
 
 #[test]
 fn shrink_entries_that_clear_at_any_time_extract_as_7zip_reads_them() {
     assert_shrink_samples_extract(
-        &[Some(1), Some(2), Some(37), Some(500)],
+        &[1, 2, 37, 500].map(Clears::WhenFullAndEvery),
         Oracles::SevenZipOnly,
     );
 }
@@ -485,7 +481,7 @@ fn self_prefixed_shrink_entries_are_accepted_while_unused_as_unzip_and_7zip_acce
 fn damaged_legacy_entries_are_refused() {
     let data = b"the quick brown fox jumps over the lazy dog ".repeat(40);
     for (method, flags, packed) in [
-        (SHRINK, 0, shrink(&data, Some(50))),
+        (SHRINK, 0, shrink(&data, Clears::WhenFullAndEvery(50))),
         (IMPLODE, 0, implode(&data, 0, 1)),
         (
             IMPLODE,
@@ -548,10 +544,19 @@ fn hostile_implode_trees_are_refused_as_7zip_refuses_them() {
         )
     };
     let with_lengths = |lengths: Vec<u8>| {
-        let mut packed = Code { lengths }.description();
-        packed.extend(Code::flat(64).description());
-        packed.extend_from_slice(&[0; 8]);
-        Entry::new("data.bin", IMPLODE, 0, data, packed)
+        let literals: Vec<Token> = data.iter().map(|&byte| Token::Literal(byte)).collect();
+        let trees = ImplodeTrees {
+            literals: None,
+            lengths: Code { lengths },
+            distances: Code::flat(64),
+        };
+        Entry::new(
+            "data.bin",
+            IMPLODE,
+            0,
+            data,
+            implode_tokens(&literals, 0, &trees),
+        )
     };
     let mut incomplete = vec![6u8; 64];
     incomplete[0] = 7;
@@ -595,6 +600,30 @@ fn hostile_implode_trees_are_refused_as_7zip_refuses_them() {
 }
 
 #[test]
+fn implode_flags_must_agree_between_the_local_and_central_headers() {
+    let data = b"the quick brown fox jumps over the lazy dog ".repeat(40);
+    for (central, local) in [
+        (EIGHT_K_WINDOW, 0),
+        (0, EIGHT_K_WINDOW),
+        (LITERAL_TREE, 0),
+        (EIGHT_K_WINDOW | LITERAL_TREE, LITERAL_TREE),
+    ] {
+        let mut entry = Entry::new(
+            "data.bin",
+            IMPLODE,
+            central,
+            &data,
+            implode(&data, central, 1),
+        );
+        entry.local_flags = local;
+        assert_refused_by_7zip_and_zipper(
+            &format!("central flags {central}, local {local}"),
+            entry,
+        );
+    }
+}
+
+#[test]
 fn third_party_legacy_archives_extract_as_unzip_and_7zip_read_them() {
     let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/zip-legacy");
     let work = tempfile::tempdir().unwrap();
@@ -633,10 +662,11 @@ fn random_shrink_streams_decode_and_fail_as_7zip_does() {
         let steps = 1 + rng.below(if index % 10 == 0 { 3000 } else { 120 }) as usize;
         let stream = random_shrink(&mut rng, steps);
         let name = format!("stream{index}.bin");
-        if stream.valid {
-            valid.push((name, stream));
-        } else {
-            invalid.push((name, stream));
+        match stream.ending {
+            Ending::Complete(data) => valid.push((name, stream.codes, data)),
+            Ending::RefusedAtLastCode { bytes_before } => {
+                invalid.push((name, stream.codes, bytes_before))
+            }
         }
     }
     assert!(
@@ -649,31 +679,29 @@ fn random_shrink_streams_decode_and_fail_as_7zip_does() {
     let archive = work.path().join("valid.zip");
     let entries: Vec<Entry> = valid
         .iter()
-        .map(|(name, stream)| {
-            Entry::new(name, SHRINK, 0, &stream.data, shrink_codes(&stream.codes))
-        })
+        .map(|(name, codes, data)| Entry::new(name, SHRINK, 0, data, shrink_codes(codes)))
         .collect();
     fs::write(&archive, zip(&entries)).unwrap();
     let expected: Vec<(String, Vec<u8>)> = valid
         .iter()
-        .map(|(name, stream)| (name.clone(), stream.data.clone()))
+        .map(|(name, _, data)| (name.clone(), data.clone()))
         .collect();
     assert_every_reader_extracts(&archive, &expected, Oracles::SevenZipOnly);
-    let declared = |stream: &legacy_encoder::RandomShrink| {
-        let mut declared = stream.data.clone();
+    let declared = |bytes_before: &Vec<u8>| {
+        let mut declared = bytes_before.clone();
         declared.push(0);
         declared
     };
     let archive = work.path().join("invalid.zip");
     let entries: Vec<Entry> = invalid
         .iter()
-        .map(|(name, stream)| {
+        .map(|(name, codes, bytes_before)| {
             Entry::new(
                 name,
                 SHRINK,
                 0,
-                &declared(stream),
-                shrink_codes(&stream.codes),
+                &declared(bytes_before),
+                shrink_codes(codes),
             )
         })
         .collect();
@@ -681,21 +709,21 @@ fn random_shrink_streams_decode_and_fail_as_7zip_does() {
     match seven_zip_extracts(&archive) {
         Some(Err(report)) => {
             let folder = archive.with_extension("7zip");
-            for (name, stream) in &invalid {
+            for (name, _, bytes_before) in &invalid {
                 assert!(report.contains(name.as_str()), "7-Zip accepted {name}");
                 let written = fs::read(folder.join(name)).unwrap_or_default();
                 assert!(
-                    written == stream.data,
+                    written == *bytes_before,
                     "7-Zip stopped {name} after {} bytes, not {}",
                     written.len(),
-                    stream.data.len()
+                    bytes_before.len()
                 );
             }
         }
         Some(Ok(_)) => panic!("7-Zip accepted every invalid stream"),
         None => {}
     }
-    for (name, stream) in &invalid {
+    for (name, codes, bytes_before) in &invalid {
         let one = work.path().join(format!("{name}.zip"));
         fs::write(
             &one,
@@ -703,8 +731,8 @@ fn random_shrink_streams_decode_and_fail_as_7zip_does() {
                 name,
                 SHRINK,
                 0,
-                &declared(stream),
-                shrink_codes(&stream.codes),
+                &declared(bytes_before),
+                shrink_codes(codes),
             )]),
         )
         .unwrap();

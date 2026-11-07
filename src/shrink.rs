@@ -105,32 +105,54 @@ enum Step {
 }
 
 // SPEC(APPNOTE 5.1): LZW codes of 9 to 13 bits; 256 then 1 widens the code, 256 then 2 frees every leaf, lowest code reused first.
-// EXTERNAL(7-Zip ShrinkDecoder, Info-ZIP unshrink): each code takes the next free entry before it is expanded, so a partial clear
-// can give an entry itself as prefix; both refuse when such a cycle, a freed entry or a full table is reached.
-struct Table<const N: usize> {
+// EXTERNAL(7-Zip ShrinkDecoder): each code reserves the next free entry before it is expanded, so a partial clear can make an entry its own prefix.
+struct Table<const N: usize, const W: usize> {
     prefix: [u16; N],
     suffix: [u8; N],
     used: [bool; N],
     string: [u8; N],
-    next_free: usize,
+    children: [u16; N],
+    leaves: [u16; N],
+    leaf_at: [u16; N],
+    leaf_count: usize,
+    free: [u64; W],
     previous: Option<u16>,
     first_byte: u8,
     width: u32,
     escaped: bool,
+    #[cfg(test)]
+    visited: u64,
 }
 
-impl<const N: usize> Table<N> {
+const NOT_A_LEAF: u16 = u16::MAX;
+const FREE_WORDS: usize = CODES / 64;
+
+impl<const N: usize, const W: usize> Table<N, W> {
     fn new() -> Self {
+        const { assert!(64 * W >= N && N > FIRST_ENTRY) };
+        let mut free = [0u64; W];
+        for (word, bits) in free.iter_mut().enumerate() {
+            let low = 64 * word;
+            let first = FIRST_ENTRY.clamp(low, low + 64) - low;
+            let end = N.clamp(first + low, low + 64) - low;
+            *bits = ((1u128 << end) - (1u128 << first)) as u64;
+        }
         Table {
             prefix: [0; N],
             suffix: [0; N],
             used: [false; N],
             string: [0; N],
-            next_free: FIRST_ENTRY,
+            children: [0; N],
+            leaves: [0; N],
+            leaf_at: [NOT_A_LEAF; N],
+            leaf_count: 0,
+            free,
             previous: None,
             first_byte: 0,
             width: INITIAL_WIDTH,
             escaped: false,
+            #[cfg(test)]
+            visited: 0,
         }
     }
 
@@ -164,30 +186,76 @@ impl<const N: usize> Table<N> {
             self.escaped = true;
             return Ok(Step::Control);
         }
-        let added = match self.previous {
-            Some(previous) => Some(self.add_entry(previous)?),
+        let reserved = match self.previous {
+            Some(previous) => Some(self.reserve_entry(previous)?),
             None => None,
         };
         let start = self.expand(code)?;
-        if let Some(entry) = added {
-            self.suffix[entry] = self.first_byte;
+        if let Some(entry) = reserved {
+            self.complete_entry(entry);
         }
         self.previous = Some(code);
         Ok(Step::Bytes(start))
     }
 
-    fn add_entry(&mut self, previous: u16) -> Decoded<usize> {
-        while self.next_free < N && self.used[self.next_free] {
-            self.next_free += 1;
+    fn lowest_free(&mut self) -> Option<usize> {
+        for word in FIRST_ENTRY / 64..W {
+            #[cfg(test)]
+            {
+                self.visited += 1;
+            }
+            if self.free[word] != 0 {
+                return Some(64 * word + self.free[word].trailing_zeros() as usize);
+            }
         }
-        if self.next_free == N {
-            return Err(Refusal::FullTable);
+        None
+    }
+
+    fn mark_free(&mut self, entry: usize, free: bool) {
+        let bit = 1u64 << (entry % 64);
+        if free {
+            self.free[entry / 64] |= bit;
+        } else {
+            self.free[entry / 64] &= !bit;
         }
-        self.prefix[self.next_free] = previous;
-        self.suffix[self.next_free] = self.first_byte;
-        self.used[self.next_free] = true;
-        self.next_free += 1;
-        Ok(self.next_free - 1)
+    }
+
+    fn push_leaf(&mut self, entry: usize) {
+        self.leaves[self.leaf_count] = entry as u16;
+        self.leaf_at[entry] = self.leaf_count as u16;
+        self.leaf_count += 1;
+    }
+
+    fn remove_leaf(&mut self, entry: usize) {
+        let at = usize::from(self.leaf_at[entry]);
+        self.leaf_count -= 1;
+        let last = self.leaves[self.leaf_count];
+        self.leaves[at] = last;
+        self.leaf_at[usize::from(last)] = at as u16;
+        self.leaf_at[entry] = NOT_A_LEAF;
+    }
+
+    fn reserve_entry(&mut self, previous: u16) -> Decoded<usize> {
+        let entry = self.lowest_free().ok_or(Refusal::FullTable)?;
+        self.mark_free(entry, false);
+        self.used[entry] = true;
+        self.prefix[entry] = previous;
+        self.suffix[entry] = self.first_byte;
+        let parent = usize::from(previous);
+        if parent >= FIRST_ENTRY {
+            self.children[parent] += 1;
+            if self.leaf_at[parent] != NOT_A_LEAF {
+                self.remove_leaf(parent);
+            }
+        }
+        if self.children[entry] == 0 {
+            self.push_leaf(entry);
+        }
+        Ok(entry)
+    }
+
+    fn complete_entry(&mut self, entry: usize) {
+        self.suffix[entry] = self.first_byte;
     }
 
     fn defined(&self, code: usize) -> bool {
@@ -218,25 +286,31 @@ impl<const N: usize> Table<N> {
     }
 
     fn partial_clear(&mut self) {
-        let mut parent = [false; N];
-        for code in FIRST_ENTRY..N {
-            if self.used[code] {
-                parent[usize::from(self.prefix[code])] = true;
+        let leaves = self.leaf_count;
+        self.leaf_count = 0;
+        for index in 0..leaves {
+            #[cfg(test)]
+            {
+                self.visited += 1;
+            }
+            let entry = usize::from(self.leaves[index]);
+            self.leaf_at[entry] = NOT_A_LEAF;
+            self.used[entry] = false;
+            self.mark_free(entry, true);
+            let parent = usize::from(self.prefix[entry]);
+            if parent >= FIRST_ENTRY {
+                self.children[parent] -= 1;
+                if self.children[parent] == 0 && self.used[parent] {
+                    self.push_leaf(parent);
+                }
             }
         }
-        for (used, &has_child) in self.used[FIRST_ENTRY..]
-            .iter_mut()
-            .zip(&parent[FIRST_ENTRY..])
-        {
-            *used &= has_child;
-        }
-        self.next_free = FIRST_ENTRY;
     }
 }
 
 pub(crate) struct Unshrink<R> {
     bits: LowBitsFirst<R>,
-    table: Box<Table<CODES>>,
+    table: Box<Table<CODES, FREE_WORDS>>,
     pending: usize,
     remaining: u64,
     finished: bool,
@@ -348,7 +422,7 @@ mod tests {
     }
 
     fn refusal_of(stream: &[u16]) -> Option<Refusal> {
-        let mut table = Table::<CODES>::new();
+        let mut table = Table::<CODES, FREE_WORDS>::new();
         stream.iter().find_map(|&code| table.feed(code).err())
     }
 
@@ -398,6 +472,36 @@ mod tests {
     }
 
     #[test]
+    fn table_work_stays_proportional_to_the_codes_under_clear_floods() {
+        let mut table = Table::<CODES, FREE_WORDS>::new();
+        let mut codes = 0u64;
+        let mut feed = |table: &mut Table<CODES, FREE_WORDS>, code: u16| {
+            codes += 1;
+            table.feed(code).unwrap();
+        };
+        feed(&mut table, 97);
+        let mut next = FIRST_ENTRY as u16;
+        while next < 8000 {
+            while u32::from(next) >= 1 << table.width() {
+                feed(&mut table, ESCAPE);
+                feed(&mut table, WIDEN);
+            }
+            feed(&mut table, next);
+            next += 1;
+        }
+        for _ in 0..20_000 {
+            feed(&mut table, ESCAPE);
+            feed(&mut table, PARTIAL_CLEAR);
+            feed(&mut table, 97);
+        }
+        assert!(
+            table.visited < 200 * codes,
+            "{} table slots visited for {codes} codes",
+            table.visited
+        );
+    }
+
+    #[test]
     fn the_declared_size_bounds_the_output_and_the_input() {
         let packed = codes(&[(97, 9), (98, 9), (257, 9)]);
         assert_eq!(decode_in_reads_of(&packed, 4, 8).unwrap(), b"abab");
@@ -421,16 +525,37 @@ mod proofs {
 
     const PROVEN_ENTRIES: usize = 3;
     const PROVEN_TABLE: usize = FIRST_ENTRY + PROVEN_ENTRIES;
+    const PROVEN_WORDS: usize = PROVEN_TABLE.div_ceil(64);
     const PROVEN_CODES: usize = 8;
 
-    fn has_own_prefix<const N: usize>(table: &Table<N>) -> bool {
-        (FIRST_ENTRY..N).any(|code| table.used[code] && usize::from(table.prefix[code]) == code)
+    type Proven = Table<PROVEN_TABLE, PROVEN_WORDS>;
+
+    fn has_own_prefix(table: &Proven) -> bool {
+        (FIRST_ENTRY..PROVEN_TABLE)
+            .any(|code| table.used[code] && usize::from(table.prefix[code]) == code)
+    }
+
+    fn bookkeeping_matches_the_entries(table: &Proven) -> bool {
+        table.leaf_count <= PROVEN_ENTRIES
+            && (FIRST_ENTRY..PROVEN_TABLE).all(|entry| {
+                let children = (FIRST_ENTRY..PROVEN_TABLE)
+                    .filter(|&child| table.used[child] && usize::from(table.prefix[child]) == entry)
+                    .count();
+                let free = table.free[entry / 64] >> (entry % 64) & 1 == 1;
+                let at = usize::from(table.leaf_at[entry]);
+                let leaf = table.leaf_at[entry] != NOT_A_LEAF;
+                usize::from(table.children[entry]) == children
+                    && free != table.used[entry]
+                    && leaf == (table.used[entry] && children == 0)
+                    && (!leaf || (at < table.leaf_count && usize::from(table.leaves[at]) == entry))
+            })
     }
 
     #[kani::proof]
     #[kani::unwind(9)]
     fn any_short_code_stream_stays_inside_the_table() {
-        let mut table = Table::<PROVEN_TABLE>::new();
+        let mut table = Proven::new();
+        assert!(bookkeeping_matches_the_entries(&table));
         let mut cleared = false;
         for _ in 0..PROVEN_CODES {
             let code: u16 = kani::any();
@@ -449,7 +574,7 @@ mod proofs {
                 }
             }
             assert!((INITIAL_WIDTH..=WIDEST).contains(&table.width()));
-            assert!(table.next_free >= FIRST_ENTRY && table.next_free <= PROVEN_TABLE);
+            assert!(bookkeeping_matches_the_entries(&table));
         }
     }
 }

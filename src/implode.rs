@@ -17,8 +17,11 @@ fn data_error(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
-// SPEC(APPNOTE 5.3.7, 5.3.8): each byte gives a run of up to 16 symbols with one length of 1 to 16 bits.
-// The longest codes take the lowest values, so a code is the bitwise complement of the canonical Huffman code.
+// SPEC(APPNOTE 5.3.7): each byte gives a run of up to 16 symbols with one length of 1 to 16 bits.
+fn length_run(byte: u8) -> (usize, usize) {
+    (usize::from(byte & 0x0F) + 1, usize::from(byte >> 4) + 1)
+}
+
 struct Tree {
     counts: [u16; LONGEST_CODE + 1],
     symbols: [u8; LITERAL_SYMBOLS],
@@ -26,23 +29,18 @@ struct Tree {
 
 impl Tree {
     fn from_description(description: &[u8], symbols: usize) -> Decoded<Tree> {
-        let mut lengths = [0u8; LITERAL_SYMBOLS];
+        let mut counts = [0u16; LONGEST_CODE + 1];
         let mut filled = 0;
         for &byte in description {
-            let length = (byte & 0x0F) + 1;
-            let run = usize::from(byte >> 4) + 1;
+            let (length, run) = length_run(byte);
             if filled + run > symbols {
                 return Err("ZIP Implode tree describes more symbols than it holds");
             }
-            lengths[filled..filled + run].fill(length);
+            counts[length] += run as u16;
             filled += run;
         }
         if filled != symbols {
             return Err("ZIP Implode tree describes fewer symbols than it holds");
-        }
-        let mut counts = [0u16; LONGEST_CODE + 1];
-        for &length in &lengths[..symbols] {
-            counts[usize::from(length)] += 1;
         }
         let mut unused = 1i32;
         for &count in &counts[1..] {
@@ -59,10 +57,14 @@ impl Tree {
             offsets[length + 1] = offsets[length] + usize::from(counts[length]);
         }
         let mut sorted = [0u8; LITERAL_SYMBOLS];
-        for (symbol, &length) in lengths[..symbols].iter().enumerate() {
-            let slot = &mut offsets[usize::from(length)];
-            sorted[*slot] = symbol as u8;
-            *slot += 1;
+        let mut symbol = 0;
+        for &byte in description {
+            let (length, run) = length_run(byte);
+            for _ in 0..run {
+                sorted[offsets[length]] = symbol as u8;
+                offsets[length] += 1;
+                symbol += 1;
+            }
         }
         Ok(Tree {
             counts,
@@ -73,7 +75,7 @@ impl Tree {
     fn decode<E>(&self, mut bit: impl FnMut() -> Result<u32, E>) -> Result<Option<u8>, E> {
         let (mut code, mut first, mut index) = (0usize, 0usize, 0usize);
         for &count in &self.counts[1..] {
-            code |= (bit()? ^ 1) as usize;
+            code |= canonical_huffman_bit(bit()?) as usize;
             let count = usize::from(count);
             if code < first + count {
                 return Ok(Some(self.symbols[index + code - first]));
@@ -84,6 +86,10 @@ impl Tree {
         }
         Ok(None)
     }
+}
+
+fn canonical_huffman_bit(shannon_fano_bit: u32) -> u32 {
+    shannon_fano_bit ^ 1
 }
 
 struct Trees {
@@ -268,15 +274,16 @@ mod tests {
 mod proofs {
     use super::*;
 
-    const PROVEN_DESCRIPTION: usize = 5;
+    const PROVEN_DESCRIPTION: usize = 3;
 
     #[kani::proof]
-    #[kani::unwind(65)]
-    fn any_short_length_tree_description_builds_a_decodable_tree_or_is_refused() {
+    #[kani::unwind(17)]
+    fn any_short_tree_description_builds_a_decodable_tree_or_is_refused() {
         let description: [u8; PROVEN_DESCRIPTION] = kani::any();
         let length: usize = kani::any();
         kani::assume(length >= 1 && length <= PROVEN_DESCRIPTION);
-        let symbols = LENGTH_SYMBOLS;
+        let symbols: usize = kani::any();
+        kani::assume(symbols >= 1 && symbols <= LITERAL_SYMBOLS);
         let Ok(tree) = Tree::from_description(&description[..length], symbols) else {
             return;
         };
@@ -289,6 +296,6 @@ mod proofs {
         });
         let symbol = decoded.unwrap();
         assert!(symbol.is_some_and(|symbol| usize::from(symbol) < symbols));
-        kani::cover!(next == LONGEST_CODE);
+        kani::cover!(next == 6);
     }
 }

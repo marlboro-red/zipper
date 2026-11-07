@@ -1,6 +1,3 @@
-//! Test encoders for ZIP's Shrink and Implode methods, which no current tool
-//! writes, and a ZIP writer for their entries. Their output is checked
-//! against Info-ZIP `unzip` and 7-Zip before Zipper's reader is trusted.
 #![allow(dead_code)]
 use std::collections::HashMap;
 
@@ -32,6 +29,7 @@ pub struct Entry {
     pub name: String,
     pub method: u16,
     pub flags: u16,
+    pub local_flags: u16,
     pub crc: u32,
     pub size: u32,
     pub packed: Vec<u8>,
@@ -43,6 +41,7 @@ impl Entry {
             name: name.to_owned(),
             method,
             flags,
+            local_flags: flags,
             crc: crc32fast::hash(data),
             size: data.len() as u32,
             packed,
@@ -62,7 +61,12 @@ pub fn zip(entries: &[Entry]) -> Vec<u8> {
             None => out.extend_from_slice(b"PK\x03\x04"),
         }
         out.extend_from_slice(&10u16.to_le_bytes());
-        out.extend_from_slice(&entry.flags.to_le_bytes());
+        let flags = if central.is_some() {
+            entry.flags
+        } else {
+            entry.local_flags
+        };
+        out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&entry.method.to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes());
         out.extend_from_slice(&0x5021u16.to_le_bytes());
@@ -205,13 +209,21 @@ impl ShrinkTable {
     }
 }
 
-/// Shrinks `data` greedily. `clear_every` emits a partial clear after that
-/// many codes, and the encoder always clears before its table fills.
-pub fn shrink(data: &[u8], clear_every: Option<usize>) -> Vec<u8> {
-    shrink_codes(&shrink_trace(data, clear_every))
+#[derive(Clone, Copy, Debug)]
+pub enum Clears {
+    WhenFull,
+    WhenFullAndEvery(usize),
 }
 
-pub fn shrink_trace(data: &[u8], clear_every: Option<usize>) -> Vec<(u32, u32)> {
+pub fn shrink(data: &[u8], clears: Clears) -> Vec<u8> {
+    shrink_codes(&shrink_trace(data, clears))
+}
+
+pub fn shrink_trace(data: &[u8], clears: Clears) -> Vec<(u32, u32)> {
+    let scheduled = |emitted: usize| match clears {
+        Clears::WhenFull => false,
+        Clears::WhenFullAndEvery(every) => emitted.is_multiple_of(every),
+    };
     let mut bits: Vec<(u32, u32)> = Vec::new();
     let mut width = 9;
     let mut table = ShrinkTable::new();
@@ -220,7 +232,7 @@ pub fn shrink_trace(data: &[u8], clear_every: Option<usize>) -> Vec<(u32, u32)> 
     let mut emitted = 0usize;
     while position < data.len() {
         if let Some(previous) = previous {
-            if clear_every.is_some_and(|every| emitted.is_multiple_of(every)) || table.full() {
+            if scheduled(emitted) || table.full() {
                 bits.push((256, width));
                 bits.push((2, width));
                 table.partial_clear();
@@ -249,13 +261,14 @@ pub fn shrink_trace(data: &[u8], clear_every: Option<usize>) -> Vec<(u32, u32)> 
     bits
 }
 
-/// A random Shrink code stream and the bytes 7-Zip's rules give it. When
-/// `valid` is false, the last code names a cleared or cyclic entry, or the
-/// table is full, and `data` holds the bytes before that code.
+pub enum Ending {
+    Complete(Vec<u8>),
+    RefusedAtLastCode { bytes_before: Vec<u8> },
+}
+
 pub struct RandomShrink {
     pub codes: Vec<(u32, u32)>,
-    pub data: Vec<u8>,
-    pub valid: bool,
+    pub ending: Ending,
 }
 
 struct Reference {
@@ -332,8 +345,7 @@ pub fn random_shrink(rng: &mut Rng, steps: usize) -> RandomShrink {
                 codes.push((rng.below(256) as u32, width));
                 return RandomShrink {
                     codes,
-                    data,
-                    valid: false,
+                    ending: Ending::RefusedAtLastCode { bytes_before: data },
                 };
             }
             let slot = table.lowest_free;
@@ -363,8 +375,7 @@ pub fn random_shrink(rng: &mut Rng, steps: usize) -> RandomShrink {
             codes.push((code as u32, width));
             return RandomShrink {
                 codes,
-                data,
-                valid: false,
+                ending: Ending::RefusedAtLastCode { bytes_before: data },
             };
         };
         if let Some(slot) = added {
@@ -376,8 +387,7 @@ pub fn random_shrink(rng: &mut Rng, steps: usize) -> RandomShrink {
     }
     RandomShrink {
         codes,
-        data,
-        valid: true,
+        ending: Ending::Complete(data),
     }
 }
 
