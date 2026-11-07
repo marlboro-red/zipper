@@ -13,6 +13,7 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 The reader supports these features:
 
 - Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. XZ and LZMA decode with Zipper's own decoder in `src/lzma.rs`, the readers [tar](tar-reader.md#supported-archives) uses. An LZMA entry may end with an end marker or without one, and as in liblzma, `lc` plus `lp` above 4 is refused. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
+- Shrink (method 1) and Implode (method 6) entries, which PKZIP 1.x wrote. [Legacy methods](#legacy-methods) gives their rules.
 - XZ entries decode with Zipper's own xz reader, as [tar's xz](tar-reader.md#supported-archives) does. An entry holds exactly one xz stream, so stream padding or a second stream after it is refused.
 - Split sets, `name.z01` and on with `name.zip` last, as [ZIP split sets](#zip-split-sets) describes, and an archive that starts with the spanning signature, as Info-ZIP `zip -s` writes one that fits in one piece.
 - Self-extracting archives, a stub followed by a ZIP, whether `zip -A` adjusted the offsets or not, as [self-extracting ZIP](#self-extracting-zip) describes.
@@ -26,7 +27,7 @@ The reader does not support these features:
 
 - PKWARE strong encryption and encrypted central directories.
 - Symlinks that point outside the destination.
-- Shrink, Implode and other legacy methods.
+- Reduce (methods 2 to 5), Tokenize and other legacy methods. Neither Info-ZIP `unzip` on macOS, which is built without Reduce, nor 7-Zip reads Reduce, so no oracle can check a decoder.
 - The last volume of a split set without the volumes before it.
 - Ambiguous end records.
 - A ZIP64 locator just before the end record that the end record does not use. bsdtar, 7-Zip and Python follow such a locator and can read a different directory.
@@ -116,6 +117,22 @@ The header fields of an entry are not covered by the AES code. Suppose someone c
 `native-fast` streams encrypted entries instead of buffering them.
 
 `tests/encrypted_zip.rs` extracts archives from 7-Zip and Info-ZIP with each scheme and several methods, and compares them with the tree `7zz x` gives. It flips every byte of an encrypted entry, the CRC and the code, and checks that each run fails with the destination unchanged and no staging folder left.
+
+## Legacy methods
+
+`src/shrink.rs` decodes Shrink and `src/implode.rs` decodes Implode, as APPNOTE 5.1 and 5.3 define them. Each holds a fixed table. Shrink keeps 8,192 entries and Implode an 8 KiB window, so neither takes decoder memory from the shared budget. Each stops at the entry's declared size, and the CRC and staging rules are the same as for other methods.
+
+A Shrink stream follows 7-Zip's rules where Info-ZIP `unzip` and 7-Zip differ:
+
+- Each code after the first takes the lowest free entry before it is expanded. A partial clear can free the code read just before it, so that entry can become its own prefix. The entry is accepted until a code names it, and then the stream is refused, as both tools refuse it.
+- Zipper refuses a code that names a freed entry, a prefix that leads to one and a code once the table is full. `unzip` decodes the first two to wrong bytes.
+- Zipper refuses a control code before the first byte, a control code other than 1 and 2, and a widening past 13 bits. `unzip` ignores unknown control codes.
+- A partial clear frees every leaf of the table. `unzip` frees only the leaves below its next free entry, so after a clear on a table that is not full it can decode other bytes. On a full table, which is when PKZIP clears, the two agree.
+- After the declared size, only control codes may follow, then zero bits up to the next byte. 7-Zip also accepts one more code there, which `unzip` decodes as data, so Zipper refuses it.
+
+An Implode entry reads its two or three Shannon-Fano trees, as general purpose bits 1 and 2 select. A tree must describe exactly its 256 or 64 symbols with a complete code. A match may reach before the start of the entry and reads zeros there. A match that runs past the declared size and a byte left after the last symbol are refused, as 7-Zip refuses them.
+
+`tests/zip_legacy.rs` builds Shrink and Implode streams with the test encoders in `tests/common/legacy_encoder.rs` and checks each archive against `unzip` and 7-Zip 26 or newer before Zipper reads it. Random Shrink code streams with clears, widenings and entries that are their own prefix must decode or fail where 7-Zip does. Random Implode trees and matches must extract as both tools extract them. Three archives from the `zip` crate's tests, in `tests/data/zip-legacy`, must extract as both tools extract them. Kani proves the Shrink table and the Implode tree builder never panic, under `[zip-legacy-methods]` in `verification/coverage.txt`.
 
 ## Integrity checks
 

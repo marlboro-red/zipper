@@ -23,6 +23,7 @@ struct Item {
     crc: u32,
     compressed: u64,
     method: u16,
+    flags: u16,
     stored_name_if_different: Option<Box<[u8]>>,
     header_start: u64,
     next_record_start: u64,
@@ -503,7 +504,16 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
         ensure!(
             matches!(
                 method,
-                STORED | DEFLATE | DEFLATE64 | BZIP2 | LZMA | ZSTANDARD | XZ | PPMD
+                STORED
+                    | SHRINK
+                    | IMPLODE
+                    | DEFLATE
+                    | DEFLATE64
+                    | BZIP2
+                    | LZMA
+                    | ZSTANDARD
+                    | XZ
+                    | PPMD
             ),
             "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
@@ -539,6 +549,7 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
             crc: file.crc32,
             compressed: file.compressed_size,
             method,
+            flags: file.flags,
             stored_name_if_different,
             header_start: file.header_start,
             next_record_start: 0,
@@ -988,6 +999,8 @@ fn write_behind(
 
 // SPEC(APPNOTE 4.4.5): compression method numbers.
 const STORED: u16 = 0;
+const SHRINK: u16 = 1;
+const IMPLODE: u16 = 6;
 const DEFLATE: u16 = 8;
 const DEFLATE64: u16 = 9;
 const BZIP2: u16 = 12;
@@ -1136,6 +1149,12 @@ fn method_decoder<'a>(
     input: &'a mut std::io::BufReader<&mut dyn Read>,
 ) -> Result<Box<dyn Read + 'a>> {
     Ok(match item.method {
+        SHRINK => Box::new(crate::shrink::Unshrink::new(input, item.entry.size)),
+        IMPLODE => Box::new(crate::implode::Explode::new(
+            input,
+            item.flags,
+            item.entry.size,
+        )),
         BZIP2 => Box::new(bzip2::bufread::BzDecoder::new(input)),
         ZSTANDARD => Box::new(zstd::stream::read::Decoder::with_buffer(input)?.single_frame()),
         XZ => Box::new(crate::lzma::XzReader::new(input).single_stream()),

@@ -283,10 +283,20 @@
       "status": "native"
     },
     "Shrink": {
-      "status": "backend"
+      "status": "native",
+      "note": "No current tool writes it, so the proof is a test encoder checked against unzip and 7-Zip.",
+      "tests": [
+        "tests/zip_legacy.rs::shrink_entries_that_clear_a_full_table_extract_as_unzip_and_7zip_read_them",
+        "tests/zip_legacy.rs::random_shrink_streams_decode_and_fail_as_7zip_does"
+      ]
     },
     "Implode": {
-      "status": "backend"
+      "status": "native",
+      "note": "No current tool writes it, so the proof is a test encoder checked against unzip and 7-Zip.",
+      "tests": [
+        "tests/zip_legacy.rs::implode_entries_extract_as_unzip_and_7zip_read_them",
+        "tests/zip_legacy.rs::random_implode_tokens_and_trees_extract_as_unzip_and_7zip_read_them"
+      ]
     },
     "Deflate": {
       "status": "native"

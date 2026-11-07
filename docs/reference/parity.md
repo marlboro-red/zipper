@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 62 |
-| `partial` | 1 |
+| `native` | 61 |
+| `partial` | 2 |
 | `backend` | 44 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-40 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+38 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -35,7 +35,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Arj` | `backend` |  | No proof yet. |
 | `Base64` | `backend` |  | No proof yet. |
 | `COFF` | `backend` |  | No proof yet. |
-| `Cab` | `native` | Stored, MSZIP, Quantum and LZX folders and cabinet sets read in process. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set. | `tests/data/parity/archives/cab-set-1.cab`, `tests/data/parity/archives/cab.cab`, `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_sets_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/cab_sets.rs` |
+| `Cab` | `partial` | Stored, MSZIP, Quantum and LZX folders read in process. Cabinet sets go to 7-Zip. | `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs` |
 | `Chm` | `backend` |  | No proof yet. |
 | `Compound` | `native` | MSI, MSP, MSM and other compound files read in process, and an installer's one CAB through the CAB reader. An installer whose main stream is not a CAB goes to 7-Zip. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/msi_corpus.rs`, `generated_compound_files_extract_exactly_as_7zip_extracts_them` in `tests/msi_corpus.rs` |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
@@ -49,7 +49,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `HFS` | `backend` |  | `tests/data/parity/archives/hfs.img.stored.xz` |
 | `Hxs` | `backend` |  | No proof yet. |
 | `IHex` | `backend` |  | No proof yet. |
-| `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |
+| `Iso` | `backend` |  | `tests/data/parity/archives/iso.iso.stored.xz` |
 | `LP` | `backend` |  | No proof yet. |
 | `Lzh` | `backend` |  | No proof yet. |
 | `MBR` | `backend` |  | `tests/data/parity/archives/mbr.img.stored.xz` |
@@ -72,7 +72,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `TE` | `backend` |  | No proof yet. |
 | `UEFIc` | `backend` |  | No proof yet. |
 | `UEFIf` | `backend` |  | No proof yet. |
-| `Udf` | `native` | UDF 1.02 to 2.60 with metadata partitions read in process. A UDF tree 7-Zip cannot open gives way to ISO 9660, as in 7-Zip. | `tests/data/parity/archives/udf.iso.stored.xz`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs`, `a_udf_tree_7zip_cannot_open_falls_back_to_iso_9660_as_7zip_does` in `tests/iso_corpus.rs` |
+| `Udf` | `backend` |  | `tests/data/parity/archives/udf.iso.stored.xz` |
 | `VDI` | `backend` |  | No proof yet. |
 | `VHD` | `backend` |  | No proof yet. |
 | `VHDX` | `backend` |  | No proof yet. |
@@ -121,8 +121,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | Row | Status | Note | Proof |
 | --- | --- | --- | --- |
 | `Store` | `native` |  | `tests/data/parity/archives/zip-store.zip` |
-| `Shrink` | `backend` |  | No proof yet. |
-| `Implode` | `backend` |  | No proof yet. |
+| `Shrink` | `native` | No current tool writes it, so the proof is a test encoder checked against unzip and 7-Zip. | `shrink_entries_that_clear_a_full_table_extract_as_unzip_and_7zip_read_them` in `tests/zip_legacy.rs`, `random_shrink_streams_decode_and_fail_as_7zip_does` in `tests/zip_legacy.rs` |
+| `Implode` | `native` | No current tool writes it, so the proof is a test encoder checked against unzip and 7-Zip. | `implode_entries_extract_as_unzip_and_7zip_read_them` in `tests/zip_legacy.rs`, `random_implode_tokens_and_trees_extract_as_unzip_and_7zip_read_them` in `tests/zip_legacy.rs` |
 | `Deflate` | `native` |  | `tests/data/parity/archives/zip-deflate.zip` |
 | `Deflate64` | `native` |  | `tests/data/parity/archives/zip-deflate64.zip` |
 | `BZip2` | `native` |  | `tests/data/parity/archives/zip-bzip2.zip` |
