@@ -142,7 +142,7 @@ fn methods() -> Vec<(&'static str, Method)> {
 }
 
 fn small(method: &Method) -> Cabinet {
-    cab_writer::simple(
+    cab_writer::one_folder_in_order(
         &[
             ("a.txt", b"hello, cabinet\r\n"),
             ("dir/b.txt", b"second file\r\n"),
@@ -161,7 +161,7 @@ fn every_method_extracts_byte_for_byte_and_verifies_without_a_destination() {
         ("last.bin", &[0xE8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
     ];
     for (label, method) in methods() {
-        let bytes = cab_writer::simple(&files, &method).build();
+        let bytes = cab_writer::one_folder_in_order(&files, &method).build();
         let (_root, destination, result) = extract_with(&bytes, ReadOptions::default());
         let entries = result.unwrap_or_else(|error| panic!("{label}: {error:#}"));
         assert_eq!(tree(&destination), expected(&files), "{label}");
@@ -182,11 +182,11 @@ fn every_method_extracts_byte_for_byte_and_verifies_without_a_destination() {
 #[test]
 fn several_folders_reserves_directories_and_trailing_data_extract() {
     let large = text(9000);
-    let mut cabinet = cab_writer::simple(
+    let mut cabinet = cab_writer::one_folder_in_order(
         &[("one/a.txt", b"aaa"), ("one/b.txt", &large)],
         &Method::Mszip,
     );
-    let second = cab_writer::simple(
+    let second = cab_writer::one_folder_in_order(
         &[("two/c.txt", &large)],
         &Method::Lzx(lzx_encoder::Options::plain(21)),
     );
@@ -256,7 +256,7 @@ fn names_that_are_not_utf8_or_not_ended_or_too_long_are_refused() {
         result.is_ok() || !format!("{:#}", result.unwrap_err()).contains("8192"),
         "an 8192-byte name passes the CAB name limit"
     );
-    let built = cab_writer::simple(&[("a.txt", b"one")], &Method::Stored).build();
+    let built = cab_writer::one_folder_in_order(&[("a.txt", b"one")], &Method::Stored).build();
     let name_end = built.windows(6).position(|w| w == b"a.txt\0").unwrap() + 5;
     let mut unterminated = built[..name_end].to_vec();
     unterminated[8..12].copy_from_slice(&(name_end as u32).to_le_bytes());
@@ -265,7 +265,7 @@ fn names_that_are_not_utf8_or_not_ended_or_too_long_are_refused() {
 
 #[test]
 fn repeated_names_follow_the_last_and_shared_or_overlapping_data_is_refused() {
-    let mut repeated = cab_writer::simple(
+    let mut repeated = cab_writer::one_folder_in_order(
         &[("same.txt", b"first"), ("same.txt", b"second")],
         &Method::Stored,
     );
@@ -291,7 +291,7 @@ fn repeated_names_follow_the_last_and_shared_or_overlapping_data_is_refused() {
     assert_rejected_with("overlap", &overlap.build(), "share bytes");
 
     let file_and_folder =
-        cab_writer::simple(&[("a", b"file"), ("a/b", b"inside")], &Method::Stored);
+        cab_writer::one_folder_in_order(&[("a", b"file"), ("a/b", b"inside")], &Method::Stored);
     assert_rejected_without_leftovers("file then folder", &file_and_folder.build());
     let mut kinds = small(&Method::Stored);
     kinds.files.push(cab_writer::File {
@@ -553,7 +553,7 @@ fn mszip_blocks_must_be_whole_deflate_streams() {
 fn lzx_streams_that_lie_are_refused() {
     let large = text(6000);
     let lzx = Method::Lzx(lzx_encoder::Options::plain(15));
-    let base = cab_writer::simple(&[("a", &large)], &lzx);
+    let base = cab_writer::one_folder_in_order(&[("a", &large)], &lzx);
     assert!(base.folders[0].blocks.len() > 1);
     let mut wrong_window = base.clone();
     wrong_window.folders[0].type_compress = 3 | (21 << 8);
@@ -577,7 +577,8 @@ fn lzx_streams_that_lie_are_refused() {
 #[test]
 fn output_limit_is_enforced_before_writing() {
     let large = text(5000);
-    let bytes = cab_writer::simple(&[("a", b"small"), ("b", &large)], &Method::Mszip).build();
+    let bytes =
+        cab_writer::one_folder_in_order(&[("a", b"small"), ("b", &large)], &Method::Mszip).build();
     let (root, destination, result) = extract_with(
         &bytes,
         ReadOptions {
@@ -592,7 +593,7 @@ fn output_limit_is_enforced_before_writing() {
 
 #[test]
 fn read_only_attributes_times_and_options_apply() {
-    let mut cabinet = cab_writer::simple(
+    let mut cabinet = cab_writer::one_folder_in_order(
         &[
             ("keep/a.txt", b"a"),
             ("keep/b.txt", b"b"),
@@ -768,4 +769,23 @@ fn a_cab_of_many_empty_files_and_folders_stays_within_its_limits() {
         fs::read_dir(destination).unwrap().count(),
         u16::MAX as usize
     );
+}
+
+#[test]
+fn folders_that_share_data_blocks_are_refused_before_their_blocks_are_decoded_twice() {
+    let large = text(4000);
+    let mut cabinet = cab_writer::one_folder_in_order(&[("a.txt", &large)], &Method::Mszip);
+    for _ in 0..3 {
+        cabinet.folders.push(cab_writer::Folder {
+            type_compress: 0,
+            blocks: Vec::new(),
+            declared_blocks: None,
+        });
+    }
+    let mut bytes = cabinet.build();
+    let first = bytes[36..44].to_vec();
+    for folder in 1..4 {
+        bytes[36 + 8 * folder..44 + 8 * folder].copy_from_slice(&first);
+    }
+    assert_rejected_with("shared blocks", &bytes, "share data blocks");
 }

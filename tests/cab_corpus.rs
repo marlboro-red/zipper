@@ -305,7 +305,8 @@ fn lzx_block_edges_at_chunk_ends_extract_as_7zip_extracts_them() {
                 options.plan = plan.clone();
                 options.padding_in_next_chunk = padding_in_next_chunk;
                 options.translation = translation;
-                let cabinet = cab_writer::simple(&[("a.bin", &data)], &Method::Lzx(options));
+                let cabinet =
+                    cab_writer::one_folder_in_order(&[("a.bin", &data)], &Method::Lzx(options));
                 let archive = root.path().join(format!("edge{case}.cab"));
                 fs::write(&archive, cabinet.build()).unwrap();
                 let theirs =
@@ -346,11 +347,11 @@ fn write_the_generated_corpus() {
     let mut cabinets: Vec<(String, Cabinet)> = vec![
         (
             "stored.cab".into(),
-            cab_writer::simple(&files, &Method::Stored),
+            cab_writer::one_folder_in_order(&files, &Method::Stored),
         ),
         (
             "mszip.cab".into(),
-            cab_writer::simple(&files, &Method::Mszip),
+            cab_writer::one_folder_in_order(&files, &Method::Mszip),
         ),
     ];
     for window_bits in 15..=21u8 {
@@ -365,10 +366,10 @@ fn write_the_generated_corpus() {
         options.translation = Some(12_000_000);
         cabinets.push((
             format!("lzx-{window_bits}.cab"),
-            cab_writer::simple(&files, &Method::Lzx(options)),
+            cab_writer::one_folder_in_order(&files, &Method::Lzx(options)),
         ));
     }
-    let mut folders = cab_writer::simple(
+    let mut folders = cab_writer::one_folder_in_order(
         &[
             files[0],
             files[1],
@@ -377,7 +378,8 @@ fn write_the_generated_corpus() {
         &Method::Mszip,
     );
     folders.files[2].attributes = cab_writer::NAME_IS_UTF8;
-    let second = cab_writer::simple(&files[2..], &Method::Lzx(lzx_encoder::Options::plain(16)));
+    let second =
+        cab_writer::one_folder_in_order(&files[2..], &Method::Lzx(lzx_encoder::Options::plain(16)));
     folders.folders.extend(second.folders);
     folders
         .files

@@ -1,5 +1,3 @@
-//! Writes CAB files for tests: stored, MSZIP and LZX folders, reserved
-//! areas, cabinet set fields and checksums, with every field open to damage.
 #![allow(dead_code)]
 use crate::lzx_encoder;
 
@@ -124,8 +122,7 @@ pub fn file(name: &str, folder: u16, offset: u32, size: u32) -> File {
     }
 }
 
-/// One folder holding every file, in order.
-pub fn simple(files: &[(&str, &[u8])], method: &Method) -> Cabinet {
+pub fn one_folder_in_order(files: &[(&str, &[u8])], method: &Method) -> Cabinet {
     let mut data = Vec::new();
     let mut records = Vec::new();
     for (name, contents) in files {

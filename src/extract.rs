@@ -11,8 +11,8 @@ use std::{io::Read, path::Path};
 pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, single compressed files,
     /// unrecognized files, and 7z and CAB whose methods it decodes. 7-Zip for
-    /// other 7z and CAB and the other formats whose signature Zipper
-    /// recognizes.
+    /// other 7z and CAB, CAB cabinet sets, and the other formats whose
+    /// signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.

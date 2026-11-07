@@ -966,7 +966,7 @@ mod tests {
     fn a_match_that_runs_past_its_block_or_reaches_before_the_stream_is_refused() {
         use encoder::Token::{Literal, Match};
         let decode = |block: usize, tokens: &[encoder::Token], size: usize| {
-            let bytes = encoder::crafted_verbatim(15, block, tokens);
+            let bytes = encoder::verbatim_chunk_of_exact_tokens(15, block, tokens);
             Lzx::new(15, None)
                 .unwrap()
                 .chunk(&bytes, size)

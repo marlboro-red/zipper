@@ -44,6 +44,7 @@ The reader checks the whole cabinet before it publishes anything, and it publish
 - A stored block packs exactly as many bytes as it holds. An MSZIP block starts with `CK`, and its deflate stream ends with a final block exactly at the block's last byte and size.
 - An LZX block follows 7-Zip's checks. Each Huffman table is a complete code, and only the length table may be empty, in which case no match may need it. Every length run stays inside its table. A match stays inside its block and data block, and reaches no byte before the start of the folder. The padding bits before an uncompressed block and the padding byte after an odd one are zero. The repeated distances an uncompressed block stores lie inside the window. Each data block ends with its last bit, padded with fewer than 16 zero bits.
 - Every block a folder declares is decoded and checked, even past the last file in it. A file that ends past its folder's data is refused.
+- The data blocks of all folders together hold no more bytes than the cabinet. So folders cannot share blocks, and no block is decoded twice.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
 ## Limits
@@ -58,7 +59,7 @@ The reader checks the whole cabinet before it publishes anything, and it publish
 | Decoder memory | at most 4 MiB, an LZX window of up to 2 MiB with 96 KiB of tables and buffers |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-The reader keeps the file table in memory, with each name, so a cabinet whose names fill the limits holds up to 64 MiB of names. It decodes one folder at a time with one decoder, reused from folder to folder, and writes each file in folder order through a 1 MiB buffer. So memory does not grow with file size. `--threads` has no effect on CAB.
+The reader keeps the file table in memory, with each name, and frees each name once the file is written. The shared tree that the cpio reader also uses keeps two more copies, one to find repeated names and one for the list of entries. On a cabinet of 65,535 empty files whose names total 62 MiB, `zipper list` peaked at 154 MB of resident memory, and `7zz t` at 147 MB. It decodes one folder at a time with one decoder, reused from folder to folder, and writes each file in folder order through a 1 MiB buffer. So memory does not grow with file size. `--threads` has no effect on CAB.
 
 ## Differences from 7-Zip
 
@@ -68,6 +69,7 @@ The reader keeps the file table in memory, with each name, so a cabinet whose na
 - 7-Zip reads a name without the UTF-8 flag in the system code page. Zipper refuses a name that is not ASCII or UTF-8.
 - 7-Zip reads data blocks past a folder's declared count, for folders of more than 65,535 blocks that some Microsoft cabinets hold. Zipper decodes exactly the declared count and refuses a file that needs more.
 - 7-Zip stops decoding a folder at the end of its last file. Zipper decodes and checks every block the folder declares.
+- 7-Zip reads folders whose data blocks overlap. Zipper refuses them.
 - 7-Zip removes a leading `\` and `..` from a name and writes the file. Zipper refuses the cabinet.
 - 7-Zip reads a cabinet set across its files, and decodes Quantum. The default engine hands both to 7-Zip, and `--zip-engine native` refuses them.
 

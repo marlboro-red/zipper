@@ -24,7 +24,7 @@ const RESERVE_PRESENT: u16 = 0x0004;
 const KNOWN_FLAGS: u16 = PREVIOUS_CABINET | NEXT_CABINET | RESERVE_PRESENT;
 const FIRST_CONTINUED_FOLDER: u16 = 0xFFFD;
 const BLOCK: usize = 32 * 1024;
-// SPEC(MS-CAB 2.4): a compressed block may grow by up to 6,144 bytes.
+// SPEC(MS-CAB CFDATA): a compressed block may grow by up to 6,144 bytes.
 const LARGEST_PACKED: usize = BLOCK + 6144;
 const METHOD_MASK: u8 = 0x0F;
 const READ_ONLY: u16 = 0x01;
@@ -96,7 +96,6 @@ fn u32_at(bytes: &[u8], at: usize) -> u32 {
     u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
 }
 
-// SPEC(MS-CAB 2.2): CFHEADER, with 7-Zip's checks of the reserved fields and the flags.
 fn header(bytes: &[u8; HEADER]) -> Field<Header> {
     field_check(&bytes[..8] == SIGNATURE, "not a CAB file")?;
     field_check(
@@ -132,8 +131,8 @@ fn reserve(bytes: &[u8; RESERVE_SIZES]) -> Reserve {
     }
 }
 
-// SPEC(MS-CAB 2.3): CFFOLDER. 7-Zip reads the method from the low 4 bits of the first byte
-// of typeCompress and the LZX window from the whole second byte.
+// EXTERNAL(7-Zip CabItem): the method is the low 4 bits of typeCompress's first byte, and
+// the LZX window is its whole second byte.
 fn folder(bytes: &[u8; FOLDER]) -> Field<Folder> {
     let minor = bytes[7];
     let method = match bytes[6] & METHOD_MASK {
@@ -176,7 +175,6 @@ impl FileRecord {
     }
 }
 
-// SPEC(MS-CAB 2.5): CFDATA. 7-Zip also caps the uncompressed size at 32 KiB.
 fn data_header(bytes: &[u8; DATA]) -> Field<DataHeader> {
     let header = DataHeader {
         checksum: u32_at(bytes, 0),
@@ -198,8 +196,8 @@ fn data_header(bytes: &[u8; DATA]) -> Field<DataHeader> {
     Ok(header)
 }
 
-// SPEC(MS-CAB 2.5): the checksum XORs little-endian words, and a short tail with its first
-// byte highest.
+// EXTERNAL(7-Zip CabBlockInStream): the checksum XORs little-endian words, and a short tail
+// with its first byte highest.
 fn checksum(bytes: &[u8]) -> u32 {
     let mut words = bytes.chunks_exact(4);
     let mut sum = words.by_ref().fold(0, |sum, word| sum ^ u32_at(word, 0));
@@ -210,7 +208,7 @@ fn checksum(bytes: &[u8]) -> u32 {
     sum
 }
 
-// EXTERNAL(7-Zip CabBlockInStream): the checksum also covers the block's reserved bytes.
+// SPEC(MS-CAB CFDATA): the checksum covers cbData through the data, reserved bytes included.
 fn checksum_matches(header_and_reserve: &[u8], data: &[u8]) -> bool {
     let stored = u32_at(header_and_reserve, 0);
     stored == 0 || stored == checksum(&header_and_reserve[4..]) ^ checksum(data)
@@ -339,6 +337,7 @@ struct Tables {
     reserve: Reserve,
     folders: Vec<Folder>,
     items: Vec<Item>,
+    block_bytes: u64,
 }
 
 impl Tables {
@@ -362,6 +361,7 @@ impl Tables {
             reserve: Reserve::default(),
             folders: Vec::new(),
             items: Vec::new(),
+            block_bytes: 0,
         };
         let mut at = HEADER as u64;
         if header.flags & RESERVE_PRESENT != 0 {
@@ -506,8 +506,8 @@ impl Tables {
     }
 }
 
-// EXTERNAL(7-Zip CabIn): items sort folders first, then by folder, offset and size, and a
-// record that repeats the folder, offset, size and name of the one before it is dropped.
+// EXTERNAL(7-Zip CabIn): records sort directories first, then by folder, offset and size, and
+// one that repeats the folder, offset, size and slashed name of the one before it is dropped.
 fn sort_items(items: &mut Vec<Item>) {
     items.sort_by_key(|item| {
         (
@@ -695,6 +695,11 @@ impl<'a> FolderStream<'a> {
         let header = data_header(header_bytes[..DATA].try_into().unwrap())?;
         let packed = &mut rest[..usize::from(header.packed)];
         self.tables.exact(packed, &mut at, "data block")?;
+        self.tables.block_bytes += at - self.at;
+        ensure!(
+            self.tables.block_bytes <= u64::from(self.tables.header.cabinet_size),
+            "CAB folders share data blocks: they read more block bytes than the cabinet holds"
+        );
         ensure!(
             checksum_matches(header_bytes, packed),
             "CAB data block fails its checksum"
@@ -743,8 +748,10 @@ impl<'a> FolderStream<'a> {
         Ok(())
     }
 
-    fn finish(mut self, decoders: &mut Decoders, method: Method) -> Result<()> {
-        while self.next_block()? {}
+    fn finish(mut self, tree: &tree::Tree, decoders: &mut Decoders, method: Method) -> Result<()> {
+        while self.next_block()? {
+            tree.check()?;
+        }
         decoders.give_back(self.decoder, method);
         Ok(())
     }
@@ -778,8 +785,8 @@ fn file_mode(record: &FileRecord) -> u32 {
 }
 
 fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
-    let items = std::mem::take(&mut tables.items);
-    for item in items.iter().filter(|item| item.directory()) {
+    let mut items = std::mem::take(&mut tables.items).into_iter().peekable();
+    while let Some(item) = items.next_if(Item::directory) {
         tree.check()?;
         ensure!(
             item.record.size == 0,
@@ -793,11 +800,10 @@ fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
         mszip: None,
         lzx: None,
     };
-    let mut files = items.iter().filter(|item| !item.directory()).peekable();
     for index in 0..tables.folders.len() {
         let folder = tables.folders[index];
         let mut stream = FolderStream::open(tables, folder, &mut decoders)?;
-        while let Some(item) = files.next_if(|item| usize::from(item.record.folder) == index) {
+        while let Some(item) = items.next_if(|item| usize::from(item.record.folder) == index) {
             tree.check()?;
             let record = item.record;
             while stream.position < u64::from(record.offset) {
@@ -815,7 +821,7 @@ fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
             )?;
         }
         tree.check()?;
-        stream.finish(&mut decoders, folder.method)?;
+        stream.finish(tree, &mut decoders, folder.method)?;
     }
     Ok(())
 }

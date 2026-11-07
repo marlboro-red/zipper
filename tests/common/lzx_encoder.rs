@@ -1,7 +1,3 @@
-//! An LZX encoder for tests. It writes the chunks a CAB LZX folder holds, one
-//! per 32 KiB of output, with verbatim, aligned and uncompressed blocks in a
-//! seeded random plan, E8 translation and an optional reset interval. It
-//! favours covering the format over compressing well.
 #![allow(dead_code)]
 
 pub const CHUNK: usize = 32 * 1024;
@@ -700,9 +696,11 @@ pub fn encode(original: &[u8], options: &Options) -> Vec<Chunk> {
     encoder.writer.chunks
 }
 
-/// One chunk holding one verbatim block of exactly these tokens, so a test
-/// can write a match that no real encoder would.
-pub fn crafted_verbatim(window_bits: u8, block_length: usize, tokens: &[Token]) -> Vec<u8> {
+pub fn verbatim_chunk_of_exact_tokens(
+    window_bits: u8,
+    block_length: usize,
+    tokens: &[Token],
+) -> Vec<u8> {
     let slots = position_slots(window_bits);
     let mut repeats = [1usize; 3];
     let mut coded = Vec::new();
