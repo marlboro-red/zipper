@@ -35,7 +35,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 119d151bb05cf7f7
+fingerprint = bb0d8887f90ab25d
 full-check = python3 scripts/check_model.py verification/7z-folder-workers MCWorkers.tla:workers.cfg
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
@@ -102,7 +102,7 @@ item = src/lib.rs | fn ensure_link_stays_inside(
 
 [7z-lzma2-segments]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = c7eb034bcb343f80
+fingerprint = 5daa6ca3b3d591a6
 full-check = python3 scripts/check_model.py verification/7z-lzma2-segments MCSegments.tla:segments.cfg
 item = src/native_7z.rs | const SEGMENT_BUDGET:
 item = src/native_7z.rs | const PARALLEL_FOLDER_MIN:
@@ -247,7 +247,7 @@ item = src/xz_filters.rs | pub(crate) fn xz_filter(
 
 [lzma]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 214e3009f46de3ca
+fingerprint = 73860646eaebd8e1
 full-check = cargo kani --tests --harness lzma::proofs::
 full-check = cargo test --release --lib lzma
 item = src/lzma.rs | const PROBABILITY_BITS:
