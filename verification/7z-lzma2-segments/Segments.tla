@@ -1,41 +1,49 @@
 ---------------------------- MODULE Segments ----------------------------
 (***************************************************************************)
 (* Parallel decoding of one solid 7z LZMA2 folder, split where the stream  *)
-(* resets its dictionary. The folder's reader is the consumer: when it     *)
-(* needs bytes it starts decoder threads for the next segments, at most    *)
-(* `Window` at once and within `Budget` bytes of output held in memory,    *)
-(* then takes each segment's output in order. A decoder thread decodes     *)
-(* one segment into memory and sends it, or an error, on its own channel.  *)
-(* The reader can be dropped at any time, after an error elsewhere or a    *)
-(* cancel; a decoder that finishes then finds no receiver and exits.       *)
-(* After an error or a drop, the reader stops its decoders and joins them, *)
-(* so its caller returns only once no decoder thread is left.              *)
+(* resets its dictionary. The folder's reader is the consumer. When its    *)
+(* front segment is used up and no decoder thread is queued, the reader    *)
+(* decodes the next segment itself, straight into the caller's buffer, and *)
+(* holds only that segment's dictionary. Behind the front it starts        *)
+(* decoder threads, at most `Window` decoders at once with its own, and    *)
+(* within `Budget`. A thread holds its segment's whole output and          *)
+(* dictionary until the reader takes it, in order, from the thread's own   *)
+(* channel. A segment too large for a thread waits until it is the front,  *)
+(* then streams. The reader can be dropped at any time, after an error     *)
+(* elsewhere or a cancel; a decoder that finishes then finds no receiver   *)
+(* and exits. After an error or a drop, the reader stops its decoders and  *)
+(* joins them, so its caller returns only once no decoder thread is left.  *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences
 
 CONSTANTS
-    Sizes,          \* segment -> output size, in budget units
-    Window,         \* decoder threads at once
-    Budget,         \* output bytes held in memory at once
+    Sizes,          \* segment -> output and dictionary, in budget units
+    Streamed,       \* segment -> dictionary alone, in budget units
+    Window,         \* decoders at once, the reader's own included
+    Budget,         \* memory the started segments hold at once
     DecodeCanFail,  \* a segment can be corrupt
     ReaderCanDrop   \* the consumer can be dropped early
 
 N == Len(Sizes)
 Segments == 1..N
 
+ASSUME \A s \in Segments : Streamed[s] <= Budget
+
 VARIABLES
     next,       \* next segment to start
-    state,      \* segment -> "waiting", "decoding", "ready", "failed", "taken" or "abandoned"
-    held,       \* output units started and not yet taken or freed
+    state,      \* segment -> "waiting", "streaming", "decoding", "ready", "failed", "taken" or "abandoned"
+    charge,     \* segment -> units it holds once started
+    held,       \* units started and not yet taken or freed
     emitted,    \* segments whose bytes the consumer has passed on, in order
     rpc,        \* consumer: "reading", "ok", "error", "dropped" or "returned"
     threads     \* decoder threads alive
 
-vars == <<next, state, held, emitted, rpc, threads>>
+vars == <<next, state, charge, held, emitted, rpc, threads>>
 
 Init ==
     /\ next = 1
     /\ state = [s \in Segments |-> "waiting"]
+    /\ charge = [s \in Segments |-> 0]
     /\ held = 0
     /\ emitted = <<>>
     /\ rpc = "reading"
@@ -43,14 +51,30 @@ Init ==
 
 Front == Len(emitted) + 1
 
-\* Before reading, start the next segment while the window and the budget
-\* allow.
+Streaming == IF Front <= N /\ state[Front] = "streaming" THEN 1 ELSE 0
+
+\* `stream_front`: no thread is queued, so the next segment is the front,
+\* and the reader decodes it itself.
+ReaderStreamsFront ==
+    /\ rpc = "reading"
+    /\ next <= N
+    /\ next = Front
+    /\ state' = [state EXCEPT ![next] = "streaming"]
+    /\ charge' = [charge EXCEPT ![next] = Streamed[next]]
+    /\ held' = held + Streamed[next]
+    /\ next' = next + 1
+    /\ UNCHANGED <<emitted, rpc, threads>>
+
+\* `start_segments`: behind the front, start a thread for the next segment
+\* while the window and the budget allow.
 ReaderStartsSegment ==
     /\ rpc = "reading"
     /\ next <= N
-    /\ threads < Window
+    /\ next > Front
+    /\ threads + Streaming < Window
     /\ held + Sizes[next] <= Budget
     /\ state' = [state EXCEPT ![next] = "decoding"]
+    /\ charge' = [charge EXCEPT ![next] = Sizes[next]]
     /\ held' = held + Sizes[next]
     /\ threads' = threads + 1
     /\ next' = next + 1
@@ -62,9 +86,25 @@ DecoderFinishes(s) ==
     /\ \/ state' = [state EXCEPT ![s] = "ready"]
        \/ DecodeCanFail /\ state' = [state EXCEPT ![s] = "failed"]
     /\ threads' = threads - 1
-    /\ UNCHANGED <<next, held, emitted, rpc>>
+    /\ UNCHANGED <<next, charge, held, emitted, rpc>>
 
-\* `recv()` on the front segment's channel: its bytes go out in order and
+\* `SegmentDecoder::read` on the streaming front, to its end: its bytes go
+\* out in order and its dictionary is freed, or the decode fails.
+ReaderDecodesFront ==
+    /\ rpc = "reading"
+    /\ Front <= N
+    /\ state[Front] = "streaming"
+    /\ \/ /\ emitted' = Append(emitted, Front)
+          /\ state' = [state EXCEPT ![Front] = "taken"]
+          /\ held' = held - charge[Front]
+          /\ rpc' = IF Front = N THEN "ok" ELSE "reading"
+       \/ /\ DecodeCanFail
+          /\ state' = [state EXCEPT ![Front] = "failed"]
+          /\ rpc' = "error"
+          /\ UNCHANGED <<emitted, held>>
+    /\ UNCHANGED <<next, charge, threads>>
+
+\* `recv()` on the front thread's channel: its bytes go out in order and
 \* its memory is freed; a failed segment becomes the reader's error.
 ReaderTakesFront ==
     /\ rpc = "reading"
@@ -73,26 +113,27 @@ ReaderTakesFront ==
     /\ IF state[Front] = "ready"
        THEN /\ emitted' = Append(emitted, Front)
             /\ state' = [state EXCEPT ![Front] = "taken"]
-            /\ held' = held - Sizes[Front]
+            /\ held' = held - charge[Front]
             /\ rpc' = IF Front = N THEN "ok" ELSE "reading"
        ELSE /\ rpc' = "error"
             /\ UNCHANGED <<emitted, state, held>>
-    /\ UNCHANGED <<next, threads>>
+    /\ UNCHANGED <<next, charge, threads>>
 
 \* The folder worker stops reading and drops the reader.
 ReaderDropped ==
     /\ ReaderCanDrop
     /\ rpc = "reading"
     /\ rpc' = "dropped"
-    /\ UNCHANGED <<next, state, held, emitted, threads>>
+    /\ UNCHANGED <<next, state, charge, held, emitted, threads>>
 
-\* Once the reader is gone, results it never took are freed.
+\* Once the reader is gone, results it never took and the front it was
+\* streaming are freed.
 ResultFreed(s) ==
     /\ rpc \in {"error", "dropped", "returned"}
-    /\ state[s] \in {"ready", "failed"}
+    /\ state[s] \in {"ready", "failed", "streaming"}
     /\ state' = [state EXCEPT ![s] = "abandoned"]
-    /\ held' = held - Sizes[s]
-    /\ UNCHANGED <<next, emitted, rpc, threads>>
+    /\ held' = held - charge[s]
+    /\ UNCHANGED <<next, charge, emitted, rpc, threads>>
 
 \* Dropping the reader joins every decoder thread it started, and only
 \* then does the folder worker return.
@@ -100,20 +141,29 @@ ReaderReturns ==
     /\ rpc \in {"error", "dropped"}
     /\ threads = 0
     /\ rpc' = "returned"
-    /\ UNCHANGED <<next, state, held, emitted, threads>>
+    /\ UNCHANGED <<next, state, charge, held, emitted, threads>>
+
+Holding == {"streaming", "decoding", "ready", "failed"}
 
 Settled ==
     /\ rpc \in {"ok", "returned"}
     /\ threads = 0
-    /\ \A s \in Segments : state[s] \notin {"ready", "failed", "decoding"}
+    /\ \A s \in Segments : state[s] \notin Holding
     /\ UNCHANGED vars
 
 Next ==
-    \/ ReaderStartsSegment \/ ReaderTakesFront \/ ReaderDropped \/ ReaderReturns
+    \/ ReaderStreamsFront \/ ReaderStartsSegment \/ ReaderDecodesFront
+    \/ ReaderTakesFront \/ ReaderDropped \/ ReaderReturns
     \/ \E s \in Segments : DecoderFinishes(s) \/ ResultFreed(s)
     \/ Settled
 
 Spec == Init /\ [][Next]_vars
+
+-----------------------------------------------------------------------------
+
+RECURSIVE SumOf(_)
+SumOf(S) == IF S = {} THEN 0
+            ELSE LET s == CHOOSE x \in S : TRUE IN charge[s] + SumOf(S \ {s})
 
 -----------------------------------------------------------------------------
 
@@ -126,12 +176,21 @@ OkIsComplete == rpc = "ok" => Len(emitted) = N
 \* A corrupt segment never ends in a complete read.
 FailureIsReported == (rpc = "ok") => \A s \in Segments : state[s] /= "failed"
 
-\* Output held in memory stays within the budget. The reader falls back to
-\* sequential decoding when a segment is larger than the budget.
-MemoryBounded == held <= Budget
+\* What the started segments hold stays within the budget, and the reader's
+\* count matches it. A thread's segment holds its whole output and its
+\* dictionary, and the streaming front only its dictionary.
+MemoryBounded ==
+    /\ held <= Budget
+    /\ held = SumOf({s \in Segments : state[s] \in Holding})
+    /\ \A s \in Segments :
+         /\ state[s] = "streaming" => charge[s] = Streamed[s]
+         /\ state[s] \in {"decoding", "ready"} => charge[s] = Sizes[s]
 
-\* At most `Window` decoder threads run at once.
-ThreadsBounded == threads <= Window
+\* Only the front segment streams.
+OnlyTheFrontStreams == \A s \in Segments : state[s] = "streaming" => s = Front
+
+\* At most `Window` decoders run at once, the reader's own included.
+ThreadsBounded == threads + Streaming <= Window
 
 \* The folder worker never returns while a decoder thread it started runs,
 \* so no thread outlives the extraction and holds the archive open.
@@ -139,6 +198,6 @@ NoThreadOutlivesReader == rpc \in {"ok", "returned"} => threads = 0
 
 \* When the reader is done or gone and everything settles, nothing is held.
 NothingLeaks == (rpc /= "reading" /\ threads = 0
-                 /\ \A s \in Segments : state[s] \notin {"ready", "failed", "decoding"})
+                 /\ \A s \in Segments : state[s] \notin Holding)
                 => held = 0
 =============================================================================
