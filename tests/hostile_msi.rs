@@ -778,6 +778,16 @@ fn unsafe_and_colliding_names_are_refused() {
 }
 
 #[test]
+fn a_stream_cut_short_is_refused_before_anything_is_read() {
+    for version in [3u16, 4] {
+        let built = sample(version).build();
+        let mut bytes = built.bytes.clone();
+        bytes.truncate(bytes.len() - built.sector_size + 1);
+        assert_rejected_with(&format!("v{version} last sector cut"), &bytes, "past its end");
+    }
+}
+
+#[test]
 fn every_cut_is_refused_or_extracts_the_whole_tree() {
     let cab = embedded_cab();
     let files = [
