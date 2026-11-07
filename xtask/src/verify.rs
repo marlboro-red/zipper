@@ -299,22 +299,39 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         "{name}: the covered code changed while the check ran; nothing was synced"
     );
     let text = fs::read_to_string(root.join(MANIFEST))?;
+    fs::write(root.join(MANIFEST), with_fingerprint(&text, name, &current))?;
+    println!("{name}: synced at fingerprint {current}");
+    Ok(())
+}
+
+fn with_fingerprint(text: &str, name: &str, current: &str) -> String {
+    let header = format!("[{name}]");
+    let has_line = section_has_fingerprint(text, &header);
     let mut in_section = false;
     let mut updated = String::new();
     for line in text.lines() {
         if line.starts_with('[') {
-            in_section = line == format!("[{name}]");
+            in_section = line == header;
         }
         if in_section && line.starts_with("fingerprint = ") {
             updated.push_str(&format!("fingerprint = {current}\n"));
-        } else {
-            updated.push_str(line);
-            updated.push('\n');
+            continue;
+        }
+        updated.push_str(line);
+        updated.push('\n');
+        if line == header && !has_line {
+            updated.push_str(&format!("fingerprint = {current}\n"));
         }
     }
-    fs::write(root.join(MANIFEST), updated)?;
-    println!("{name}: synced at fingerprint {current}");
-    Ok(())
+    updated
+}
+
+fn section_has_fingerprint(text: &str, header: &str) -> bool {
+    text.lines()
+        .skip_while(|line| *line != header)
+        .skip(1)
+        .take_while(|line| !line.starts_with('['))
+        .any(|line| line.starts_with("fingerprint = "))
 }
 
 fn uncovered(root: &Path) -> Result<Vec<String>> {
@@ -671,5 +688,18 @@ mod tests {
             }
         }
         assert!(cut.is_empty(), "items cut short:\n{}", cut.join("\n"));
+    }
+    #[test]
+    fn a_sync_writes_the_fingerprint_of_a_section_that_has_none_yet() {
+        let text = "[first]\nskill = a.md\nfingerprint = old\n\n[fresh]\nskill = b.md\nfull-check = true\n";
+        let synced = with_fingerprint(text, "fresh", "new");
+        assert_eq!(
+            synced,
+            "[first]\nskill = a.md\nfingerprint = old\n\n[fresh]\nfingerprint = new\nskill = b.md\nfull-check = true\n"
+        );
+        let resynced = with_fingerprint(&synced, "fresh", "newer");
+        assert_eq!(resynced.matches("fingerprint = ").count(), 2);
+        assert!(resynced.contains("[fresh]\nfingerprint = newer\n"));
+        assert!(resynced.contains("[first]\nskill = a.md\nfingerprint = old\n"));
     }
 }
