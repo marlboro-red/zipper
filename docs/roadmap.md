@@ -28,7 +28,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M13. Remaining codecs](#m13-remaining-codecs) | Done | M10 |
 | [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | In progress | M10 |
 | [M14. Encrypted archives](#m14-encrypted-archives) | Done | M13 |
-| [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | In progress | M13 |
+| [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | Done | M13 |
 | [M16. Package formats](#m16-package-formats) | In progress | M13 |
 | [M17. Disc and disk images](#m17-disc-and-disk-images) | Planned | M16 |
 | [M18. RAR](#m18-rar) | Planned | M14, M15 |
@@ -377,6 +377,7 @@ Done so far, by 6 November 2026:
 - ZIP split sets from Info-ZIP `zip -s`, read in process with every disk number and offset placed inside its own volume, as [ZIP split sets](reference/zip-reader.md#zip-split-sets) describes. 7-Zip writes no `.z01` sets and WinZip was not available, so Info-ZIP is the only writer in the corpus.
 - Self-extracting ZIP, with offsets adjusted by `zip -A` or not, as [self-extracting ZIP](reference/zip-reader.md#self-extracting-zip) describes. The rule for the stub changed. Recognizing a known stub was dropped, because stubs differ by writer and version. The stub must be a whole PE, ELF or Mach-O executable or a `#!` script. The archive must start exactly where the executable's own data ends, and no range its headers name may reach it. The stub may hold no other archive's signature. Three of five adversarial reviews found files that another reader opened as a different archive, and each is closed by one of these rules.
 - Self-extracting 7z, found within 8 MiB after a PE, ELF or Mach-O stub, as [self-extracting 7z](reference/7z-reader.md#self-extracting-7z) describes. `7zz a -sfx` has no SFX module on macOS, so the tests build the stubs by hand.
+- M15 closed on 8 November 2026. WinZip does not run on macOS, and 7-Zip on macOS has no self-extractor module. So the corpus of exit check 1 holds Info-ZIP split sets and self-extracting archives whose stubs the tests build. Every one extracts the tree 7-Zip extracts.
 
 ## M16. Package formats
 
