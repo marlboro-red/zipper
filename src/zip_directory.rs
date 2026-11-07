@@ -1309,13 +1309,31 @@ mod tests {
                 .any(|refusal| message.starts_with(refusal))
     }
 
-    fn native_listing(bytes: &[u8]) -> std::result::Result<(), String> {
+    fn native_listing(bytes: &[u8]) -> std::result::Result<Vec<crate::Entry>, String> {
         let folder = tempfile::tempdir().unwrap();
         let path = folder.path().join("case.zip");
         std::fs::write(&path, bytes).unwrap();
-        crate::native_zip::list(&path)
-            .map(drop)
-            .map_err(|error| error.to_string())
+        crate::native_zip::list(&path).map_err(|error| error.to_string())
+    }
+
+    fn listed_natively_as(entries: &[Listed]) -> Vec<(String, u64, bool)> {
+        entries
+            .iter()
+            .map(|entry| {
+                let name = match entry.name.strip_suffix('/') {
+                    Some(folder) if entry.is_dir => folder,
+                    _ => &entry.name,
+                };
+                (name.to_owned(), entry.size, entry.is_dir)
+            })
+            .collect()
+    }
+
+    fn native_entries(entries: &[crate::Entry]) -> Vec<(String, u64, bool)> {
+        entries
+            .iter()
+            .map(|entry| (entry.name.clone(), entry.size, entry.directory))
+            .collect()
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1380,6 +1398,15 @@ mod tests {
                     Err(native) if refused_before_the_zip_crate(&native) => Err(format!(
                         "we accept, native_zip::list refuses with {native:?}"
                     )),
+                    Ok(native)
+                        if native_entries(&native) != listed_natively_as(&theirs.entries) =>
+                    {
+                        Err(format!(
+                            "native_zip::list gives {:?}, the zip crate {:?}",
+                            native_entries(&native),
+                            listed_natively_as(&theirs.entries)
+                        ))
+                    }
                     _ => Ok(Outcome::Listed),
                 }
             }
@@ -2065,7 +2092,7 @@ mod tests {
     fn real_archives() -> Vec<(String, Vec<u8>)> {
         let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
         let mut archives = Vec::new();
-        for folder in ["zip-corpus", "parity/archives"] {
+        for folder in ["zip-corpus", "parity/archives", "encrypted-zip"] {
             let mut paths: Vec<_> = std::fs::read_dir(data.join(folder))
                 .unwrap()
                 .map(|entry| entry.unwrap().path())
@@ -2157,6 +2184,55 @@ mod tests {
                 outcome => failures.push(format!("{name}: expected {expected:?}, got {outcome:?}")),
             }
         }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn a_split_set_lists_as_the_zip_crate_lists_the_same_tree_in_one_piece() {
+        let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/zip-corpus");
+        let split = crate::native_zip::list(&corpus.join("infozip-split.zip")).unwrap();
+        let one_piece = std::fs::read(corpus.join("infozip-split-one-piece.zip")).unwrap();
+        let theirs = listed_by_zip_crate(&one_piece).unwrap();
+        assert!(theirs.entries.len() > 10);
+        assert_eq!(native_entries(&split), listed_natively_as(&theirs.entries));
+    }
+
+    fn starts_like_a_zip(path: &Path) -> bool {
+        let mut signature = [0; 4];
+        std::fs::File::open(path)
+            .and_then(|mut file| file.read_exact(&mut signature))
+            .is_ok()
+            && matches!(&signature, b"PK\x03\x04" | b"PK\x05\x06")
+    }
+
+    #[test]
+    #[ignore = "reads the real-world set that scripts/realworld_diff.py fetch downloads"]
+    fn every_real_world_zip_lists_as_the_zip_crate_lists_it_or_both_refuse() {
+        let folder = std::env::var("ZIPPER_REALWORLD_ARCHIVES").map_or_else(
+            |_| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/realworld/archives"),
+            std::path::PathBuf::from,
+        );
+        let mut paths: Vec<_> = std::fs::read_dir(&folder)
+            .unwrap_or_else(|error| panic!("{}: {error}", folder.display()))
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| starts_like_a_zip(path))
+            .collect();
+        paths.sort();
+        assert!(
+            paths.len() >= 90,
+            "{} ZIPs in {}",
+            paths.len(),
+            folder.display()
+        );
+        let mut outcomes = std::collections::HashMap::new();
+        let mut failures = Vec::new();
+        for path in &paths {
+            match compare(&std::fs::read(path).unwrap()) {
+                Ok(outcome) => *outcomes.entry(outcome).or_insert(0) += 1,
+                Err(failure) => failures.push(format!("{}: {failure}", path.display())),
+            }
+        }
+        println!("{} real-world ZIPs: {outcomes:?}", paths.len());
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 

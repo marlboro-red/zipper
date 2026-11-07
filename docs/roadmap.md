@@ -471,10 +471,13 @@ Exit checks:
 3. Every test in `tests/hostile_zip.rs` and `tests/zip_fuzz.rs` passes, and an adversarial review finds no layout the new parser accepts that the old one refused.
 4. `cargo tree -e normal` shows no `zip` crate, and the scoreboard shows no slower listing.
 
-Done so far, by 5 November 2026:
+Done so far, by 8 November 2026:
 
-- The reader in `src/zip_directory.rs`, written by a builder agent and used only by tests so far. A differential test agrees with the `zip` crate on the corpora, 34 hand-built shapes and 198,100 damaged archives, or both refuse. It refuses more than the `zip` crate does wherever the native reader's own checks already refuse.
-- Four Kani proofs of its extra fields, central records and end records, run by `cargo xtask verify-sync zip-directory`.
+- The reader in `src/zip_directory.rs` lists every ZIP entry in the release build, for `zipper list`, both native engines, encrypted entries, split sets and self-extractors. The `zip` crate is a dev-dependency only. Its removal took `zip`, `indexmap`, `hashbrown`, `equivalent`, `memchr`, `nix` and `typed-path` out of `cargo tree -e normal`.
+- A differential test agrees with the `zip` crate on the corpora, the encrypted set, hand-built shapes and damaged archives, or both refuse. It also compares what `native_zip::list` gives, and lists the corpus split set against the same tree in one piece. Its ignored real-world case listed all 95 ZIPs of the real-world set the same.
+- The ten Kani proofs of `[zip-directory]`, run by `cargo xtask verify-sync zip-directory`.
+- Every test in `tests/hostile_zip.rs` and `tests/zip_fuzz.rs` passes.
+- Left are the scoreboard listing comparison and the adversarial review of the whole wired path.
 
 ## M23. The LZMA decoder as its own crate
 

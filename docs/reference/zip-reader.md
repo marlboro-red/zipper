@@ -157,6 +157,12 @@ The manifest also records each path's exact modification time where `unzip` and 
 
 The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 94 ZIP archives from PyPI, Maven, Go and GitHub with Zipper and default bsdtar. All matched, along with the 154 tar archives in the same set.
 
+## Central directory
+
+The reader reads the end record, the ZIP64 end record and locator and the central directory with its own code in `src/zip_directory.rs`, and the release build has no `zip` crate. A differential test lists every ZIP in the corpus, the parity set and `tests/data/encrypted-zip` with this code and with the `zip` crate. Both must give the same entries, or both must refuse, or one of Zipper's own checks that the `zip` crate lacks must refuse. The names, sizes and folders that `native_zip::list` gives, which `zipper list` prints, must match the `zip` crate's too. The test repeats this on 300 damaged copies of each archive. The corpus split set must list as the `zip` crate lists the same tree in one piece.
+
+`every_real_world_zip_lists_as_the_zip_crate_lists_it_or_both_refuse` lists the [real-world set](../../benchmarks/realworld/README.md) the same way. It is ignored by default, because `scripts/realworld_diff.py fetch` downloads the set. Run it with `cargo test --release --lib every_real_world_zip -- --ignored`. Set `ZIPPER_REALWORLD_ARCHIVES` to the folder when it is not `target/realworld/archives`. On 8 November 2026 all 95 ZIPs there listed the same.
+
 ## Mutation testing
 
 `tests/zip_fuzz.rs` mutates corpus archives with seeded bit flips, truncations, insertions and edge values written into header fields. Both engines extract every mutant. Each case must either fail and leave nothing in the destination's parent, or succeed with verification agreeing and exactly the declared bytes written. A panic fails the test.
