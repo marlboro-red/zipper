@@ -346,12 +346,13 @@ fn decoded_name(bytes: &[u8]) -> anyhow::Result<String> {
         }
         Some((other, _)) => anyhow::bail!("UDF name has unknown compression {other}"),
     };
-    crate::native_iso::ensure_single_name("UDF", &name)?;
-    Ok(if name.trim_matches([' ', '\t', '\n']).is_empty() {
+    let name = if name.trim_matches([' ', '\t', '\n']).is_empty() {
         String::from("[]")
     } else {
         name
-    })
+    };
+    crate::native_iso::ensure_single_name("UDF", &name)?;
+    Ok(name)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -519,6 +520,14 @@ impl Volume {
     }
 
     fn folder_bytes(&self, image: &mut Image, extents: &[Extent]) -> Opening<Vec<u8>> {
+        let mut sorted = extents.to_vec();
+        sorted.sort_unstable_by_key(|extent| extent.offset);
+        if sorted
+            .windows(2)
+            .any(|pair| pair[0].offset + pair[0].length > pair[1].offset)
+        {
+            return refuse(String::from("a UDF folder's extents overlap"));
+        }
         let total: u64 = extents.iter().map(|extent| extent.length).sum();
         if total > MAX_FOLDER_BYTES {
             return refuse(format!(
@@ -610,6 +619,7 @@ impl Volume {
             if fid.characteristics & (FID_DELETED | FID_PARENT) != 0 {
                 continue;
             }
+            crate::native_iso::ensure_folder_fits(children.len() + 1)?;
             let name = decoded_name(&rest[fid.name.0..fid.name.1])?;
             let span = self.span_of_map(fid.partition)?;
             children.push(self.child(

@@ -1073,3 +1073,123 @@ fn output_limit_and_options_apply() {
         expected(&[("sub", b"/"), ("sub/leaf", &bytes_of(2049, 2))])
     );
 }
+
+fn a_dot_folder_beside(name: impl Fn(Item) -> Item, disc: Disc) -> Vec<u8> {
+    Disc {
+        items: vec![file("x", b"outer"), name(dir("d")), file("d/x", b"inner")],
+        ..disc
+    }
+    .build()
+    .bytes
+}
+
+#[test]
+fn a_root_folder_named_dot_or_dot_dot_is_refused_rather_than_merged() {
+    let plain = Disc {
+        iso: true,
+        ..Disc::default()
+    };
+    for (case, bytes) in [
+        (
+            "ISO id ..",
+            a_dot_folder_beside(
+                |item| Item {
+                    iso_id: Some(b"..".to_vec()),
+                    ..item
+                },
+                plain.clone(),
+            ),
+        ),
+        (
+            "ISO id .;1",
+            a_dot_folder_beside(
+                |item| Item {
+                    iso_id: Some(b".;1".to_vec()),
+                    ..item
+                },
+                plain.clone(),
+            ),
+        ),
+        (
+            "Rock Ridge ..",
+            a_dot_folder_beside(
+                |item| Item {
+                    rock_ridge_name: Some(b"..".to_vec()),
+                    ..item
+                },
+                Disc {
+                    rock_ridge: true,
+                    ..plain.clone()
+                },
+            ),
+        ),
+        (
+            "Joliet ..",
+            a_dot_folder_beside(
+                |item| Item {
+                    joliet_id: Some("..".encode_utf16().collect()),
+                    ..item
+                },
+                Disc {
+                    joliet: true,
+                    ..plain.clone()
+                },
+            ),
+        ),
+        (
+            "UDF .",
+            a_dot_folder_beside(
+                |item| Item {
+                    udf_name: Some(b"\x08.".to_vec()),
+                    ..item
+                },
+                Disc {
+                    udf: Some(Udf::default()),
+                    ..Disc::default()
+                },
+            ),
+        ),
+    ] {
+        assert_rejected_with(case, &bytes, "names no entry");
+    }
+}
+
+#[test]
+fn a_udf_folder_whose_extents_repeat_is_refused() {
+    let built = udf(false).build();
+    let folder = entry(&built, "folder");
+    let mut repeated = built.bytes.clone();
+    let ads = folder + 176;
+    let length =
+        u32::from_le_bytes(repeated[folder + 172..folder + 176].try_into().unwrap()) as usize;
+    let first = repeated[ads..ads + length].to_vec();
+    let size = u64::from_le_bytes(repeated[folder + 56..folder + 64].try_into().unwrap());
+    for copy in 1..4 {
+        repeated[ads + copy * length..ads + (copy + 1) * length].copy_from_slice(&first);
+    }
+    put32(&mut repeated, folder + 172, 4 * length as u32);
+    repeated[folder + 56..folder + 64].copy_from_slice(&(4 * size).to_le_bytes());
+    let crc_length = 176 + 4 * length - 16;
+    repeated[folder + 10..folder + 12].copy_from_slice(&(crc_length as u16).to_le_bytes());
+    retag_in_place(&mut repeated, folder);
+    assert_rejected_with("one extent four times", &repeated, "overlap");
+}
+
+#[test]
+fn a_folder_of_more_entries_than_the_limit_is_refused_while_it_is_read() {
+    let mut items = vec![dir("crowd")];
+    items.extend((0..1_000_001).map(|index| file(&format!("crowd/{index:07}"), b"")));
+    let disc = Disc {
+        items,
+        iso: true,
+        ..Disc::default()
+    };
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.iso");
+    fs::write(&archive, disc.build().bytes).unwrap();
+    let error = read_archive(&archive, None, ReadOptions::default()).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("folder holds more than 1000000 entries"),
+        "{error:#}"
+    );
+}

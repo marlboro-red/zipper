@@ -484,8 +484,21 @@ fn joliet_name(id: &[u8]) -> Result<String> {
     String::from_utf16(&units).context("Joliet name has an unpaired surrogate")
 }
 
+pub(crate) fn ensure_folder_fits(children: usize) -> Result<()> {
+    ensure!(
+        children <= tree::MAX_ENTRIES,
+        "a folder holds more than {} entries",
+        tree::MAX_ENTRIES
+    );
+    Ok(())
+}
+
 pub(crate) fn ensure_single_name(format: &str, name: &str) -> Result<()> {
     ensure!(!name.contains('/'), "{format} name {name:?} holds a slash");
+    ensure!(
+        !matches!(name, "" | "." | ".."),
+        "{format} name {name:?} names no entry of its own"
+    );
     Ok(())
 }
 
@@ -769,6 +782,7 @@ impl IsoReader {
                     continue;
                 }
                 self.add(image, &record, raw, &mut pending, &mut children)?;
+                ensure_folder_fits(children.len())?;
             }
             done += length;
         }
@@ -1319,14 +1333,16 @@ fn extract(catalog: &Catalog, image: &mut Image, tree: &mut Tree) -> Result<()> 
     Ok(())
 }
 
-/// Returns whether the file holds an ISO 9660 volume descriptor at sector
-/// 16, or a UDF anchor at sector 256 of 2048 or 512 bytes.
+/// Returns whether the file holds a well-formed ISO 9660 volume descriptor
+/// at sector 16, or a UDF anchor at sector 256 of 2048 or 512 bytes.
 pub fn sniff(path: &Path) -> Result<bool> {
     let mut image = Image::open(path)?;
-    let mut head = [0u8; 6];
+    let mut head = [0u8; DESCRIPTOR_HEAD];
     if image.length >= DESCRIPTORS_START * SECTOR + head.len() as u64 {
         image.read_exact_at(&mut head, DESCRIPTORS_START * SECTOR, "volume descriptors")?;
-        if &head[1..6] == STANDARD_ID {
+        if volume_descriptor(&head)
+            .is_ok_and(|descriptor| matches!(descriptor.kind, 0 | 1 | 2 | 255))
+        {
             return Ok(true);
         }
     }

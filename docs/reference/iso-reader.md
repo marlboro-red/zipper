@@ -1,6 +1,6 @@
 # In-process ISO and UDF reader
 
-Zipper extracts disc images with its own Rust reader, in the tree `7zz x` writes. It reads ISO 9660 with Joliet, Rock Ridge and El Torito boot images, and UDF 1.02 to 2.60 with metadata partitions. The default engine sends a file here when it holds `CD001` one byte into sector 16, or a UDF anchor at sector 256 of 2048 or 512 bytes. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB, compound file or 7z signature goes to that reader first. `--zip-engine backend` hands every image to 7-Zip, without `-tiso`, because that switch makes 7-Zip skip a disc's UDF tree.
+Zipper extracts disc images with its own Rust reader, in the tree `7zz x` writes. It reads ISO 9660 with Joliet, Rock Ridge and El Torito boot images, and UDF 1.02 to 2.60 with metadata partitions. The default engine sends a file here when sector 16 holds a well-formed volume descriptor, or a UDF anchor at sector 256 of 2048 or 512 bytes. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB, compound file or 7z signature goes to that reader first. `--zip-engine backend` hands every image to 7-Zip, without `-tiso`, because that switch makes 7-Zip skip a disc's UDF tree.
 
 ## Which tree a disc gives
 
@@ -45,7 +45,8 @@ The reader reads the whole directory tree before it writes anything, and publish
 - A `PX` mode of another file type than its record, such as a device, or a link target longer than 4,096 bytes.
 - A damaged El Torito catalog, entry or extension chain. 7-Zip reports such a catalog and extracts no boot image from it.
 - A UDF file whose extents do not hold its size or are not recorded, which 7-Zip fails to extract. A reserved allocation descriptor type.
-- Names with `/`, `\`, `:` or NUL, `.` and `..`, invalid UTF-8 outside Joliet and UDF, an unpaired surrogate, and a UDF name of unknown compression. Two entries of one name in one folder are refused, after the rules above, including a root folder named `[BOOT]` beside boot images.
+- A UDF folder whose extents overlap, and a folder of more than 1,000,000 entries, refused while it is read.
+- Names with `/`, `\`, `:` or NUL, and names that are empty, `.` or `..` once a version and dot are dropped. Invalid UTF-8 outside Joliet and UDF, an unpaired surrogate, and a UDF name of unknown compression. Two entries of one name in one folder are refused, after the rules above, including a root folder named `[BOOT]` beside boot images.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
 These images are refused with an error that suggests `--zip-engine backend`:
