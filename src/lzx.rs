@@ -379,6 +379,7 @@ pub(crate) fn translate_e8(data: &mut [u8], processed: u32, translation: u32) {
 
 pub(crate) struct Lzx {
     window: Vec<u8>,
+    window_size: usize,
     slots: usize,
     position: usize,
     wrapped: bool,
@@ -412,6 +413,7 @@ impl Lzx {
         )?;
         let mut lzx = Lzx {
             window: vec![0; 1 << window_bits],
+            window_size: 1 << window_bits,
             slots: position_slots(window_bits),
             position: 0,
             wrapped: false,
@@ -434,6 +436,20 @@ impl Lzx {
         };
         lzx.reset();
         Ok(lzx)
+    }
+
+    pub(crate) fn reset_to_window(&mut self, window_bits: u8) -> Field<()> {
+        field_check(
+            (MIN_WINDOW_BITS..=MAX_WINDOW_BITS).contains(&window_bits),
+            "LZX window is not 2^15 to 2^21 bytes",
+        )?;
+        self.window_size = 1 << window_bits;
+        if self.window.len() < self.window_size {
+            self.window = vec![0; self.window_size];
+        }
+        self.slots = position_slots(window_bits);
+        self.reset();
+        Ok(())
     }
 
     pub(crate) fn reset(&mut self) {
@@ -459,12 +475,12 @@ impl Lzx {
         if self.fresh {
             self.position = 0;
             self.wrapped = false;
-        } else if self.position == self.window.len() {
+        } else if self.position == self.window_size {
             self.position = 0;
             self.wrapped = true;
         }
         field_check(
-            size <= self.window.len() - self.position,
+            size <= self.window_size - self.position,
             "LZX chunk runs past the end of its window",
         )?;
         let mut input = Input::new(data, !self.fresh && self.kind == Kind::Uncompressed);
@@ -545,7 +561,7 @@ impl Lzx {
             for (repeat, bytes) in self.repeats.iter_mut().zip(stored.chunks_exact(4)) {
                 let value = u32::from_le_bytes(bytes.try_into().unwrap());
                 field_check(
-                    value != 0 && value as usize <= self.window.len() - REPEAT_SLOTS,
+                    value != 0 && value as usize <= self.window_size - REPEAT_SLOTS,
                     "LZX uncompressed block stores a match distance outside its window",
                 )?;
                 *repeat = value;
@@ -605,7 +621,7 @@ impl Lzx {
     }
 
     fn decode_run(&mut self, bits: &mut Bits, run: usize) -> Field<()> {
-        let window_size = self.window.len();
+        let window_size = self.window_size;
         let end = self.position + run;
         let mut at = self.position;
         while at < end {

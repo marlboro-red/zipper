@@ -17,6 +17,7 @@ A cabinet is a header, a table of folders, a table of files and the data blocks 
 The reader refuses these cabinets:
 
 - A cabinet with the previous or next cabinet flag, or a file that continues into another cabinet.
+- In every engine, a cabinet set whose previous or next cabinet name is empty, `.` or `..`, or holds `/`, `\`, `:` or NUL. Such a set is refused before 7-Zip sees it, so 7-Zip never opens a cabinet outside the folder of the one named. 7-Zip runs with its standard input closed.
 - A folder compressed with Quantum, or with a method above 3.
 - Two files that share bytes of their folder.
 - A name that is neither flagged UTF-8 nor ASCII or UTF-8. The error suggests `--zip-engine backend`.
@@ -43,8 +44,8 @@ The reader checks the whole cabinet before it publishes anything, and it publish
 - Each data block decodes to between 1 byte and 32 KiB, and only the last block of a folder may be shorter than 32 KiB. Its packed size is at most 38,912 bytes, and its checksum matches.
 - A stored block packs exactly as many bytes as it holds. An MSZIP block starts with `CK`, and its deflate stream ends with a final block exactly at the block's last byte and size.
 - An LZX block follows 7-Zip's checks. Each Huffman table is a complete code, and only the length table may be empty, in which case no match may need it. Every length run stays inside its table. A match stays inside its block and data block, and reaches no byte before the start of the folder. The padding bits before an uncompressed block and the padding byte after an odd one are zero. The repeated distances an uncompressed block stores lie inside the window. Each data block ends with its last bit, padded with fewer than 16 zero bits.
-- Every block a folder declares is decoded and checked, even past the last file in it. A file that ends past its folder's data is refused.
-- The data blocks of all folders together hold no more bytes than the cabinet. So folders cannot share blocks, and no block is decoded twice.
+- A folder is decoded only until its last file ends, as 7-Zip decodes it, and a folder that no file uses is not read. Every block that is read is checked as above. So the work a cabinet costs is bounded by the data its files need, and a cabinet of blocks no file uses costs nothing. A file that ends past its folder's data is refused.
+- Each data block that is read lies outside the byte ranges of the blocks earlier folders read. So folders cannot share blocks, and no block is decoded twice.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
 ## Limits
@@ -59,7 +60,7 @@ The reader checks the whole cabinet before it publishes anything, and it publish
 | Decoder memory | at most 4 MiB, an LZX window of up to 2 MiB with 96 KiB of tables and buffers |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-The reader keeps the file table in memory, with each name, and frees each name once the file is written. The shared tree that the cpio reader also uses keeps two more copies, one to find repeated names and one for the list of entries. On a cabinet of 65,535 empty files whose names total 62 MiB, `zipper list` peaked at 154 MB of resident memory, and `7zz t` at 147 MB. It decodes one folder at a time with one decoder, reused from folder to folder, and writes each file in folder order through a 1 MiB buffer. So memory does not grow with file size. `--threads` has no effect on CAB.
+The reader keeps the file table in memory, with each name, and frees each name once the file is written. The shared tree that the cpio reader also uses keeps two more copies, one to find repeated names and one for the list of entries. On a cabinet of 65,535 empty files whose names total 62 MiB, `zipper list` peaked at 154 MB of resident memory, and `7zz t` at 147 MB. It decodes one folder at a time and writes each file in folder order through a 1 MiB buffer. The block buffers and each decoder are allocated when a folder first reads a block, and one LZX decoder is reused from folder to folder, its window grown to the largest one seen. So many folders cost no more than one. So memory does not grow with file size. `--threads` has no effect on CAB.
 
 ## Differences from 7-Zip
 
@@ -68,7 +69,6 @@ The reader keeps the file table in memory, with each name, and frees each name o
 - 7-Zip extracts two files that name the same bytes of a folder. Zipper refuses the cabinet.
 - 7-Zip reads a name without the UTF-8 flag in the system code page. Zipper refuses a name that is not ASCII or UTF-8.
 - 7-Zip reads data blocks past a folder's declared count, for folders of more than 65,535 blocks that some Microsoft cabinets hold. Zipper decodes exactly the declared count and refuses a file that needs more.
-- 7-Zip stops decoding a folder at the end of its last file. Zipper decodes and checks every block the folder declares.
 - 7-Zip reads folders whose data blocks overlap. Zipper refuses them.
 - 7-Zip removes a leading `\` and `..` from a name and writes the file. Zipper refuses the cabinet.
 - 7-Zip reads a cabinet set across its files, and decodes Quantum. The default engine hands both to 7-Zip, and `--zip-engine native` refuses them.
@@ -83,6 +83,6 @@ Kani proves that the header, folder, file record and data block header readers n
 
 The LZX decoder is checked against 7-Zip under `[lzx]`. A test encoder in `tests/common/lzx_encoder.rs` writes verbatim, aligned and uncompressed blocks in a seeded random plan, and `tests/cab_corpus.rs` compares Zipper's output with 7-Zip's on each one. That includes blocks that end at a data block's end with their padding byte in either data block. Unit tests in `src/lzx.rs` decode every encoded plan back to its input. They decode every 1 and 2 byte chunk and 200,000 random chunks without a panic, and refuse every cut chunk. They also compare E8 translation with a separate signed reference, and check each refusal above with a crafted block, including a match past its block or before the stream.
 
-`tests/hostile_cab.rs` holds one case per rejected layout. Each case must fail and leave nothing in the destination's parent, both when extracting and when only verifying. It cuts stored, MSZIP and LZX cabinets at every byte before the cabinet's end, and flips bits in every byte.
+`tests/hostile_cab.rs` holds one case per rejected layout. Each case must fail and leave nothing in the destination's parent, both when extracting and when only verifying. It cuts stored, MSZIP and LZX cabinets at every byte before the cabinet's end, and flips bits in every byte. Where 7-Zip is installed, it also requires 7-Zip's result in three cases. E8 translation sizes of 2^31 and above decode alike. An all-zero aligned table and a one-symbol main table are refused by both, and damage past a folder's last file is accepted by both.
 
 `tests/data/cab-corpus/NOTICE.txt` names the source and license of the three samples taken from the `cab` and `lzxd` crates. The rest of the corpus comes from `write_the_generated_corpus` in `tests/cab_corpus.rs`. No sample there comes from Microsoft's own `makecab`.

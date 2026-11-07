@@ -7,6 +7,7 @@ use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check, lzx};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
+    collections::BTreeMap,
     io::{BufRead, BufReader, Read, Seek},
     path::Path,
     time::SystemTime,
@@ -319,6 +320,15 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
     }))
 }
 
+fn plain_cabinet_name(name: &[u8]) -> bool {
+    !name.is_empty()
+        && name != b"."
+        && name != b".."
+        && !name
+            .iter()
+            .any(|byte| matches!(byte, b'/' | b'\\' | b':' | 0))
+}
+
 struct Item {
     name: String,
     record: FileRecord,
@@ -337,7 +347,7 @@ struct Tables {
     reserve: Reserve,
     folders: Vec<Folder>,
     items: Vec<Item>,
-    block_bytes: u64,
+    claimed: BTreeMap<u64, u64>,
 }
 
 impl Tables {
@@ -361,7 +371,7 @@ impl Tables {
             reserve: Reserve::default(),
             folders: Vec::new(),
             items: Vec::new(),
-            block_bytes: 0,
+            claimed: BTreeMap::new(),
         };
         let mut at = HEADER as u64;
         if header.flags & RESERVE_PRESENT != 0 {
@@ -371,10 +381,10 @@ impl Tables {
             tables.skip(u64::from(tables.reserve.header), &mut at, "header reserve")?;
         }
         if header.flags & PREVIOUS_CABINET != 0 {
-            tables.skip_names(&mut at)?;
+            tables.check_set_names(&mut at, "previous")?;
         }
         if header.flags & NEXT_CABINET != 0 {
-            tables.skip_names(&mut at)?;
+            tables.check_set_names(&mut at, "next")?;
         }
         let record = FOLDER as u64 + u64::from(tables.reserve.folder);
         ensure!(
@@ -424,10 +434,14 @@ impl Tables {
         Ok(())
     }
 
-    fn skip_names(&mut self, at: &mut u64) -> Result<()> {
-        for _ in 0..2 {
-            self.name(at)?;
-        }
+    fn check_set_names(&mut self, at: &mut u64, which: &str) -> Result<()> {
+        let cabinet = self.name(at)?;
+        ensure!(
+            plain_cabinet_name(&cabinet),
+            "CAB names its {which} cabinet {:?}, which is not a plain file name beside it",
+            String::from_utf8_lossy(&cabinet)
+        );
+        self.name(at)?;
         Ok(())
     }
 
@@ -602,7 +616,9 @@ enum Decoder {
 
 struct Decoders {
     mszip: Option<Box<Mszip>>,
-    lzx: Option<(u8, Box<lzx::Lzx>)>,
+    lzx: Option<Box<lzx::Lzx>>,
+    block: Vec<u8>,
+    output: Vec<u8>,
 }
 
 impl Decoders {
@@ -615,6 +631,10 @@ impl Decoders {
             need <= DECODER_MEMORY,
             "CAB folder decoder needs {need} bytes, more than the {DECODER_MEMORY}-byte decoder budget"
         );
+        if self.block.is_empty() {
+            self.block = vec![0; DATA + usize::from(u8::MAX) + LARGEST_PACKED];
+            self.output = vec![0; BLOCK + 1];
+        }
         Ok(match method {
             Method::Stored => Decoder::Stored,
             Method::Mszip => {
@@ -628,32 +648,42 @@ impl Decoders {
                 Decoder::Mszip(mszip)
             }
             Method::Lzx { window_bits } => Decoder::Lzx(match self.lzx.take() {
-                Some((bits, mut lzx)) if bits == window_bits => {
-                    lzx.reset();
+                Some(mut lzx) => {
+                    lzx.reset_to_window(window_bits)?;
                     lzx
                 }
-                _ => Box::new(lzx::Lzx::new(window_bits, None)?),
+                None => Box::new(lzx::Lzx::new(window_bits, None)?),
             }),
             Method::Quantum { .. } => unreachable!("refused above"),
         })
     }
 
-    fn give_back(&mut self, decoder: Decoder, method: Method) {
-        match (decoder, method) {
-            (Decoder::Mszip(mszip), _) => self.mszip = Some(mszip),
-            (Decoder::Lzx(lzx), Method::Lzx { window_bits }) => self.lzx = Some((window_bits, lzx)),
-            _ => {}
+    fn give_back(&mut self, decoder: Decoder) {
+        match decoder {
+            Decoder::Mszip(mszip) => self.mszip = Some(mszip),
+            Decoder::Lzx(lzx) => self.lzx = Some(lzx),
+            Decoder::Stored => {}
         }
     }
 }
 
+fn ensure_unclaimed(claimed: &BTreeMap<u64, u64>, start: u64, end: u64) -> Result<()> {
+    let earlier = claimed.range(..end).next_back();
+    ensure!(
+        earlier.is_none_or(|(_, &claimed_end)| claimed_end <= start),
+        "CAB folders share data blocks: the block at offset {start} belongs to an earlier folder"
+    );
+    Ok(())
+}
+
 struct FolderStream<'a> {
     tables: &'a mut Tables,
-    decoder: Decoder,
+    decoders: &'a mut Decoders,
+    method: Method,
+    decoder: Option<Decoder>,
     blocks_left: u16,
+    first: u64,
     at: u64,
-    block: Vec<u8>,
-    output: Vec<u8>,
     start: usize,
     end: usize,
     position: u64,
@@ -661,17 +691,17 @@ struct FolderStream<'a> {
 }
 
 impl<'a> FolderStream<'a> {
-    fn open(tables: &'a mut Tables, folder: Folder, decoders: &mut Decoders) -> Result<Self> {
-        let decoder = decoders.take(folder.method)?;
+    fn open(tables: &'a mut Tables, folder: Folder, decoders: &'a mut Decoders) -> Result<Self> {
         let at = u64::from(folder.data_offset);
         tables.seek_to(at)?;
         Ok(FolderStream {
             tables,
-            decoder,
+            decoders,
+            method: folder.method,
+            decoder: None,
             blocks_left: folder.blocks,
+            first: at,
             at,
-            block: vec![0; DATA + usize::from(u8::MAX) + LARGEST_PACKED],
-            output: vec![0; BLOCK + 1],
             start: 0,
             end: 0,
             position: 0,
@@ -687,19 +717,18 @@ impl<'a> FolderStream<'a> {
             !self.short_block_read,
             "CAB folder has a block shorter than 32 KiB before its last block"
         );
+        if self.decoder.is_none() {
+            self.decoder = Some(self.decoders.take(self.method)?);
+        }
         let header_length = DATA + usize::from(self.tables.reserve.data);
         let mut at = self.at;
-        let (header_bytes, rest) = self.block.split_at_mut(header_length);
+        let (header_bytes, rest) = self.decoders.block.split_at_mut(header_length);
         self.tables
             .exact(header_bytes, &mut at, "data block header")?;
         let header = data_header(header_bytes[..DATA].try_into().unwrap())?;
         let packed = &mut rest[..usize::from(header.packed)];
         self.tables.exact(packed, &mut at, "data block")?;
-        self.tables.block_bytes += at - self.at;
-        ensure!(
-            self.tables.block_bytes <= u64::from(self.tables.header.cabinet_size),
-            "CAB folders share data blocks: they read more block bytes than the cabinet holds"
-        );
+        ensure_unclaimed(&self.tables.claimed, self.at, at)?;
         ensure!(
             checksum_matches(header_bytes, packed),
             "CAB data block fails its checksum"
@@ -708,21 +737,22 @@ impl<'a> FolderStream<'a> {
         self.blocks_left -= 1;
         let size = usize::from(header.size);
         self.short_block_read = size < BLOCK;
-        match &mut self.decoder {
+        let output = &mut self.decoders.output;
+        match self.decoder.as_mut().expect("taken above") {
             Decoder::Stored => {
                 ensure!(
                     packed.len() == size,
                     "CAB stored block packs {} bytes for {size}",
                     packed.len()
                 );
-                self.output[..size].copy_from_slice(packed);
+                output[..size].copy_from_slice(packed);
             }
-            Decoder::Mszip(mszip) => mszip.block(packed, &mut self.output, size)?,
+            Decoder::Mszip(mszip) => mszip.block(packed, output, size)?,
             Decoder::Lzx(lzx) => {
                 let decoded = lzx
                     .chunk(packed, size)
                     .map_err(|error| anyhow::anyhow!("damaged CAB LZX block: {error}"))?;
-                self.output[..size].copy_from_slice(decoded);
+                output[..size].copy_from_slice(decoded);
             }
         }
         self.start = 0;
@@ -748,12 +778,15 @@ impl<'a> FolderStream<'a> {
         Ok(())
     }
 
-    fn finish(mut self, tree: &tree::Tree, decoders: &mut Decoders, method: Method) -> Result<()> {
-        while self.next_block()? {
-            tree.check()?;
+    // EXTERNAL(7-Zip CabHandler): a folder decodes only until its last file ends, so blocks
+    // after it are neither decoded nor checked.
+    fn finish(self) {
+        if self.at > self.first {
+            self.tables.claimed.insert(self.first, self.at);
         }
-        decoders.give_back(self.decoder, method);
-        Ok(())
+        if let Some(decoder) = self.decoder {
+            self.decoders.give_back(decoder);
+        }
     }
 }
 
@@ -769,7 +802,7 @@ impl Read for FolderStream<'_> {
             return Ok(0);
         }
         let count = buffer.len().min(self.end - self.start);
-        buffer[..count].copy_from_slice(&self.output[self.start..self.start + count]);
+        buffer[..count].copy_from_slice(&self.decoders.output[self.start..self.start + count]);
         self.start += count;
         self.position += count as u64;
         Ok(count)
@@ -799,8 +832,16 @@ fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
     let mut decoders = Decoders {
         mszip: None,
         lzx: None,
+        block: Vec::new(),
+        output: Vec::new(),
     };
     for index in 0..tables.folders.len() {
+        if items
+            .peek()
+            .is_none_or(|item| usize::from(item.record.folder) != index)
+        {
+            continue;
+        }
         let folder = tables.folders[index];
         let mut stream = FolderStream::open(tables, folder, &mut decoders)?;
         while let Some(item) = items.next_if(|item| usize::from(item.record.folder) == index) {
@@ -820,8 +861,7 @@ fn parse(tree: &mut tree::Tree, tables: &mut Tables) -> Result<()> {
                 &mut data,
             )?;
         }
-        tree.check()?;
-        stream.finish(tree, &mut decoders, folder.method)?;
+        stream.finish();
     }
     Ok(())
 }

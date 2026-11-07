@@ -701,6 +701,27 @@ pub fn verbatim_chunk_of_exact_tokens(
     block_length: usize,
     tokens: &[Token],
 ) -> Vec<u8> {
+    chunk_of_exact_tokens(
+        &Crafted {
+            window_bits,
+            block_length,
+            ..Crafted::default()
+        },
+        tokens,
+    )
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Crafted {
+    pub window_bits: u8,
+    pub block_length: usize,
+    pub translation: Option<u32>,
+    pub aligned_lengths: Option<[u8; 8]>,
+    pub main_lengths: Option<Vec<u8>>,
+}
+
+pub fn chunk_of_exact_tokens(crafted: &Crafted, tokens: &[Token]) -> Vec<u8> {
+    let (window_bits, block_length) = (crafted.window_bits, crafted.block_length);
     let slots = position_slots(window_bits);
     let mut repeats = [1usize; 3];
     let mut coded = Vec::new();
@@ -742,11 +763,33 @@ pub fn verbatim_chunk_of_exact_tokens(
     main_frequencies[1] += 1;
     let mut writer = Writer::new();
     let mut random = Random(1);
-    writer.bits(0, 1);
-    writer.bits(1, 3);
+    match crafted.translation {
+        Some(size) => {
+            writer.bits(1, 1);
+            writer.bits(size >> 16, 16);
+            writer.bits(size & 0xFFFF, 16);
+        }
+        None => writer.bits(0, 1),
+    }
+    writer.bits(
+        if crafted.aligned_lengths.is_some() {
+            2
+        } else {
+            1
+        },
+        3,
+    );
     writer.bits(block_length as u32 >> 8, 16);
     writer.bits(block_length as u32 & 0xFF, 8);
-    let main = Code::new(huffman_lengths(&main_frequencies, 16));
+    for &length in crafted.aligned_lengths.iter().flatten() {
+        writer.bits(u32::from(length), 3);
+    }
+    let main = Code::new(
+        crafted
+            .main_lengths
+            .clone()
+            .unwrap_or_else(|| huffman_lengths(&main_frequencies, 16)),
+    );
     let mut previous = vec![0u8; 256 + slots * 8];
     let (literals, matches) = previous.split_at_mut(256);
     write_lengths(

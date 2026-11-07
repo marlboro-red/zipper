@@ -415,11 +415,6 @@ fn layouts_that_lie_are_refused() {
             "truncated",
         ),
         (
-            "more blocks than stored",
-            build(&|c| c.folders[0].declared_blocks = Some(2)),
-            "block",
-        ),
-        (
             "unknown method",
             build(&|c| c.folders[0].type_compress = 4),
             "unknown compression method",
@@ -775,12 +770,15 @@ fn a_cab_of_many_empty_files_and_folders_stays_within_its_limits() {
 fn folders_that_share_data_blocks_are_refused_before_their_blocks_are_decoded_twice() {
     let large = text(4000);
     let mut cabinet = cab_writer::one_folder_in_order(&[("a.txt", &large)], &Method::Mszip);
-    for _ in 0..3 {
+    for folder in 1..4 {
         cabinet.folders.push(cab_writer::Folder {
             type_compress: 0,
             blocks: Vec::new(),
             declared_blocks: None,
         });
+        cabinet
+            .files
+            .push(cab_writer::file(&format!("{folder}.txt"), folder, 0, 10));
     }
     let mut bytes = cabinet.build();
     let first = bytes[36..44].to_vec();
@@ -788,4 +786,340 @@ fn folders_that_share_data_blocks_are_refused_before_their_blocks_are_decoded_tw
         bytes[36 + 8 * folder..44 + 8 * folder].copy_from_slice(&first);
     }
     assert_rejected_with("shared blocks", &bytes, "share data blocks");
+}
+
+fn sevenzip() -> Option<PathBuf> {
+    ["7zz", "7z"]
+        .into_iter()
+        .find(|binary| {
+            std::process::Command::new(binary)
+                .arg("i")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
+        .map(PathBuf::from)
+}
+
+fn sevenzip_tree(bytes: &[u8]) -> Option<Option<BTreeMap<String, Vec<u8>>>> {
+    let binary = sevenzip()?;
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.cab");
+    fs::write(&archive, bytes).unwrap();
+    let into = root.path().join("out");
+    let mut flag = std::ffi::OsString::from("-o");
+    flag.push(&into);
+    let run = std::process::Command::new(binary)
+        .args(["x", "-y", "-tcab"])
+        .arg(flag)
+        .arg(&archive)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    Some(run.status.success().then(|| tree(&into)))
+}
+
+fn zipper_tree(bytes: &[u8]) -> Option<BTreeMap<String, Vec<u8>>> {
+    let (_root, destination, result) = extract_with(bytes, ReadOptions::default());
+    result.ok().map(|_| tree(&destination))
+}
+
+fn assert_matches_7zip(case: &str, bytes: &[u8]) -> Option<BTreeMap<String, Vec<u8>>> {
+    let ours = zipper_tree(bytes);
+    if let Some(theirs) = sevenzip_tree(bytes) {
+        assert_eq!(ours, theirs, "{case}: Zipper and 7-Zip disagree");
+    }
+    ours
+}
+
+fn lzx_cabinet(window_bits: u8, chunk: Vec<u8>, size: usize) -> Vec<u8> {
+    Cabinet {
+        folders: vec![cab_writer::Folder {
+            type_compress: 3 | (u16::from(window_bits) << 8),
+            blocks: vec![Block {
+                packed: chunk,
+                size,
+            }],
+            declared_blocks: None,
+        }],
+        files: vec![cab_writer::file("a.bin", 0, 0, size as u32)],
+        checksums: true,
+        ..Cabinet::default()
+    }
+    .build()
+}
+
+#[test]
+fn folders_that_share_one_block_are_refused_even_when_the_cabinet_has_spare_bytes() {
+    let data = text(3000);
+    let block = &data[..20_000];
+    let mut cabinet = cab_writer::one_folder_in_order(&[("a.txt", block)], &Method::Stored);
+    cabinet.folders.push(cab_writer::Folder {
+        type_compress: 0,
+        blocks: Vec::new(),
+        declared_blocks: None,
+    });
+    cabinet.files.push(cab_writer::file("b.txt", 1, 0, 20_000));
+    cabinet.reserve = Some((vec![0; 30_000], Vec::new(), Vec::new()));
+    let mut bytes = cabinet.build();
+    let table = 36 + 4 + 30_000;
+    let first = bytes[table..table + 8].to_vec();
+    bytes[table + 8..table + 16].copy_from_slice(&first);
+    assert_rejected_with("one block in two folders", &bytes, "share data blocks");
+}
+
+#[test]
+fn e8_translation_sizes_of_2_to_the_31_and_above_decode_as_7zip_decodes_them() {
+    use lzx_encoder::Token::Literal;
+    let values = [
+        0u32,
+        5,
+        100,
+        0x7FFF_FFF0,
+        0x7FFF_FFFF,
+        0x8000_0000,
+        0x8000_0010,
+        0xFFFF_FFEF,
+        0xFFFF_FFF0,
+        0xFFFF_FFF8,
+        0xFFFF_FFFF,
+        0xFFFF_FF00,
+        0x1234_5678,
+    ];
+    let mut data = Vec::new();
+    for value in values {
+        data.push(0xE8);
+        data.extend_from_slice(&value.to_le_bytes());
+        data.extend_from_slice(b"..");
+    }
+    data.extend_from_slice(&[b'z'; 12]);
+    let tokens: Vec<_> = data.iter().map(|&byte| Literal(byte)).collect();
+    for translation in [12_000_000, 0x8000_0000, 0x8000_0001, 0xFFFF_FFF0, u32::MAX] {
+        let chunk = lzx_encoder::chunk_of_exact_tokens(
+            &lzx_encoder::Crafted {
+                window_bits: 15,
+                block_length: data.len(),
+                translation: Some(translation),
+                ..lzx_encoder::Crafted::default()
+            },
+            &tokens,
+        );
+        let bytes = lzx_cabinet(15, chunk, data.len());
+        let ours = assert_matches_7zip(&format!("translation {translation:#x}"), &bytes);
+        assert!(ours.is_some(), "translation {translation:#x} is refused");
+    }
+}
+
+#[test]
+fn a_folder_is_decoded_only_as_far_as_its_last_file_and_every_block_read_is_checked() {
+    let mut extra = small(&Method::Stored);
+    extra.folders[0].declared_blocks = Some(2);
+    let ours = assert_matches_7zip("a declared block past the last file", &extra.build());
+    assert!(ours.is_some(), "a missing block no file needs is not read");
+    let data = text(9000);
+    let mut tail = cab_writer::one_folder_in_order(&[("a.txt", &data)], &Method::Mszip);
+    assert!(tail.folders[0].blocks.len() > 2);
+    tail.files[0].size = 1000;
+    let last = tail.folders[0].blocks.len() - 1;
+    tail.folders[0].blocks[last].packed[3] ^= 0xFF;
+    let mut unchecked = tail.clone();
+    unchecked.checksums = false;
+    for (label, cabinet) in [("checked", &tail), ("unchecked", &unchecked)] {
+        let ours = assert_matches_7zip(
+            &format!("damage past the last file, {label}"),
+            &cabinet.build(),
+        );
+        assert_eq!(ours, Some(expected(&[("a.txt", &data[..1000])])), "{label}");
+    }
+    let mut needed = tail.clone();
+    needed.folders[0].blocks[0].packed[3] ^= 0xFF;
+    assert_rejected_with("damage inside the last file", &needed.build(), "");
+    let mut empty = cab_writer::one_folder_in_order(&[("a.txt", &data)], &Method::Mszip);
+    empty.files.clear();
+    empty.folders[0].blocks[0].packed[3] ^= 0xFF;
+    let (_root, _destination, result) = extract_with(&empty.build(), ReadOptions::default());
+    assert!(
+        result.unwrap().is_empty(),
+        "a folder no file needs is not decoded"
+    );
+}
+
+#[test]
+fn many_folders_of_alternating_lzx_windows_extract_and_reuse_one_decoder() {
+    use lzx_encoder::Token::{Literal, Match};
+    let mut cabinet = Cabinet {
+        checksums: true,
+        ..Cabinet::default()
+    };
+    let mut wanted = BTreeMap::new();
+    for index in 0..600u16 {
+        let window_bits = if index % 2 == 0 { 21 } else { 15 };
+        let byte = b'a' + (index % 26) as u8;
+        let tokens = [
+            Literal(byte),
+            Match {
+                length: 9,
+                distance: 1,
+            },
+        ];
+        let chunk = lzx_encoder::verbatim_chunk_of_exact_tokens(window_bits, 10, &tokens);
+        cabinet.folders.push(cab_writer::Folder {
+            type_compress: 3 | (u16::from(window_bits) << 8),
+            blocks: vec![Block {
+                packed: chunk,
+                size: 10,
+            }],
+            declared_blocks: None,
+        });
+        let name = format!("f{index}");
+        cabinet.files.push(cab_writer::file(&name, index, 0, 10));
+        wanted.insert(name, vec![byte; 10]);
+        cabinet.folders.push(cab_writer::Folder {
+            type_compress: 3 | (u16::from(window_bits) << 8),
+            blocks: Vec::new(),
+            declared_blocks: None,
+        });
+    }
+    for file in &mut cabinet.files {
+        file.folder *= 2;
+    }
+    let (_root, destination, result) = extract_with(&cabinet.build(), ReadOptions::default());
+    result.unwrap();
+    assert_eq!(tree(&destination), wanted);
+    let large = text(9000);
+    let mut mixed = Cabinet {
+        checksums: true,
+        ..Cabinet::default()
+    };
+    for (index, window_bits) in [21u8, 15, 21, 15].into_iter().enumerate() {
+        let part = cab_writer::one_folder_in_order(
+            &[("x", &large)],
+            &Method::Lzx(lzx_encoder::Options::plain(window_bits)),
+        );
+        mixed.folders.extend(part.folders);
+        let name = format!("w{index}");
+        mixed
+            .files
+            .push(cab_writer::file(&name, index as u16, 0, large.len() as u32));
+    }
+    let (_root, destination, result) = extract_with(&mixed.build(), ReadOptions::default());
+    result.unwrap();
+    let names: Vec<String> = (0..4).map(|index| format!("w{index}")).collect();
+    let files: Vec<(&str, &[u8])> = names
+        .iter()
+        .map(|name| (name.as_str(), &large[..]))
+        .collect();
+    assert_eq!(tree(&destination), expected(&files));
+    let mut writer = lzx_encoder::Writer::new();
+    writer.bits(0, 1);
+    writer.bits(3, 3);
+    writer.bits(0, 16);
+    writer.bits(4, 8);
+    let pad = 16 - writer.pending_bits;
+    writer.bits(0, pad);
+    for repeat in [40_000u32, 1, 1] {
+        writer.raw(&repeat.to_le_bytes());
+    }
+    writer.raw(b"abcd");
+    let far_repeat = writer.finish();
+    let mut narrow_after_wide = cab_writer::one_folder_in_order(
+        &[("x", &large)],
+        &Method::Lzx(lzx_encoder::Options::plain(21)),
+    );
+    narrow_after_wide.folders.push(cab_writer::Folder {
+        type_compress: 3 | (15 << 8),
+        blocks: vec![Block {
+            packed: far_repeat,
+            size: 4,
+        }],
+        declared_blocks: None,
+    });
+    narrow_after_wide.files.push(cab_writer::file("y", 1, 0, 4));
+    assert_rejected_with(
+        "a 2^15 folder after a 2^21 one stores a distance past its window",
+        &narrow_after_wide.build(),
+        "outside its window",
+    );
+    narrow_after_wide.folders[1].type_compress = 3 | (16 << 8);
+    let (_root, destination, result) =
+        extract_with(&narrow_after_wide.build(), ReadOptions::default());
+    result.unwrap();
+    assert_eq!(fs::read(destination.join("y")).unwrap(), b"abcd");
+}
+
+#[test]
+fn cabinet_sets_whose_names_leave_their_folder_are_refused_before_7zip_sees_them() {
+    for name in [
+        "../other.cab",
+        "..\\other.cab",
+        "dir/other.cab",
+        "C:other.cab",
+        "..",
+        "",
+    ] {
+        for previous in [false, true] {
+            let mut set = small(&Method::Stored);
+            let names = Some((name.to_owned(), "disk".to_owned()));
+            if previous {
+                set.previous = names;
+            } else {
+                set.next = names;
+            }
+            let bytes = set.build();
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("set.cab");
+            fs::write(&path, &bytes).unwrap();
+            assert_eq!(
+                zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
+                zipper::Reader::Cab,
+                "{name:?} stays with the native reader"
+            );
+            assert_rejected_with(&format!("{name:?}"), &bytes, "not a plain file name");
+        }
+    }
+    let mut disk = small(&Method::Stored);
+    disk.next = Some(("two.cab".to_owned(), "../disk".to_owned()));
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("set.cab");
+    fs::write(&path, disk.build()).unwrap();
+    assert_eq!(
+        zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
+        zipper::Reader::Backend {
+            format: Some("-tcab".to_owned())
+        },
+        "a disk label is not a path"
+    );
+}
+
+#[test]
+fn an_empty_aligned_table_and_a_one_symbol_main_table_are_refused_as_7zip_refuses_them() {
+    use lzx_encoder::Token::Literal;
+    let tokens = [Literal(b'a'), Literal(b'b'), Literal(b'c')];
+    let aligned = lzx_encoder::chunk_of_exact_tokens(
+        &lzx_encoder::Crafted {
+            window_bits: 15,
+            block_length: 3,
+            aligned_lengths: Some([0; 8]),
+            ..lzx_encoder::Crafted::default()
+        },
+        &tokens,
+    );
+    assert_eq!(
+        assert_matches_7zip("empty aligned table", &lzx_cabinet(15, aligned, 3)),
+        None
+    );
+    let mut one = vec![0u8; 256 + 30 * 8];
+    one[usize::from(b'a')] = 1;
+    let single = lzx_encoder::chunk_of_exact_tokens(
+        &lzx_encoder::Crafted {
+            window_bits: 15,
+            block_length: 3,
+            main_lengths: Some(one),
+            ..lzx_encoder::Crafted::default()
+        },
+        &[Literal(b'a'); 3],
+    );
+    assert_eq!(
+        assert_matches_7zip("one symbol main table", &lzx_cabinet(15, single, 3)),
+        None
+    );
 }

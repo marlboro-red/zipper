@@ -98,7 +98,11 @@ pub fn run_until_cancelled(
     let archive = archive.canonicalize()?;
     ensure_no_wildcards(&archive)?;
     let mut command = Command::new(backend()?);
-    command.arg(action).arg("-y").args(format);
+    command
+        .arg(action)
+        .arg("-y")
+        .args(format)
+        .stdin(std::process::Stdio::null());
     let staging = if let Some(dst) = destination {
         let temp = crate::staging::stage(&archive, dst, existing, crate::Metadata::Restore)?;
         let staging = temp.path().canonicalize()?;
