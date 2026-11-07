@@ -479,6 +479,7 @@ Done so far, by 8 November 2026:
 - Every test in `tests/hostile_zip.rs` and `tests/zip_fuzz.rs` passes.
 - An adversarial review of the wired path ran about 6,850 archives on `zipper list` and both engines. It confirmed no layout that the new path accepts and the `zip` crate refuses, and no listing that differs. Peak memory of `zipper list` stayed at or below the old build's on archives at the entry and metadata limits.
 - A run of 5,000 damaged copies of each archive found one empty archive of ZIP64 records without sentinels that the new reader listed and the old one refused. The reader now refuses it, as the old reader and 7-Zip do, and a built case covers it.
+- One layout stays accepted on purpose. A ZIP64 end record without sentinels after a directory with entries lists its real entries, as the `zip` crate and Python list them, though the old reader refused it. Refusing it would risk archives that real writers produce.
 - Left are the scoreboard comparison of listing speed and the owed `[zip-directory]` sync.
 
 ## M23. The LZMA decoder as its own crate
