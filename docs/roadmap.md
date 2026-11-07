@@ -27,7 +27,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M12. Extraction controls](#m12-extraction-controls) | Done | M10 |
 | [M13. Remaining codecs](#m13-remaining-codecs) | Done | M10 |
 | [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | In progress | M10 |
-| [M14. Encrypted archives](#m14-encrypted-archives) | In progress | M13 |
+| [M14. Encrypted archives](#m14-encrypted-archives) | Done | M13 |
 | [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | In progress | M13 |
 | [M16. Package formats](#m16-package-formats) | In progress | M13 |
 | [M17. Disc and disk images](#m17-disc-and-disk-images) | Planned | M16 |
@@ -325,6 +325,7 @@ Done by 7 November 2026:
 - The decoder takes 0.878 times liblzma's time on the probe stream, as the [tree-preload record](../benchmarks/lzma/tree-preload/README.md) shows.
 - 7z decodes LZMA and LZMA2 with it, and the `lc=8` corpus archive reads natively. Silesia extracts 7 to 9% faster than with liblzma, and 7-Zip is still about 8% faster at one thread, as the [switch record](../benchmarks/native-7z/own-decoder-shipped/README.md) shows. Exit check 4 is not met yet.
 - 7z decodes its branch and Delta filters with `src/xz_filters.rs`, at unchanged speed, as the [filters record](../benchmarks/native-7z/own-filters/README.md) shows. The 7z reader no longer uses liblzma outside tests.
+- Parallel LZMA2 segments peak at 146 MiB on solid Silesia at default threads, against 257 MiB for 7-Zip, as the [segment memory record](../benchmarks/native-7z/segment-memory/README.md) shows. That meets the memory half of exit check 4.
 - Two changes from a machine-level study of 7-Zip's decoder made 7z Silesia extract about 3.5% faster, as the [kernel record](../benchmarks/lzma/7zip-study-kernel/README.md) shows. 7-Zip is still about 11% faster at one thread, so exit check 4 is not met yet.
 - tar, the ZIP XZ method and RPM decode xz with Zipper's own reader. Silesia `.tar.xz` extracts 11 to 15% faster than with liblzma, as the [xz record](../benchmarks/xz/own-decoder/README.md) shows.
 - `.lzma`, lzip, the ZIP LZMA method and RPM's LZMA payloads decode with Zipper's own readers, and liblzma is only a test dependency, as the [lzip and `.lzma` record](../benchmarks/xz/lzip-lzma-zip/README.md) shows. The release build no longer links liblzma.
@@ -352,6 +353,7 @@ Done so far, by 8 November 2026:
 
 - ZIP ZipCrypto and WinZip AES decrypt in process, with `--password`, the prompt on Unix and the library option, as the [ZIP reader reference](reference/zip-reader.md) describes. WinZip itself does not run on macOS, so the WinZip AES archives in `tests/data/encrypted-zip` come from 7-Zip instead. Info-ZIP writes only ZipCrypto, so it adds ZipCrypto archives alone.
 - 7z AES-256 decrypts in process, in every folder layout 7-Zip writes and in encrypted headers, as [Encryption](reference/7z-reader.md#encryption) describes. The default engine no longer sends an encrypted 7z to 7-Zip. A wrong password fails through the header CRC or the data CRC, before publish. A key derivation power above 7-Zip's limit of 24 is refused before any work. `tests/encrypted_7z.rs` checks 26 archives from `7zz` against the trees 7-Zip gave, a wrong password and none on each, and every point where decryption can fail. A Kani proof covers the property parser under `[7z-aes-properties]`.
+- M14 closed on 8 November 2026. WinZip does not run on macOS and Info-ZIP writes only ZipCrypto, so the WinZip AES archives of exit check 1 come from 7-Zip, which writes the same format.
 
 ## M15. Split, spanned and self-extracting archives
 

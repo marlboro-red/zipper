@@ -74,33 +74,45 @@ The rules are proven able to fail. Each of these model changes, which match plau
 
 ## The LZMA2 segment pipeline
 
-`verification/7z-lzma2-segments/` checks the reader that decodes one solid LZMA2 folder in segments, `ParallelLzma2`, listed under `[7z-lzma2-segments]` in `verification/coverage.txt`. Run the pstack `/statechart` skill on `MCSegments.tla` with `segments.cfg`. All seven rules must hold.
+`verification/7z-lzma2-segments/` checks the reader that decodes one solid LZMA2 folder in segments, `ParallelLzma2`, listed under `[7z-lzma2-segments]` in `verification/coverage.txt`. `cargo xtask verify-sync 7z-lzma2-segments` runs three configurations through `scripts/check_model.py`:
+
+- `MCSegments.tla` with `segments.cfg`, the main bound;
+- `MCSegments.tla` with `undropped.cfg`, where no result is dropped early, so a deadlock can show;
+- `MCHugeFront.tla` with `segments.cfg`, where the front segment's dictionary is larger than the budget.
+
+All nine rules, `NoDeadlock` included, must hold in all three.
 
 | Rule | In plain words |
 | --- | --- |
 | `InOrder` | Segment bytes leave in segment order, with none skipped. |
 | `OkIsComplete` | A reader that reports the end passed on every segment. |
 | `FailureIsReported` | A corrupt segment never ends in a complete read. |
-| `MemoryBounded` | Packed and decoded bytes of started segments stay within `SEGMENT_BUDGET`. |
+| `MemoryBounded` | The most units threads ever held, plus the largest front dictionary, stay within `SEGMENT_BUDGET`, counted as if no freed memory ever left the process. |
+| `OnlyTheFrontStreams` | Only the segment at the front of the output decodes on the folder's worker, straight into its buffer. |
 | `ThreadsBounded` | At most `window` segment decoders run at once. |
 | `NothingLeaks` | After an error or an early drop, every result is freed once the decoders finish. |
 | `NoThreadOutlivesReader` | The folder worker returns only after every decoder thread it started has exited, so no thread holds the archive open after the extraction returns. |
+| `NoDeadlock` | Some step is always possible until the reader ends. |
 
 | Covered code | Model |
 | --- | --- |
-| `ParallelLzma2::start_segments`, with its window and budget checks | `ReaderStartsSegment` |
-| The spawned thread running `decode_segment` and sending the result | `DecoderFinishes` |
-| `Read for ParallelLzma2`, which receives the front segment and frees its share of the budget when it is used up | `ReaderTakesFront` |
+| `ParallelLzma2::start_segments`, with its window and budget checks, which leave room for the largest front dictionary | `ReaderStartsSegment` |
+| `Front::Streaming` and `SegmentDecoder`, the front decoded on the worker | `ReaderStreamsFront` |
+| The spawned thread running `decode_segment`, reading packed bytes from the file, and sending the result | `DecoderFinishes` |
+| `Read for ParallelLzma2`, which takes the front segment and frees its share of the budget when it is used up | `ReaderTakesFront` |
 | The folder worker dropping the reader, and a thread whose send finds no receiver | `ReaderDropped`, `ResultFreed` |
 | `Drop for ParallelLzma2`, which sets the stop flag and joins every started thread, and `SegmentThread::finish`, which joins a thread after its result | `ReaderReturns` |
 
-A thread the OS refuses either fails the read, when no segment is running, or stops new starts, so the model covers it as a decoder failure. The stop flag a dropped reader sets ends decoders early, which the model covers as decoders finishing after `ReaderDropped`. The model leaves out `lzma2_segments`, the chunk-header scan, which the hostile tests in `tests/hostile_7z.rs` cover, and the bytes themselves. The bound is five segments of 1, 1, 1, 2 and 2 units, a window of 2 and a budget of 3, so both limits bind.
+A thread the OS refuses only stops new starts, and the front still streams. After an error, every read that follows fails (`Front::Failed`). The model leaves out the chunk-header scan, which the hostile tests in `tests/hostile_7z.rs` cover, and the bytes themselves. `tests/sevenz_segment_memory.rs` measures the heap peak with a counting allocator, and `/usr/bin/time -l` the resident peak, because the allocator can keep freed memory resident.
 
 Each change below breaks the named rule:
 
 | Change | Rule that breaks |
 | --- | --- |
-| `ReaderStartsSegment` skips the budget check | `MemoryBounded` |
-| The reader may hand out the segment after the front one first | `InOrder` |
-| `ReaderStartsSegment` skips the window check | `ThreadsBounded` |
-| `ReaderReturns` does not wait for the decoders, as before the threads were joined | `NoThreadOutlivesReader`, in 3 steps |
+| `ReaderStartsSegment` skips the budget check, leaves no room for the largest front, counts only fronts streamed so far, or charges the front nothing | `MemoryBounded` |
+| The front streams only when its thread size fits | `NoDeadlock`, on `undropped.cfg` |
+| A segment behind a queued thread streams | `OnlyTheFrontStreams` |
+| The reader takes the segment after the front first | `InOrder` |
+| `ReaderStartsSegment` skips the window check, or the window leaves out the streaming front | `ThreadsBounded` |
+| `ReaderReturns` does not wait for the decoders | `NoThreadOutlivesReader` |
+| A dropped streaming front is never freed | `NoDeadlock` |
