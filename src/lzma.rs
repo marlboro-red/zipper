@@ -823,7 +823,7 @@ fn decode_symbols_from(
 }
 
 pub(crate) struct RawLzmaReader<R> {
-    state: ChunkState,
+    state: Box<ChunkState>,
     range: RangeDecoder<R>,
     window: Window,
     decoded_size: u64,
@@ -845,10 +845,24 @@ impl<R: Read> RawLzmaReader<R> {
         dictionary: u32,
         decoded_size: u64,
     ) -> Self {
+        Self::from_parts(
+            RangeDecoder::new(input),
+            Box::new(ChunkState::new(properties, dictionary as usize)),
+            Window::new(raw_window(dictionary, decoded_size)),
+            decoded_size,
+        )
+    }
+
+    fn from_parts(
+        range: RangeDecoder<R>,
+        state: Box<ChunkState>,
+        window: Window,
+        decoded_size: u64,
+    ) -> Self {
         RawLzmaReader {
-            state: ChunkState::new(properties, dictionary as usize),
-            range: RangeDecoder::new(input),
-            window: Window::new(raw_window(dictionary, decoded_size)),
+            state,
+            range,
+            window,
             decoded_size,
             pending: 0,
             started: false,
@@ -874,9 +888,44 @@ impl<R: Read> RawLzmaReader<R> {
     }
 
     pub(crate) fn until_its_end_marker(input: R, properties: Properties, dictionary: u32) -> Self {
-        let mut reader = Self::new(input, properties, dictionary, u64::MAX);
-        reader.ends_at_its_marker = true;
-        reader
+        Self::new(input, properties, dictionary, u64::MAX).ending_at_its_marker()
+    }
+
+    fn resume_until_its_end_marker(
+        input: R,
+        properties: Properties,
+        dictionary: u32,
+        parts: Lzma2Parts,
+        held: (usize, usize),
+    ) -> Self {
+        let size = raw_window(dictionary, u64::MAX);
+        let window = match parts.window {
+            Some(mut window) if window.size == size.max(1) + COPY_CHUNK => {
+                window.reset();
+                window
+            }
+            _ => Window::new(size),
+        };
+        let state = match parts.state {
+            Some(mut state) => {
+                state.dictionary = (dictionary as usize).max(DICTIONARY_MIN);
+                state.reset(properties);
+                state
+            }
+            None => Box::new(ChunkState::new(properties, dictionary as usize)),
+        };
+        Self::from_parts(
+            RangeDecoder::holding(input, parts.buffer, held.0, held.1),
+            state,
+            window,
+            u64::MAX,
+        )
+        .ending_at_its_marker()
+    }
+
+    fn ending_at_its_marker(mut self) -> Self {
+        self.ends_at_its_marker = true;
+        self
     }
 
     pub(crate) fn requiring_a_clean_end(mut self) -> Self {
@@ -892,10 +941,6 @@ impl<R: Read> RawLzmaReader<R> {
     pub(crate) fn has_input_after_its_end(&mut self) -> io::Result<bool> {
         self.range.fill_to(1)?;
         Ok(self.range.start < self.range.end)
-    }
-
-    pub(crate) fn consumed(&self) -> u64 {
-        self.range.consumed()
     }
 
     pub(crate) fn into_inner(self) -> io::Chain<io::Cursor<Vec<u8>>, R> {
@@ -928,6 +973,22 @@ impl<R: Read> Read for RawLzmaReader<R> {
 }
 
 impl<R> RawLzmaReader<R> {
+    fn into_parts(self) -> (R, Lzma2Parts, (usize, usize)) {
+        let RangeDecoder {
+            input,
+            buffer,
+            start,
+            end,
+            ..
+        } = self.range;
+        let parts = Lzma2Parts {
+            buffer,
+            window: Some(self.window),
+            state: Some(self.state),
+        };
+        (input, parts, (start, end))
+    }
+
     pub(crate) fn into_input(self) -> (R, Vec<u8>) {
         let RangeDecoder {
             input,
@@ -1171,58 +1232,17 @@ fn lzip_trailer_matches(
     Ok(())
 }
 
-struct HeldInput<R> {
-    held: Vec<u8>,
-    next: usize,
-    inner: R,
-}
-
-impl<R: Read> Read for HeldInput<R> {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        if self.next == self.held.len() {
-            return self.inner.read(buffer);
-        }
-        let count = buffer.len().min(self.held.len() - self.next);
-        buffer[..count].copy_from_slice(&self.held[self.next..self.next + count]);
-        self.next += count;
-        Ok(count)
-    }
-}
-
-impl<R: Read> HeldInput<R> {
-    fn give_back(&mut self, mut bytes: Vec<u8>) {
-        bytes.extend_from_slice(&self.held[self.next..]);
-        self.held = bytes;
-        self.next = 0;
-    }
-
-    fn peek(&mut self, count: usize) -> io::Result<&[u8]> {
-        self.held.drain(..self.next);
-        self.next = 0;
-        let mut piece = [0; LZIP_HEADER];
-        while self.held.len() < count {
-            let wanted = (count - self.held.len()).min(piece.len());
-            match self.inner.read(&mut piece[..wanted]) {
-                Ok(0) => break,
-                Ok(read) => self.held.extend_from_slice(&piece[..read]),
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Ok(&self.held[..self.held.len().min(count)])
-    }
-}
-
 struct LzipMember<R> {
-    decoder: RawLzmaReader<HeldInput<R>>,
+    decoder: RawLzmaReader<XzInput<R>>,
     header: LzipHeader,
+    data_start: u64,
     crc: crc32fast::Hasher,
     size: u64,
 }
 
 enum LzipPart<R> {
     Member(Box<LzipMember<R>>),
-    Between(HeldInput<R>),
+    Between(XzInput<R>),
     Done,
     Failed,
 }
@@ -1233,28 +1253,43 @@ pub(crate) struct LzipReader<R> {
 }
 
 fn start_lzip_member<R: Read>(
-    mut input: HeldInput<R>,
+    mut input: XzInput<R>,
+    header: [u8; LZIP_HEADER],
     check_dictionary: fn(u64) -> io::Result<()>,
 ) -> io::Result<LzipPart<R>> {
-    let mut header = [0; LZIP_HEADER];
-    exact(&mut input, &mut header, "truncated lzip header")?;
     check_dictionary(lzip_dictionary(header[LZIP_HEADER - 1]))?;
     let header = lzip_header(header).map_err(data_error)?;
+    let data_start = input.position;
+    let (buffer, held) = input.hand_over_held();
+    let parts = Lzma2Parts {
+        buffer,
+        window: input.spare.window.take(),
+        state: input.spare.state.take(),
+    };
     Ok(LzipPart::Member(Box::new(LzipMember {
-        decoder: RawLzmaReader::until_its_end_marker(input, LZIP_PROPERTIES, header.dictionary),
+        decoder: RawLzmaReader::resume_until_its_end_marker(
+            input,
+            LZIP_PROPERTIES,
+            header.dictionary,
+            parts,
+            held,
+        ),
         header,
+        data_start,
         crc: crc32fast::Hasher::new(),
         size: 0,
     })))
 }
 
 fn finish_lzip_member<R: Read>(member: LzipMember<R>) -> io::Result<LzipPart<R>> {
-    let consumed = member.decoder.consumed();
-    let (mut input, rest) = member.decoder.into_input();
-    input.give_back(rest);
+    let (mut input, parts, held) = member.decoder.into_parts();
+    input.spare.window = parts.window;
+    input.spare.state = parts.state;
+    input.take_back(parts.buffer, held);
+    let consumed = input.position - member.data_start;
     let mut trailer = [0; LZIP_TRAILER];
     let size = member.header.trailer_size();
-    exact(&mut input, &mut trailer[..size], "truncated lzip trailer")?;
+    input.exact(&mut trailer[..size], "truncated lzip trailer")?;
     lzip_trailer_matches(
         member.header,
         &trailer,
@@ -1267,28 +1302,37 @@ fn finish_lzip_member<R: Read>(member: LzipMember<R>) -> io::Result<LzipPart<R>>
 }
 
 fn next_lzip_member<R: Read>(
-    mut input: HeldInput<R>,
+    mut input: XzInput<R>,
     check_dictionary: fn(u64) -> io::Result<()>,
 ) -> io::Result<LzipPart<R>> {
-    let next = input.peek(LZIP_MAGIC.len())?;
-    if next.is_empty() {
+    if input.peek()?.is_none() {
         return Ok(LzipPart::Done);
     }
-    if !LZIP_MAGIC.starts_with(next) {
-        return Err(data_error("lzip has data after its last member"));
+    let mut header = [0; LZIP_HEADER];
+    for (index, slot) in header.iter_mut().enumerate() {
+        *slot = input.byte("truncated lzip header")?;
+        if LZIP_MAGIC.get(index).is_some_and(|&magic| magic != *slot) {
+            return Err(data_error("lzip has data after its last member"));
+        }
     }
-    start_lzip_member(input, check_dictionary)
+    start_lzip_member(input, header, check_dictionary)
 }
 
 impl<R: Read> LzipReader<R> {
     pub(crate) fn new(input: R, check_dictionary: fn(u64) -> io::Result<()>) -> io::Result<Self> {
-        let input = HeldInput {
+        let mut input = XzInput {
+            inner: input,
             held: Vec::new(),
             next: 0,
-            inner: input,
+            filled: 0,
+            position: 0,
+            limit: u64::MAX,
+            spare: Lzma2Parts::default(),
         };
+        let mut header = [0; LZIP_HEADER];
+        input.exact(&mut header, "truncated lzip header")?;
         Ok(LzipReader {
-            part: start_lzip_member(input, check_dictionary)?,
+            part: start_lzip_member(input, header, check_dictionary)?,
             check_dictionary,
         })
     }
@@ -5530,7 +5574,8 @@ pub(crate) mod lzma_file_and_lzip_tests {
         };
         let mut reader = lzma_file(input);
         let out = read_all(&mut reader, reads)?;
-        Ok((out, LZMA_FILE_HEADER as u64 + reader.consumed()))
+        let (unread, held) = reader.into_input();
+        Ok((out, (stream.len() - unread.data.len() - held.len()) as u64))
     }
 
     fn assert_lzma_file_agrees(stream: &[u8], what: &str) -> Option<Vec<u8>> {
@@ -5605,14 +5650,18 @@ pub(crate) mod lzma_file_and_lzip_tests {
             }
         }
         let stream = with_size(lzma_file_of_unknown_size(&data, 6), data.len() as u64);
+        let empty = lzma_file_of_unknown_size(&[], 6);
         let mut decoded = 0;
         for byte in 0..=u8::MAX {
-            let mut changed = stream.clone();
-            changed[0] = byte;
-            let outcome = assert_lzma_file_agrees(&changed, &format!("properties {byte}"));
-            decoded += usize::from(outcome.is_some());
+            for (stream, what) in [(&stream, "data"), (&empty, "nothing")] {
+                let mut changed = stream.clone();
+                changed[0] = byte;
+                let outcome =
+                    assert_lzma_file_agrees(&changed, &format!("{what}, properties {byte}"));
+                decoded += usize::from(outcome.is_some());
+            }
         }
-        assert!(decoded >= 1, "{decoded}");
+        assert_eq!(decoded, 1 + 5 * 15, "{decoded}");
     }
 
     #[test]
@@ -5898,6 +5947,13 @@ pub(crate) mod lzma_file_and_lzip_tests {
             assert_lzip_agrees(&joined, "five members"),
             Outcome::Decoded(expected)
         );
+        let empty = lzip_member(&[], 0x10, 0);
+        let many = [&members[1][..], &empty.repeat(3_000), &members[0]].concat();
+        let expected = [&second[..], &first].concat();
+        assert_eq!(
+            assert_lzip_agrees(&many, "3,002 members"),
+            Outcome::Decoded(expected)
+        );
         let member = lzip_member(&first, 0x14, 6);
         for at in member.len() - LZIP_TRAILER..member.len() {
             let mut damaged = member.clone();
@@ -5922,6 +5978,16 @@ pub(crate) mod lzma_file_and_lzip_tests {
             let trailing = [&member[..], tail].concat();
             let outcome = assert_lzip_agrees(&trailing, &format!("trailing {tail:?}"));
             assert_eq!(outcome, Outcome::Refused, "trailing {tail:?}");
+            let error = LzipReader::new(&trailing[..], within_the_limit)
+                .and_then(|mut reader| reader.read_to_end(&mut Vec::new()))
+                .unwrap_err()
+                .to_string();
+            let after = !LZIP_MAGIC.starts_with(&tail[..tail.len().min(4)]);
+            assert_eq!(
+                error.contains("data after its last member"),
+                after,
+                "{tail:?}: {error}"
+            );
         }
         let mut decoded_versions = 0;
         for version in 0..=u8::MAX {

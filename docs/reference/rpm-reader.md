@@ -7,7 +7,7 @@ Zipper extracts the files an RPM package installs with its own Rust reader. The 
 An RPM package is a 96-byte lead, a signature header, a main header and a compressed payload. The payload is a cpio archive of the files the package installs. The reader supports these features:
 
 - Binary and source packages in the version 4 format, with a lead of version 3 or 4 and a signature in header form.
-- Payloads compressed with gzip, bzip2, xz, LZMA or zstd. The main header's payload compressor tag names the compressor, and a package without that tag holds gzip, as `rpm` assumes. An xz payload decodes with Zipper's own xz reader, as [tar's xz](tar-reader.md#supported-archives) does.
+- Payloads compressed with gzip, bzip2, xz, LZMA or zstd. The main header's payload compressor tag names the compressor, and a package without that tag holds gzip, as `rpm` assumes. An xz or LZMA payload decodes with Zipper's own reader, as [tar's xz and `.lzma`](tar-reader.md#supported-archives) do.
 - A payload in the newc cpio form, `070701`, or its CRC variant `070702`.
 - Files, directories, symlinks that stay inside the destination, and hard links, by the rules of the [cpio reader](cpio-reader.md#supported-archives). `rpmbuild` writes each name with a leading `./`, which the reader removes.
 

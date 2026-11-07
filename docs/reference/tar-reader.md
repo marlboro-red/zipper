@@ -10,6 +10,7 @@ The reader supports these features:
 
 - Plain tar, and tar inside gzip, including several gzip members, zstd, including the skippable frame `pzstd` writes first, xz, bzip2, lzip, LZ4 and `compress` (`.tar.Z`).
 - xz through Zipper's own reader in `src/lzma.rs`, not liblzma. It reads several streams in a row with zero padding between them, blocks with or without sizes in their headers, and the branch and Delta filters before LZMA2. It checks the CRC-32, CRC-64 or SHA-256 each block carries, and the index of each stream. liblzma decodes a stream whose check type it does not know without checking it. This reader refuses such a stream, which no xz writer produces.
+- `.lzma` and lzip through the same decoder. A `.lzma` stream ends at the size its header declares, or at its end marker when the size is unknown. A stream of known size must end there with a clean range coder or an end marker. As in liblzma, `lc` plus `lp` above 4 is refused. lzip members of version 0 or 1 may follow one another, and each trailer's CRC-32, data size and member size must match. Data after the last member is refused, though `lzip -t` ignores it unless it starts like a header.
 - POSIX ustar with its name prefix, pax extended headers, GNU long names and long link targets, and old tar without the `ustar` marker.
 - Base-256 sizes and times, as GNU tar writes for large values.
 - Files, directories, symlinks that stay inside the destination on Unix, and hard links to an earlier file in the same archive.
