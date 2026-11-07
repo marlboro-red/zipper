@@ -35,6 +35,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-08 | [lzip, `.lzma` and ZIP LZMA on Zipper's own decoder](xz/lzip-lzma-zip/README.md) | Kept. Silesia `.tar.lz` extracts 15 to 16% faster than with liblzma, `.lzma` 12% and ZIP LZMA 8 to 11%. The release build no longer links liblzma. |
 | 2026-11-07 | [xz on Zipper's own decoder](xz/own-decoder/README.md) | Kept. Silesia `.tar.xz` extracts 11 to 15% faster than with liblzma, and dependency sources 5 to 11% faster. 7z LZMA2 extraction, which shares the changed reader, is unchanged. |
 | 2026-11-02 | [Decoding tar data straight into writer chunks](native-tar/direct-chunks/README.md) | Kept. The 256 MiB random gzip entry extracts 1.11× faster and the compressible one 1.06× faster, with one fewer copy. |
 | 2026-11-02 | [Writer pool for tar extraction](native-tar/writer-pool/README.md) | Kept. Four writer threads make small-file tar extraction 3.0× to 5.6× faster and large gzip entries 1.11× to 1.24× faster. Measured under load from a game. |
