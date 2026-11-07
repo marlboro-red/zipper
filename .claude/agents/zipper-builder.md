@@ -27,7 +27,7 @@ It has these fields. A missing field means none.
 5. When you change code listed in `verification/coverage.txt`, follow its skill. On each commit of a branch, run only the proofs or models that commit adds or changes, such as `cargo kani --tests --harness NAME --exact`, and its module's tests. Run the full `cargo xtask verify-sync` once, on the branch head, since the gate checks only the head. Never sync a check you did not run on the exact code you commit.
 6. Prefer safe Rust. Any `unsafe` needs a `SAFETY:` comment and a Kani proof or exhaustive test of what it assumes.
 7. Comments follow the keep-list in `AGENTS.md`. Copy every commit hash you cite from `git log --oneline`.
-8. Put scratch files under `/private/tmp/claude-501/<branch name>/`. Never delete outside it or `target/`.
+8. Put scratch files under `/private/tmp/claude-501/<branch name>/`. Never delete outside it or `target/`. Before you report, delete from it every copied worktree, build folder, generated corpus and file over 10 MB, and keep only the scripts and small outputs your report cites.
 9. Never weaken a check, test or rule to get green. A check that fails for a reason outside your scope is a finding, not a fix.
 10. Run `cargo xtask gate fast` last. If the `hooks` step fails only because the worktree sits under a scratch folder, say so and give the other steps' results.
 
