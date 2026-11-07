@@ -320,6 +320,12 @@ Done so far, by 5 November 2026:
 - An LZMA2 reader on the same decoder, also used only by tests, with the same bytes or the same refusal as liblzma for every control code, every properties byte and every cut. A builder agent wrote it, and its tests found a read that could return bytes a chunked match copy had just overrun, fixed in `a69a361`.
 - An xz container reader on the same LZMA2 decoder, with the branch filters and Delta, also used only by tests so far. Kani proves the range coder and symbol decoders, and a reader fails every read after its first error.
 
+Done by 7 November 2026:
+
+- The decoder takes 0.878 times liblzma's time on the probe stream, as the [tree-preload record](../benchmarks/lzma/tree-preload/README.md) shows.
+- 7z decodes LZMA and LZMA2 with it, and the `lc=8` corpus archive reads natively. Silesia extracts 7 to 9% faster than with liblzma, and 7-Zip is still about 8% faster at one thread, as the [switch record](../benchmarks/native-7z/own-decoder-shipped/README.md) shows. Exit check 4 is not met yet.
+- liblzma still runs the 7z branch filters and Delta, xz and `.lzma` in tar, the ZIP XZ and LZMA methods, lzip and RPM. Those move to Zipper's code next, so that liblzma leaves the release build.
+
 ## M14. Encrypted archives
 
 Zipper extracts encrypted archives when given the password, and never writes a byte decrypted with a wrong one.
