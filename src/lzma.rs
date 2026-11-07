@@ -1244,6 +1244,7 @@ struct LzipMember<R> {
 enum LzipPart<R> {
     Member(Box<LzipMember<R>>),
     Between(XzInput<R>),
+    Refused(io::Error),
     Done,
     Failed,
 }
@@ -1331,9 +1332,15 @@ impl<R: Read> LzipReader<R> {
             spare: Lzma2Parts::default(),
         };
         let mut header = [0; LZIP_HEADER];
-        input.exact(&mut header, "truncated lzip header")?;
+        let part = input
+            .exact(&mut header, "truncated lzip header")
+            .and_then(|()| start_lzip_member(input, header, check_dictionary));
+        let part = match part {
+            Err(error) if error.kind() != io::ErrorKind::OutOfMemory => LzipPart::Refused(error),
+            part => part?,
+        };
         Ok(LzipReader {
-            part: start_lzip_member(input, header, check_dictionary)?,
+            part,
             check_dictionary,
         })
     }
@@ -1358,13 +1365,14 @@ impl<R: Read> Read for LzipReader<R> {
                         return Err(error);
                     }
                 },
-                LzipPart::Between(_) => {}
+                LzipPart::Between(_) | LzipPart::Refused(_) => {}
                 LzipPart::Done => return Ok(0),
                 LzipPart::Failed => return Err(data_error("lzip stream failed earlier")),
             }
             self.part = match std::mem::replace(&mut self.part, LzipPart::Failed) {
                 LzipPart::Member(member) => finish_lzip_member(*member)?,
                 LzipPart::Between(input) => next_lzip_member(input, self.check_dictionary)?,
+                LzipPart::Refused(error) => return Err(error),
                 done => done,
             };
         }
@@ -5890,6 +5898,26 @@ pub(crate) mod lzma_file_and_lzip_tests {
                 assert!(decoded.is_empty());
             }
         }
+    }
+
+    #[test]
+    fn a_bad_first_lzip_header_fails_the_first_read_and_a_large_dictionary_fails_at_once() {
+        let member = lzip_member(b"data", 0x0C, 0);
+        for (changed, what) in [
+            (
+                [&member[..5], &[0x0B], &member[6..]].concat(),
+                "coded dictionary 0x0b",
+            ),
+            ([&member[..4], &[2], &member[5..]].concat(), "version 2"),
+            (member[..3].to_vec(), "cut header"),
+        ] {
+            let mut reader = LzipReader::new(&changed[..], within_the_limit)
+                .unwrap_or_else(|error| panic!("{what}: {error}"));
+            assert!(reader.read(&mut [0; 16]).is_err(), "{what}");
+        }
+        let large = [&member[..5], &[0x1D], &member[6..]].concat();
+        let error = LzipReader::new(&large[..], within_the_limit).err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
     }
 
     #[test]

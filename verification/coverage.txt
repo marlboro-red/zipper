@@ -468,7 +468,7 @@ item = src/xz_filters.rs | pub(crate) fn xz_filter(
 
 [lzma]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 48d20ff0dadf9ef0
+fingerprint = ab0117c0b067f975
 full-check = cargo test --release --lib lzma
 item = src/lzma.rs | const PROBABILITY_BITS:
 item = src/lzma.rs | const PROBABILITY_ONE:
@@ -788,7 +788,10 @@ item = src/lzma.rs |     fn input_limits_keep_every_symbol_inside_the_buffer_and
 
 [lzma-headers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0000000000000000
+fingerprint = c8fb179c5414b46f
+goto-fingerprint = lzma::proofs::lzma_file_headers_keep_their_fields_and_only_properties_liblzma_accepts fc7094b7ba299367
+goto-fingerprint = lzma::proofs::lzip_headers_accept_only_dictionaries_from_4_kib_to_512_mib 9ce89782599b0672
+goto-fingerprint = lzma::proofs::lzip_trailers_accept_only_their_crc_and_sizes e6fcbabfe480c1a1
 full-check = cargo xtask kani-reach lzma-headers
 full-check = cargo kani --tests --exact --harness lzma::proofs::lzma_file_headers_keep_their_fields_and_only_properties_liblzma_accepts --harness lzma::proofs::lzip_headers_accept_only_dictionaries_from_4_kib_to_512_mib --harness lzma::proofs::lzip_trailers_accept_only_their_crc_and_sizes
 item = src/lzma.rs | const DICTIONARY_MIN:
