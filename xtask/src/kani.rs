@@ -1,5 +1,6 @@
 use crate::verify::{
-    ItemEnd, MANIFEST, end_of_braced_body_or_semicolon, manifest, read_source, sources,
+    ItemEnd, MANIFEST, Verification, end_of_braced_body_or_semicolon, manifest, read_source,
+    sources,
 };
 use anyhow::{Context, Result, ensure};
 use std::{
@@ -174,15 +175,6 @@ fn scan_items(path: &str, module: &str, code: &str) -> Scanned {
         let proof = pending
             .iter()
             .any(|attribute| attribute == "#[kani::proof]");
-        for attribute in &pending {
-            if attribute.contains("kani::proof_for_contract")
-                || (attribute.starts_with("#[cfg_attr(") && attribute.contains("kani::proof"))
-            {
-                scanned.problems.push(format!(
-                    "{path}:{number}: {attribute} is not supported; use #[kani::proof]"
-                ));
-            }
-        }
         let function = words
             .iter()
             .skip_while(|word| matches!(**word, "const" | "unsafe" | "async" | "extern"))
@@ -238,6 +230,133 @@ fn scan_items(path: &str, module: &str, code: &str) -> Scanned {
     scanned
 }
 
+fn names_a_proof(text: &str) -> bool {
+    identifiers(text).any(|name| name == "proof" || name.starts_with("proof_"))
+}
+
+fn proof_form_problems(path: &str, source: &str) -> Vec<String> {
+    let model = FileModel::new(path, source.to_owned(), &[]);
+    let code = model.code.as_str();
+    let bytes = code.as_bytes();
+    let macros: Vec<Lines> = model
+        .definitions
+        .values()
+        .flatten()
+        .filter(|(_, kind)| *kind == Kind::Macro)
+        .map(|(span, _)| *span)
+        .collect();
+    let mut problems = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'#' {
+            index += 1;
+            continue;
+        }
+        let mut open = index + 1;
+        while open < bytes.len() && (bytes[open] == b'!' || bytes[open].is_ascii_whitespace()) {
+            open += 1;
+        }
+        if bytes.get(open) != Some(&b'[') {
+            index += 1;
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut close = open;
+        while close < bytes.len() {
+            match bytes[close] {
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            close += 1;
+        }
+        let text = &code[index..(close + 1).min(code.len())];
+        let line = line_of(&model.offsets, index);
+        if names_a_proof(text) {
+            let alone = text == "#[kani::proof]" && model.code_line(line).trim() == text;
+            let in_macro = macros.iter().any(|span| span.contains(line));
+            if !alone || in_macro {
+                problems.push(format!(
+                    "{path}:{line}: `{text}` marks a Kani proof in a form the gate does not read; write `#[kani::proof]` alone on its own line, outside any macro"
+                ));
+            }
+        }
+        index = close + 1;
+    }
+    for (line, tree) in kani_imports(code, &model.offsets) {
+        problems.push(format!(
+            "{path}:{line}: `use {tree}` imports Kani's proof attribute under another name, which the gate does not read"
+        ));
+    }
+    problems.sort_by_key(|problem| {
+        problem
+            .split(':')
+            .nth(1)
+            .and_then(|line| line.parse::<usize>().ok())
+            .unwrap_or(0)
+    });
+    problems
+}
+
+fn kani_imports(code: &str, offsets: &[usize]) -> Vec<(usize, String)> {
+    let mut found = Vec::new();
+    for (start, end) in use_statements(code) {
+        let text = &code[start + 3..end];
+        let Some(tokens) = use_tokens(text) else {
+            continue;
+        };
+        let mut at = usize::from(tokens.first() == Some(&UseToken::Separator));
+        let mut trees = Vec::new();
+        if parse_use_tree(&tokens, &mut at, &[], &mut trees).is_none() {
+            continue;
+        }
+        let imports_proof = trees.iter().any(|tree| match tree {
+            UseTree::Glob(prefix) => prefix.first().map(String::as_str) == Some("kani"),
+            UseTree::Leaf { path, .. } => {
+                path.first().map(String::as_str) == Some("kani")
+                    && (path.len() == 1
+                        || path.iter().skip(1).any(|segment| names_a_proof(segment)))
+            }
+        });
+        if imports_proof {
+            found.push((line_of(offsets, start), text.trim().to_owned()));
+        }
+    }
+    found
+}
+
+fn use_statements(code: &str) -> Vec<(usize, usize)> {
+    let bytes = code.as_bytes();
+    let mut found = Vec::new();
+    let mut index = 0;
+    while let Some(position) = code[index..].find("use") {
+        let start = index + position;
+        index = start + 3;
+        let before_ok =
+            start == 0 || !(bytes[start - 1].is_ascii_alphanumeric() || bytes[start - 1] == b'_');
+        let after_ok = bytes
+            .get(start + 3)
+            .is_some_and(|byte| byte.is_ascii_whitespace() || *byte == b':');
+        if !before_ok || !after_ok {
+            continue;
+        }
+        let line_start = code[..start].rfind('\n').map_or(0, |at| at + 1);
+        let lead = code[line_start..start].trim();
+        if !(lead.is_empty() || lead.starts_with("pub")) {
+            continue;
+        }
+        if let Some(end) = code[start..].find(';') {
+            found.push((start, start + end));
+        }
+    }
+    found
+}
+
 pub(crate) fn discover_harnesses(
     files: &[String],
     source_of: impl Fn(&str) -> Result<String>,
@@ -261,10 +380,14 @@ pub(crate) fn discover_harnesses(
     };
     for path in files {
         let source = source_of(path)?;
-        if !source.contains("kani::proof") {
+        if !source.contains("proof") {
             continue;
         }
         let code = blank_strings_and_comments(&source);
+        if !names_a_proof(&code) {
+            continue;
+        }
+        problems.extend(proof_form_problems(path, &source));
         if !code.contains("kani::proof") {
             continue;
         }
@@ -370,6 +493,9 @@ pub(crate) fn fail_on_harnesses_not_run_as_listed(root: &Path) -> Result<()> {
         &all_kani_checks(&all),
         &harnesses,
     ));
+    for verification in &all {
+        problems.extend(goto_fingerprints_not_listed(verification));
+    }
     ensure!(problems.is_empty(), "{}", problems.join("\n"));
     Ok(())
 }
@@ -546,6 +672,13 @@ enum Kind {
     Function,
 }
 
+struct Binding {
+    name: String,
+    path: Vec<String>,
+    line: usize,
+    exported: bool,
+}
+
 struct FileModel {
     source: String,
     code: String,
@@ -554,11 +687,12 @@ struct FileModel {
     functions: Vec<Lines>,
     impls: Vec<Lines>,
     definitions: BTreeMap<String, Vec<(Lines, Kind)>>,
-    imports: BTreeMap<String, String>,
+    bindings: Vec<Binding>,
+    refusals: Vec<String>,
 }
 
 impl FileModel {
-    fn new(source: String, openings: &[&str]) -> Self {
+    fn new(path: &str, source: String, openings: &[&str]) -> Self {
         let code = blank_strings_and_comments(&source);
         let mut offsets = vec![0];
         for line in source.split_inclusive('\n') {
@@ -572,7 +706,8 @@ impl FileModel {
             functions: Vec::new(),
             impls: Vec::new(),
             definitions: BTreeMap::new(),
-            imports: BTreeMap::new(),
+            bindings: Vec::new(),
+            refusals: Vec::new(),
         };
         for number in 1..model.offsets.len() {
             let line = model.line(number);
@@ -591,11 +726,18 @@ impl FileModel {
                     .or_default()
                     .push((span, kind));
             }
-            if code_line.trim_start().starts_with("impl") {
+            if without_visibility(code_line.trim_start()).starts_with("impl") {
                 model.impls.push(model.item_at(number));
             }
+            if code_line.contains("include!") {
+                model.refusals.push(format!(
+                    "{path}:{number}: `include!` brings in code the reach check cannot see"
+                ));
+            }
         }
-        model.imports = imports(&model.code);
+        let (bindings, refusals) = use_bindings(path, &model.code, &model.offsets);
+        model.bindings = bindings;
+        model.refusals.extend(refusals);
         model
     }
 
@@ -635,6 +777,14 @@ impl FileModel {
         self.listed.iter().any(|span| span.contains(line))
     }
 
+    fn binding(&self, name: &str) -> Option<&Binding> {
+        self.bindings.iter().find(|binding| binding.name == name)
+    }
+
+    fn defines(&self, name: &str) -> bool {
+        self.definitions.contains_key(name)
+    }
+
     fn opening_for(&self, first: usize, name: &str) -> String {
         let line = self.line(first).trim_end();
         let unique = |opening: &str| {
@@ -651,6 +801,10 @@ impl FileModel {
     }
 }
 
+fn line_of(offsets: &[usize], offset: usize) -> usize {
+    offsets.partition_point(|&start| start <= offset).max(1)
+}
+
 fn innermost(spans: &[Lines], line: usize) -> Option<Lines> {
     spans
         .iter()
@@ -664,10 +818,25 @@ fn identifiers(text: &str) -> impl Iterator<Item = &str> {
         .filter(|word| word.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_'))
 }
 
+fn without_visibility(line: &str) -> &str {
+    let Some(rest) = line.strip_prefix("pub") else {
+        return line;
+    };
+    let trimmed = rest.trim_start();
+    if let Some(inside) = trimmed.strip_prefix('(') {
+        return inside
+            .find(')')
+            .map_or(line, |close| inside[close + 1..].trim_start());
+    }
+    if rest.starts_with(char::is_whitespace) {
+        return trimmed;
+    }
+    line
+}
+
 fn definition(line: &str) -> Option<(&str, Kind)> {
-    let words: Vec<&str> = line
+    let words: Vec<&str> = without_visibility(line.trim_start())
         .split_whitespace()
-        .skip_while(|word| word.starts_with("pub"))
         .collect();
     let name_after = |at: usize| words.get(at).and_then(|word| identifiers(word).next());
     match *words.first()? {
@@ -701,42 +870,170 @@ fn definition(line: &str) -> Option<(&str, Kind)> {
     }
 }
 
-fn imports(code: &str) -> BTreeMap<String, String> {
-    let mut found = BTreeMap::new();
-    for statement in code.split(';') {
-        let statement = unspaced(statement);
-        let Some(at) = statement.find("usecrate::") else {
-            continue;
-        };
-        let path = &statement[at + "usecrate::".len()..];
-        let (prefix, entries): (&str, Vec<&str>) = match path.split_once('{') {
-            Some((prefix, rest)) => (
-                prefix.trim_end_matches("::"),
-                rest.trim_end_matches('}').split(',').collect(),
-            ),
-            None => ("", vec![path]),
-        };
-        for entry in entries {
-            let (target, alias) = match entry.split_once("as") {
-                Some((target, alias)) if !target.is_empty() && !alias.contains(':') => {
-                    (target, Some(alias))
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum UseToken {
+    Name(String),
+    Separator,
+    Open,
+    Close,
+    Comma,
+    Glob,
+}
+
+fn use_tokens(text: &str) -> Option<Vec<UseToken>> {
+    let mut tokens = Vec::new();
+    let mut chars = text.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            c if c.is_whitespace() => {}
+            ':' if chars.peek().map(|(_, next)| *next) == Some(':') => {
+                chars.next();
+                tokens.push(UseToken::Separator);
+            }
+            '{' => tokens.push(UseToken::Open),
+            '}' => tokens.push(UseToken::Close),
+            ',' => tokens.push(UseToken::Comma),
+            '*' => tokens.push(UseToken::Glob),
+            c if c.is_ascii_alphanumeric() || c == '_' => {
+                let mut end = at + c.len_utf8();
+                while let Some((next_at, next)) = chars.peek().copied() {
+                    if next.is_ascii_alphanumeric() || next == '_' {
+                        end = next_at + next.len_utf8();
+                        chars.next();
+                    } else {
+                        break;
+                    }
                 }
-                _ => (entry, None),
-            };
-            let full = joined(&[prefix, target]);
-            let Some((module, name)) = full.rsplit_once("::") else {
-                continue;
-            };
-            found.insert(alias.unwrap_or(name).to_owned(), module.to_owned());
+                tokens.push(UseToken::Name(text[at..end].to_owned()));
+            }
+            _ => return None,
         }
     }
-    found
+    Some(tokens)
+}
+
+enum UseTree {
+    Leaf {
+        path: Vec<String>,
+        alias: Option<String>,
+    },
+    Glob(Vec<String>),
+}
+
+fn parse_use_tree(
+    tokens: &[UseToken],
+    at: &mut usize,
+    prefix: &[String],
+    out: &mut Vec<UseTree>,
+) -> Option<()> {
+    let mut path = prefix.to_vec();
+    loop {
+        match tokens.get(*at)? {
+            UseToken::Open => {
+                *at += 1;
+                loop {
+                    if tokens.get(*at) == Some(&UseToken::Close) {
+                        *at += 1;
+                        return Some(());
+                    }
+                    parse_use_tree(tokens, at, &path, out)?;
+                    match tokens.get(*at)? {
+                        UseToken::Comma => *at += 1,
+                        UseToken::Close => {
+                            *at += 1;
+                            return Some(());
+                        }
+                        _ => return None,
+                    }
+                }
+            }
+            UseToken::Glob => {
+                *at += 1;
+                out.push(UseTree::Glob(path));
+                return Some(());
+            }
+            UseToken::Name(name) => {
+                *at += 1;
+                path.push(name.clone());
+                if tokens.get(*at) == Some(&UseToken::Separator) {
+                    *at += 1;
+                    continue;
+                }
+                let mut alias = None;
+                if tokens.get(*at) == Some(&UseToken::Name("as".to_owned())) {
+                    match tokens.get(*at + 1)? {
+                        UseToken::Name(name) => alias = Some(name.clone()),
+                        _ => return None,
+                    }
+                    *at += 2;
+                }
+                if path.last().map(String::as_str) == Some("self") {
+                    path.pop();
+                }
+                out.push(UseTree::Leaf { path, alias });
+                return Some(());
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn use_bindings(path: &str, code: &str, offsets: &[usize]) -> (Vec<Binding>, Vec<String>) {
+    let mut bindings = Vec::new();
+    let mut refusals = Vec::new();
+    for (start, end) in use_statements(code) {
+        let line = line_of(offsets, start);
+        let line_start = code[..start].rfind('\n').map_or(0, |at| at + 1);
+        let exported = !code[line_start..start].trim().is_empty();
+        let Some(tokens) = use_tokens(&code[start + 3..end]) else {
+            refusals.push(format!(
+                "{path}:{line}: a `use` the reach check cannot parse"
+            ));
+            continue;
+        };
+        let mut trees = Vec::new();
+        let mut at = usize::from(tokens.first() == Some(&UseToken::Separator));
+        if parse_use_tree(&tokens, &mut at, &[], &mut trees).is_none() || at != tokens.len() {
+            refusals.push(format!(
+                "{path}:{line}: a `use` the reach check cannot parse"
+            ));
+            continue;
+        }
+        for tree in trees {
+            match tree {
+                UseTree::Glob(prefix) => {
+                    if prefix.first().map(String::as_str) == Some("crate") {
+                        refusals.push(format!(
+                            "{path}:{line}: `use {}::*` imports names the reach check cannot list",
+                            prefix.join("::")
+                        ));
+                    }
+                }
+                UseTree::Leaf {
+                    path: target,
+                    alias,
+                } => {
+                    if target.first().map(String::as_str) != Some("crate") || target.len() < 2 {
+                        continue;
+                    }
+                    let name = alias.unwrap_or_else(|| target.last().cloned().unwrap_or_default());
+                    bindings.push(Binding {
+                        name,
+                        path: target[1..].to_vec(),
+                        line,
+                        exported,
+                    });
+                }
+            }
+        }
+    }
+    (bindings, refusals)
 }
 
 struct Reference {
-    module: Option<String>,
-    name: String,
+    segments: Vec<String>,
     called: bool,
+    offset: usize,
 }
 
 fn references(code: &str) -> Vec<Reference> {
@@ -754,48 +1051,116 @@ fn references(code: &str) -> Vec<Reference> {
         let c = bytes[index];
         let starts = (c.is_ascii_alphabetic() || c == b'_')
             && (index == 0
-                || !(bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_'));
+                || !(bytes[index - 1].is_ascii_alphanumeric()
+                    || bytes[index - 1] == b'_'
+                    || bytes[index - 1] == b'.'));
         if !starts {
             index += 1;
             continue;
+        }
+        if &code[index..ident(index)] == "pub" {
+            let mut next = ident(index);
+            while next < bytes.len() && bytes[next] == b' ' {
+                next += 1;
+            }
+            if bytes.get(next) == Some(&b'(') {
+                index = code[next..]
+                    .find(')')
+                    .map_or(bytes.len(), |close| next + close + 1);
+                continue;
+            }
         }
         let mut segments = Vec::new();
         let mut at = index;
         loop {
             let end = ident(at);
-            segments.push(&code[at..end]);
+            segments.push(code[at..end].to_owned());
             at = end;
-            if code[at..].starts_with("::") && ident(at + 2) > at + 2 {
-                at += 2;
-            } else {
-                break;
+            let mut next = at;
+            while next < bytes.len() && bytes[next] == b' ' {
+                next += 1;
             }
+            if code[next..].starts_with("::") {
+                let mut name = next + 2;
+                while name < bytes.len() && bytes[name] == b' ' {
+                    name += 1;
+                }
+                if ident(name) > name {
+                    at = name;
+                    continue;
+                }
+            }
+            break;
         }
         let mut after = at;
         while after < bytes.len() && bytes[after] == b' ' {
             after += 1;
         }
         let called = bytes.get(after) == Some(&b'(') || bytes.get(after) == Some(&b'!');
-        for (position, segment) in segments.iter().enumerate() {
-            let last = position + 1 == segments.len();
-            found.push(Reference {
-                module: None,
-                name: (*segment).to_owned(),
-                called: called && last,
-            });
-        }
-        if segments.first() == Some(&"crate") {
-            for split in 2..=segments.len() {
-                found.push(Reference {
-                    module: Some(segments[1..split - 1].join("::")),
-                    name: segments[split - 1].to_owned(),
-                    called: called && split == segments.len(),
-                });
-            }
-        }
+        found.push(Reference {
+            segments,
+            called,
+            offset: index,
+        });
         index = at;
     }
     found
+}
+
+const EXTERNAL_ROOTS: &[&str] = &["std", "core", "alloc", "kani"];
+
+enum Target {
+    Here(String, String),
+    Nothing,
+}
+
+fn resolve_crate_path(
+    segments: &[String],
+    load: &mut dyn FnMut(&str) -> bool,
+    defines: &dyn Fn(&str, &str) -> Option<bool>,
+) -> std::result::Result<Target, String> {
+    let (name, module) = match segments.split_last() {
+        Some((name, module)) => (name, module.join("::")),
+        None => return Ok(Target::Nothing),
+    };
+    for file in module_files(&module) {
+        if load(&file) {
+            match defines(&file, name) {
+                Some(true) => return Ok(Target::Here(file, name.clone())),
+                Some(false) => {}
+                None => {
+                    return Err(format!(
+                        "crate::{} is re-exported from {file}, which the reach check does not follow",
+                        segments.join("::")
+                    ));
+                }
+            }
+        }
+    }
+    for file in module_files(&segments.join("::")) {
+        if load(&file) {
+            return Err(format!(
+                "crate::{} names a module, which the reach check does not follow",
+                segments.join("::")
+            ));
+        }
+    }
+    if segments.len() >= 2 {
+        let type_name = &segments[segments.len() - 2];
+        let parent = segments[..segments.len() - 2].join("::");
+        for file in module_files(&parent) {
+            if load(&file) && defines(&file, type_name) == Some(true) {
+                return Err(format!(
+                    "crate::{} is an associated item of a type in {file}, which the reach check does not follow",
+                    segments.join("::")
+                ));
+            }
+        }
+    }
+    Err(format!(
+        "crate::{} resolves to no definition",
+        segments.join("::")
+    ))
 }
 
 fn reach_not_listed(
@@ -804,26 +1169,43 @@ fn reach_not_listed(
     source_of: impl Fn(&str) -> Result<String>,
 ) -> Result<BTreeSet<String>> {
     let mut problems = BTreeSet::new();
-    let mut models: BTreeMap<String, Option<FileModel>> = BTreeMap::new();
-    let load = |path: &str, models: &mut BTreeMap<String, Option<FileModel>>| {
-        models.entry(path.to_owned()).or_insert_with(|| {
-            let openings: Vec<&str> = items
-                .iter()
-                .filter(|(item_path, _)| item_path == path)
-                .map(|(_, opening)| opening.as_str())
-                .collect();
-            source_of(path)
-                .ok()
-                .map(|source| FileModel::new(source, &openings))
-        });
+    let models: std::cell::RefCell<BTreeMap<String, Option<FileModel>>> =
+        std::cell::RefCell::new(BTreeMap::new());
+    let load = |path: &str| -> bool {
+        let mut models = models.borrow_mut();
+        models
+            .entry(path.to_owned())
+            .or_insert_with(|| {
+                let openings: Vec<&str> = items
+                    .iter()
+                    .filter(|(item_path, _)| item_path == path)
+                    .map(|(_, opening)| opening.as_str())
+                    .collect();
+                source_of(path)
+                    .ok()
+                    .map(|source| FileModel::new(path, source, &openings))
+            })
+            .is_some()
+    };
+    let defines = |file: &str, name: &str| -> Option<bool> {
+        let models = models.borrow();
+        let model = models.get(file)?.as_ref()?;
+        if model.defines(name) {
+            Some(true)
+        } else if model.binding(name).is_some_and(|binding| binding.exported) {
+            None
+        } else {
+            Some(false)
+        }
     };
     let mut work: Vec<(String, Lines, bool)> = Vec::new();
     for (path, line) in reached {
-        load(path, &mut models);
-        let Some(model) = models[path].as_ref() else {
+        if !load(path) {
             problems.insert(format!("{path}: reached by a proof but cannot be read"));
             continue;
-        };
+        }
+        let models_ref = models.borrow();
+        let model = models_ref[path].as_ref().expect("loaded");
         let function = innermost(&model.functions, *line);
         if !model.covered(*line) {
             match function {
@@ -873,55 +1255,382 @@ fn reach_not_listed(
         if !seen.insert((path.clone(), span, compile_time)) {
             continue;
         }
-        let found = match models.get(&path).and_then(Option::as_ref) {
-            Some(model) => references(model.code_of(span)),
-            None => continue,
+        let (found, span_offset, offsets) = {
+            let models_ref = models.borrow();
+            let Some(model) = models_ref.get(&path).and_then(Option::as_ref) else {
+                continue;
+            };
+            (
+                references(model.code_of(span)),
+                model.offsets[span.first - 1],
+                model.offsets.clone(),
+            )
         };
         for reference in found {
+            let line = line_of(&offsets, span_offset + reference.offset);
+            let segments = &reference.segments;
+            let first = segments[0].as_str();
             let mut targets: Vec<(String, String)> = Vec::new();
-            match &reference.module {
-                Some(module) => {
-                    for file in module_files(module) {
-                        targets.push((file, reference.name.clone()));
+            let refuse = |problems: &mut BTreeSet<String>, why: String| {
+                problems.insert(format!("{path}:{line}: {why}"));
+            };
+            let binding = {
+                let models_ref = models.borrow();
+                models_ref[&path]
+                    .as_ref()
+                    .and_then(|model| model.binding(first))
+                    .map(|binding| (binding.path.clone(), binding.line))
+            };
+            let local = defines(&path, first) == Some(true);
+            if first == "crate" {
+                match resolve_crate_path(&segments[1..], &mut |file| load(file), &defines) {
+                    Ok(Target::Here(file, name)) => targets.push((file, name)),
+                    Ok(Target::Nothing) => {}
+                    Err(why) => refuse(&mut problems, why),
+                }
+            } else if matches!(first, "self" | "super" | "Self") {
+                let name = segments.last().cloned().unwrap_or_default();
+                if segments.len() > 1 && defines(&path, &name) != Some(true) && first != "Self" {
+                    refuse(
+                        &mut problems,
+                        format!(
+                            "`{}` leaves this file, which the reach check does not follow",
+                            segments.join("::")
+                        ),
+                    );
+                } else {
+                    targets.push((path.clone(), name));
+                }
+            } else if !local && let Some((target, binding_line)) = binding {
+                let mut full = target.clone();
+                full.extend(segments[1..].iter().cloned());
+                if segments.len() == 1 {
+                    match resolve_crate_path(&full, &mut |file| load(file), &defines) {
+                        Ok(Target::Here(file, name)) => targets.push((file, name)),
+                        Ok(Target::Nothing) => {}
+                        Err(why) => refuse(
+                            &mut problems,
+                            format!("{why} (imported at line {binding_line})"),
+                        ),
+                    }
+                } else {
+                    let module_exists = module_files(&target.join("::"))
+                        .iter()
+                        .any(|file| load(file));
+                    let why = if module_exists {
+                        format!(
+                            "`{}` goes through the module imported at line {binding_line}, which the reach check does not follow",
+                            segments.join("::")
+                        )
+                    } else {
+                        format!(
+                            "`{}` names an item of `{first}`, imported at line {binding_line} from another file, which the reach check does not follow",
+                            segments.join("::")
+                        )
+                    };
+                    refuse(&mut problems, why);
+                }
+            } else {
+                if segments.len() > 1 && !local && !EXTERNAL_ROOTS.contains(&first) {
+                    let crate_module = module_files(first).iter().any(|file| load(file));
+                    if crate_module {
+                        refuse(
+                            &mut problems,
+                            format!(
+                                "`{}` goes through a module path the reach check does not follow",
+                                segments.join("::")
+                            ),
+                        );
                     }
                 }
-                None => {
-                    targets.push((path.clone(), reference.name.clone()));
-                    let imported = models[&path]
-                        .as_ref()
-                        .and_then(|model| model.imports.get(&reference.name).cloned());
-                    if let Some(module) = imported {
-                        for file in module_files(&module) {
-                            targets.push((file, reference.name.clone()));
-                        }
-                    }
+                for segment in segments {
+                    targets.push((path.clone(), segment.clone()));
                 }
             }
+            let last = segments.last().cloned().unwrap_or_default();
             for (file, name) in targets {
-                load(&file, &mut models);
-                let Some(model) = models[&file].as_ref() else {
+                if !load(&file) {
                     continue;
+                }
+                let found: Vec<(Lines, Kind, bool, String)> = {
+                    let models_ref = models.borrow();
+                    let model = models_ref[&file].as_ref().expect("loaded");
+                    model
+                        .definitions
+                        .get(&name)
+                        .into_iter()
+                        .flatten()
+                        .map(|&(span, kind)| {
+                            (
+                                span,
+                                kind,
+                                model.covered(span.first),
+                                model.opening_for(span.first, &name),
+                            )
+                        })
+                        .collect()
                 };
-                for &(definition_span, kind) in model.definitions.get(&name).into_iter().flatten() {
+                for (definition_span, kind, covered, opening) in found {
+                    let called = reference.called && name == last;
                     let needed = match kind {
                         Kind::Value | Kind::Type | Kind::Macro | Kind::ConstFunction => true,
-                        Kind::Function => compile_time && reference.called,
+                        Kind::Function => compile_time && called,
                     };
                     if !needed {
                         continue;
                     }
-                    if !model.covered(definition_span.first) {
-                        problems.insert(format!(
-                            "item = {file} | {}",
-                            model.opening_for(definition_span.first, &name)
-                        ));
+                    if !covered {
+                        problems.insert(format!("item = {file} | {opening}"));
                     }
                     work.push((file.clone(), definition_span, kind != Kind::Function));
                 }
             }
         }
     }
+    for model in models.borrow().values().flatten() {
+        problems.extend(model.refusals.iter().cloned());
+    }
     Ok(problems)
+}
+
+fn exact_harnesses(verification: &Verification) -> Vec<String> {
+    verification
+        .full_checks
+        .iter()
+        .filter_map(|check| kani_check(check))
+        .filter(|check| check.exact)
+        .flat_map(|check| check.filters.into_iter().map(str::to_owned))
+        .collect()
+}
+
+fn goto_fingerprints_not_listed(verification: &Verification) -> Vec<String> {
+    let expected: BTreeSet<String> = exact_harnesses(verification).into_iter().collect();
+    let recorded: Vec<&String> = verification
+        .goto_fingerprints
+        .iter()
+        .map(|(harness, _)| harness)
+        .collect();
+    let recorded_set: BTreeSet<String> = recorded.iter().map(|name| (*name).clone()).collect();
+    let mut problems = Vec::new();
+    if recorded.len() != recorded_set.len() || recorded_set != expected {
+        problems.push(format!(
+            "{}: its goto-fingerprint lines must name exactly its --exact harnesses, once each; run `cargo xtask verify-sync {}`",
+            verification.name, verification.name
+        ));
+    }
+    problems
+}
+
+fn normalized_goto_fingerprint(text: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut allocations: BTreeMap<String, usize> = BTreeMap::new();
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//") || line.starts_with("Reading GOTO program") {
+            continue;
+        }
+        let line = with_allocations_in_order(&without_crate_disambiguators(line), &mut allocations);
+        hash = crate::verify::fnv1a(hash, line.bytes().chain([b'\n']));
+    }
+    format!("{hash:016x}")
+}
+
+fn with_allocations_in_order(line: &str, allocations: &mut BTreeMap<String, usize>) -> String {
+    const MARK: &str = "AllocId(";
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(at) = rest.find(MARK) {
+        out.push_str(&rest[..at + MARK.len()]);
+        rest = &rest[at + MARK.len()..];
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        let next = allocations.len();
+        let order = *allocations.entry(rest[..digits].to_owned()).or_insert(next);
+        out.push_str(&order.to_string());
+        rest = &rest[digits..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn without_crate_disambiguators(line: &str) -> String {
+    let bytes = line.as_bytes();
+    let mut out = String::with_capacity(line.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if line[index..].starts_with("Cs") {
+            let mut end = index + 2;
+            while end < bytes.len() && bytes[end].is_ascii_alphanumeric() {
+                end += 1;
+            }
+            if end > index + 2
+                && bytes.get(end) == Some(&b'_')
+                && bytes.get(end + 1).is_some_and(u8::is_ascii_digit)
+            {
+                out.push_str("Cs_");
+                index = end + 1;
+                continue;
+            }
+        }
+        if bytes[index] == b'.' && index > 0 && bytes[index - 1].is_ascii_alphanumeric() {
+            let hex = line[index + 1..]
+                .bytes()
+                .take_while(u8::is_ascii_hexdigit)
+                .count();
+            if hex == 16 && line[index + 17..].starts_with("::") {
+                out.push('.');
+                index += 17;
+                continue;
+            }
+        }
+        let c = line[index..].chars().next().unwrap_or(' ');
+        out.push(c);
+        index += c.len_utf8();
+    }
+    out
+}
+
+fn codegen(root: &Path, name: &str, check: &KaniCheck) -> Result<SystemTime> {
+    let started = SystemTime::now();
+    let mut codegen = Command::new(check.base[0]);
+    codegen.args(&check.base[1..]).arg("--only-codegen");
+    for harness in &check.filters {
+        codegen.args(["--harness", harness, "--exact"]);
+    }
+    let codegen = codegen.current_dir(root).output()?;
+    ensure!(
+        codegen.status.success(),
+        "{name}: Kani codegen failed:\n{}{}",
+        String::from_utf8_lossy(&codegen.stdout),
+        String::from_utf8_lossy(&codegen.stderr)
+    );
+    Ok(started)
+}
+
+pub(crate) fn goto_fingerprints(
+    root: &Path,
+    verification: &Verification,
+) -> Result<Vec<(String, String)>> {
+    let checks: Vec<KaniCheck> = verification
+        .full_checks
+        .iter()
+        .filter_map(|check| kani_check(check))
+        .filter(|check| check.exact)
+        .collect();
+    if checks.is_empty() {
+        return Ok(Vec::new());
+    }
+    let goto_instrument = kani_tool("goto-instrument")?;
+    let mut found = Vec::new();
+    for check in &checks {
+        let started = codegen(root, &verification.name, check)?;
+        for harness in &check.filters {
+            let program = newest_goto_program(&target_folder(root).join("kani"), harness, started)?;
+            let shown = Command::new(&goto_instrument)
+                .arg("--show-goto-functions")
+                .arg(&program)
+                .output()?;
+            ensure!(
+                shown.status.success(),
+                "goto-instrument failed on {}",
+                program.display()
+            );
+            let settings = format!(
+                "{}\n{}\n",
+                check.base.join(" "),
+                harness_attributes(&program, harness)?
+            );
+            found.push((
+                (*harness).to_owned(),
+                normalized_goto_fingerprint(&format!(
+                    "{settings}{}",
+                    String::from_utf8_lossy(&shown.stdout)
+                )),
+            ));
+        }
+    }
+    Ok(found)
+}
+
+fn harness_attributes(program: &Path, harness: &str) -> Result<String> {
+    let folder = program.parent().context("a goto program has no folder")?;
+    let pretty = format!("\"pretty_name\":\"{harness}\"");
+    for entry in fs::read_dir(folder)? {
+        let path = entry?.path();
+        if !path.to_string_lossy().ends_with(".kani-metadata.json") {
+            continue;
+        }
+        let text = unspaced(&fs::read_to_string(&path)?);
+        let Some(at) = text.find(&pretty) else {
+            continue;
+        };
+        let rest = &text[at..];
+        let start = rest
+            .find("\"attributes\"")
+            .with_context(|| format!("{} gives {harness} no attributes", path.display()))?;
+        let open = start
+            + rest[start..]
+                .find('{')
+                .context("attributes is not an object")?;
+        let mut depth = 0;
+        for (index, c) in rest[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(rest[open..=open + index].to_owned());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    anyhow::bail!(
+        "no Kani metadata beside {} describes {harness}",
+        program.display()
+    )
+}
+
+pub(crate) fn print_goto_fingerprints(root: &Path, name: &str) -> Result<()> {
+    let all = manifest(root)?;
+    let verification = all
+        .iter()
+        .find(|verification| verification.name == name)
+        .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
+    for (harness, hash) in goto_fingerprints(root, verification)? {
+        println!("goto-fingerprint = {harness} {hash}");
+    }
+    Ok(())
+}
+
+pub(crate) fn fail_on_goto_fingerprint_drift(root: &Path) -> Result<()> {
+    let mut problems = Vec::new();
+    for verification in manifest(root)? {
+        problems.extend(goto_fingerprints_not_listed(&verification));
+        let recorded: BTreeMap<&String, &String> = verification
+            .goto_fingerprints
+            .iter()
+            .map(|(harness, hash)| (harness, hash))
+            .collect();
+        for (harness, hash) in goto_fingerprints(root, &verification)? {
+            match recorded.get(&harness) {
+                Some(&recorded) if *recorded == hash => {}
+                Some(recorded) => problems.push(format!(
+                    "{}: {harness} compiles to a different goto program ({hash}, recorded {recorded}); what it proves changed, so run `cargo xtask verify-sync {}`",
+                    verification.name, verification.name
+                )),
+                None => problems.push(format!(
+                    "{}: {harness} has no goto-fingerprint",
+                    verification.name
+                )),
+            }
+        }
+    }
+    ensure!(problems.is_empty(), "{}", problems.join("\n"));
+    println!(
+        "goto fingerprints: every recorded harness compiles to the goto program its proof last checked"
+    );
+    Ok(())
 }
 
 fn kani_tool(program: &str) -> Result<PathBuf> {
@@ -1014,19 +1723,7 @@ pub(crate) fn fail_on_unlisted_kani_reach(root: &Path, name: &str) -> Result<()>
     let goto_instrument = kani_tool("goto-instrument")?;
     let mut problems = BTreeSet::new();
     for check in &checks {
-        let started = SystemTime::now();
-        let mut codegen = Command::new(check.base[0]);
-        codegen.args(&check.base[1..]).arg("--only-codegen");
-        for harness in &check.filters {
-            codegen.args(["--harness", harness, "--exact"]);
-        }
-        let codegen = codegen.current_dir(root).output()?;
-        ensure!(
-            codegen.status.success(),
-            "{name}: Kani codegen failed:\n{}{}",
-            String::from_utf8_lossy(&codegen.stdout),
-            String::from_utf8_lossy(&codegen.stderr)
-        );
+        let started = codegen(root, name, check)?;
         for harness in &check.filters {
             let program = newest_goto_program(&target_folder(root).join("kani"), harness, started)?;
             let eloc = Command::new(&goto_instrument)
@@ -1167,11 +1864,41 @@ mod off {
         let named = |text: &str| problems.iter().filter(|p| p.contains(text)).count();
         assert_eq!(named("a::gated::gated_one"), 1, "{problems:#?}");
         assert_eq!(named("a::off::never"), 1, "{problems:#?}");
-        assert_eq!(named("kani::proof_for_contract"), 1, "{problems:#?}");
-        assert_eq!(named("#[cfg_attr(kani,kani::proof)]"), 1, "{problems:#?}");
+        assert_eq!(named("#[kani::proof_for_contract(f)]"), 1, "{problems:#?}");
+        assert_eq!(named("#[cfg_attr(kani, kani::proof)]"), 1, "{problems:#?}");
         assert_eq!(named("u::proofs::on_unix"), 1, "{problems:#?}");
         assert_eq!(named("inside another item"), 1, "{problems:#?}");
         assert_eq!(problems.len(), 6, "{problems:#?}");
+    }
+
+    #[test]
+    fn a_proof_attribute_in_any_other_form_fails_by_line() {
+        let cases = [
+            ("use kani::proof;\n\n#[proof]\nfn a() {}\n", &[1, 3][..]),
+            ("use kani::*;\n#[proof]\nfn a() {}\n", &[1, 2]),
+            ("use ::kani::{proof as p};\n", &[1]),
+            ("#[::kani::proof]\nfn a() {}\n", &[1]),
+            ("# [kani :: proof]\nfn a() {}\n", &[1]),
+            ("#[kani::proof] #[kani::unwind(9)] fn a() {}\n", &[1]),
+            (
+                "macro_rules! make {\n    ($name:ident) => {\n        #[kani::proof]\n        fn $name() {}\n    };\n}\n",
+                &[3],
+            ),
+            ("#[kani::proof_for_contract(f)]\nfn a() {}\n", &[1]),
+            ("#[cfg_attr(kani, kani::proof)]\nfn a() {}\n", &[1]),
+            (
+                "#[kani::proof]\n#[kani::unwind(3)]\nfn fine() {}\n#[doc = \"#[proof]\"]\nfn b() {}\n",
+                &[],
+            ),
+        ];
+        for (source, lines) in cases {
+            let problems = proof_form_problems("src/m.rs", source);
+            let found: Vec<usize> = problems
+                .iter()
+                .map(|problem| problem.split(':').nth(1).unwrap().parse().unwrap())
+                .collect();
+            assert_eq!(found, lines, "{source}: {problems:#?}");
+        }
     }
 
     fn harness(path: &str, needs_tests: bool) -> Harness {
@@ -1311,6 +2038,119 @@ mod off {
         assert!(unlisted_in(&files, &listed, &[2]).is_empty());
     }
 
+    const MEMORY: &str = "pub(crate) const READ_CHUNK: usize = 4096;\npub(crate) const READ_SLACK: usize = 64;\npub(crate) const fn fast_read_chunk() -> usize {\n    4096\n}\npub(crate) struct ReadChunk;\n\nimpl ReadChunk {\n    pub(crate) const BYTES: usize = 4096;\n}\npub(crate) use crate::progress::SHARED;\npub(in crate::m) const NARROW: usize = 1;\n";
+    const PROGRESS: &str =
+        "pub(crate) const SHARED: usize = 1;\npub(crate) const OTHER: usize = 2;\n";
+
+    fn reach_through(imports: &str, value: &str) -> Vec<String> {
+        let m = format!("{imports}\n{STEP}const TOP: u32 = {value} as u32;\n");
+        let step_line = imports.lines().count() + 3;
+        let files = [
+            ("src/m.rs", m.as_str()),
+            ("src/memory.rs", MEMORY),
+            ("src/progress.rs", PROGRESS),
+        ];
+        unlisted_in(&files, &STEP_ITEMS, &[step_line])
+    }
+
+    #[test]
+    fn imports_resolve_through_aliases_and_nested_groups() {
+        assert_eq!(
+            reach_through("use crate::memory::fast_read_chunk;", "fast_read_chunk()"),
+            ["item = src/memory.rs | pub(crate) const fn fast_read_chunk("]
+        );
+        assert_eq!(
+            reach_through("use crate::memory::READ_CHUNK as CHUNK;", "CHUNK"),
+            ["item = src/memory.rs | pub(crate) const READ_CHUNK:"]
+        );
+        assert_eq!(
+            reach_through(
+                "use crate::{memory::{READ_CHUNK, READ_SLACK}, progress::OTHER};",
+                "READ_CHUNK + READ_SLACK + OTHER"
+            ),
+            [
+                "item = src/memory.rs | pub(crate) const READ_CHUNK:",
+                "item = src/memory.rs | pub(crate) const READ_SLACK:",
+                "item = src/progress.rs | pub(crate) const OTHER:",
+            ]
+        );
+        assert_eq!(
+            reach_through("", "crate::memory::NARROW"),
+            ["item = src/memory.rs | pub(in crate::m) const NARROW:"]
+        );
+    }
+
+    fn refused(problems: &[String], text: &str) -> bool {
+        problems.len() == 1 && problems[0].contains(text)
+    }
+
+    #[test]
+    fn a_file_that_includes_code_is_refused_when_a_name_is_looked_up_in_it() {
+        let m = format!("{STEP}const TOP: u32 = crate::other::INCLUDED;\n");
+        let other = "pub(crate) const SEEN: u32 = 1;\ninclude!(\"/elsewhere/included.rs\");\n";
+        let files = [("src/m.rs", m.as_str()), ("src/other.rs", other)];
+        let problems = unlisted_in(&files, &STEP_ITEMS, &[2]);
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.starts_with("src/other.rs:2: `include!` brings in code")),
+            "{problems:#?}"
+        );
+    }
+
+    #[test]
+    fn forms_the_reach_check_cannot_follow_are_refused_by_line() {
+        let cases = [
+            (
+                "use crate::memory;",
+                "memory::READ_CHUNK",
+                "src/m.rs:5: `memory::READ_CHUNK` goes through the module imported at line 1",
+            ),
+            (
+                "use crate::memory::ReadChunk;",
+                "ReadChunk::BYTES",
+                "src/m.rs:5: `ReadChunk::BYTES` names an item of `ReadChunk`, imported at line 1 from another file",
+            ),
+            (
+                "",
+                "crate::memory::ReadChunk::BYTES",
+                "is an associated item of a type in src/memory.rs",
+            ),
+            (
+                "use crate::memory::SHARED;",
+                "SHARED",
+                "crate::memory::SHARED is re-exported from src/memory.rs",
+            ),
+            (
+                "use crate::memory::MISSING;",
+                "MISSING",
+                "crate::memory::MISSING resolves to no definition (imported at line 1)",
+            ),
+            (
+                "",
+                "crate::memory::MISSING",
+                "crate::memory::MISSING resolves to no definition",
+            ),
+            (
+                "use crate::memory::*;",
+                "READ_CHUNK",
+                "src/m.rs:1: `use crate::memory::*` imports names",
+            ),
+            (
+                "include!(\"other.rs\");",
+                "1",
+                "src/m.rs:1: `include!` brings in code",
+            ),
+        ];
+        for (imports, value, expected) in cases {
+            let problems = reach_through(imports, value);
+            assert!(
+                refused(&problems, expected),
+                "{imports} / {value}: {problems:#?}"
+            );
+        }
+    }
+
     #[test]
     fn a_const_needs_what_it_names_in_another_file_by_path_or_import() {
         let memory = "pub(crate) const TOP_BITS: u32 = 24;\npub(crate) const OTHER: u32 = 1;\n";
@@ -1370,6 +2210,40 @@ mod off {
             [
                 "src/m.rs:3 is reached but lies in no function's span; the function at src/m.rs:1 ends at line 2, so its span is cut short"
             ]
+        );
+    }
+
+    #[test]
+    fn goto_fingerprints_ignore_locations_and_crate_hashes_but_not_code() {
+        let program = "Reading GOTO program from 'a/b.out'\nf /* _RNvCs25vTPsMbSID_6zipper1f */\n        // 3 file src/m.rs line 10 column 2 function f\n        ASSIGN x := 1\n";
+        let moved = "Reading GOTO program from 'c/d.out'\nf /* _RNvCsZZZ9_6zipper1f */\n        // 3 file src/m.rs line 99 column 7 function f\n        ASSIGN x := 1\n";
+        let changed = program.replace("x := 1", "x := 2");
+        assert_eq!(
+            normalized_goto_fingerprint(program),
+            normalized_goto_fingerprint(moved)
+        );
+        assert_ne!(
+            normalized_goto_fingerprint(program),
+            normalized_goto_fingerprint(&changed)
+        );
+        assert_eq!(
+            without_crate_disambiguators("Cs25vTPsMbSID_6zipper Csx Cs_1"),
+            "Cs_6zipper Csx Cs_1"
+        );
+        assert_eq!(
+            without_crate_disambiguators("address_of(zipper.1854caf7989fb411::zipper::x)"),
+            "address_of(zipper.::zipper::x)"
+        );
+        let first = "x := f(AllocId(198, T))\ny := f(AllocId(7, T))\nz := AllocId(198, T)\n";
+        let renumbered = "x := f(AllocId(193, T))\ny := f(AllocId(2, T))\nz := AllocId(193, T)\n";
+        let swapped = "x := f(AllocId(193, T))\ny := f(AllocId(2, T))\nz := AllocId(2, T)\n";
+        assert_eq!(
+            normalized_goto_fingerprint(first),
+            normalized_goto_fingerprint(renumbered)
+        );
+        assert_ne!(
+            normalized_goto_fingerprint(first),
+            normalized_goto_fingerprint(swapped)
         );
     }
 

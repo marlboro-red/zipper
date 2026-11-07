@@ -11,6 +11,7 @@ pub(crate) struct Verification {
     pub(crate) full_checks: Vec<String>,
     pub(crate) items: Vec<(String, String)>,
     pub(crate) item_end: ItemEnd,
+    pub(crate) goto_fingerprints: Vec<(String, String)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +43,7 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
                 full_checks: Vec::new(),
                 items: Vec::new(),
                 item_end: ItemEnd::FirstSemicolon,
+                goto_fingerprints: Vec::new(),
             });
             continue;
         }
@@ -55,6 +57,14 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
             "skill" => entry.skill = value.to_owned(),
             "fingerprint" => entry.fingerprint = value.to_owned(),
             "full-check" => entry.full_checks.push(value.to_owned()),
+            "goto-fingerprint" => {
+                let (harness, hash) = value.split_once(' ').with_context(|| {
+                    format!("{MANIFEST}:{number}: expected `goto-fingerprint = HARNESS HASH`")
+                })?;
+                entry
+                    .goto_fingerprints
+                    .push((harness.to_owned(), hash.to_owned()));
+            }
             "item-end" if value == "semicolon outside brackets" => {
                 entry.item_end = ItemEnd::SemicolonOutsideBrackets;
             }
@@ -129,7 +139,7 @@ pub(crate) fn end_of_braced_body_or_semicolon(text: &str, end: ItemEnd) -> usize
 }
 
 // EXTERNAL(Git on Windows): checkouts can turn LF into CRLF.
-fn fnv1a(mut hash: u64, bytes: impl Iterator<Item = u8>) -> u64 {
+pub(crate) fn fnv1a(mut hash: u64, bytes: impl Iterator<Item = u8>) -> u64 {
     for byte in bytes.filter(|&byte| byte != b'\r') {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
@@ -265,6 +275,11 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         current == checked,
         "{name}: the covered code changed while the check ran; nothing was synced"
     );
+    let goto = crate::kani::goto_fingerprints(root, verification)?;
+    ensure!(
+        fingerprint(root, verification)? == checked,
+        "{name}: the covered code changed while the goto programs were fingerprinted; nothing was synced"
+    );
     let text = fs::read_to_string(root.join(MANIFEST))?;
     let mut in_section = false;
     let mut updated = String::new();
@@ -272,8 +287,14 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         if line.starts_with('[') {
             in_section = line == format!("[{name}]");
         }
+        if in_section && line.starts_with("goto-fingerprint = ") {
+            continue;
+        }
         if in_section && line.starts_with("fingerprint = ") {
             updated.push_str(&format!("fingerprint = {current}\n"));
+            for (harness, hash) in &goto {
+                updated.push_str(&format!("goto-fingerprint = {harness} {hash}\n"));
+            }
         } else {
             updated.push_str(line);
             updated.push('\n');

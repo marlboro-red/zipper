@@ -307,6 +307,9 @@ item = src/lzma.rs | impl<R: Read> XzIndex<'_, R> {
 [lzma-bits]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = e9290b6f8e489725
+goto-fingerprint = lzma::proofs::both_bit_decoders_agree_and_keep_the_coder_in_range 6695e9152ebec67c
+goto-fingerprint = lzma::proofs::branching_bits_normalized_in_each_arm_match_one_normalization_after_both 3bc7f0739496dbad
+goto-fingerprint = lzma::proofs::direct_bits_fit_their_count_and_keep_the_range_normalized 7e129315a922fe4d
 item-end = semicolon outside brackets
 full-check = cargo xtask kani-reach lzma-bits
 full-check = cargo kani --tests --exact --harness lzma::proofs::both_bit_decoders_agree_and_keep_the_coder_in_range --harness lzma::proofs::branching_bits_normalized_in_each_arm_match_one_normalization_after_both --harness lzma::proofs::direct_bits_fit_their_count_and_keep_the_range_normalized
@@ -335,6 +338,11 @@ item = src/lzma.rs |     fn direct_bits_fit_their_count_and_keep_the_range_norma
 [lzma-trees]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 8af6c0cd6c4c3c42
+goto-fingerprint = lzma::proofs::every_bit_tree_size_stays_inside_its_table 11c9fcb2f8de4362
+goto-fingerprint = lzma::proofs::length_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities 666b4db5ec5c12c3
+goto-fingerprint = lzma::proofs::slot_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities 63cf88c13c4be9fa
+goto-fingerprint = lzma::proofs::high_length_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities 762c2187095b8819
+goto-fingerprint = lzma::proofs::reverse_trees_decode_as_one_bit_at_a_time_reading_no_entry_past_their_bits e2ebefc1cb5c00e7
 item-end = semicolon outside brackets
 full-check = cargo xtask kani-reach lzma-trees
 full-check = cargo kani --tests --exact --harness lzma::proofs::every_bit_tree_size_stays_inside_its_table --harness lzma::proofs::length_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities --harness lzma::proofs::slot_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities --harness lzma::proofs::high_length_trees_decode_as_one_bit_at_a_time_with_any_sibling_probabilities --harness lzma::proofs::reverse_trees_decode_as_one_bit_at_a_time_reading_no_entry_past_their_bits
@@ -370,6 +378,7 @@ item = src/lzma.rs |     fn reverse_trees_decode_as_one_bit_at_a_time_reading_no
 [lzma-lengths]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 2c8def54cc40f871
+goto-fingerprint = lzma::proofs::lengths_stay_below_the_longest_match_at_every_position_state 41e4c30998a6b4d1
 item-end = semicolon outside brackets
 full-check = cargo xtask kani-reach lzma-lengths
 full-check = cargo kani --tests --exact --harness lzma::proofs::lengths_stay_below_the_longest_match_at_every_position_state
@@ -397,6 +406,9 @@ item = src/lzma.rs |     fn lengths_stay_below_the_longest_match_at_every_positi
 [lzma-literal]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = e5acb540c8fe7965
+goto-fingerprint = lzma::proofs::literal_contexts_stay_inside_the_literal_table_for_every_property_byte 7aa1160dcc64eebc
+goto-fingerprint = lzma::proofs::plain_literals_stay_inside_the_first_quarter_of_their_coder bfe1a149237d3ebe
+goto-fingerprint = lzma::proofs::plain_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities 6ed940842cc9c398
 item-end = semicolon outside brackets
 full-check = cargo xtask kani-reach lzma-literal
 full-check = cargo kani --tests --exact --harness lzma::proofs::literal_contexts_stay_inside_the_literal_table_for_every_property_byte --harness lzma::proofs::plain_literals_stay_inside_the_first_quarter_of_their_coder --harness lzma::proofs::plain_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities
@@ -436,6 +448,9 @@ item = src/lzma.rs |     fn plain_literals_decode_as_one_bit_at_a_time_with_any_
 [lzma-matched-literal]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 8f64d78c6c2d44dc
+goto-fingerprint = lzma::proofs::matched_literals_stay_inside_their_coder_for_every_match_byte 8d164564665d4138
+goto-fingerprint = lzma::proofs::matched_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities a1675c48104fbe9e
+goto-fingerprint = lzma::proofs::matched_literal_children_stay_in_their_coder_apart_from_the_entry_they_follow 43c4fdf8e12d7649
 item-end = semicolon outside brackets
 full-check = cargo xtask kani-reach lzma-matched-literal
 full-check = cargo kani --tests --exact --harness lzma::proofs::matched_literals_stay_inside_their_coder_for_every_match_byte --harness lzma::proofs::matched_literals_decode_as_one_bit_at_a_time_with_any_sibling_probabilities --harness lzma::proofs::matched_literal_children_stay_in_their_coder_apart_from_the_entry_they_follow
@@ -464,6 +479,8 @@ item = src/lzma.rs |     fn matched_literal_children_stay_in_their_coder_apart_f
 [lzma-distances]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 7814041e137ad245
+goto-fingerprint = lzma::proofs::short_distances_stay_inside_the_special_probabilities af15173e6b802721
+goto-fingerprint = lzma::proofs::long_distances_fit_32_bits 9c0bda8efd2de37b
 item-end = semicolon outside brackets
 full-check = cargo xtask kani-reach lzma-distances
 full-check = cargo kani --tests --exact --harness lzma::proofs::short_distances_stay_inside_the_special_probabilities --harness lzma::proofs::long_distances_fit_32_bits
@@ -504,6 +521,7 @@ item = src/lzma.rs |     fn long_distances_fit_32_bits(
 [lzma-input]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = bcef1d4e126cb716
+goto-fingerprint = lzma::proofs::input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk cca1b35c0110e2b4
 item-end = semicolon outside brackets
 full-check = cargo xtask kani-reach lzma-input
 full-check = cargo kani --tests --exact --harness lzma::proofs::input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk
