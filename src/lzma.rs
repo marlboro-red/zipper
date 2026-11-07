@@ -1165,8 +1165,8 @@ impl LzipHeader {
     }
 }
 
-// SPEC(lzip manual, File format): "LZIP", version 0 or 1, then a coded dictionary size from 4 KiB
-// to 512 MiB.
+// SPEC(lzip manual, File format): "LZIP", version 1, then a coded dictionary size from 4 KiB to 512 MiB.
+// EXTERNAL(liblzma lzip_decoder.c): version 0, from older lzip releases, is read too.
 fn lzip_header(header: [u8; LZIP_HEADER]) -> Result<LzipHeader, &'static str> {
     let [m0, m1, m2, m3, version, coded] = header;
     if [m0, m1, m2, m3] != LZIP_MAGIC {
@@ -1189,7 +1189,8 @@ fn lzip_header(header: [u8; LZIP_HEADER]) -> Result<LzipHeader, &'static str> {
 }
 
 // SPEC(lzip manual, File format): the trailer holds the CRC-32 of the data, the data size and the
-// member size, little-endian. Version 0 has no member size.
+// member size, little-endian.
+// EXTERNAL(liblzma lzip_decoder.c): a version 0 trailer has no member size.
 fn lzip_trailer_matches(
     header: LzipHeader,
     trailer: &[u8; LZIP_TRAILER],
