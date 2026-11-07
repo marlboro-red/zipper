@@ -833,6 +833,9 @@ pub(crate) struct RawLzmaReader<R> {
     failed: bool,
     output_start: u64,
     requires_a_clean_end: bool,
+    ends_at_its_marker: bool,
+    refuses_input_after_its_end: Option<&'static str>,
+    header_error: Option<io::Error>,
 }
 
 impl<R: Read> RawLzmaReader<R> {
@@ -853,12 +856,51 @@ impl<R: Read> RawLzmaReader<R> {
             failed: false,
             output_start: 0,
             requires_a_clean_end: false,
+            ends_at_its_marker: false,
+            refuses_input_after_its_end: None,
+            header_error: None,
         }
+    }
+
+    fn failing_with(input: R, error: io::Error) -> Self {
+        let properties = Properties {
+            lc: 0,
+            lp: 0,
+            pb: 0,
+        };
+        let mut reader = Self::new(input, properties, 0, 0);
+        reader.header_error = Some(error);
+        reader
+    }
+
+    pub(crate) fn until_its_end_marker(input: R, properties: Properties, dictionary: u32) -> Self {
+        let mut reader = Self::new(input, properties, dictionary, u64::MAX);
+        reader.ends_at_its_marker = true;
+        reader
     }
 
     pub(crate) fn requiring_a_clean_end(mut self) -> Self {
         self.requires_a_clean_end = true;
         self
+    }
+
+    pub(crate) fn refusing_input_after_its_end(mut self, message: &'static str) -> Self {
+        self.refuses_input_after_its_end = Some(message);
+        self
+    }
+
+    pub(crate) fn has_input_after_its_end(&mut self) -> io::Result<bool> {
+        self.range.fill_to(1)?;
+        Ok(self.range.start < self.range.end)
+    }
+
+    pub(crate) fn consumed(&self) -> u64 {
+        self.range.consumed()
+    }
+
+    pub(crate) fn into_inner(self) -> io::Chain<io::Cursor<Vec<u8>>, R> {
+        let (input, held) = self.into_input();
+        io::Cursor::new(held).chain(input)
     }
 }
 
@@ -867,9 +909,36 @@ impl<R: Read> Read for RawLzmaReader<R> {
         if self.failed {
             return Err(data_error("LZMA stream failed earlier"));
         }
-        let read = self.read_unlatched(buffer);
+        if let Some(error) = self.header_error.take() {
+            self.failed = true;
+            return Err(error);
+        }
+        let read = self.read_unlatched(buffer).and_then(|read| {
+            match self
+                .refuses_input_after_its_end
+                .filter(|_| read == 0 && self.finished)
+            {
+                Some(message) if self.has_input_after_its_end()? => Err(data_error(message)),
+                _ => Ok(read),
+            }
+        });
         self.failed = read.is_err();
         read
+    }
+}
+
+impl<R> RawLzmaReader<R> {
+    pub(crate) fn into_input(self) -> (R, Vec<u8>) {
+        let RangeDecoder {
+            input,
+            mut buffer,
+            start,
+            end,
+            ..
+        } = self.range;
+        buffer.truncate(end);
+        buffer.drain(..start);
+        (input, buffer)
     }
 }
 
@@ -898,6 +967,9 @@ impl<R: Read> RawLzmaReader<R> {
                 limit,
                 &mut self.pending,
             )?;
+            if stop == Stop::EndMarker && self.ends_at_its_marker {
+                self.decoded_size = self.window.total;
+            }
             if stop == Stop::EndMarker && self.window.total != self.decoded_size {
                 return Err(data_error("LZMA end marker comes before the declared size"));
             }
@@ -933,6 +1005,324 @@ impl<R: Read> RawLzmaReader<R> {
         self.output_start += count as u64;
         self.finished = self.output_start == self.decoded_size;
         Ok(count)
+    }
+}
+
+const LZMA_FILE_HEADER: usize = 13;
+const LZMA_FILE_UNKNOWN_SIZE: u64 = u64::MAX;
+// EXTERNAL(liblzma lzma_decoder.c, lzma_lzma_lclppb_decode): a .lzma file with lc + lp above 4 is refused.
+const LZMA_FILE_LC_PLUS_LP_MAX: u32 = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LzmaFileHeader {
+    pub(crate) properties: Properties,
+    pub(crate) dictionary: u32,
+    pub(crate) size: Option<u64>,
+}
+
+// SPEC(lzma-file-format.txt 1.1 Header): a properties byte, a 32-bit dictionary size and a 64-bit
+// uncompressed size, all little-endian, with a size of all ones when it is unknown.
+pub(crate) fn lzma_file_header(
+    header: [u8; LZMA_FILE_HEADER],
+) -> Result<LzmaFileHeader, &'static str> {
+    let [byte, d0, d1, d2, d3, s0, s1, s2, s3, s4, s5, s6, s7] = header;
+    let properties = Properties::from_byte(byte)
+        .filter(|properties| properties.lc + properties.lp <= LZMA_FILE_LC_PLUS_LP_MAX)
+        .ok_or(".lzma properties are out of range")?;
+    let size = u64::from_le_bytes([s0, s1, s2, s3, s4, s5, s6, s7]);
+    Ok(LzmaFileHeader {
+        properties,
+        dictionary: u32::from_le_bytes([d0, d1, d2, d3]),
+        size: (size != LZMA_FILE_UNKNOWN_SIZE).then_some(size),
+    })
+}
+
+fn liblzma_dictionary(dictionary: u32) -> u32 {
+    // EXTERNAL(liblzma lz_decoder.c): the dictionary is at least 4 KiB, rounded up to 16 bytes, and matches may reach all of it.
+    u64::from(dictionary)
+        .max(DICTIONARY_MIN as u64)
+        .next_multiple_of(LIBLZMA_DICTIONARY_ALIGN as u64)
+        .min(u64::from(u32::MAX)) as u32
+}
+
+fn exact(input: &mut impl Read, bytes: &mut [u8], truncated: &'static str) -> io::Result<()> {
+    input.read_exact(bytes).map_err(|error| match error.kind() {
+        io::ErrorKind::UnexpectedEof => data_error(truncated),
+        _ => error,
+    })
+}
+
+pub(crate) fn lzma_file<R: Read>(mut input: R) -> RawLzmaReader<R> {
+    let mut header = [0; LZMA_FILE_HEADER];
+    let header = exact(&mut input, &mut header, "truncated .lzma header")
+        .and_then(|()| lzma_file_header(header).map_err(data_error));
+    let header = match header {
+        Ok(header) => header,
+        Err(error) => return RawLzmaReader::failing_with(input, error),
+    };
+    let dictionary = liblzma_dictionary(header.dictionary);
+    match header.size {
+        Some(size) => {
+            RawLzmaReader::new(input, header.properties, dictionary, size).requiring_a_clean_end()
+        }
+        None => RawLzmaReader::until_its_end_marker(input, header.properties, dictionary),
+    }
+}
+
+const LZIP_MAGIC: [u8; 4] = *b"LZIP";
+const LZIP_HEADER: usize = 6;
+const LZIP_TRAILER: usize = 20;
+const LZIP_VERSION_0_TRAILER: usize = 12;
+const LZIP_DICTIONARY_LOG: std::ops::RangeInclusive<u8> = 12..=29;
+// SPEC(lzip manual, File format): lzip's LZMA stream has lc 3, lp 0 and pb 2, and ends with an end marker.
+const LZIP_PROPERTIES: Properties = Properties {
+    lc: 3,
+    lp: 0,
+    pb: 2,
+};
+
+// SPEC(lzip manual, File format): bits 4-0 of the coded dictionary size are the base 2 logarithm
+// of a base size, and bits 7-5 how many sixteenths of the base to subtract from it.
+pub(crate) fn lzip_dictionary(coded: u8) -> u64 {
+    let base = 1u64 << (coded & 0x1F);
+    base - base / 16 * u64::from(coded >> 5)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LzipHeader {
+    version: u8,
+    dictionary: u32,
+}
+
+impl LzipHeader {
+    fn trailer_size(self) -> usize {
+        if self.version == 0 {
+            LZIP_VERSION_0_TRAILER
+        } else {
+            LZIP_TRAILER
+        }
+    }
+}
+
+// SPEC(lzip manual, File format): "LZIP", version 0 or 1, then a coded dictionary size from 4 KiB
+// to 512 MiB.
+fn lzip_header(header: [u8; LZIP_HEADER]) -> Result<LzipHeader, &'static str> {
+    let [m0, m1, m2, m3, version, coded] = header;
+    if [m0, m1, m2, m3] != LZIP_MAGIC {
+        return Err("lzip member does not start with LZIP");
+    }
+    if version > 1 {
+        return Err("lzip version is not 0 or 1");
+    }
+    let log = coded & 0x1F;
+    let sixteenths = coded >> 5;
+    if !LZIP_DICTIONARY_LOG.contains(&log)
+        || (log == *LZIP_DICTIONARY_LOG.start() && sixteenths > 0)
+    {
+        return Err("lzip dictionary size is out of range");
+    }
+    Ok(LzipHeader {
+        version,
+        dictionary: lzip_dictionary(coded) as u32,
+    })
+}
+
+// SPEC(lzip manual, File format): the trailer holds the CRC-32 of the data, the data size and the
+// member size, little-endian. Version 0 has no member size.
+fn lzip_trailer_matches(
+    header: LzipHeader,
+    trailer: &[u8; LZIP_TRAILER],
+    crc: u32,
+    data_size: u64,
+    consumed: u64,
+) -> Result<(), &'static str> {
+    let [
+        c0,
+        c1,
+        c2,
+        c3,
+        d0,
+        d1,
+        d2,
+        d3,
+        d4,
+        d5,
+        d6,
+        d7,
+        m0,
+        m1,
+        m2,
+        m3,
+        m4,
+        m5,
+        m6,
+        m7,
+    ] = *trailer;
+    if u32::from_le_bytes([c0, c1, c2, c3]) != crc {
+        return Err("lzip CRC-32 does not match");
+    }
+    if u64::from_le_bytes([d0, d1, d2, d3, d4, d5, d6, d7]) != data_size {
+        return Err("lzip data size does not match");
+    }
+    let member_size = consumed.saturating_add((LZIP_HEADER + header.trailer_size()) as u64);
+    if header.version > 0 && u64::from_le_bytes([m0, m1, m2, m3, m4, m5, m6, m7]) != member_size {
+        return Err("lzip member size does not match");
+    }
+    Ok(())
+}
+
+struct HeldInput<R> {
+    held: Vec<u8>,
+    next: usize,
+    inner: R,
+}
+
+impl<R: Read> Read for HeldInput<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if self.next == self.held.len() {
+            return self.inner.read(buffer);
+        }
+        let count = buffer.len().min(self.held.len() - self.next);
+        buffer[..count].copy_from_slice(&self.held[self.next..self.next + count]);
+        self.next += count;
+        Ok(count)
+    }
+}
+
+impl<R: Read> HeldInput<R> {
+    fn give_back(&mut self, mut bytes: Vec<u8>) {
+        bytes.extend_from_slice(&self.held[self.next..]);
+        self.held = bytes;
+        self.next = 0;
+    }
+
+    fn peek(&mut self, count: usize) -> io::Result<&[u8]> {
+        self.held.drain(..self.next);
+        self.next = 0;
+        let mut piece = [0; LZIP_HEADER];
+        while self.held.len() < count {
+            let wanted = (count - self.held.len()).min(piece.len());
+            match self.inner.read(&mut piece[..wanted]) {
+                Ok(0) => break,
+                Ok(read) => self.held.extend_from_slice(&piece[..read]),
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(&self.held[..self.held.len().min(count)])
+    }
+}
+
+struct LzipMember<R> {
+    decoder: RawLzmaReader<HeldInput<R>>,
+    header: LzipHeader,
+    crc: crc32fast::Hasher,
+    size: u64,
+}
+
+enum LzipPart<R> {
+    Member(Box<LzipMember<R>>),
+    Between(HeldInput<R>),
+    Done,
+    Failed,
+}
+
+pub(crate) struct LzipReader<R> {
+    part: LzipPart<R>,
+    check_dictionary: fn(u64) -> io::Result<()>,
+}
+
+fn start_lzip_member<R: Read>(
+    mut input: HeldInput<R>,
+    check_dictionary: fn(u64) -> io::Result<()>,
+) -> io::Result<LzipPart<R>> {
+    let mut header = [0; LZIP_HEADER];
+    exact(&mut input, &mut header, "truncated lzip header")?;
+    check_dictionary(lzip_dictionary(header[LZIP_HEADER - 1]))?;
+    let header = lzip_header(header).map_err(data_error)?;
+    Ok(LzipPart::Member(Box::new(LzipMember {
+        decoder: RawLzmaReader::until_its_end_marker(input, LZIP_PROPERTIES, header.dictionary),
+        header,
+        crc: crc32fast::Hasher::new(),
+        size: 0,
+    })))
+}
+
+fn finish_lzip_member<R: Read>(member: LzipMember<R>) -> io::Result<LzipPart<R>> {
+    let consumed = member.decoder.consumed();
+    let (mut input, rest) = member.decoder.into_input();
+    input.give_back(rest);
+    let mut trailer = [0; LZIP_TRAILER];
+    let size = member.header.trailer_size();
+    exact(&mut input, &mut trailer[..size], "truncated lzip trailer")?;
+    lzip_trailer_matches(
+        member.header,
+        &trailer,
+        member.crc.finalize(),
+        member.size,
+        consumed,
+    )
+    .map_err(data_error)?;
+    Ok(LzipPart::Between(input))
+}
+
+fn next_lzip_member<R: Read>(
+    mut input: HeldInput<R>,
+    check_dictionary: fn(u64) -> io::Result<()>,
+) -> io::Result<LzipPart<R>> {
+    let next = input.peek(LZIP_MAGIC.len())?;
+    if next.is_empty() {
+        return Ok(LzipPart::Done);
+    }
+    if !LZIP_MAGIC.starts_with(next) {
+        return Err(data_error("lzip has data after its last member"));
+    }
+    start_lzip_member(input, check_dictionary)
+}
+
+impl<R: Read> LzipReader<R> {
+    pub(crate) fn new(input: R, check_dictionary: fn(u64) -> io::Result<()>) -> io::Result<Self> {
+        let input = HeldInput {
+            held: Vec::new(),
+            next: 0,
+            inner: input,
+        };
+        Ok(LzipReader {
+            part: start_lzip_member(input, check_dictionary)?,
+            check_dictionary,
+        })
+    }
+}
+
+impl<R: Read> Read for LzipReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        loop {
+            match &mut self.part {
+                LzipPart::Member(member) => match member.decoder.read(buffer) {
+                    Ok(0) => {}
+                    Ok(read) => {
+                        member.crc.update(&buffer[..read]);
+                        member.size += read as u64;
+                        return Ok(read);
+                    }
+                    Err(error) => {
+                        self.part = LzipPart::Failed;
+                        return Err(error);
+                    }
+                },
+                LzipPart::Between(_) => {}
+                LzipPart::Done => return Ok(0),
+                LzipPart::Failed => return Err(data_error("lzip stream failed earlier")),
+            }
+            self.part = match std::mem::replace(&mut self.part, LzipPart::Failed) {
+                LzipPart::Member(member) => finish_lzip_member(*member)?,
+                LzipPart::Between(input) => next_lzip_member(input, self.check_dictionary)?,
+                done => done,
+            };
+        }
     }
 }
 
@@ -4986,6 +5376,606 @@ mod tests {
 }
 
 #[cfg(test)]
+pub(crate) mod lzma_file_and_lzip_tests {
+    use super::*;
+    use liblzma::stream::{Filters, LzmaOptions, PRESET_EXTREME, Stream};
+
+    const LARGEST_DICTIONARY: u64 = 256 << 20;
+    const ONE_BYTE_READS_UP_TO: usize = 20_000;
+
+    pub(crate) fn sample(length: usize, seed: u32) -> Vec<u8> {
+        let words: [&[u8]; 6] = [
+            b"lzip ",
+            b"member ",
+            b"trailer ",
+            b"the ",
+            b"window ",
+            b"\n",
+        ];
+        let mut state = seed;
+        let mut out = Vec::with_capacity(length + 16);
+        while out.len() < length {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            match (state >> 16) % 8 {
+                pick @ 0..=5 => out.extend_from_slice(words[pick as usize]),
+                _ => out.push((state >> 8) as u8),
+            }
+        }
+        out.truncate(length);
+        out
+    }
+
+    pub(crate) fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(format!("{}/tests/data/{name}", env!("CARGO_MANIFEST_DIR"))).unwrap()
+    }
+
+    pub(crate) fn pax_short() -> Vec<u8> {
+        fixture("tar-corpus/python-pax-short.tar")
+    }
+
+    struct Pieces<'a> {
+        data: &'a [u8],
+        state: u32,
+        largest: usize,
+    }
+
+    impl Read for Pieces<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            self.state = self.state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            let size = 1 + (self.state >> 8) as usize % self.largest;
+            let count = size.min(buffer.len()).min(self.data.len());
+            buffer[..count].copy_from_slice(&self.data[..count]);
+            self.data = &self.data[count..];
+            Ok(count)
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Reads {
+        OneByte,
+        Random(u32),
+        Large,
+    }
+
+    const READS: [(Reads, usize); 4] = [
+        (Reads::OneByte, 1),
+        (Reads::Random(7), 3),
+        (Reads::Random(11), 70_000),
+        (Reads::Large, 1 << 20),
+    ];
+
+    fn read_all(reader: &mut impl Read, reads: Reads) -> io::Result<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut buffer = vec![0; 1 << 20];
+        let mut state = match reads {
+            Reads::Random(seed) => seed,
+            _ => 0,
+        };
+        loop {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            let size = match reads {
+                Reads::OneByte => 1,
+                Reads::Random(_) => 1 + (state >> 8) as usize % (3 * OUTPUT_CHUNK),
+                Reads::Large => buffer.len(),
+            };
+            match reader.read(&mut buffer[..size])? {
+                0 => return Ok(out),
+                read => out.extend_from_slice(&buffer[..read]),
+            }
+        }
+    }
+
+    fn options(preset: u32, (lc, lp, pb): (u32, u32, u32), dictionary: u32) -> LzmaOptions {
+        let mut options = LzmaOptions::new_preset(preset).unwrap();
+        options
+            .literal_context_bits(lc)
+            .literal_position_bits(lp)
+            .position_bits(pb)
+            .dict_size(dictionary);
+        options
+    }
+
+    fn encoded(data: &[u8], stream: Stream) -> Vec<u8> {
+        let mut out = Vec::new();
+        liblzma::read::XzEncoder::new_stream(data, stream)
+            .read_to_end(&mut out)
+            .unwrap();
+        out
+    }
+
+    pub(crate) fn lzma_file_of_unknown_size(data: &[u8], preset: u32) -> Vec<u8> {
+        let options = options(preset, (3, 0, 2), 1 << 16);
+        encoded(data, Stream::new_lzma_encoder(&options).unwrap())
+    }
+
+    pub(crate) fn with_size(mut stream: Vec<u8>, size: u64) -> Vec<u8> {
+        stream[5..LZMA_FILE_HEADER].copy_from_slice(&size.to_le_bytes());
+        stream
+    }
+
+    pub(crate) fn zip_lzma_fixture(name: &str) -> (Vec<u8>, u64) {
+        let zip = fixture(name);
+        let field = |at: usize, width: usize| {
+            zip[at..at + width]
+                .iter()
+                .rev()
+                .fold(0u64, |value, &byte| value << 8 | u64::from(byte))
+        };
+        assert_eq!((&zip[..4], field(8, 2)), (&b"PK\x03\x04"[..], 14), "{name}");
+        let start = 30 + field(26, 2) as usize + field(28, 2) as usize;
+        let packed = &zip[start..start + field(18, 4) as usize];
+        (packed.to_vec(), field(22, 4))
+    }
+
+    fn lzma_file_from_zip(name: &str) -> Vec<u8> {
+        let (packed, size) = zip_lzma_fixture(name);
+        [&packed[4..9], &size.to_le_bytes()[..], &packed[9..]].concat()
+    }
+
+    fn liblzma_lzma_file(stream: &[u8]) -> Option<(Vec<u8>, u64)> {
+        let mut decoder = liblzma::bufread::XzDecoder::new_stream(
+            stream,
+            Stream::new_lzma_decoder(u64::MAX).unwrap(),
+        );
+        let mut out = Vec::new();
+        decoder.read_to_end(&mut out).ok()?;
+        Some((out, decoder.total_in()))
+    }
+
+    fn ours_lzma_file(stream: &[u8], reads: Reads, piece: usize) -> io::Result<(Vec<u8>, u64)> {
+        let input = Pieces {
+            data: stream,
+            state: piece as u32,
+            largest: piece,
+        };
+        let mut reader = lzma_file(input);
+        let out = read_all(&mut reader, reads)?;
+        Ok((out, LZMA_FILE_HEADER as u64 + reader.consumed()))
+    }
+
+    fn assert_lzma_file_agrees(stream: &[u8], what: &str) -> Option<Vec<u8>> {
+        let theirs = liblzma_lzma_file(stream);
+        let decoded = theirs.as_ref().map_or(0, |(out, _)| out.len());
+        for (reads, piece) in READS {
+            if matches!(reads, Reads::OneByte) && decoded > ONE_BYTE_READS_UP_TO {
+                continue;
+            }
+            let ours = ours_lzma_file(stream, reads, piece);
+            let agree = match (&theirs, &ours) {
+                (Some(theirs), Ok(ours)) => theirs == ours,
+                (None, Err(_)) => true,
+                _ => false,
+            };
+            assert!(
+                agree,
+                "{what}, {reads:?}, pieces of {piece}: zipper {:?}, liblzma {:?}",
+                ours.as_ref()
+                    .map(|(out, used)| (out.len(), *used))
+                    .map_err(ToString::to_string),
+                theirs.as_ref().map(|(out, used)| (out.len(), *used)),
+            );
+        }
+        theirs.map(|(out, _)| out)
+    }
+
+    fn declares_a_small_dictionary(stream: &[u8]) -> bool {
+        stream.get(1..5).is_none_or(|field| {
+            u64::from(u32::from_le_bytes(field.try_into().unwrap())) <= LARGEST_DICTIONARY
+        })
+    }
+
+    #[test]
+    fn lzma_files_decode_as_liblzma_does_at_every_preset_with_and_without_a_size() {
+        let mut checked = 0;
+        for data in [
+            Vec::new(),
+            b"a".to_vec(),
+            sample(ONE_BYTE_READS_UP_TO, 1),
+            sample(300_000, 2),
+        ] {
+            let presets = (0..=9).chain([6 | PRESET_EXTREME, 9 | PRESET_EXTREME]);
+            for preset in presets {
+                let unknown = lzma_file_of_unknown_size(&data, preset);
+                let known = with_size(unknown.clone(), data.len() as u64);
+                for (stream, what) in [(unknown, "unknown size"), (known, "known size")] {
+                    let what = format!("{} bytes, preset {preset:#x}, {what}", data.len());
+                    let decoded = assert_lzma_file_agrees(&stream, &what);
+                    assert!(decoded.as_ref() == Some(&data), "{what}");
+                    let mut trailing = stream.clone();
+                    trailing.extend_from_slice(b"trailing");
+                    assert!(assert_lzma_file_agrees(&trailing, &what).as_ref() == Some(&data));
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 96);
+    }
+
+    #[test]
+    fn every_lzma_property_byte_decodes_or_refuses_as_liblzma_does() {
+        let data = sample(5_000, 3);
+        for lc in 0..=4 {
+            for lp in 0..=4 - lc {
+                for pb in 0..=4 {
+                    let options = options(1, (lc, lp, pb), 1 << 16);
+                    let stream = encoded(&data, Stream::new_lzma_encoder(&options).unwrap());
+                    let what = format!("lc {lc} lp {lp} pb {pb}");
+                    assert!(assert_lzma_file_agrees(&stream, &what) == Some(data.clone()));
+                }
+            }
+        }
+        let stream = with_size(lzma_file_of_unknown_size(&data, 6), data.len() as u64);
+        let mut decoded = 0;
+        for byte in 0..=u8::MAX {
+            let mut changed = stream.clone();
+            changed[0] = byte;
+            let outcome = assert_lzma_file_agrees(&changed, &format!("properties {byte}"));
+            decoded += usize::from(outcome.is_some());
+        }
+        assert!(decoded >= 1, "{decoded}");
+    }
+
+    #[test]
+    fn declared_dictionaries_bound_match_distances_where_liblzma_bounds_them() {
+        let block = sample(4_200, 11);
+        let data = [&block[..], &sample(17, 12), &block, &sample(40, 13), &block].concat();
+        let stream = with_size(lzma_file_of_unknown_size(&data, 6), data.len() as u64);
+        let (mut decoded, mut refused) = (0, 0);
+        let declared = (0..64)
+            .chain(4_080..4_400)
+            .chain([u32::MAX >> 8, u32::MAX >> 4]);
+        for dictionary in declared {
+            let mut changed = stream.clone();
+            changed[1..5].copy_from_slice(&dictionary.to_le_bytes());
+            match assert_lzma_file_agrees(&changed, &format!("dictionary {dictionary}")) {
+                Some(out) => {
+                    assert!(out == data, "dictionary {dictionary}");
+                    decoded += 1;
+                }
+                None => refused += 1,
+            }
+        }
+        assert!(decoded > 100 && refused > 100, "{decoded} {refused}");
+    }
+
+    #[test]
+    fn lzma_files_seven_zip_wrote_with_and_without_an_end_marker_decode_as_liblzma_does() {
+        let original = pax_short();
+        for level in [1, 5, 9] {
+            for name in [
+                format!("lzma/pax-short-lzma-{level}.zip"),
+                format!("lzma/pax-short-lzma-no-eos-{level}.zip"),
+            ] {
+                let stream = lzma_file_from_zip(&name);
+                assert!(assert_lzma_file_agrees(&stream, &name) == Some(original.clone()));
+                let size = original.len() as u64;
+                for (declared, what) in [
+                    (size - 1, "one byte short"),
+                    (size + 1, "one byte long"),
+                    (LZMA_FILE_UNKNOWN_SIZE, "unknown"),
+                    (0, "empty"),
+                ] {
+                    let changed = with_size(stream.clone(), declared);
+                    let outcome = assert_lzma_file_agrees(&changed, &format!("{name}, {what}"));
+                    let ends_marked = !name.contains("no-eos");
+                    let decodes = declared == LZMA_FILE_UNKNOWN_SIZE && ends_marked;
+                    assert_eq!(outcome.is_some(), decodes, "{name}, {what}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_cut_and_boundary_bit_flip_of_a_lzma_file_decodes_or_refuses_as_liblzma_does() {
+        let data = sample(3_000, 4);
+        let unknown = lzma_file_of_unknown_size(&data, 6);
+        let known = with_size(unknown.clone(), data.len() as u64);
+        let no_marker = lzma_file_from_zip("lzma/pax-short-lzma-no-eos-1.zip");
+        let mut refused = 0;
+        for (stream, what, every_cut) in [
+            (&unknown, "unknown size", true),
+            (&known, "known size", true),
+            (&no_marker, "no end marker", false),
+        ] {
+            let edges = (0..LZMA_FILE_HEADER + 12).chain(stream.len() - 16..stream.len());
+            for cut in 0..stream.len() {
+                if every_cut || edges.clone().any(|edge| edge == cut) {
+                    let outcome =
+                        assert_lzma_file_agrees(&stream[..cut], &format!("{what} cut {cut}"));
+                    refused += usize::from(outcome.is_none());
+                }
+            }
+            for at in edges {
+                for bit in 0..8 {
+                    let mut flipped = stream.clone();
+                    flipped[at] ^= 1 << bit;
+                    if declares_a_small_dictionary(&flipped) {
+                        let what = format!("{what} byte {at} bit {bit}");
+                        refused += usize::from(assert_lzma_file_agrees(&flipped, &what).is_none());
+                    }
+                }
+            }
+        }
+        assert!(refused > unknown.len() + known.len(), "{refused}");
+    }
+
+    pub(crate) fn lzip_member(data: &[u8], coded: u8, preset: u32) -> Vec<u8> {
+        let dictionary = lzip_dictionary(coded) as u32;
+        let mut filters = Filters::new();
+        filters.lzma1(&options(preset, (3, 0, 2), dictionary.max(4096)));
+        let lzma = encoded(data, Stream::new_raw_encoder(&filters).unwrap());
+        let member_size = (LZIP_HEADER + lzma.len() + LZIP_TRAILER) as u64;
+        [
+            &LZIP_MAGIC[..],
+            &[1, coded],
+            &lzma,
+            &crc32fast::hash(data).to_le_bytes(),
+            &(data.len() as u64).to_le_bytes(),
+            &member_size.to_le_bytes(),
+        ]
+        .concat()
+    }
+
+    fn version_0(member: &[u8]) -> Vec<u8> {
+        let mut old = member[..member.len() - 8].to_vec();
+        old[4] = 0;
+        old
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum Outcome {
+        Decoded(Vec<u8>),
+        OverLimit,
+        Refused,
+    }
+
+    fn liblzma_lzip(stream: &[u8]) -> Outcome {
+        let mut input = stream;
+        let mut out = Vec::new();
+        loop {
+            if input
+                .get(5)
+                .is_some_and(|&coded| lzip_dictionary(coded) > LARGEST_DICTIONARY)
+            {
+                return Outcome::OverLimit;
+            }
+            let mut decoder = liblzma::bufread::XzDecoder::new_stream(
+                input,
+                Stream::new_lzip_decoder(u64::MAX, 0).unwrap(),
+            );
+            if decoder.read_to_end(&mut out).is_err() {
+                return Outcome::Refused;
+            }
+            input = decoder.into_inner();
+            if input.is_empty() {
+                return Outcome::Decoded(out);
+            }
+            if !LZIP_MAGIC.starts_with(&input[..input.len().min(4)]) {
+                return Outcome::Refused;
+            }
+        }
+    }
+
+    fn within_the_limit(dictionary: u64) -> io::Result<()> {
+        if dictionary > LARGEST_DICTIONARY {
+            return Err(io::Error::new(io::ErrorKind::OutOfMemory, "over the limit"));
+        }
+        Ok(())
+    }
+
+    fn ours_lzip(stream: &[u8], reads: Reads, piece: usize) -> Outcome {
+        let input = Pieces {
+            data: stream,
+            state: piece as u32,
+            largest: piece,
+        };
+        let result = LzipReader::new(input, within_the_limit)
+            .and_then(|mut reader| read_all(&mut reader, reads));
+        match result {
+            Ok(out) => Outcome::Decoded(out),
+            Err(error) if error.kind() == io::ErrorKind::OutOfMemory => Outcome::OverLimit,
+            Err(_) => Outcome::Refused,
+        }
+    }
+
+    fn assert_lzip_agrees(stream: &[u8], what: &str) -> Outcome {
+        let theirs = liblzma_lzip(stream);
+        let decoded = match &theirs {
+            Outcome::Decoded(out) => out.len(),
+            _ => 0,
+        };
+        for (reads, piece) in READS {
+            if matches!(reads, Reads::OneByte) && decoded > ONE_BYTE_READS_UP_TO {
+                continue;
+            }
+            let ours = ours_lzip(stream, reads, piece);
+            assert!(
+                ours == theirs,
+                "{what}, {reads:?}, pieces of {piece}: zipper {:?}, liblzma {:?}",
+                summary(&ours),
+                summary(&theirs)
+            );
+        }
+        theirs
+    }
+
+    fn summary(outcome: &Outcome) -> String {
+        match outcome {
+            Outcome::Decoded(out) => format!("{} bytes", out.len()),
+            other => format!("{other:?}"),
+        }
+    }
+
+    fn lzip_files_under(folder: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                lzip_files_under(&path, found);
+            } else if path.extension().is_some_and(|extension| extension == "lz") {
+                found.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn every_lzip_file_in_the_corpora_decodes_as_liblzma_does() {
+        let mut found = Vec::new();
+        lzip_files_under(
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data")),
+            &mut found,
+        );
+        assert!(found.len() >= 15, "{found:?}");
+        let original = pax_short();
+        for path in found {
+            let stream = std::fs::read(&path).unwrap();
+            let what = path.display().to_string();
+            let Outcome::Decoded(decoded) = assert_lzip_agrees(&stream, &what) else {
+                panic!("{what} does not decode");
+            };
+            let name = path.file_name().unwrap().to_string_lossy();
+            if name.starts_with("pax-short-") {
+                assert!(decoded == original, "{what}");
+            }
+            if name == "empty.lz" {
+                assert!(decoded.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn the_lzip_writer_here_writes_what_lzip_and_liblzma_read() {
+        let original = pax_short();
+        let lzip = fixture("lzma/pax-short-6.tar.lz");
+        let ours = lzip_member(&original, lzip[LZIP_HEADER - 1], 6);
+        assert_eq!(&ours[..LZIP_HEADER], &lzip[..LZIP_HEADER]);
+        let checks = |member: &[u8]| member[member.len() - LZIP_TRAILER..member.len() - 8].to_vec();
+        assert_eq!(checks(&ours), checks(&lzip));
+        for (stream, copies) in [([&ours[..], &ours].concat(), 2), (version_0(&ours), 1)] {
+            let mut decoded = Vec::new();
+            liblzma::bufread::XzDecoder::new_stream(
+                &stream[..],
+                Stream::new_lzip_decoder(u64::MAX, liblzma::stream::CONCATENATED).unwrap(),
+            )
+            .read_to_end(&mut decoded)
+            .unwrap();
+            assert!(decoded == original.repeat(copies), "{copies}");
+        }
+    }
+
+    #[test]
+    fn generated_lzip_members_decode_and_refuse_as_liblzma_does() {
+        for data in [
+            Vec::new(),
+            b"a".to_vec(),
+            sample(20_000, 5),
+            sample(200_000, 6),
+        ] {
+            for preset in (0..=9).chain([9 | PRESET_EXTREME]) {
+                let member = lzip_member(&data, 0x10, preset);
+                let what = format!("{} bytes at preset {preset:#x}", data.len());
+                assert_eq!(
+                    assert_lzip_agrees(&member, &what),
+                    Outcome::Decoded(data.clone())
+                );
+                let old = version_0(&member);
+                assert_eq!(
+                    assert_lzip_agrees(&old, &what),
+                    Outcome::Decoded(data.clone())
+                );
+            }
+        }
+        let (first, second) = (sample(3_000, 7), sample(40_000, 8));
+        let members = [
+            lzip_member(&first, 0x0C, 0),
+            lzip_member(&second, 0xD4, 9),
+            lzip_member(&[], 0x1C, 6),
+            version_0(&lzip_member(&first, 0x0D, 3)),
+            lzip_member(&first, 0x14, 6),
+        ];
+        let joined = members.concat();
+        let expected = [&first[..], &second, &first, &first].concat();
+        assert_eq!(
+            assert_lzip_agrees(&joined, "five members"),
+            Outcome::Decoded(expected)
+        );
+        let member = lzip_member(&first, 0x14, 6);
+        for at in member.len() - LZIP_TRAILER..member.len() {
+            let mut damaged = member.clone();
+            damaged[at] ^= 0x01;
+            let outcome = assert_lzip_agrees(&damaged, &format!("trailer byte {at}"));
+            assert_eq!(outcome, Outcome::Refused, "trailer byte {at}");
+        }
+        for tail in [
+            &b"x"[..],
+            &[0],
+            &[0; 4],
+            b"L",
+            b"LZ",
+            b"LZI",
+            b"LZIP",
+            b"LZIP\x01",
+            b"LZIP\x01\x14",
+            b"LZIPX",
+            b"LZIP\x02\x14\x00",
+            b"lzip",
+        ] {
+            let trailing = [&member[..], tail].concat();
+            let outcome = assert_lzip_agrees(&trailing, &format!("trailing {tail:?}"));
+            assert_eq!(outcome, Outcome::Refused, "trailing {tail:?}");
+        }
+        let mut decoded_versions = 0;
+        for version in 0..=u8::MAX {
+            let mut changed = member.clone();
+            changed[4] = version;
+            let outcome = assert_lzip_agrees(&changed, &format!("version {version}"));
+            decoded_versions += usize::from(matches!(outcome, Outcome::Decoded(_)));
+        }
+        assert_eq!(decoded_versions, 1);
+        let small = lzip_member(&first, 0x0C, 6);
+        let (mut decoded, mut over) = (0, 0);
+        for coded in 0..=u8::MAX {
+            let mut changed = small.clone();
+            changed[5] = coded;
+            match assert_lzip_agrees(&changed, &format!("coded dictionary {coded:#x}")) {
+                Outcome::Decoded(_) => decoded += 1,
+                Outcome::OverLimit => over += 1,
+                Outcome::Refused => {}
+            }
+        }
+        assert_eq!((decoded, over), (1 + 16 * 8, 3 * 8), "{decoded} {over}");
+    }
+
+    #[test]
+    fn every_cut_and_boundary_bit_flip_of_two_lzip_members_decodes_or_refuses_as_liblzma_does() {
+        let first = lzip_member(&sample(3_000, 9), 0x0C, 6);
+        let second = lzip_member(&sample(2_000, 10), 0x10, 0);
+        let stream = [&first[..], &second].concat();
+        let edges: Vec<usize> = [
+            0..14,
+            first.len() - 28..first.len() + 14,
+            stream.len() - 28..stream.len(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let mut refused = 0;
+        for cut in 0..stream.len() {
+            let outcome = assert_lzip_agrees(&stream[..cut], &format!("cut {cut}"));
+            refused += usize::from(outcome == Outcome::Refused);
+        }
+        for &at in &edges {
+            for bit in 0..8 {
+                let mut flipped = stream.clone();
+                flipped[at] ^= 1 << bit;
+                let outcome = assert_lzip_agrees(&flipped, &format!("byte {at} bit {bit}"));
+                refused += usize::from(outcome == Outcome::Refused);
+            }
+        }
+        assert!(refused > stream.len(), "{refused}");
+    }
+}
+
+#[cfg(test)]
 mod speed {
     use super::*;
 
@@ -5539,6 +6529,76 @@ mod proofs {
         }
         if !past_input {
             assert!(decoder.consumed() <= decoder.input_limit);
+        }
+    }
+
+    #[kani::proof]
+    fn lzma_file_headers_keep_their_fields_and_only_properties_liblzma_accepts() {
+        let header: [u8; LZMA_FILE_HEADER] = kani::any();
+        let declared = u32::from_le_bytes([header[1], header[2], header[3], header[4]]);
+        let size = u64::from_le_bytes([
+            header[5], header[6], header[7], header[8], header[9], header[10], header[11],
+            header[12],
+        ]);
+        match lzma_file_header(header) {
+            Ok(parsed) => {
+                let Properties { lc, lp, pb } = parsed.properties;
+                assert!(lc + lp <= LZMA_FILE_LC_PLUS_LP_MAX && pb <= 4);
+                assert!(u32::from(header[0]) == (pb * 5 + lp) * 9 + lc);
+                assert!(parsed.dictionary == declared);
+                assert!(parsed.size == (size != u64::MAX).then_some(size));
+            }
+            Err(_) => assert!(
+                Properties::from_byte(header[0]).is_none_or(|properties| properties.lc
+                    + properties.lp
+                    > LZMA_FILE_LC_PLUS_LP_MAX)
+            ),
+        }
+        let used = liblzma_dictionary(declared);
+        assert!(
+            u64::from(used)
+                >= u64::from(declared)
+                    .max(DICTIONARY_MIN as u64)
+                    .min(u64::from(u32::MAX))
+        );
+        assert!(used == u32::MAX || used as usize % LIBLZMA_DICTIONARY_ALIGN == 0);
+        assert!(
+            u64::from(used)
+                < u64::from(declared).max(DICTIONARY_MIN as u64) + LIBLZMA_DICTIONARY_ALIGN as u64
+        );
+    }
+
+    #[kani::proof]
+    fn lzip_headers_accept_only_dictionaries_from_4_kib_to_512_mib() {
+        let header: [u8; LZIP_HEADER] = kani::any();
+        let coded = header[LZIP_HEADER - 1];
+        let dictionary = lzip_dictionary(coded);
+        assert!(dictionary >= 1 && dictionary <= 1 << 31);
+        if let Ok(parsed) = lzip_header(header) {
+            assert!(header[..4] == LZIP_MAGIC && header[4] <= 1);
+            assert!(parsed.version == header[4]);
+            assert!(u64::from(parsed.dictionary) == dictionary);
+            assert!((4096..=512 << 20).contains(&dictionary));
+            assert!(parsed.trailer_size() == if header[4] == 0 { 12 } else { 20 });
+        }
+    }
+
+    #[kani::proof]
+    fn lzip_trailers_accept_only_their_crc_and_sizes() {
+        let header = LzipHeader {
+            version: kani::any(),
+            dictionary: kani::any(),
+        };
+        kani::assume(header.version <= 1);
+        let trailer: [u8; LZIP_TRAILER] = kani::any();
+        let crc: u32 = kani::any();
+        let data_size: u64 = kani::any();
+        let consumed: u64 = kani::any();
+        if lzip_trailer_matches(header, &trailer, crc, data_size, consumed).is_ok() {
+            assert!(trailer[..4] == crc.to_le_bytes());
+            assert!(trailer[4..12] == data_size.to_le_bytes());
+            let member_size = consumed.saturating_add((LZIP_HEADER + header.trailer_size()) as u64);
+            assert!(header.version == 0 || trailer[12..] == member_size.to_le_bytes());
         }
     }
 }

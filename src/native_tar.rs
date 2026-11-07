@@ -413,7 +413,9 @@ fn read_up_to(file: &mut impl Read, buffer: &mut [u8]) -> std::io::Result<usize>
 const SNIFF_INPUT: u64 = crate::lz4::FIRST_BLOCK_INPUT_MAX;
 const BZIP2_OUTPUT_PER_EXTRA_STREAM: u64 = 4096;
 const LARGEST_DICTIONARY: u64 = 256 * 1024 * 1024;
+#[cfg(test)]
 const DECODER_OVERHEAD: u64 = 16 * 1024 * 1024;
+#[cfg(test)]
 const DECODER_MEMORY: u64 = LARGEST_DICTIONARY + DECODER_OVERHEAD;
 
 pub(crate) fn decoder(path: &Path, compression: Compression) -> Result<Box<dyn Read + Send>> {
@@ -439,24 +441,21 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
             streams: 1,
             decoded: 0,
         }),
-        Compression::Lzma => Box::new(DecoderMemory(lzma_decoder(input)?)),
-        Compression::Lzip => Box::new(LzipMembers {
-            decoder: Some(lzip_member(input)?),
-        }),
+        Compression::Lzma => Box::new(lzma_decoder(input)?),
+        Compression::Lzip => Box::new(crate::lzma::LzipReader::new(input, |dictionary| {
+            ensure_dictionary_fits("lzip", dictionary)
+        })?),
         Compression::Lz4 => Box::new(crate::lz4::Lz4Frames::new(input)),
         Compression::Compress => Box::new(crate::lzw::Unlzw::new(input)),
     })
 }
 
-pub(crate) fn lzma_decoder<R: BufRead>(mut input: R) -> Result<liblzma::bufread::XzDecoder<R>> {
+pub(crate) fn lzma_decoder<R: BufRead>(mut input: R) -> Result<crate::lzma::RawLzmaReader<R>> {
     if let Some(field) = input.fill_buf()?.get(1..5) {
         let dictionary = u32::from_le_bytes(field.try_into().unwrap());
         ensure_dictionary_fits("LZMA", u64::from(dictionary))?;
     }
-    Ok(liblzma::bufread::XzDecoder::new_stream(
-        input,
-        liblzma::stream::Stream::new_lzma_decoder(DECODER_MEMORY)?,
-    ))
+    Ok(crate::lzma::lzma_file(input))
 }
 
 fn is_over_memory(error: &anyhow::Error) -> bool {
@@ -485,24 +484,14 @@ fn ensure_dictionary_fits(format: &str, dictionary: u64) -> std::io::Result<()> 
     ))
 }
 
-// SPEC(lzip manual, File format): bits 4-0 of the coded dictionary size are the base 2 logarithm
-// of a base size, and bits 7-5 how many sixteenths of the base to subtract from it.
-fn lzip_dictionary(coded: u8) -> u64 {
-    let base = 1u64 << (coded & 0x1F);
-    base - base / 16 * u64::from(coded >> 5)
-}
-
 pub(crate) struct DecoderMemory<R>(pub(crate) R);
 
 impl<R: Read> Read for DecoderMemory<R> {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         self.0.read(buffer).map_err(|error| {
-            let over = error.get_ref().is_some_and(|inner| {
-                inner.is::<crate::lzma::DictionaryOverLimit>()
-                    || inner
-                        .downcast_ref::<liblzma::stream::Error>()
-                        .is_some_and(|inner| matches!(inner, liblzma::stream::Error::MemLimit))
-            });
+            let over = error
+                .get_ref()
+                .is_some_and(|inner| inner.is::<crate::lzma::DictionaryOverLimit>());
             if over {
                 std::io::Error::new(
                     std::io::ErrorKind::OutOfMemory,
@@ -515,45 +504,6 @@ impl<R: Read> Read for DecoderMemory<R> {
                 error
             }
         })
-    }
-}
-
-fn lzip_member<R: BufRead>(mut input: R) -> std::io::Result<liblzma::bufread::XzDecoder<R>> {
-    if let Some(&coded) = input.fill_buf()?.get(5) {
-        ensure_dictionary_fits("lzip", lzip_dictionary(coded))?;
-    }
-    Ok(liblzma::bufread::XzDecoder::new_stream(
-        input,
-        liblzma::stream::Stream::new_lzip_decoder(DECODER_MEMORY, 0)?,
-    ))
-}
-
-// EXTERNAL(liblzma lzip_decoder.c): with LZMA_CONCATENATED it drops up to 3 bytes of a cut next member, so each member decodes alone.
-struct LzipMembers<R: BufRead> {
-    decoder: Option<liblzma::bufread::XzDecoder<R>>,
-}
-
-impl<R: BufRead> Read for LzipMembers<R> {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        while let Some(decoder) = &mut self.decoder {
-            let read = decoder.read(buffer)?;
-            if read > 0 || buffer.is_empty() {
-                return Ok(read);
-            }
-            let mut input = self.decoder.take().expect("a decoder").into_inner();
-            let next = input.fill_buf()?;
-            if next.is_empty() {
-                return Ok(0);
-            }
-            if !b"LZIP".starts_with(&next[..next.len().min(4)]) {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "lzip has data after its last member",
-                ));
-            }
-            self.decoder = Some(lzip_member(input)?);
-        }
-        Ok(0)
     }
 }
 
@@ -1833,6 +1783,154 @@ mod sniff_tests {
 #[cfg(test)]
 mod lzip_tests {
     use super::*;
+    use crate::lzma::lzma_file_and_lzip_tests::{
+        fixture, lzip_member, lzma_file_of_unknown_size, pax_short, sample, with_size,
+    };
+
+    fn liblzma_lzma(mut input: &[u8]) -> Result<Vec<u8>> {
+        if let Some(field) = input.get(1..5) {
+            let dictionary = u32::from_le_bytes(field.try_into().unwrap());
+            ensure_dictionary_fits("LZMA", u64::from(dictionary))?;
+        }
+        let mut decoder = liblzma::bufread::XzDecoder::new_stream(
+            &mut input,
+            liblzma::stream::Stream::new_lzma_decoder(DECODER_MEMORY)?,
+        );
+        let mut out = Vec::new();
+        decoder.read_to_end(&mut out)?;
+        Ok(out)
+    }
+
+    fn liblzma_lzip(mut input: &[u8]) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        loop {
+            if let Some(&coded) = input.get(5) {
+                ensure_dictionary_fits("lzip", crate::lzma::lzip_dictionary(coded))?;
+            }
+            let mut decoder = liblzma::bufread::XzDecoder::new_stream(
+                input,
+                liblzma::stream::Stream::new_lzip_decoder(DECODER_MEMORY, 0)?,
+            );
+            decoder.read_to_end(&mut out)?;
+            input = decoder.into_inner();
+            if input.is_empty() {
+                return Ok(out);
+            }
+            ensure!(
+                b"LZIP".starts_with(&input[..input.len().min(4)]),
+                "lzip has data after its last member"
+            );
+        }
+    }
+
+    fn ours(stream: &[u8], compression: Compression) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        decode(std::io::Cursor::new(stream.to_vec()), compression)?.read_to_end(&mut out)?;
+        Ok(out)
+    }
+
+    fn over_memory_message(result: &Result<Vec<u8>>) -> Option<String> {
+        let error = result.as_ref().err()?;
+        let io = error.downcast_ref::<std::io::Error>()?;
+        (io.kind() == std::io::ErrorKind::OutOfMemory).then(|| io.to_string())
+    }
+
+    fn assert_decodes_as_the_liblzma_reader_did(
+        stream: &[u8],
+        compression: Compression,
+        what: &str,
+    ) -> Option<Vec<u8>> {
+        let theirs = match compression {
+            Compression::Lzma => liblzma_lzma(stream),
+            _ => liblzma_lzip(stream),
+        };
+        let ours = ours(stream, compression);
+        assert_eq!(
+            over_memory_message(&ours),
+            over_memory_message(&theirs),
+            "{what}"
+        );
+        match (ours, theirs) {
+            (Ok(ours), Ok(theirs)) => {
+                assert!(ours == theirs, "{what}");
+                Some(ours)
+            }
+            (Err(_), Err(_)) => None,
+            (ours, theirs) => panic!(
+                "{what}: zipper {:?}, liblzma {:?}",
+                ours.map(|out| out.len()),
+                theirs.map(|out| out.len())
+            ),
+        }
+    }
+
+    #[test]
+    fn every_lzma_and_lzip_stream_in_the_corpora_decodes_as_the_liblzma_reader_did() {
+        let original = pax_short();
+        let mut checked = 0;
+        for (name, compression) in [
+            ("tar-corpus/python-pax-lzip.tar.lz", Compression::Lzip),
+            ("lzip/lzip-9.tar.lz", Compression::Lzip),
+            ("stream/hello.txt.lz", Compression::Lzip),
+            ("lzma/empty.lz", Compression::Lzip),
+            ("lzma/pax-short-members.tar.lz", Compression::Lzip),
+            ("parity/archives/hello.txt.lzma", Compression::Lzma),
+        ]
+        .map(|(name, compression)| (name.to_string(), compression))
+        .into_iter()
+        .chain((0..=9).map(|level| (format!("lzma/pax-short-{level}.tar.lz"), Compression::Lzip)))
+        {
+            let decoded =
+                assert_decodes_as_the_liblzma_reader_did(&fixture(&name), compression, &name);
+            let decoded = decoded.unwrap_or_else(|| panic!("{name} does not decode"));
+            if name.starts_with("lzma/pax-short-") {
+                assert!(decoded == original, "{name}");
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, 16);
+    }
+
+    #[test]
+    fn dictionaries_over_the_decoder_budget_are_refused_with_the_liblzma_readers_messages() {
+        let data = sample(2_000, 21);
+        let lzma = with_size(lzma_file_of_unknown_size(&data, 6), data.len() as u64);
+        let mut over = 0;
+        let largest = LARGEST_DICTIONARY as u32;
+        for dictionary in [
+            0,
+            4096,
+            64 << 20,
+            largest - 1,
+            largest,
+            largest + 1,
+            u32::MAX,
+        ] {
+            let mut changed = lzma.clone();
+            changed[1..5].copy_from_slice(&dictionary.to_le_bytes());
+            let what = format!("LZMA dictionary {dictionary}");
+            let decoded =
+                assert_decodes_as_the_liblzma_reader_did(&changed, Compression::Lzma, &what);
+            assert_eq!(decoded.is_some(), dictionary <= largest, "{what}");
+            over += usize::from(decoded.is_none());
+        }
+        let member = lzip_member(&data, 0x0C, 6);
+        for coded in 0..=u8::MAX {
+            for stream in [
+                [&member[..5], &[coded], &member[6..]].concat(),
+                [&member[..], &member[..5], &[coded], &member[6..]].concat(),
+            ] {
+                let what = format!(
+                    "lzip coded dictionary {coded:#x} in member {}",
+                    stream.len() / member.len()
+                );
+                let decoded =
+                    assert_decodes_as_the_liblzma_reader_did(&stream, Compression::Lzip, &what);
+                over += usize::from(decoded.is_none());
+            }
+        }
+        assert!(over > 2 + 2 * 24, "{over}");
+    }
 
     #[test]
     fn coded_dictionary_sizes_read_as_lzip_reports_them() {
@@ -1844,7 +1942,7 @@ mod lzip_tests {
             (0x1C, 256 << 20),
             (0x1D, 512 << 20),
         ] {
-            assert_eq!(lzip_dictionary(coded), size, "{coded:#x}");
+            assert_eq!(crate::lzma::lzip_dictionary(coded), size, "{coded:#x}");
         }
     }
 }

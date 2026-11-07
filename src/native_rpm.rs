@@ -7,7 +7,7 @@ use crate::native_tar::Compression;
 use crate::{BadField, Entry, Field, field_check, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
-    io::{BufRead, BufReader, Read},
+    io::{BufReader, Read},
     path::Path,
 };
 
@@ -349,29 +349,15 @@ fn payload(path: &Path) -> Result<Box<dyn Read + Send>> {
     );
     let input = std::io::Cursor::new(head).chain(package.reader);
     let decoder: Box<dyn Read + Send> = match compressor {
-        Compressor::Lzma => Box::new(crate::native_tar::DecoderMemory(LzmaToTheEnd {
-            decoder: crate::native_tar::lzma_decoder(input)?,
-        })),
+        Compressor::Lzma => Box::new(lzma_payload(input)?),
         _ => crate::native_tar::decode(input, compressor.compression())?,
     };
     Ok(Box::new(Damaged(decoder)))
 }
 
-struct LzmaToTheEnd<R: BufRead> {
-    decoder: liblzma::bufread::XzDecoder<R>,
-}
-
-impl<R: BufRead> Read for LzmaToTheEnd<R> {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        let read = self.decoder.read(buffer)?;
-        if read == 0 && !buffer.is_empty() && !self.decoder.get_mut().fill_buf()?.is_empty() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "it has data after its LZMA stream",
-            ));
-        }
-        Ok(read)
-    }
+fn lzma_payload<R: std::io::BufRead>(input: R) -> Result<crate::lzma::RawLzmaReader<R>> {
+    Ok(crate::native_tar::lzma_decoder(input)?
+        .refusing_input_after_its_end("it has data after its LZMA stream"))
 }
 
 struct Damaged<R>(R);
@@ -410,6 +396,64 @@ pub fn read_archive(
         );
     }
     crate::native_cpio::read_newc_stream("rpm", path, magic, payload, destination, options)
+}
+
+#[cfg(test)]
+mod lzma_payload_tests {
+    use super::*;
+    use crate::lzma::lzma_file_and_lzip_tests::{lzma_file_of_unknown_size, sample};
+    use std::io::BufRead;
+
+    fn liblzma_payload(stream: &[u8]) -> std::io::Result<Vec<u8>> {
+        let mut decoder = liblzma::bufread::XzDecoder::new_stream(
+            stream,
+            liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
+        );
+        let mut out = Vec::new();
+        decoder.read_to_end(&mut out)?;
+        if !decoder.get_mut().fill_buf()?.is_empty() {
+            return Err(std::io::Error::other("it has data after its LZMA stream"));
+        }
+        Ok(out)
+    }
+
+    fn ours(stream: &[u8]) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        lzma_payload(std::io::BufReader::with_capacity(7, stream))?.read_to_end(&mut out)?;
+        Ok(out)
+    }
+
+    #[test]
+    fn lzma_payloads_with_data_after_them_or_cut_short_are_refused_as_liblzma_refused_them() {
+        let data = sample(30_000, 41);
+        let payload = lzma_file_of_unknown_size(&data, 6);
+        let mut checked = 0;
+        let tails: [&[u8]; 5] = [b"", b"x", &[0], &[0; 70_000], &payload];
+        for tail in tails {
+            let edges = (0..20).chain(payload.len() - 20..=payload.len());
+            for cut in edges {
+                let stream = [&payload[..cut], tail].concat();
+                let what = format!("cut to {cut} with {} bytes after", tail.len());
+                match (ours(&stream), liblzma_payload(&stream)) {
+                    (Ok(ours), Ok(theirs)) => assert!(ours == theirs && ours == data, "{what}"),
+                    (Err(error), Err(_)) if !tail.is_empty() && cut == payload.len() => {
+                        assert!(
+                            format!("{error:#}").contains("after its LZMA stream"),
+                            "{what}"
+                        )
+                    }
+                    (Err(_), Err(_)) => {}
+                    (ours, theirs) => panic!(
+                        "{what}: zipper {:?}, liblzma {:?}",
+                        ours.map(|out| out.len()),
+                        theirs.map(|out| out.len())
+                    ),
+                }
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 5 * 41);
+    }
 }
 
 #[cfg(test)]

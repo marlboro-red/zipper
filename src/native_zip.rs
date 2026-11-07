@@ -1080,6 +1080,14 @@ fn lzma_alone_header(prefix: [u8; 9], size: u64) -> Field<[u8; 13]> {
     Ok(header)
 }
 
+fn lzma_entry<'a>(prefix: [u8; 9], size: u64, input: impl Read + 'a) -> Result<Box<dyn Read + 'a>> {
+    let header = lzma_alone_header(prefix, size)?;
+    Ok(Box::new(
+        crate::lzma::lzma_file(std::io::Cursor::new(header).chain(input))
+            .refusing_input_after_its_end("ZIP compressed stream ends before its compressed size"),
+    ))
+}
+
 fn ppmd8_fields(fields: u16) -> Field<(u32, u32, u16)> {
     // SPEC(APPNOTE 5.10): order - 1 in bits 0-3, model MiB - 1 in bits 4-11, then the restore method.
     let order = u32::from(fields & 0x0f) + 1;
@@ -1136,11 +1144,7 @@ fn method_decoder<'a>(
             input
                 .read_exact(&mut prefix)
                 .context("truncated ZIP LZMA header")?;
-            let header = lzma_alone_header(prefix, item.entry.size)?;
-            Box::new(liblzma::bufread::XzDecoder::new_stream(
-                std::io::Cursor::new(header).chain(input),
-                liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
-            ))
+            lzma_entry(prefix, item.entry.size, input)?
         }
         PPMD => {
             let mut header = [0u8; 2];
@@ -1812,6 +1816,121 @@ pub fn read_archive_with_options(
         staging.publish(&directories)?;
     }
     Ok(items.into_iter().map(|item| item.entry).collect())
+}
+
+#[cfg(test)]
+mod lzma_entry_tests {
+    use super::*;
+    use crate::lzma::lzma_file_and_lzip_tests::{
+        lzma_file_of_unknown_size, pax_short, sample, zip_lzma_fixture,
+    };
+    use std::io::BufRead;
+
+    fn liblzma_entry(packed: &[u8], size: u64) -> Result<Vec<u8>> {
+        let mut input = std::io::BufReader::new(packed);
+        let mut prefix = [0u8; 9];
+        input.read_exact(&mut prefix)?;
+        let header = lzma_alone_header(prefix, size)?;
+        let mut out = Vec::new();
+        liblzma::bufread::XzDecoder::new_stream(
+            std::io::Cursor::new(header).chain(&mut input),
+            liblzma::stream::Stream::new_lzma_decoder(u64::MAX)?,
+        )
+        .read_to_end(&mut out)?;
+        ensure!(input.fill_buf()?.is_empty(), "data after the stream");
+        Ok(out)
+    }
+
+    fn ours(packed: &[u8], size: u64) -> Result<Vec<u8>> {
+        let mut input = std::io::BufReader::with_capacity(OTHER_METHOD_INPUT, packed);
+        let mut prefix = [0u8; 9];
+        input.read_exact(&mut prefix)?;
+        let mut out = Vec::new();
+        lzma_entry(prefix, size, &mut input)?.read_to_end(&mut out)?;
+        ensure!(input.fill_buf()?.is_empty(), "data after the stream");
+        Ok(out)
+    }
+
+    fn assert_decodes_as_liblzma_did(packed: &[u8], size: u64, what: &str) -> Option<Vec<u8>> {
+        match (ours(packed, size), liblzma_entry(packed, size)) {
+            (Ok(ours), Ok(theirs)) => {
+                assert!(ours == theirs, "{what}");
+                Some(ours)
+            }
+            (Err(_), Err(_)) => None,
+            (ours, theirs) => panic!(
+                "{what}: zipper {:?}, liblzma {:?}",
+                ours.map(|out| out.len())
+                    .map_err(|error| format!("{error:#}")),
+                theirs
+                    .map(|out| out.len())
+                    .map_err(|error| format!("{error:#}"))
+            ),
+        }
+    }
+
+    fn zip_lzma(data: &[u8], preset: u32) -> Vec<u8> {
+        let stream = lzma_file_of_unknown_size(data, preset);
+        [&[9, 20, 5, 0], &stream[..5], &stream[13..]].concat()
+    }
+
+    #[test]
+    fn zip_lzma_entries_decode_cut_and_damaged_as_liblzma_decoded_them() {
+        let mut entries: Vec<(String, Vec<u8>, Vec<u8>)> = ["", "no-eos-"]
+            .iter()
+            .flat_map(|form| {
+                [1, 5, 9].map(|level| format!("lzma/pax-short-lzma-{form}{level}.zip"))
+            })
+            .map(|name| {
+                let (packed, size) = zip_lzma_fixture(&name);
+                assert_eq!(size, pax_short().len() as u64);
+                (name, packed, pax_short())
+            })
+            .collect();
+        for (length, preset) in [(0, 6), (1, 0), (3_000, 6), (70_000, 9)] {
+            let data = sample(length, 31);
+            entries.push((format!("{length} bytes"), zip_lzma(&data, preset), data));
+        }
+        let mut refused = 0;
+        for (name, packed, data) in entries {
+            let size = data.len() as u64;
+            assert!(
+                assert_decodes_as_liblzma_did(&packed, size, &name) == Some(data),
+                "{name}"
+            );
+            for declared in [0, size.saturating_sub(1), size + 1, u64::MAX] {
+                let what = format!("{name} declaring {declared} bytes");
+                refused +=
+                    usize::from(assert_decodes_as_liblzma_did(&packed, declared, &what).is_none());
+            }
+            for tail in [&b"x"[..], &[0], &[0; 64]] {
+                let longer = [&packed[..], tail].concat();
+                let what = format!("{name} with {} bytes after", tail.len());
+                assert!(
+                    assert_decodes_as_liblzma_did(&longer, size, &what).is_none(),
+                    "{what}"
+                );
+            }
+            let edges = (0..24).chain(packed.len().saturating_sub(24)..packed.len());
+            for cut in edges.clone().chain((0..packed.len()).step_by(37)) {
+                let what = format!("{name} cut to {cut}");
+                refused += usize::from(
+                    assert_decodes_as_liblzma_did(&packed[..cut.min(packed.len())], size, &what)
+                        .is_none(),
+                );
+            }
+            for at in edges.filter(|&at| at < packed.len()) {
+                for bit in 0..8 {
+                    let mut flipped = packed.clone();
+                    flipped[at] ^= 1 << bit;
+                    let what = format!("{name} byte {at} bit {bit}");
+                    refused +=
+                        usize::from(assert_decodes_as_liblzma_did(&flipped, size, &what).is_none());
+                }
+            }
+        }
+        assert!(refused > 1_000, "{refused}");
+    }
 }
 
 #[cfg(test)]
