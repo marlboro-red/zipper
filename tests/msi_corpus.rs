@@ -370,17 +370,6 @@ fn local_samples_extract_as_7zip_extracts_them() {
                 }
             ),
         }
-        common_cleanup(root.path());
-    }
-}
-
-fn common_cleanup(root: &Path) {
-    for entry in walkdir::WalkDir::new(root).into_iter().flatten() {
-        #[cfg(unix)]
-        if entry.file_type().is_dir() {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(entry.path(), fs::Permissions::from_mode(0o755));
-        }
     }
 }
 
