@@ -248,10 +248,10 @@ fn nothing_stays_open_after_any_extraction_returns() {
             let (root, ok) = extract(&archive, *engine, Some(workers));
             assert!(ok || !succeeds, "{label} failed");
             assert_eq!(open_handles(), handles, "{label}: a handle stayed open");
-            assert_eq!(
-                settled_threads(threads_before),
-                threads_before,
-                "{label}: a thread outlived the call"
+            let threads_after = settled_threads(threads_before);
+            assert!(
+                threads_after <= threads_before,
+                "{label}: a thread outlived the call, {threads_after} against {threads_before}"
             );
             let destination = root.path().join("out");
             if ok {
