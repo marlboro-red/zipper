@@ -16,6 +16,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[7z-aes-properties]` | `aes_properties_never_panic_and_keep_their_salt_iv_and_cycles` | 5 s |
 | `[cab-fields]` | the six CAB header, folder, file record, data block, checksum and DOS time proofs | a few seconds each |
 | `[lzx]` | no Kani proof; `cargo test --release --lib lzx` and the 7-Zip differential in `tests/cab_corpus.rs` | tests only |
+| `[zip-legacy-methods]` | `shrink::proofs::any_short_code_stream_stays_inside_the_table` and `implode::proofs::any_short_tree_description_builds_a_decodable_tree_or_is_refused` | about 3 min each |
 | `[zip-extra-times]` | `time_fields_never_panic_on_any_extra_field` | 128 s |
 | `[zip-dos-times]` | `dos_time_arithmetic_never_overflows` | 0.4 s |
 | `[zip64-extra-field]` | `zip64_fields_never_panic_and_fit_their_field` | 36 s |
