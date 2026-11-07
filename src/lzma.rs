@@ -407,12 +407,24 @@ impl Window {
 
     fn new(size: usize) -> Self {
         Window {
-            buffer: vec![0; Self::allocation(size)],
+            buffer: Vec::with_capacity(Self::allocation(size)),
             size: size.max(1) + COPY_CHUNK,
             position: 0,
             full: false,
             total: 0,
             last: 0,
+        }
+    }
+
+    fn make_room(&mut self, count: u64) {
+        let allocation = self.size + COPY_CHUNK;
+        let needed = (self.position as u64)
+            .saturating_add(count)
+            .saturating_add(COPY_CHUNK as u64)
+            .min(allocation as u64) as usize;
+        if needed > self.buffer.len() {
+            let grown = needed.next_multiple_of(OUTPUT_CHUNK).min(allocation);
+            self.buffer.resize(grown, 0);
         }
     }
 
@@ -424,6 +436,7 @@ impl Window {
     }
 
     fn write(&mut self, bytes: &[u8]) {
+        self.make_room(bytes.len() as u64);
         let mut left = bytes;
         while !left.is_empty() {
             let run = left.len().min(self.size - self.position);
@@ -678,6 +691,7 @@ fn decode<R: Read>(
     limit: u64,
     pending: &mut usize,
 ) -> io::Result<Stop> {
+    window.make_room(limit.saturating_sub(window.total));
     loop {
         let (stop, kept) = decode_symbols(state, range.bits(), window, limit, pending);
         range.keep(kept);
@@ -2158,6 +2172,7 @@ mod tests {
         let mut checked = 0u64;
         for history in [16, 17, 31, 33] {
             let mut start = Window::new(history);
+            start.make_room(u64::MAX);
             for (index, byte) in start.buffer.iter_mut().enumerate() {
                 *byte = index as u8;
             }
@@ -4883,6 +4898,36 @@ mod tests {
                     "{what}"
                 );
             }
+        }
+
+        #[test]
+        fn a_large_dictionary_touches_only_the_window_its_output_needs() {
+            let data = text(3_000, 92);
+            let mut block = Block::new(data.clone(), 6);
+            block.filters = lzma2_filter(36);
+            let blocks = vec![block.clone(), block.clone(), Block::new(Vec::new(), 6)];
+            let mut empty = Block::new(Vec::new(), 6);
+            empty.filters = lzma2_filter(36);
+            let stream = Parts::new(&[blocks, vec![empty; 50]].concat(), 0x04).bytes();
+            let mut reader = XzReader::new(stream.as_slice());
+            let mut out = Vec::new();
+            let mut buffer = [0u8; 1_000];
+            loop {
+                let read = reader.read(&mut buffer).unwrap();
+                if read == 0 {
+                    break;
+                }
+                out.extend_from_slice(&buffer[..read]);
+                if let XzPart::Block(block) = &reader.part {
+                    let touched = block.decoder.window.buffer.len();
+                    assert!(touched <= 2 * OUTPUT_CHUNK, "{touched} bytes of window");
+                }
+            }
+            assert_eq!(out, [data.clone(), data].concat());
+            let mut window = Window::new(1 << 30);
+            window.write(&[7; 100]);
+            assert!(window.buffer.len() <= 2 * OUTPUT_CHUNK);
+            assert!(window.buffer.capacity() >= Window::allocation(1 << 30));
         }
 
         #[test]
