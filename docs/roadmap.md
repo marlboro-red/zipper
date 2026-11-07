@@ -420,6 +420,10 @@ Exit checks:
 1. The M10 rows for these formats read native or are recorded as decided against, with the reason.
 2. Each image reader bounds memory by the image's directory size, not its data size.
 
+Done so far, by 8 November 2026:
+
+- ISO 9660 with Joliet, Rock Ridge and El Torito, and UDF 1.02 to 2.60 with metadata partitions, read in process in the tree 7-Zip chooses, as the [ISO reader reference](reference/iso-reader.md) describes. A UDF tree 7-Zip opens wins, then the last Joliet volume, then the primary volume. Every `hdiutil` image in the corpus and every generated disc extract as `7zz x` extracts them, modes included. `xorriso` and `mkisofs` were not installed, so no image from them was compared. The reader keeps one node for each entry and reads one folder at a time, so its memory follows the folders, not the data.
+
 ## M18. RAR
 
 Zipper extracts RAR 4 and RAR 5 archives, including encrypted and multi-volume ones.

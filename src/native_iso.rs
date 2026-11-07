@@ -68,7 +68,44 @@ pub(crate) struct Node {
     pub(crate) mode: u32,
     pub(crate) modified: Option<SystemTime>,
     pub(crate) size: u64,
-    pub(crate) extents: Vec<Extent>,
+    pub(crate) extents: Extents,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) enum Extents {
+    #[default]
+    None,
+    One(Extent),
+    Many(Vec<Extent>),
+}
+
+impl Extents {
+    pub(crate) fn from_vec(mut extents: Vec<Extent>) -> Extents {
+        match extents.len() {
+            0 => Extents::None,
+            1 => Extents::One(extents.pop().unwrap()),
+            _ => Extents::Many(extents),
+        }
+    }
+
+    pub(crate) fn as_slice(&self) -> &[Extent] {
+        match self {
+            Extents::None => &[],
+            Extents::One(extent) => std::slice::from_ref(extent),
+            Extents::Many(extents) => extents,
+        }
+    }
+
+    fn push(&mut self, extent: Extent) {
+        *self = match std::mem::take(self) {
+            Extents::None => Extents::One(extent),
+            Extents::One(first) => Extents::Many(vec![first, extent]),
+            Extents::Many(mut extents) => {
+                extents.push(extent);
+                Extents::Many(extents)
+            }
+        };
+    }
 }
 
 pub(crate) struct Catalog {
@@ -792,9 +829,9 @@ impl IsoReader {
                 extent.length
             },
             extents: if record.is_directory() {
-                Vec::new()
+                Extents::None
             } else {
-                vec![extent]
+                Extents::One(extent)
             },
         };
         if let Some(skip) = self.susp_skip {
@@ -890,20 +927,24 @@ impl IsoReader {
             }
             None => {
                 ensure!(
-                    node.size <= crate::MAX_LINK_TARGET && node.extents.len() == 1,
+                    node.size <= crate::MAX_LINK_TARGET && node.extents.as_slice().len() == 1,
                     "Rock Ridge link {:?} keeps a target longer than {} bytes",
                     node.name,
                     crate::MAX_LINK_TARGET
                 );
                 let mut target = vec![0u8; node.size as usize];
-                image.read_exact_at(&mut target, node.extents[0].offset, "link targets")?;
+                image.read_exact_at(
+                    &mut target,
+                    node.extents.as_slice()[0].offset,
+                    "link targets",
+                )?;
                 target
             }
         };
         let target = String::from_utf8(target).context("Rock Ridge link is not UTF-8")?;
         node.kind = Kind::Symlink(target.into());
         node.size = 0;
-        node.extents.clear();
+        node.extents = Extents::None;
         Ok(())
     }
 
@@ -1118,7 +1159,7 @@ fn boot_nodes(image: &mut Image, catalog_sector: u32, nodes: &mut Vec<Node>) -> 
         mode: DIRECTORY_MODE,
         modified: None,
         size: 0,
-        extents: Vec::new(),
+        extents: Extents::None,
     });
     let numbered = entries.len() > 1;
     for (index, entry) in entries.iter().enumerate() {
@@ -1146,10 +1187,10 @@ fn boot_nodes(image: &mut Image, catalog_sector: u32, nodes: &mut Vec<Node>) -> 
             mode: FILE_MODE,
             modified: None,
             size,
-            extents: vec![Extent {
+            extents: Extents::One(Extent {
                 offset,
                 length: size,
-            }],
+            }),
         });
     }
     Ok(())
@@ -1267,7 +1308,7 @@ fn extract(catalog: &Catalog, image: &mut Image, tree: &mut Tree) -> Result<()> 
             Kind::File => {
                 let mut data = ExtentReader {
                     image,
-                    extents: node.extents.iter(),
+                    extents: node.extents.as_slice().iter(),
                     offset: 0,
                     left: 0,
                 };
@@ -1334,7 +1375,7 @@ mod field_tests {
             mode: FILE_MODE,
             modified: None,
             size: 0,
-            extents: Vec::new(),
+            extents: Extents::None,
         }
     }
 

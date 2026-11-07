@@ -5,8 +5,8 @@ use crate::{
     BadField, Field, field_check,
     native_cpio::tree::{BACKEND_HINT, MAX_ENTRIES},
     native_iso::{
-        Catalog, Child, DIRECTORY_MODE, Extent, FILE_MODE, Folder, Image, Kind, NO_PARENT, Node,
-        SECTOR, SECTOR_BYTES, Walk, civil_time, walk_folders,
+        Catalog, Child, DIRECTORY_MODE, Extent, Extents, FILE_MODE, Folder, Image, Kind, NO_PARENT,
+        Node, SECTOR, SECTOR_BYTES, Walk, civil_time, walk_folders,
     },
 };
 use anyhow::anyhow;
@@ -586,7 +586,11 @@ impl Volume {
                 mode: if directory { DIRECTORY_MODE } else { FILE_MODE },
                 modified: item.modified,
                 size: if directory { 0 } else { item.size },
-                extents: if directory { Vec::new() } else { extents },
+                extents: if directory {
+                    Extents::None
+                } else {
+                    Extents::from_vec(extents)
+                },
             },
         })
     }
