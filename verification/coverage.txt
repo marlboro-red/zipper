@@ -2158,7 +2158,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [apfs-fields]
-fingerprint = 857fd755fd94feab
+fingerprint = e1b491dfb2726346
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach apfs-fields
 full-check = cargo kani --harness native_apfs::proofs::
