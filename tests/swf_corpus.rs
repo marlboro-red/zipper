@@ -115,7 +115,7 @@ fn generated_flv_of_every_codec_and_tag_kind_extract_as_7zip_extracts_them() {
     }
     for round in 0..40u8 {
         let audio_codec = round % 16;
-        let video_codec = (round * 7 + 3) % 16;
+        let video_codec = ((usize::from(round) * 7 + 3) % 16) as u8;
         let (audio_count, video_count) = (1 + random.below(4), 1 + random.below(4));
         let mut audio_tags = one_stream(&mut random, AUDIO, audio_codec, audio_count);
         let video_tags = one_stream(&mut random, VIDEO, video_codec, video_count);
