@@ -131,28 +131,30 @@ fn safe_path(s: &str) -> Result<()> {
 #[cfg(windows)]
 fn ensure_plain_windows_name(component: &str) -> Result<()> {
     ensure!(!component.ends_with(['.', ' ']), "ambiguous Windows path");
-    let base = component
-        .split('.')
-        .next()
-        .unwrap()
-        .trim_end_matches(' ')
-        .to_uppercase();
-    let device = matches!(
-        base.as_str(),
-        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-    ) || ["COM", "LPT"].iter().any(|prefix| {
-        base.strip_prefix(prefix).is_some_and(|suffix| {
-            matches!(
-                suffix,
-                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
-            )
-        })
-    });
     ensure!(
-        !device,
+        !windows_device_name(component),
         "Windows device path is not a regular archive entry"
     );
     Ok(())
+}
+
+// LINK: https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+pub(crate) fn windows_device_name(component: &str) -> bool {
+    let base = component
+        .split('.')
+        .next()
+        .unwrap_or(component)
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    matches!(
+        base.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        base.strip_prefix(prefix).is_some_and(|number| {
+            number.len() == 1 && number.as_bytes()[0].is_ascii_digit()
+                || matches!(number, "¹" | "²" | "³")
+        })
+    })
 }
 
 /// Input for a decoder that treats an early end of input as a clean finish:
@@ -722,6 +724,29 @@ mod escape_spec {
 mod tests {
     use super::*;
     use std::path::Component;
+
+    #[test]
+    fn every_numbered_port_from_0_to_9_and_superscripts_is_a_device() {
+        for prefix in ["COM", "LPT", "com", "Lpt"] {
+            for number in ["0", "1", "5", "9", "¹", "²", "³"] {
+                for name in [format!("{prefix}{number}"), format!("{prefix}{number}.txt")] {
+                    assert!(windows_device_name(&name), "{name}");
+                }
+            }
+            for number in ["", "10", "a", "⁴", "0x"] {
+                assert!(
+                    !windows_device_name(&format!("{prefix}{number}")),
+                    "{prefix}{number}"
+                );
+            }
+        }
+        for name in ["CON", "nul.tar.gz", "aux ", "CONIN$", "conout$.log"] {
+            assert!(windows_device_name(name), "{name}");
+        }
+        for name in ["CONSOLE", "NULL", "xCON", "", "."] {
+            assert!(!windows_device_name(name), "{name}");
+        }
+    }
 
     fn every_string(alphabet: &[u8], longest: usize) -> Vec<String> {
         let mut all = vec![String::new()];

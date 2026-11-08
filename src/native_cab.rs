@@ -390,28 +390,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(magic == SIGNATURE)
 }
 
-// LINK: https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
-fn windows_device_name(name: &[u8]) -> bool {
-    let Ok(name) = std::str::from_utf8(name) else {
-        return false;
-    };
-    let base = name
-        .split('.')
-        .next()
-        .unwrap_or(name)
-        .trim_end_matches(' ')
-        .to_ascii_uppercase();
-    matches!(
-        base.as_str(),
-        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-    ) || ["COM", "LPT"].iter().any(|prefix| {
-        base.strip_prefix(prefix).is_some_and(|number| {
-            number.len() == 1 && number.as_bytes()[0].is_ascii_digit()
-                || matches!(number, "¹" | "²" | "³")
-        })
-    })
-}
-
 fn plain_cabinet_name(name: &[u8]) -> bool {
     !name.is_empty()
         && name != b"."
@@ -419,7 +397,7 @@ fn plain_cabinet_name(name: &[u8]) -> bool {
         && !name
             .iter()
             .any(|byte| matches!(byte, b'/' | b'\\' | b':' | 0))
-        && !windows_device_name(name)
+        && !std::str::from_utf8(name).is_ok_and(crate::windows_device_name)
 }
 
 struct Item {
