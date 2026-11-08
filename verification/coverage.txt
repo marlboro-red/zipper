@@ -1857,6 +1857,9 @@ item = src/lznt1.rs | const MIN_MATCH:
 item = src/lznt1.rs | pub(crate) fn decode_whole_chunks(
 item = src/lznt1.rs | fn decode_chunk(
 item = src/lznt1.rs | mod tests {
+item = src/lib.rs | pub(crate) fn field_check(
+item = src/lib.rs | pub(crate) struct BadField(
+item = src/lib.rs | pub(crate) type Field<
 
 [disk-fields]
 fingerprint = 707d531cc6c3379a
