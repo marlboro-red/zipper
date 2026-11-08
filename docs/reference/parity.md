@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 79 |
+| `native` | 82 |
 | `partial` | 5 |
-| `backend` | 23 |
+| `backend` | 20 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-27 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+24 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -44,7 +44,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `ELF` | `backend` |  | No proof yet. |
 | `Ext` | `backend` |  | No proof yet. |
 | `FAT` | `native` | FAT12, FAT16 and FAT32 with long names read in process. | `tests/data/parity/archives/fat.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
-| `FLV` | `backend` |  | No proof yet. |
+| `FLV` | `native` | Read in process. A file of one stream writes its raw data and a file of audio and video writes one FLV for each, as 7-Zip does. A file whose tags stop before its end is refused, where 7-Zip warns and writes the tags before the damage. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_flv_of_every_codec_and_tag_kind_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs` |
 | `GPT` | `native` | Read in process. A lone partition that does not hold FAT, or a partition name 7-Zip writes as a path, goes to 7-Zip. | `tests/data/parity/archives/gpt.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `HFS` | `partial` | HFS+ and HFSX read in process, raw and inside DMG images. Hard links become links. Resource forks are refused and extended attributes skipped, because 7-Zip writes them as files with `:` in their names, which the shared name check refuses. So the corpus image, whose files carry extended attributes, is checked through 7-Zip. | `tests/data/parity/archives/hfs.img.stored.xz`, `generated_volumes_extract_byte_for_byte_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams` in `tests/dmg_corpus.rs`, `damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_them` in `tests/hostile_dmg.rs` |
 | `Hxs` | `native` | Help 2 files with an ITSF record and LZX sections read in process. One without an ITSF record, which 7-Zip lists as one text item, goes to 7-Zip. No Help 2 compiler runs here, so every file comes from Zipper's own test writer. | `generated_help2_files_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/chm_corpus.rs`, `damaged_help2_files_are_refused_exactly_when_7zip_refuses_them` in `tests/chm_corpus.rs`, `a_help2_file_without_an_itsf_record_goes_to_7zip` in `tests/hostile_chm.rs` |
@@ -64,8 +64,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Rar` | `backend` |  | No proof yet. |
 | `Rar5` | `backend` |  | No proof yet. |
 | `Rpm` | `native` |  | `tests/data/parity/archives/rpm-bzip2.rpm`, `tests/data/parity/archives/rpm-gzip.rpm`, `tests/data/parity/archives/rpm-lzma.rpm`, `tests/data/parity/archives/rpm-xz.rpm`, `tests/data/parity/archives/rpm-zstd.rpm` |
-| `SWF` | `backend` |  | No proof yet. |
-| `SWFc` | `backend` |  | No proof yet. |
+| `SWF` | `native` | Uncompressed SWF reads in process, one file per tag, as 7-Zip writes them. Data after the declared length is refused, where 7-Zip warns. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_swf_of_every_tag_form_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs` |
+| `SWFc` | `native` | SWF compressed with zlib or LZMA reads in process, with Zipper's own LZMA decoder. A stream that decodes past its declared length, or data after the stream, is refused, where 7-Zip stops at the length or ignores the data. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_compressed_swf_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs`, `a_stream_that_decodes_past_its_declared_length_is_refused_at_that_length` in `tests/hostile_swf.rs` |
 | `Sparse` | `backend` |  | No proof yet. |
 | `Split` | `native` | Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip. | `tests/data/parity/archives/split.7z.001` |
 | `SquashFS` | `backend` |  | No proof yet. |

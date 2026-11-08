@@ -1006,6 +1006,16 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_dmg::ReadOptions::default(),
                     )?),
+                    Reader::Flv => print(zipper::native_flv::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_flv::ReadOptions::default(),
+                    )?),
+                    Reader::Swf => print(zipper::native_swf::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_swf::ReadOptions::default(),
+                    )?),
                     Reader::Wim => print(zipper::native_wim::read_archive(
                         &archive,
                         None,
@@ -1150,6 +1160,16 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_dmg::ReadOptions::default(),
+                    )?),
+                    Reader::Flv => report(zipper::native_flv::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_flv::ReadOptions::default(),
+                    )?),
+                    Reader::Swf => report(zipper::native_swf::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_swf::ReadOptions::default(),
                     )?),
                     Reader::Wim => report(zipper::native_wim::read_archive(
                         &archive,

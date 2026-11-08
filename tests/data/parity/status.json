@@ -105,7 +105,13 @@
       ]
     },
     "FLV": {
-      "status": "backend"
+      "status": "native",
+      "note": "Read in process. A file of one stream writes its raw data and a file of audio and video writes one FLV for each, as 7-Zip does. A file whose tags stop before its end is refused, where 7-Zip warns and writes the tags before the damage.",
+      "tests": [
+        "tests/swf_corpus.rs::every_corpus_file_extracts_the_tree_7zip_extracts",
+        "tests/swf_corpus.rs::generated_flv_of_every_codec_and_tag_kind_extract_as_7zip_extracts_them",
+        "tests/hostile_swf.rs::every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it"
+      ]
     },
     "GPT": {
       "status": "native",
@@ -219,10 +225,23 @@
       "status": "native"
     },
     "SWF": {
-      "status": "backend"
+      "status": "native",
+      "note": "Uncompressed SWF reads in process, one file per tag, as 7-Zip writes them. Data after the declared length is refused, where 7-Zip warns.",
+      "tests": [
+        "tests/swf_corpus.rs::every_corpus_file_extracts_the_tree_7zip_extracts",
+        "tests/swf_corpus.rs::generated_swf_of_every_tag_form_extract_as_7zip_extracts_them",
+        "tests/hostile_swf.rs::every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it"
+      ]
     },
     "SWFc": {
-      "status": "backend"
+      "status": "native",
+      "note": "SWF compressed with zlib or LZMA reads in process, with Zipper's own LZMA decoder. A stream that decodes past its declared length, or data after the stream, is refused, where 7-Zip stops at the length or ignores the data.",
+      "tests": [
+        "tests/swf_corpus.rs::every_corpus_file_extracts_the_tree_7zip_extracts",
+        "tests/swf_corpus.rs::generated_compressed_swf_extract_as_7zip_extracts_them",
+        "tests/hostile_swf.rs::every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it",
+        "tests/hostile_swf.rs::a_stream_that_decodes_past_its_declared_length_is_refused_at_that_length"
+      ]
     },
     "Sparse": {
       "status": "backend"

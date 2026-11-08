@@ -1,7 +1,7 @@
 use crate::{
     Control, Existing, compat, disk, native_7z, native_apfs, native_ar, native_arj, native_cab,
-    native_chm, native_cpio, native_dmg, native_iso, native_lzh, native_msi, native_ntfs,
-    native_rpm, native_tar, native_wim, native_xar, native_zip,
+    native_chm, native_cpio, native_dmg, native_flv, native_iso, native_lzh, native_msi,
+    native_ntfs, native_rpm, native_swf, native_tar, native_wim, native_xar, native_zip,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -15,7 +15,7 @@ pub enum Engine {
     /// CAB files and cabinet sets, LZH, ARJ, WIM and ESD images, CHM and Help 2
     /// files, NTFS volumes, APFS containers, VHD and VHDX images and MBR and
     /// GPT disks with FAT, NTFS or APFS, DMG images and disks holding HFS+,
-    /// HFSX or APFS, and 7z whose methods it decodes. 7-Zip for other 7z, an
+    /// HFSX or APFS, FLV and SWF files, and 7z whose methods it decodes. 7-Zip for other 7z, an
     /// MSI whose main stream is not a CAB, a split or pre-1.13 WIM, a Help 2
     /// file without an ITSF record, a differencing VHD or VHDX, a DMG or disk
     /// holding another file system Zipper does not read there, an APFS
@@ -28,7 +28,7 @@ pub enum Engine {
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
     /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, DMG,
-    /// HFS+, APFS, 7z and single compressed files, and native ZIP for
+    /// HFS+, APFS, FLV, SWF, 7z and single compressed files, and native ZIP for
     /// unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
@@ -78,6 +78,11 @@ pub enum Reader {
     Dmg,
     /// The native reader for raw APFS containers.
     Apfs,
+    /// The native reader for Flash Video files.
+    Flv,
+    /// The native reader for SWF files, uncompressed or compressed with zlib
+    /// or LZMA.
+    Swf,
     /// The native reader for one compressed stream that holds no tar, in a
     /// format [`crate::native_stream::Format`] names.
     Stream,
@@ -147,6 +152,8 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             Reader::Backend { format: None }
         }
         _ if disk::sniff(archive)? => Reader::Disk,
+        _ if native_flv::sniff(archive)? => Reader::Flv,
+        _ if native_swf::sniff(archive)? => Reader::Swf,
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
         Engine::Native => Reader::Zip { fast: false },
         Engine::NativeFast => Reader::Zip { fast: true },
@@ -489,7 +496,9 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         | Reader::Ntfs
         | Reader::Disk
         | Reader::Dmg
-        | Reader::Apfs => {
+        | Reader::Apfs
+        | Reader::Flv
+        | Reader::Swf => {
             let read = match reader {
                 Reader::Cpio => native_cpio::read_archive,
                 Reader::Ar => native_ar::read_archive,
@@ -505,6 +514,8 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 Reader::Disk => disk::read_archive,
                 Reader::Dmg => native_dmg::read_archive,
                 Reader::Apfs => native_apfs::read_archive,
+                Reader::Flv => native_flv::read_archive,
+                Reader::Swf => native_swf::read_archive,
                 _ => native_rpm::read_archive,
             };
             read(
