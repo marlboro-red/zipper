@@ -36,7 +36,7 @@ It never restores owners, flags, access, change or creation times, or ACLs.
 
 On macOS, the reader restores the extended attributes of each file, folder and link as macOS extended attributes. 7-Zip writes each one instead as a file named `file:name`, and Zipper's shared name check still refuses a `:` in every entry name. On Linux and Windows the reader skips them, and `metadata: Metadata::ContentOnly`, or `--content-only`, writes none. The user decided this on 8 November 2026.
 
-- The reader never restores `com.apple.quarantine`, `com.apple.provenance`, `com.apple.macl`, `com.apple.rootless` or any name that starts with `com.apple.system.`, and skips them without a message. Each carries state of the machine that wrote the volume, such as a quarantine or sandbox mark.
+- The reader never restores `com.apple.quarantine`, `com.apple.provenance`, `com.apple.macl`, `com.apple.rootless`, `com.apple.root.installed` or any name that starts with `com.apple.system.`, and skips them without a message. Each carries state of the machine that wrote the volume, such as a quarantine or sandbox mark or an installer's mark, and macOS refuses some of them to a user process.
 - `com.apple.decmpfs` and `com.apple.ResourceFork` hold a compressed file's data, and `com.apple.fs.symlink` holds a link's target. None of them is restored as an attribute.
 - Attributes are set in staging, after a file's data is written and before its mode and time are applied. A file whose mode lacks the owner's write right gets it while its attributes are set, and loses it again after. Its modification time is set last.
 - A link's attributes are set on the link itself, never on its target, after every link is created.

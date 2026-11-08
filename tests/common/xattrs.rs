@@ -3,11 +3,12 @@ use std::path::Path;
 
 pub const RESTORED_HERE: bool = cfg!(target_os = "macos");
 
-const NEVER_RESTORED: [&str; 4] = [
+const NEVER_RESTORED: [&str; 5] = [
     "com.apple.quarantine",
     "com.apple.provenance",
     "com.apple.macl",
     "com.apple.rootless",
+    "com.apple.root.installed",
 ];
 const STREAMS_ZIPPER_DOES_NOT_WRITE: [&str; 3] =
     ["com.apple.ResourceFork", "com.apple.decmpfs", "rsrc"];

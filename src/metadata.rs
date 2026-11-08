@@ -5,7 +5,8 @@ pub enum Metadata {
     /// modification times, on Windows the archive's Mark of the Web, and on
     /// macOS the extended attributes of APFS and HFS+ volumes, apart from
     /// `com.apple.quarantine`, `com.apple.provenance`, `com.apple.macl`,
-    /// `com.apple.rootless` and names that start with `com.apple.system.`.
+    /// `com.apple.rootless`, `com.apple.root.installed` and names that start
+    /// with `com.apple.system.`.
     #[default]
     Restore,
     /// Write contents only, for files that a build or runtime reads. Files

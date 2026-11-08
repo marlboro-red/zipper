@@ -543,6 +543,7 @@ fn never_restored(id: u32) -> Vec<Attribute> {
         "com.apple.provenance",
         "com.apple.quarantine",
         "com.apple.rootless",
+        "com.apple.root.installed",
         "com.apple.system.Security",
     ]
     .into_iter()

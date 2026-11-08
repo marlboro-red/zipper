@@ -7,11 +7,12 @@ pub(crate) const MAX_NAME: usize = 127;
 pub(crate) const MAX_PER_ENTRY: usize = 128;
 pub(crate) const MAX_VALUE: u64 = 64 << 20;
 const READ_PIECE: usize = 1 << 20;
-const NEVER_RESTORED: [&str; 4] = [
+const NEVER_RESTORED: [&str; 5] = [
     "com.apple.quarantine",
     "com.apple.provenance",
     "com.apple.macl",
     "com.apple.rootless",
+    "com.apple.root.installed",
 ];
 const SYSTEM_PREFIX: &str = "com.apple.system.";
 
@@ -219,6 +220,7 @@ mod tests {
             "com.apple.quarantine2",
             "com.apple.systemx",
             "com.apple.provenance.x",
+            "com.apple.root.installedx",
         ] {
             assert!(is_restored(name), "{name}");
         }

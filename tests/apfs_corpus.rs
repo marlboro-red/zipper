@@ -368,6 +368,7 @@ fn skipped_names() -> Vec<Xattr> {
         "com.apple.provenance",
         "com.apple.macl",
         "com.apple.rootless",
+        "com.apple.root.installed",
         "com.apple.system.Security",
     ]
     .into_iter()
