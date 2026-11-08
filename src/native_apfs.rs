@@ -111,7 +111,6 @@ const REGULAR: u16 = 0o100_000;
 const SYMLINK: u16 = 0o120_000;
 const DEFAULT_FILE_MODE: u32 = 0o666;
 const DEFAULT_FOLDER_MODE: u32 = 0o777;
-const BLANK_NAME: &str = "[]";
 
 const DECMPFS: &[u8] = b"com.apple.decmpfs";
 const RESOURCE_FORK: &[u8] = b"com.apple.ResourceFork";
@@ -358,7 +357,7 @@ pub(crate) fn checkpoint_mapping(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ObjectMap {
     pub(crate) snapshots: u32,
-    pub(crate) tree: u64,
+    pub(crate) root: u64,
 }
 
 pub(crate) fn object_map(bytes: &[u8; OBJECT_MAP_FIELDS]) -> Field<ObjectMap> {
@@ -372,7 +371,7 @@ pub(crate) fn object_map(bytes: &[u8; OBJECT_MAP_FIELDS]) -> Field<ObjectMap> {
     )?;
     Ok(ObjectMap {
         snapshots: le32(bytes, 0x24),
-        tree: le64(bytes, 0x30),
+        root: le64(bytes, 0x30),
     })
 }
 
@@ -1015,8 +1014,8 @@ fn load_omap(disk: &mut Disk, address: u64, what: &'static str) -> Result<(Omap,
     let kind = TreeKind { what, ..OMAP_TREE };
     walk(
         disk,
-        fields.tree,
-        fields.tree,
+        fields.root,
+        fields.root,
         kind,
         None,
         |key, value, _| {
@@ -2042,9 +2041,6 @@ fn apfs_time(nanoseconds: u64) -> Option<SystemTime> {
 }
 
 fn shown_name(name: &str) -> String {
-    if name.is_empty() || name == " " {
-        return BLANK_NAME.to_owned();
-    }
     name.replace('/', "_")
 }
 
@@ -2398,4 +2394,262 @@ pub fn read_archive(
     tree::extract("APFS", path, destination, options, |tree| {
         read(&mut volume, tree, options)
     })
+}
+
+#[cfg(test)]
+mod field_tests {
+    use super::*;
+
+    fn reference_fletcher(words: &[u8]) -> u64 {
+        let (mut low, mut high) = (0u64, 0u64);
+        for word in words.chunks_exact(4) {
+            low =
+                (low + u64::from(u32::from_le_bytes(word.try_into().unwrap()))) % FLETCHER_MODULUS;
+            high = (high + low) % FLETCHER_MODULUS;
+        }
+        let check_low = FLETCHER_MODULUS - (low + high) % FLETCHER_MODULUS;
+        let check_high = FLETCHER_MODULUS - (low + check_low) % FLETCHER_MODULUS;
+        check_high << 32 | check_low
+    }
+
+    #[test]
+    fn fletcher64_matches_a_word_at_a_time_reference_past_every_run_edge() {
+        let mut state = 0x1234_5678_9ABC_DEF0u64;
+        let mut bytes = vec![0u8; 4 * (3 * FLETCHER_RUN + 7)];
+        for (index, byte) in bytes.iter_mut().enumerate() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            *byte = if index % 5 == 0 { 0xFF } else { state as u8 };
+        }
+        for words in (0..=bytes.len() / 4).filter(|words| {
+            words % FLETCHER_RUN <= 2 || words % FLETCHER_RUN >= FLETCHER_RUN - 2 || words % 97 == 0
+        }) {
+            let slice = &bytes[..words * 4];
+            assert_eq!(
+                fletcher64(slice),
+                reference_fletcher(slice),
+                "{words} words"
+            );
+        }
+        let ones = vec![0xFFu8; 4 * 16384];
+        assert_eq!(fletcher64(&ones), reference_fletcher(&ones));
+    }
+
+    #[test]
+    fn an_object_passes_only_with_the_checksum_of_its_other_bytes() {
+        let mut block = vec![0u8; 4096];
+        block[8] = 1;
+        block[0x18] = 1;
+        let sum = fletcher64(&block[8..]);
+        block[..8].copy_from_slice(&sum.to_le_bytes());
+        assert!(object(&block).is_ok());
+        for at in [0, 7, 8, 100, 4095] {
+            block[at] ^= 0x40;
+            assert!(object(&block).is_err(), "flip at {at}");
+            block[at] ^= 0x40;
+        }
+    }
+
+    #[test]
+    fn names_end_at_their_only_nul() {
+        assert_eq!(terminated_name(b"a\0").unwrap(), 0..1);
+        assert_eq!(terminated_name(b"\0").unwrap(), 0..0);
+        assert!(terminated_name(b"").is_err());
+        assert!(terminated_name(b"a").is_err());
+        assert!(terminated_name(b"a\0b\0").is_err());
+    }
+
+    #[test]
+    fn modes_apply_only_to_regular_files_and_folders() {
+        assert_eq!(file_mode(REGULAR | 0o4755), 0o755);
+        assert_eq!(file_mode(0o010_644), DEFAULT_FILE_MODE);
+        assert_eq!(folder_mode(DIRECTORY | 0o055), 0o755);
+        assert_eq!(folder_mode(REGULAR | 0o644), DEFAULT_FOLDER_MODE);
+    }
+
+    #[test]
+    fn apfs_times_count_nanoseconds_from_1970() {
+        assert_eq!(apfs_time(0), None);
+        assert_eq!(
+            apfs_time(1_500_000_000_123_456_789),
+            Some(SystemTime::UNIX_EPOCH + Duration::new(1_500_000_000, 123_456_789))
+        );
+        assert!(apfs_time(u64::MAX).is_some());
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    fn reference_fletcher(words: &[u8]) -> u64 {
+        let (mut low, mut high) = (0u64, 0u64);
+        for word in words.chunks_exact(4) {
+            low =
+                (low + u64::from(u32::from_le_bytes(word.try_into().unwrap()))) % FLETCHER_MODULUS;
+            high = (high + low) % FLETCHER_MODULUS;
+        }
+        let check_low = FLETCHER_MODULUS - (low + high) % FLETCHER_MODULUS;
+        let check_high = FLETCHER_MODULUS - (low + check_low) % FLETCHER_MODULUS;
+        check_high << 32 | check_low
+    }
+
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn fletcher64_matches_a_word_at_a_time_reference() {
+        let bytes: [u8; 12] = kani::any();
+        let words: usize = kani::any();
+        kani::assume(words <= 3);
+        let slice = &bytes[..words * 4];
+        assert!(fletcher64(slice) == reference_fletcher(slice));
+    }
+
+    #[kani::proof]
+    #[kani::unwind(10)]
+    fn objects_never_panic_and_pass_only_with_their_checksum() {
+        let block: [u8; 36] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= block.len());
+        if let Ok(header) = object(&block[..length]) {
+            assert!(length >= OBJECT_HEADER && length % 4 == 0);
+            assert!(le64(&block, 0) == fletcher64(&block[8..length]));
+            assert!(header.kind <= TYPE_MASK && header.storage & !STORAGE_MASK == 0);
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(101)]
+    fn superblocks_keep_their_block_size_and_checkpoint_inside_the_container() {
+        let bytes: [u8; SUPERBLOCK_FIELDS] = kani::any();
+        if let Ok(fields) = superblock(&bytes) {
+            assert!((SMALLEST_BLOCK_LOG..=LARGEST_BLOCK_LOG).contains(&fields.block_log));
+            assert!(fields.block_count <= SIZE_LIMIT >> fields.block_log);
+            assert!(fields.max_volumes as usize <= MAX_VOLUMES);
+            assert!(
+                fields.descriptors.blocks != 0
+                    && fields.descriptors.blocks <= MAX_CHECKPOINT_BLOCKS
+            );
+            assert!(
+                fields.descriptors.fits(fields.block_count) && fields.data.fits(fields.block_count)
+            );
+            assert!(fields.first_descriptor < fields.descriptors.blocks);
+            assert!((1..=fields.descriptors.blocks).contains(&fields.descriptor_count));
+            let step: u32 = kani::any();
+            kani::assume(step < fields.descriptor_count);
+            let block = fields.descriptors.at(fields.first_descriptor + step);
+            assert!(block >= fields.descriptors.base);
+            assert!(block < fields.descriptors.base + u64::from(fields.descriptors.blocks));
+        }
+    }
+
+    #[kani::proof]
+    fn checkpoint_maps_and_mappings_stay_inside_their_block_and_data_area() {
+        let block: [u8; CHECKPOINT_HEADER + 2 * CHECKPOINT_MAPPING] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= block.len());
+        if let Ok(map) = checkpoint_map(&block[..length]) {
+            assert!(CHECKPOINT_HEADER + map.count * CHECKPOINT_MAPPING <= length);
+        }
+        let mapping: [u8; CHECKPOINT_MAPPING] = kani::any();
+        let data = Area {
+            base: kani::any(),
+            blocks: kani::any(),
+        };
+        let block_log: u32 = kani::any();
+        kani::assume((SMALLEST_BLOCK_LOG..=LARGEST_BLOCK_LOG).contains(&block_log));
+        kani::assume(data.fits(SIZE_LIMIT >> block_log));
+        if let Ok(blocks) = checkpoint_mapping(&mapping, data, block_log) {
+            assert!(!blocks.is_empty() && blocks.start >= data.base);
+            assert!(blocks.end <= data.base + u64::from(data.blocks));
+        }
+    }
+
+    #[kani::proof]
+    fn object_maps_and_volume_superblocks_never_panic() {
+        let map: [u8; OBJECT_MAP_FIELDS] = kani::any();
+        if let Ok(fields) = object_map(&map) {
+            assert!(fields.root == le64(&map, 0x30));
+        }
+        let volume: [u8; VOLUME_FIELDS] = kani::any();
+        if let Ok(fields) = volume_superblock(&volume) {
+            assert!(&volume[0x20..0x24] == APSB);
+            assert!(fields.root_tree == le64(&volume, 0x88));
+        }
+    }
+
+    #[kani::proof]
+    fn node_entries_stay_between_the_table_of_contents_and_the_values_end() {
+        let block: [u8; NODE_HEADER + TREE_INFO + 32] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= block.len());
+        let block = &block[..length];
+        if let Ok(parsed) = node(block) {
+            assert!(parsed.key_area <= parsed.value_end && parsed.value_end <= length);
+            assert!(parsed.is_leaf() == (parsed.level == 0));
+            let index: usize = kani::any();
+            let sizes: (u32, u32) = (kani::any(), kani::any());
+            if let Ok((key, value)) = entry(&parsed, block, index, sizes) {
+                assert!(index < parsed.keys);
+                assert!(parsed.key_area <= key.start && key.end <= parsed.value_end);
+                assert!(parsed.key_area <= value.start && value.end <= parsed.value_end);
+                assert!(key.start <= key.end && value.start <= value.end);
+            }
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn directory_records_keep_their_names_inside_the_key() {
+        let key: [u8; 16] = kani::any();
+        let value: [u8; DIRECTORY_VALUE] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= key.len());
+        let hashed: bool = kani::any();
+        if let Ok((id, _)) = record_key(&key[..length]) {
+            assert!(id <= RECORD_ID_MASK);
+        }
+        if let Ok(record) = directory_record(&key[..length], &value, hashed) {
+            assert!(record.name.end < length);
+            assert!(key[record.name.end] == 0);
+            for at in record.name.clone() {
+                assert!(key[at] != 0);
+            }
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn attribute_records_keep_their_names_and_data_inside_the_record() {
+        let key: [u8; 16] = kani::any();
+        let value: [u8; XATTR_VALUE + XATTR_STREAM] = kani::any();
+        let (key_length, value_length): (usize, usize) = (kani::any(), kani::any());
+        kani::assume(key_length <= key.len() && value_length <= value.len());
+        if let Ok(record) = xattr_record(&key[..key_length], &value[..value_length]) {
+            assert!(record.name.end < key_length && key[record.name.end] == 0);
+            if let XattrData::Embedded(range) = record.data {
+                assert!(range.start == XATTR_VALUE && range.end == value_length);
+            }
+        }
+        let extent_key: [u8; FILE_EXTENT_KEY] = kani::any();
+        let extent_value: [u8; FILE_EXTENT_VALUE] = kani::any();
+        if let Ok(extent) = file_extent_record(&extent_key, &extent_value) {
+            assert!(extent.length <= EXTENT_LENGTH_MASK);
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn inode_extended_fields_stay_inside_the_inode() {
+        let value: [u8; INODE + 24] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= value.len());
+        if let Ok(record) = inode_record(&value[..length]) {
+            assert!(length >= INODE);
+            assert!(record.mode == le16(&value, 0x50));
+            if record.stream.is_some() {
+                assert!(length >= INODE + XFIELD_HEADER + XFIELD + DSTREAM);
+            }
+        }
+    }
 }

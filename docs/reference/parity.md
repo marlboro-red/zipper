@@ -17,8 +17,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | Status | Rows |
 | --- | ---: |
 | `native` | 79 |
-| `partial` | 4 |
-| `backend` | 24 |
+| `partial` | 5 |
+| `backend` | 23 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
@@ -29,7 +29,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | Row | Status | Note | Proof |
 | --- | --- | --- | --- |
 | `7z` | `native` |  | `tests/data/parity/archives/7z.7z` |
-| `APFS` | `backend` |  | `tests/data/parity/archives/apfs.img.stored.xz` |
+| `APFS` | `partial` | APFS containers read in process, raw and inside DMG images and GPT disks, with several volumes, hard links, sparse, cloned and compressed files. Extended attributes are skipped, because 7-Zip writes them as files with `:` in their names, which the shared name check refuses. So the corpus image, whose files carry extended attributes, is checked through 7-Zip. Encrypted, sealed and snapshot volumes and Fusion containers go to 7-Zip. | `tests/data/parity/archives/apfs.img.stored.xz`, `every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts` in `tests/apfs_corpus.rs`, `the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them_without_their_streams` in `tests/apfs_corpus.rs`, `generated_volumes_extract_byte_for_byte_as_7zip_extracts_them` in `tests/apfs_corpus.rs`, `damaged_file_tree_nodes_are_refused_when_7zip_refuses_them` in `tests/hostile_apfs.rs` |
 | `APM` | `partial` | Apple partition maps holding HFS+ or HFSX read in process, raw and inside DMG images. The corpus image's files carry extended attributes, which Zipper skips, so it is checked through 7-Zip. | `tests/data/parity/archives/apm.img.stored.xz`, `partition_maps_inside_a_dmg_extract_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams` in `tests/dmg_corpus.rs` |
 | `Ar` | `native` |  | `tests/data/parity/archives/ar.a` |
 | `Arj` | `native` | Methods 0 to 4 read in process. Encrypted entries and multi-volume archives are refused. No ARJ tool is installed here, so the corpus comes from Zipper's own test writer. | `every_corpus_arj_extracts_the_tree_7zip_extracts` in `tests/arj_corpus.rs`, `generated_arj_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/arj_corpus.rs`, `token_streams_of_every_method_decode_as_7zip_decodes_them` in `tests/arj_corpus.rs`, `damaged_arj_are_refused_exactly_when_7zip_refuses_them` in `tests/arj_corpus.rs` |
@@ -40,7 +40,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Compound` | `native` | MSI, MSP, MSM and other compound files read in process, and an installer's one CAB through the CAB reader. An installer whose main stream is not a CAB goes to 7-Zip. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/msi_corpus.rs`, `generated_compound_files_extract_exactly_as_7zip_extracts_them` in `tests/msi_corpus.rs` |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
 | `CramFS` | `backend` |  | No proof yet. |
-| `Dmg` | `partial` | UDIF images whose file system is HFS+ or HFSX read in process, with every chunk method. A DMG holding APFS or another file system, as the corpus images do, goes to 7-Zip. | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg`, `every_corpus_dmg_extracts_the_tree_7zip_extracts` in `tests/dmg_corpus.rs`, `generated_dmgs_of_every_chunk_method_and_form_extract_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them` in `tests/hostile_dmg.rs` |
+| `Dmg` | `partial` | UDIF images whose file system is HFS+, HFSX or APFS read in process, with every chunk method. The corpus images hold APFS files with extended attributes, which Zipper skips, so they are checked through 7-Zip. A DMG holding another file system goes to 7-Zip. | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg`, `every_corpus_dmg_extracts_the_tree_7zip_extracts` in `tests/dmg_corpus.rs`, `the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them_without_their_streams` in `tests/apfs_corpus.rs`, `generated_dmgs_of_every_chunk_method_and_form_extract_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them` in `tests/hostile_dmg.rs` |
 | `ELF` | `backend` |  | No proof yet. |
 | `Ext` | `backend` |  | No proof yet. |
 | `FAT` | `native` | FAT12, FAT16 and FAT32 with long names read in process. | `tests/data/parity/archives/fat.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |

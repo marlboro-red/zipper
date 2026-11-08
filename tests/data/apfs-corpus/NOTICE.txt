@@ -1,0 +1,43 @@
+Every image here was written for Zipper's tests by hdiutil, diskutil and
+ditto on macOS 26 and then compressed with `xz -9`. No file in them comes
+from a third party. `tools/make_corpus.py` writes them all again.
+
+The apfs images hold one APFS volume named Corpus, and the sensitive images
+one case-sensitive APFS volume named Sensitive. Each was made as an 8 MiB
+read-write UDIF image, attached under a scratch folder with -nobrowse,
+filled, detached, and converted with `hdiutil convert -format`:
+
+| Image | Format | Chunks |
+| --- | --- | --- |
+| apfs-udzo.dmg, sensitive-udzo.dmg | UDZO | zlib |
+| apfs-udbz.dmg | UDBZ | bzip2 |
+| apfs-ulfo.dmg, sensitive-ulfo.dmg | ULFO | LZFSE |
+| apfs-ulmo.dmg | ULMO | xz |
+| apfs-udro.dmg | UDRO | raw |
+| apfs-udco.dmg | UDCO | ADC |
+| apfs-gpt.img | UDTO | a raw GPT disk |
+
+apfs-raw.img is a raw container, made with `-layout NONE` and filled the
+same way. Each of these volumes holds small text files, 5,000 seeded random
+bytes, names in Latin, CJK and emoji letters, a symlink, a file with three
+hard links, a folder 40 levels deep, a folder of 300 files, files with
+modes 755, 444 and 600 in a folder of mode 555, and a small and a 6,000-byte
+extended attribute. `ditto --hfsCompression` stored `big.txt` as LZVN
+chunks in its resource fork and `medium.txt` as LZVN data in its decmpfs
+attribute, and left `noise.bin` uncompressed with an empty resource fork.
+
+special-udzo.dmg holds a file cloned with `cp -c`, a sparse file with
+8,192 bytes at 1 MiB in 3 MiB, and a link to `../original.txt`.
+
+volumes-udzo.dmg holds a 1,100 MiB container with three volumes: First,
+a case-sensitive Second and an empty Third, added with `diskutil apfs
+addVolume`.
+
+far-6g-udzo.dmg holds a 6 GiB container. A 4,400 MiB file of zeros was
+written and then deleted after `far.txt` was written behind it, so that
+file lies past 4 GiB in a partition that is mostly zero chunks.
+
+`trees.json` holds the tree Zipper extracts from each image, which
+`tests/apfs_corpus.rs` checks against `7zz x` 26.05 where it is installed.
+An image whose tree equals an earlier one's names that image.
+`ZIPPER_APFS_WRITE_TREES=1 cargo test --test apfs_corpus` rewrites it.

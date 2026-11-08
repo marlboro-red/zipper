@@ -4,7 +4,14 @@
       "status": "native"
     },
     "APFS": {
-      "status": "backend"
+      "status": "partial",
+      "note": "APFS containers read in process, raw and inside DMG images and GPT disks, with several volumes, hard links, sparse, cloned and compressed files. Extended attributes are skipped, because 7-Zip writes them as files with `:` in their names, which the shared name check refuses. So the corpus image, whose files carry extended attributes, is checked through 7-Zip. Encrypted, sealed and snapshot volumes and Fusion containers go to 7-Zip.",
+      "tests": [
+        "tests/apfs_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
+        "tests/apfs_corpus.rs::the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them_without_their_streams",
+        "tests/apfs_corpus.rs::generated_volumes_extract_byte_for_byte_as_7zip_extracts_them",
+        "tests/hostile_apfs.rs::damaged_file_tree_nodes_are_refused_when_7zip_refuses_them"
+      ]
     },
     "APM": {
       "status": "partial",
@@ -73,9 +80,10 @@
     },
     "Dmg": {
       "status": "partial",
-      "note": "UDIF images whose file system is HFS+ or HFSX read in process, with every chunk method. A DMG holding APFS or another file system, as the corpus images do, goes to 7-Zip.",
+      "note": "UDIF images whose file system is HFS+, HFSX or APFS read in process, with every chunk method. The corpus images hold APFS files with extended attributes, which Zipper skips, so they are checked through 7-Zip. A DMG holding another file system goes to 7-Zip.",
       "tests": [
         "tests/dmg_corpus.rs::every_corpus_dmg_extracts_the_tree_7zip_extracts",
+        "tests/apfs_corpus.rs::the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them_without_their_streams",
         "tests/dmg_corpus.rs::generated_dmgs_of_every_chunk_method_and_form_extract_as_7zip_extracts_them",
         "tests/hostile_dmg.rs::damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them"
       ]

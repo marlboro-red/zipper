@@ -630,3 +630,24 @@ fn the_newest_checkpoint_wins_over_an_older_block_zero() {
         );
     }
 }
+
+#[test]
+#[ignore = "writes a container of 999,000 inodes for peak-memory checks"]
+fn write_a_container_of_many_inodes_to_zipper_apfs_many() {
+    let Some(path) = std::env::var_os("ZIPPER_APFS_MANY") else {
+        return;
+    };
+    let mut entries = Vec::new();
+    let mut id = 16u64;
+    for folder_number in 0..1000u64 {
+        let parent = id;
+        entries.push(folder(parent, ROOT, &format!("folder{folder_number:04}")));
+        id += 1;
+        for number in 0..998u64 {
+            entries.push(file(id, parent, &format!("entry{number:04}.txt"), b""));
+            id += 1;
+        }
+    }
+    let (image, _) = apfs_writer::build(&Container::new(vec![Volume::new(entries)]));
+    image.write_sparse(Path::new(&path));
+}
