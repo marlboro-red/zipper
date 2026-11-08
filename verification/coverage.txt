@@ -2360,6 +2360,7 @@ item = src/native_apfs.rs | pub fn read_archive(
 item = src/native_apfs.rs | mod proofs {
 
 [swf-fields]
+fingerprint = 2630fa64dc0e4cb3
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach swf-fields
 full-check = cargo kani --harness native_swf::proofs:: --harness native_flv::proofs::
