@@ -495,6 +495,11 @@ fn names_follow_7zip_and_unsafe_ones_are_refused() {
     checksum.bytes[at + 13] ^= 0xFF;
     let found = extracted(&checksum.bytes);
     assert!(found.contains_key("ALONGF~1.TXT"), "{:?}", found.keys());
+    let mut renamed = sample_volume(16);
+    let at = renamed.record("A long file name with spaces.txt");
+    renamed.bytes[at + 7] = b'9';
+    let found = extracted(&renamed.bytes);
+    assert!(found.contains_key("ALONGF~9.TXT"), "{:?}", found.keys());
     let mut blank = sample_volume(16);
     let at = blank.record("HELLO.TXT");
     blank.bytes[at..at + 11].copy_from_slice(b"           ");
