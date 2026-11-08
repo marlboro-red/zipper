@@ -1,6 +1,6 @@
 # In-process DMG reader
 
-Zipper extracts Apple disk images (`.dmg`) and the HFS+ and HFSX volumes inside them with its own Rust reader. It also reads a raw HFS+ or HFSX volume and a raw disk with an Apple partition map. The default engine sends a file here when the volume inside is HFS+ or HFSX. It finds a DMG by the UDIF `koly` trailer at its end, or rarely at its start, and a raw disk by its HFS+ volume header or Apple partition map. It sends a DMG or disk that holds APFS, FAT or another file system, or several file systems, to 7-Zip instead. `--zip-engine native` refuses those by name, and the error suggests `--zip-engine backend`. `--zip-engine backend` hands every image to 7-Zip.
+Zipper extracts Apple disk images (`.dmg`) and the HFS+ and HFSX volumes inside them with its own Rust reader. It also reads a raw HFS+ or HFSX volume and a raw disk with an Apple partition map. The default engine sends a file here when the volume inside is HFS+, HFSX or APFS, and this reader hands an APFS container to the [APFS reader](apfs-reader.md). It finds a DMG by the UDIF `koly` trailer at its end, or rarely at its start, and a raw disk by its HFS+ volume header or Apple partition map. It sends a DMG or disk that holds FAT or another file system, or several file systems, to 7-Zip instead. `--zip-engine native` refuses those by name, and the error suggests `--zip-engine backend`. `--zip-engine backend` hands every image to 7-Zip.
 
 ## Supported images
 
@@ -10,7 +10,7 @@ A UDIF image is a data fork of chunks, a list of partitions and a 512-byte `koly
 - The partition list as an XML property list, read with 7-Zip's own XML rules, or as a resource fork, which older images use and 7-Zip still reads.
 - Blocks of zeros, blocks to ignore, raw blocks, and chunks compressed with ADC, zlib, bzip2, LZFSE or xz. `hdiutil` writes these as UDZO, UDBZ, ULFO, ULMO, UDRO and UDCO.
 - The one partition whose name marks it as a file system, as 7-Zip picks it. Names with `Apple_partition_map`, `MBR`, ` GPT `, `Apple_Free`, `DDM`, `Driver`, `Patches` or the EFI system partition's GUID are not file systems. Names with `Apple_HFS`, `Apple_HFSX`, `Apple_APFS` and other names are.
-- Inside that partition, an HFS+ or HFSX volume, or an Apple partition map, a GPT or an MBR with one such volume, as 7-Zip opens them. The same holds for a raw disk with an Apple partition map.
+- Inside that partition, an HFS+, HFSX or APFS volume, or an Apple partition map, a GPT or an MBR with one such volume, as 7-Zip opens them. The same holds for a raw disk with an Apple partition map.
 - HFS+ inside an HFS wrapper, as old images store it.
 
 ADC, LZFSE and LZVN are Zipper's own decoders in safe Rust, in `src/adc.rs`, `src/lzfse.rs` and `src/lzvn.rs`. They follow 7-Zip's end rules, which are stricter than Apple's. A stream must fill its declared size exactly and end exactly at the end of its input. LZFSE version 1 blocks, which no encoder writes and 7-Zip refuses, are refused. zlib and bzip2 use the `flate2` and `bzip2` crates, and xz uses Zipper's own decoder in `src/lzma.rs`.

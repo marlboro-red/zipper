@@ -538,28 +538,25 @@ fn a_file_with_a_resource_fork_is_refused_with_its_name() {
 }
 
 #[test]
-fn apfs_images_go_to_7zip_and_are_refused_by_name_under_the_native_engine() {
+fn apfs_images_stay_in_process_under_both_engines() {
     let archive = Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/data/parity/archives/dmg-zlib.dmg"
     ));
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, archive).unwrap(),
-        zipper::Reader::Backend { format: None }
-    );
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Native, archive).unwrap(),
-        zipper::Reader::Dmg
-    );
+    for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
+        assert_eq!(
+            zipper::choose_reader(engine, archive).unwrap(),
+            zipper::Reader::Dmg
+        );
+    }
     let work = tempfile::tempdir().unwrap();
-    let error = read_archive(
+    read_archive(
         archive,
         Some(&work.path().join("out")),
         ReadOptions::default(),
     )
-    .unwrap_err();
-    assert!(format!("{error:#}").contains("APFS"), "{error:#}");
-    assert!(!work.path().join("out").exists());
+    .unwrap();
+    assert!(work.path().join("out/folder/data.txt").exists());
     let (volume, _) = hfs_writer::build(&small_volume());
     let (image, _) = dmg_of(&volume, &Options::default());
     let path = work.path().join("hfs.dmg");
