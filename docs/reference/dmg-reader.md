@@ -29,7 +29,7 @@ The reader writes the volume as `7zz x` writes it on macOS and Linux:
 
 - On macOS, each extended attribute is restored, as the next section describes.
 
-It never restores owners, flags, Finder information, access or creation times, or ACLs.
+It never restores owners, flags, the Finder information of catalog records, access or creation times, or ACLs.
 
 ## Resource forks and extended attributes
 
@@ -68,6 +68,7 @@ The reader checks the layout before it writes each file, and it publishes nothin
 | Entries and attributes | at most 1,000,000 each, as the shared tree allows |
 | Extended attributes of one entry | at most 128, skipped ones included |
 | One restored attribute value | at most 64 MiB |
+| Attributes of links, held until the links are created | at most 64 MiB, counted as the [APFS reader](apfs-reader.md#limits) counts them |
 | Names and folder paths | at most 64 MiB each |
 | Partition maps inside one another | at most 4 deep |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |

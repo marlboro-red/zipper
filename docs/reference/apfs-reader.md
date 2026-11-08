@@ -80,7 +80,7 @@ The reader checks the layout before it writes each file, and it publishes nothin
 | Extended attributes of one entry | at most 128, skipped ones included |
 | One restored attribute value | at most 64 MiB |
 | Restored attributes | at most 1,000,000 per volume |
-| Attributes of links, held until the links are created | at most 64 MiB |
+| Attributes of links, held until the links are created | at most 64 MiB, with 128 bytes counted for each beside its name and value, so each name of a hard-linked link counts again |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
 The reader never holds a container's data. It walks each B-tree one node at a time, with one block for each level. It keeps one small entry per inode, directory record and file extent, with names in one buffer. It also keeps where each compressed file's or link's attribute and each restored attribute lies, and reads it again when it writes that entry. It reads one attribute value at a time, in pieces of 1 MiB, and holds it whole, since macOS sets a value in one call. On a container of 999,936 restored attributes from the test writer, `zipper extract` peaked at 33 MB of resident memory, the reader before this change at 8 MB and `7zz t` at 318 MB. On one with a value of 64 MiB and 1,024 values of 256 KiB, `zipper extract` peaked at 73 MB and `7zz t`, which streams each value, at 4 MB. So memory follows the file-system tree, not the container. It reads one volume's tree at a time. On a container of 998,000 empty files in 1,000 folders from the test writer, `zipper test` peaked at 599 MB of resident memory and `7zz t` at 827 MB. `--threads` has no effect on APFS.

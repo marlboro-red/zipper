@@ -756,3 +756,26 @@ fn attributes_that_break_the_name_count_and_size_rules_refuse_the_volume() {
     );
     refused(&bytes, "holds 67108865 bytes, more than 67108864");
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn many_names_of_one_tagged_link_cannot_queue_past_the_link_attribute_budget() {
+    let mut link = symlink(16, ROOT, "link", "target");
+    link.xattrs = (0..127).map(|n| named(&format!("{n:x}"))).collect();
+    for xattr in &mut link.xattrs {
+        xattr.value.clear();
+    }
+    let mut entries = vec![link, file(17, ROOT, "target", b"t\n")];
+    for number in 0..9000u64 {
+        entries.push(hard_link(
+            18 + number,
+            ROOT,
+            &format!("name{number:04}"),
+            16,
+        ));
+    }
+    refused(
+        &built(Volume::new(entries)),
+        "more than 64 MiB of extended attributes",
+    );
+}

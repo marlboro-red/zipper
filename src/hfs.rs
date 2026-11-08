@@ -1518,6 +1518,10 @@ fn restore_attributes(
             "HFS attributes file changed while it was read"
         );
         let name = name.unwrap();
+        ensure!(
+            name != DECMPFS && name != RESOURCE_FORK_ATTRIBUTE && crate::xattr::is_restored(&name),
+            "HFS attributes file changed while it was read"
+        );
         let value = match attribute.value {
             AttributeValue::Inline(range) => bytes[range].to_vec(),
             AttributeValue::Fork(data) => {

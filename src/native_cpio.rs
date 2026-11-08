@@ -664,6 +664,7 @@ pub(crate) mod tree {
     pub(crate) const MAX_NAME: u64 = 8192;
     const MAX_METADATA: usize = 64 * 1024 * 1024;
     const MAX_LINK_ATTRIBUTES: usize = 64 * 1024 * 1024;
+    const LINK_ATTRIBUTE_ENTRY: usize = 128;
     const COPY_BUFFER: usize = 1024 * 1024;
     const LINKS_PER_REPORT: usize = 1024;
     pub(crate) const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
@@ -1170,7 +1171,7 @@ pub(crate) mod tree {
                     &format!("{format} folder {placed:?}"),
                 ),
                 &mut Owner::Link(index) => {
-                    self.link_attribute_bytes += name.len() + value.len();
+                    self.link_attribute_bytes += LINK_ATTRIBUTE_ENTRY + name.len() + value.len();
                     ensure!(
                         self.link_attribute_bytes <= MAX_LINK_ATTRIBUTES,
                         "{format} links hold more than 64 MiB of extended attributes"
@@ -1272,7 +1273,10 @@ pub(crate) mod tree {
                 }
                 crate::create_symlink(format, root, name, target)?;
             }
-            for (index, name, value) in &self.link_attributes {
+            for (count, (index, name, value)) in self.link_attributes.iter().enumerate() {
+                if count % LINKS_PER_REPORT == 0 {
+                    self.tracker.report()?;
+                }
                 let link = &self.symlinks[*index].0;
                 crate::xattr::set_on_path(
                     &root.join(link),

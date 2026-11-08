@@ -1932,6 +1932,11 @@ impl Reading<'_, '_, '_> {
                 "APFS file-system tree changed while it was read"
             );
             let name = crate::xattr::checked_name(&key[record.name])?;
+            ensure!(
+                crate::xattr::is_restored(name)
+                    && ![DECMPFS, RESOURCE_FORK, SYMLINK_TARGET].contains(&name.as_bytes()),
+                "APFS file-system tree changed while it was read"
+            );
             let bytes = match record.data {
                 XattrData::Embedded(range) => value[range].to_vec(),
                 XattrData::Stream { id, size } => {

@@ -702,12 +702,22 @@ impl Builder<'_> {
                 links.entry(inode).or_default().push(entry);
             }
         }
+        let kinds: BTreeMap<u64, u16> = all
+            .iter()
+            .map(|entry| {
+                let kind = match &entry.kind {
+                    Kind::Folder => 4,
+                    Kind::Symlink(_) => 10,
+                    Kind::Fifo => 1,
+                    _ => 8,
+                };
+                (entry.id, kind)
+            })
+            .collect();
         for entry in &all {
-            let kind = match &entry.kind {
-                Kind::Folder => 4,
-                Kind::Symlink(_) => 10,
-                Kind::Fifo => 1,
-                _ => 8,
+            let kind = match entry.kind {
+                Kind::HardLink(inode) => kinds[&inode],
+                _ => kinds[&entry.id],
             };
             let file = match entry.kind {
                 Kind::HardLink(inode) => inode,
