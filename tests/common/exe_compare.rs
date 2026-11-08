@@ -30,6 +30,38 @@ pub fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
+// EXTERNAL(7-Zip on Linux): a stored U+EF00 plus byte name character is written back as the raw byte.
+fn name_as_7zip_stores_it(path: &Path) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let mut name = String::new();
+        for chunk in path.as_os_str().as_bytes().utf8_chunks() {
+            name.push_str(chunk.valid());
+            name.extend(
+                chunk
+                    .invalid()
+                    .iter()
+                    .map(|&byte| char::from_u32(0xEF00 + u32::from(byte)).unwrap()),
+            );
+        }
+        name
+    }
+    #[cfg(not(unix))]
+    path.to_string_lossy().into_owned()
+}
+
+#[test]
+fn a_raw_byte_in_a_7zip_name_reads_as_the_character_7zip_stores() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let raw = std::ffi::OsStr::from_bytes(b"\xffbss");
+        assert_eq!(name_as_7zip_stores_it(Path::new(raw)), "\u{efff}bss");
+    }
+    assert_eq!(name_as_7zip_stores_it(Path::new("caf\u{e9}")), "caf\u{e9}");
+}
+
 pub fn tree(root: &Path, metadata: bool) -> BTreeMap<String, String> {
     walkdir::WalkDir::new(root)
         .min_depth(1)
@@ -37,12 +69,8 @@ pub fn tree(root: &Path, metadata: bool) -> BTreeMap<String, String> {
         .into_iter()
         .map(|entry| {
             let entry = entry.unwrap();
-            let name = entry
-                .path()
-                .strip_prefix(root)
-                .unwrap()
-                .to_string_lossy()
-                .replace('\\', "/");
+            let name =
+                name_as_7zip_stores_it(entry.path().strip_prefix(root).unwrap()).replace('\\', "/");
             let found = fs::symlink_metadata(entry.path()).unwrap();
             let mut kind = if found.is_dir() {
                 "dir".to_owned()

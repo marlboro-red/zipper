@@ -54,7 +54,7 @@ Zipper is stricter than 7-Zip in these cases. Each refuses a file that 7-Zip ext
 - An ELF section name longer than 4,096 bytes.
 - A resource directory of more than 2^22 entries, converted text past 64 MiB, or names past 64 MiB in total.
 
-7-Zip's own names for bytes that are not valid UTF-8 are kept. A PE or TE section name or a Mach-O name in such bytes takes the character U+EF00 plus the byte, or `_` in Mach-O, as 7-Zip writes it.
+7-Zip's own names for bytes that are not valid UTF-8 are kept. A PE or TE section name or a Mach-O name in such bytes takes the character U+EF00 plus the byte, or `_` in Mach-O, as 7-Zip writes it on macOS. 7-Zip on Linux writes the raw byte instead, and Zipper writes U+EF00 plus the byte on every system, so the tree is the same everywhere.
 
 ## Limits
 
