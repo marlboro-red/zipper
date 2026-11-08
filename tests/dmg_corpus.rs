@@ -81,6 +81,8 @@ fn open_up(root: &Path) {
             }
         }
     }
+    #[cfg(not(unix))]
+    let _ = root;
 }
 
 fn tree(root: &Path) -> (Tree, Vec<String>) {

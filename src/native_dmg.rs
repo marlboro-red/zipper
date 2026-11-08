@@ -1260,8 +1260,13 @@ fn gpt_partition(volume: &mut dyn Volume, start: &[u8]) -> Result<Located> {
         .find(|&log| start.get(1 << log..(1 << log) + 8) == Some(GPT_SIGNATURE))
         .context("GPT has no header")?;
     let sector = 1usize << log;
-    let mut header = start[sector..sector * 2].to_vec();
-    let size = u32_at(&header, 12).swap_bytes() as usize;
+    ensure!(
+        volume.size() >= 2 * sector as u64,
+        "GPT disk is shorter than its header"
+    );
+    let mut header = vec![0u8; sector];
+    volume.read_exact_at(sector as u64, &mut header)?;
+    let size = u32::from_le_bytes(header[12..16].try_into().unwrap()) as usize;
     ensure!(size <= sector && size >= 0x5C, "GPT header has a bad size");
     let crc = u32::from_le_bytes(header[16..20].try_into().unwrap());
     header[16..20].fill(0);
@@ -1285,7 +1290,14 @@ fn gpt_partition(volume: &mut dyn Volume, start: &[u8]) -> Result<Located> {
         "GPT entries have a bad size"
     );
     let bytes = entries as usize * entry_size as usize;
-    let mut list = vec![0u8; bytes.div_ceil(sector) * sector];
+    let rounded = bytes.div_ceil(sector) * sector;
+    ensure!(
+        (table << log)
+            .checked_add(rounded as u64)
+            .is_some_and(|end| end <= volume.size()),
+        "GPT table lies past the end of its disk"
+    );
+    let mut list = vec![0u8; rounded];
     volume.read_exact_at(table << log, &mut list)?;
     ensure!(
         crc32fast::hash(&list[..bytes]) == le32(0x58),

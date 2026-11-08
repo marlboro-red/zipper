@@ -120,6 +120,8 @@ fn hfs_writer_cleanup(root: &Path) {
             let _ = fs::set_permissions(entry.path(), fs::Permissions::from_mode(0o755));
         }
     }
+    #[cfg(not(unix))]
+    let _ = root;
 }
 
 fn judge(binary: &Path, image: &Path, label: &str) -> Option<String> {
@@ -740,4 +742,81 @@ fn partitions_and_trailers_whose_checksums_fail_are_refused() {
         error.contains("data fork fails its CRC-32 check"),
         "{error}"
     );
+}
+
+fn apm_with_partition(partition: &[u8]) -> Vec<u8> {
+    let mut disk = vec![0u8; 4 * 512];
+    disk[..2].copy_from_slice(b"ER");
+    disk[2..4].copy_from_slice(&512u16.to_be_bytes());
+    let entries = [
+        ("Apple", "Apple_partition_map", 1u32, 3u32),
+        ("disk", "Apple_HFS", 4, (partition.len() / 512) as u32),
+    ];
+    for (index, (name, kind, first, count)) in entries.iter().enumerate() {
+        let sector = &mut disk[(index + 1) * 512..(index + 2) * 512];
+        sector[..2].copy_from_slice(b"PM");
+        sector[4..8].copy_from_slice(&2u32.to_be_bytes());
+        sector[8..12].copy_from_slice(&first.to_be_bytes());
+        sector[12..16].copy_from_slice(&count.to_be_bytes());
+        sector[16..16 + name.len()].copy_from_slice(name.as_bytes());
+        sector[48..48 + kind.len()].copy_from_slice(kind.as_bytes());
+        sector[0x58..0x5C].copy_from_slice(&0x33u32.to_be_bytes());
+    }
+    disk.extend(partition);
+    disk
+}
+
+#[test]
+fn a_gpt_with_4_kib_sectors_in_a_short_partition_is_refused_without_a_panic() {
+    for length in [4608usize, 5120, 5632, 8192, 10240] {
+        let mut partition = vec![0u8; length];
+        partition[0x1FE] = 0x55;
+        partition[0x1FF] = 0xAA;
+        partition[4096..4104].copy_from_slice(b"EFI PART");
+        let error = refusal(&apm_with_partition(&partition));
+        assert!(error.contains("GPT"), "{length}: {error}");
+    }
+}
+
+#[test]
+fn a_gpt_table_larger_than_its_disk_is_refused_before_it_is_read() {
+    let mut partition = vec![0u8; 4096];
+    partition[0x1FE] = 0x55;
+    partition[0x1FF] = 0xAA;
+    let header = &mut partition[512..1024];
+    header[..8].copy_from_slice(b"EFI PART");
+    header[12..16].copy_from_slice(&92u32.to_le_bytes());
+    header[0x18..0x20].copy_from_slice(&1u64.to_le_bytes());
+    header[0x48..0x50].copy_from_slice(&2u64.to_le_bytes());
+    header[0x50..0x54].copy_from_slice(&65_536u32.to_le_bytes());
+    header[0x54..0x58].copy_from_slice(&4096u32.to_le_bytes());
+    let crc = crc32fast::hash(&header[..92]);
+    header[0x10..0x14].copy_from_slice(&crc.to_le_bytes());
+    let error = refusal(&apm_with_partition(&partition));
+    assert!(error.contains("GPT table lies past"), "{error}");
+}
+
+#[test]
+fn every_byte_of_a_resource_fork_list_and_trailer_set_to_any_value_never_panics() {
+    let (volume, _) = hfs_writer::build(&small_volume());
+    let options = Options {
+        chunk_sectors: 64,
+        form: Form::ResourceFork,
+        ..Options::default()
+    };
+    let (image, layout) = dmg_of(&volume, &options);
+    let work = tempfile::tempdir().unwrap();
+    let path = work.path().join("fork.dmg");
+    let (fork, length) = layout.resource;
+    let mut tried = 0;
+    for at in (fork..fork + length).chain(layout.koly..layout.koly + 512) {
+        for value in [0x00u8, 0x01, 0x7F, 0x80, 0xFF, image[at] ^ 0x10] {
+            let mut damaged = image.clone();
+            damaged[at] = value;
+            fs::write(&path, &damaged).unwrap();
+            let _ = read_archive(&path, None, ReadOptions::default());
+            tried += 1;
+        }
+    }
+    assert!(tried > 3000, "{tried}");
 }
