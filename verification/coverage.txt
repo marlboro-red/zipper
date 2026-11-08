@@ -1177,6 +1177,9 @@ item = src/native_cab.rs | impl<'a> FolderStream<'a> {
 item = src/native_cab.rs | impl Read for FolderStream<'_> {
 item = src/native_chm.rs | impl<'a> SectionStream<'a> {
 item = src/native_chm.rs | impl Read for SectionStream<'_> {
+item = src/lib.rs | pub(crate) fn field_check(
+item = src/lib.rs | pub(crate) struct BadField(
+item = src/lib.rs | pub(crate) type Field<
 
 [quantum]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
@@ -1714,6 +1717,9 @@ item = src/lzms.rs | fn is_x86_opcode(
 item = src/lzms.rs | fn x86_operand_at(
 item = src/lzms.rs | fn x86_filter(
 item = src/lzms.rs | mod tests {
+item = src/lib.rs | pub(crate) fn field_check(
+item = src/lib.rs | pub(crate) struct BadField(
+item = src/lib.rs | pub(crate) type Field<
 
 [legacy-streams]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md

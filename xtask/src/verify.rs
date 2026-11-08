@@ -176,6 +176,57 @@ fn fingerprint_of(
     Ok(format!("{hash:016x}"))
 }
 
+const SHARED_FIELD_CHECK: [(&str, &str); 3] = [
+    ("src/lib.rs", "pub(crate) fn field_check("),
+    ("src/lib.rs", "pub(crate) struct BadField("),
+    ("src/lib.rs", "pub(crate) type Field<"),
+];
+
+fn names_the_field_check(text: &str) -> bool {
+    ["field_check(", "Field<"].iter().any(|name| {
+        text.match_indices(name).any(|(at, _)| {
+            !text[..at]
+                .chars()
+                .next_back()
+                .is_some_and(|before| before.is_alphanumeric() || before == '_')
+        })
+    })
+}
+
+fn missing_shared_items(
+    verification: &Verification,
+    source_of: impl Fn(&str) -> Result<String>,
+) -> Result<Vec<String>> {
+    let listed = |(path, opening): &(&str, &str)| {
+        verification
+            .items
+            .iter()
+            .any(|(have_path, have)| have_path == path && have == opening)
+    };
+    let mut uses = false;
+    for (path, opening) in &verification.items {
+        if SHARED_FIELD_CHECK
+            .iter()
+            .any(|(p, o)| p == path && o == opening)
+        {
+            continue;
+        }
+        let source = source_of(path)?;
+        uses |= item_spans_starting_with(&source, opening)
+            .iter()
+            .any(|text| names_the_field_check(text));
+    }
+    Ok(if uses {
+        SHARED_FIELD_CHECK
+            .iter()
+            .filter(|item| !listed(item))
+            .map(|(path, opening)| format!("item = {path} | {opening}"))
+            .collect()
+    } else {
+        Vec::new()
+    })
+}
+
 fn fail_on_interrupted_plants(root: &Path) -> Result<()> {
     let journal = root.join("target/plant-journal");
     let mut left = Vec::new();
@@ -212,6 +263,16 @@ fn fail_on_stale(root: &Path, owed: Owed) -> Result<()> {
     crate::kani::fail_on_harnesses_not_run_as_listed(root)?;
     let mut stale = Vec::new();
     for verification in manifest(root)? {
+        let missing = missing_shared_items(&verification, |path| {
+            fs::read_to_string(root.join(path)).with_context(|| format!("cannot read {path}"))
+        })?;
+        if !missing.is_empty() {
+            stale.push(format!(
+                "{}: its items call the shared field check, so add to {MANIFEST}: {}",
+                verification.name,
+                missing.join(", ")
+            ));
+        }
         let current = fingerprint(root, &verification)?;
         if current == verification.fingerprint {
             continue;
@@ -540,6 +601,44 @@ mod tests {
         assert!(script.contains("--detach \"$run/tree\" '0123abcd'"));
         let wrapped = shell_quoted(&script);
         assert!(wrapped.starts_with('\'') && wrapped.ends_with('\''));
+    }
+
+    #[test]
+    fn a_section_whose_code_calls_the_field_check_must_list_its_shared_items() {
+        let section = |items: &[(&str, &str)]| Verification {
+            name: "x-fields".to_owned(),
+            skill: String::new(),
+            fingerprint: String::new(),
+            slow: false,
+            full_checks: Vec::new(),
+            items: items
+                .iter()
+                .map(|(path, opening)| ((*path).to_owned(), (*opening).to_owned()))
+                .collect(),
+        };
+        let source = |path: &str| -> Result<String> {
+            Ok(match path {
+                "src/x.rs" => "fn header(b: &[u8]) -> Field<u8> {\n    field_check(true, \"x\")?;\n    Ok(b[0])\n}\nfn plain() -> RawField<u8> {\n    my_field_check(1)\n}\n".to_owned(),
+                _ => "pub(crate) fn field_check(ok: bool) {}\npub(crate) struct BadField(u8);\npub(crate) type Field<T> = T;\n".to_owned(),
+            })
+        };
+        let missing =
+            missing_shared_items(&section(&[("src/x.rs", "fn header(")]), source).unwrap();
+        assert_eq!(missing.len(), 3, "{missing:?}");
+        assert!(missing[0].starts_with("item = src/lib.rs | pub(crate) fn field_check("));
+        let mut whole = vec![("src/x.rs", "fn header(")];
+        whole.extend(SHARED_FIELD_CHECK);
+        assert!(
+            missing_shared_items(&section(&whole), source)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            missing_shared_items(&section(&[("src/x.rs", "fn plain(")]), source)
+                .unwrap()
+                .is_empty(),
+            "a longer name that ends in the shared one is not a call to it"
+        );
     }
 
     #[test]
