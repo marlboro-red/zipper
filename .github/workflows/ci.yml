@@ -38,12 +38,15 @@ jobs:
           key: 7zip-26.05-linux-x64-22cf82fcc6eb7474
       - name: Install 7-Zip for the parity archives
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           case "$RUNNER_OS" in
             Linux)
               mkdir -p "$HOME/7zip-download"
               if [ ! -f "$HOME/7zip-download/7z.tar.xz" ]; then
-                curl -fsSL --retry 6 --retry-delay 20 --retry-all-errors -o "$HOME/7zip-download/7z.tar.xz" https://github.com/ip7z/7zip/releases/download/26.05/7z2605-linux-x64.tar.xz
+                curl -fsSL --retry 2 --retry-delay 10 --retry-all-errors -o "$HOME/7zip-download/7z.tar.xz" https://github.com/ip7z/7zip/releases/download/26.05/7z2605-linux-x64.tar.xz \
+                  || gh release download 26.05 -R ip7z/7zip -p 7z2605-linux-x64.tar.xz -O "$HOME/7zip-download/7z.tar.xz" --clobber
               fi
               cp "$HOME/7zip-download/7z.tar.xz" /tmp/7z.tar.xz
               echo "22cf82fcc6eb7474f1d5bb4f02c0f8ebd573a718089d6833dc30f8350a3b232e  /tmp/7z.tar.xz" | sha256sum -c -
