@@ -47,6 +47,7 @@ fn sevenzip_binary() -> Option<PathBuf> {
     found
 }
 
+#[cfg(unix)]
 fn tool(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH").unwrap_or_default();
     std::env::split_paths(&path)
@@ -397,6 +398,7 @@ fn every_corpus_image_extracts_the_tree_7zip_extracts() {
     }
 }
 
+#[cfg(unix)]
 struct Tools {
     mkfs: PathBuf,
     mcopy: PathBuf,
@@ -407,6 +409,7 @@ struct Tools {
     qemu: PathBuf,
 }
 
+#[cfg(unix)]
 fn tools() -> Option<Tools> {
     Some(Tools {
         mkfs: tool("mkfs.fat")?,
@@ -419,6 +422,7 @@ fn tools() -> Option<Tools> {
     })
 }
 
+#[cfg(unix)]
 fn run(program: &Path, arguments: &[&std::ffi::OsStr]) {
     let output = Command::new(program)
         .args(arguments)
@@ -433,10 +437,12 @@ fn run(program: &Path, arguments: &[&std::ffi::OsStr]) {
     );
 }
 
+#[cfg(unix)]
 fn os(text: &str) -> &std::ffi::OsStr {
     std::ffi::OsStr::new(text)
 }
 
+#[cfg(unix)]
 fn source_tree(root: &Path, seed: u32) {
     let deep: PathBuf = (0..10).map(|level| format!("level {level}")).collect();
     fs::create_dir_all(root.join(&deep)).unwrap();
@@ -458,6 +464,7 @@ fn source_tree(root: &Path, seed: u32) {
     fs::write(root.join("MiXeD.Txt"), b"mixed\n").unwrap();
 }
 
+#[cfg(unix)]
 fn tool_volume(tools: &Tools, work: &Path, bits: u32, seed: u32) -> Vec<u8> {
     let (kilobytes, cluster) = match bits {
         12 => ("4000", "4"),
@@ -540,6 +547,7 @@ fn tool_volume(tools: &Tools, work: &Path, bits: u32, seed: u32) -> Vec<u8> {
     fs::read(&image).unwrap()
 }
 
+#[cfg(unix)]
 fn sgdisk_image(
     tools: &Tools,
     work: &Path,
@@ -573,6 +581,7 @@ fn sgdisk_image(
     disk
 }
 
+#[cfg(unix)]
 fn qemu_convert(
     tools: &Tools,
     work: &Path,
@@ -602,6 +611,7 @@ fn qemu_convert(
     fs::read(&out).unwrap()
 }
 
+#[cfg(unix)]
 fn tool_images(tools: &Tools, work: &Path, seed: u32) -> Vec<(String, Vec<u8>)> {
     let fat12 = tool_volume(tools, work, 12, seed);
     let fat16 = tool_volume(tools, work, 16, seed);

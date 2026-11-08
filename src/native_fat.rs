@@ -928,7 +928,7 @@ mod field_tests {
         assert_eq!(short_name_checksum(b"ALONGF~1TXT"), {
             let mut sum = 0u8;
             for byte in b"ALONGF~1TXT" {
-                sum = ((sum & 1) << 7) + (sum >> 1) + byte;
+                sum = ((sum & 1) << 7).wrapping_add(sum >> 1).wrapping_add(*byte);
             }
             sum
         });
