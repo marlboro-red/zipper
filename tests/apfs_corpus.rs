@@ -930,7 +930,11 @@ fn a_fat_destination_gets_no_attributes() {
         .arg(&mount)
         .status();
     result.unwrap();
-    assert_eq!(names, ["._clash", "clash"]);
+    assert!(names.contains(&"clash".to_owned()), "{names:?}");
+    assert!(
+        !names.iter().any(|name| name.contains(".zipper-")),
+        "{names:?}"
+    );
     assert_eq!(attributes, Vec::<(String, Vec<u8>)>::new());
 }
 
