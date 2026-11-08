@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 73 |
+| `native` | 74 |
 | `partial` | 1 |
-| `backend` | 33 |
+| `backend` | 32 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-30 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+29 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -56,7 +56,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `MachO` | `backend` |  | No proof yet. |
 | `MsLZ` | `native` | SZDD files read in process, named as 7-Zip 26.05 names them. Files come from Zipper's own encoder, since no permissively licensed file from Microsoft's `compress.exe` was found. | `generated_szdd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_szdd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs`, `szdd_names_follow_7zip_and_stay_safe` in `tests/legacy_streams.rs` |
 | `Mub` | `backend` |  | No proof yet. |
-| `NTFS` | `backend` |  | No proof yet. |
+| `NTFS` | `native` | Raw NTFS volumes read in process, with LZNT1, sparse and fragmented data and hard links, in the tree 7-Zip writes. Named streams outside `[SYSTEM]` and encrypted files are refused. | `every_corpus_volume_extracts_the_tree_7zip_extracts` in `tests/ntfs_corpus.rs`, `generated_volumes_extract_byte_for_byte_as_7zip_extracts_them` in `tests/ntfs_corpus.rs`, `damage_sweeps_are_refused_exactly_when_7zip_refuses_them_or_by_a_listed_stricter_check` in `tests/hostile_ntfs.rs` |
 | `Nsis` | `backend` |  | No proof yet. |
 | `PE` | `backend` |  | No proof yet. |
 | `Ppmd` | `native` | var.H and var.I files read in process. Files come from the `ppmd-rust` encoders. A file with data after its end marker is refused, where 7-Zip ignores the rest. | `generated_pmd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_pmd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
@@ -150,8 +150,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `-si` | `native` | An archive named `-`. | `archives_come_from_standard_input_and_one_file_goes_to_standard_output` in `tests/cli.rs` |
 | `-so` | `native` | `--stdout`, for one selected file. | `archives_come_from_standard_input_and_one_file_goes_to_standard_output` in `tests/cli.rs` |
 | `-snl` | `native` | Links that stay inside the destination are created. Windows needs Developer Mode or administrator rights. | `symlinks_inside_the_destination_are_created_after_files` in `tests/hostile_zip.rs`, `symlinks_must_stay_inside_the_destination` in `tests/hostile_zip.rs` |
-| `-snh` | `partial` | Tar and WIM hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs`, `hard_links_stay_linked_as_7zip_links_them` in `tests/wim_corpus.rs` |
+| `-snh` | `partial` | Tar, WIM and NTFS hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs`, `hard_links_stay_linked_as_7zip_links_them` in `tests/wim_corpus.rs`, `hard_links_stay_linked_as_7zip_links_them` in `tests/ntfs_corpus.rs` |
 | `-sni` | `missing` |  | No proof yet. |
-| `-sns` | `missing` | 7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader refuses them, because the shared name check refuses `:`. | No proof yet. |
+| `-sns` | `missing` | 7-Zip stores NTFS streams in WIM, not in 7z. The WIM and NTFS readers refuse them, because the shared name check refuses `:`. | No proof yet. |
 | `-snz` | `native` | On Windows, every reader copies the archive's mark onto each extracted file. | `extracted_files_carry_the_archives_mark_of_the_web` in `tests/zone.rs` |
 | `-spf` | `dropped` | Absolute paths are refused, because they write outside the destination. | `unsafe_names_never_escape` in `tests/hostile_zip.rs` |

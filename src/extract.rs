@@ -1,7 +1,7 @@
 use crate::{
     Control, Existing, compat, native_7z, native_ar, native_arj, native_cab, native_chm,
-    native_cpio, native_iso, native_lzh, native_msi, native_rpm, native_tar, native_wim,
-    native_xar, native_zip,
+    native_cpio, native_iso, native_lzh, native_msi, native_ntfs, native_rpm, native_tar,
+    native_wim, native_xar, native_zip,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -13,16 +13,17 @@ pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, compound files such as MSI,
     /// ISO and UDF disc images, single compressed files, unrecognized files,
     /// CAB files and cabinet sets, LZH, ARJ, WIM and ESD images, CHM and Help 2
-    /// files, and 7z whose methods it decodes. 7-Zip for other 7z, an MSI whose
-    /// main stream is not a CAB, a split or pre-1.13 WIM, a Help 2 file without
-    /// an ITSF record, and the other formats whose signature Zipper recognizes.
+    /// files, NTFS volumes, and 7z whose methods it decodes. 7-Zip for other 7z,
+    /// an MSI whose main stream is not a CAB, a split or pre-1.13 WIM, a Help 2
+    /// file without an ITSF record, and the other formats whose signature Zipper
+    /// recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
-    /// files, disc images, WIM, CHM, Help 2, 7z and single compressed files,
-    /// and native ZIP for unrecognized files.
+    /// files, disc images, WIM, NTFS, CHM, Help 2, 7z and single compressed
+    /// files, and native ZIP for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -61,6 +62,8 @@ pub enum Reader {
     Wim,
     /// The native reader for Compiled HTML Help and Help 2 files.
     Chm,
+    /// The native reader for NTFS volume images.
+    Ntfs,
     /// The native reader for one compressed stream that holds no tar, in a
     /// format [`crate::native_stream::Format`] names.
     Stream,
@@ -112,6 +115,7 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             }
         }
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
+        _ if native_ntfs::sniff(archive)? => Reader::Ntfs,
         _ if native_iso::sniff(archive)? => Reader::Iso,
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
         Engine::Native => Reader::Zip { fast: false },
@@ -451,7 +455,8 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         | Reader::Msi
         | Reader::Iso
         | Reader::Wim
-        | Reader::Chm => {
+        | Reader::Chm
+        | Reader::Ntfs => {
             let read = match reader {
                 Reader::Cpio => native_cpio::read_archive,
                 Reader::Ar => native_ar::read_archive,
@@ -463,6 +468,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 Reader::Iso => native_iso::read_archive,
                 Reader::Wim => native_wim::read_archive,
                 Reader::Chm => native_chm::read_archive,
+                Reader::Ntfs => native_ntfs::read_archive,
                 _ => native_rpm::read_archive,
             };
             read(

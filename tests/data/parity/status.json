@@ -140,7 +140,13 @@
       "status": "backend"
     },
     "NTFS": {
-      "status": "backend"
+      "status": "native",
+      "note": "Raw NTFS volumes read in process, with LZNT1, sparse and fragmented data and hard links, in the tree 7-Zip writes. Named streams outside `[SYSTEM]` and encrypted files are refused.",
+      "tests": [
+        "tests/ntfs_corpus.rs::every_corpus_volume_extracts_the_tree_7zip_extracts",
+        "tests/ntfs_corpus.rs::generated_volumes_extract_byte_for_byte_as_7zip_extracts_them",
+        "tests/hostile_ntfs.rs::damage_sweeps_are_refused_exactly_when_7zip_refuses_them_or_by_a_listed_stricter_check"
+      ]
     },
     "Nsis": {
       "status": "backend"
@@ -473,7 +479,7 @@
     },
     "-sns": {
       "status": "missing",
-      "note": "7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader refuses them, because the shared name check refuses `:`."
+      "note": "7-Zip stores NTFS streams in WIM, not in 7z. The WIM and NTFS readers refuse them, because the shared name check refuses `:`."
     },
     "-snz": {
       "status": "native",
@@ -499,10 +505,11 @@
     },
     "-snh": {
       "status": "partial",
-      "note": "Tar and WIM hard links are created. The other native readers meet none.",
+      "note": "Tar, WIM and NTFS hard links are created. The other native readers meet none.",
       "tests": [
         "tests/hostile_tar.rs::links_stay_inside_and_never_carry_writes",
-        "tests/wim_corpus.rs::hard_links_stay_linked_as_7zip_links_them"
+        "tests/wim_corpus.rs::hard_links_stay_linked_as_7zip_links_them",
+        "tests/ntfs_corpus.rs::hard_links_stay_linked_as_7zip_links_them"
       ]
     },
     "-spf": {

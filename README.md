@@ -37,6 +37,7 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [ISO reader reference](docs/reference/iso-reader.md) covers ISO 9660, Joliet, Rock Ridge, El Torito and UDF disc images, which tree a hybrid disc gives, and how they differ from 7-Zip.
 - [WIM reader reference](docs/reference/wim-reader.md) covers Windows Imaging files and ESD images with XPRESS, LZX and LZMS, and how they differ from 7-Zip.
 - [CHM reader reference](docs/reference/chm-reader.md) covers Compiled HTML Help and Help 2 files with LZX sections, and how they differ from 7-Zip.
+- [NTFS reader reference](docs/reference/ntfs-reader.md) covers raw NTFS volumes with LZNT1, sparse and fragmented files, and how they differ from 7-Zip.
 - [Single compressed file reference](docs/reference/stream-reader.md) covers gzip, bzip2, xz, zstd and LZMA files that hold no tar.
 - [7-Zip parity](docs/reference/parity.md) lists every format, method and switch 7-Zip extracts with, and how Zipper handles each.
 - [Duplicate-checking reference](docs/reference/duplicates.md) describes the `duplicates` command.
