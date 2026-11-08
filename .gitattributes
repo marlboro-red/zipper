@@ -1,2 +1,3 @@
 tests/data/parity/archives/** binary
 tests/data/7z-hostile/** binary
+verification/coverage.txt merge=coverage

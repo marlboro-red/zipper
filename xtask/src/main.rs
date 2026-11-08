@@ -423,13 +423,26 @@ fn stub_c_toolchain(args: &[String]) -> Result<()> {
 }
 
 fn install_hooks() -> Result<()> {
-    let status = Command::new("git")
-        .current_dir(root())
-        .args(["config", "core.hooksPath", ".githooks"])
-        .status()?;
-    ensure!(status.success(), "git config exited with {status}");
+    for setting in [
+        ["core.hooksPath", ".githooks"],
+        [
+            "merge.coverage.name",
+            "one section of verification/coverage.txt at a time",
+        ],
+        [
+            "merge.coverage.driver",
+            "python3 scripts/merge_coverage.py %O %A %B",
+        ],
+    ] {
+        let status = Command::new("git")
+            .current_dir(root())
+            .arg("config")
+            .args(setting)
+            .status()?;
+        ensure!(status.success(), "git config exited with {status}");
+    }
     println!(
-        "commit-msg now checks cited hashes, and pre-push runs `cargo xtask lint-commits` and `cargo xtask gate fast`"
+        "commit-msg now checks cited hashes, pre-push runs `cargo xtask lint-commits` and `cargo xtask gate fast`, and verification/coverage.txt merges one section at a time"
     );
     Ok(())
 }
@@ -582,6 +595,7 @@ fn hook_tests() -> Result<()> {
     for script in [
         ".claude/hooks/test_guard_destructive.py",
         "scripts/test_plant.py",
+        "scripts/test_merge_coverage.py",
     ] {
         let status = Command::new(python()?)
             .current_dir(root())

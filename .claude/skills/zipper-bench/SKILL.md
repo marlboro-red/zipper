@@ -48,6 +48,7 @@ Answer each question from the JSON, not from memory.
 
 - A ratio without a thread count, or a speedup without CPU time.
 - A ratio retyped into a commit message or record instead of computed from the JSON. One commit called a 2.03× to 2.29× range "1.6x to 2.3x".
+- Two numbers compared across records or sessions, or a row of a reverted build quoted as the shipped code. The M21 close first cited 1.478 s, the reverted unsafe build, against 7-Zip from another session; the shipped decoder took 1.484 s in the same rotation as 7-Zip.
 - "Faster" over overlapping ranges.
 - A best fixture or best reader quoted without the others.
 - A comparison against a path the default no longer uses.
