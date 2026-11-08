@@ -454,13 +454,13 @@ fn remote_script(dir: &str, branch: &str, head: &str, name: &str) -> String {
          mkdir -p target\n\
          run=$(mktemp -d \"$base/target/remote-sync.XXXXXX\")\n\
          git worktree add -q --detach \"$run/tree\" {head}\n\
-         status=0\n\
+         result=0\n\
          (cd \"$run/tree\" && PATH=\"$base/target/tools:$PATH\" \
-         CARGO_TARGET_DIR=\"$base/target/remote-sync-build\" cargo xtask verify-sync {name}) || status=$?\n\
+         CARGO_TARGET_DIR=\"$base/target/remote-sync-build\" cargo xtask verify-sync {name}) || result=$?\n\
          git -C \"$run/tree\" checkout -q -- .\n\
          git worktree remove \"$run/tree\"\n\
          rmdir \"$run\"\n\
-         exit $status\n"
+         exit $result\n"
     )
 }
 
