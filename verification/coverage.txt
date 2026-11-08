@@ -1792,7 +1792,7 @@ item = src/pmd.rs | mod proofs {
 
 [ntfs-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 3ecb9874e6c26a62
+fingerprint = b8f49b966569f68f
 full-check = cargo xtask kani-reach ntfs-fields
 full-check = cargo kani --harness native_ntfs::proofs::
 full-check = cargo test --release --lib native_ntfs
