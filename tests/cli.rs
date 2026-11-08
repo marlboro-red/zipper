@@ -850,3 +850,28 @@ fn content_only_writes_no_times_and_no_read_only_bits() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn list_stops_quietly_when_its_reader_closes_the_pipe() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let archive = dir.path().join("many.zip");
+    let names: Vec<String> = (0..20_000)
+        .map(|i| format!("folder/entry-{i:05}"))
+        .collect();
+    let entries: Vec<(&str, &[u8])> = names.iter().map(|name| (name.as_str(), &b""[..])).collect();
+    zip_of(&archive, &entries)?;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .arg("list")
+        .arg(&archive)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    let mut first = [0; 1];
+    std::io::Read::read_exact(child.stdout.as_mut().expect("piped"), &mut first)?;
+    drop(child.stdout.take());
+    let output = child.wait_with_output()?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{:?}: {stderr}", output.status);
+    assert!(stderr.is_empty(), "{stderr}");
+    Ok(())
+}

@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use std::{io::IsTerminal, path::PathBuf};
+use std::{
+    io::{IsTerminal, Write},
+    path::PathBuf,
+};
 use zeroize::Zeroizing;
 use zipper::Reader;
 
@@ -768,6 +771,14 @@ fn raise_signals_that_ended_the_run(succeeded: bool) {
     let _ = succeeded;
 }
 
+fn exit_for_unwritable_listing(error: std::io::Error) -> ! {
+    if error.kind() == std::io::ErrorKind::BrokenPipe {
+        std::process::exit(0);
+    }
+    eprintln!("Error: writing the listing failed: {error}");
+    std::process::exit(1);
+}
+
 fn main() -> std::process::ExitCode {
     let ran = run();
     raise_signals_that_ended_the_run(ran.is_ok());
@@ -918,13 +929,17 @@ fn run() -> Result<()> {
         }
         Command::List { archive } => {
             let print = |entries: Vec<zipper::Entry>| {
+                let mut out = std::io::stdout().lock();
                 for e in entries {
-                    println!(
+                    if let Err(error) = writeln!(
+                        out,
                         "{}\t{}\t{:?}",
                         if e.directory { "dir" } else { "file" },
                         e.size,
                         e.name
-                    );
+                    ) {
+                        exit_for_unwritable_listing(error);
+                    }
                 }
             };
             zipper::read_volumes(&archive, || {
