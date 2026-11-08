@@ -1,0 +1,632 @@
+//! Every image in `tests/data/apfs-corpus` extracts to the tree recorded
+//! when the corpus was written, and to the tree `7zz x` extracts now where
+//! it is installed. The parity APFS image and DMGs, and generated containers
+//! with many files, deep folders, hard links, links, sparse, fragmented,
+//! cloned and compressed files, extended attributes, several volumes, plain
+//! and hashed names and multi-level B-trees, raw, inside a DMG and inside a
+//! GPT disk, extract exactly as `7zz x` extracts them, apart from the
+//! differences `docs/reference/apfs-reader.md` lists. Generated containers
+//! are also checked against the bytes they were written from. Without 7-Zip
+//! 26 or later the differential checks are skipped, unless
+//! `ZIPPER_PARITY_REQUIRE_7Z` is set.
+#[path = "common/apfs_trees.rs"]
+mod apfs_trees;
+#[path = "common/apfs_writer.rs"]
+mod apfs_writer;
+#[path = "common/disk_writer.rs"]
+mod disk_writer;
+#[path = "common/dmg_writer.rs"]
+mod dmg_writer;
+#[path = "common/hfs_writer.rs"]
+mod hfs_writer;
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
+
+use apfs_trees::{Tree, as_zipper_writes, sevenzip_run, sha256, tree, without_modes};
+use apfs_writer::{
+    Container, Entry, Kind, ROOT, Volume, Xattr, compressed, decmpfs_header, file, folder,
+    hard_link, sparse, symlink,
+};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
+use zipper::{Engine, ExtractOptions, Reader};
+
+const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/apfs-corpus");
+const PARITY: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/parity/archives");
+pub const APFS_PARTITION: [u8; 16] = [
+    0xEF, 0x57, 0x34, 0x7C, 0x00, 0x00, 0xAA, 0x11, 0xAA, 0x11, 0x00, 0x30, 0x65, 0x43, 0xEC, 0xAC,
+];
+
+fn sevenzip_binary() -> Option<PathBuf> {
+    let found = sevenzip::sevenzip();
+    assert!(
+        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
+        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
+    );
+    found
+}
+
+fn zipper_tree(image: &Path, into: &Path) -> anyhow::Result<Tree> {
+    zipper::extract_archive(image, into, ExtractOptions::default())?;
+    Ok(tree(into))
+}
+
+fn compare(binary: &Path, image: &Path, differs: &[&str], label: &str) -> Tree {
+    let work = tempfile::tempdir().unwrap();
+    let ours = zipper_tree(image, &work.path().join("zipper"))
+        .unwrap_or_else(|error| panic!("{label}: {error:#}"));
+    let (_, theirs, output) = sevenzip_run(binary, image, &work.path().join("7z"));
+    assert_eq!(
+        ours,
+        as_zipper_writes(&theirs, &ours, differs, label),
+        "{label} differs from 7-Zip:\n{output}"
+    );
+    ours
+}
+
+fn unpacked(stored: &Path, into: &Path) -> PathBuf {
+    let mut bytes = Vec::new();
+    liblzma::read::XzDecoder::new(fs::File::open(stored).unwrap())
+        .read_to_end(&mut bytes)
+        .unwrap();
+    let name = stored
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .trim_end_matches(".xz")
+        .trim_end_matches(".stored")
+        .to_owned();
+    let path = into.join(name);
+    fs::write(&path, bytes).unwrap();
+    path
+}
+
+// 7-Zip fills a hole with the container's first block, fails on a clone whose data
+// another inode owns, and ignores a link with `..` by writing an empty file.
+fn corpus_differences(image: &str) -> &'static [&'static str] {
+    match image {
+        "special-udzo.dmg.xz" => &["clone.txt", "sparse.bin", "up/parent-link"],
+        _ => &[],
+    }
+}
+
+#[test]
+fn every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts() {
+    let recorded: BTreeMap<String, serde_json::Value> =
+        serde_json::from_str(&fs::read_to_string(Path::new(CORPUS).join("trees.json")).unwrap())
+            .unwrap();
+    let binary = sevenzip_binary();
+    let writing = std::env::var_os("ZIPPER_APFS_WRITE_TREES").is_some();
+    let mut written: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    let mut images: Vec<PathBuf> = fs::read_dir(CORPUS)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "xz"))
+        .collect();
+    images.sort();
+    assert!(images.len() >= 13, "{images:?}");
+    for stored in images {
+        let name = stored.file_name().unwrap().to_string_lossy().into_owned();
+        let work = tempfile::tempdir().unwrap();
+        let image = unpacked(&stored, work.path());
+        let ours = match &binary {
+            Some(binary) => compare(binary, &image, corpus_differences(&name), &name),
+            None => zipper_tree(&image, &work.path().join("zipper"))
+                .unwrap_or_else(|error| panic!("{name}: {error:#}")),
+        };
+        let ours = without_modes(&ours);
+        let earlier = written
+            .iter()
+            .find(|(_, tree)| **tree == serde_json::to_value(&ours).unwrap())
+            .map(|(other, _)| other.clone());
+        if writing {
+            let value = match earlier {
+                Some(other) => serde_json::Value::String(other),
+                None => serde_json::to_value(&ours).unwrap(),
+            };
+            written.insert(name, value);
+            continue;
+        }
+        let value = match &recorded[&name] {
+            serde_json::Value::String(other) => &recorded[other],
+            value => value,
+        };
+        let expected: Tree = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(ours, expected, "{name} differs from the recorded tree");
+        written.insert(name, serde_json::to_value(&ours).unwrap());
+    }
+    if writing {
+        fs::write(
+            Path::new(CORPUS).join("trees.json"),
+            serde_json::to_string_pretty(&written).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them_without_their_streams() {
+    let Some(binary) = sevenzip_binary() else {
+        return;
+    };
+    for name in [
+        "apfs.img.stored.xz",
+        "dmg-bzip2.dmg",
+        "dmg-lzfse.dmg",
+        "dmg-lzma.dmg",
+        "dmg-zlib.dmg",
+    ] {
+        let work = tempfile::tempdir().unwrap();
+        let source = Path::new(PARITY).join(name);
+        let image = if name.ends_with(".xz") {
+            unpacked(&source, work.path())
+        } else {
+            source
+        };
+        let expected_reader = if name.ends_with(".dmg") {
+            Reader::Dmg
+        } else {
+            Reader::Apfs
+        };
+        assert_eq!(
+            zipper::choose_reader(Engine::Auto, &image).unwrap(),
+            expected_reader,
+            "{name}"
+        );
+        let ours = compare(&binary, &image, &[], name);
+        assert!(ours.contains_key("folder/data.txt"), "{name}: {ours:?}");
+    }
+}
+
+fn seeded(seed: u64, length: usize) -> Vec<u8> {
+    let mut state = seed;
+    (0..length)
+        .map(|index| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            if index % 3 == 0 {
+                b"abcabc"[index % 6]
+            } else {
+                (state >> 56) as u8
+            }
+        })
+        .collect()
+}
+
+fn zlib(data: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn chunks(data: &[u8], encode: impl Fn(&[u8]) -> Vec<u8>, stored: u8) -> Vec<Vec<u8>> {
+    data.chunks(1 << 16)
+        .map(|chunk| {
+            let packed = encode(chunk);
+            if packed.len() < chunk.len() {
+                packed
+            } else {
+                [&[stored][..], chunk].concat()
+            }
+        })
+        .collect()
+}
+
+type Method = (&'static str, Vec<u8>, Vec<u8>, Option<Vec<u8>>);
+
+struct Generated {
+    container: Container,
+    expected: Tree,
+}
+
+fn expected_tree(volumes: &[Volume], several: bool) -> Tree {
+    let mut expected = Tree::new();
+    for (number, volume) in volumes.iter().enumerate() {
+        let prefix = if several {
+            let name = format!("Volume{}", number + 1);
+            expected.insert(name.clone(), "dir".into());
+            Some(name)
+        } else {
+            None
+        };
+        let mut paths: BTreeMap<u64, String> = BTreeMap::new();
+        let mut data: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
+        let mut pending: Vec<&Entry> = volume.entries.iter().collect();
+        while !pending.is_empty() {
+            let before = pending.len();
+            pending.retain(|entry| {
+                let parent = if entry.parent == ROOT {
+                    prefix.clone()
+                } else {
+                    match paths.get(&entry.parent) {
+                        Some(path) => Some(path.clone()),
+                        None => return true,
+                    }
+                };
+                let name = entry.name.replace('/', "_");
+                let path = match parent {
+                    Some(parent) => format!("{parent}/{name}"),
+                    None => name,
+                };
+                let content = match &entry.kind {
+                    Kind::Folder => {
+                        paths.insert(entry.id, path.clone());
+                        expected.insert(path, "dir".into());
+                        return false;
+                    }
+                    Kind::Symlink(target) => {
+                        expected.insert(path, format!("link:{target}"));
+                        return false;
+                    }
+                    Kind::File(bytes) => bytes.clone(),
+                    Kind::Sparse { size, pieces } => {
+                        let mut bytes = vec![0u8; *size as usize];
+                        for (offset, piece) in pieces {
+                            let end = (*offset as usize + piece.len()).min(bytes.len());
+                            bytes[*offset as usize..end]
+                                .copy_from_slice(&piece[..end - *offset as usize]);
+                        }
+                        bytes
+                    }
+                    Kind::Compressed { size, .. } => {
+                        let original = volume
+                            .entries
+                            .iter()
+                            .find(|other| other.name == format!("{}.original", entry.name))
+                            .map(|other| match &other.kind {
+                                Kind::File(bytes) => bytes.clone(),
+                                _ => unreachable!(),
+                            })
+                            .unwrap();
+                        assert_eq!(original.len() as u64, *size);
+                        original
+                    }
+                    Kind::HardLink(inode) => match data.get(inode) {
+                        Some(bytes) => bytes.clone(),
+                        None => return true,
+                    },
+                    Kind::Clone { of, .. } => match data.get(of) {
+                        Some(bytes) => bytes.clone(),
+                        None => return true,
+                    },
+                    Kind::Fifo => Vec::new(),
+                };
+                data.insert(entry.id, content.clone());
+                expected.insert(path, sha256(&content));
+                false
+            });
+            assert!(pending.len() < before, "generated volume has an orphan");
+        }
+    }
+    expected
+}
+
+fn variety(seed: u64) -> Vec<Entry> {
+    let mut entries = Vec::new();
+    let mut id = 16u64;
+    let mut next = || {
+        id += 1;
+        id
+    };
+    let docs = next();
+    entries.push(folder(docs, ROOT, "docs"));
+    let readme = next();
+    entries.push(file(
+        readme,
+        docs,
+        "readme.txt",
+        b"hello from the APFS writer\n",
+    ));
+    entries.push(file(next(), docs, "empty", b""));
+    let mut fragmented = file(next(), docs, "fragmented.bin", &seeded(seed, 50_000));
+    fragmented.fragments = 4;
+    entries.push(fragmented);
+    let mut tagged = file(next(), ROOT, "tagged.txt", b"has attributes\n");
+    tagged.xattrs = vec![
+        Xattr {
+            name: "user.small".into(),
+            value: b"value".to_vec(),
+            stream: false,
+        },
+        Xattr {
+            name: "user.large".into(),
+            value: seeded(seed + 1, 9000),
+            stream: true,
+        },
+    ];
+    entries.push(tagged);
+    for name in [
+        "café ünïcödé.txt",
+        "日本語.txt",
+        "emoji 😀.txt",
+        "slash/in name",
+    ] {
+        entries.push(file(next(), ROOT, name, name.as_bytes()));
+    }
+    let mut run = file(next(), ROOT, "run.sh", b"#!/bin/sh\n");
+    run.mode = apfs_writer::REGULAR | 0o755;
+    entries.push(run);
+    let locked = next();
+    let mut locked_folder = folder(locked, ROOT, "locked");
+    locked_folder.mode = apfs_writer::DIRECTORY | 0o500;
+    entries.push(locked_folder);
+    let mut private = file(next(), locked, "private.txt", b"secret\n");
+    private.mode = apfs_writer::REGULAR | 0o600;
+    entries.push(private);
+    let shared = next();
+    entries.push(file(shared, ROOT, "shared.txt", b"one file, three names\n"));
+    entries.push(hard_link(next(), docs, "second-name.txt", shared));
+    entries.push(hard_link(next(), ROOT, "third-name.txt", shared));
+    entries.push(symlink(next(), ROOT, "link-to-readme", "docs/readme.txt"));
+    entries.push(symlink(next(), docs, "link-to-sibling", "readme.txt"));
+    let mut parent = ROOT;
+    for level in 0..60 {
+        let deep = next();
+        entries.push(folder(deep, parent, &format!("d{level:02}")));
+        parent = deep;
+    }
+    entries.push(file(next(), parent, "bottom.txt", b"sixty folders down\n"));
+    let wide = next();
+    entries.push(folder(wide, ROOT, "wide"));
+    for number in 0..1500 {
+        entries.push(file(
+            next(),
+            wide,
+            &format!("file{number:04}.txt"),
+            format!("file {number}\n").as_bytes(),
+        ));
+    }
+    let packed = next();
+    entries.push(folder(packed, ROOT, "packed"));
+    let text: Vec<u8> = (0..200_000u32)
+        .flat_map(|n| format!("line {n}\n").into_bytes())
+        .take(150_000)
+        .collect();
+    let small = b"compressed inline text ".repeat(40);
+    let noise = seeded(seed + 2, 70_000);
+    let mut methods: Vec<Method> = vec![
+        (
+            "zlib-inline",
+            small.clone(),
+            decmpfs_header(3, small.len() as u64, &zlib(&small)),
+            None,
+        ),
+        (
+            "zlib-stored",
+            small.clone(),
+            decmpfs_header(3, small.len() as u64, &[&[0xFF][..], &small].concat()),
+            None,
+        ),
+        (
+            "lzvn-inline",
+            small.clone(),
+            decmpfs_header(7, small.len() as u64, &dmg_writer::lzvn(&small)),
+            None,
+        ),
+        (
+            "lzvn-stored",
+            small.clone(),
+            decmpfs_header(7, small.len() as u64, &[&[0x06][..], &small].concat()),
+            None,
+        ),
+        (
+            "copy-inline",
+            small.clone(),
+            decmpfs_header(9, small.len() as u64, &[&[0xCC][..], &small].concat()),
+            None,
+        ),
+    ];
+    for (name, data) in [("text", text.clone()), ("noise", noise.clone())] {
+        methods.push((
+            Box::leak(format!("zlib-fork-{name}").into_boxed_str()),
+            data.clone(),
+            decmpfs_header(4, data.len() as u64, &[]),
+            Some(hfs_writer::zlib_fork(&chunks(&data, zlib, 0xFF))),
+        ));
+        methods.push((
+            Box::leak(format!("lzvn-fork-{name}").into_boxed_str()),
+            data.clone(),
+            decmpfs_header(8, data.len() as u64, &[]),
+            Some(hfs_writer::lzvn_fork(&chunks(
+                &data,
+                dmg_writer::lzvn,
+                0x06,
+            ))),
+        ));
+    }
+    for (name, original, decmpfs, resource) in methods {
+        entries.push(compressed(
+            next(),
+            packed,
+            name,
+            decmpfs,
+            original.len() as u64,
+            resource,
+        ));
+        entries.push(file(next(), packed, &format!("{name}.original"), &original));
+    }
+    entries
+}
+
+fn holes(seed: u64) -> Vec<Entry> {
+    let original = seeded(seed, 30_000);
+    let mut entries = vec![
+        sparse(
+            100,
+            ROOT,
+            "sparse.bin",
+            3 << 20,
+            vec![
+                (1 << 20, seeded(seed + 1, 8192)),
+                (2 << 20, b"tail".to_vec()),
+            ],
+        ),
+        file(101, ROOT, "original.txt", &original),
+    ];
+    let mut clone = file(102, ROOT, "clone.txt", &[]);
+    clone.kind = Kind::Clone {
+        of: 101,
+        size: original.len() as u64,
+    };
+    entries.push(clone);
+    entries
+}
+
+fn wrapped(image: &[u8], form: &str, work: &Path, label: &str) -> PathBuf {
+    let bytes = match form {
+        "raw" => image.to_vec(),
+        "dmg" => {
+            dmg_writer::write(
+                &[dmg_writer::Partition {
+                    name: "disk image (Apple_APFS : 1)".into(),
+                    data: image.to_vec(),
+                }],
+                &dmg_writer::Options::default(),
+            )
+            .0
+        }
+        "gpt" => disk_writer::gpt(&[(APFS_PARTITION, "disk image", 40, image)], 8),
+        _ => unreachable!(),
+    };
+    let path = work.join(format!("{label}-{form}.img"));
+    fs::write(&path, bytes).unwrap();
+    path
+}
+
+fn check(generated: &Generated, label: &str, differs: &[&str]) {
+    let binary = sevenzip_binary();
+    let (image, _) = apfs_writer::build(&generated.container);
+    let image = image.to_vec();
+    for form in ["raw", "dmg", "gpt"] {
+        let work = tempfile::tempdir().unwrap();
+        let path = wrapped(&image, form, work.path(), label);
+        let label = format!("{label} ({form})");
+        let ours = match &binary {
+            Some(binary) => compare(binary, &path, differs, &label),
+            None => zipper_tree(&path, &work.path().join("zipper"))
+                .unwrap_or_else(|error| panic!("{label}: {error:#}")),
+        };
+        assert_eq!(
+            without_modes(&ours),
+            generated.expected,
+            "{label} differs from the bytes it was written from"
+        );
+    }
+}
+
+fn single(volume: Volume) -> Generated {
+    let expected = expected_tree(std::slice::from_ref(&volume), false);
+    Generated {
+        container: Container::new(vec![volume]),
+        expected,
+    }
+}
+
+#[test]
+fn generated_volumes_extract_byte_for_byte_as_7zip_extracts_them() {
+    let hashed = single(Volume::new(variety(1)));
+    check(&hashed, "hashed", &[]);
+    let mut plain = Volume::new(variety(2));
+    plain.normalization_insensitive = false;
+    check(&single(plain), "plain names", &[]);
+    let mut insensitive = Volume::new(variety(3));
+    insensitive.case_insensitive = true;
+    check(&single(insensitive), "case-insensitive", &[]);
+    let mut deep_trees = single(Volume::new(variety(4)));
+    deep_trees.container.records_per_leaf = 7;
+    deep_trees.container.children_per_index = 3;
+    deep_trees.container.omap_entries_per_leaf = 5;
+    check(&deep_trees, "multi-level trees", &[]);
+}
+
+#[test]
+fn several_volumes_extract_as_7zip_names_them() {
+    let mut second = Volume::new(vec![
+        file(16, ROOT, "Name.txt", b"upper\n"),
+        folder(17, ROOT, "inside"),
+        file(18, 17, "deeper.txt", b"second volume\n"),
+    ]);
+    second.normalization_insensitive = false;
+    let volumes = vec![Volume::new(variety(5)), second, Volume::new(Vec::new())];
+    let expected = expected_tree(&volumes, true);
+    let mut container = Container::new(volumes);
+    container.max_volumes = 5;
+    check(
+        &Generated {
+            container,
+            expected,
+        },
+        "three volumes",
+        &[],
+    );
+}
+
+#[test]
+fn sparse_and_cloned_files_hold_the_bytes_they_were_written_from() {
+    let generated = single(Volume::new(holes(6)));
+    check(&generated, "holes and clones", &["sparse.bin", "clone.txt"]);
+}
+
+#[test]
+fn a_container_past_4_gib_reads_its_far_blocks() {
+    let binary = sevenzip_binary();
+    let volume = Volume::new(vec![
+        file(16, ROOT, "far.txt", &b"written past 4 GiB\n".repeat(400)),
+        sparse(
+            17,
+            ROOT,
+            "far-sparse.bin",
+            1 << 20,
+            vec![(1 << 16, b"far".to_vec())],
+        ),
+    ]);
+    let expected = expected_tree(std::slice::from_ref(&volume), false);
+    let mut container = Container::new(vec![volume]);
+    container.data_at = Some((5u64 << 30) / 4096);
+    let (image, layout) = apfs_writer::build(&container);
+    assert!(layout.extents.iter().all(|extent| extent.1 << 12 > 4 << 30));
+    let work = tempfile::tempdir().unwrap();
+    let path = work.path().join("far.img");
+    image.write_sparse(&path);
+    let ours = match &binary {
+        Some(binary) => compare(binary, &path, &["far-sparse.bin"], "far"),
+        None => zipper_tree(&path, &work.path().join("zipper")).unwrap(),
+    };
+    assert_eq!(without_modes(&ours), expected);
+}
+
+#[test]
+fn the_newest_checkpoint_wins_over_an_older_block_zero() {
+    let volume = Volume::new(vec![file(
+        16,
+        ROOT,
+        "newest.txt",
+        b"in the newest checkpoint\n",
+    )]);
+    let mut container = Container::new(vec![volume]);
+    container.stale_block_zero = true;
+    let (image, _) = apfs_writer::build(&container);
+    let work = tempfile::tempdir().unwrap();
+    let path = work.path().join("stale.img");
+    fs::write(&path, image.to_vec()).unwrap();
+    let ours = zipper_tree(&path, &work.path().join("zipper")).unwrap();
+    assert_eq!(
+        without_modes(&ours),
+        Tree::from([(
+            "newest.txt".to_owned(),
+            sha256(b"in the newest checkpoint\n")
+        )])
+    );
+    if let Some(binary) = sevenzip_binary() {
+        let (_, theirs, _) = sevenzip_run(&binary, &path, &work.path().join("7z"));
+        assert!(
+            theirs.is_empty(),
+            "7-Zip read the newest checkpoint: {theirs:?}"
+        );
+    }
+}
