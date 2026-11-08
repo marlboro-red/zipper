@@ -19,6 +19,7 @@ pub mod native_7z;
 pub mod native_ar;
 pub mod native_arj;
 pub mod native_cab;
+pub mod native_chm;
 pub mod native_cpio;
 pub mod native_iso;
 pub mod native_lzh;

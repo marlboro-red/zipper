@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 71 |
+| `native` | 73 |
 | `partial` | 1 |
-| `backend` | 35 |
+| `backend` | 33 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-32 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+30 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -36,7 +36,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Base64` | `native` | Files named `*.b64` read in process when their first 4 KiB pass 7-Zip's check. Data after the padding is refused, where 7-Zip warns past the first 4 KiB. | `generated_base64_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_base64_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
 | `COFF` | `backend` |  | No proof yet. |
 | `Cab` | `native` | Stored, MSZIP, Quantum and LZX folders and cabinet sets read in process. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set. | `tests/data/parity/archives/cab-set-1.cab`, `tests/data/parity/archives/cab.cab`, `every_corpus_cab_extracts_the_tree_7zip_extracts` in `tests/cab_corpus.rs`, `generated_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_quantum_cabs_extract_exactly_as_7zip_extracts_them` in `tests/cab_corpus.rs`, `generated_sets_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/cab_sets.rs` |
-| `Chm` | `backend` |  | No proof yet. |
+| `Chm` | `native` | Section 0 and LZX sections read in process, in the tree 7-Zip writes, with the # and $ system files and without the ::DataSpace storage. The corpus comes from chmcmd and Zipper's own test writer, since no Microsoft compiler runs here. | `every_corpus_chm_extracts_the_tree_7zip_extracts` in `tests/chm_corpus.rs`, `generated_chm_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/chm_corpus.rs`, `damaged_chm_are_refused_exactly_when_7zip_refuses_them` in `tests/chm_corpus.rs` |
 | `Compound` | `native` | MSI, MSP, MSM and other compound files read in process, and an installer's one CAB through the CAB reader. An installer whose main stream is not a CAB goes to 7-Zip. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/msi_corpus.rs`, `generated_compound_files_extract_exactly_as_7zip_extracts_them` in `tests/msi_corpus.rs` |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
 | `CramFS` | `backend` |  | No proof yet. |
@@ -47,7 +47,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `FLV` | `backend` |  | No proof yet. |
 | `GPT` | `backend` |  | `tests/data/parity/archives/gpt.img.stored.xz` |
 | `HFS` | `backend` |  | `tests/data/parity/archives/hfs.img.stored.xz` |
-| `Hxs` | `backend` |  | No proof yet. |
+| `Hxs` | `native` | Help 2 files with an ITSF record and LZX sections read in process. One without an ITSF record, which 7-Zip lists as one text item, goes to 7-Zip. No Help 2 compiler runs here, so every file comes from Zipper's own test writer. | `generated_help2_files_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/chm_corpus.rs`, `damaged_help2_files_are_refused_exactly_when_7zip_refuses_them` in `tests/chm_corpus.rs`, `a_help2_file_without_an_itsf_record_goes_to_7zip` in `tests/hostile_chm.rs` |
 | `IHex` | `backend` | Left to 7-Zip. It decodes to one file for each block of addresses, which the single-stream reader does not do. | No proof yet. |
 | `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |
 | `LP` | `backend` |  | No proof yet. |
