@@ -52,7 +52,7 @@ The reader checks the layout before it writes each file, and it publishes nothin
 - A compressed file has no data fork of its own. Its decompressed data, chunk table and chunks stay within the sizes it declares, and a chunk decodes to exactly its block.
 - A hard link names data that the private folder holds. A hard link to a folder, which Time Machine writes, is refused.
 - Names pass the same checks as tar names. `..`, `.`, backslashes, `:` and NUL are refused, and so is a name that is not valid UTF-16.
-- Every extended attribute's name is valid UTF-16, not empty, without a NUL and at most 127 bytes long in UTF-8. An entry has at most 128 attributes, skipped ones included, no two of one name, and its records lie together in the attributes file. A value the reader restores holds at most 64 MiB, and one held in a fork has extents that hold its block count inside the volume. A volume that breaks any of these is refused by name on every platform.
+- Every extended attribute's name is valid UTF-16, not empty, without a NUL and at most 127 bytes long in UTF-8. An entry has at most 128 attributes, skipped ones included, no two of one name, and its records lie together in the attributes file. A value the reader restores holds at most 64 MiB, and one held in a fork has extents that hold its block count inside the volume. A `com.apple.FinderInfo` value holds exactly 32 bytes, as macOS requires. A volume that breaks any of these is refused by name on every platform.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
 ## Limits

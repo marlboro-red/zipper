@@ -757,6 +757,28 @@ fn attributes_that_break_the_name_count_and_size_rules_refuse_the_volume() {
     refused(&bytes, "holds 67108865 bytes, more than 67108864");
 }
 
+#[test]
+fn a_finder_info_attribute_of_any_size_but_32_bytes_is_refused() {
+    for (size, stream) in [(0, false), (31, false), (33, false), (4000, true)] {
+        let mut info = named("com.apple.FinderInfo");
+        info.value = vec![0; size];
+        info.stream = stream;
+        refused(
+            &built(tagged(vec![info])),
+            &format!("\"com.apple.FinderInfo\" holds {size} bytes, not 32"),
+        );
+    }
+    let mut info = named("com.apple.FinderInfo");
+    info.value = vec![0; 32];
+    let work = tempfile::tempdir().unwrap();
+    let image = work.path().join("finder-info.img");
+    fs::write(&image, built(tagged(vec![info]))).unwrap();
+    assert!(matches!(
+        zipper_outcome(&image, work.path()),
+        Outcome::Extracted(_)
+    ));
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn many_names_of_one_tagged_link_cannot_queue_past_the_link_attribute_budget() {

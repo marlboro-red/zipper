@@ -888,10 +888,13 @@ fn load_attributes(reader: &mut Reader, overflow: &Overflow) -> Result<Attribute
                 .with_context(|| format!("HFS entry {}", attribute.id))?;
             if name != DECMPFS {
                 if name != RESOURCE_FORK_ATTRIBUTE && crate::xattr::is_restored(&name) {
-                    if let AttributeValue::Fork(fork) = &attribute.value {
-                        crate::xattr::check_size(&name, fork.size)
-                            .with_context(|| format!("HFS entry {}", attribute.id))?;
-                    }
+                    let size = match &attribute.value {
+                        AttributeValue::Fork(fork) => fork.size,
+                        AttributeValue::Inline(range) => range.len() as u64,
+                        AttributeValue::Unsupported => 0,
+                    };
+                    crate::xattr::check_size(&name, size)
+                        .with_context(|| format!("HFS entry {}", attribute.id))?;
                     attributes.restored.push((attribute.id, at));
                 }
                 continue;

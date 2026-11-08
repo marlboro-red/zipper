@@ -15,6 +15,10 @@ const NEVER_RESTORED: [&str; 5] = [
     "com.apple.root.installed",
 ];
 const SYSTEM_PREFIX: &str = "com.apple.system.";
+// EXTERNAL(macOS setxattr): com.apple.FinderInfo takes exactly 32 bytes, and any other size
+// fails with ERANGE.
+const FINDER_INFO: &str = "com.apple.FinderInfo";
+const FINDER_INFO_SIZE: u64 = 32;
 
 pub(crate) fn is_restored(name: &str) -> bool {
     !NEVER_RESTORED.contains(&name) && !name.starts_with(SYSTEM_PREFIX)
@@ -38,6 +42,10 @@ pub(crate) fn check_size(name: &str, size: u64) -> Result<()> {
     ensure!(
         size <= MAX_VALUE,
         "extended attribute {name:?} holds {size} bytes, more than {MAX_VALUE}"
+    );
+    ensure!(
+        name != FINDER_INFO || size == FINDER_INFO_SIZE,
+        "extended attribute {name:?} holds {size} bytes, not {FINDER_INFO_SIZE}"
     );
     Ok(())
 }
@@ -259,5 +267,15 @@ mod tests {
         );
         assert!(read_value(&source[..10], 11, "user.a").is_err());
         assert!(read_value(std::io::repeat(0), MAX_VALUE + 1, "user.a").is_err());
+    }
+
+    #[test]
+    fn finder_info_holds_exactly_32_bytes_and_other_names_any_size_to_the_cap() {
+        for size in [0, 1, 31, 33, 64, MAX_VALUE] {
+            assert!(check_size(FINDER_INFO, size).is_err(), "{size}");
+            assert!(check_size("user.a", size).is_ok(), "{size}");
+        }
+        assert!(check_size(FINDER_INFO, 32).is_ok());
+        assert!(check_size("com.apple.FinderInfo2", 5).is_ok());
     }
 }

@@ -991,3 +991,31 @@ fn attributes_that_break_the_name_count_and_size_rules_refuse_the_volume() {
         "{error}"
     );
 }
+
+#[test]
+fn a_finder_info_attribute_of_any_size_but_32_bytes_is_refused() {
+    let finder_info = |value: AttributeValue| Attribute {
+        id: 17,
+        name: "com.apple.FinderInfo".into(),
+        value,
+    };
+    for value in [
+        AttributeValue::Inline(vec![0; 31]),
+        AttributeValue::Inline(vec![0; 33]),
+        AttributeValue::Fork(vec![0; 5000]),
+    ] {
+        let size = match &value {
+            AttributeValue::Inline(bytes) | AttributeValue::Fork(bytes) => bytes.len(),
+            AttributeValue::Extents => unreachable!(),
+        };
+        let error = refusal(&with_attributes(vec![finder_info(value)]));
+        assert!(
+            error.contains(&format!(
+                "\"com.apple.FinderInfo\" holds {size} bytes, not 32"
+            )),
+            "{error}"
+        );
+    }
+    let kept = with_attributes(vec![finder_info(AttributeValue::Inline(vec![0; 32]))]);
+    assert!(extracted(&kept).contains_key("Small/hello.txt"));
+}

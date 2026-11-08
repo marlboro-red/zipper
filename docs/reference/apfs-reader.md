@@ -59,7 +59,7 @@ The reader checks the layout before it writes each file, and it publishes nothin
 - A file's extents follow one another from offset 0, are whole blocks, cover its size and lie inside the container. No extent starts past the file's size.
 - A compressed file has no data stream or extents of its own, and its decmpfs header's size matches its inode. Its decompressed data, chunk table and chunks stay within the sizes it declares, and a chunk decodes to exactly its block.
 - Names pass the same checks as tar names. `..`, `.`, backslashes, `:` and NUL are refused, and so is a name that is not UTF-8.
-- Every extended attribute's name is UTF-8, not empty, without a NUL and at most 127 bytes long, as macOS allows. An entry has at most 128 attributes, skipped ones included, and no two of one name. A value the reader restores holds at most 64 MiB. A volume that breaks any of these is refused by name on every platform, also where attributes are skipped.
+- Every extended attribute's name is UTF-8, not empty, without a NUL and at most 127 bytes long, as macOS allows. An entry has at most 128 attributes, skipped ones included, and no two of one name. A value the reader restores holds at most 64 MiB. A `com.apple.FinderInfo` value holds exactly 32 bytes, as macOS requires. A volume that breaks any of these is refused by name on every platform, also where attributes are skipped.
 - An attribute held as a data stream has extents that follow one another, cover its size and lie inside the container, checked on every platform.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 

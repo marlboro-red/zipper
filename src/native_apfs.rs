@@ -1368,7 +1368,10 @@ impl CatalogBuilder {
                         return Ok(());
                     }
                     match record.data {
-                        XattrData::Embedded(_) => {}
+                        XattrData::Embedded(ref range) => {
+                            crate::xattr::check_size(shown, range.len() as u64)
+                                .with_context(|| format!("APFS inode {id}"))?
+                        }
                         XattrData::Stream { size, .. } => crate::xattr::check_size(shown, size)
                             .with_context(|| format!("APFS inode {id}"))?,
                         XattrData::Other => bail!(
