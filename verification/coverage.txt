@@ -2415,6 +2415,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [disk-containers]
+fingerprint = 3927ada842904738
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach disk-containers
 full-check = cargo kani --harness disk_qcow::proofs:: --harness disk_vdi::proofs:: --harness disk_vmdk::proofs:: --harness disk_sparse::proofs::
