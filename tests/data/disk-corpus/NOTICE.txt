@@ -1,0 +1,7 @@
+Every image in this folder was written on macOS through write_the_corpus in
+tests/disk_corpus.rs, from trees of seeded pseudo-random data that the test
+generates. mkfs.fat 4.2 formatted the FAT12, FAT16 and FAT32 volumes and
+mtools 4.0.50 filled them. sgdisk 1.0.10 wrote the GPT tables, the test
+writer in tests/common/disk_writer.rs wrote the MBR tables, and qemu-img
+11.1.3 wrote the VHD and VHDX images. No file holds third-party content.
+trees.json records the tree 7zz 26.05 extracted from each one.

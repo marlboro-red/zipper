@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 74 |
+| `native` | 79 |
 | `partial` | 1 |
-| `backend` | 32 |
+| `backend` | 27 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-29 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+27 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -43,16 +43,16 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Dmg` | `backend` |  | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg` |
 | `ELF` | `backend` |  | No proof yet. |
 | `Ext` | `backend` |  | No proof yet. |
-| `FAT` | `backend` |  | `tests/data/parity/archives/fat.img.stored.xz` |
+| `FAT` | `native` | FAT12, FAT16 and FAT32 with long names read in process. | `tests/data/parity/archives/fat.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `FLV` | `backend` |  | No proof yet. |
-| `GPT` | `backend` |  | `tests/data/parity/archives/gpt.img.stored.xz` |
+| `GPT` | `native` | Read in process. A lone partition that does not hold FAT, or a partition name 7-Zip writes as a path, goes to 7-Zip. | `tests/data/parity/archives/gpt.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `HFS` | `backend` |  | `tests/data/parity/archives/hfs.img.stored.xz` |
 | `Hxs` | `native` | Help 2 files with an ITSF record and LZX sections read in process. One without an ITSF record, which 7-Zip lists as one text item, goes to 7-Zip. No Help 2 compiler runs here, so every file comes from Zipper's own test writer. | `generated_help2_files_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/chm_corpus.rs`, `damaged_help2_files_are_refused_exactly_when_7zip_refuses_them` in `tests/chm_corpus.rs`, `a_help2_file_without_an_itsf_record_goes_to_7zip` in `tests/hostile_chm.rs` |
 | `IHex` | `backend` | Left to 7-Zip. It decodes to one file for each block of addresses, which the single-stream reader does not do. | No proof yet. |
 | `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |
 | `LP` | `backend` |  | No proof yet. |
 | `Lzh` | `native` | Header levels 0 to 3 and the -lh0-, -lz4-, -lh4- to -lh7- and -lhd- methods read in process. Methods 7-Zip does not read either, such as -lh1- and -lz5-, are refused. | `every_corpus_lzh_extracts_the_tree_7zip_extracts_or_the_refusal_its_record_gives` in `tests/lzh_corpus.rs`, `generated_lzh_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/lzh_corpus.rs`, `token_streams_and_every_table_form_decode_as_7zip_decodes_them` in `tests/lzh_corpus.rs`, `damaged_lzh_are_refused_exactly_when_7zip_refuses_them` in `tests/lzh_corpus.rs` |
-| `MBR` | `backend` |  | `tests/data/parity/archives/mbr.img.stored.xz` |
+| `MBR` | `native` | Primary, extended and logical partitions read in process. A lone partition that does not hold FAT goes to 7-Zip. | `tests/data/parity/archives/mbr.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `MachO` | `backend` |  | No proof yet. |
 | `MsLZ` | `native` | SZDD files read in process, named as 7-Zip 26.05 names them. Files come from Zipper's own encoder, since no permissively licensed file from Microsoft's `compress.exe` was found. | `generated_szdd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_szdd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs`, `szdd_names_follow_7zip_and_stay_safe` in `tests/legacy_streams.rs` |
 | `Mub` | `backend` |  | No proof yet. |
@@ -74,8 +74,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `UEFIf` | `backend` |  | No proof yet. |
 | `Udf` | `native` | UDF 1.02 to 2.60 with metadata partitions read in process. A UDF tree 7-Zip cannot open gives way to ISO 9660, as in 7-Zip. | `tests/data/parity/archives/udf.iso.stored.xz`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs`, `a_udf_tree_7zip_cannot_open_falls_back_to_iso_9660_as_7zip_does` in `tests/iso_corpus.rs` |
 | `VDI` | `backend` |  | No proof yet. |
-| `VHD` | `backend` |  | No proof yet. |
-| `VHDX` | `backend` |  | No proof yet. |
+| `VHD` | `native` | Fixed and dynamic VHD read in process. A differencing VHD, or a disk that does not hold FAT, goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
+| `VHDX` | `native` | Fixed and dynamic VHDX read in process. A differencing VHDX, or a disk that does not hold FAT, goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `VMDK` | `backend` |  | No proof yet. |
 | `Xar` | `native` | xar archives and flat macOS packages, written as `7zz x -txar` and `xar -x` write them. For a component package, `7zz x` instead writes its Payload decompressed as `Payload~`. | `tests/data/parity/archives/xar.xar` |
 | `Z` | `native` |  | `tests/data/parity/archives/hello.txt.Z`, `tests/data/parity/archives/tar.tar.Z` |

@@ -76,13 +76,26 @@
       "status": "backend"
     },
     "FAT": {
-      "status": "backend"
+      "status": "native",
+      "note": "FAT12, FAT16 and FAT32 with long names read in process.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::tool_images_extract_as_7zip_extracts_them",
+        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "FLV": {
       "status": "backend"
     },
     "GPT": {
-      "status": "backend"
+      "status": "native",
+      "note": "Read in process. A lone partition that does not hold FAT, or a partition name 7-Zip writes as a path, goes to 7-Zip.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "HFS": {
       "status": "backend"
@@ -122,7 +135,13 @@
       ]
     },
     "MBR": {
-      "status": "backend"
+      "status": "native",
+      "note": "Primary, extended and logical partitions read in process. A lone partition that does not hold FAT goes to 7-Zip.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "MachO": {
       "status": "backend"
@@ -211,10 +230,24 @@
       "status": "backend"
     },
     "VHD": {
-      "status": "backend"
+      "status": "native",
+      "note": "Fixed and dynamic VHD read in process. A differencing VHD, or a disk that does not hold FAT, goes to 7-Zip.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::tool_images_extract_as_7zip_extracts_them",
+        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "VHDX": {
-      "status": "backend"
+      "status": "native",
+      "note": "Fixed and dynamic VHDX read in process. A differencing VHDX, or a disk that does not hold FAT, goes to 7-Zip.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::tool_images_extract_as_7zip_extracts_them",
+        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "VMDK": {
       "status": "backend"
