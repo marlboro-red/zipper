@@ -8,7 +8,7 @@ use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check, progress::Tracker, safe_path};
 use anyhow::{Context, Result, ensure};
 use std::{
-    io::{self, BufRead, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, Read, Seek, Write},
     path::Path,
 };
 
@@ -27,6 +27,8 @@ const MOVIE_HEADER_MAX: usize = 21;
 const LARGEST_WINDOW: u64 = 256 * 1024 * 1024;
 const FILE_MODE: u32 = 0o666;
 const MAX_TAGS: u64 = 1_000_000;
+// EXTERNAL(7-Zip 26.05): an uncompressed SWF that declares more than 512 MiB does not open.
+const UNCOMPRESSED_LIMIT: u32 = 1 << 29;
 const ALLOCATION_UNIT: u64 = 4096;
 const COPY_BUFFER: usize = 1024 * 1024;
 const UNCOMPRESSED_SUFFIX: &str = "~.swf";
@@ -357,6 +359,13 @@ fn extract_tags(
         })
         .transpose()?;
     let budget = Budget::new(staging.as_ref(), options.max_output_bytes)?;
+    let start = input.stream_position()?;
+    walk_tags(&mut input, declared, |_, length, body| {
+        tracker.check()?;
+        body.seek_relative(i64::from(length))?;
+        Ok(())
+    })?;
+    input.seek(io::SeekFrom::Start(start))?;
     let selects_by_name = !(options.paths.is_empty() && options.include.is_empty());
     let mut writer = TagWriter {
         staging,
@@ -567,6 +576,10 @@ pub fn read_archive(
     read_exactly(&mut input, &mut bytes, "header")?;
     let header = header(bytes)?;
     if header.compression == Compression::None {
+        ensure!(
+            header.length <= UNCOMPRESSED_LIMIT,
+            "the uncompressed SWF declares more than 512 MiB, which 7-Zip does not open"
+        );
         ensure!(
             file_length >= u64::from(header.length),
             "the SWF file is shorter than the length it declares"

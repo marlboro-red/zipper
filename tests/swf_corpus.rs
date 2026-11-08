@@ -15,7 +15,7 @@ use std::{fs, path::Path};
 use swf_check::{Tree, judge, report, sevenzip_binary, sevenzip_tree, zipper_tree};
 use swf_writer::{
     AUDIO, Random, SCRIPT, VIDEO, audio, flv, flv_tag, lzma_swf_from_7zip,
-    lzma_swf_with_end_marker, movie, swf_tag, video, zlib_swf,
+    lzma_swf_with_end_marker, movie, movie_with_tail, swf_tag, video, zlib_swf,
 };
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/swf-corpus");
@@ -139,6 +139,12 @@ fn generated_flv_of_every_codec_and_tag_kind_extract_as_7zip_extracts_them() {
         let flags = [0, 1, 4, 5][usize::from(round % 4)];
         cases.push((format!("mixed-{round}.flv"), flv(flags, &tags)));
     }
+    let simple = flv(5, &[audio(2, 0, b"sound", 0), video(1, 2, b"frame", 0)]);
+    for (at, value) in [(3, 2), (4, 2), (4, 8), (4, 0x80), (8, 10), (12, 1)] {
+        let mut header = simple.clone();
+        header[at] = value;
+        cases.push((format!("header-{at}-{value}.flv"), header));
+    }
     cases.push((
         "one-byte-tags.flv".into(),
         flv(5, &[audio(2, 0, b"", 0), audio(2, 0, b"", 1)]),
@@ -163,7 +169,7 @@ fn generated_flv_of_every_codec_and_tag_kind_extract_as_7zip_extracts_them() {
         cases.push((name.to_owned(), both.clone()));
         cases.push((name.to_owned(), one.clone()));
     }
-    check_all(cases, 90);
+    check_all(cases, 96);
 }
 
 #[test]
@@ -199,6 +205,8 @@ fn generated_swf_of_every_tag_form_extract_as_7zip_extracts_them() {
     };
     cases.push(("long-end.swf".into(), long_end));
     cases.push(("no-tags.swf".into(), movie(10, 0, &[])));
+    let early_end = movie_with_tail(10, 1, &[], &[0, 0, 1, 0x40]);
+    cases.push(("early-end.swf".into(), early_end));
     check_all(cases, 50);
 }
 

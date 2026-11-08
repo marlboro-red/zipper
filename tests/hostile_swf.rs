@@ -300,4 +300,134 @@ fn an_swf_of_more_than_a_million_tags_is_refused() {
             read.map(|entries| entries.len())
         );
     }
+    let most = std::sync::atomic::AtomicU64::new(0);
+    let report = |progress: zipper::Progress| {
+        most.fetch_max(progress.files_done, std::sync::atomic::Ordering::Relaxed);
+    };
+    let result = zipper::extract_archive(
+        &work.path().join("1000001.swf"),
+        &work.path().join("out"),
+        zipper::ExtractOptions {
+            control: zipper::Control {
+                progress: Some(&report),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    assert!(result.is_err());
+    assert_eq!(
+        most.into_inner(),
+        0,
+        "files were written before the refusal"
+    );
+}
+
+fn sparse_movie(work: &Path, declared: u64) -> std::path::PathBuf {
+    use std::io::{Seek, SeekFrom, Write};
+    let path = work.join(format!("{declared}.swf"));
+    let mut file = fs::File::create(&path).unwrap();
+    let head = movie(10, 0, &[]);
+    let body = declared - head.len() as u64 - 6;
+    file.write_all(&with_length(
+        head[..head.len() - 2].to_vec(),
+        declared as u32,
+    ))
+    .unwrap();
+    file.write_all(&(87u16 << 6 | 0x3F).to_le_bytes()).unwrap();
+    file.write_all(&(body as u32).to_le_bytes()).unwrap();
+    file.seek(SeekFrom::Start(declared - 2)).unwrap();
+    file.write_all(&[0, 0]).unwrap();
+    path
+}
+
+#[test]
+fn an_uncompressed_swf_over_512_mib_is_refused_as_7zip_refuses_it() {
+    let work = tempfile::tempdir().unwrap();
+    let limit = sparse_movie(work.path(), 1 << 29);
+    let read = zipper::native_swf::read_archive(&limit, None, Default::default()).unwrap();
+    assert_eq!(read.len(), 1);
+    let over = sparse_movie(work.path(), (1 << 29) + 1);
+    let error = zipper::native_swf::read_archive(&over, None, Default::default()).unwrap_err();
+    assert!(format!("{error:#}").contains("512 MiB"), "{error:#}");
+}
+
+#[test]
+fn each_listed_stricter_refusal_is_refused_where_7zip_extracts() {
+    let swf = movie(10, 5, &[swf_tag(9, b"\0\0\xff", false)]);
+    let flv_both = flv(5, &[audio(2, 15, b"abc", 0), video(1, 2, b"defg", 0)]);
+    let mut stream_id = flv_both.clone();
+    stream_id[32 + 10] = 1;
+    let mut previous = flv_both.clone();
+    previous[51] ^= 1;
+    let mut empty_tag = flv_both.clone();
+    empty_tag.extend(flv_tag(8, b"", 0));
+    let lzma = lzma_swf_with_end_marker(&swf, 1 << 16, 3, 0, 2);
+    let mut lzma_short_pack = lzma.clone();
+    let packed = u32::from_le_bytes(lzma[8..12].try_into().unwrap());
+    lzma_short_pack[8..12].copy_from_slice(&(packed + 3).to_le_bytes());
+    lzma_short_pack.extend_from_slice(b"pad");
+    let cases: Vec<(&str, Vec<u8>, &str)> = vec![
+        (
+            "trailing.swf",
+            [&swf[..], b"junk"].concat(),
+            "has data after the length",
+        ),
+        (
+            "trailing-zlib.swf",
+            [zlib_swf(&swf, 9), b"junk".to_vec()].concat(),
+            "has data after its zlib",
+        ),
+        (
+            "trailing-lzma.swf",
+            [lzma.clone(), b"junk".to_vec()].concat(),
+            "has data after its LZMA",
+        ),
+        (
+            "long-pack.swf",
+            lzma_short_pack,
+            "ends before its packed size",
+        ),
+        (
+            "short-length.swf",
+            with_length(lzma.clone(), swf.len() as u32 - 1),
+            "declared size",
+        ),
+        (
+            "trailing.flv",
+            [&flv_both[..], b"junk"].concat(),
+            "ends inside a tag header",
+        ),
+        (
+            "cut.flv",
+            flv_both[..flv_both.len() - 1].to_vec(),
+            "runs past the end of the file",
+        ),
+        ("stream.flv", stream_id, "has a stream ID"),
+        ("previous.flv", previous, "previous tag size does not match"),
+        ("empty.flv", empty_tag, "holds no data"),
+        (
+            "type.flv",
+            [&flv_both[..], &flv_tag(7, b"x", 0)[..]].concat(),
+            "neither audio, video nor script",
+        ),
+    ];
+    let binary = sevenzip_binary();
+    for (name, bytes, said) in cases {
+        let (result, work) = extract(&bytes, name, None);
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains(said), "{name}: {error}");
+        assert!(
+            STRICTER.iter().any(|known| error.contains(known)),
+            "{name}: {error}"
+        );
+        if let Some(binary) = &binary {
+            let into = work.path().join("7z");
+            let theirs = swf_check::sevenzip_tree(binary, &work.path().join(name), &into);
+            assert!(
+                theirs.is_some_and(|tree| !tree.is_empty()),
+                "{name}: 7-Zip refused it too"
+            );
+        }
+    }
 }

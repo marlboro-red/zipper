@@ -40,7 +40,7 @@ The raw data takes the codec as its extension, from this table. A file of both s
 
 A SWF file starts with `FWS`, `CWS` or `ZWS`, a version byte and the length of the uncompressed file.
 
-- An uncompressed SWF, `FWS`, writes each tag before its end tag as a file named `N.CODE`. `N` counts the tags from 0 and `CODE` is the tag code, so `3.21` is the fourth tag, a `DefineBitsJPEG2`. The file holds the tag's body. The end tag must end exactly at the length the header declares, as in 7-Zip.
+- An uncompressed SWF, `FWS`, writes each tag before its end tag as a file named `N.CODE`. `N` counts the tags from 0 and `CODE` is the tag code, so `3.21` is the fourth tag, a `DefineBitsJPEG2`. The file holds the tag's body. The end tag must end exactly at the length the header declares, and that length must be at most 512 MiB, as in 7-Zip.
 - A SWF compressed with zlib, `CWS`, or with LZMA, `ZWS`, writes the uncompressed SWF it holds, with `FWS` in its header. The reader does not check that the result is a movie, as 7-Zip does not. The declared length must be at least 8 bytes, or 17 for LZMA, as 7-Zip requires.
 - The zlib stream must decode to exactly the declared length, less the 8 header bytes, and end with a matching Adler-32. The LZMA stream takes its properties, dictionary and packed size from the 9 bytes after the header. It must decode to exactly the declared length and then end, with an end marker or a clean range coder.
 
@@ -51,7 +51,7 @@ A compressed SWF and an FLV hold no names of their own, so the reader names thei
 - The archive name loses its last extension. A name with no extension, or whose only dot comes first, such as `.flv`, keeps it whole.
 - A compressed SWF adds `~.swf`, so `movie.swf` writes `movie~.swf` and `movie` writes `movie~.swf`.
 - An FLV drops trailing spaces from that stem, then adds a dot and the extension, so `movie.flv` writes `movie.mp3`. A name with no extension gains `~` first, so `movie` writes `movie~.mp3`.
-- `\` and `:` become `_`, and trailing spaces are dropped, with trailing dots too on Windows. 7-Zip on macOS and Linux keeps `:`.
+- `\` and `:` become `_`, and trailing spaces are dropped, with trailing dots too on Windows. 7-Zip on macOS and Linux keeps both.
 - A name that equals the archive's own name, ignoring ASCII case, gains `~`, where 7-Zip would write over the archive in its own folder. `x.aac.aac` holding AAC writes `x.aac.aac~`.
 
 A file split into [volumes](zip-reader.md#split-volumes) is named from its first volume's name without `.001`.
@@ -63,7 +63,7 @@ A file split into [volumes](zip-reader.md#split-volumes) is named from its first
 - A zlib or LZMA stream is decoded within its declared length. A stream that would write one byte past it is refused at that byte, so a small file that declares a short length cannot expand without bound.
 - An LZMA window, the dictionary or the declared length if smaller, larger than 256 MiB is refused with a hint to use `--zip-engine backend`.
 - The FLV reader passes over the file once to check every tag and count the streams, then once for each output file. It holds one tag header at a time, so a long file costs no more memory than a short one. 7-Zip reads every tag into memory.
-- The SWF reader writes each tag as it reads it, and keeps only the list of files it wrote. With `--path` or `--include`, it also keeps every tag's name, about 13 bytes each, to report a selected path that matches no tag. A SWF of 1,000,000 tags peaks at 62 MB under `zipper test`, where 7-Zip peaks at 75 MB.
+- The SWF reader first passes over the tag headers, so a file it refuses writes nothing. It then writes each tag as it reads it, and keeps only the list of files it wrote. With `--path` or `--include`, it also keeps every tag's name, about 13 bytes each, to report a selected path that matches no tag. A SWF of 1,000,000 tags peaks at 62 MB under `zipper test`, where 7-Zip peaks at 75 MB.
 - `--path`, `--include` and `--exclude` select output files by name. An FLV or a compressed SWF takes `--strip-components` and `--strip-prefix` as every reader does. The tags of an uncompressed SWF sit in no folder, so any strip leaves nothing and is refused.
 
 ## Differences from 7-Zip
@@ -85,6 +85,7 @@ Zipper refuses these files, which 7-Zip extracts:
 | --- | --- |
 | FLV audio and video tags | at most 2^23, as in 7-Zip |
 | SWF tags | at most 1,000,000 |
+| Uncompressed SWF | at most 512 MiB, as in 7-Zip |
 | LZMA window | at most 256 MiB |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
