@@ -4,16 +4,17 @@ Zipper extracts VHD and VHDX disk images, MBR and GPT partition tables and the F
 
 ## Supported images
 
-The reader has three layers, and each partition is a bounded `Read + Seek` view of the disk below it. A file system reader takes one view, so another reader, such as one for NTFS, plugs in at the same place.
+The reader has three layers, and each partition is a bounded `Read + Seek` view of the disk below it. A file system reader takes one view, so the FAT reader and the [NTFS reader](ntfs-reader.md) plug in at the same place.
 
 - Containers. A fixed VHD, a dynamic VHD with blocks of 512 KiB to 2 GiB, and a VHDX with blocks of 1 MiB to 256 MiB, fixed or dynamic, with 512 or 4096-byte logical sectors. A raw disk is its own container.
 - Partition tables. An MBR with primary, extended and logical partitions, with 512 or 4096-byte sectors as 7-Zip detects them, and a GPT with 512 or 4096-byte sectors.
-- File systems. FAT12, FAT16 and FAT32 with VFAT long names, NT lowercase flags, deleted entries, empty files, folders up to 256 deep and fragmented cluster chains.
+- File systems. FAT12, FAT16 and FAT32 with VFAT long names, NT lowercase flags, deleted entries, empty files, folders up to 256 deep and fragmented cluster chains. NTFS, through the NTFS reader's `read_volume`, with that reader's rules.
 
 ## What it writes
 
 The reader follows 7-Zip's rule for the main subfile. A disk whose partition table holds one partition, and a VHD or VHDX, is opened again inside, down to the file system. So a VHD holding an MBR with one FAT partition writes the files of that FAT volume.
 
+- An NTFS volume writes the tree the NTFS reader writes for the same raw volume.
 - A FAT volume writes its tree. Names come from the long name when its records and checksum match, as 7-Zip checks them, and otherwise from the short name with its NT lowercase flags. A `/` in a long name becomes `_`. A short name of spaces becomes `[NONAME]-N`, as 7-Zip names it.
 - Files get their modification time, read as local time. A file with the read-only attribute gets mode `0o444`, and every other file `0o644`. Folders get mode `0o755` and their time. The umask limits all of them.
 - A disk with several partitions writes each partition as one file, as 7-Zip does. An MBR partition is named `N.fat`, `N.ntfs` or `N.img` by its type, and a gap that an extended partition or the end of the disk leaves is named `N`. A GPT partition is named `N.name.fat` or `N.name.img`. These files get mode `0o644` and no time.
@@ -24,7 +25,7 @@ It never restores the hidden, system or archive attributes, short names beside l
 
 The default engine sends the whole image to 7-Zip, and `--zip-engine native` refuses it with the reason, in these cases:
 
-- The lone partition, or the disk inside a VHD or VHDX, holds NTFS, exFAT, UDF or any other file system that is not FAT.
+- The lone partition, or the disk inside a VHD or VHDX, holds exFAT, UDF or any other file system that is neither FAT nor NTFS.
 - The lone partition holds no partition table or file system Zipper knows, such as one of zeros.
 - A GPT partition name holds `/`, `\`, `:` or a control character, since 7-Zip writes it as a path.
 - The image is a differencing VHD or VHDX, which 7-Zip reads with its parent disk.

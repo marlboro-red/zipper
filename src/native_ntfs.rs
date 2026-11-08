@@ -1931,6 +1931,10 @@ impl Ntfs<'_> {
     }
 }
 
+pub(crate) fn is_boot_sector(bytes: &[u8; BOOT_SECTOR]) -> bool {
+    boot_sector(bytes).is_ok()
+}
+
 /// Returns whether the file starts with an NTFS boot sector that 7-Zip
 /// would open.
 pub fn sniff(path: &Path) -> Result<bool> {
@@ -1944,7 +1948,7 @@ pub fn sniff(path: &Path) -> Result<bool> {
         }
         read += count;
     }
-    Ok(boot_sector(&bytes).is_ok())
+    Ok(is_boot_sector(&bytes))
 }
 
 #[allow(dead_code)]

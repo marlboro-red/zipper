@@ -2,7 +2,7 @@
 
 Zipper extracts NTFS volume images with its own Rust reader, in the tree `7zz x` writes. The default engine and `--zip-engine native` send a file here when its first sector is an NTFS boot sector that 7-Zip would open. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound file, WIM or 7z signature goes to that reader first. `--zip-engine backend` hands every volume to 7-Zip.
 
-A disk image that holds the volume in a partition calls `zipper::native_ntfs::read_volume` with a reader bounded to the partition. The reader seeks from the partition's first byte and takes its end as the volume's end.
+The [disk reader](disk-reader.md) calls `zipper::native_ntfs::read_volume` with a reader bounded to the partition when a VHD, VHDX, MBR or GPT disk holds one NTFS partition. The reader seeks from the partition's first byte and takes its end as the volume's end.
 
 ## What it reads
 

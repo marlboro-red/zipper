@@ -929,6 +929,7 @@ struct RawItem {
 
 enum Plan {
     FileSystem(Span),
+    Ntfs(Span),
     Files {
         format: &'static str,
         items: Vec<RawItem>,
@@ -1697,6 +1698,9 @@ fn plan_span(disk: &mut Disk, span: Span, depth: u32) -> Result<Plan> {
     if sector.is_some_and(|sector| native_fat::is_boot_sector(&sector)) {
         return Ok(Plan::FileSystem(span));
     }
+    if sector.is_some_and(|sector| crate::native_ntfs::is_boot_sector(&sector)) {
+        return Ok(Plan::Ntfs(span));
+    }
     let found = mbr(&mut span.view(disk))?;
     if let Some(mbr) = found {
         let mut real = mbr.items.iter().filter(|item| item.real);
@@ -1799,14 +1803,14 @@ pub fn sniff(path: &Path) -> Result<bool> {
 
 /// Returns whether the default engine should send the image to 7-Zip: a
 /// differencing VHD or VHDX, or a disk whose file system or partition names
-/// Zipper does not read in process, such as NTFS.
+/// Zipper does not read in process, such as exFAT.
 pub fn needs_backend(path: &Path) -> Result<bool> {
     Ok(matches!(plan(path), Ok((_, Plan::Elsewhere(_)))))
 }
 
 /// Verify and optionally extract a disk image into a new directory, in the
 /// tree `7z x` extracts. A disk with one partition, or a VHD or VHDX holding
-/// one, extracts the FAT file system inside. A disk with several partitions
+/// one, extracts the FAT or NTFS file system inside. A disk with several partitions
 /// extracts each partition, and each gap between them, as one file.
 pub fn read_archive(
     path: &Path,
@@ -1824,6 +1828,10 @@ pub fn read_archive(
             tree::extract("FAT", path, destination, options, |tree| {
                 volume.extract(tree)
             })
+        }
+        Plan::Ntfs(span) => {
+            let mut disk = disk.expect("a file system plan comes from an opened disk");
+            crate::native_ntfs::read_volume(span.view(&mut disk), path, destination, options)
         }
         Plan::Files { format, items } => {
             let mut disk = disk.expect("a partition plan comes from an opened disk");

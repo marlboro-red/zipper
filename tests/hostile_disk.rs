@@ -975,3 +975,59 @@ fn write_disks_at_the_documented_limits() {
     let built = build(&volume, &folders);
     fs::write(into.join("names.img"), &built.bytes).unwrap();
 }
+
+fn ntfs_volume() -> Vec<u8> {
+    let mut volume = Vec::new();
+    std::io::Read::read_to_end(
+        &mut liblzma::read::XzDecoder::new(
+            fs::File::open("tests/data/ntfs-corpus/ntfs3g-basic.ntfs.xz").unwrap(),
+        ),
+        &mut volume,
+    )
+    .unwrap();
+    volume
+}
+
+fn ntfs_tree(volume: &[u8]) -> BTreeMap<String, Vec<u8>> {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("volume.ntfs");
+    fs::write(&archive, volume).unwrap();
+    let destination = root.path().join("out");
+    zipper::native_ntfs::read_archive(
+        &archive,
+        Some(&destination),
+        zipper::native_ntfs::ReadOptions::default(),
+    )
+    .unwrap();
+    let found = tree(&destination);
+    common_deletable(root.path());
+    found
+}
+
+#[test]
+fn a_lone_ntfs_partition_extracts_in_process_as_the_raw_volume_does() {
+    let volume = ntfs_volume();
+    let sectors = u32::try_from(volume.len() / SECTOR).unwrap();
+    assert!(sectors > 0);
+    let wanted = ntfs_tree(&volume);
+    let mbr = disk_writer::mbr(&[(0x07, 64, &volume)], 0);
+    let gpt = disk_writer::gpt(
+        &[(disk_writer::BASIC_DATA, "Basic data partition", 40, &volume)],
+        0,
+    );
+    for (case, bytes, name) in [
+        ("MBR", mbr.clone(), "disk.img"),
+        ("GPT", gpt, "disk.img"),
+        ("VHDX", disk_writer::vhdx(&mbr, 20), "disk.vhdx"),
+        ("fixed VHD", disk_writer::vhd_fixed(&mbr), "disk.vhd"),
+    ] {
+        assert_eq!(
+            reader(&bytes, name, Engine::Auto),
+            Reader::Disk,
+            "{case} goes to 7-Zip"
+        );
+        let found = extracted_named(&bytes, name, ReadOptions::default())
+            .unwrap_or_else(|error| panic!("{case}: {error:#}"));
+        assert_eq!(found, wanted, "{case}");
+    }
+}
