@@ -1118,7 +1118,7 @@ item = src/quantum.rs | pub(crate) fn decoder_memory(
 
 [lzx]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 309dcc2a98110a0c
+fingerprint = d74078f95d5b955f
 full-check = cargo test --release --lib lzx
 full-check = cargo test --release --test cab_corpus
 full-check = cargo test --release --test cab_sets
