@@ -1,7 +1,3 @@
-//! In-process reader for FAT12, FAT16 and FAT32 file systems with VFAT long
-//! names, read from one volume the way 7-Zip reads it.
-//! `docs/reference/disk-reader.md` gives the rules.
-
 use crate::{BadField, Field, field_check, native_cpio::tree::Tree};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
@@ -139,8 +135,6 @@ impl BootSector {
     }
 }
 
-/// Parse a FAT boot sector by 7-Zip's `CHeader::Parse` rules. The FAT size
-/// falls back to what the FAT sectors hold, as 7-Zip's does.
 pub(crate) fn boot_sector(p: &[u8; BOOT_SECTOR]) -> Field<BootSector> {
     field_check(
         le16(p, 0x1FE) == 0xAA55,
@@ -306,8 +300,6 @@ pub(crate) enum Record {
     Item(Short),
 }
 
-/// Read one 32-byte folder record by 7-Zip's rules. A record 7-Zip treats as
-/// a reason not to open the volume at all is an error.
 pub(crate) fn record(p: &[u8; RECORD], fat32: bool) -> Field<Record> {
     match p[0] {
         RECORD_END => return Ok(Record::End),
@@ -377,9 +369,6 @@ pub(crate) fn short_name_checksum(name: &[u8; SHORT_NAME]) -> u8 {
     })
 }
 
-/// The length of a long name, with its terminator, as 7-Zip's
-/// `ParseLongName` finds it, or 0 for a name 7-Zip ignores. `units` holds
-/// one unit past the records for the terminator a full name lacks.
 pub(crate) fn long_name_length(units: &mut [u16], words: usize) -> usize {
     let mut end = 0;
     while end < words {
@@ -464,8 +453,6 @@ impl ClusterMap {
     }
 }
 
-/// A FAT volume opened for reading: its boot sector, the FAT read on demand
-/// and the clusters its folders and files have claimed so far.
 pub(crate) struct Volume<R> {
     data: R,
     boot: BootSector,
@@ -488,8 +475,6 @@ fn read_exact_at<R: Read + Seek>(
 }
 
 impl<R: Read + Seek> Volume<R> {
-    /// Open the volume and read every folder, as 7-Zip does before it
-    /// extracts anything.
     pub(crate) fn open(mut data: R) -> Result<Volume<R>> {
         let length = data.seek(SeekFrom::End(0))?;
         let mut sector = [0u8; BOOT_SECTOR];
@@ -755,7 +740,6 @@ impl<R: Read + Seek> Volume<R> {
         Ok(())
     }
 
-    /// Write every entry into `tree`, in the order 7-Zip lists them.
     pub(crate) fn extract(&mut self, tree: &mut Tree) -> Result<()> {
         let mut folders: HashMap<u32, String> = HashMap::new();
         for index in 0..self.nodes.len() {
@@ -872,7 +856,6 @@ impl<R: Read + Seek> Read for FileData<'_, R> {
     }
 }
 
-/// Whether `sector` is a FAT boot sector 7-Zip would open as FAT.
 pub(crate) fn is_boot_sector(sector: &[u8; BOOT_SECTOR]) -> bool {
     boot_sector(sector).is_ok()
 }

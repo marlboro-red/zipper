@@ -583,6 +583,33 @@ fn file_systems_zipper_does_not_read_go_to_7zip_and_are_refused_by_name_in_proce
         reader(&named, "disk.img", Engine::Auto),
         Reader::Backend { format: None }
     );
+    let mut table = disk_writer::gpt(&[(disk_writer::BASIC_DATA, "data", 40, &fat.bytes)], 0);
+    assert_eq!(extracted(&table), extracted(&fat.bytes));
+    table[2 * SECTOR + 60] ^= 1;
+    refused(
+        "GPT table that fails its checksum",
+        &table,
+        "no partition table or file system",
+    );
+    for header_size in [0u32, 4, 16, 19] {
+        let mut tiny = disk_writer::gpt(&[(disk_writer::BASIC_DATA, "data", 40, &fat.bytes)], 0);
+        tiny[SECTOR + 12..SECTOR + 16].copy_from_slice(&header_size.to_le_bytes());
+        refused(
+            "GPT header shorter than its checksum",
+            &tiny,
+            "no partition table",
+        );
+        let mut sealed = tiny.clone();
+        let mut header = sealed[SECTOR..2 * SECTOR].to_vec();
+        header[16..20].fill(0);
+        let crc = crc32fast::hash(&header[..header_size as usize]);
+        sealed[SECTOR + 16..SECTOR + 20].copy_from_slice(&crc.to_le_bytes());
+        assert_eq!(
+            extracted(&sealed),
+            extracted(&fat.bytes),
+            "a {header_size}-byte GPT header whose checksum covers it"
+        );
+    }
     let zeros = disk_writer::mbr(&[(0x06, 64, &vec![0u8; 64 * SECTOR])], 0);
     refused(
         "partition of zeros",
@@ -742,8 +769,6 @@ fn vhdx_images_are_checked_before_their_disk_is_read() {
     refused("empty block table", &short_table, "block table is empty");
 }
 
-/// A 2 TiB VHDX holding one FAT32 partition with one small file. Its FAT
-/// alone is 256 MiB, which 7-Zip holds in memory and Zipper reads in blocks.
 pub fn large_sparse_disk() -> Vec<u8> {
     let size: u64 = 1 << 41;
     let lba: u64 = 2048;

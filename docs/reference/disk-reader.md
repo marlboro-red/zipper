@@ -65,10 +65,10 @@ Peak resident memory on images at the limits, written by `write_disks_at_the_doc
 
 | Image | `zipper list` | `zipper extract` | `7zz l` | `7zz x` |
 | --- | ---: | ---: | ---: | ---: |
-| A 2 TiB VHDX with one FAT32 partition, a 256 MiB FAT and one file | MEM1 | MEM2 | MEM3 | MEM4 |
-| 993,600 empty files with names of about 60 bytes, in 92 folders | MEM5 | MEM6 | MEM7 | MEM8 |
+| A 2 TiB VHDX with one FAT32 partition, a 256 MiB FAT and one file | 3 MiB | 3 MiB | 277 MiB | 277 MiB |
+| 993,600 empty files with names of about 60 bytes, in 92 folders | 236 MiB | 261 MiB | 210 MiB | 209 MiB |
 
-`--threads` has no effect on disk images.
+On the first image 7-Zip holds the whole FAT, and Zipper holds a few blocks of it. On the second the shared tree keeps every path, so Zipper peaks about a quarter above 7-Zip. `--threads` has no effect on disk images.
 
 ## Differences from 7-Zip
 

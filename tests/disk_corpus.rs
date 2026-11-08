@@ -95,9 +95,8 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
             };
             #[cfg(not(unix))]
             let mode = String::new();
-            // EXTERNAL(7-Zip): it turns a FAT local time into UTC with the offset in force
-            // now, and Zipper with the one in force on that date, so only the time within
-            // the hour is compared.
+            // EXTERNAL(7-Zip): FatHandler's LocalFileTimeToFileTime applies today's UTC
+            // offset, not the one on the file's date, so only the time within the hour is compared.
             let modified = metadata
                 .modified()
                 .unwrap()
@@ -163,7 +162,6 @@ fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> Option<BTreeMap<
     found
 }
 
-/// Compare Zipper with 7-Zip on one image. Returns whether 7-Zip extracted it.
 fn compare(binary: &Path, label: &str, bytes: &[u8], name: &str) -> bool {
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join(name);
@@ -456,9 +454,6 @@ fn source_tree(root: &Path, seed: u32) {
     fs::write(root.join("MiXeD.Txt"), b"mixed\n").unwrap();
 }
 
-/// Format a FAT volume with `mkfs.fat`, fill it with `mcopy`, mark a file
-/// read-only, delete files and write a large one across the holes they
-/// leave, so its clusters are fragmented.
 fn tool_volume(tools: &Tools, work: &Path, bits: u32, seed: u32) -> Vec<u8> {
     let (kilobytes, cluster) = match bits {
         12 => ("4000", "4"),

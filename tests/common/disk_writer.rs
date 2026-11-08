@@ -1,7 +1,3 @@
-//! Writes FAT12, FAT16 and FAT32 volumes with VFAT long names, MBR and GPT
-//! partition tables, and fixed and dynamic VHD and VHDX images, for tests
-//! that need shapes no installed tool writes. It records where each record
-//! and cluster chain lies, so a test can damage exactly one of them.
 #![allow(dead_code)]
 use std::collections::BTreeMap;
 
@@ -577,8 +573,6 @@ pub fn mbr_sector(entries: &[(u8, u32, u32)]) -> [u8; SECTOR] {
     sector
 }
 
-/// A disk with an MBR whose primary partitions hold `contents`, each
-/// starting at the sector given, followed by `tail` free sectors.
 pub fn mbr(partitions: &[(u8, u32, &[u8])], tail: u32) -> Vec<u8> {
     let entries: Vec<(u8, u32, u32)> = partitions
         .iter()
@@ -605,8 +599,6 @@ pub const LINUX_DATA: [u8; 16] = [
     0xAF, 0x3D, 0xC6, 0x0F, 0x83, 0x84, 0x72, 0x47, 0x8E, 0x79, 0x3D, 0x69, 0xD8, 0x47, 0x7D, 0xE4,
 ];
 
-/// A disk with a GPT of 128 entries whose partitions hold `contents`, with
-/// its backup table at the end.
 pub fn gpt(partitions: &[([u8; 16], &str, u64, &[u8])], tail: u64) -> Vec<u8> {
     let end = partitions
         .iter()
@@ -690,8 +682,6 @@ pub fn vhd_fixed(disk: &[u8]) -> Vec<u8> {
     image
 }
 
-/// A dynamic VHD of `disk` with blocks of 2^`block_log` bytes, leaving out
-/// each block that holds only zeros and marking every sector present.
 pub fn vhd_dynamic(disk: &[u8], block_log: u32) -> Vec<u8> {
     let block = 1usize << block_log;
     let blocks = disk.len().div_ceil(block);
@@ -786,8 +776,6 @@ pub struct Vhdx {
     pub chunk_ratio: u64,
 }
 
-/// A dynamic VHDX of a disk of `size` bytes, with blocks of 2^`block_log`
-/// bytes. `blocks` gives the contents of the blocks that are present.
 pub fn vhdx_sparse(size: u64, block_log: u32, blocks: &[(u64, Vec<u8>)], flags: u32) -> Vhdx {
     const MIB: usize = 1 << 20;
     let block = 1u64 << block_log;
@@ -868,8 +856,6 @@ pub fn vhdx_sparse(size: u64, block_log: u32, blocks: &[(u64, Vec<u8>)], flags: 
     }
 }
 
-/// A dynamic VHDX holding `disk`, padded to whole MiB as tools write it,
-/// leaving out blocks of zeros.
 pub fn vhdx(disk: &[u8], block_log: u32) -> Vec<u8> {
     let mut disk = disk.to_vec();
     disk.resize(disk.len().next_multiple_of(1 << 20), 0);

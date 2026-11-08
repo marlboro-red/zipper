@@ -40,6 +40,11 @@ const VHD_LOCATORS_AT: usize = 0x240;
 const VHD_LOCATOR: usize = 24;
 const VHD_LOCATORS: usize = 8;
 const VHD_SECTORS_PER_BITMAP_SECTOR: u32 = 512 * 8;
+const VHD_FOOTER_FIELDS: usize = 0x40;
+const VHD_FOOTER_CHECKSUM: usize = 0x40;
+const VHD_FOOTER_ZEROS: usize = 0x55;
+const VHD_SPARSE_FIELDS: usize = VHD_LOCATORS_AT + VHD_LOCATORS * VHD_LOCATOR;
+const VHD_SPARSE_CHECKSUM: usize = 0x24;
 const VHD_TABLE_BATCH: usize = 1 << 16;
 
 const VHDX_SIGNATURE: &[u8; 8] = b"vhdxfile";
@@ -227,10 +232,10 @@ fn crc32c(bytes: &[u8]) -> u32 {
     })
 }
 
-fn crc_without_field(bytes: &[u8], at: usize, crc: impl Fn(&[u8]) -> u32) -> bool {
+fn crc_without_field(bytes: &[u8], at: usize, covered: usize, crc: impl Fn(&[u8]) -> u32) -> bool {
     let mut copy = bytes.to_vec();
     copy[at..at + 4].fill(0);
-    crc(&copy) == le32(bytes, at)
+    crc(&copy[..covered]) == le32(bytes, at)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -250,8 +255,17 @@ fn vhd_checksum_holds(bytes: &[u8], at: usize) -> bool {
     !sum == be32(bytes, at)
 }
 
-/// Read a VHD footer by 7-Zip's `CFooter::Parse` rules.
 pub(crate) fn vhd_footer(p: &[u8; VHD_FOOTER]) -> Field<VhdFooter> {
+    let footer = vhd_footer_fields(p[..VHD_FOOTER_FIELDS].try_into().unwrap())?;
+    field_check(
+        vhd_checksum_holds(p, VHD_FOOTER_CHECKSUM)
+            && p[VHD_FOOTER_ZEROS..].iter().all(|byte| *byte == 0),
+        "the VHD footer checksum does not match",
+    )?;
+    Ok(footer)
+}
+
+pub(crate) fn vhd_footer_fields(p: &[u8; VHD_FOOTER_FIELDS]) -> Field<VhdFooter> {
     field_check(&p[..11] == VHD_SIGNATURE, "not a VHD footer")?;
     field_check(p[11] & 0xFE == 2, "the VHD footer names unknown features")?;
     let footer = VhdFooter {
@@ -275,10 +289,6 @@ pub(crate) fn vhd_footer(p: &[u8; VHD_FOOTER]) -> Field<VhdFooter> {
             "the VHD header lies too far into the file",
         )?;
     }
-    field_check(
-        vhd_checksum_holds(p, 0x40) && p[0x55..].iter().all(|byte| *byte == 0),
-        "the VHD footer checksum does not match",
-    )?;
     Ok(footer)
 }
 
@@ -289,8 +299,17 @@ pub(crate) struct VhdSparse {
     pub(crate) block_log: u32,
 }
 
-/// Read a dynamic VHD header by 7-Zip's `CDynHeader::Parse` rules.
 pub(crate) fn vhd_sparse_header(p: &[u8; VHD_SPARSE_HEADER]) -> Field<VhdSparse> {
+    let sparse = vhd_sparse_fields(p[..VHD_SPARSE_FIELDS].try_into().unwrap())?;
+    field_check(
+        vhd_checksum_holds(p, VHD_SPARSE_CHECKSUM)
+            && p[VHD_SPARSE_FIELDS..].iter().all(|byte| *byte == 0),
+        "the dynamic VHD header checksum does not match",
+    )?;
+    Ok(sparse)
+}
+
+pub(crate) fn vhd_sparse_fields(p: &[u8; VHD_SPARSE_FIELDS]) -> Field<VhdSparse> {
     field_check(
         &p[..8] == VHD_SPARSE_SIGNATURE,
         "the dynamic VHD header lacks its signature",
@@ -314,11 +333,6 @@ pub(crate) fn vhd_sparse_header(p: &[u8; VHD_SPARSE_HEADER]) -> Field<VhdSparse>
             "a VHD parent locator's reserved field is set",
         )?;
     }
-    let zeros_from = VHD_LOCATORS_AT + VHD_LOCATORS * VHD_LOCATOR;
-    field_check(
-        vhd_checksum_holds(p, 0x24) && p[zeros_from..].iter().all(|byte| *byte == 0),
-        "the dynamic VHD header checksum does not match",
-    )?;
     Ok(VhdSparse {
         table: be64(p, 0x10),
         blocks: be32(p, 0x1C),
@@ -348,7 +362,6 @@ pub(crate) struct VhdxHeader {
     pub(crate) log_offset: u64,
 }
 
-/// Read the fields of a VHDX header, whose checksum the caller has checked.
 pub(crate) fn vhdx_header_fields(p: &[u8; VHDX_HEADER_FIELDS]) -> Field<VhdxHeader> {
     field_check(
         le32(p, 0) == VHDX_HEADER_SIGNATURE,
@@ -371,7 +384,7 @@ pub(crate) fn vhdx_header_fields(p: &[u8; VHDX_HEADER_FIELDS]) -> Field<VhdxHead
 
 fn vhdx_header(p: &[u8]) -> Field<VhdxHeader> {
     field_check(
-        crc_without_field(&p[..VHDX_HEADER], 4, crc32c),
+        crc_without_field(&p[..VHDX_HEADER], 4, VHDX_HEADER, crc32c),
         "a VHDX header checksum does not match",
     )?;
     vhdx_header_fields(p[..VHDX_HEADER_FIELDS].try_into().unwrap())
@@ -385,7 +398,6 @@ pub(crate) struct VhdxRegion {
     pub(crate) required: bool,
 }
 
-/// Read one VHDX region table entry by 7-Zip's `CRegionEntry::Parse` rules.
 pub(crate) fn vhdx_region(p: &[u8; VHDX_REGION_ENTRY]) -> Field<VhdxRegion> {
     let region = VhdxRegion {
         guid: guid(p, 0),
@@ -416,9 +428,10 @@ pub(crate) struct VhdxItem {
     pub(crate) required: bool,
 }
 
-/// Read one VHDX metadata table entry by 7-Zip's `CMetaEntry::Parse` rules,
-/// and check that it lies inside a metadata region of `region` bytes.
-pub(crate) fn vhdx_item(p: &[u8; VHDX_METADATA_ENTRY], region: u32) -> Field<VhdxItem> {
+pub(crate) fn vhdx_item(
+    p: &[u8; VHDX_METADATA_ENTRY],
+    metadata_region_length: u32,
+) -> Field<VhdxItem> {
     let item = VhdxItem {
         guid: guid(p, 0),
         offset: le32(p, 0x10),
@@ -446,14 +459,13 @@ pub(crate) fn vhdx_item(p: &[u8; VHDX_METADATA_ENTRY], region: u32) -> Field<Vhd
         "a VHDX metadata item sets reserved flags",
     )?;
     field_check(
-        item.offset <= region && item.length <= region - item.offset,
+        item.offset <= metadata_region_length
+            && item.length <= metadata_region_length - item.offset,
         "a VHDX metadata item lies past its region",
     )?;
     Ok(item)
 }
 
-/// Check one entry of a VHDX block table that is not differencing, as
-/// 7-Zip's `ParseBat` does, and return its state and file offset.
 pub(crate) fn vhdx_bat_entry(value: u64, sector_bitmap: bool) -> Field<(u64, u64)> {
     field_check(
         value & VHDX_BAT_RESERVED_MASK == 0,
@@ -515,7 +527,6 @@ fn chs_holds(chs: &[u8]) -> bool {
     chs[0] | chs[1] | chs[2] == 0 || chs[1] & 0x3F > 0
 }
 
-/// Read one MBR partition entry by 7-Zip's `CPartition::Parse` rules.
 pub(crate) fn mbr_entry(p: &[u8; MBR_ENTRY]) -> Field<MbrEntry> {
     let entry = MbrEntry {
         kind: p[4],
@@ -546,7 +557,6 @@ pub(crate) struct GptHeader {
     pub(crate) header_size: u32,
 }
 
-/// Read the fields of a GPT header by 7-Zip's rules, before its checksum.
 pub(crate) fn gpt_header(p: &[u8; 0x5C], sector_log: u32) -> Field<GptHeader> {
     let header = GptHeader {
         header_size: le32(p, 12),
@@ -587,7 +597,6 @@ pub(crate) struct GptEntry {
     pub(crate) name: [u16; GPT_NAME_UNITS],
 }
 
-/// Read one GPT partition entry by 7-Zip's rules: `None` for an unused one.
 pub(crate) fn gpt_entry(p: &[u8; GPT_ENTRY_READ], sector_log: u32) -> Field<Option<GptEntry>> {
     if p[..16].iter().all(|byte| *byte == 0) {
         return Ok(None);
@@ -636,8 +645,6 @@ enum Mapping {
 const TABLE_PAGE: u64 = 4096;
 const TABLE_PAGES_CACHED: usize = 8;
 
-/// The bytes of one virtual disk: a raw file, or the disk a VHD or VHDX
-/// image describes. Block tables are read a page at a time.
 pub(crate) struct Disk {
     file: ArchiveFile,
     mapping: Mapping,
@@ -729,8 +736,6 @@ impl Disk {
         read_file_exact(&self.file, buffer, offset)
     }
 
-    /// Read from `offset` of the virtual disk into `buffer`, returning fewer
-    /// bytes only at the end of the disk or of the file holding it.
     fn read(&mut self, offset: u64, buffer: &mut [u8]) -> io::Result<usize> {
         if offset >= self.size || buffer.is_empty() {
             return Ok(0);
@@ -824,9 +829,6 @@ impl Disk {
     }
 }
 
-/// A bounded `Read + Seek` view of a disk: the whole disk or one partition.
-/// Reads past `length` end the view, and reads past `end`, where the disk or
-/// an enclosing partition stops, return no bytes.
 pub(crate) struct View<'d> {
     disk: &'d mut Disk,
     start: u64,
@@ -1239,7 +1241,8 @@ fn open_vhdx(file: ArchiveFile, length: u64) -> Result<Opened> {
     let (table, copy) = tables.split_at(VHDX_REGION_TABLE);
     ensure!(table == copy, "the two VHDX region tables differ");
     ensure!(
-        le32(table, 0) == VHDX_REGION_SIGNATURE && crc_without_field(table, 4, crc32c),
+        le32(table, 0) == VHDX_REGION_SIGNATURE
+            && crc_without_field(table, 4, VHDX_REGION_TABLE, crc32c),
         "the VHDX region table is damaged"
     );
     let count = le32(table, 8);
@@ -1592,11 +1595,7 @@ fn gpt(view: &mut View) -> Result<Option<Vec<GptItem>>> {
     let Ok(header) = gpt_header(sector[..0x5C].try_into().unwrap(), sector_log) else {
         return Ok(None);
     };
-    if !crc_without_field(
-        &sector[..header.header_size as usize],
-        0x10,
-        crc32fast::hash,
-    ) {
+    if !crc_without_field(sector, 0x10, header.header_size as usize, crc32fast::hash) {
         return Ok(None);
     }
     let table_size = u64::from(header.entry_size) * u64::from(header.entries);
@@ -1777,7 +1776,8 @@ fn raw_disk_is_claimed(head: &[u8], tail: &[u8]) -> bool {
 }
 
 /// Returns whether the file is a VHD or VHDX image, or a raw disk that
-/// starts with an MBR or GPT partition table or a FAT boot sector.
+/// starts with an MBR or GPT partition table or a FAT boot sector. A file
+/// that only ends with a fixed VHD footer counts when it is named `.vhd`.
 pub fn sniff(path: &Path) -> Result<bool> {
     let file = crate::volumes::open(path)?;
     let length = file.len()?;
@@ -1906,10 +1906,10 @@ mod proofs {
     use super::*;
 
     #[kani::proof]
-    #[kani::unwind(513)]
+    #[kani::unwind(12)]
     fn vhd_footers_never_panic_and_keep_their_limits() {
-        let bytes: [u8; VHD_FOOTER] = kani::any();
-        if let Ok(footer) = vhd_footer(&bytes) {
+        let bytes: [u8; VHD_FOOTER_FIELDS] = kani::any();
+        if let Ok(footer) = vhd_footer_fields(&bytes) {
             assert!(footer.size <= VHD_LARGEST_DISK);
             assert!((VHD_FIXED..=VHD_DIFFERENCING).contains(&footer.kind));
             assert!(footer.kind != VHD_FIXED || footer.data_offset == u64::MAX);
@@ -1918,10 +1918,19 @@ mod proofs {
     }
 
     #[kani::proof]
-    #[kani::unwind(1025)]
+    #[kani::unwind(14)]
+    fn vhd_checksums_never_panic_or_read_past_their_block() {
+        let bytes: [u8; 12] = kani::any();
+        let at: usize = kani::any();
+        kani::assume(at <= bytes.len() - 4);
+        let _ = vhd_checksum_holds(&bytes, at);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(14)]
     fn dynamic_vhd_headers_never_panic_and_name_blocks_their_bitmaps_cover() {
-        let bytes: [u8; VHD_SPARSE_HEADER] = kani::any();
-        if let Ok(sparse) = vhd_sparse_header(&bytes) {
+        let bytes: [u8; VHD_SPARSE_FIELDS] = kani::any();
+        if let Ok(sparse) = vhd_sparse_fields(&bytes) {
             assert!((VHD_SMALLEST_BLOCK_LOG..=VHD_LARGEST_BLOCK_LOG).contains(&sparse.block_log));
             let bitmap = u64::from(vhd_bitmap_bytes(sparse.block_log));
             assert!(bitmap * 8 * 512 >= 1u64 << sparse.block_log);

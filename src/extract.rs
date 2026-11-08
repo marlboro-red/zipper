@@ -16,7 +16,7 @@ pub enum Engine {
     /// files, NTFS volumes, VHD and VHDX images and MBR and GPT disks with FAT,
     /// and 7z whose methods it decodes. 7-Zip for other 7z, an MSI whose main
     /// stream is not a CAB, a split or pre-1.13 WIM, a Help 2 file without an
-    /// ITSF record, a disk whose file system Zipper does not read there, and
+    /// ITSF record, a differencing VHD or VHDX, a disk whose file system Zipper does not read there, and
     /// the other formats whose signature Zipper recognizes.
     #[default]
     Auto,
