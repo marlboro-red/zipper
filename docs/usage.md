@@ -100,6 +100,7 @@ target/release/zipper extract toolchain.tar.gz --output tools --content-only
 - No modification time is restored, so every file and folder carries the time it was written.
 - On Windows, no read-only, hidden or system attribute is set, and no Mark of the Web is copied from the archive.
 - On Unix, a file gets mode 0o666, or 0o777 when the archive marks it executable, less the umask. Folders get the default mode. A read-only entry therefore stays writable, and scripts still run.
+- On macOS, no extended attribute is restored from an APFS or HFS+ volume.
 - Links are still created, with the same safety checks.
 - Library callers set `metadata: Metadata::ContentOnly` in `ExtractOptions`. `tests/content_only.rs` extracts every archive of the ZIP, tar and 7z corpora this way and checks contents, modes, times and, on Windows, attributes and zone marks.
 - The 7-Zip backend refuses it, because 7-Zip restores times and attributes itself.

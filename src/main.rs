@@ -112,8 +112,8 @@ enum Command {
         #[arg(long, value_name = "N")]
         strip_components: Option<usize>,
         /// Write file contents only: no modification times, no Windows
-        /// attributes and no Mark of the Web. Files keep only the execute
-        /// bit, and folders get the default mode.
+        /// attributes, no extended attributes and no Mark of the Web. Files
+        /// keep only the execute bit, and folders get the default mode.
         #[arg(long)]
         content_only: bool,
         /// Refuse archives whose declared output exceeds this many bytes. By

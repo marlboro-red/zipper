@@ -61,6 +61,7 @@ const PRIVATE_DATA_NAME: &str = "[HFS+ Private Data]";
 const BLANK_NAME: &str = "[]";
 const INODE_PREFIX: &str = "iNode";
 const DECMPFS: &str = "com.apple.decmpfs";
+const RESOURCE_FORK_ATTRIBUTE: &str = "com.apple.ResourceFork";
 const DECMPFS_MAGIC: u32 = u32::from_le_bytes(*b"fpmc");
 pub(crate) const DECMPFS_HEADER: usize = 16;
 const COMPRESSED_CHUNK: usize = 1 << 16;
@@ -769,6 +770,7 @@ struct Attributes {
     node_log: u32,
     compressed: HashMap<u32, AttributeAt>,
     owners: Vec<u32>,
+    restored: Vec<(u32, AttributeAt)>,
 }
 
 fn load_overflow(reader: &mut Reader) -> Result<Overflow> {
@@ -850,6 +852,8 @@ fn load_attributes(reader: &mut Reader, overflow: &Overflow) -> Result<Attribute
     let fork = attributes.fork.clone();
     let mut walk = Walk::open(reader, &fork, "attributes")?;
     attributes.node_log = walk.header.node_log;
+    let mut count = 0usize;
+    let mut names = crate::xattr::EntryNames::default();
     while let Some(node) = walk.next_leaf(reader, &fork, "attributes")? {
         for index in 0..node.records {
             let bytes = record(&walk.node, index);
@@ -860,12 +864,36 @@ fn load_attributes(reader: &mut Reader, overflow: &Overflow) -> Result<Attribute
                 attribute.id
             );
             ensure!(
-                attributes.owners.len() < tree::MAX_ENTRIES,
+                count < tree::MAX_ENTRIES,
                 "HFS volume has more than {} attributes",
                 tree::MAX_ENTRIES
             );
-            attributes.owners.push(attribute.id);
-            if utf16_name(&bytes[attribute.name.clone()]).as_deref() != Some(DECMPFS) {
+            count += 1;
+            if attributes.owners.last() != Some(&attribute.id) {
+                attributes.owners.push(attribute.id);
+                names.clear();
+            }
+            let at = AttributeAt {
+                node: walk.current,
+                record: index as u16,
+            };
+            let name = utf16_name(&bytes[attribute.name.clone()]).with_context(|| {
+                format!(
+                    "HFS entry {} has an extended attribute whose name is not valid UTF-16",
+                    attribute.id
+                )
+            })?;
+            names
+                .add(name.as_bytes())
+                .with_context(|| format!("HFS entry {}", attribute.id))?;
+            if name != DECMPFS {
+                if name != RESOURCE_FORK_ATTRIBUTE && crate::xattr::is_restored(&name) {
+                    if let AttributeValue::Fork(fork) = &attribute.value {
+                        crate::xattr::check_size(&name, fork.size)
+                            .with_context(|| format!("HFS entry {}", attribute.id))?;
+                    }
+                    attributes.restored.push((attribute.id, at));
+                }
                 continue;
             }
             ensure!(
@@ -873,10 +901,6 @@ fn load_attributes(reader: &mut Reader, overflow: &Overflow) -> Result<Attribute
                 "HFS file {} keeps its decmpfs header in a fork; {BACKEND_HINT}",
                 attribute.id
             );
-            let at = AttributeAt {
-                node: walk.current,
-                record: index as u16,
-            };
             ensure!(
                 attributes.compressed.insert(attribute.id, at).is_none(),
                 "HFS file {} has two decmpfs headers",
@@ -884,6 +908,15 @@ fn load_attributes(reader: &mut Reader, overflow: &Overflow) -> Result<Attribute
             );
         }
     }
+    let mut runs = attributes.owners.clone();
+    runs.sort_unstable();
+    if let Some(pair) = runs.windows(2).find(|pair| pair[0] == pair[1]) {
+        bail!(
+            "HFS entry {} has extended attribute records that lie apart",
+            pair[0]
+        );
+    }
+    attributes.restored.sort_by_key(|&(owner, _)| owner);
     Ok(attributes)
 }
 
@@ -1447,7 +1480,7 @@ struct Source<'a, 'v> {
     attributes: &'a Attributes,
 }
 
-fn read_attribute(volume: &mut Source, at: &AttributeAt, id: u32) -> Result<Vec<u8>> {
+fn attribute_node(volume: &mut Source, at: &AttributeAt) -> Result<(Vec<u8>, usize)> {
     let fork = volume.attributes.fork.clone();
     let mut node = vec![0u8; 1 << volume.attributes.node_log];
     volume.reader.read_fork(
@@ -1460,7 +1493,70 @@ fn read_attribute(volume: &mut Source, at: &AttributeAt, id: u32) -> Result<Vec<
         usize::from(at.record) < descriptor.records,
         "HFS attributes file changed while it was read"
     );
-    let bytes = record(&node, usize::from(at.record));
+    Ok((node, usize::from(at.record)))
+}
+
+fn restore_attributes(
+    volume: &mut Source,
+    owner: u32,
+    path: &str,
+    tree: &mut tree::Tree,
+    mut target: Option<tree::Owner>,
+) -> Result<()> {
+    let writes = target.is_some() && tree.writes_attributes();
+    let restored = &volume.attributes.restored;
+    let start = restored.partition_point(|&(id, _)| id < owner);
+    let end = restored.partition_point(|&(id, _)| id <= owner);
+    for (_, at) in &restored[start..end] {
+        tree.check()?;
+        let (node, index) = attribute_node(volume, at)?;
+        let bytes = record(&node, index);
+        let attribute = attribute_record(bytes)?;
+        let name = utf16_name(&bytes[attribute.name.clone()]);
+        ensure!(
+            attribute.id == owner && name.is_some(),
+            "HFS attributes file changed while it was read"
+        );
+        let name = name.unwrap();
+        let value = match attribute.value {
+            AttributeValue::Inline(range) => bytes[range].to_vec(),
+            AttributeValue::Fork(data) => {
+                let fork = Fork {
+                    size: data.size,
+                    blocks: data.blocks,
+                    extents: used(&data.extents).collect(),
+                };
+                ensure!(
+                    block_sum(&fork.extents) == u64::from(fork.blocks),
+                    "HFS entry {path:?} has an extended attribute {name:?} whose extents do not add up to its blocks"
+                );
+                volume
+                    .reader
+                    .check_fork(&fork, &format!("attribute {name:?} of {path:?}"))?;
+                if !writes {
+                    continue;
+                }
+                let size = fork.size;
+                let stream = ForkStream {
+                    reader: &mut *volume.reader,
+                    fork,
+                    position: 0,
+                };
+                crate::xattr::read_value(stream, size, &name)
+                    .with_context(|| format!("HFS entry {path:?}"))?
+            }
+            AttributeValue::Unsupported => bail!("HFS attributes file changed while it was read"),
+        };
+        if let Some(target) = &mut target {
+            tree.set_attribute(target, &name, value)?;
+        }
+    }
+    Ok(())
+}
+
+fn read_attribute(volume: &mut Source, at: &AttributeAt, id: u32) -> Result<Vec<u8>> {
+    let (node, index) = attribute_node(volume, at)?;
+    let bytes = record(&node, index);
     let attribute = attribute_record(bytes)?;
     let AttributeValue::Inline(range) = attribute.value else {
         bail!("HFS attributes file changed while it was read");
@@ -1597,7 +1693,9 @@ fn emit(
         let time = hfs_time(item.modified);
         let (source, group) = match item.kind {
             Kind::Folder => {
-                tree.directory(&path, folder_mode(item.mode), time)?;
+                let placed = tree.placed_directory(&path, folder_mode(item.mode), time)?;
+                let target = placed.as_deref().map(tree::Owner::Folder);
+                restore_attributes(&mut volume, item.id, &path, tree, target)?;
                 continue;
             }
             Kind::HardLink(number) => {
@@ -1612,7 +1710,14 @@ fn emit(
             let (size, data) = content(&mut volume, source, &path)?;
             let target = link_target(data, size, &path)?;
             tree.check()?;
-            tree.symlink(&path, target)?;
+            let link = tree.placed_symlink(&path, target)?;
+            restore_attributes(
+                &mut volume,
+                source.id,
+                &path,
+                tree,
+                link.map(tree::Owner::Link),
+            )?;
             continue;
         }
         ensure!(
@@ -1627,7 +1732,7 @@ fn emit(
             continue;
         }
         let (size, mut data) = content(&mut volume, source, &path)?;
-        tree.file(
+        let mut written = tree.write_file(
             &path,
             size,
             file_mode(source.mode),
@@ -1639,6 +1744,10 @@ fn emit(
             data.read(&mut rest)? == 0,
             "HFS file {path:?} decodes to more than its declared size"
         );
+        drop(data);
+        let target = written.as_mut().map(tree::Owner::File);
+        restore_attributes(&mut volume, source.id, &path, tree, target)?;
+        tree.finish_file(written)?;
         if let Some(group) = group
             && writer.writes(&path)
         {

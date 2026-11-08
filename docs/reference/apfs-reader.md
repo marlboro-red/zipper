@@ -28,11 +28,23 @@ The reader writes each volume as `7zz x` writes it on macOS and Linux:
 - A sparse file's holes are written as zeros. A cloned file is written from the data stream its inode names.
 - A compressed file is written decompressed.
 
-It never restores owners, flags, Finder information, access, change or creation times, or ACLs.
+- On macOS, each extended attribute is restored, as the next section describes.
+
+It never restores owners, flags, access, change or creation times, or ACLs.
 
 ## Extended attributes and resource forks
 
-7-Zip writes each extended attribute of a file on macOS and Linux as a file named `file:name`. Zipper's shared name check refuses a `:` in every reader. So Zipper skips extended attributes, as the DMG and xar readers do, since macOS adds `com.apple.provenance` to most files. A resource fork is the `com.apple.ResourceFork` attribute. Zipper refuses a file whose resource fork is not compressed data, and the error names the file and suggests `--zip-engine backend`. It skips an empty resource fork, which `ditto --hfsCompression` leaves on a file it could not compress.
+On macOS, the reader restores the extended attributes of each file, folder and link as macOS extended attributes. 7-Zip writes each one instead as a file named `file:name`, and Zipper's shared name check still refuses a `:` in every entry name. On Linux and Windows the reader skips them, and `metadata: Metadata::ContentOnly`, or `--content-only`, writes none. The user decided this on 8 November 2026.
+
+- The reader never restores `com.apple.quarantine`, `com.apple.provenance`, `com.apple.macl`, `com.apple.rootless` or any name that starts with `com.apple.system.`, and skips them without a message. Each carries state of the machine that wrote the volume, such as a quarantine or sandbox mark.
+- `com.apple.decmpfs` and `com.apple.ResourceFork` hold a compressed file's data, and `com.apple.fs.symlink` holds a link's target. None of them is restored as an attribute.
+- Attributes are set in staging, after a file's data is written and before its mode and time are applied. A file whose mode lacks the owner's write right gets it while its attributes are set, and loses it again after. Its modification time is set last.
+- A link's attributes are set on the link itself, never on its target, after every link is created.
+- A folder that already exists in the destination keeps its own attributes when an extraction merges into it. A file that replaces one has only the archive's attributes.
+- Each value counts toward `--max-extracted-bytes`, or free space, before it is written.
+- On a destination that reports `ENOTSUP` for extended attributes, the reader skips them and keeps extracting. So it does where macOS keeps them in AppleDouble `._name` files, as on FAT and exFAT, which the reader finds with a probe file in staging before the first attribute. An AppleDouble file could replace an archive entry of that name. Any other failure to set one fails the extraction, and nothing is published.
+
+A resource fork is the `com.apple.ResourceFork` attribute. Zipper refuses a file whose resource fork is not compressed data, and the error names the file and suggests `--zip-engine backend`. It skips an empty resource fork, which `ditto --hfsCompression` leaves on a file it could not compress.
 
 ## Safety checks
 
@@ -47,6 +59,8 @@ The reader checks the layout before it writes each file, and it publishes nothin
 - A file's extents follow one another from offset 0, are whole blocks, cover its size and lie inside the container. No extent starts past the file's size.
 - A compressed file has no data stream or extents of its own, and its decmpfs header's size matches its inode. Its decompressed data, chunk table and chunks stay within the sizes it declares, and a chunk decodes to exactly its block.
 - Names pass the same checks as tar names. `..`, `.`, backslashes, `:` and NUL are refused, and so is a name that is not UTF-8.
+- Every extended attribute's name is UTF-8, not empty, without a NUL and at most 127 bytes long, as macOS allows. An entry has at most 128 attributes, skipped ones included, and no two of one name. A value the reader restores holds at most 64 MiB. A volume that breaks any of these is refused by name on every platform, also where attributes are skipped.
+- An attribute held as a data stream has extents that follow one another, cover its size and lie inside the container, checked on every platform.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
 ## Limits
@@ -63,15 +77,20 @@ The reader checks the layout before it writes each file, and it publishes nothin
 | File extents | at most 16,777,216 per volume |
 | Names and folder paths | at most 64 MiB each |
 | A decmpfs attribute held as a data stream | at most 64 KiB, as 7-Zip reads |
+| Extended attributes of one entry | at most 128, skipped ones included |
+| One restored attribute value | at most 64 MiB |
+| Restored attributes | at most 1,000,000 per volume |
+| Attributes of links, held until the links are created | at most 64 MiB |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-The reader never holds a container's data. It walks each B-tree one node at a time, with one block for each level. It keeps one small entry per inode, directory record and file extent, with names in one buffer, and where each compressed file's or link's attribute lies, which it reads again when it writes that file. So memory follows the file-system tree, not the container. It reads one volume's tree at a time. On a container of 998,000 empty files in 1,000 folders from the test writer, `zipper test` peaked at 599 MB of resident memory and `7zz t` at 827 MB. `--threads` has no effect on APFS.
+The reader never holds a container's data. It walks each B-tree one node at a time, with one block for each level. It keeps one small entry per inode, directory record and file extent, with names in one buffer. It also keeps where each compressed file's or link's attribute and each restored attribute lies, and reads it again when it writes that entry. It reads one attribute value at a time, in pieces of 1 MiB, and holds it whole, since macOS sets a value in one call. On a container of 999,936 restored attributes from the test writer, `zipper extract` peaked at 33 MB of resident memory, the reader before this change at 8 MB and `7zz t` at 318 MB. On one with a value of 64 MiB and 1,024 values of 256 KiB, `zipper extract` peaked at 73 MB and `7zz t`, which streams each value, at 4 MB. So memory follows the file-system tree, not the container. It reads one volume's tree at a time. On a container of 998,000 empty files in 1,000 folders from the test writer, `zipper test` peaked at 599 MB of resident memory and `7zz t` at 827 MB. `--threads` has no effect on APFS.
 
 ## Differences from 7-Zip
 
 `tests/apfs_corpus.rs` requires every image in `tests/data/apfs-corpus` to extract to the tree recorded when it was written, and to the tree 7-Zip extracts where it is installed. It does the same for the parity APFS image and DMG images, and for generated containers that are also checked against the bytes they were written from. The reader differs from 7-Zip 26.05 on purpose in these cases:
 
-- 7-Zip writes extended attributes as `file:name` files. Zipper skips them and refuses a resource fork that is not compressed data.
+- 7-Zip writes each extended attribute of a file or link as a `file:name` file, with a `:` or `/` in the attribute's name written as `_`. Zipper restores it as an extended attribute on macOS and skips it elsewhere. 7-Zip writes no attribute of a folder, and Zipper restores them. 7-Zip also writes the names Zipper never restores.
+- Zipper refuses a resource fork that is not compressed data, which 7-Zip writes as a `file:com.apple.ResourceFork` file.
 - 7-Zip reads the superblock at block 0 and nothing of the checkpoint area. Zipper reads the newest valid checkpoint, which is the one at block 0 in a container that was unmounted cleanly. Zipper also refuses a container whose newest checkpoint map is damaged, which 7-Zip never reads.
 - 7-Zip writes each name of a hard link as a copy of its data. Zipper writes hard links to one copy.
 - 7-Zip fills a sparse file's holes with the bytes of the container's first block. Zipper writes zeros.
@@ -83,7 +102,9 @@ The reader never holds a container's data. It walks each B-tree one node at a ti
 - 7-Zip checks the superblock's checksum over its first 4 KiB, so it opens only containers of 4 KiB blocks. Zipper checks the whole block.
 - 7-Zip does not check an object's identifier, storage or transaction id against its owner, or that a node lies one level below its parent. Zipper refuses an object that disagrees, though its checksum must still hold for such a container to exist.
 
-`tests/hostile_apfs.rs` flips a bit in bytes of the container superblock, the checkpoint area, the object maps and their nodes, and the file-system tree's nodes. It does the same to the volume superblock and the file extents, and cuts the container at many lengths. Zipper must refuse each damaged container whenever 7-Zip refuses it. When 7-Zip extracts it, Zipper must extract the same tree or refuse it for one of the stricter checks above. The gate runs a sample of each sweep. The full sweeps flip every byte of each object's first 128 bytes and of the superblock's fields, and every 7th to 17th byte elsewhere. They are ignored tests that `cargo xtask release-checks` runs under `[apfs-fields]`. Crafted cases cover B-tree loops in both kinds of tree, nodes outside the container, bad checksums and extents past the end. They also cover records that disagree with their inodes, unsafe names and links, deep and looping folders, repeated names, and each refusal by name.
+On macOS, `tests/apfs_corpus.rs` compares each restored attribute with the bytes of 7-Zip's `file:name` file, and with the bytes a generated container was written from. Those containers carry attributes on files, folders, links and hard links, and values of up to 3 MiB held as data streams. They also hold a read-only file, a name of 127 bytes and every name that is never restored. Another test checks that `Metadata::ContentOnly` writes none, that a selection and a strip keep them, and that an extraction into an existing folder keeps that folder's own.
+
+`tests/hostile_apfs.rs` flips a bit in bytes of the container superblock, the checkpoint area, the object maps and their nodes, and the file-system tree's nodes. It does the same to the volume superblock and the file extents, and cuts the container at many lengths. Zipper must refuse each damaged container whenever 7-Zip refuses it. When 7-Zip extracts it, Zipper must extract the same tree or refuse it for one of the stricter checks above. The gate runs a sample of each sweep. The full sweeps flip every byte of each object's first 128 bytes and of the superblock's fields, and every 7th to 17th byte elsewhere. They are ignored tests that `cargo xtask release-checks` runs under `[apfs-fields]`. Crafted cases cover B-tree loops in both kinds of tree, nodes outside the container, bad checksums and extents past the end. They also cover records that disagree with their inodes, unsafe names and links, deep and looping folders, repeated names, and each refusal by name. Each attribute rule above has a crafted container, refused with nothing published.
 
 ## Extraction options
 

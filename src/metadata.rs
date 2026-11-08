@@ -2,14 +2,18 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Metadata {
     /// Restore what the archive carries: Unix modes, Windows attributes,
-    /// modification times, and on Windows the archive's Mark of the Web.
+    /// modification times, on Windows the archive's Mark of the Web, and on
+    /// macOS the extended attributes of APFS and HFS+ volumes, apart from
+    /// `com.apple.quarantine`, `com.apple.provenance`, `com.apple.macl`,
+    /// `com.apple.rootless` and names that start with `com.apple.system.`.
     #[default]
     Restore,
     /// Write contents only, for files that a build or runtime reads. Files
     /// get mode 0o666, or 0o777 when the archive marks them executable, and
     /// folders the default mode, all less the umask. No Windows attribute,
-    /// such as read-only or hidden, no modification time and no
-    /// `Zone.Identifier` stream is written. Links are still created.
+    /// such as read-only or hidden, no modification time, no extended
+    /// attribute and no `Zone.Identifier` stream is written. Links are still
+    /// created.
     ContentOnly,
 }
 

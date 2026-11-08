@@ -27,11 +27,15 @@ The reader writes the volume as `7zz x` writes it on macOS and Linux:
 - A hard link becomes a hard link to its data in `[HFS+ Private Data]/iNodeN`, which is also written there.
 - A file compressed with HFS+ compression is written decompressed. It may keep its data in its `com.apple.decmpfs` attribute, stored or compressed with zlib, LZVN or a copy, methods 3, 7 and 9. Or it may keep 64 KiB chunks of zlib or LZVN in its resource fork, methods 4 and 8. These are the methods 7-Zip decodes.
 
+- On macOS, each extended attribute is restored, as the next section describes.
+
 It never restores owners, flags, Finder information, access or creation times, or ACLs.
 
 ## Resource forks and extended attributes
 
-7-Zip writes a file's resource fork on macOS and Linux as a file named `file:rsrc`, and each extended attribute as a file named `file:name`. Zipper's shared name check refuses a `:` in every reader. So Zipper refuses an image with a resource fork that is not compressed data, and the error names the file and suggests `--zip-engine backend`. It skips extended attributes, as the xar reader does, because macOS adds `com.apple.provenance` to most files and refusing them would refuse most images.
+On macOS, the reader restores the extended attributes of each file, folder and link as macOS extended attributes, as the [APFS reader](apfs-reader.md#extended-attributes-and-resource-forks) does, with the same names never restored and the same order in staging. 7-Zip writes each one instead as a file named `file:name`. On Linux and Windows the reader skips them, and `metadata: Metadata::ContentOnly`, or `--content-only`, writes none. A hard link shares its data's attributes, which the reader sets on `[HFS+ Private Data]/iNodeN`.
+
+7-Zip writes a file's resource fork as a file named `file:rsrc`. Zipper's shared name check refuses a `:` in every reader. So Zipper refuses an image with a resource fork that is not compressed data, and the error names the file and suggests `--zip-engine backend`.
 
 ## Safety checks
 
@@ -48,6 +52,7 @@ The reader checks the layout before it writes each file, and it publishes nothin
 - A compressed file has no data fork of its own. Its decompressed data, chunk table and chunks stay within the sizes it declares, and a chunk decodes to exactly its block.
 - A hard link names data that the private folder holds. A hard link to a folder, which Time Machine writes, is refused.
 - Names pass the same checks as tar names. `..`, `.`, backslashes, `:` and NUL are refused, and so is a name that is not valid UTF-16.
+- Every extended attribute's name is valid UTF-16, not empty, without a NUL and at most 127 bytes long in UTF-8. An entry has at most 128 attributes, skipped ones included, no two of one name, and its records lie together in the attributes file. A value the reader restores holds at most 64 MiB, and one held in a fork has extents that hold its block count inside the volume. A volume that breaks any of these is refused by name on every platform.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
 ## Limits
@@ -61,18 +66,20 @@ The reader checks the layout before it writes each file, and it publishes nothin
 | Decoded chunks held | at most 64 chunks and 64 MiB, and always the chunk being read |
 | Nodes in one B-tree | at most 16,777,216 |
 | Entries and attributes | at most 1,000,000 each, as the shared tree allows |
+| Extended attributes of one entry | at most 128, skipped ones included |
+| One restored attribute value | at most 64 MiB |
 | Names and folder paths | at most 64 MiB each |
 | Partition maps inside one another | at most 4 deep |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-The reader never holds an image's data. It decodes the partition one chunk at a time into a small cache, and walks each B-tree one node at a time. It keeps one entry per catalog record, with its name in one buffer, and where each compressed file's decmpfs attribute lies, which it reads again when it writes that file. So memory follows the catalog, not the image. On a DMG of 999,001 entries in 1,000 folders, `zipper test` peaked at 665 MB of resident memory and `7zz t` at 957 MB. On the 6 GiB sparse corpus image, `zipper test` peaked at 8 MB and `7zz t` at 37 MB. `--threads` has no effect on DMG.
+The reader never holds an image's data. It decodes the partition one chunk at a time into a small cache, and walks each B-tree one node at a time. It keeps one entry per catalog record, with its name in one buffer, and where each compressed file's decmpfs attribute and each restored attribute lies, which it reads again when it writes that entry. It reads one attribute value at a time, in pieces of 1 MiB. So memory follows the catalog, not the image. On a DMG of 999,001 entries in 1,000 folders, `zipper test` peaked at 665 MB of resident memory and `7zz t` at 957 MB. On the 6 GiB sparse corpus image, `zipper test` peaked at 8 MB and `7zz t` at 37 MB. `--threads` has no effect on DMG.
 
 ## Differences from 7-Zip
 
 `tests/dmg_corpus.rs` requires every DMG in `tests/data/dmg-corpus` to extract to the tree recorded when it was written, and to the tree 7-Zip extracts where it is installed. It also compares generated HFS+ and HFSX volumes with every chunk method, both partition list forms and Apple, GPT and MBR partition maps. They hold compressed files of every method 7-Zip decodes, hard links, links, modes, folders 60 deep and 1,500 wide, and Unicode names. The reader differs from 7-Zip 26.05 on purpose in these cases:
 
 - 7-Zip writes each hard link as an empty file with the link's own mode. Zipper writes it as a hard link to its data, with that data's mode.
-- 7-Zip writes resource forks and extended attributes as `file:rsrc` and `file:name` files. Zipper refuses a resource fork and skips extended attributes.
+- 7-Zip writes resource forks and extended attributes as `file:rsrc` and `file:name` files, with a `:` or `/` in an attribute's name written as `_`. Zipper refuses a resource fork, and restores extended attributes on macOS and skips them elsewhere. 7-Zip writes no attribute for a hard link's own name, which Zipper links to data that has them.
 - 7-Zip refuses a relative link with `..` in it, such as `../hello.txt`, and writes an empty file in its place. Zipper creates the link when it stays inside the destination.
 - 7-Zip opens a DMG's file system without checking any CRC-32, and only warns when the master or data fork checksum fails. Zipper checks the partition's CRC-32 and refuses the image when any check fails, also when a block the volume never reads is damaged.
 - 7-Zip only warns when a DMG's trailer or other partitions are inconsistent, as Zipper also accepts. It reads a zero block that holds data, and a raw block whose data size differs from its own, without complaint. Zipper refuses both.
@@ -84,7 +91,7 @@ The reader never holds an image's data. It decodes the partition one chunk at a 
 - 7-Zip reads a zlib compressed file whose resource data does not start at byte 256, from byte 256. Zipper refuses it.
 - 7-Zip opens an MBR whose only partition is a protective or extended one. Zipper leaves such a disk, and an MBR that may use 4 KiB sectors, to 7-Zip.
 
-`tests/hostile_dmg.rs` flips bits in every byte of the trailer, in every 5th byte of the property list or resource fork and every 89th byte of each chunk, and cuts each image every 97 bytes. It flips bits in every byte of the HFS+ volume header, of each B-tree header node's records, of each leaf node's descriptor and offset table, and in every 41st byte of each leaf. These full sweeps are ignored tests that `cargo xtask release-checks` runs under `[dmg-fields]`. The gate runs a sample of each. The sample flips every byte of the trailer's forks, checksum types and sector count, and of the volume header's counts and special forks. It also flips every byte of each B-tree header record and of each leaf's descriptor and offset table, with sparser bytes elsewhere. Zipper must refuse each damaged image whenever 7-Zip refuses it. When 7-Zip extracts it, Zipper must extract the same tree, apart from the hard links above, or refuse it for one of the stricter checks above. Crafted cases cover B-tree loops, leaves outside their file, shared extents, data larger than its declared size, unknown and oversized chunks, resource forks, unsafe names and links, deep and looping folders and repeated names.
+`tests/hostile_dmg.rs` flips bits in every byte of the trailer, in every 5th byte of the property list or resource fork and every 89th byte of each chunk, and cuts each image every 97 bytes. It flips bits in every byte of the HFS+ volume header, of each B-tree header node's records, of each leaf node's descriptor and offset table, and in every 41st byte of each leaf. These full sweeps are ignored tests that `cargo xtask release-checks` runs under `[dmg-fields]`. The gate runs a sample of each. The sample flips every byte of the trailer's forks, checksum types and sector count, and of the volume header's counts and special forks. It also flips every byte of each B-tree header record and of each leaf's descriptor and offset table, with sparser bytes elsewhere. Zipper must refuse each damaged image whenever 7-Zip refuses it. When 7-Zip extracts it, Zipper must extract the same tree, apart from the hard links above, or refuse it for one of the stricter checks above. Crafted cases cover B-tree loops, leaves outside their file, shared extents, data larger than its declared size, unknown and oversized chunks, resource forks, unsafe names and links, deep and looping folders and repeated names. Each attribute rule above has a crafted volume, refused with nothing published. On macOS, `tests/dmg_corpus.rs` compares each restored attribute of the generated volumes, on files, folders, links and a read-only file, inline and in a fork of 200,000 bytes, with the bytes of 7-Zip's `file:name` file.
 
 ## Extraction options
 

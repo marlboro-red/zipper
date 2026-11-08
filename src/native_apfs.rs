@@ -133,6 +133,7 @@ const MAX_KEYS: u64 = 1 << 26;
 const MAX_ENTRIES: usize = tree::MAX_ENTRIES + 16;
 const MAX_EXTENTS: usize = 1 << 24;
 const MAX_NAMES: usize = 64 * 1024 * 1024;
+const MAX_ATTRIBUTES: usize = tree::MAX_ENTRIES;
 const MAX_DEPTH: usize = 1024;
 const COPY_PIECE: usize = 1 << 20;
 const FLETCHER_MODULUS: u64 = 0xFFFF_FFFF;
@@ -1233,6 +1234,7 @@ struct Record {
 struct Catalog {
     inodes: Vec<Inode>,
     specials: Vec<Special>,
+    attributes: Vec<(u64, Location)>,
     records: Vec<Record>,
     names: Vec<u8>,
     extents: Vec<FileExtent>,
@@ -1257,6 +1259,12 @@ impl Catalog {
             .unwrap_or_default()
     }
 
+    fn attributes_of(&self, owner: u64) -> &[(u64, Location)] {
+        let start = self.attributes.partition_point(|&(id, _)| id < owner);
+        let end = self.attributes.partition_point(|&(id, _)| id <= owner);
+        &self.attributes[start..end]
+    }
+
     fn extents_of(&self, owner: u64) -> &[FileExtent] {
         let Ok(index) = self.runs.binary_search_by_key(&owner, |run| run.0) else {
             return &[];
@@ -1275,6 +1283,8 @@ struct CatalogBuilder {
     catalog: Catalog,
     last_id: u64,
     current_run: Option<(u64, u32)>,
+    attribute_owner: u64,
+    attribute_names: crate::xattr::EntryNames,
 }
 
 impl CatalogBuilder {
@@ -1345,7 +1355,31 @@ impl CatalogBuilder {
                     xattr_record(key, value).with_context(|| format!("APFS inode {id}"))?;
                 self.last_inode(id, "attribute")?;
                 let name = &key[record.name.clone()];
+                if self.attribute_owner != id {
+                    self.attribute_owner = id;
+                    self.attribute_names.clear();
+                }
+                let shown = self
+                    .attribute_names
+                    .add(name)
+                    .with_context(|| format!("APFS inode {id}"))?;
                 if ![DECMPFS, RESOURCE_FORK, SYMLINK_TARGET].contains(&name) {
+                    if !crate::xattr::is_restored(shown) {
+                        return Ok(());
+                    }
+                    match record.data {
+                        XattrData::Embedded(_) => {}
+                        XattrData::Stream { size, .. } => crate::xattr::check_size(shown, size)
+                            .with_context(|| format!("APFS inode {id}"))?,
+                        XattrData::Other => bail!(
+                            "APFS inode {id} has a {shown} attribute with neither embedded nor stream data"
+                        ),
+                    }
+                    ensure!(
+                        self.catalog.attributes.len() < MAX_ATTRIBUTES,
+                        "APFS volume has more than {MAX_ATTRIBUTES} extended attributes"
+                    );
+                    self.catalog.attributes.push((id, at));
                     return Ok(());
                 }
                 let name = name.to_vec();
@@ -1444,6 +1478,7 @@ fn load_catalog(container: &mut Container, opened: &OpenedVolume) -> Result<Cata
         catalog: Catalog {
             inodes: Vec::new(),
             specials: Vec::new(),
+            attributes: Vec::new(),
             records: Vec::new(),
             names: Vec::new(),
             extents: Vec::new(),
@@ -1452,6 +1487,8 @@ fn load_catalog(container: &mut Container, opened: &OpenedVolume) -> Result<Cata
         },
         last_id: 0,
         current_run: None,
+        attribute_owner: 0,
+        attribute_names: crate::xattr::EntryNames::default(),
     };
     walk(
         &mut container.disk,
@@ -1873,6 +1910,54 @@ struct Reading<'c, 'd, 'v> {
 }
 
 impl Reading<'_, '_, '_> {
+    fn restore_attributes(
+        &mut self,
+        owner: u64,
+        path: &str,
+        tree: &mut tree::Tree,
+        mut target: Option<tree::Owner>,
+    ) -> Result<()> {
+        let writes = target.is_some() && tree.writes_attributes();
+        for &(_, at) in self.catalog.attributes_of(owner) {
+            tree.check()?;
+            let mut block = vec![0u8; self.disk.block_size()];
+            self.disk
+                .read_object(at.node, &mut block, "file-system tree")?;
+            let parsed = node(&block)?;
+            let (key, value) = entry(&parsed, &block, usize::from(at.index), (0, 0))?;
+            let (key, value) = (&block[key], &block[value]);
+            let record = xattr_record(key, value)?;
+            ensure!(
+                record_key(key)? == (owner, XATTR_RECORD),
+                "APFS file-system tree changed while it was read"
+            );
+            let name = crate::xattr::checked_name(&key[record.name])?;
+            let bytes = match record.data {
+                XattrData::Embedded(range) => value[range].to_vec(),
+                XattrData::Stream { id, size } => {
+                    let extents = self.catalog.extents_of(id);
+                    validate_extents(extents, size, self.disk, path)?;
+                    if !writes {
+                        continue;
+                    }
+                    let stream = ExtentStream {
+                        disk: &mut *self.disk,
+                        extents,
+                        size,
+                        position: 0,
+                    };
+                    crate::xattr::read_value(stream, size, name)
+                        .with_context(|| format!("APFS file {path:?}"))?
+                }
+                XattrData::Other => bail!("APFS file-system tree changed while it was read"),
+            };
+            if let Some(target) = &mut target {
+                tree.set_attribute(target, name, bytes)?;
+            }
+        }
+        Ok(())
+    }
+
     fn embedded(&mut self, at: Location, owner: u64, name: &[u8]) -> Result<Vec<u8>> {
         let mut block = vec![0u8; self.disk.block_size()];
         self.disk
@@ -2184,13 +2269,20 @@ fn emit(
         let inode = &catalog.inodes[catalog.inode(record.file).unwrap()];
         match inode.mode & TYPE_BITS {
             DIRECTORY => {
-                tree.directory(&path, folder_mode(inode.mode), apfs_time(inode.modified))?;
+                let placed = tree.placed_directory(
+                    &path,
+                    folder_mode(inode.mode),
+                    apfs_time(inode.modified),
+                )?;
+                let target = placed.as_deref().map(tree::Owner::Folder);
+                reading.restore_attributes(inode.id, &path, tree, target)?;
                 continue;
             }
             SYMLINK => {
                 let target = reading.link_target(inode, &path)?;
                 tree.check()?;
-                tree.symlink(&path, target)?;
+                let link = tree.placed_symlink(&path, target)?;
+                reading.restore_attributes(inode.id, &path, tree, link.map(tree::Owner::Link))?;
                 continue;
             }
             _ => {}
@@ -2203,7 +2295,7 @@ fn emit(
             continue;
         }
         let (size, mut data) = reading.content(inode, &path)?;
-        tree.file(
+        let mut written = tree.write_file(
             &path,
             size,
             file_mode(inode.mode),
@@ -2215,6 +2307,10 @@ fn emit(
             data.read(&mut rest)? == 0,
             "APFS file {path:?} decodes to more than its declared size"
         );
+        drop(data);
+        let target = written.as_mut().map(tree::Owner::File);
+        reading.restore_attributes(inode.id, &path, tree, target)?;
+        tree.finish_file(written)?;
         if writer.writes(&path) {
             writer.leaders.insert(inode.id, path);
         }

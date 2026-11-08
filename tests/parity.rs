@@ -17,6 +17,9 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[path = "common/xattrs.rs"]
+mod xattrs;
+
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/parity");
 const STORED_SUFFIX: &str = ".stored.xz";
 
@@ -53,7 +56,7 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
         .sort_by_file_name()
         .into_iter()
         .map(|entry| entry.unwrap())
-        .map(|entry| {
+        .flat_map(|entry| {
             let name = entry
                 .path()
                 .strip_prefix(root)
@@ -65,14 +68,24 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
             } else if entry.file_type().is_dir() {
                 "dir".to_owned()
             } else {
-                Sha256::digest(fs::read(entry.path()).unwrap())
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect()
+                hex(&Sha256::digest(fs::read(entry.path()).unwrap()))
             };
-            (name, kind)
+            let attributes = xattrs::attributes(entry.path())
+                .into_iter()
+                .map(|(attribute, value)| {
+                    (
+                        format!("{name}:{}", xattrs::sevenzip_stream_name(&attribute)),
+                        hex(&Sha256::digest(value)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            std::iter::once((name, kind)).chain(attributes)
         })
         .collect()
+}
+
+fn hex(digest: &[u8]) -> String {
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn reference_tree(record: &Value) -> BTreeMap<String, String> {
@@ -194,7 +207,11 @@ fn every_parity_archive_extracts_as_its_row_says() {
                     "{name}: {}",
                     String::from_utf8_lossy(&run.stderr)
                 );
-                assert_eq!(tree(&output), reference_tree(record), "{name}");
+                let reference: BTreeMap<String, String> = reference_tree(record)
+                    .into_iter()
+                    .filter(|(path, _)| xattrs::sevenzip_stream_kept(path))
+                    .collect();
+                assert_eq!(tree(&output), reference, "{name}");
             }
             (Expect::Backend, Some(binary)) => {
                 let run = zipper(Some("backend"), None, &archive, &output);

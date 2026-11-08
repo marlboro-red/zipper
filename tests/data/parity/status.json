@@ -4,21 +4,21 @@
       "status": "native"
     },
     "APFS": {
-      "status": "partial",
-      "note": "APFS containers read in process, raw and inside DMG images and GPT disks, with several volumes, hard links, sparse, cloned and compressed files. Extended attributes are skipped, because 7-Zip writes them as files with `:` in their names, which the shared name check refuses. So the corpus image, whose files carry extended attributes, is checked through 7-Zip. Encrypted, sealed and snapshot volumes and Fusion containers go to 7-Zip.",
+      "status": "native",
+      "note": "APFS containers read in process, raw and inside DMG images and GPT disks, with several volumes, hard links, sparse, cloned and compressed files. On macOS, extended attributes are restored as extended attributes, where 7-Zip writes each as a separate `file:name` file. Elsewhere they are skipped. Encrypted, sealed and snapshot volumes and Fusion containers go to 7-Zip.",
       "tests": [
         "tests/apfs_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
-        "tests/apfs_corpus.rs::the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them_without_their_streams",
+        "tests/apfs_corpus.rs::the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them",
         "tests/apfs_corpus.rs::generated_volumes_extract_byte_for_byte_as_7zip_extracts_them",
         "tests/hostile_apfs.rs::damaged_file_tree_nodes_are_refused_when_7zip_refuses_them"
       ]
     },
     "APM": {
-      "status": "partial",
-      "note": "Apple partition maps holding HFS+ or HFSX read in process, raw and inside DMG images. The corpus image's files carry extended attributes, which Zipper skips, so it is checked through 7-Zip.",
+      "status": "native",
+      "note": "Apple partition maps holding HFS+ or HFSX read in process, raw and inside DMG images. On macOS, extended attributes are restored as extended attributes, where 7-Zip writes each as a separate `file:name` file. Elsewhere they are skipped.",
       "tests": [
         "tests/dmg_corpus.rs::partition_maps_inside_a_dmg_extract_as_7zip_extracts_them",
-        "tests/dmg_corpus.rs::the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams"
+        "tests/dmg_corpus.rs::the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them"
       ]
     },
     "Ar": {
@@ -85,11 +85,11 @@
       "status": "backend"
     },
     "Dmg": {
-      "status": "partial",
-      "note": "UDIF images whose file system is HFS+, HFSX or APFS read in process, with every chunk method. The corpus images hold APFS files with extended attributes, which Zipper skips, so they are checked through 7-Zip. A DMG holding another file system goes to 7-Zip.",
+      "status": "native",
+      "note": "UDIF images whose file system is HFS+, HFSX or APFS read in process, with every chunk method. On macOS, extended attributes are restored as extended attributes, where 7-Zip writes each as a separate `file:name` file. Elsewhere they are skipped. A DMG holding another file system goes to 7-Zip.",
       "tests": [
         "tests/dmg_corpus.rs::every_corpus_dmg_extracts_the_tree_7zip_extracts",
-        "tests/apfs_corpus.rs::the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them_without_their_streams",
+        "tests/apfs_corpus.rs::the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them",
         "tests/dmg_corpus.rs::generated_dmgs_of_every_chunk_method_and_form_extract_as_7zip_extracts_them",
         "tests/hostile_dmg.rs::damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them"
       ]
@@ -135,11 +135,11 @@
       ]
     },
     "HFS": {
-      "status": "partial",
-      "note": "HFS+ and HFSX read in process, raw and inside DMG images. Hard links become links. Resource forks are refused and extended attributes skipped, because 7-Zip writes them as files with `:` in their names, which the shared name check refuses. So the corpus image, whose files carry extended attributes, is checked through 7-Zip.",
+      "status": "native",
+      "note": "HFS+ and HFSX read in process, raw and inside DMG images. Hard links become links. On macOS, extended attributes are restored as extended attributes, where 7-Zip writes each as a separate `file:name` file. Elsewhere they are skipped. A resource fork that is not compressed data is refused.",
       "tests": [
         "tests/dmg_corpus.rs::generated_volumes_extract_byte_for_byte_as_7zip_extracts_them",
-        "tests/dmg_corpus.rs::the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams",
+        "tests/dmg_corpus.rs::the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them",
         "tests/hostile_dmg.rs::damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_them"
       ]
     },

@@ -39,6 +39,13 @@ const STRICTER: &[&str] = &[
     "holds a NUL",
     "holds data of its own",
     "share block",
+    "an extended attribute",
+    "a name longer than 127 bytes",
+    "more than 128 extended attributes",
+    "two extended attributes named",
+    "more than 67108864",
+    "an extended attribute whose name is not valid UTF-16",
+    "extended attribute records that lie apart",
 ];
 
 fn sevenzip_binary() -> Option<PathBuf> {
@@ -891,4 +898,96 @@ fn a_compressed_hard_link_record_is_refused() {
     let (image, _) = hfs_writer::build(&volume);
     let error = refusal(&image);
     assert!(error.contains("holds data of its own"), "{error}");
+}
+
+fn inline_attribute(id: u32, name: &str) -> Attribute {
+    Attribute {
+        id,
+        name: name.into(),
+        value: AttributeValue::Inline(b"value".to_vec()),
+    }
+}
+
+fn with_attributes(attributes: Vec<Attribute>) -> Vec<u8> {
+    let mut volume = small_volume();
+    volume.attributes.extend(attributes);
+    hfs_writer::build(&volume).0
+}
+
+fn units_of(name: &str) -> Vec<u8> {
+    name.encode_utf16().flat_map(u16::to_be_bytes).collect()
+}
+
+#[test]
+fn attributes_that_break_the_name_count_and_size_rules_refuse_the_volume() {
+    let cases: Vec<(Vec<Attribute>, &str)> = vec![
+        (
+            vec![inline_attribute(17, "")],
+            "an extended attribute has an empty name",
+        ),
+        (vec![inline_attribute(17, "a\0b")], "holds a NUL"),
+        (
+            vec![inline_attribute(17, &"é".repeat(64))],
+            "longer than 127 bytes",
+        ),
+        (
+            vec![
+                inline_attribute(17, "user.twice"),
+                inline_attribute(17, "user.twice"),
+            ],
+            "two extended attributes named \"user.twice\"",
+        ),
+        (
+            (0..129)
+                .map(|n| inline_attribute(17, &format!("user.{n:03}")))
+                .collect(),
+            "more than 128 extended attributes",
+        ),
+        (
+            vec![
+                inline_attribute(17, "user.a"),
+                inline_attribute(18, "user.b"),
+                inline_attribute(17, "user.c"),
+            ],
+            "HFS entry 17 has extended attribute records that lie apart",
+        ),
+    ];
+    for (attributes, wanted) in cases {
+        let error = refusal(&with_attributes(attributes));
+        assert!(error.contains(wanted), "{error}; wanted {wanted:?}");
+    }
+    let most = (0..128)
+        .map(|n| inline_attribute(17, &format!("user.{n:03}")))
+        .collect();
+    assert!(extracted(&with_attributes(most)).contains_key("Small/hello.txt"));
+
+    let mut image = with_attributes(vec![inline_attribute(17, "user.Xbad")]);
+    let units = units_of("user.Xbad");
+    let at = image
+        .windows(units.len())
+        .position(|window| window == units)
+        .unwrap();
+    image[at + 10..at + 12].copy_from_slice(&0xD800u16.to_be_bytes());
+    let error = refusal(&image);
+    assert!(error.contains("not valid UTF-16"), "{error}");
+
+    let mut image = with_attributes(vec![Attribute {
+        id: 17,
+        name: "user.big".into(),
+        value: AttributeValue::Fork(vec![1; 5000]),
+    }]);
+    let units = units_of("user.big");
+    let at = image
+        .windows(units.len() + 4)
+        .position(|window| {
+            window[..units.len()] == units[..] && window[units.len()..] == [0, 0, 0, 0x20]
+        })
+        .unwrap();
+    let size = at + units.len() + 8;
+    image[size..size + 8].copy_from_slice(&((64u64 << 20) + 1).to_be_bytes());
+    let error = refusal(&image);
+    assert!(
+        error.contains("holds 67108865 bytes, more than 67108864"),
+        "{error}"
+    );
 }

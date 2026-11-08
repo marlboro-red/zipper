@@ -13,6 +13,8 @@ mod dmg_writer;
 mod hfs_writer;
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
+#[path = "common/xattrs.rs"]
+mod xattrs;
 
 use dmg_writer::{Chunk, Form, Options, Partition};
 use hfs_writer::{Attribute, AttributeValue, Entry, Kind, ROOT, ROOT_PARENT, Volume};
@@ -129,6 +131,12 @@ fn tree(root: &Path) -> (Tree, Vec<String>) {
                 mode(&metadata)
             )
         };
+        for (attribute, value) in xattrs::attributes(entry.path()) {
+            found.insert(
+                format!("{name}:{}", xattrs::sevenzip_stream_name(&attribute)),
+                sha256(&value),
+            );
+        }
         found.insert(name, kind);
     }
     (found, hard)
@@ -142,6 +150,7 @@ fn without_modes(tree: &Tree) -> Tree {
 
 fn zipper_tree(image: &Path, into: &Path) -> anyhow::Result<(Tree, Vec<String>)> {
     read_archive(image, Some(into), ReadOptions::default())?;
+    xattrs::assert_no_skipped_value(into);
     Ok(tree(into))
 }
 
@@ -161,9 +170,17 @@ fn sevenzip_run(binary: &Path, image: &Path, into: &Path) -> (bool, Tree) {
 fn as_zipper_writes(theirs: &Tree, ours: &Tree, hard: &[String]) -> Tree {
     let mut expected: Tree = theirs
         .iter()
-        .filter(|(name, _)| !name.contains(':'))
-        .map(|(name, kind)| (name.clone(), kind.clone()))
+        .filter(|(name, _)| xattrs::sevenzip_stream_kept(name))
+        .map(|(name, kind)| match name.contains(':') {
+            true => (name.clone(), kind.split(' ').next().unwrap().to_owned()),
+            false => (name.clone(), kind.clone()),
+        })
         .collect();
+    for (name, kind) in ours {
+        if xattrs::sevenzip_writes_no_attribute_of(ours, name) {
+            expected.insert(name.clone(), kind.clone());
+        }
+    }
     for path in hard {
         let theirs = expected
             .get(path)
@@ -174,6 +191,13 @@ fn as_zipper_writes(theirs: &Tree, ours: &Tree, hard: &[String]) -> Tree {
             "7-Zip wrote hard link {path} with data"
         );
         expected.insert(path.clone(), ours[path].clone());
+        let attributes = format!("{path}:");
+        for (name, kind) in ours.range(attributes.clone()..) {
+            if !name.starts_with(&attributes) {
+                break;
+            }
+            expected.insert(name.clone(), kind.clone());
+        }
     }
     expected
 }
@@ -287,7 +311,7 @@ fn every_corpus_dmg_extracts_the_tree_7zip_extracts() {
 }
 
 #[test]
-fn the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams() {
+fn the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them() {
     let Some(binary) = sevenzip_binary() else {
         return;
     };
@@ -499,14 +523,54 @@ fn feature_volume(hfsx: bool, fragment: bool, per_leaf: usize) -> Volume {
         Vec::new(),
         hfs_writer::lzvn_fork(&[]),
     ));
-    attributes.push(Attribute {
-        id: 17,
-        name: "user.note".into(),
-        value: AttributeValue::Inline(b"skipped".to_vec()),
-    });
+    attributes.extend(tagged_attributes());
     volume.entries = entries;
     volume.attributes = attributes;
     volume
+}
+
+fn inline(id: u32, name: &str, value: &[u8]) -> Attribute {
+    Attribute {
+        id,
+        name: name.into(),
+        value: AttributeValue::Inline(value.to_vec()),
+    }
+}
+
+fn never_restored(id: u32) -> Vec<Attribute> {
+    [
+        "com.apple.macl",
+        "com.apple.provenance",
+        "com.apple.quarantine",
+        "com.apple.rootless",
+        "com.apple.system.Security",
+    ]
+    .into_iter()
+    .map(|name| inline(id, name, xattrs::SKIPPED_VALUE))
+    .collect()
+}
+
+const FOLDER_VALUE: &[u8] = b"on a folder";
+const LARGE_ATTRIBUTE: usize = 200_000;
+
+fn tagged_attributes() -> Vec<Attribute> {
+    let mut attributes = vec![inline(16, "user.folder", FOLDER_VALUE)];
+    attributes.extend(never_restored(16));
+    attributes.push(inline(17, &"n".repeat(127), b"longest name"));
+    attributes.push(inline(17, "com.apple.metadata:kMDItemWhereFroms", b"colon"));
+    attributes.extend(never_restored(17));
+    attributes.push(inline(17, "user.empty", b""));
+    attributes.push(Attribute {
+        id: 17,
+        name: "user.large".into(),
+        value: AttributeValue::Fork(seeded(5, LARGE_ATTRIBUTE)),
+    });
+    attributes.push(inline(17, "user.note", b"restored"));
+    attributes.push(inline(20, "user.link", b"on the link itself"));
+    attributes.extend(never_restored(20));
+    attributes.push(inline(31, "user.linked", b"every name"));
+    attributes.push(inline(52, "user.read-only", b"on a read-only file"));
+    attributes
 }
 
 fn wrap(volume: &[u8], methods: &[Chunk], form: Form) -> Vec<u8> {
@@ -554,6 +618,17 @@ fn generated_volumes_extract_byte_for_byte_as_7zip_extracts_them() {
             ours["Generated/modes/typeless"].split(' ').nth(1),
             Some("644")
         );
+        if xattrs::RESTORED_HERE {
+            assert_eq!(ours["Generated/folder:user.folder"], sha256(FOLDER_VALUE));
+            assert_eq!(
+                ours["Generated/hello.txt:user.large"],
+                sha256(&seeded(5, LARGE_ATTRIBUTE))
+            );
+            assert_eq!(
+                ours["Generated/modes/readonly"].split(' ').nth(1),
+                Some("444")
+            );
+        }
         assert_eq!(
             ours["Generated/zlib fork"].split(' ').next().unwrap(),
             sha256(&b"compressible text line\n".repeat(7000))

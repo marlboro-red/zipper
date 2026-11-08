@@ -13,6 +13,8 @@ mod apfs_writer;
 mod dmg_writer;
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
+#[path = "common/xattrs.rs"]
+mod xattrs;
 
 use apfs_trees::{Tree, sevenzip_run, tree};
 use apfs_writer::{
@@ -35,6 +37,11 @@ const CHECKS_7ZIP_SKIPS: &[&str] = &[
     "is not the object its",
     "lies past the end of the image",
     "holds more blocks than its image",
+    "an extended attribute",
+    "a name longer than 127 bytes",
+    "more than 128 extended attributes",
+    "two extended attributes named",
+    "more than 67108864",
 ];
 
 fn sevenzip_binary() -> Option<PathBuf> {
@@ -656,4 +663,96 @@ fn selection_and_strip_pick_the_paths_7zip_writes() {
         "{found:?}"
     );
     assert_eq!(fs::read(into.join("docs/b-again.txt")).unwrap(), b"b\n");
+}
+
+fn tagged(xattrs: Vec<Xattr>) -> Volume {
+    let mut entry = file(16, ROOT, "tagged.txt", b"tagged\n");
+    entry.xattrs = xattrs;
+    Volume::new(vec![entry, folder(17, ROOT, "after")])
+}
+
+fn named(name: &str) -> Xattr {
+    Xattr {
+        name: name.into(),
+        value: b"value".to_vec(),
+        stream: false,
+    }
+}
+
+fn patch_key(bytes: &mut [u8], layout: &Layout, holding: &[u8], edit: impl Fn(&mut [u8])) {
+    let records = leaf_records(bytes, layout);
+    let record = records
+        .iter()
+        .find(|record| {
+            bytes[record.key.clone()]
+                .windows(holding.len())
+                .any(|window| window == holding)
+        })
+        .expect("no key to patch");
+    edit(&mut bytes[record.key.clone()]);
+    let node = record.node;
+    seal(&mut bytes[node..node + BLOCK]);
+}
+
+#[test]
+fn attributes_that_break_the_name_count_and_size_rules_refuse_the_volume() {
+    let cases: Vec<(Vec<Xattr>, &str)> = vec![
+        (vec![named("")], "an extended attribute has an empty name"),
+        (vec![named("a\0b")], "does not end at its only NUL"),
+        (vec![named(&"n".repeat(128))], "longer than 127 bytes"),
+        (vec![named(&"é".repeat(64))], "longer than 127 bytes"),
+        (
+            vec![named("user.twice"), named("user.twice")],
+            "two extended attributes named \"user.twice\"",
+        ),
+        (
+            vec![named("com.apple.provenance"), named("com.apple.provenance")],
+            "two extended attributes named",
+        ),
+        (
+            (0..129).map(|n| named(&format!("user.{n:03}"))).collect(),
+            "more than 128 extended attributes",
+        ),
+    ];
+    for (xattrs, wanted) in cases {
+        refused(&built(tagged(xattrs)), wanted);
+    }
+    let most = (0..128).map(|n| named(&format!("user.{n:03}"))).collect();
+    let work = tempfile::tempdir().unwrap();
+    let image = work.path().join("most.img");
+    fs::write(&image, built(tagged(most))).unwrap();
+    assert!(matches!(
+        zipper_outcome(&image, work.path()),
+        Outcome::Extracted(_)
+    ));
+
+    let container = Container::new(vec![tagged(vec![named("user.\u{7f}bad")])]);
+    let (image, layout) = apfs_writer::build(&container);
+    let mut bytes = image.to_vec();
+    patch_key(&mut bytes, &layout, b"user.\x7fbad", |key| {
+        let at = key
+            .windows(4)
+            .position(|window| window == b"\x7fbad")
+            .unwrap();
+        key[at] = 0xFF;
+    });
+    refused(&bytes, "is not UTF-8");
+
+    let mut big = named("user.big");
+    big.stream = true;
+    let container = Container::new(vec![tagged(vec![big])]);
+    let (image, layout) = apfs_writer::build(&container);
+    let mut bytes = image.to_vec();
+    patch(
+        &mut bytes,
+        &layout,
+        |bytes, record| {
+            record_id(bytes, record) == (16, 4)
+                && bytes[record.key.clone()]
+                    .windows(8)
+                    .any(|window| window == b"user.big")
+        },
+        |value| put64(value, 12, (64 << 20) + 1),
+    );
+    refused(&bytes, "holds 67108865 bytes, more than 67108864");
 }

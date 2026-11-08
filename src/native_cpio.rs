@@ -663,6 +663,7 @@ pub(crate) mod tree {
     pub(crate) const MAX_ENTRIES: usize = 1_000_000;
     pub(crate) const MAX_NAME: u64 = 8192;
     const MAX_METADATA: usize = 64 * 1024 * 1024;
+    const MAX_LINK_ATTRIBUTES: usize = 64 * 1024 * 1024;
     const COPY_BUFFER: usize = 1024 * 1024;
     const LINKS_PER_REPORT: usize = 1024;
     pub(crate) const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
@@ -724,6 +725,9 @@ pub(crate) mod tree {
         directory_index: HashMap<String, usize>,
         hard_links: Vec<(String, String)>,
         symlinks: Vec<(String, String)>,
+        link_attributes: Vec<(usize, String, Vec<u8>)>,
+        link_attribute_bytes: usize,
+        attributes_kept: Option<bool>,
         entries: Vec<Entry>,
         budget: Budget,
         tracker: &'a Tracker<'a>,
@@ -733,6 +737,21 @@ pub(crate) mod tree {
         placed_any: bool,
         metadata: crate::Metadata,
         buffer: Vec<u8>,
+    }
+
+    pub(crate) struct Written {
+        placed: String,
+        size: u64,
+        modified: Option<SystemTime>,
+        file: Option<fs::File>,
+        unlocked: bool,
+        locked_permissions: Option<fs::Permissions>,
+    }
+
+    pub(crate) enum Owner<'w> {
+        File(&'w mut Written),
+        Folder(&'w str),
+        Link(usize),
     }
 
     fn leading_dots(raw: &str) -> usize {
@@ -787,6 +806,9 @@ pub(crate) mod tree {
             directory_index: HashMap::new(),
             hard_links: Vec::new(),
             symlinks: Vec::new(),
+            link_attributes: Vec::new(),
+            link_attribute_bytes: 0,
+            attributes_kept: None,
             entries: Vec::new(),
             budget: Budget {
                 limit: options.max_output_bytes,
@@ -968,16 +990,25 @@ pub(crate) mod tree {
             mode: u32,
             modified: Option<SystemTime>,
         ) -> Result<()> {
+            self.placed_directory(raw, mode, modified).map(drop)
+        }
+
+        pub(crate) fn placed_directory(
+            &mut self,
+            raw: &str,
+            mode: u32,
+            modified: Option<SystemTime>,
+        ) -> Result<Option<String>> {
             let dots = leading_dots(raw);
             let name = entry_name(raw).trim_end_matches('/');
             if name.is_empty() || name == "." {
-                return Ok(());
+                return Ok(None);
             }
             safe_path(name)?;
             let name = name.to_owned();
             let replaces = self.claim(&name, Node::Directory)?;
             let Some((placed, _)) = self.place(&name, dots, true, replaces)? else {
-                return Ok(());
+                return Ok(None);
             };
             if self.root.is_some() {
                 self.create_parent(&format!("{placed}/"))?;
@@ -996,11 +1027,11 @@ pub(crate) mod tree {
                 }
             }
             self.entries.push(Entry {
-                name: placed,
+                name: placed.clone(),
                 size: 0,
                 directory: true,
             });
-            Ok(())
+            Ok(Some(placed))
         }
 
         pub(crate) fn file(
@@ -1011,16 +1042,32 @@ pub(crate) mod tree {
             modified: Option<SystemTime>,
             data: &mut dyn Read,
         ) -> Result<()> {
+            let written = self.write_file(raw, size, mode, modified, data)?;
+            self.finish_file(written)
+        }
+
+        pub(crate) fn write_file(
+            &mut self,
+            raw: &str,
+            size: u64,
+            mode: u32,
+            modified: Option<SystemTime>,
+            data: &mut dyn Read,
+        ) -> Result<Option<Written>> {
             let (name, dots) = checked_name(raw)?;
             let mode = self.metadata.file_mode(Some(mode)).unwrap_or(mode);
             let replaces = self.claim(&name, Node::File)?;
             let Some((placed, replaces)) = self.place(&name, dots, false, replaces)? else {
-                return self.copy(data, size, false, |_| Ok(()));
+                self.copy(data, size, false, |_| Ok(()))?;
+                return Ok(None);
             };
             self.budget.charge(size)?;
             let format = self.format;
-            match self.root {
-                None => self.copy(data, size, true, |_| Ok(()))?,
+            let file = match self.root {
+                None => {
+                    self.copy(data, size, true, |_| Ok(()))?;
+                    None
+                }
                 Some(root) => {
                     self.create_parent(&placed)?;
                     let path = root.join(&placed);
@@ -1042,26 +1089,113 @@ pub(crate) mod tree {
                         file.write_all(bytes)
                             .with_context(|| format!("cannot write {format} entry {placed:?}"))
                     })?;
-                    if let Some(time) = self.metadata.time(modified) {
-                        crate::set_modified_best_effort(&file, time);
-                    }
+                    Some(file)
+                }
+            };
+            Ok(Some(Written {
+                placed,
+                size,
+                modified,
+                file,
+                unlocked: false,
+                locked_permissions: None,
+            }))
+        }
+
+        pub(crate) fn finish_file(&mut self, written: Option<Written>) -> Result<()> {
+            let Some(written) = written else {
+                return Ok(());
+            };
+            if let Some(file) = &written.file {
+                if let Some(permissions) = written.locked_permissions {
+                    file.set_permissions(permissions).with_context(|| {
+                        format!(
+                            "cannot restore the mode of {} entry {:?}",
+                            self.format, written.placed
+                        )
+                    })?;
+                }
+                if let Some(time) = self.metadata.time(written.modified) {
+                    crate::set_modified_best_effort(file, time);
                 }
             }
             self.entries.push(Entry {
-                name: placed,
-                size,
+                name: written.placed,
+                size: written.size,
                 directory: false,
             });
             self.tracker.file_done()
         }
 
+        pub(crate) fn writes_attributes(&self) -> bool {
+            crate::xattr::WRITES && self.root.is_some() && self.metadata.restores()
+        }
+
+        pub(crate) fn set_attribute(
+            &mut self,
+            owner: &mut Owner,
+            name: &str,
+            value: Vec<u8>,
+        ) -> Result<()> {
+            let Some(root) = self.root.filter(|_| self.writes_attributes()) else {
+                return Ok(());
+            };
+            let kept = match self.attributes_kept {
+                Some(kept) => kept,
+                None => *self
+                    .attributes_kept
+                    .insert(crate::xattr::kept_natively_in(root)?),
+            };
+            if !kept {
+                return Ok(());
+            }
+            self.budget.charge(value.len() as u64)?;
+            let format = self.format;
+            match owner {
+                Owner::File(written) => {
+                    let Some(file) = &written.file else {
+                        return Ok(());
+                    };
+                    if !written.unlocked {
+                        written.locked_permissions = crate::xattr::make_writable(file)?;
+                        written.unlocked = true;
+                    }
+                    let what = format!("{format} entry {:?}", written.placed);
+                    crate::xattr::set_on_file(file, name, &value, &what)
+                }
+                &mut Owner::Folder(placed) => crate::xattr::set_on_path(
+                    &root.join(placed),
+                    name,
+                    &value,
+                    &format!("{format} folder {placed:?}"),
+                ),
+                &mut Owner::Link(index) => {
+                    self.link_attribute_bytes += name.len() + value.len();
+                    ensure!(
+                        self.link_attribute_bytes <= MAX_LINK_ATTRIBUTES,
+                        "{format} links hold more than 64 MiB of extended attributes"
+                    );
+                    self.link_attributes.push((index, name.to_owned(), value));
+                    Ok(())
+                }
+            }
+        }
+
         pub(crate) fn symlink(&mut self, raw: &str, target: String) -> Result<()> {
+            self.placed_symlink(raw, target).map(drop)
+        }
+
+        pub(crate) fn placed_symlink(
+            &mut self,
+            raw: &str,
+            target: String,
+        ) -> Result<Option<usize>> {
             let (name, dots) = checked_name(raw)?;
             crate::ensure_link_stays_inside(self.format, &name, &target)?;
             self.charge_name(target.len())?;
             self.claim(&name, Node::Symlink)?;
             let Some((placed, _)) = self.place(&name, dots, false, false)? else {
-                return Ok(());
+                return Ok(None);
             };
             crate::ensure_link_stays_inside(self.format, &placed, &target)?;
             self.create_parent(&placed)?;
@@ -1071,7 +1205,8 @@ pub(crate) mod tree {
                 size: 0,
                 directory: false,
             });
-            self.tracker.file_done()
+            self.tracker.file_done()?;
+            Ok(Some(self.symlinks.len() - 1))
         }
 
         pub(crate) fn hard_link(&mut self, raw: &str, raw_target: &str) -> Result<()> {
@@ -1136,6 +1271,15 @@ pub(crate) mod tree {
                     self.tracker.report()?;
                 }
                 crate::create_symlink(format, root, name, target)?;
+            }
+            for (index, name, value) in &self.link_attributes {
+                let link = &self.symlinks[*index].0;
+                crate::xattr::set_on_path(
+                    &root.join(link),
+                    name,
+                    value,
+                    &format!("{format} symlink {link:?}"),
+                )?;
             }
             Ok(())
         }

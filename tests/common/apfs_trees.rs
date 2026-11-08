@@ -82,6 +82,12 @@ pub fn tree(root: &Path) -> Tree {
                 mode(&metadata)
             )
         };
+        for (attribute, value) in crate::xattrs::attributes(entry.path()) {
+            found.insert(
+                format!("{name}:{}", crate::xattrs::sevenzip_stream_name(&attribute)),
+                sha256(&value),
+            );
+        }
         found.insert(name, kind);
     }
     found
@@ -103,13 +109,20 @@ pub fn sevenzip_run(binary: &Path, image: &Path, into: &Path) -> (bool, Tree, St
         .stdin(Stdio::null())
         .output()
         .unwrap();
-    let streams_left_out = tree(into)
+    let as_attributes = tree(into)
         .into_iter()
-        .filter(|(name, _)| !name.contains(':'))
+        .filter(|(name, _)| crate::xattrs::sevenzip_stream_kept(name))
+        .map(|(name, kind)| {
+            let kind = match name.contains(':') {
+                true => kind.split(' ').next().unwrap().to_owned(),
+                false => kind,
+            };
+            (name, kind)
+        })
         .collect();
     let output =
         String::from_utf8_lossy(&run.stdout).into_owned() + &String::from_utf8_lossy(&run.stderr);
-    (run.status.success(), streams_left_out, output)
+    (run.status.success(), as_attributes, output)
 }
 
 pub fn as_zipper_writes(theirs: &Tree, ours: &Tree, differs: &[&str], label: &str) -> Tree {
@@ -125,6 +138,11 @@ pub fn as_zipper_writes(theirs: &Tree, ours: &Tree, differs: &[&str], label: &st
             "{label}: 7-Zip now writes {path} as Zipper does; drop it from the differences"
         );
         expected.insert((*path).to_owned(), ours[*path].clone());
+    }
+    for (path, kind) in ours {
+        if crate::xattrs::sevenzip_writes_no_attribute_of(ours, path) {
+            expected.insert(path.clone(), kind.clone());
+        }
     }
     expected
 }

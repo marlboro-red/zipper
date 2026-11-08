@@ -58,6 +58,7 @@ mod shrink;
 mod staging;
 mod udf;
 mod volumes;
+mod xattr;
 mod xpress;
 mod xz_filters;
 mod zip_crypto;
