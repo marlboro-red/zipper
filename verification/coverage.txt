@@ -1997,6 +1997,9 @@ item = src/native_fat.rs | pub(crate) fn long_name_length(
 item = src/native_fat.rs | fn trimmed(
 item = src/native_fat.rs | pub(crate) fn short_name_bytes(
 item = src/native_fat.rs | mod proofs {
+item = src/lib.rs | pub(crate) fn field_check(
+item = src/lib.rs | pub(crate) struct BadField(
+item = src/lib.rs | pub(crate) type Field<
 
 [dmg-fields]
 fingerprint = 6518e2e82c151418
