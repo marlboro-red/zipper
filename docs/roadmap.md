@@ -26,13 +26,13 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M11. Windows metadata parity](#m11-windows-metadata-parity) | Done | M10 |
 | [M12. Extraction controls](#m12-extraction-controls) | Done | M10 |
 | [M13. Remaining codecs](#m13-remaining-codecs) | Done | M10 |
-| [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | In progress | M10 |
+| [M21. Zipper's own LZMA decoder](#m21-zippers-own-lzma-decoder) | Done | M10 |
 | [M14. Encrypted archives](#m14-encrypted-archives) | Done | M13 |
 | [M15. Split, spanned and self-extracting archives](#m15-split-spanned-and-self-extracting-archives) | Done | M13 |
 | [M16. Package formats](#m16-package-formats) | Done | M13 |
-| [M17. Disc and disk images](#m17-disc-and-disk-images) | Planned | M16 |
+| [M17. Disc and disk images](#m17-disc-and-disk-images) | In progress | M16 |
 | [M18. RAR](#m18-rar) | Planned | M14, M15 |
-| [M19. Legacy formats](#m19-legacy-formats) | Planned | M13 |
+| [M19. Legacy formats](#m19-legacy-formats) | In progress | M13 |
 | [M20. Zipper without 7-Zip](#m20-zipper-without-7-zip) | Planned | M11 to M19, M21 |
 | [M22. Zipper's own ZIP directory reader](#m22-zippers-own-zip-directory-reader) | Done | M21 |
 | [M23. The LZMA decoder as its own crate](#m23-the-lzma-decoder-as-its-own-crate) | Planned | M21 |
