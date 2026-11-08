@@ -2358,6 +2358,9 @@ item = src/native_apfs.rs | pub(crate) fn needs_backend_in<
 item = src/native_apfs.rs | pub fn read_volume<
 item = src/native_apfs.rs | pub fn read_archive(
 item = src/native_apfs.rs | mod proofs {
+item = src/lib.rs | pub(crate) fn field_check(
+item = src/lib.rs | pub(crate) struct BadField(
+item = src/lib.rs | pub(crate) type Field<
 
 [swf-fields]
 fingerprint = 2630fa64dc0e4cb3
