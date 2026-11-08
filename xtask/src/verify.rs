@@ -410,10 +410,137 @@ fn fail_on_unclassified_sources(root: &Path) -> Result<()> {
     Ok(())
 }
 
+const REMOTE_SETTINGS: [&str; 3] = ["zipper.remoteHost", "zipper.remoteGit", "zipper.remoteDir"];
+
+fn local_git(root: &Path, args: &[&str]) -> Result<String> {
+    let output = Command::new("git").current_dir(root).args(args).output()?;
+    ensure!(
+        output.status.success(),
+        "git {} exited with {}: {}",
+        args.join(" "),
+        output.status,
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+}
+
+fn remote_settings(root: &Path) -> Result<[String; 3]> {
+    let read = |key: &str| {
+        local_git(root, &["config", "--get", key]).with_context(|| {
+            format!(
+                "set `git config {key}` first. `verify-sync NAME --remote` reads {REMOTE_SETTINGS:?}: \
+                 the ssh host, the git remote its checkout fetches from as `origin`, and that checkout's folder"
+            )
+        })
+    };
+    Ok([
+        read(REMOTE_SETTINGS[0])?,
+        read(REMOTE_SETTINGS[1])?,
+        read(REMOTE_SETTINGS[2])?,
+    ])
+}
+
+fn shell_quoted(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
+fn remote_script(dir: &str, branch: &str, head: &str, name: &str) -> String {
+    let [dir, branch, head, name] = [dir, branch, head, name].map(shell_quoted);
+    format!(
+        "set -e\n\
+         cd {dir}\n\
+         base=$PWD\n\
+         git fetch -q origin \"refs/heads/\"{branch}\n\
+         mkdir -p target\n\
+         run=$(mktemp -d \"$base/target/remote-sync.XXXXXX\")\n\
+         git worktree add -q --detach \"$run/tree\" {head}\n\
+         status=0\n\
+         (cd \"$run/tree\" && PATH=\"$base/target/tools:$PATH\" \
+         CARGO_TARGET_DIR=\"$base/target/remote-sync-build\" cargo xtask verify-sync {name}) || status=$?\n\
+         git -C \"$run/tree\" checkout -q -- .\n\
+         git worktree remove \"$run/tree\"\n\
+         rmdir \"$run\"\n\
+         exit $status\n"
+    )
+}
+
+pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
+    let all = manifest(root)?;
+    let verification = all
+        .iter()
+        .find(|verification| verification.name == name)
+        .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
+    ensure!(
+        local_git(root, &["status", "--porcelain"])?.is_empty(),
+        "commit every change first, since the second machine checks the committed HEAD"
+    );
+    let [host, remote, dir] = remote_settings(root)?;
+    let head = local_git(root, &["rev-parse", "HEAD"])?;
+    let checked = fingerprint(root, verification)?;
+    let branch = format!("remote-sync/{}-{name}", &head[..12]);
+    local_git(
+        root,
+        &[
+            "push",
+            "-q",
+            "--no-verify",
+            "--force",
+            &remote,
+            &format!("HEAD:refs/heads/{branch}"),
+        ],
+    )?;
+    let run = Command::new("ssh")
+        .args([host.as_str(), "zsh", "-lc"])
+        .arg(shell_quoted(&remote_script(&dir, &branch, &head, name)))
+        .output()?;
+    let printed = String::from_utf8_lossy(&run.stdout);
+    print!("{printed}");
+    eprint!("{}", String::from_utf8_lossy(&run.stderr));
+    let _ = local_git(
+        root,
+        &["push", "-q", "--no-verify", &remote, "--delete", &branch],
+    );
+    ensure!(
+        run.status.success(),
+        "{name}: the check on the second machine exited with {}; nothing was synced",
+        run.status
+    );
+    let reported = printed
+        .lines()
+        .find_map(|line| line.strip_prefix(&format!("{name}: synced at fingerprint ")))
+        .with_context(|| format!("{name}: the second machine printed no fingerprint"))?
+        .trim()
+        .to_owned();
+    ensure!(
+        reported == checked,
+        "{name}: the second machine checked fingerprint {reported}, but this tree's covered code is {checked}; nothing was synced"
+    );
+    ensure!(
+        local_git(root, &["rev-parse", "HEAD"])? == head
+            && fingerprint(root, verification)? == checked,
+        "{name}: HEAD or the covered code changed while the check ran; nothing was synced"
+    );
+    let text = fs::read_to_string(root.join(MANIFEST))?;
+    fs::write(root.join(MANIFEST), with_fingerprint(&text, name, &checked))?;
+    println!("{name}: synced at fingerprint {checked}, checked on a second machine");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{collections::BTreeSet, path::PathBuf};
+
+    #[test]
+    fn the_remote_script_quotes_every_value_and_works_inside_the_checkouts_target() {
+        let script = remote_script("/a b/it's", "remote-sync/x", "0123abcd", "zip-crypto");
+        assert!(script.contains(r"cd '/a b/it'\''s'"));
+        assert!(script.contains("mktemp -d \"$base/target/remote-sync.XXXXXX\""));
+        assert!(script.contains("cargo xtask verify-sync 'zip-crypto'"));
+        assert!(script.contains("--detach \"$run/tree\" '0123abcd'"));
+        let wrapped = shell_quoted(&script);
+        assert!(wrapped.starts_with('\'') && wrapped.ends_with('\''));
+    }
 
     #[test]
     fn every_source_needs_a_formal_check_or_a_reason_and_never_both() {
