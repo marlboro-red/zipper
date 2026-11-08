@@ -29,7 +29,7 @@ It has these fields. A missing field means none.
 7. Comments follow the keep-list in `AGENTS.md`. Copy every commit hash you cite from `git log --oneline`.
 8. Put scratch files under `/private/tmp/claude-501/<branch name>/`. Never delete outside it or `target/`. Before you report, delete from it every copied worktree, build folder, generated corpus and file over 10 MB, and keep only the scripts and small outputs your report cites. Extraction tests leave read-only folders, so run `chmod -R u+rwx` on a folder before you delete it.
 9. Never weaken a check, test or rule to get green. A check that fails for a reason outside your scope is a finding, not a fix.
-10. Run `cargo xtask gate fast` last. If the `hooks` step fails only because the worktree sits under a scratch folder, say so and give the other steps' results.
+10. Commit, then run `cargo xtask gate fast --remote` last. It runs the gate on a second machine at your committed head, so other builders' tests do not slow yours. Use plain `cargo xtask gate fast` only when `--remote` reports that `git config zipper.remoteHost` is unset or the host is unreachable. If the `hooks` step fails only because the worktree sits under a scratch folder, say so and give the other steps' results.
 
 ## Report
 

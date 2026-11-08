@@ -24,7 +24,7 @@ Follow [pstack's philosophy](https://github.com/cursor/plugins/tree/main/pstack)
 
 ## Checks
 
-- Treat a change as done only when `cargo xtask gate fast` passes. CI runs `cargo xtask gate full`.
+- Treat a change as done only when `cargo xtask gate fast` passes. CI runs `cargo xtask gate full`. `cargo xtask gate fast --remote` runs the same gate on the second machine at the committed `HEAD`, set by the `git config` keys below, so this machine stays free.
 - Run `cargo xtask install-hooks` once so pre-push runs the fast gate.
 - Ship with `cargo xtask ship`. It refuses a dirty tree, runs `cargo xtask lint-commits`, and pushes `HEAD` to a `ci/` branch without the pre-push gate, since CI runs the stricter full gate on that commit. It then waits for CI on that exact commit and moves `main` only when every job passes, so `main` never receives a commit that CI failed. Every other push still runs the pre-push gate. On the push to `main`, CI runs only `cargo xtask warm-cache`, which builds what the gate builds and saves the build cache that each `ci/` run restores. CI runs on Ubuntu only. The gate lints the Windows build on every push, and the `Windows release candidate` workflow tests Windows when invoked, before a release.
 - `cargo xtask ci-wait` waits for the CI run on a pushed `HEAD` and prints each job's result.

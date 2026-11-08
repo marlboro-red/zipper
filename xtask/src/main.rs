@@ -15,7 +15,7 @@ mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full | lint-docs | lint-comments | install-hooks | ci-wait | warm-cache | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | install-hooks | ci-wait | warm-cache | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -31,6 +31,7 @@ fn main() -> ExitCode {
     let result = match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["gate", "fast"] => gate(false),
         ["gate", "full"] => gate(true),
+        ["gate", kind @ ("fast" | "full"), "--remote"] => verify::gate_remotely(&root(), kind),
         ["lint-docs"] => docs::lint(&root()),
         ["lint-comments"] => comments::lint(&root()),
         ["install-hooks"] => install_hooks(),
@@ -64,6 +65,10 @@ fn root() -> PathBuf {
         .parent()
         .expect("xtask lives inside the workspace")
         .to_path_buf()
+}
+
+fn target_dir() -> PathBuf {
+    root().join(env::var_os("CARGO_TARGET_DIR").unwrap_or_else(|| "target".into()))
 }
 
 fn cargo(args: &[&str]) -> Result<()> {
@@ -234,7 +239,7 @@ fn ensure_system_zlib() -> Result<()> {
     if !cfg!(target_os = "macos") {
         return Ok(());
     }
-    let binary = root().join("target/release/zipper");
+    let binary = target_dir().join("release/zipper");
     let libraries = output("otool", &["-L", &binary.to_string_lossy()])?;
     let zlibs: Vec<&str> = libraries
         .lines()
@@ -398,11 +403,9 @@ fn windows_clippy() -> Result<()> {
             "--target",
             WINDOWS_TARGET,
             "--target-dir",
-            "target/windows-clippy",
-            "--",
-            "-D",
-            "warnings",
         ])
+        .arg(target_dir().join("windows-clippy"))
+        .args(["--", "-D", "warnings"])
         .status()?;
     ensure!(status.success(), "Windows clippy exited with {status}");
     Ok(())
@@ -432,8 +435,8 @@ fn install_hooks() -> Result<()> {
 }
 
 fn round_trip() -> Result<()> {
-    let binary = root()
-        .join("target/release")
+    let binary = target_dir()
+        .join("release")
         .join(format!("zipper{}", env::consts::EXE_SUFFIX));
     ensure!(
         binary.is_file(),
@@ -524,8 +527,8 @@ fn benchmark_smoke() -> Result<()> {
     // EXTERNAL(bsdtar): macOS bsdtar rewrites UTF-8 names to NFD.
     fs::remove_file(tree.join("\u{fc}nicode-\u{65e5}.txt"))?;
     let report = work.path().join("matrix.json");
-    let binary = root()
-        .join("target/release")
+    let binary = target_dir()
+        .join("release")
         .join(format!("zipper{}", env::consts::EXE_SUFFIX));
     let mut args = vec![
         root().join("scripts/extraction_matrix.py").into_os_string(),

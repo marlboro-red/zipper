@@ -489,7 +489,7 @@ fn remote_settings(root: &Path) -> Result<[String; 3]> {
     let read = |key: &str| {
         local_git(root, &["config", "--get", key]).with_context(|| {
             format!(
-                "set `git config {key}` first. `verify-sync NAME --remote` reads {REMOTE_SETTINGS:?}: \
+                "set `git config {key}` first. `--remote` reads {REMOTE_SETTINGS:?}: \
                  the ssh host, the git remote its checkout fetches from as `origin`, and that checkout's folder"
             )
         })
@@ -505,8 +505,10 @@ fn shell_quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
-fn remote_script(dir: &str, branch: &str, head: &str, name: &str) -> String {
-    let [dir, branch, head, name] = [dir, branch, head, name].map(shell_quoted);
+fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str]) -> String {
+    let [dir, branch, head] = [dir, branch, head].map(shell_quoted);
+    let xtask: Vec<String> = xtask.iter().map(|word| shell_quoted(word)).collect();
+    let xtask = xtask.join(" ");
     format!(
         "set -e\n\
          cd {dir}\n\
@@ -517,7 +519,7 @@ fn remote_script(dir: &str, branch: &str, head: &str, name: &str) -> String {
          git worktree add -q --detach \"$run/tree\" {head}\n\
          result=0\n\
          (cd \"$run/tree\" && PATH=\"$base/target/tools:$PATH\" \
-         CARGO_TARGET_DIR=\"$base/target/remote-sync-build\" cargo xtask verify-sync {name}) || result=$?\n\
+         CARGO_TARGET_DIR=\"$base/target/remote-sync-build\" cargo xtask {xtask}) || result=$?\n\
          git -C \"$run/tree\" checkout -q -- .\n\
          git worktree remove \"$run/tree\"\n\
          rmdir \"$run\"\n\
@@ -525,20 +527,22 @@ fn remote_script(dir: &str, branch: &str, head: &str, name: &str) -> String {
     )
 }
 
-pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
-    let all = manifest(root)?;
-    let verification = all
-        .iter()
-        .find(|verification| verification.name == name)
-        .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
+fn ensure_committed(root: &Path) -> Result<()> {
     ensure!(
         local_git(root, &["status", "--porcelain"])?.is_empty(),
         "commit every change first, since the second machine checks the committed HEAD"
     );
+    Ok(())
+}
+
+fn run_at_head_remotely(
+    root: &Path,
+    head: &str,
+    label: &str,
+    xtask: &[&str],
+) -> Result<std::process::Output> {
     let [host, remote, dir] = remote_settings(root)?;
-    let head = local_git(root, &["rev-parse", "HEAD"])?;
-    let checked = fingerprint(root, verification)?;
-    let branch = format!("remote-sync/{}-{name}", &head[..12]);
+    let branch = format!("remote-sync/{}-{label}", &head[..12]);
     local_git(
         root,
         &[
@@ -547,20 +551,47 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
             "--no-verify",
             "--force",
             &remote,
-            &format!("HEAD:refs/heads/{branch}"),
+            &format!("{head}:refs/heads/{branch}"),
         ],
     )?;
     let run = Command::new("ssh")
         .args([host.as_str(), "zsh", "-lc"])
-        .arg(shell_quoted(&remote_script(&dir, &branch, &head, name)))
+        .arg(shell_quoted(&remote_script(&dir, &branch, head, xtask)))
         .output()?;
-    let printed = String::from_utf8_lossy(&run.stdout);
-    print!("{printed}");
+    print!("{}", String::from_utf8_lossy(&run.stdout));
     eprint!("{}", String::from_utf8_lossy(&run.stderr));
     let _ = local_git(
         root,
         &["push", "-q", "--no-verify", &remote, "--delete", &branch],
     );
+    Ok(run)
+}
+
+pub fn gate_remotely(root: &Path, kind: &str) -> Result<()> {
+    ensure_committed(root)?;
+    let head = local_git(root, &["rev-parse", "HEAD"])?;
+    let run = run_at_head_remotely(root, &head, "gate", &["gate", kind])?;
+    ensure!(
+        run.status.success(),
+        "gate {kind} on the second machine at {} exited with {}",
+        &head[..12],
+        run.status
+    );
+    println!("gate {kind} passed on a second machine at {}", &head[..12]);
+    Ok(())
+}
+
+pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
+    let all = manifest(root)?;
+    let verification = all
+        .iter()
+        .find(|verification| verification.name == name)
+        .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
+    ensure_committed(root)?;
+    let head = local_git(root, &["rev-parse", "HEAD"])?;
+    let checked = fingerprint(root, verification)?;
+    let run = run_at_head_remotely(root, &head, name, &["verify-sync", name])?;
+    let printed = String::from_utf8_lossy(&run.stdout);
     ensure!(
         run.status.success(),
         "{name}: the check on the second machine exited with {}; nothing was synced",
@@ -594,10 +625,15 @@ mod tests {
 
     #[test]
     fn the_remote_script_quotes_every_value_and_works_inside_the_checkouts_target() {
-        let script = remote_script("/a b/it's", "remote-sync/x", "0123abcd", "zip-crypto");
+        let script = remote_script(
+            "/a b/it's",
+            "remote-sync/x",
+            "0123abcd",
+            &["verify-sync", "zip-crypto"],
+        );
         assert!(script.contains(r"cd '/a b/it'\''s'"));
         assert!(script.contains("mktemp -d \"$base/target/remote-sync.XXXXXX\""));
-        assert!(script.contains("cargo xtask verify-sync 'zip-crypto'"));
+        assert!(script.contains("cargo xtask 'verify-sync' 'zip-crypto'"));
         assert!(script.contains("--detach \"$run/tree\" '0123abcd'"));
         let wrapped = shell_quoted(&script);
         assert!(wrapped.starts_with('\'') && wrapped.ends_with('\''));
