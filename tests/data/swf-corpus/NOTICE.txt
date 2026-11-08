@@ -1,0 +1,7 @@
+Every FLV and uncompressed SWF file in this folder was written by ffmpeg 9.0.2
+on macOS through make_corpus.py in this folder, from ffmpeg's own testsrc
+pattern and sine tone, with libx264, libmp3lame and ffmpeg's own encoders.
+The files ending in -zlib.swf and -lzma.swf hold flv1-mp3.swf and mjpeg.swf,
+compressed by that script with Python's zlib and lzma modules. No file holds
+third-party content. trees.json records the SHA-256 of every file 7zz 26.05
+extracted from each one, or null where 7-Zip refused it.
