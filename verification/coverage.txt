@@ -1999,6 +1999,7 @@ item = src/native_fat.rs | pub(crate) fn short_name_bytes(
 item = src/native_fat.rs | mod proofs {
 
 [dmg-fields]
+fingerprint = 6518e2e82c151418
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach dmg-fields
 full-check = cargo kani --harness native_dmg::proofs:: --harness hfs::proofs:: --harness adc::proofs:: --harness lzvn::proofs:: --harness lzfse::proofs::
