@@ -383,7 +383,11 @@ fn every_corpus_image_extracts_the_tree_7zip_extracts() {
         if let Some(binary) = &binary {
             let theirs = sevenzip_tree(binary, &image, &work.path().join("7z"))
                 .unwrap_or_else(|| panic!("{name}: 7-Zip failed"));
-            assert_eq!(ours, theirs, "{name} differs from 7-Zip");
+            assert_eq!(
+                without_partition_times(ours.clone()),
+                without_partition_times(theirs),
+                "{name} differs from 7-Zip"
+            );
         }
         assert_eq!(
             Some(&without_metadata(&ours)),

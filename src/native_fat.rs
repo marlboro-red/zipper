@@ -386,34 +386,57 @@ pub(crate) fn long_name_length(units: &mut [u16], words: usize) -> usize {
     end + 1
 }
 
-fn trimmed(bytes: &[u8], lower: bool, into: &mut Vec<u8>) {
-    let kept = bytes
-        .iter()
-        .rposition(|byte| *byte != b' ')
-        .map_or(0, |at| at + 1);
-    into.extend(bytes[..kept].iter().map(|byte| {
-        if lower {
+fn trimmed(bytes: &[u8], lower: bool, into: &mut [u8; SHORT_NAME + 1], length: &mut usize) {
+    let mut kept = bytes.len();
+    while kept > 0 && bytes[kept - 1] == b' ' {
+        kept -= 1;
+    }
+    for byte in &bytes[..kept] {
+        into[*length] = if lower {
             byte.to_ascii_lowercase()
         } else {
             *byte
-        }
-    }));
+        };
+        *length += 1;
+    }
 }
 
-pub(crate) fn short_name(name: &[u8; SHORT_NAME], case: u8) -> Field<String> {
-    let mut spelled = Vec::with_capacity(SHORT_NAME + 1);
-    trimmed(&name[..8], case & NAME_IS_LOWER != 0, &mut spelled);
-    let base = spelled.len();
-    spelled.push(b'.');
-    trimmed(&name[8..], case & EXTENSION_IS_LOWER != 0, &mut spelled);
-    if spelled.len() == base + 1 {
-        spelled.pop();
+pub(crate) fn short_name_bytes(
+    name: &[u8; SHORT_NAME],
+    case: u8,
+) -> Field<([u8; SHORT_NAME + 1], usize)> {
+    let mut spelled = [0u8; SHORT_NAME + 1];
+    let mut length = 0;
+    trimmed(
+        &name[..8],
+        case & NAME_IS_LOWER != 0,
+        &mut spelled,
+        &mut length,
+    );
+    let base = length;
+    spelled[length] = b'.';
+    length += 1;
+    trimmed(
+        &name[8..],
+        case & EXTENSION_IS_LOWER != 0,
+        &mut spelled,
+        &mut length,
+    );
+    if length == base + 1 {
+        length = base;
     }
-    field_check(
-        spelled.iter().all(|byte| (1..0x80).contains(byte)),
-        "a short name holds a byte outside ASCII, which 7-Zip reads in the OEM code page",
-    )?;
-    Ok(spelled.into_iter().map(char::from).collect())
+    for byte in &spelled[..length] {
+        field_check(
+            (1..0x80).contains(byte),
+            "a short name holds a byte outside ASCII, which 7-Zip reads in the OEM code page",
+        )?;
+    }
+    Ok((spelled, length))
+}
+
+fn short_name(name: &[u8; SHORT_NAME], case: u8) -> Field<String> {
+    let (spelled, length) = short_name_bytes(name, case)?;
+    Ok(spelled[..length].iter().copied().map(char::from).collect())
 }
 
 struct Node {
@@ -1012,9 +1035,11 @@ mod proofs {
     fn short_names_never_panic_and_stay_ascii_within_twelve_bytes() {
         let name: [u8; SHORT_NAME] = kani::any();
         let case: u8 = kani::any();
-        if let Ok(spelled) = short_name(&name, case) {
-            assert!(spelled.len() <= SHORT_NAME + 1);
-            assert!(spelled.is_ascii());
+        if let Ok((spelled, length)) = short_name_bytes(&name, case) {
+            assert!(length <= SHORT_NAME + 1);
+            for byte in &spelled[..length] {
+                assert!((1..0x80).contains(byte));
+            }
         }
         let _ = short_name_checksum(&name);
     }
