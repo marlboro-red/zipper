@@ -17,7 +17,8 @@ const DIFFERENCING: u32 = 4;
 const BLOCK_LOG: u32 = 20;
 const SECTOR: u32 = 512;
 const HEADER_FIELDS_AT: u64 = 0x48;
-const LARGEST_DISK_LOG: u32 = 56;
+const LARGEST_DISK_LOG: u32 = 46;
+const LARGEST_HEADER: u32 = 0x1000;
 const FREE: u32 = u32::MAX;
 const ZERO: u32 = u32::MAX - 1;
 const ENTRY: u64 = 4;
@@ -29,6 +30,13 @@ fn le32(bytes: &[u8], at: usize) -> u32 {
 
 fn le64(bytes: &[u8], at: usize) -> u64 {
     u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap())
+}
+
+pub(crate) fn sniffed(head: &[u8]) -> bool {
+    head.len() >= HEADER_READ
+        && le32(head, SIGNATURE_AT) == SIGNATURE
+        && le32(head, 0x44) >> 16 == MAJOR_VERSION
+        && (SMALLEST_HEADER..=LARGEST_HEADER).contains(&le32(head, 0x48))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,7 +89,7 @@ pub(crate) fn header(p: &[u8; HEADER_READ]) -> Field<Header> {
     };
     field_check(
         header.size >> LARGEST_DISK_LOG == 0,
-        "the VDI disk is larger than 2^56 bytes",
+        "the VDI disk is larger than 64 TiB",
     )?;
     field_check(
         u64::from(header.blocks) << BLOCK_LOG >= header.size,

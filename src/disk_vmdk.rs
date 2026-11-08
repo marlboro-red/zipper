@@ -24,10 +24,11 @@ const NO_COMPRESSION: u16 = 0;
 const DEFLATE: u16 = 1;
 const LARGEST_GRAIN_LOG: u32 = 16;
 const TABLE_LOG: u32 = 9;
-const LARGEST_CAPACITY_LOG: u32 = 47;
+const LARGEST_CAPACITY_LOG: u32 = 37;
 const DESCRIPTOR_LIMIT: u64 = 1 << 20;
 const EXTENT_LIMIT: usize = 4096;
 const ENTRY: u64 = 4;
+const DIRECTORY_BATCH: usize = 1 << 16;
 const GRAIN_MARKER: usize = 12;
 const MARKER: usize = 16;
 const MARKER_END_OF_STREAM: u32 = 0;
@@ -131,7 +132,7 @@ pub(crate) fn header(p: &[u8; HEADER]) -> Field<Header> {
     }
     field_check(
         header.capacity >> LARGEST_CAPACITY_LOG == 0,
-        "the VMDK disk is larger than 2^56 bytes",
+        "the VMDK disk is larger than 64 TiB",
     )?;
     Ok(header)
 }
@@ -162,6 +163,11 @@ pub(crate) struct Sparse {
 }
 
 impl Sparse {
+    fn forget(&mut self) {
+        self.pages = Pages::default();
+        self.inflated = None;
+    }
+
     fn grain_bytes(&self) -> u64 {
         1 << (self.header.grain_log + SECTOR_LOG)
     }
@@ -353,7 +359,7 @@ fn check_tables(file: &ArchiveFile, length: u64, header: &Header) -> Result<()> 
             && header
                 .gd
                 .checked_add(gd_sectors)
-                .is_some_and(|end| end << SECTOR_LOG <= length),
+                .is_some_and(|end| end <= length >> SECTOR_LOG),
         "the VMDK grain directory lies outside the image"
     );
     if header.stream() {
@@ -364,16 +370,20 @@ fn check_tables(file: &ArchiveFile, length: u64, header: &Header) -> Result<()> 
         );
     }
     places.sectors(header.gd, gd_sectors, "grain directory")?;
-    let directory = read_at(
-        file,
-        length,
-        header.gd << SECTOR_LOG,
-        (tables * ENTRY) as usize,
-        "VMDK grain directory",
-    )?;
+    let mut directory = vec![0u8; DIRECTORY_BATCH];
     let mut table = vec![0u8; (per_table * ENTRY) as usize];
     for index in 0..tables {
-        let table_at = u64::from(le32(&directory, (index * ENTRY) as usize));
+        let place = (index * ENTRY) as usize % DIRECTORY_BATCH;
+        if place == 0 {
+            let bytes = ((tables - index) * ENTRY).min(DIRECTORY_BATCH as u64) as usize;
+            read_file_exact(
+                file,
+                &mut directory[..bytes],
+                (header.gd << SECTOR_LOG) + index * ENTRY,
+            )
+            .context("cannot read the VMDK grain directory")?;
+        }
+        let table_at = u64::from(le32(&directory, place));
         if table_at == 0 {
             continue;
         }
@@ -604,6 +614,7 @@ struct Extent {
 
 struct Extents {
     extents: Vec<Extent>,
+    last: usize,
 }
 
 impl Layer for Extents {
@@ -611,6 +622,12 @@ impl Layer for Extents {
         let index = self
             .extents
             .partition_point(|extent| extent.start + extent.size <= offset);
+        if index != self.last
+            && let Content::Sparse { sparse, .. } = &mut self.extents[self.last].content
+        {
+            sparse.forget();
+        }
+        self.last = index;
         let extent = &mut self.extents[index];
         let within = offset - extent.start;
         let want = (buffer.len() as u64).min(extent.size - within) as usize;
@@ -637,7 +654,12 @@ fn open_extent(folder: &Path, name: &str) -> Result<(ArchiveFile, u64)> {
         plain_name(name),
         "the VMDK extent file {name:?} is not one plain file name in the descriptor's folder"
     );
-    let (extent, _) = crate::volumes::open_alone(&folder.join(name))
+    let path = folder.join(name);
+    ensure!(
+        !std::fs::symlink_metadata(&path).is_ok_and(|found| found.file_type().is_symlink()),
+        "the VMDK extent file {name:?} is a link, which may lead outside the descriptor's folder"
+    );
+    let (extent, _) = crate::volumes::open_alone(&path)
         .with_context(|| format!("cannot open the VMDK extent file {name:?}"))?;
     let extent_length = extent.len()?;
     Ok((extent, extent_length))
@@ -726,12 +748,12 @@ pub(crate) fn open_descriptor(path: &Path, file: ArchiveFile, length: u64) -> Re
         start = start
             .checked_add(size)
             .filter(|end| *end >> (LARGEST_CAPACITY_LOG + SECTOR_LOG) == 0)
-            .context("the VMDK disk is larger than 2^56 bytes")?;
+            .context("the VMDK disk is larger than 64 TiB")?;
     }
     Ok(Opened::Disk(Disk::layered(
         file,
         start,
-        Box::new(Extents { extents }),
+        Box::new(Extents { extents, last: 0 }),
     )))
 }
 

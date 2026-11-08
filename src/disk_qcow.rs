@@ -17,7 +17,8 @@ const SMALLEST_CLUSTER_LOG: u32 = 9;
 const LARGEST_CLUSTER_LOG: u32 = 21;
 const V1_LARGEST_CLUSTER_LOG: u32 = 16;
 const V1_SMALLEST_TABLE_LOG: u32 = 6;
-const LARGEST_DISK_LOG: u32 = 56;
+const LARGEST_DISK_LOG: u32 = 46;
+const FILE_OFFSET_LOG: u32 = 56;
 const L1_ENTRY_LIMIT: u64 = 1 << 22;
 const ENTRY: u64 = 8;
 const OFFSET_MASK: u64 = 0x00FF_FFFF_FFFF_FE00;
@@ -94,7 +95,7 @@ pub(crate) fn header(p: &[u8; HEADER_READ]) -> Field<Header> {
     };
     field_check(
         header.size >> LARGEST_DISK_LOG == 0,
-        "the QCOW disk is larger than 2^56 bytes",
+        "the QCOW disk is larger than 64 TiB",
     )?;
     if version == 1 {
         header.cluster_log = u32::from(p[32]);
@@ -110,6 +111,10 @@ pub(crate) fn header(p: &[u8; HEADER_READ]) -> Field<Header> {
         header.encrypted = be32(p, 36) != 0;
         header.l1_at = be64(p, 40);
         header.l1_entries = needed_l1_entries(header.size, header.cluster_log, header.table_log);
+        field_check(
+            header.l1_entries <= L1_ENTRY_LIMIT,
+            "the QCOW first-level table holds more than 4,194,304 entries",
+        )?;
         return Ok(header);
     }
     field_check(
@@ -178,7 +183,7 @@ pub(crate) fn header(p: &[u8; HEADER_READ]) -> Field<Header> {
 pub(crate) fn l1_entry(value: u64, v1: bool) -> Field<u64> {
     if v1 {
         field_check(
-            value >> LARGEST_DISK_LOG == 0,
+            value >> FILE_OFFSET_LOG == 0,
             "a QCOW first-level entry lies past 2^56",
         )?;
         return Ok(value);
@@ -208,7 +213,7 @@ pub(crate) fn l2_entry(value: u64, header: &Header) -> Field<Cluster> {
             });
         }
         field_check(
-            value >> LARGEST_DISK_LOG == 0,
+            value >> FILE_OFFSET_LOG == 0,
             "a QCOW cluster lies past 2^56",
         )?;
         return Ok(if value == 0 {
@@ -556,7 +561,7 @@ mod proofs {
             assert!(found.header_end < 1 << found.cluster_log || found.version == 1);
             let needed = needed_l1_entries(found.size, found.cluster_log, found.table_log);
             assert!(found.version == 1 || needed <= found.l1_entries);
-            assert!(found.version == 1 || found.l1_entries <= L1_ENTRY_LIMIT);
+            assert!(found.l1_entries <= L1_ENTRY_LIMIT);
             assert!((needed << (found.cluster_log + found.table_log)) >= found.size);
         }
     }
@@ -584,12 +589,12 @@ mod proofs {
             refcount_clusters: 0,
         };
         if let Ok(at) = l1_entry(value, version == 1) {
-            assert!(at >> LARGEST_DISK_LOG == 0);
+            assert!(at >> FILE_OFFSET_LOG == 0);
             assert!(version == 1 || at & 0x1FF == 0);
         }
         match l2_entry(value, &header) {
             Ok(Cluster::Data(at)) => {
-                assert!(at != 0 && at >> LARGEST_DISK_LOG == 0);
+                assert!(at != 0 && at >> FILE_OFFSET_LOG == 0);
                 assert!(version == 1 || at & 0x1FF == 0);
             }
             Ok(Cluster::Compressed { at, length }) => {

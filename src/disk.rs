@@ -1058,10 +1058,9 @@ enum Container {
 }
 
 fn container(head: &[u8], path: &Path) -> Option<Container> {
-    let vdi_at = crate::disk_vdi::SIGNATURE_AT;
     if head.starts_with(crate::disk_qcow::MAGIC) {
         Some(Container::Qcow)
-    } else if head.get(vdi_at..vdi_at + 4) == Some(&crate::disk_vdi::SIGNATURE.to_le_bytes()) {
+    } else if crate::disk_vdi::sniffed(head) {
         Some(Container::Vdi)
     } else if head.starts_with(crate::disk_vmdk::MAGIC) {
         Some(Container::Vmdk)

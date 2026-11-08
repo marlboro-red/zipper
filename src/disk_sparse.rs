@@ -18,6 +18,7 @@ const CRC32: u16 = 0xCAC4;
 const FILL_VALUE: u32 = 4;
 const LARGEST_BLOCK: u32 = 1 << 28;
 const GROUP: u64 = 256;
+const LARGEST_DISK_LOG: u32 = 46;
 
 fn le16(bytes: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([bytes[at], bytes[at + 1]])
@@ -52,6 +53,10 @@ pub(crate) fn header(p: &[u8; HEADER]) -> Field<Header> {
     field_check(
         header.block != 0 && header.block.is_multiple_of(4) && header.block <= LARGEST_BLOCK,
         "the Android sparse block size is not a multiple of 4 bytes up to 256 MiB",
+    )?;
+    field_check(
+        (u64::from(header.blocks) * u64::from(header.block)) >> LARGEST_DISK_LOG == 0,
+        "the Android sparse disk is larger than 64 TiB",
     )?;
     Ok(header)
 }

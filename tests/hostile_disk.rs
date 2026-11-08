@@ -1856,3 +1856,213 @@ fn flipped_container_bytes_never_panic_or_leave_output() {
         }
     }
 }
+
+#[cfg(unix)]
+#[expect(
+    clippy::zombie_processes,
+    reason = "wait4 reaps the child and reads its peak memory"
+)]
+fn peak_bytes_of_zipper_test(image: &Path) -> u64 {
+    let child = std::process::Command::new(env!("CARGO_BIN_EXE_zipper"))
+        .arg("test")
+        .arg(image)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut status = 0;
+    // SAFETY: an all-zero `rusage` is a valid value of this plain C struct.
+    let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+    // SAFETY: `child.id()` names a child of this process that nothing else waits for,
+    // and both pointers name live locals of the types `wait4` writes.
+    let waited = unsafe { libc::wait4(child.id() as libc::pid_t, &mut status, 0, &mut usage) };
+    assert_eq!(waited, child.id() as libc::pid_t);
+    let peak = usage.ru_maxrss as u64;
+    if cfg!(target_os = "macos") {
+        peak
+    } else {
+        peak * 1024
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn extents_of_one_stream_file_hold_one_decoded_grain_at_a_time() {
+    let base = disk_writer::mbr(&[(0x01, 64, &sample_volume(12).bytes)], 0);
+    let copy_sectors = (base.len() / SECTOR) as u32;
+    let copies = 8u32;
+    let mut disk = base.clone();
+    disk[..SECTOR].copy_from_slice(&disk_writer::mbr_sector(&[
+        (0x83, 64, 4 * copy_sectors - 64),
+        (0x83, 4 * copy_sectors, 4 * copy_sectors),
+    ]));
+    let stream = disk_writer::vmdk(
+        &disk,
+        disk_writer::Vmdk {
+            grain_sectors: 65_536,
+            table_entries: 512,
+            stream: true,
+        },
+        "one.vmdk",
+    );
+    let extents: Vec<String> = (0..copies)
+        .map(|_| format!("RW {copy_sectors} SPARSE \"one.vmdk\""))
+        .collect();
+    let descriptor = disk_writer::vmdk_descriptor("twoGbMaxExtentSparse", &extents, None);
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("one.vmdk"), &stream).unwrap();
+    fs::write(root.path().join("many.vmdk"), &descriptor).unwrap();
+    let peak = peak_bytes_of_zipper_test(&root.path().join("many.vmdk"));
+    assert!(
+        peak < 100 << 20,
+        "peak {peak} bytes for {copies} extents of 32 MiB grains"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_vmdk_grain_directory_is_read_in_batches() {
+    let options = disk_writer::Vmdk {
+        grain_sectors: 1,
+        table_entries: 512,
+        stream: false,
+    };
+    let mut image = disk_writer::vmdk_sparse(options, 64 * SECTOR as u64, &[], "huge.vmdk");
+    let capacity = 1u64 << 36;
+    image.bytes[12..20].copy_from_slice(&capacity.to_le_bytes());
+    let directory_end = (image.gd_at as u64) + 4 * (capacity >> 9);
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("huge.vmdk");
+    fs::write(&path, &image.bytes).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(directory_end + 4096)
+        .unwrap();
+    let peak = peak_bytes_of_zipper_test(&path);
+    assert!(
+        peak < 100 << 20,
+        "peak {peak} bytes for a 512 MiB grain directory"
+    );
+}
+
+#[test]
+fn a_grain_directory_past_2_pow_55_sectors_is_refused_not_wrapped() {
+    let disk = container_disk();
+    let options = disk_writer::Vmdk {
+        grain_sectors: 16,
+        table_entries: 512,
+        stream: false,
+    };
+    let image = disk_writer::vmdk_sparse(options, disk.len() as u64, &pieces(&disk, 8192), "a");
+    let mut wrapped = image.bytes.clone();
+    let gd = u64::from_le_bytes(wrapped[0x38..0x40].try_into().unwrap());
+    wrapped[0x38..0x40].copy_from_slice(&(gd + (1 << 55)).to_le_bytes());
+    refused(
+        "grain directory past 2^55 sectors",
+        &wrapped,
+        "grain directory lies outside",
+    );
+}
+
+#[test]
+fn a_gzip_whose_name_holds_the_vdi_signature_stays_a_gzip() {
+    use std::io::Write;
+    let mut name = vec![b'n'; 54];
+    name.extend_from_slice(&0xBEDA_107Fu32.to_le_bytes());
+    name.extend_from_slice(b".txt");
+    let mut encoder = flate2::GzBuilder::new()
+        .filename(name)
+        .write(Vec::new(), flate2::Compression::default());
+    encoder.write_all(b"a gzip, not a disk\n").unwrap();
+    let gzip = encoder.finish().unwrap();
+    assert_eq!(&gzip[0x40..0x44], &0xBEDA_107Fu32.to_le_bytes());
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("note.txt.gz");
+    fs::write(&path, &gzip).unwrap();
+    assert!(!zipper::disk::sniff(&path).unwrap());
+    assert_ne!(
+        zipper::choose_reader(Engine::Native, &path).unwrap(),
+        Reader::Disk
+    );
+}
+
+#[test]
+fn container_disks_past_64_tib_and_first_level_tables_past_their_limit_are_refused() {
+    let disk = container_disk();
+    let clusters = pieces(&disk, 4096);
+    let mut qcow =
+        disk_writer::qcow_sparse(qcow_options(3, false), disk.len() as u64, &clusters).bytes;
+    put_be64(&mut qcow, 24, 1 << 47);
+    qcow[36..40].copy_from_slice(&(1u32 << 18).to_be_bytes());
+    refused("QCOW of 128 TiB", &qcow, "larger than 64 TiB");
+    let mut old = disk_writer::qcow_sparse(
+        disk_writer::Qcow {
+            version: 1,
+            cluster_bits: 9,
+            compressed: false,
+            zero_flags: false,
+        },
+        disk.len() as u64,
+        &pieces(&disk, 512),
+    )
+    .bytes;
+    old[33] = 6;
+    put_be64(&mut old, 24, 1 << 40);
+    refused(
+        "QCOW 1 with 33,554,432 first-level entries",
+        &old,
+        "4,194,304 entries",
+    );
+    let mut vdi = disk_writer::vdi(
+        &disk,
+        disk_writer::Vdi {
+            block_log: 20,
+            fixed: false,
+            zero_entries: false,
+        },
+    );
+    vdi[0x170..0x178].copy_from_slice(&(1u64 << 47).to_le_bytes());
+    vdi[0x180..0x184].copy_from_slice(&(1u32 << 27).to_le_bytes());
+    refused("VDI of 128 TiB", &vdi, "larger than 64 TiB");
+    let mut vmdk = disk_writer::vmdk(
+        &disk,
+        disk_writer::Vmdk {
+            grain_sectors: 16,
+            table_entries: 512,
+            stream: false,
+        },
+        "case.img",
+    );
+    vmdk[12..20].copy_from_slice(&(1u64 << 38).to_le_bytes());
+    refused("VMDK of 128 TiB", &vmdk, "larger than 64 TiB");
+    let mut sparse = disk_writer::android_sparse(&disk, 1 << 28);
+    sparse[16..20].copy_from_slice(&(1u32 << 19).to_le_bytes());
+    refused(
+        "Android sparse image of 128 TiB",
+        &sparse,
+        "larger than 64 TiB",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_vmdk_extent_that_is_a_link_is_refused() {
+    let disk = container_disk();
+    let (descriptor, flat) = disk_writer::vmdk_flat(&disk, "case-flat.vmdk");
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("disk")).unwrap();
+    fs::write(root.path().join("outside.raw"), &flat).unwrap();
+    fs::write(root.path().join("disk/case.vmdk"), &descriptor).unwrap();
+    std::os::unix::fs::symlink("../outside.raw", root.path().join("disk/case-flat.vmdk")).unwrap();
+    let destination = root.path().join("out");
+    let error = read_archive(
+        &root.path().join("disk/case.vmdk"),
+        Some(&destination),
+        ReadOptions::default(),
+    )
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("is a link"), "{error:#}");
+    assert!(!destination.exists());
+}

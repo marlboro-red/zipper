@@ -43,7 +43,8 @@ const STRICTER: &[&str] = &[
     "shorter than the descriptor says",
     "carry extra data",
     "shorter than its disk needs",
-    "larger than 2^56 bytes",
+    "larger than 64 TiB",
+    "grain directory lies outside the image",
     "needs features Zipper does not know",
     "is not a VMDK sparse extent",
 ];
@@ -1158,6 +1159,7 @@ fn qemu_files(
     files
 }
 
+#[cfg(unix)]
 fn corpus_raw(name: &str) -> Vec<u8> {
     let mut bytes = Vec::new();
     liblzma::read::XzDecoder::new(
