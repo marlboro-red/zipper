@@ -1657,7 +1657,7 @@ item = src/lib.rs | pub(crate) fn field_check(
 item = src/lib.rs | pub(crate) struct BadField(
 
 [lzms]
-fingerprint = 6a9cce20c53a607b
+fingerprint = ec18b537ce6f33e8
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo test --release --lib lzms
 full-check = cargo test --release --test wim_corpus
