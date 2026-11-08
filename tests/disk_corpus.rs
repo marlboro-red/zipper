@@ -698,6 +698,29 @@ fn vmdk_descriptors_with_flat_and_sparse_extents_extract_as_7zip_extracts_them()
             text.replace("parentCID=ffffffff", "parentCID=12345678"),
         ),
         ("vmfs", text.replace(" FLAT ", " VMFS ")),
+        ("line of spaces", text.clone() + "   \n"),
+        ("indented comment", text.replace("# Extent", "  # Extent")),
+        (
+            "words after the offset",
+            text.replace("\"disk-flat.vmdk\" 0", "\"disk-flat.vmdk\" 0 more words"),
+        ),
+        (
+            "malformed offset",
+            text.replace("\"disk-flat.vmdk\" 0", "\"disk-flat.vmdk\" zero"),
+        ),
+        (
+            "quote before the equals sign",
+            text.replace("version=1", "ver\"sion=1"),
+        ),
+        (
+            "quote after the equals sign",
+            text.replace("version=1", "version=\"1"),
+        ),
+        ("hexadecimal size", text.replace("RW 8064 ", "RW 0x1f80 ")),
+        (
+            "unquoted file",
+            text.replace("\"disk-flat.vmdk\"", "disk-flat.vmdk"),
+        ),
         (
             "no extent",
             text.replace("RW 8064 FLAT \"disk-flat.vmdk\" 0", ""),

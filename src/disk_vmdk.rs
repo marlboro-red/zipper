@@ -1,7 +1,3 @@
-//! VMDK images as a container layer of the disk reader: hosted sparse
-//! extents, stream-optimized ones and descriptor files that join flat and
-//! sparse extents. `docs/reference/disk-reader.md` gives the rules.
-
 use crate::{
     BadField, Field,
     disk::{Claims, Disk, Layer, Opened, Pages, read_at, read_file_exact},
@@ -424,19 +420,25 @@ fn word(text: &str) -> (&str, &str) {
     text.split_once(char::is_whitespace).unwrap_or((text, ""))
 }
 
+fn is_blank(line: &str) -> bool {
+    line.is_empty()
+}
+
+fn is_comment(line: &str) -> bool {
+    line.starts_with('#')
+}
+
 fn is_setting(line: &str) -> bool {
     line.split_once('=')
         .is_some_and(|(key, _)| !key.contains('"'))
 }
 
-// EXTERNAL(7-Zip): a descriptor line is blank, a `#` comment at its start, a
-// setting with `=` and no quote before it, or an extent of access, decimal sectors,
-// type and quoted file; 7-Zip refuses any other line, and ignores what follows an offset.
+// EXTERNAL(7-Zip): 7zz refuses a descriptor line that is not blank, a comment, a setting or an extent.
 pub(crate) fn descriptor_line(
     line: &str,
 ) -> std::result::Result<Option<ExtentLine<'_>>, &'static str> {
     let line = line.strip_suffix('\r').unwrap_or(line);
-    if line.is_empty() || line.starts_with('#') || is_setting(line) {
+    if is_blank(line) || is_comment(line) || is_setting(line) {
         return Ok(None);
     }
     let (_, rest) = word(line);

@@ -1,6 +1,3 @@
-//! VirtualBox VDI images as a container layer of the disk reader.
-//! `docs/reference/disk-reader.md` gives the rules.
-
 use crate::{
     Field,
     disk::{Claims, Disk, Layer, Opened, Pages, read_at, read_file_exact},

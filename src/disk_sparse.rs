@@ -1,6 +1,3 @@
-//! Android sparse images as a container layer of the disk reader.
-//! `docs/reference/disk-reader.md` gives the rules.
-
 use crate::{
     BadField, Field,
     disk::{Disk, Layer, Opened, read_at, read_file_exact},
