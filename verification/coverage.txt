@@ -2009,6 +2009,7 @@ full-check = cargo test --release --lib lzfse
 full-check = cargo test --release --lib hfs
 full-check = cargo test --release --lib native_dmg
 full-check = cargo test --release --test hostile_dmg
+full-check = cargo test --release --test hostile_dmg -- --ignored
 full-check = cargo test --release --test dmg_corpus
 item = src/native_dmg.rs | const TRAILER:
 item = src/native_dmg.rs | const KOLY:

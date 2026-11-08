@@ -208,14 +208,45 @@ fn positions(range: std::ops::Range<usize>, step: usize) -> impl Iterator<Item =
     range.step_by(step.max(1))
 }
 
-#[test]
-fn damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them() {
+fn flips_at(at: usize, full: bool) -> &'static [u8] {
+    match (full, at % 2) {
+        (true, _) => &[0x01, 0x80],
+        (false, 0) => &[0x01],
+        (false, _) => &[0x80],
+    }
+}
+
+fn report(problems: Vec<String>, checked: usize, least: usize) {
+    assert!(checked >= least, "{checked}");
+    assert!(
+        problems.is_empty(),
+        "{} of {checked} disagree:\n{}",
+        problems.len(),
+        problems.join("\n")
+    );
+}
+
+fn koly_positions(koly: usize, full: bool) -> Vec<usize> {
+    if full {
+        return positions(koly..koly + 512, 1).collect();
+    }
+    let fields = [0..0x60, 0xD8..0xE8, 0x160..0x168, 0x1E8..0x1F4];
+    let mut targets: Vec<usize> = fields
+        .iter()
+        .flat_map(|field| positions(koly + field.start..koly + field.end, 1))
+        .collect();
+    targets.extend(positions(koly..koly + 512, 64));
+    targets
+}
+
+fn sweep_dmgs(full: bool) {
     let Some(binary) = sevenzip_binary() else {
         return;
     };
     let (volume, _) = hfs_writer::build(&small_volume());
     let mut problems = Vec::new();
     let mut checked = 0;
+    let (list, chunk, cut) = if full { (5, 89, 97) } else { (97, 1999, 1999) };
     for form in [Form::Plist, Form::ResourceFork] {
         let options = Options {
             chunk_sectors: 16,
@@ -227,47 +258,41 @@ fn damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them
         let (image, layout) = dmg_of(&volume, &options);
         let work = tempfile::tempdir().unwrap();
         let path = work.path().join("damaged.dmg");
-        let mut targets: Vec<usize> = positions(layout.koly..layout.koly + 512, 1).collect();
+        let mut targets = koly_positions(layout.koly, full);
         let (forks, length) = match form {
             Form::Plist => layout.xml,
             Form::ResourceFork => layout.resource,
         };
-        targets.extend(positions(forks..forks + length, 5));
-        for &(_, at, length) in &layout.chunks {
-            targets.extend(positions(at..at + length, 89));
+        if form == Form::ResourceFork {
+            targets.extend(positions(forks..forks + 16, 1));
+            targets.extend(positions(forks + length - 64..forks + length, 1));
         }
+        targets.extend(positions(forks..forks + length, list));
+        for &(_, at, length) in &layout.chunks {
+            targets.extend(positions(at..at + length, chunk));
+        }
+        targets.sort_unstable();
+        targets.dedup();
         for at in targets {
-            for flip in [0x01u8, 0x80] {
+            for &flip in flips_at(at, full) {
                 let mut damaged = image.clone();
                 damaged[at] ^= flip;
                 fs::write(&path, &damaged).unwrap();
-                if let Some(problem) =
-                    judge(&binary, &path, &format!("{form:?} byte {at} ^ {flip:#x}"))
-                {
-                    problems.push(problem);
-                }
+                let label = format!("{form:?} byte {at} ^ {flip:#x}");
+                problems.extend(judge(&binary, &path, &label));
                 checked += 1;
             }
         }
-        for cut in positions(0..image.len(), 97) {
+        for cut in positions(0..image.len(), cut) {
             fs::write(&path, &image[..cut]).unwrap();
-            if let Some(problem) = judge(&binary, &path, &format!("{form:?} cut at {cut}")) {
-                problems.push(problem);
-            }
+            problems.extend(judge(&binary, &path, &format!("{form:?} cut at {cut}")));
             checked += 1;
         }
     }
-    assert!(checked > 2500, "{checked}");
-    assert!(
-        problems.is_empty(),
-        "{} of {checked} disagree:\n{}",
-        problems.len(),
-        problems.join("\n")
-    );
+    report(problems, checked, if full { 2500 } else { 250 });
 }
 
-#[test]
-fn damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_them() {
+fn sweep_volumes(full: bool) {
     let Some(binary) = sevenzip_binary() else {
         return;
     };
@@ -277,14 +302,28 @@ fn damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_
     let work = tempfile::tempdir().unwrap();
     let path = work.path().join("damaged.hfs");
     let node = layout.node_size;
-    let mut targets: Vec<usize> = positions(layout.header..layout.header + 512, 1).collect();
+    let header = layout.header;
+    let mut targets: Vec<usize> = if full {
+        positions(header..header + 512, 1).collect()
+    } else {
+        let fields = [0..0x34, 0xC0..0xD8, 0x110..0x128, 0x160..0x178];
+        fields
+            .iter()
+            .flat_map(|field| positions(header + field.start..header + field.end, 1))
+            .chain(positions(header..header + 512, 64))
+            .collect()
+    };
+    let (record, interior) = if full { (140, 41) } else { (14 + 0x1A, 1021) };
     for start in [
         layout.catalog_file,
         layout.extents_file,
         layout.attributes_file,
     ] {
-        targets.extend(positions(start..start + 140, 1));
-        targets.extend(positions(start + node - 16..start + node, 1));
+        targets.extend(positions(start..start + record, 1));
+        targets.extend(positions(
+            start + node - 16..start + node,
+            if full { 1 } else { 2 },
+        ));
     }
     for &leaf in layout
         .catalog_leaves
@@ -292,30 +331,48 @@ fn damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_
         .chain(&layout.extents_leaves)
         .chain(&layout.attribute_leaves)
     {
-        targets.extend(positions(leaf..leaf + 64, 1));
-        targets.extend(positions(leaf + 64..leaf + node - 32, 41));
-        targets.extend(positions(leaf + node - 32..leaf + node, 1));
+        let descriptor = if full { 64 } else { 14 };
+        let table = if full { 32 } else { 16 };
+        targets.extend(positions(leaf..leaf + descriptor, 1));
+        targets.extend(positions(leaf + descriptor..leaf + node - table, interior));
+        targets.extend(positions(leaf + node - table..leaf + node, 1));
     }
+    targets.sort_unstable();
+    targets.dedup();
     let mut problems = Vec::new();
     let mut checked = 0;
     for at in targets {
-        for flip in [0x01u8, 0x80] {
+        for &flip in flips_at(at, full) {
             let mut damaged = image.clone();
             damaged[at] ^= flip;
             fs::write(&path, &damaged).unwrap();
-            if let Some(problem) = judge(&binary, &path, &format!("byte {at} ^ {flip:#x}")) {
-                problems.push(problem);
-            }
+            problems.extend(judge(&binary, &path, &format!("byte {at} ^ {flip:#x}")));
             checked += 1;
         }
     }
-    assert!(checked > 2500, "{checked}");
-    assert!(
-        problems.is_empty(),
-        "{} of {checked} disagree:\n{}",
-        problems.len(),
-        problems.join("\n")
-    );
+    report(problems, checked, if full { 2500 } else { 250 });
+}
+
+#[test]
+fn sampled_damage_to_trailers_property_lists_and_chunks_is_refused_when_7zip_refuses_it() {
+    sweep_dmgs(false);
+}
+
+#[test]
+#[ignore = "the full sweep runs in release-checks; the sampled one runs in the gate"]
+fn damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them() {
+    sweep_dmgs(true);
+}
+
+#[test]
+fn sampled_damage_to_volume_headers_btree_nodes_and_extents_is_refused_when_7zip_refuses_it() {
+    sweep_volumes(false);
+}
+
+#[test]
+#[ignore = "the full sweep runs in release-checks; the sampled one runs in the gate"]
+fn damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_them() {
+    sweep_volumes(true);
 }
 
 fn refusal(image: &[u8]) -> String {
@@ -819,4 +876,22 @@ fn every_byte_of_a_resource_fork_list_and_trailer_set_to_any_value_never_panics(
         }
     }
     assert!(tried > 3000, "{tried}");
+}
+
+#[test]
+fn a_compressed_hard_link_record_is_refused() {
+    let mut volume = small_volume();
+    let text = b"packed text ".repeat(200);
+    volume.attributes.push(Attribute {
+        id: 22,
+        name: "com.apple.decmpfs".into(),
+        value: AttributeValue::Inline(hfs_writer::decmpfs_header(
+            7,
+            text.len() as u64,
+            &dmg_writer::lzvn(&text),
+        )),
+    });
+    let (image, _) = hfs_writer::build(&volume);
+    let error = refusal(&image);
+    assert!(error.contains("holds data of its own"), "{error}");
 }
