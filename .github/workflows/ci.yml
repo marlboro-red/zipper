@@ -30,12 +30,22 @@ jobs:
           prefix-key: rust-1.96.0
           shared-key: gate
           save-if: false
+      - name: Restore the 7-Zip download
+        if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/7zip-download/7z.tar.xz
+          key: 7zip-26.05-linux-x64-22cf82fcc6eb7474
       - name: Install 7-Zip for the parity archives
         shell: bash
         run: |
           case "$RUNNER_OS" in
             Linux)
-              curl -fsSL -o /tmp/7z.tar.xz https://github.com/ip7z/7zip/releases/download/26.05/7z2605-linux-x64.tar.xz
+              mkdir -p "$HOME/7zip-download"
+              if [ ! -f "$HOME/7zip-download/7z.tar.xz" ]; then
+                curl -fsSL --retry 6 --retry-delay 20 --retry-all-errors -o "$HOME/7zip-download/7z.tar.xz" https://github.com/ip7z/7zip/releases/download/26.05/7z2605-linux-x64.tar.xz
+              fi
+              cp "$HOME/7zip-download/7z.tar.xz" /tmp/7z.tar.xz
               echo "22cf82fcc6eb7474f1d5bb4f02c0f8ebd573a718089d6833dc30f8350a3b232e  /tmp/7z.tar.xz" | sha256sum -c -
               mkdir -p "$HOME/.local/bin"
               tar -xJf /tmp/7z.tar.xz -C "$HOME/.local/bin" 7zz
