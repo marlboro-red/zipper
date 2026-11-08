@@ -35,7 +35,7 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Native for ZIP, tar, cpio, ar, RPM, xar, ISO and UDF images, single compressed files, unrecognized files, and 7z, CAB, MSI, WIM, CHM, Help 2, NTFS, APFS, disk images with FAT and HFS+ and APFS in DMG images it decodes; 7-Zip for other recognized formats.
+    /// Native for ZIP, tar, cpio, ar, RPM, xar, ISO and UDF images, single compressed files, unrecognized files, and 7z, CAB, MSI, WIM, CHM, Help 2, NTFS, APFS, disk images with FAT, NTFS or APFS, and HFS+ or APFS in DMG images it decodes; 7-Zip for other recognized formats.
     Auto,
     /// 7-Zip for every archive.
     Backend,

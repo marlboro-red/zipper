@@ -150,7 +150,7 @@ fn le64(bytes: &[u8], at: usize) -> u64 {
     u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap())
 }
 
-// SPEC(APFS Reference, Object Checksums): Fletcher-64 over 32-bit words modulo 2^32 - 1,
+// EXTERNAL(7-Zip ApfsHandler Fletcher64): Fletcher-64 over 32-bit words modulo 2^32 - 1,
 // stored as the two check values that make the whole object sum to zero.
 pub(crate) fn fletcher64(words: &[u8]) -> u64 {
     let (mut low, mut high) = (0u64, 0u64);
@@ -417,7 +417,7 @@ impl Node {
 }
 
 // EXTERNAL(7-Zip ApfsHandler ReadMap): a leaf is level 0 and only a leaf, the table of
-// contents fits before the key area, and the root keeps its tree information at its end.
+// contents ends inside the node, and a root keeps its tree information at its end.
 pub(crate) fn node(block: &[u8]) -> Field<Node> {
     field_check(
         block.len() >= NODE_HEADER,
@@ -1466,8 +1466,8 @@ fn load_catalog(container: &mut Container, opened: &OpenedVolume) -> Result<Cata
     Ok(catalog)
 }
 
-// EXTERNAL(7-Zip ApfsHandler CVol::FillRefs): a record's type, when known, matches its
-// inode's mode, and a folder has exactly one directory record.
+// EXTERNAL(7-Zip ApfsHandler CVol::FillRefs): a headers error when a record names a missing
+// inode or one of another type, a folder has two records, or an inode has none.
 fn link_folders(catalog: &mut Catalog) -> Result<()> {
     let mut linked = vec![false; catalog.inodes.len()];
     for (position, record) in catalog.records.iter().enumerate() {
@@ -1951,8 +1951,8 @@ impl Reading<'_, '_, '_> {
         Ok(target.to_owned())
     }
 
-    // EXTERNAL(7-Zip ApfsHandler Extract): a file without a data stream or extents whose
-    // decmpfs header declares its uncompressed size is decompressed; any other is read plain.
+    // EXTERNAL(7-Zip ApfsHandler Extract): only a file with no data stream or extents, the
+    // uncompressed-size flag and a decmpfs size equal to its inode's is decompressed.
     fn content<'r>(&'r mut self, inode: &Inode, path: &str) -> Result<(u64, Box<dyn Read + 'r>)> {
         let catalog = self.catalog;
         let special = catalog.special(inode);
@@ -2015,8 +2015,8 @@ impl Reading<'_, '_, '_> {
     }
 }
 
-// EXTERNAL(7-Zip Windows/FileDir SetFileAttrib_PosixHighDetect): only a regular file's or folder's own mode is
-// applied, and a folder always keeps its owner's read, write and search rights.
+// EXTERNAL(7-Zip Windows/FileDir SetFileAttrib_PosixHighDetect): only a regular file's or
+// folder's own mode is applied, and a folder keeps its owner's read, write and search rights.
 fn file_mode(mode: u16) -> u32 {
     if mode & TYPE_BITS == REGULAR {
         u32::from(mode) & 0o777
@@ -2255,8 +2255,6 @@ pub(crate) fn read(
     Ok(())
 }
 
-/// Returns whether the first 4 KiB hold an APFS container superblock that
-/// passes its checksum, as 7-Zip checks before it opens a container.
 pub(crate) fn is_container(start: &[u8]) -> bool {
     start.len() >= HEADER_BLOCK
         && superblock(start[..SUPERBLOCK_FIELDS].try_into().unwrap()).is_ok()
@@ -2319,8 +2317,9 @@ impl<V: Read + Seek> Volume for SeekVolume<V> {
     }
 }
 
-/// Returns whether the file is a raw APFS container whose superblock passes
-/// 7-Zip's check.
+/// Returns whether the file is a raw APFS container whose first 4 KiB hold
+/// a superblock that passes 7-Zip's checks and has a contiguous checkpoint
+/// area inside the container.
 pub fn sniff(path: &Path) -> Result<bool> {
     let file = crate::volumes::open(path)?;
     let mut start = vec![0u8; HEADER_BLOCK];

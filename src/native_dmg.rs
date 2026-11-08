@@ -1493,8 +1493,8 @@ pub fn sniff_disk(path: &Path) -> Result<bool> {
 
 /// Returns whether the default engine sends this image to 7-Zip: a DMG or
 /// disk whose file system is not HFS+, HFSX or APFS, an APFS container with
-/// an encrypted, sealed or snapshot volume, or one laid out in a way Zipper
-/// leaves to 7-Zip.
+/// an encrypted, sealed or snapshot volume or a Fusion container, or one laid
+/// out in a way Zipper leaves to 7-Zip.
 pub fn needs_backend(path: &Path) -> Result<bool> {
     let natively = || -> Result<()> {
         match Udif::open(path)? {

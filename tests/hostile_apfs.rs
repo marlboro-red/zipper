@@ -5,9 +5,6 @@
 //! loops, nodes outside the container, bad checksums, extents past the end,
 //! the features Zipper refuses by name, unsafe names and links, and folder
 //! records that disagree with their inodes. Nothing is published on failure.
-//!
-//! The gate runs a sample of each sweep. The full sweeps are ignored tests
-//! that `cargo xtask release-checks` runs under `[apfs-fields]`.
 #[path = "common/apfs_trees.rs"]
 mod apfs_trees;
 #[path = "common/apfs_writer.rs"]
@@ -31,8 +28,7 @@ use zipper::{Engine, Reader};
 
 const BLOCK: usize = 4096;
 
-// Checks Zipper makes that 7-Zip does not; a damaged container 7-Zip extracts may fail one.
-const STRICTER: &[&str] = &[
+const CHECKS_7ZIP_SKIPS: &[&str] = &[
     "checkpoint map",
     "newer than its checkpoint",
     "is not the node its parent names",
@@ -141,7 +137,9 @@ fn judge(binary: &Path, bytes: &[u8], label: &str) {
             )
         }
         (Outcome::Refused(message), true) => assert!(
-            STRICTER.iter().any(|check| message.contains(check)),
+            CHECKS_7ZIP_SKIPS
+                .iter()
+                .any(|check| message.contains(check)),
             "{label}: 7-Zip extracts it and Zipper refused: {message}"
         ),
         (Outcome::Extracted(ours), true) => {

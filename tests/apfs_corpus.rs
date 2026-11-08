@@ -85,13 +85,33 @@ fn unpacked(stored: &Path, into: &Path) -> PathBuf {
     path
 }
 
-// 7-Zip fills a hole with the container's first block, fails on a clone whose data
-// another inode owns, and ignores a link with `..` by writing an empty file.
-fn corpus_differences(image: &str) -> &'static [&'static str] {
-    match image {
-        "special-udzo.dmg.xz" => &["clone.txt", "sparse.bin", "up/parent-link"],
-        _ => &[],
-    }
+const SEVEN_ZIP_DIFFERS: [(&str, &str, &str); 3] = [
+    (
+        "special-udzo.dmg.xz",
+        "clone.txt",
+        "7-Zip fails on a clone whose data stream another inode owns",
+    ),
+    (
+        "special-udzo.dmg.xz",
+        "sparse.bin",
+        "7-Zip fills holes with the container's first block",
+    ),
+    (
+        "special-udzo.dmg.xz",
+        "up/parent-link",
+        "7-Zip writes a link with `..` as an empty file",
+    ),
+];
+
+fn corpus_differences(image: &str) -> Vec<&'static str> {
+    SEVEN_ZIP_DIFFERS
+        .iter()
+        .filter(|(name, _, _)| *name == image)
+        .map(|(_, path, reason)| {
+            eprintln!("{image}: {path} differs from 7-Zip, since {reason}");
+            *path
+        })
+        .collect()
 }
 
 #[test]
@@ -114,7 +134,7 @@ fn every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts() {
         let work = tempfile::tempdir().unwrap();
         let image = unpacked(&stored, work.path());
         let ours = match &binary {
-            Some(binary) => compare(binary, &image, corpus_differences(&name), &name),
+            Some(binary) => compare(binary, &image, &corpus_differences(&name), &name),
             None => zipper_tree(&image, &work.path().join("zipper"))
                 .unwrap_or_else(|error| panic!("{name}: {error:#}")),
         };

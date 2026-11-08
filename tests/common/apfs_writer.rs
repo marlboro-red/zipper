@@ -1,7 +1,4 @@
 #![allow(dead_code)]
-//! Writes APFS containers for tests: a checkpoint area, the container and
-//! volume object maps, multi-level B-trees and the file-system records of
-//! each volume, laid out as the APFS Reference describes.
 use std::collections::BTreeMap;
 
 pub const ROOT_PARENT: u64 = 1;
@@ -464,8 +461,7 @@ impl Builder<'_> {
         groups
     }
 
-    // Builds a B-tree bottom up and returns its nodes as (oid, address, block) before sealing.
-    fn tree(
+    fn unsealed_tree(
         &mut self,
         records: Vec<Record>,
         per_leaf: usize,
@@ -545,7 +541,7 @@ impl Builder<'_> {
             .collect();
         let per_leaf = self.container.omap_entries_per_leaf;
         let omap_address = self.allocator.take(1);
-        let tree = self.tree(records, per_leaf, true, OMAP, Some((16, 16)));
+        let tree = self.unsealed_tree(records, per_leaf, true, OMAP, Some((16, 16)));
         let mut block = self.block();
         header(&mut block, omap_address, OBJ_PHYSICAL | OMAP, 0);
         put32(&mut block, 0x28, OBJ_PHYSICAL | BTREE);
@@ -876,7 +872,7 @@ pub fn build(container: &Container) -> (Image, Layout) {
     let mut volume_entries = Vec::new();
     for (index, volume) in container.volumes.iter().enumerate() {
         let records = std::mem::take(&mut all_records[index]);
-        let tree = builder.tree(records, container.records_per_leaf, false, FSTREE, None);
+        let tree = builder.unsealed_tree(records, container.records_per_leaf, false, FSTREE, None);
         let mut fs_nodes = Vec::new();
         let mut omap_entries = Vec::new();
         for (oid, address, mut node) in tree.nodes {

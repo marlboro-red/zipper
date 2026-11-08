@@ -1,6 +1,4 @@
 #![allow(dead_code)]
-//! Trees of extracted files for the APFS tests, and runs of Zipper and
-//! 7-Zip that produce them.
 use std::{
     collections::BTreeMap,
     fs,
@@ -44,9 +42,6 @@ fn open_up(root: &Path) {
     let _ = root;
 }
 
-/// Every path under `root` with its sha256 and mode, `dir` and its mode, or
-/// `link:` and its target. Folders are opened up afterwards so the caller
-/// can delete them.
 pub fn tree(root: &Path) -> Tree {
     let mut found = Tree::new();
     if !root.exists() {
@@ -98,8 +93,6 @@ pub fn without_modes(tree: &Tree) -> Tree {
         .collect()
 }
 
-/// Runs `7zz x` and returns whether it succeeded, its tree without the
-/// `name:stream` files it writes for extended attributes, and its output.
 pub fn sevenzip_run(binary: &Path, image: &Path, into: &Path) -> (bool, Tree, String) {
     let mut flag = std::ffi::OsString::from("-o");
     flag.push(into);
@@ -119,8 +112,6 @@ pub fn sevenzip_run(binary: &Path, image: &Path, into: &Path) -> (bool, Tree, St
     (run.status.success(), streams_left_out, output)
 }
 
-/// The tree 7-Zip wrote with each path in `differs` taken from Zipper's
-/// tree instead, after checking that 7-Zip wrote that path differently.
 pub fn as_zipper_writes(theirs: &Tree, ours: &Tree, differs: &[&str], label: &str) -> Tree {
     let mut expected = theirs.clone();
     for path in differs {

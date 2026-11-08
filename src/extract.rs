@@ -19,7 +19,8 @@ pub enum Engine {
     /// MSI whose main stream is not a CAB, a split or pre-1.13 WIM, a Help 2
     /// file without an ITSF record, a differencing VHD or VHDX, a DMG or disk
     /// holding another file system Zipper does not read there, an APFS
-    /// container with an encrypted, sealed or snapshot volume, and
+    /// container with an encrypted, sealed or snapshot volume or a Fusion
+    /// container, and
     /// the other formats whose signature Zipper recognizes.
     #[default]
     Auto,
