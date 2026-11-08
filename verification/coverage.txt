@@ -2535,6 +2535,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [exe-fields]
+fingerprint = 63c348198fd1e764
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach exe-fields
 full-check = cargo kani --harness native_exe::proofs:: --harness native_exe::resources::proofs::
@@ -2601,6 +2602,7 @@ item = src/native_exe/resources.rs | const BITMAP_FILE_HEADER:
 item = src/native_exe/resources.rs | pub(super) fn icon_header(
 item = src/native_exe/resources.rs | pub(super) fn bitmap_header(
 item = src/native_exe/resources.rs | mod proofs {
+item = src/native_exe/version.rs | pub(super) fn render(
 item = src/lib.rs | pub(crate) fn field_check(
 item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
