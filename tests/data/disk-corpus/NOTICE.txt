@@ -4,4 +4,16 @@ generates. mkfs.fat 4.2 formatted the FAT12, FAT16 and FAT32 volumes and
 mtools 4.0.50 filled them. sgdisk 1.0.10 wrote the GPT tables, the test
 writer in tests/common/disk_writer.rs wrote the MBR tables, and qemu-img
 11.1.3 wrote the VHD and VHDX images. No file holds third-party content.
+
+write_the_container_corpus added the QCOW, VDI, VMDK and Android sparse
+images from the raw disks above. qemu-img 11.1.3 converted them to QCOW 1,
+QCOW 2 with and without zlib clusters, VDI dynamic and static, and VMDK
+monolithic sparse and monolithic flat, whose descriptor and extent are
+gpt-two-flat.vmdk and gpt-two-flat-flat.vmdk. The test writer wrote
+gpt-one-stream.vmdk, a stream-optimized VMDK in the layout VMware writes,
+since 7-Zip 26.05 cannot open the layout qemu-img writes, and mbr-two.simg.
+hdiutil on macOS 26 wrote the GPT disks holding HFS+ and APFS volumes inside
+hfs-gpt.qcow2 and apfs-gpt.vdi. ntfs-mbr.vmdk wraps ntfs3g-basic.ntfs from
+tests/data/ntfs-corpus in an MBR from the test writer.
+
 trees.json records the tree 7zz 26.05 extracted from each one.

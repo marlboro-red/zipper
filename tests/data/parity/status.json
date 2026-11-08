@@ -213,7 +213,15 @@
       ]
     },
     "QCOW": {
-      "status": "backend"
+      "status": "native",
+      "note": "QCOW versions 1, 2 and 3 read in process, with zlib clusters. An image with a backing file, or a disk whose file system Zipper does not read, goes to 7-Zip. Encrypted, external-data, extended-L2 and zstd images are refused, as 7-Zip refuses them.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::damaged_containers_are_refused_exactly_when_7zip_refuses_them",
+        "tests/disk_corpus.rs::qemu_images_extract_as_7zip_extracts_them",
+        "tests/hostile_disk.rs::qcow_images_are_checked_before_their_disk_is_read"
+      ]
     },
     "Rar": {
       "status": "backend"
@@ -244,7 +252,14 @@
       ]
     },
     "Sparse": {
-      "status": "backend"
+      "status": "native",
+      "note": "Android sparse images read in process. A disk whose file system Zipper does not read goes to 7-Zip.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::damaged_containers_are_refused_exactly_when_7zip_refuses_them",
+        "tests/hostile_disk.rs::android_sparse_images_are_checked_before_their_disk_is_read"
+      ]
     },
     "Split": {
       "status": "native",
@@ -271,7 +286,15 @@
       ]
     },
     "VDI": {
-      "status": "backend"
+      "status": "native",
+      "note": "Dynamic, static and undo VDI images with 1 MiB blocks read in process. A differencing VDI, or a disk whose file system Zipper does not read, goes to 7-Zip.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::damaged_containers_are_refused_exactly_when_7zip_refuses_them",
+        "tests/disk_corpus.rs::qemu_images_extract_as_7zip_extracts_them",
+        "tests/hostile_disk.rs::vdi_images_are_checked_before_their_disk_is_read"
+      ]
     },
     "VHD": {
       "status": "native",
@@ -294,7 +317,16 @@
       ]
     },
     "VMDK": {
-      "status": "backend"
+      "status": "native",
+      "note": "Monolithic sparse and stream-optimized extents and descriptors with flat and sparse extents read in process. A differencing VMDK, or a disk whose file system Zipper does not read, goes to 7-Zip. 7-Zip and Zipper both refuse the stream-optimized layout qemu-img writes.",
+      "tests": [
+        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
+        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
+        "tests/disk_corpus.rs::damaged_containers_are_refused_exactly_when_7zip_refuses_them",
+        "tests/disk_corpus.rs::qemu_images_extract_as_7zip_extracts_them",
+        "tests/disk_corpus.rs::vmdk_descriptors_with_flat_and_sparse_extents_extract_as_7zip_extracts_them",
+        "tests/hostile_disk.rs::vmdk_images_are_checked_before_their_disk_is_read"
+      ]
     },
     "Xar": {
       "note": "xar archives and flat macOS packages, written as `7zz x -txar` and `xar -x` write them. For a component package, `7zz x` instead writes its Payload decompressed as `Payload~`.",

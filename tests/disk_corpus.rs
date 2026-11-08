@@ -36,7 +36,19 @@ const STRICTER: &[&str] = &[
     "never replayed",
     "share their bytes",
     "not one plain file name",
+    "share a cluster",
+    "not aligned to a cluster",
+    "lies past the end of the image",
+    "names another place in the disk",
+    "shorter than the descriptor says",
+    "carry extra data",
+    "shorter than its disk needs",
+    "larger than 2^56 bytes",
+    "needs features Zipper does not know",
+    "is not a VMDK sparse extent",
 ];
+
+const SENT_TO_7ZIP: &str = "Zipper does not read it in process";
 
 fn sevenzip_binary() -> Option<PathBuf> {
     let found = sevenzip::sevenzip();
@@ -113,6 +125,11 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
             };
             (name, kind)
         })
+        // EXTERNAL(7-Zip): it writes HFS+ and APFS extended attributes and NTFS system file
+        // streams as `file:name`, which those readers leave out, as their reference pages say.
+        .filter(|(name, _)| {
+            !(name.contains(":com.apple.") || name.starts_with("[SYSTEM]/") && name.contains(':'))
+        })
         .collect()
 }
 
@@ -164,9 +181,15 @@ fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> Option<BTreeMap<
 }
 
 fn compare(binary: &Path, label: &str, bytes: &[u8], name: &str) -> bool {
+    compare_files(binary, label, &[(name, bytes)])
+}
+
+fn compare_files(binary: &Path, label: &str, files: &[(&str, &[u8])]) -> bool {
     let work = tempfile::tempdir().unwrap();
-    let archive = work.path().join(name);
-    fs::write(&archive, bytes).unwrap();
+    for (name, bytes) in files {
+        fs::write(work.path().join(name), bytes).unwrap();
+    }
+    let archive = work.path().join(files[0].0);
     let theirs =
         sevenzip_tree(binary, &archive, &work.path().join("7z")).map(without_partition_times);
     let ours = zipper_tree(&archive, &work.path().join("zipper")).map(without_partition_times);
@@ -274,8 +297,82 @@ fn writer_images(seed: u32) -> Vec<(String, Vec<u8>, &'static str)> {
             disk_writer::vhdx(&gpt, 25),
             "vhdx",
         ));
+        let fat_index = bits / 16;
+        for (index, (label, image, extension)) in
+            container_images(&mbr, &gpt, seed).into_iter().enumerate()
+        {
+            if (index as u32 + fat_index + seed).is_multiple_of(3) {
+                images.push((format!("{label} fat{bits}"), image, extension));
+            }
+        }
     }
     images
+}
+
+fn container_images(mbr: &[u8], gpt: &[u8], seed: u32) -> Vec<(String, Vec<u8>, &'static str)> {
+    let qcow = |version, cluster_bits, compressed| disk_writer::Qcow {
+        version,
+        cluster_bits,
+        compressed,
+        zero_flags: false,
+    };
+    let vmdk = |stream| disk_writer::Vmdk {
+        grain_sectors: if seed.is_multiple_of(2) { 128 } else { 16 },
+        table_entries: 512,
+        stream,
+    };
+    let vdi = |fixed| disk_writer::Vdi {
+        block_log: 20,
+        fixed,
+        zero_entries: seed % 2 == 1,
+    };
+    vec![
+        (
+            "qcow2 v3".to_owned(),
+            disk_writer::qcow(mbr, qcow(3, 16, false)),
+            "qcow2",
+        ),
+        (
+            "qcow2 v2 zlib".to_owned(),
+            disk_writer::qcow(gpt, qcow(2, 12 + seed % 3, true)),
+            "qcow2",
+        ),
+        (
+            "qcow v1".to_owned(),
+            disk_writer::qcow(mbr, qcow(1, 12, false)),
+            "qcow",
+        ),
+        (
+            "vdi dynamic".to_owned(),
+            disk_writer::vdi(gpt, vdi(false)),
+            "vdi",
+        ),
+        (
+            "vdi fixed".to_owned(),
+            disk_writer::vdi(mbr, vdi(true)),
+            "vdi",
+        ),
+        (
+            "sparse vmdk".to_owned(),
+            disk_writer::vmdk(mbr, vmdk(false), "disk.vmdk"),
+            "vmdk",
+        ),
+        (
+            "stream vmdk".to_owned(),
+            disk_writer::vmdk(gpt, vmdk(true), "disk.vmdk"),
+            "vmdk",
+        ),
+        (
+            "android sparse".to_owned(),
+            disk_writer::android_sparse(mbr, 4096 >> (seed % 3)),
+            "simg",
+        ),
+        (
+            "android sparse gpt".to_owned(),
+            disk_writer::android_sparse(gpt, 4096),
+            "img",
+        ),
+    ]
 }
 
 #[test]
@@ -343,6 +440,277 @@ fn damaged_images_are_refused_exactly_when_7zip_refuses_them() {
     );
 }
 
+fn small_mbr(seed: u32) -> Vec<u8> {
+    let mut volume = Volume::new(12, 8000);
+    volume.cluster_sectors = 4;
+    volume.fragment = true;
+    let built = build(&volume, &writer_items(seed));
+    disk_writer::mbr(&[(0x01, 64, &built.bytes)], 0)
+}
+
+fn spread(ranges: &[std::ops::Range<usize>], step: usize) -> Vec<usize> {
+    ranges
+        .iter()
+        .flat_map(|range| range.clone().step_by(step.max(1)))
+        .collect()
+}
+
+struct Damageable {
+    label: &'static str,
+    name: &'static str,
+    bytes: Vec<u8>,
+    places: Vec<usize>,
+}
+
+fn damageable_containers(seed: u32) -> Vec<Damageable> {
+    let disk = small_mbr(seed);
+    let pieces = |size: usize| -> Vec<(u64, Vec<u8>)> {
+        disk.chunks(size)
+            .enumerate()
+            .filter(|(_, piece)| piece.iter().any(|byte| *byte != 0))
+            .map(|(index, piece)| {
+                let mut piece = piece.to_vec();
+                piece.resize(size, 0);
+                (index as u64, piece)
+            })
+            .collect()
+    };
+    let mut found = Vec::new();
+    for (label, version, compressed) in [
+        ("qcow2 v3", 3, false),
+        ("qcow2 v2 zlib", 2, true),
+        ("qcow v1", 1, false),
+    ] {
+        let options = disk_writer::Qcow {
+            version,
+            cluster_bits: 12,
+            compressed,
+            zero_flags: false,
+        };
+        let image = disk_writer::qcow_sparse(options, disk.len() as u64, &pieces(4096));
+        let mut ranges = vec![0..112, image.l1_at..image.l1_at + 16];
+        ranges.extend(image.l2_at.iter().map(|at| *at..at + 4096));
+        ranges.extend(image.data_at.iter().take(8).map(|at| *at..at + 4));
+        found.push(Damageable {
+            label,
+            name: if version == 1 {
+                "disk.qcow"
+            } else {
+                "disk.qcow2"
+            },
+            places: spread(&ranges, 1),
+            bytes: image.bytes,
+        });
+    }
+    let options = disk_writer::Vdi {
+        block_log: 20,
+        fixed: false,
+        zero_entries: true,
+    };
+    let image = disk_writer::vdi_sparse(options, disk.len() as u64, &pieces(1 << 20));
+    found.push(Damageable {
+        label: "vdi dynamic",
+        name: "disk.vdi",
+        places: spread(&[0x40..0x1C8, image.map_at..image.data_at], 1),
+        bytes: image.bytes,
+    });
+    for (label, stream) in [("sparse vmdk", false), ("stream vmdk", true)] {
+        let options = disk_writer::Vmdk {
+            grain_sectors: 16,
+            table_entries: 512,
+            stream,
+        };
+        let image =
+            disk_writer::vmdk_sparse(options, disk.len() as u64, &pieces(8192), "disk.vmdk");
+        let mut ranges = vec![0..0x50, image.gd_at - SECTOR..image.gd_at + 8];
+        ranges.extend(image.gt_at.iter().map(|at| at - SECTOR..at + 2048));
+        ranges.extend(image.grain_at.iter().take(8).map(|at| *at..at + 14));
+        if stream {
+            let end = image.bytes.len();
+            ranges.push(end - 3 * SECTOR..end - 2 * SECTOR + 0x50);
+        }
+        found.push(Damageable {
+            label,
+            name: "disk.vmdk",
+            places: spread(&ranges, 1),
+            bytes: image.bytes,
+        });
+    }
+    let sparse = disk_writer::android_sparse(&disk, 4096);
+    let mut chunks = Vec::new();
+    chunks.push(0..28);
+    let mut at = 28;
+    while at + 12 <= sparse.len() {
+        chunks.push(at..at + 12);
+        at += u32::from_le_bytes(sparse[at + 8..at + 12].try_into().unwrap()) as usize;
+    }
+    found.push(Damageable {
+        label: "android sparse",
+        name: "disk.simg",
+        places: spread(&chunks, 1),
+        bytes: sparse,
+    });
+    found
+}
+
+fn outcome(binary: &Path, label: &str, files: &[(&str, &[u8])]) -> Result<bool, String> {
+    std::panic::catch_unwind(|| compare_files(binary, label, files)).map_err(|panic| {
+        panic
+            .downcast_ref::<String>()
+            .cloned()
+            .unwrap_or_else(|| label.to_owned())
+    })
+}
+
+fn sent_to_7zip_or_matching(binary: &Path, label: &str, files: &[(&str, &[u8])]) {
+    if let Err(failure) = outcome(binary, label, files) {
+        assert!(failure.contains(SENT_TO_7ZIP), "{failure}");
+    }
+}
+
+fn damage_containers(flips_each: usize) {
+    let Some(binary) = sevenzip_binary() else {
+        return;
+    };
+    use rayon::prelude::*;
+    let mut failures = Vec::new();
+    for container in damageable_containers(8) {
+        let mut state = 0x9E37_79B9u32 ^ container.label.len() as u32;
+        let step = (container.places.len() / flips_each).max(1);
+        let mut flips = Vec::new();
+        for (index, at) in container.places.iter().enumerate() {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            if flips_each >= container.places.len() || index % step == (state as usize) % step {
+                flips.push((*at, 1u8 << (state % 8)));
+            }
+        }
+        assert!(!flips.is_empty(), "{}: no flips ran", container.label);
+        let outcomes: Vec<Result<bool, String>> = flips
+            .par_iter()
+            .map(|(at, bit)| {
+                let mut damaged = container.bytes.clone();
+                damaged[*at] ^= bit;
+                let label = format!("{} flip of {bit:#04x} at {at}", container.label);
+                outcome(&binary, &label, &[(container.name, &damaged)])
+            })
+            .collect();
+        let refused = outcomes
+            .iter()
+            .filter(|outcome| outcome == &&Ok(false))
+            .count();
+        failures.extend(
+            outcomes
+                .into_iter()
+                .filter_map(Result::err)
+                .filter(|failure| !failure.contains(SENT_TO_7ZIP)),
+        );
+        eprintln!(
+            "{}: 7-Zip refused {refused} of {}",
+            container.label,
+            flips.len()
+        );
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn damaged_containers_are_refused_exactly_when_7zip_refuses_them() {
+    damage_containers(24);
+}
+
+#[test]
+#[ignore = "flips every byte of every container structure; run with --ignored"]
+fn every_flip_in_every_container_structure_matches_7zip() {
+    damage_containers(usize::MAX);
+}
+
+#[test]
+fn vmdk_descriptors_with_flat_and_sparse_extents_extract_as_7zip_extracts_them() {
+    let Some(binary) = sevenzip_binary() else {
+        return;
+    };
+    let disk = small_mbr(9);
+    let (descriptor, flat) = disk_writer::vmdk_flat(&disk, "disk-flat.vmdk");
+    assert!(compare_files(
+        &binary,
+        "flat vmdk",
+        &[("disk.vmdk", &descriptor), ("disk-flat.vmdk", &flat)],
+    ));
+    let first = 1000 * SECTOR;
+    let mut padded = vec![0x77u8; 3 * SECTOR];
+    padded.extend_from_slice(&disk[..first]);
+    let sparse = disk_writer::vmdk(
+        &disk[first..],
+        disk_writer::Vmdk {
+            grain_sectors: 128,
+            table_entries: 512,
+            stream: false,
+        },
+        "part-2.vmdk",
+    );
+    let extents = [
+        format!("RW {} FLAT \"part-1.bin\" 3", first / SECTOR),
+        format!(
+            "RW {} SPARSE \"part-2.vmdk\"",
+            (disk.len() - first) / SECTOR
+        ),
+    ];
+    let descriptor = disk_writer::vmdk_descriptor("twoGbMaxExtentSparse", &extents, None);
+    assert!(compare_files(
+        &binary,
+        "two extents",
+        &[
+            ("disk.vmdk", descriptor.as_bytes()),
+            ("part-1.bin", &padded),
+            ("part-2.vmdk", &sparse),
+        ],
+    ));
+    let extents = [
+        format!("RW {} FLAT \"part-1.bin\" 3", first / SECTOR),
+        format!("RW {} ZERO", (disk.len() - first) / SECTOR),
+    ];
+    let descriptor = disk_writer::vmdk_descriptor("monolithicFlat", &extents, None);
+    sent_to_7zip_or_matching(
+        &binary,
+        "zero extent",
+        &[
+            ("disk.vmdk", descriptor.as_bytes()),
+            ("part-1.bin", &padded),
+        ],
+    );
+    let (descriptor, _) = disk_writer::vmdk_flat(&disk, "missing-flat.vmdk");
+    sent_to_7zip_or_matching(&binary, "missing extent", &[("disk.vmdk", &descriptor)]);
+    let (descriptor, flat) = disk_writer::vmdk_flat(&disk, "../disk-flat.vmdk");
+    sent_to_7zip_or_matching(
+        &binary,
+        "extent outside the folder",
+        &[("disk.vmdk", &descriptor), ("disk-flat.vmdk", &flat)],
+    );
+    let (descriptor, flat) = disk_writer::vmdk_flat(&disk, "disk-flat.vmdk");
+    let text = String::from_utf8(descriptor).unwrap();
+    for (label, edited) in [
+        ("short extent", text.replace("RW 8064 FLAT", "RW 8000 FLAT")),
+        ("long extent", text.replace("RW 8064 FLAT", "RW 9000 FLAT")),
+        (
+            "parent",
+            text.replace("parentCID=ffffffff", "parentCID=12345678"),
+        ),
+        ("vmfs", text.replace(" FLAT ", " VMFS ")),
+        (
+            "no extent",
+            text.replace("RW 8064 FLAT \"disk-flat.vmdk\" 0", ""),
+        ),
+    ] {
+        sent_to_7zip_or_matching(
+            &binary,
+            label,
+            &[("disk.vmdk", edited.as_bytes()), ("disk-flat.vmdk", &flat)],
+        );
+    }
+}
+
 fn unpacked(stored: &Path, into: &Path) -> PathBuf {
     let mut bytes = Vec::new();
     liblzma::read::XzDecoder::new(fs::File::open(stored).unwrap())
@@ -375,14 +743,19 @@ fn every_corpus_image_extracts_the_tree_7zip_extracts() {
         recorded.len(),
         "every corpus image has a recorded tree"
     );
-    for stored in images {
-        let name = stored.file_name().unwrap().to_string_lossy().into_owned();
-        let work = tempfile::tempdir().unwrap();
-        let image = unpacked(&stored, work.path());
-        let ours = zipper_tree(&image, &work.path().join("zipper"))
+    let work = tempfile::tempdir().unwrap();
+    let unpacked: Vec<(String, PathBuf)> = images
+        .iter()
+        .map(|stored| {
+            let name = stored.file_name().unwrap().to_string_lossy().into_owned();
+            (name, unpacked(stored, work.path()))
+        })
+        .collect();
+    for (index, (name, image)) in unpacked.into_iter().enumerate() {
+        let ours = zipper_tree(&image, &work.path().join(format!("zipper {index}")))
             .unwrap_or_else(|error| panic!("{name}: {error:#}"));
         if let Some(binary) = &binary {
-            let theirs = sevenzip_tree(binary, &image, &work.path().join("7z"))
+            let theirs = sevenzip_tree(binary, &image, &work.path().join(format!("7z {index}")))
                 .unwrap_or_else(|| panic!("{name}: 7-Zip failed"));
             assert_eq!(
                 without_partition_times(ours.clone()),
@@ -724,14 +1097,307 @@ fn tool_images_extract_as_7zip_extracts_them() {
 }
 
 #[cfg(unix)]
+fn qemu_files(
+    qemu: &Path,
+    work: &Path,
+    disk: &[u8],
+    name: &str,
+    arguments: &[&str],
+) -> Vec<(String, Vec<u8>)> {
+    let folder = work.join(format!("{name}.d"));
+    fs::create_dir_all(&folder).unwrap();
+    let raw = work.join(format!("{name}.raw"));
+    fs::write(&raw, disk).unwrap();
+    let output = Command::new(qemu)
+        .args(["convert", "-f", "raw", "-O"])
+        .args(arguments)
+        .arg(&raw)
+        .arg(name)
+        .current_dir(&folder)
+        .output()
+        .unwrap();
+    assert!(
+        folder.join(name).exists(),
+        "qemu-img wrote no {name}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::remove_file(&raw).unwrap();
+    let mut files: Vec<(String, Vec<u8>)> = fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let file = path.file_name().unwrap().to_string_lossy().into_owned();
+            (file, fs::read(&path).unwrap())
+        })
+        .collect();
+    files.sort_by_key(|(file, _)| file != name);
+    fs::remove_dir_all(&folder).unwrap();
+    files
+}
+
+fn corpus_raw(name: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    liblzma::read::XzDecoder::new(
+        fs::File::open(Path::new(CORPUS).join(format!("{name}.xz"))).unwrap(),
+    )
+    .read_to_end(&mut bytes)
+    .unwrap();
+    bytes
+}
+
+#[cfg(unix)]
 #[test]
-#[ignore = "rewrites tests/data/disk-corpus with mkfs.fat, mtools, sgdisk and qemu-img; run with --ignored to regenerate"]
+fn qemu_images_extract_as_7zip_extracts_them() {
+    let (Some(binary), Some(qemu)) = (sevenzip_binary(), tool("qemu-img")) else {
+        return;
+    };
+    let work = tempfile::tempdir().unwrap();
+    let fat12 = corpus_raw("fat12.img");
+    let mbr_one = corpus_raw("mbr-one.img");
+    let gpt_two = corpus_raw("gpt-two.img");
+    let readable: [(&[u8], &str, &[&str]); 16] = [
+        (&mbr_one, "mbr-one.qcow2", &["qcow2"]),
+        (&gpt_two, "zlib.qcow2", &["qcow2", "-c"]),
+        (&gpt_two, "v2.qcow2", &["qcow2", "-o", "compat=0.10"]),
+        (&fat12, "c512.qcow2", &["qcow2", "-o", "cluster_size=512"]),
+        (&fat12, "c2m.qcow2", &["qcow2", "-o", "cluster_size=2M"]),
+        (
+            &fat12,
+            "c4k-zlib.qcow2",
+            &["qcow2", "-c", "-o", "cluster_size=4096"],
+        ),
+        (&fat12, "lazy.qcow2", &["qcow2", "-o", "lazy_refcounts=on"]),
+        (
+            &fat12,
+            "refcount1.qcow2",
+            &["qcow2", "-o", "refcount_bits=1"],
+        ),
+        (
+            &fat12,
+            "prealloc.qcow2",
+            &["qcow2", "-o", "preallocation=metadata"],
+        ),
+        (&fat12, "fat12.qcow", &["qcow"]),
+        (&gpt_two, "gpt-two.vdi", &["vdi"]),
+        (&fat12, "static.vdi", &["vdi", "-o", "static=on"]),
+        (&mbr_one, "mbr-one.vmdk", &["vmdk"]),
+        (
+            &gpt_two,
+            "flat.vmdk",
+            &["vmdk", "-o", "subformat=monolithicFlat"],
+        ),
+        (
+            &fat12,
+            "split.vmdk",
+            &["vmdk", "-o", "subformat=twoGbMaxExtentSparse"],
+        ),
+        (
+            &fat12,
+            "split-flat.vmdk",
+            &["vmdk", "-o", "subformat=twoGbMaxExtentFlat"],
+        ),
+    ];
+    for (disk, name, arguments) in readable {
+        let files = qemu_files(&qemu, work.path(), disk, name, arguments);
+        let files: Vec<(&str, &[u8])> = files
+            .iter()
+            .map(|(file, bytes)| (file.as_str(), &bytes[..]))
+            .collect();
+        assert!(
+            compare_files(&binary, name, &files),
+            "{name}: 7-Zip refused it"
+        );
+    }
+    let refused: [(&str, &[&str]); 5] = [
+        ("stream.vmdk", &["vmdk", "-o", "subformat=streamOptimized"]),
+        ("extended.qcow2", &["qcow2", "-o", "extended_l2=on"]),
+        (
+            "zstd.qcow2",
+            &["qcow2", "-c", "-o", "compression_type=zstd"],
+        ),
+        (
+            "external.qcow2",
+            &["qcow2", "-o", "data_file=external.raw,data_file_raw=on"],
+        ),
+        ("compressed.qcow", &["qcow", "-c"]),
+    ];
+    for (name, arguments) in refused {
+        let files = qemu_files(&qemu, work.path(), &fat12, name, arguments);
+        let files: Vec<(&str, &[u8])> = files
+            .iter()
+            .map(|(file, bytes)| (file.as_str(), &bytes[..]))
+            .collect();
+        compare_files(&binary, name, &files);
+    }
+}
+
+#[cfg(unix)]
+fn container_corpus(
+    qemu: &Path,
+    work: &Path,
+    raws: &BTreeMap<String, Vec<u8>>,
+) -> Vec<(String, Vec<u8>)> {
+    let raw = |name: &str| &raws[name][..];
+    let mut files = Vec::new();
+    for (disk, name, arguments) in [
+        (raw("mbr-one.img"), "mbr-one.qcow2", &["qcow2"][..]),
+        (raw("gpt-one.img"), "gpt-one-zlib.qcow2", &["qcow2", "-c"]),
+        (
+            raw("mbr-two.img"),
+            "mbr-two-v2.qcow2",
+            &["qcow2", "-o", "compat=0.10"],
+        ),
+        (raw("fat12.img"), "fat12.qcow", &["qcow"]),
+        (raw("gpt-two.img"), "gpt-two.vdi", &["vdi"]),
+        (
+            raw("fat12.img"),
+            "fat12-static.vdi",
+            &["vdi", "-o", "static=on"],
+        ),
+        (raw("mbr-one.img"), "mbr-one.vmdk", &["vmdk"]),
+        (
+            raw("gpt-two.img"),
+            "gpt-two-flat.vmdk",
+            &["vmdk", "-o", "subformat=monolithicFlat"],
+        ),
+        (raw("apfs-gpt.img"), "apfs-gpt.vdi", &["vdi"]),
+        (raw("hfs-gpt.img"), "hfs-gpt.qcow2", &["qcow2"]),
+        (raw("ntfs-mbr.img"), "ntfs-mbr.vmdk", &["vmdk"]),
+    ] {
+        files.extend(qemu_files(qemu, work, disk, name, arguments));
+    }
+    files.push((
+        "gpt-one-stream.vmdk".to_owned(),
+        disk_writer::vmdk(
+            raw("gpt-one.img"),
+            disk_writer::Vmdk {
+                grain_sectors: 128,
+                table_entries: 512,
+                stream: true,
+            },
+            "gpt-one-stream.vmdk",
+        ),
+    ));
+    files.push((
+        "mbr-two.simg".to_owned(),
+        disk_writer::android_sparse(raw("mbr-two.img"), 4096),
+    ));
+    files
+}
+
+#[cfg(unix)]
+fn hdiutil_disk(work: &Path, file_system: &str, name: &str) -> Vec<u8> {
+    let source = work.join(format!("{name} source"));
+    fs::create_dir_all(source.join("folder")).unwrap();
+    fs::write(source.join("hello.txt"), b"hello from hdiutil\n").unwrap();
+    fs::write(source.join("folder/pattern.bin"), pattern(20_000, 3)).unwrap();
+    let image = work.join(name);
+    run(
+        &tool("hdiutil").expect("hdiutil writes the HFS+ and APFS corpus disks"),
+        &[
+            os("create"),
+            os("-quiet"),
+            os("-srcfolder"),
+            source.as_os_str(),
+            os("-fs"),
+            os(file_system),
+            os("-layout"),
+            os("GPTSPUD"),
+            os("-format"),
+            os("UDTO"),
+            os("-volname"),
+            os("Zipper"),
+            image.as_os_str(),
+        ],
+    );
+    fs::read(work.join(format!("{name}.cdr"))).unwrap()
+}
+
+#[cfg(unix)]
+fn container_sources(work: &Path, raws: &mut BTreeMap<String, Vec<u8>>) {
+    raws.insert(
+        "apfs-gpt.img".to_owned(),
+        hdiutil_disk(work, "APFS", "apfs-gpt"),
+    );
+    raws.insert(
+        "hfs-gpt.img".to_owned(),
+        hdiutil_disk(work, "HFS+", "hfs-gpt"),
+    );
+    let mut ntfs = Vec::new();
+    liblzma::read::XzDecoder::new(
+        fs::File::open(Path::new(CORPUS).join("../ntfs-corpus/ntfs3g-basic.ntfs.xz")).unwrap(),
+    )
+    .read_to_end(&mut ntfs)
+    .unwrap();
+    raws.insert(
+        "ntfs-mbr.img".to_owned(),
+        disk_writer::mbr(&[(0x07, 2048, &ntfs)], 0),
+    );
+}
+
+#[cfg(unix)]
+fn record_corpus(
+    binary: &Path,
+    work: &Path,
+    files: Vec<(String, Vec<u8>)>,
+    trees: &mut BTreeMap<String, BTreeMap<String, String>>,
+) {
+    let images = work.join("images");
+    fs::create_dir_all(&images).unwrap();
+    for (name, bytes) in &files {
+        let mut packed = Vec::new();
+        liblzma::read::XzEncoder::new(&bytes[..], 9)
+            .read_to_end(&mut packed)
+            .unwrap();
+        fs::write(Path::new(CORPUS).join(format!("{name}.xz")), packed).unwrap();
+        fs::write(images.join(name), bytes).unwrap();
+    }
+    for (name, _) in &files {
+        let theirs = sevenzip_tree(binary, &images.join(name), &work.join(format!("{name}.7z")))
+            .unwrap_or_else(|| panic!("7-Zip failed on {name}"));
+        trees.insert(format!("{name}.xz"), without_metadata(&theirs));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "adds the QCOW, VDI, VMDK and Android sparse images to tests/data/disk-corpus from its raw disks with qemu-img and hdiutil; run with --ignored"]
+fn write_the_container_corpus() {
+    let qemu = tool("qemu-img").expect("qemu-img writes the container corpus");
+    let binary = sevenzip_binary().expect("7-Zip records the corpus trees");
+    let work = tempfile::tempdir().unwrap();
+    let mut raws: BTreeMap<String, Vec<u8>> = [
+        "fat12.img",
+        "mbr-one.img",
+        "mbr-two.img",
+        "gpt-one.img",
+        "gpt-two.img",
+    ]
+    .into_iter()
+    .map(|name| (name.to_owned(), corpus_raw(name)))
+    .collect();
+    container_sources(work.path(), &mut raws);
+    let path = Path::new(CORPUS).join("trees.json");
+    let mut trees: BTreeMap<String, BTreeMap<String, String>> =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let files = container_corpus(&qemu, work.path(), &raws);
+    record_corpus(&binary, work.path(), files, &mut trees);
+    fs::write(&path, serde_json::to_string_pretty(&trees).unwrap() + "\n").unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "rewrites tests/data/disk-corpus with mkfs.fat, mtools, sgdisk, hdiutil and qemu-img; run with --ignored to regenerate"]
 fn write_the_corpus() {
     let tools = tools().expect("mkfs.fat, mtools, sgdisk and qemu-img write the corpus");
     let binary = sevenzip_binary().expect("7-Zip records the corpus trees");
     let work = tempfile::tempdir().unwrap();
     let mut trees = BTreeMap::new();
+    let mut raws: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for (name, bytes) in tool_images(&tools, work.path(), 1) {
+        if name.ends_with(".img") {
+            raws.insert(name.clone(), bytes.clone());
+        }
         let mut packed = Vec::new();
         liblzma::read::XzEncoder::new(&bytes[..], 9)
             .read_to_end(&mut packed)
@@ -743,6 +1409,9 @@ fn write_the_corpus() {
             .expect("7-Zip extracts the corpus");
         trees.insert(format!("{name}.xz"), without_metadata(&theirs));
     }
+    container_sources(work.path(), &mut raws);
+    let files = container_corpus(&tools.qemu, work.path(), &raws);
+    record_corpus(&binary, work.path(), files, &mut trees);
     fs::write(
         Path::new(CORPUS).join("trees.json"),
         serde_json::to_string_pretty(&trees).unwrap() + "\n",

@@ -641,6 +641,11 @@ enum Mapping {
         chunk_ratio_log: u32,
         limit: u64,
     },
+    Layer(Box<dyn Layer>),
+}
+
+pub(crate) trait Layer {
+    fn read(&mut self, file: &ArchiveFile, offset: u64, buffer: &mut [u8]) -> io::Result<usize>;
 }
 
 const TABLE_PAGE: u64 = 4096;
@@ -655,7 +660,11 @@ pub(crate) struct Disk {
     bitmap: Option<(u64, Vec<u8>)>,
 }
 
-fn read_file_exact(file: &ArchiveFile, mut buffer: &mut [u8], mut offset: u64) -> io::Result<()> {
+pub(crate) fn read_file_exact(
+    file: &ArchiveFile,
+    mut buffer: &mut [u8],
+    mut offset: u64,
+) -> io::Result<()> {
     while !buffer.is_empty() {
         let read = file.read_at(buffer, offset)?;
         if read == 0 {
@@ -667,7 +676,7 @@ fn read_file_exact(file: &ArchiveFile, mut buffer: &mut [u8], mut offset: u64) -
     Ok(())
 }
 
-fn read_at(
+pub(crate) fn read_at(
     file: &ArchiveFile,
     length: u64,
     offset: u64,
@@ -687,6 +696,12 @@ fn read_at(
 }
 
 impl Disk {
+    pub(crate) fn layered(file: ArchiveFile, size: u64, layer: Box<dyn Layer>) -> Disk {
+        let mut disk = Disk::plain(file, 0, size);
+        disk.mapping = Mapping::Layer(layer);
+        disk
+    }
+
     fn plain(file: ArchiveFile, start: u64, size: u64) -> Disk {
         Disk {
             file,
@@ -826,7 +841,64 @@ impl Disk {
                 }
                 self.file.read_at(&mut buffer[..want], place)
             }
+            Mapping::Layer(ref mut layer) => {
+                let want = (buffer.len() as u64).min(left) as usize;
+                layer.read(&self.file, offset, &mut buffer[..want])
+            }
         }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct Pages {
+    held: Vec<(u64, Vec<u8>)>,
+    next_victim: usize,
+}
+
+impl Pages {
+    pub(crate) fn read(
+        &mut self,
+        file: &ArchiveFile,
+        file_length: u64,
+        at: u64,
+        into: &mut [u8],
+    ) -> io::Result<()> {
+        if at
+            .checked_add(into.len() as u64)
+            .is_none_or(|end| end > file_length)
+        {
+            return Err(io::Error::other(
+                "a table entry lies past the end of the image",
+            ));
+        }
+        let mut done = 0;
+        while done < into.len() {
+            let place = at + done as u64;
+            let page = place / TABLE_PAGE;
+            let within = (place % TABLE_PAGE) as usize;
+            let slot = match self.held.iter().position(|(index, _)| *index == page) {
+                Some(slot) => slot,
+                None => {
+                    let from = page * TABLE_PAGE;
+                    let mut bytes = vec![0u8; (file_length - from).min(TABLE_PAGE) as usize];
+                    read_file_exact(file, &mut bytes, from)?;
+                    if self.held.len() < TABLE_PAGES_CACHED {
+                        self.held.push((page, bytes));
+                        self.held.len() - 1
+                    } else {
+                        let slot = self.next_victim;
+                        self.held[slot] = (page, bytes);
+                        self.next_victim = (slot + 1) % TABLE_PAGES_CACHED;
+                        slot
+                    }
+                }
+            };
+            let bytes = &self.held[slot].1;
+            let piece = (bytes.len() - within).min(into.len() - done);
+            into[done..done + piece].copy_from_slice(&bytes[within..within + piece]);
+            done += piece;
+        }
+        Ok(())
     }
 }
 
@@ -897,6 +969,28 @@ impl Seek for View<'_> {
     }
 }
 
+struct HfsVolume<'v> {
+    view: View<'v>,
+}
+
+impl crate::hfs::Volume for HfsVolume<'_> {
+    fn size(&self) -> u64 {
+        self.view.length
+    }
+
+    fn read_exact_at(&mut self, offset: u64, buffer: &mut [u8]) -> Result<()> {
+        ensure!(
+            offset
+                .checked_add(buffer.len() as u64)
+                .is_some_and(|end| end <= self.view.length),
+            "an HFS read lies past the end of its partition"
+        );
+        self.view
+            .read_exact_at(offset, buffer)
+            .context("cannot read the HFS partition")
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Span {
     start: u64,
@@ -932,6 +1026,7 @@ enum Plan {
     FileSystem(Span),
     Ntfs(Span),
     Apfs(Span),
+    Hfs(Span),
     Files {
         format: &'static str,
         items: Vec<RawItem>,
@@ -939,24 +1034,69 @@ enum Plan {
     Elsewhere(String),
 }
 
-enum Opened {
+pub(crate) enum Opened {
     Disk(Disk),
     Elsewhere(String),
 }
 
-fn has_vhd_extension(path: &Path) -> bool {
+fn has_extension(path: &Path, wanted: &str) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("vhd"))
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(wanted))
+}
+
+fn has_vhd_extension(path: &Path) -> bool {
+    has_extension(path, "vhd")
+}
+
+enum Container {
+    Qcow,
+    Vdi,
+    Vmdk,
+    VmdkDescriptor,
+    AndroidSparse,
+}
+
+fn container(head: &[u8], path: &Path) -> Option<Container> {
+    let vdi_at = crate::disk_vdi::SIGNATURE_AT;
+    if head.starts_with(crate::disk_qcow::MAGIC) {
+        Some(Container::Qcow)
+    } else if head.get(vdi_at..vdi_at + 4) == Some(&crate::disk_vdi::SIGNATURE.to_le_bytes()) {
+        Some(Container::Vdi)
+    } else if head.starts_with(crate::disk_vmdk::MAGIC) {
+        Some(Container::Vmdk)
+    } else if head.starts_with(&crate::disk_sparse::MAGIC.to_le_bytes()) {
+        Some(Container::AndroidSparse)
+    } else if has_extension(path, "vmdk") && head.starts_with(crate::disk_vmdk::DESCRIPTOR_START) {
+        Some(Container::VmdkDescriptor)
+    } else {
+        None
+    }
 }
 
 fn open(path: &Path) -> Result<Opened> {
     let file = crate::volumes::open(path)?;
     let length = file.len()?;
+    let head = read_at(
+        &file,
+        length,
+        0,
+        SECTOR.min(length as usize),
+        "first sector",
+    )?;
+    match container(&head, path) {
+        Some(Container::Qcow) => return crate::disk_qcow::open(file, length),
+        Some(Container::Vdi) => return crate::disk_vdi::open(file, length),
+        Some(Container::Vmdk) => return crate::disk_vmdk::open(file, length),
+        Some(Container::VmdkDescriptor) => {
+            return crate::disk_vmdk::open_descriptor(path, file, length);
+        }
+        Some(Container::AndroidSparse) => return crate::disk_sparse::open(file, length),
+        None => {}
+    }
     if length < SECTOR as u64 {
         return Ok(Opened::Disk(Disk::plain(file, 0, length)));
     }
-    let head = read_at(&file, length, 0, SECTOR, "first sector")?;
     if head.starts_with(VHDX_SIGNATURE) {
         return open_vhdx(file, length);
     }
@@ -1189,12 +1329,19 @@ fn read_vhdx_metadata(file: &ArchiveFile, length: u64, region: VhdxRegion) -> Re
 }
 
 #[derive(Default)]
-struct Megabytes {
+pub(crate) struct Claims {
     pages: HashMap<u64, Box<[u64; 512]>>,
 }
 
-impl Megabytes {
-    fn claim(&mut self, unit: u64) -> bool {
+impl Claims {
+    pub(crate) fn holds(&self, unit: u64) -> bool {
+        self.pages.get(&(unit >> 15)).is_some_and(|page| {
+            let bit = unit & ((1 << 15) - 1);
+            page[(bit >> 6) as usize] & (1u64 << (bit & 63)) != 0
+        })
+    }
+
+    pub(crate) fn claim(&mut self, unit: u64) -> bool {
         let page = self
             .pages
             .entry(unit >> 15)
@@ -1306,7 +1453,7 @@ fn open_vhdx(file: ArchiveFile, length: u64) -> Result<Opened> {
         "the VHDX block table is shorter than its disk needs"
     );
     let mut largest = 0u64;
-    let mut used = Megabytes::default();
+    let mut used = Claims::default();
     let mut batch = vec![0u8; (VHDX_BAT_BATCH * 8) as usize];
     let mut index = 0u64;
     while index < entries {
@@ -1710,6 +1857,13 @@ fn plan_span(disk: &mut Disk, span: Span, depth: u32) -> Result<Plan> {
     {
         return Ok(Plan::Apfs(span));
     }
+    let mut head = vec![0u8; crate::hfs::HEADER_AREA];
+    if span.length >= crate::hfs::HEADER_AREA as u64
+        && span.view(disk).read_if_there(0, &mut head)?
+        && crate::hfs::starts_with_volume(&head)
+    {
+        return Ok(Plan::Hfs(span));
+    }
     let found = mbr(&mut span.view(disk))?;
     if let Some(mbr) = found {
         let mut real = mbr.items.iter().filter(|item| item.real);
@@ -1788,17 +1942,22 @@ fn raw_disk_is_claimed(head: &[u8], tail: &[u8]) -> bool {
     !foreign && table_holds && nonempty
 }
 
-/// Returns whether the file is a VHD or VHDX image, or a raw disk that
-/// starts with an MBR or GPT partition table or a FAT boot sector. A file
-/// that only ends with a fixed VHD footer counts when it is named `.vhd`.
+/// Returns whether the file is a VHD, VHDX, QCOW, VDI, VMDK or Android
+/// sparse image, or a raw disk that starts with an MBR or GPT partition
+/// table or a FAT boot sector. A file that only ends with a fixed VHD footer
+/// counts when it is named `.vhd`, and a VMDK descriptor when it is named
+/// `.vmdk`.
 pub fn sniff(path: &Path) -> Result<bool> {
     let file = crate::volumes::open(path)?;
     let length = file.len()?;
+    let mut head = vec![0u8; (length.min(SNIFF_READ as u64)) as usize];
+    read_file_exact(&file, &mut head, 0)?;
+    if container(&head, path).is_some() {
+        return Ok(true);
+    }
     if length < SECTOR as u64 {
         return Ok(false);
     }
-    let mut head = vec![0u8; (length.min(SNIFF_READ as u64)) as usize];
-    read_file_exact(&file, &mut head, 0)?;
     if head.starts_with(VHDX_SIGNATURE) || head.starts_with(VHD_SIGNATURE) {
         return Ok(true);
     }
@@ -1811,9 +1970,9 @@ pub fn sniff(path: &Path) -> Result<bool> {
 }
 
 /// Returns whether the default engine should send the image to 7-Zip: a
-/// differencing VHD or VHDX, or a disk whose file system or partition names
-/// Zipper does not read in process, such as exFAT, or an APFS container
-/// the APFS reader leaves to 7-Zip.
+/// differencing image or one with a backing file, or a disk whose file
+/// system or partition names Zipper does not read in process, such as
+/// exFAT, or an APFS container the APFS reader leaves to 7-Zip.
 pub fn needs_backend(path: &Path) -> Result<bool> {
     match plan(path) {
         Ok((_, Plan::Elsewhere(_))) => Ok(true),
@@ -1825,9 +1984,10 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
 }
 
 /// Verify and optionally extract a disk image into a new directory, in the
-/// tree `7z x` extracts. A disk with one partition, or a VHD or VHDX holding
-/// one, extracts the FAT, NTFS or APFS file system inside. A disk with several partitions
-/// extracts each partition, and each gap between them, as one file.
+/// tree `7z x` extracts. A disk with one partition, or a VHD, VHDX, QCOW,
+/// VDI, VMDK or Android sparse image holding one, extracts the FAT, NTFS,
+/// HFS+ or APFS file system inside. A disk with several partitions extracts
+/// each partition, and each gap between them, as one file.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,
@@ -1852,6 +2012,15 @@ pub fn read_archive(
         Plan::Apfs(span) => {
             let mut disk = disk.expect("a file system plan comes from an opened disk");
             crate::native_apfs::read_volume(span.view(&mut disk), path, destination, options)
+        }
+        Plan::Hfs(span) => {
+            let mut disk = disk.expect("a file system plan comes from an opened disk");
+            let mut volume = HfsVolume {
+                view: span.view(&mut disk),
+            };
+            tree::extract("HFS", path, destination, options, |tree| {
+                crate::hfs::read(&mut volume, 0, tree, options)
+            })
         }
         Plan::Files { format, items } => {
             let mut disk = disk.expect("a partition plan comes from an opened disk");

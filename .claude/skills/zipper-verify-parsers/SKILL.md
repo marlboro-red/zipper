@@ -38,6 +38,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[ntfs-fields]` | the `native_ntfs` proofs, with the NTFS corpus and hostile tests | 48 s for the slowest |
 | `[chm-fields]` | the `native_chm` proofs | about 2 minutes in all |
 | `[swf-fields]` | the `native_swf` and `native_flv` proofs, with the FLV and SWF corpus and hostile tests | under a second each |
+| `[disk-containers]` | the `disk_qcow`, `disk_vdi`, `disk_vmdk` and `disk_sparse` proofs, with the disk corpus and hostile tests and the full container flip sweep against 7-Zip | 13 s for the slowest |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
 Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jobs.

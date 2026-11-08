@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 82 |
+| `native` | 86 |
 | `partial` | 5 |
-| `backend` | 20 |
+| `backend` | 16 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-24 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+20 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -60,23 +60,23 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Nsis` | `backend` |  | No proof yet. |
 | `PE` | `backend` |  | No proof yet. |
 | `Ppmd` | `native` | var.H and var.I files read in process. Files come from the `ppmd-rust` encoders. A file with data after its end marker is refused, where 7-Zip ignores the rest. | `generated_pmd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_pmd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
-| `QCOW` | `backend` |  | No proof yet. |
+| `QCOW` | `native` | QCOW versions 1, 2 and 3 read in process, with zlib clusters. An image with a backing file, or a disk whose file system Zipper does not read, goes to 7-Zip. Encrypted, external-data, extended-L2 and zstd images are refused, as 7-Zip refuses them. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_containers_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs`, `qemu_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `qcow_images_are_checked_before_their_disk_is_read` in `tests/hostile_disk.rs` |
 | `Rar` | `backend` |  | No proof yet. |
 | `Rar5` | `backend` |  | No proof yet. |
 | `Rpm` | `native` |  | `tests/data/parity/archives/rpm-bzip2.rpm`, `tests/data/parity/archives/rpm-gzip.rpm`, `tests/data/parity/archives/rpm-lzma.rpm`, `tests/data/parity/archives/rpm-xz.rpm`, `tests/data/parity/archives/rpm-zstd.rpm` |
 | `SWF` | `native` | Uncompressed SWF reads in process, one file per tag, as 7-Zip writes them. Data after the declared length is refused, where 7-Zip warns. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_swf_of_every_tag_form_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs` |
 | `SWFc` | `native` | SWF compressed with zlib or LZMA reads in process, with Zipper's own LZMA decoder. A stream that decodes past its declared length, or data after the stream, is refused, where 7-Zip stops at the length or ignores the data. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_compressed_swf_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs`, `a_stream_that_decodes_past_its_declared_length_is_refused_at_that_length` in `tests/hostile_swf.rs` |
-| `Sparse` | `backend` |  | No proof yet. |
+| `Sparse` | `native` | Android sparse images read in process. A disk whose file system Zipper does not read goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_containers_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs`, `android_sparse_images_are_checked_before_their_disk_is_read` in `tests/hostile_disk.rs` |
 | `Split` | `native` | Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip. | `tests/data/parity/archives/split.7z.001` |
 | `SquashFS` | `backend` |  | No proof yet. |
 | `TE` | `backend` |  | No proof yet. |
 | `UEFIc` | `backend` |  | No proof yet. |
 | `UEFIf` | `backend` |  | No proof yet. |
 | `Udf` | `native` | UDF 1.02 to 2.60 with metadata partitions read in process. A UDF tree 7-Zip cannot open gives way to ISO 9660, as in 7-Zip. | `tests/data/parity/archives/udf.iso.stored.xz`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs`, `a_udf_tree_7zip_cannot_open_falls_back_to_iso_9660_as_7zip_does` in `tests/iso_corpus.rs` |
-| `VDI` | `backend` |  | No proof yet. |
+| `VDI` | `native` | Dynamic, static and undo VDI images with 1 MiB blocks read in process. A differencing VDI, or a disk whose file system Zipper does not read, goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_containers_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs`, `qemu_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `vdi_images_are_checked_before_their_disk_is_read` in `tests/hostile_disk.rs` |
 | `VHD` | `native` | Fixed and dynamic VHD read in process. A differencing VHD, or a disk that does not hold FAT, goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `VHDX` | `native` | Fixed and dynamic VHDX read in process. A differencing VHDX, or a disk that does not hold FAT, goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
-| `VMDK` | `backend` |  | No proof yet. |
+| `VMDK` | `native` | Monolithic sparse and stream-optimized extents and descriptors with flat and sparse extents read in process. A differencing VMDK, or a disk whose file system Zipper does not read, goes to 7-Zip. 7-Zip and Zipper both refuse the stream-optimized layout qemu-img writes. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_containers_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs`, `qemu_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `vmdk_descriptors_with_flat_and_sparse_extents_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `vmdk_images_are_checked_before_their_disk_is_read` in `tests/hostile_disk.rs` |
 | `Xar` | `native` | xar archives and flat macOS packages, written as `7zz x -txar` and `xar -x` write them. For a component package, `7zz x` instead writes its Payload decompressed as `Payload~`. | `tests/data/parity/archives/xar.xar` |
 | `Z` | `native` |  | `tests/data/parity/archives/hello.txt.Z`, `tests/data/parity/archives/tar.tar.Z` |
 | `bzip2` | `native` |  | `tests/data/parity/archives/hello.txt.bz2`, `tests/data/parity/archives/tar.tar.bz2` |

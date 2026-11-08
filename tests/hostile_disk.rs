@@ -776,6 +776,10 @@ fn vhdx_images_are_checked_before_their_disk_is_read() {
 
 pub fn large_sparse_disk() -> Vec<u8> {
     let size: u64 = 1 << 41;
+    disk_writer::vhdx_sparse(size, 20, &large_sparse_blocks(size), 0).bytes
+}
+
+fn large_sparse_blocks(size: u64) -> Vec<(u64, Vec<u8>)> {
     let lba: u64 = 2048;
     let sectors = ((size >> 9) - 4096) as u32;
     let clusters = (sectors - 32) / 64;
@@ -810,8 +814,43 @@ pub fn large_sparse_disk() -> Vec<u8> {
         &disk_writer::short_record(b"SMALL   TXT", 0x20, 3, 5),
     );
     put(partition + data_at + 64 * SECTOR as u64, &data);
-    let blocks: Vec<(u64, Vec<u8>)> = blocks.into_iter().collect();
-    disk_writer::vhdx_sparse(size, block_log, &blocks, 0).bytes
+    blocks.into_iter().collect()
+}
+
+fn split_blocks(blocks: &[(u64, Vec<u8>)], piece_log: u32) -> Vec<(u64, Vec<u8>)> {
+    let per_block = 1u64 << (20 - piece_log);
+    blocks
+        .iter()
+        .flat_map(|(index, block)| {
+            block
+                .chunks(1 << piece_log)
+                .enumerate()
+                .filter(|(_, piece)| piece.iter().any(|byte| *byte != 0))
+                .map(move |(place, piece)| (index * per_block + place as u64, piece.to_vec()))
+        })
+        .collect()
+}
+
+fn large_android_sparse(size: u64, blocks: &[(u64, Vec<u8>)], fills: u32) -> Vec<u8> {
+    let block = 4096u32;
+    let mut chunks: Vec<(u16, u32, Vec<u8>)> = Vec::new();
+    let mut next = 0u64;
+    let skip = |chunks: &mut Vec<(u16, u32, Vec<u8>)>, count: u64| {
+        if count != 0 {
+            chunks.push((disk_writer::SPARSE_SKIP, count as u32, Vec::new()));
+        }
+    };
+    for (index, piece) in split_blocks(blocks, 12) {
+        skip(&mut chunks, index - next);
+        chunks.push((disk_writer::SPARSE_RAW, 1, piece));
+        next = index + 1;
+    }
+    for _ in 0..fills {
+        chunks.push((disk_writer::SPARSE_FILL, 1, vec![0; 4]));
+        next += 1;
+    }
+    skip(&mut chunks, size / u64::from(block) - next);
+    disk_writer::android_sparse_chunks(block, (size / u64::from(block)) as u32, &chunks).bytes
 }
 
 #[test]
@@ -953,6 +992,59 @@ fn write_disks_at_the_documented_limits() {
     let into = std::env::var_os("ZIPPER_DISK_LIMITS").expect("ZIPPER_DISK_LIMITS names a folder");
     let into = Path::new(&into);
     fs::write(into.join("sparse-2tib.vhdx"), large_sparse_disk()).unwrap();
+    let qcow_size = 1u64 << 37;
+    let qcow = disk_writer::qcow_sparse(
+        disk_writer::Qcow {
+            version: 3,
+            cluster_bits: 9,
+            compressed: false,
+            zero_flags: false,
+        },
+        qcow_size,
+        &split_blocks(&large_sparse_blocks(qcow_size), 9),
+    );
+    assert_eq!(
+        u32::from_be_bytes(qcow.bytes[36..40].try_into().unwrap()),
+        1 << 22
+    );
+    fs::write(into.join("l1-limit-128gib.qcow2"), &qcow.bytes).unwrap();
+    let size = 1u64 << 41;
+    let blocks = large_sparse_blocks(size);
+    fs::write(
+        into.join("sparse-2tib.vdi"),
+        disk_writer::vdi_sparse(
+            disk_writer::Vdi {
+                block_log: 20,
+                fixed: false,
+                zero_entries: false,
+            },
+            size,
+            &blocks,
+        )
+        .bytes,
+    )
+    .unwrap();
+    let vmdk_size = 1u64 << 39;
+    fs::write(
+        into.join("sparse-512gib.vmdk"),
+        disk_writer::vmdk_sparse(
+            disk_writer::Vmdk {
+                grain_sectors: 128,
+                table_entries: 512,
+                stream: false,
+            },
+            vmdk_size,
+            &split_blocks(&large_sparse_blocks(vmdk_size), 16),
+            "sparse-512gib.vmdk",
+        )
+        .bytes,
+    )
+    .unwrap();
+    fs::write(
+        into.join("chunks-4m-2tib.simg"),
+        large_android_sparse(size, &blocks, 1 << 22),
+    )
+    .unwrap();
     let per_folder = 10_800;
     let folders: Vec<Item> = (0..92)
         .map(|index| {
@@ -1029,5 +1121,738 @@ fn a_lone_ntfs_partition_extracts_in_process_as_the_raw_volume_does() {
         let found = extracted_named(&bytes, name, ReadOptions::default())
             .unwrap_or_else(|error| panic!("{case}: {error:#}"));
         assert_eq!(found, wanted, "{case}");
+    }
+}
+
+fn refused_files(case: &str, files: &[(&str, &[u8])], words: &str) {
+    let root = tempfile::tempdir().unwrap();
+    for (name, bytes) in files {
+        fs::write(root.path().join(name), bytes).unwrap();
+    }
+    let archive = root.path().join(files[0].0);
+    let destination = root.path().join("out");
+    let error = match read_archive(&archive, Some(&destination), ReadOptions::default()) {
+        Ok(_) => panic!("{case}: accepted a hostile image"),
+        Err(error) => format!("{error:#}"),
+    };
+    assert!(!destination.exists(), "{case}: left output behind");
+    assert!(
+        read_archive(&archive, None, ReadOptions::default()).is_err(),
+        "{case}: verification accepted a hostile image"
+    );
+    assert!(
+        error.contains(words),
+        "{case}: {error:?} does not say {words:?}"
+    );
+}
+
+fn extracted_files(files: &[(&str, &[u8])]) -> BTreeMap<String, Vec<u8>> {
+    let root = tempfile::tempdir().unwrap();
+    for (name, bytes) in files {
+        fs::write(root.path().join(name), bytes).unwrap();
+    }
+    let destination = root.path().join("out");
+    read_archive(
+        &root.path().join(files[0].0),
+        Some(&destination),
+        ReadOptions::default(),
+    )
+    .unwrap();
+    let found = tree(&destination);
+    common_deletable(root.path());
+    found
+}
+
+fn sent_to_7zip(case: &str, bytes: &[u8], name: &str, words: &str) {
+    refused_named(case, bytes, name, words);
+    assert_eq!(
+        reader(bytes, name, Engine::Auto),
+        Reader::Backend { format: None },
+        "{case}"
+    );
+    assert_eq!(reader(bytes, name, Engine::Native), Reader::Disk, "{case}");
+}
+
+fn put_be64(bytes: &mut [u8], at: usize, value: u64) {
+    bytes[at..at + 8].copy_from_slice(&value.to_be_bytes());
+}
+
+fn be64_at(bytes: &[u8], at: usize) -> u64 {
+    u64::from_be_bytes(bytes[at..at + 8].try_into().unwrap())
+}
+
+fn put_le32(bytes: &mut [u8], at: usize, value: u32) {
+    bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn le32_at(bytes: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+}
+
+fn pieces(disk: &[u8], size: usize) -> Vec<(u64, Vec<u8>)> {
+    disk.chunks(size)
+        .enumerate()
+        .filter(|(_, piece)| piece.iter().any(|byte| *byte != 0))
+        .map(|(index, piece)| {
+            let mut piece = piece.to_vec();
+            piece.resize(size, 0);
+            (index as u64, piece)
+        })
+        .collect()
+}
+
+fn container_disk() -> Vec<u8> {
+    disk_writer::mbr(&[(0x06, 64, &sample_volume(16).bytes)], 0)
+}
+
+fn qcow_options(version: u32, compressed: bool) -> disk_writer::Qcow {
+    disk_writer::Qcow {
+        version,
+        cluster_bits: 12,
+        compressed,
+        zero_flags: false,
+    }
+}
+
+#[test]
+fn writer_volumes_extract_byte_for_byte_in_the_newer_containers() {
+    let wanted = sample_tree();
+    let disk = container_disk();
+    let gpt = disk_writer::gpt(
+        &[(
+            disk_writer::BASIC_DATA,
+            "data",
+            2048,
+            &sample_volume(32).bytes,
+        )],
+        64,
+    );
+    for (version, cluster_bits, compressed) in [
+        (1, 9, false),
+        (1, 16, false),
+        (2, 9, true),
+        (2, 16, false),
+        (3, 12, true),
+        (3, 21, false),
+    ] {
+        let options = disk_writer::Qcow {
+            version,
+            cluster_bits,
+            compressed,
+            zero_flags: version == 3,
+        };
+        for (label, source) in [("MBR", &disk), ("GPT", &gpt)] {
+            let mut clusters = pieces(source, 1 << cluster_bits);
+            if options.zero_flags {
+                clusters.push((clusters.last().unwrap().0 + 1, vec![0; 1 << cluster_bits]));
+            }
+            let image = disk_writer::qcow_sparse(options, source.len() as u64, &clusters);
+            assert_eq!(
+                extracted(&image.bytes),
+                wanted,
+                "{label} QCOW {version} with {cluster_bits}-bit clusters"
+            );
+        }
+    }
+    for (fixed, zero_entries) in [(false, false), (false, true), (true, false)] {
+        let options = disk_writer::Vdi {
+            block_log: 20,
+            fixed,
+            zero_entries,
+        };
+        assert_eq!(
+            extracted(&disk_writer::vdi(&gpt, options)),
+            wanted,
+            "VDI {options:?}"
+        );
+    }
+    for (grain_sectors, stream) in [(1, false), (16, true), (128, false), (128, true)] {
+        let options = disk_writer::Vmdk {
+            grain_sectors,
+            table_entries: 512,
+            stream,
+        };
+        assert_eq!(
+            extracted(&disk_writer::vmdk(&disk, options, "case.img")),
+            wanted,
+            "VMDK {options:?}"
+        );
+    }
+    for block in [512, 4096, 65_536] {
+        assert_eq!(
+            extracted(&disk_writer::android_sparse(&gpt, block)),
+            wanted,
+            "Android sparse with {block}-byte blocks"
+        );
+    }
+    let (descriptor, flat) = disk_writer::vmdk_flat(&disk, "case-flat.vmdk");
+    assert_eq!(
+        extracted_files(&[("case.vmdk", &descriptor), ("case-flat.vmdk", &flat)]),
+        wanted,
+        "flat VMDK"
+    );
+}
+
+#[test]
+fn qcow_images_are_checked_before_their_disk_is_read() {
+    let disk = container_disk();
+    let clusters = pieces(&disk, 4096);
+    let image = disk_writer::qcow_sparse(qcow_options(3, false), disk.len() as u64, &clusters);
+    assert_eq!(extracted(&image.bytes), sample_tree());
+    let first_l2 = image.l2_at[0];
+    let mut backing = image.bytes.clone();
+    put_be64(&mut backing, 8, 4096);
+    sent_to_7zip("backing file", &backing, "case.qcow2", "backing file");
+    let mut encrypted = image.bytes.clone();
+    encrypted[35] = 2;
+    refused("encrypted", &encrypted, "encrypted");
+    for (bit, words) in [
+        (1u64 << 1, "marked corrupt"),
+        (1 << 2, "external file"),
+        (1 << 4, "extended second-level"),
+        (1 << 9, "features Zipper does not know"),
+    ] {
+        let mut flagged = image.bytes.clone();
+        put_be64(&mut flagged, 72, bit);
+        refused(words, &flagged, words);
+    }
+    let mut past_end = image.bytes.clone();
+    put_be64(
+        &mut past_end,
+        first_l2,
+        (image.bytes.len() as u64) | 1 << 63,
+    );
+    refused(
+        "cluster past the end",
+        &past_end,
+        "past the end of the image",
+    );
+    let mut shared = image.bytes.clone();
+    let first_entry = be64_at(&shared, first_l2);
+    put_be64(&mut shared, first_l2 + 8, first_entry);
+    refused("two clusters at one place", &shared, "share a cluster");
+    let mut table_as_data = image.bytes.clone();
+    put_be64(&mut table_as_data, first_l2, first_l2 as u64 | 1 << 63);
+    refused(
+        "cluster on its own table",
+        &table_as_data,
+        "share a cluster",
+    );
+    let mut header_as_data = image.bytes.clone();
+    put_be64(&mut header_as_data, first_l2, (1 << 63) | (4096 * 3));
+    refused(
+        "cluster on the first-level table",
+        &header_as_data,
+        "share a cluster",
+    );
+    let mut unaligned = image.bytes.clone();
+    put_be64(
+        &mut unaligned,
+        first_l2,
+        ((first_entry & !(1 << 63)) + 512) | (1 << 63),
+    );
+    refused(
+        "cluster not aligned",
+        &unaligned,
+        "not aligned to a cluster",
+    );
+    let mut reserved = image.bytes.clone();
+    put_be64(&mut reserved, first_l2, first_entry | 1 << 3);
+    refused("second-level reserved bits", &reserved, "reserved bits");
+    let mut l1_reserved = image.bytes.clone();
+    let l1 = be64_at(&l1_reserved, image.l1_at);
+    put_be64(&mut l1_reserved, image.l1_at, l1 | 1 << 60);
+    refused("first-level reserved bits", &l1_reserved, "reserved bits");
+    let mut short_l1 = image.bytes.clone();
+    short_l1[36..40].copy_from_slice(&0u32.to_be_bytes());
+    refused(
+        "first-level table too short",
+        &short_l1,
+        "shorter than its disk needs",
+    );
+    let mut long_l1 = image.bytes.clone();
+    long_l1[36..40].copy_from_slice(&(1u32 << 20).to_be_bytes());
+    refused(
+        "first-level table past the end",
+        &long_l1,
+        "past the end of the image",
+    );
+    let mut refcounts = image.bytes.clone();
+    refcounts[56..60].copy_from_slice(&(1u32 << 20).to_be_bytes());
+    refused(
+        "reference counts past the end",
+        &refcounts,
+        "reference count table",
+    );
+    let mut cluster_size = image.bytes.clone();
+    cluster_size[20..24].copy_from_slice(&22u32.to_be_bytes());
+    refused("cluster of 4 MiB", &cluster_size, "cluster size");
+    let truncated = &image.bytes[..image.bytes.len() - 4096];
+    refused(
+        "truncated in its last cluster",
+        truncated,
+        "past the end of the image",
+    );
+
+    let packed = disk_writer::qcow_sparse(qcow_options(3, true), disk.len() as u64, &clusters);
+    assert_eq!(extracted(&packed.bytes), sample_tree());
+    let mut zstd = packed.bytes.clone();
+    put_be64(&mut zstd, 72, 1 << 3);
+    zstd[104] = 1;
+    refused("zstd clusters", &zstd, "zstd");
+    let mut damaged = packed.bytes.clone();
+    for at in &packed.data_at {
+        damaged[*at] ^= 0xFF;
+        damaged[*at + 1] ^= 0xFF;
+    }
+    refused(
+        "damaged compressed clusters",
+        &damaged,
+        "compressed QCOW cluster",
+    );
+    let mut onto_table = packed.bytes.clone();
+    let first_packed = be64_at(&onto_table, packed.l2_at[0]);
+    let offset_bits = (1u64 << (62 - 4)) - 1;
+    put_be64(
+        &mut onto_table,
+        packed.l2_at[0],
+        (first_packed & !offset_bits) | packed.l2_at[0] as u64,
+    );
+    refused(
+        "compressed cluster on a table",
+        &onto_table,
+        "share a cluster",
+    );
+    let mut too_long = packed.bytes.clone();
+    let table = *packed.l2_at.last().unwrap();
+    let last = (0..512)
+        .map(|slot| table + 8 * slot)
+        .max_by_key(|at| be64_at(&too_long, *at) & offset_bits)
+        .unwrap();
+    let value = be64_at(&too_long, last);
+    put_be64(&mut too_long, last, value | 0xF << 58);
+    refused(
+        "compressed cluster past the end",
+        &too_long,
+        "past the end of the image",
+    );
+    let old = disk_writer::qcow_sparse(qcow_options(1, true), disk.len() as u64, &clusters);
+    refused("version 1 compressed clusters", &old.bytes, "version 1");
+}
+
+#[test]
+fn vdi_images_are_checked_before_their_disk_is_read() {
+    let disk = container_disk();
+    let options = disk_writer::Vdi {
+        block_log: 20,
+        fixed: false,
+        zero_entries: false,
+    };
+    let image = disk_writer::vdi_sparse(options, disk.len() as u64, &pieces(&disk, 1 << 20));
+    assert_eq!(extracted(&image.bytes), sample_tree());
+    let mut differencing = image.bytes.clone();
+    put_le32(&mut differencing, 0x4C, 4);
+    sent_to_7zip(
+        "differencing VDI",
+        &differencing,
+        "case.vdi",
+        "differencing VDI",
+    );
+    let mut parent = image.bytes.clone();
+    parent[0x1A8] = 1;
+    sent_to_7zip("VDI with a parent", &parent, "case.vdi", "differencing VDI");
+    let mut blocks = image.bytes.clone();
+    put_le32(&mut blocks, 0x178, 1 << 16);
+    refused("64 KiB blocks", &blocks, "not 1 MiB");
+    let mut extra = image.bytes.clone();
+    put_le32(&mut extra, 0x17C, 512);
+    refused("block extra data", &extra, "extra data");
+    let mut sectors = image.bytes.clone();
+    put_le32(&mut sectors, 0x168, 4096);
+    refused("4 KiB sectors", &sectors, "not 512 bytes");
+    let mut shared = image.bytes.clone();
+    let first = le32_at(&shared, image.map_at);
+    put_le32(&mut shared, image.map_at + 4, first);
+    refused("two blocks at one place", &shared, "share their bytes");
+    let mut past = image.bytes.clone();
+    put_le32(&mut past, image.map_at, 7);
+    refused(
+        "block past the allocated ones",
+        &past,
+        "past the allocated ones",
+    );
+    let truncated = &image.bytes[..image.bytes.len() - 4096];
+    refused(
+        "truncated in its last block",
+        truncated,
+        "allocated VDI blocks",
+    );
+    let mut map = image.bytes.clone();
+    put_le32(&mut map, 0x158, 0x200);
+    refused("map overlapping the data", &map, "overlaps");
+    let mut header = image.bytes.clone();
+    put_le32(&mut header, 0x48, 0x400);
+    refused("header overlapping the map", &header, "overlaps");
+}
+
+#[test]
+fn vmdk_images_are_checked_before_their_disk_is_read() {
+    let disk = container_disk();
+    let options = disk_writer::Vmdk {
+        grain_sectors: 16,
+        table_entries: 512,
+        stream: false,
+    };
+    let image = disk_writer::vmdk_sparse(options, disk.len() as u64, &pieces(&disk, 8192), "a");
+    assert_eq!(extracted(&image.bytes), sample_tree());
+    let table = image.gt_at[0];
+    let first = (0..512)
+        .map(|slot| table + 4 * slot)
+        .find(|at| le32_at(&image.bytes, *at) != 0)
+        .unwrap();
+    let mut past = image.bytes.clone();
+    put_le32(&mut past, first, (image.bytes.len() / SECTOR) as u32);
+    refused("grain past the end", &past, "past the end of the image");
+    let mut shared = image.bytes.clone();
+    let value = le32_at(&shared, first);
+    put_le32(&mut shared, first + 4, value);
+    refused("two grains at one place", &shared, "share their bytes");
+    let mut metadata = image.bytes.clone();
+    put_le32(&mut metadata, first, (image.gt_at[0] / SECTOR) as u32);
+    refused("grain on its table", &metadata, "metadata");
+    let mut tables = image.bytes.clone();
+    put_le32(&mut tables, 0x2C, 256);
+    refused("grain tables of 256 entries", &tables, "512 entries");
+    let mut descriptor = image.bytes.clone();
+    descriptor[SECTOR..SECTOR + 5].copy_from_slice(b"junk\n");
+    refused(
+        "descriptor junk",
+        &descriptor,
+        "not a comment, setting or extent",
+    );
+    let mut parent = image.bytes.clone();
+    let text = String::from_utf8_lossy(&parent[SECTOR..2 * SECTOR]).into_owned();
+    let at = SECTOR + text.find("parentCID=ffffffff").unwrap() + "parentCID=".len();
+    parent[at..at + 8].copy_from_slice(b"12345678");
+    sent_to_7zip(
+        "VMDK with a parent",
+        &parent,
+        "case.vmdk",
+        "differencing VMDK",
+    );
+    let mut newline = image.bytes.clone();
+    newline[0x4A] = b'x';
+    refused("newline test", &newline, "newline test");
+
+    let stream = disk_writer::vmdk_sparse(
+        disk_writer::Vmdk {
+            stream: true,
+            ..options
+        },
+        disk.len() as u64,
+        &pieces(&disk, 8192),
+        "a",
+    );
+    assert_eq!(extracted(&stream.bytes), sample_tree());
+    let mut no_marker = stream.bytes.clone();
+    no_marker[stream.gd_at - SECTOR + 12] = 9;
+    refused(
+        "grain directory without its marker",
+        &no_marker,
+        "lacks its marker",
+    );
+    let mut footer = stream.bytes.clone();
+    let footer_at = footer.len() - 2 * SECTOR;
+    footer[footer_at + 0x40] ^= 1;
+    refused("footer that differs", &footer, "does not repeat");
+    let mut place = stream.bytes.clone();
+    place[stream.grain_at[1]] ^= 1;
+    refused("grain naming another place", &place, "names another place");
+    let mut size = stream.bytes.clone();
+    let grain = stream.grain_at[0];
+    let packed = le32_at(&size, grain + 8);
+    put_le32(&mut size, grain + 8, packed - 1);
+    refused(
+        "grain size past its stream",
+        &size,
+        "does not end where its size says",
+    );
+    let mut eos = stream.bytes.clone();
+    let last = eos.len() - SECTOR;
+    eos[last] = 1;
+    refused("stream without its end marker", &eos, "end marker");
+}
+
+#[test]
+fn vmdk_descriptors_open_only_plain_extents_beside_them() {
+    let disk = container_disk();
+    let (descriptor, flat) = disk_writer::vmdk_flat(&disk, "case-flat.vmdk");
+    let text = String::from_utf8(descriptor.clone()).unwrap();
+    let sectors = flat.len() / SECTOR;
+    for (case, name) in [
+        ("subfolder", "sub/case-flat.vmdk"),
+        ("parent folder", "../case-flat.vmdk"),
+        ("absolute", "/etc/hosts"),
+        ("backslash", "sub\\case-flat.vmdk"),
+        ("dot dot", ".."),
+    ] {
+        let edited = text.replace("\"case-flat.vmdk\"", &format!("\"{name}\""));
+        refused_files(
+            case,
+            &[("case.vmdk", edited.as_bytes()), ("case-flat.vmdk", &flat)],
+            "plain file name",
+        );
+    }
+    refused_files(
+        "missing extent",
+        &[("case.vmdk", &descriptor)],
+        "cannot open the VMDK extent",
+    );
+    let long = text.replace(
+        &format!("RW {sectors} FLAT"),
+        &format!("RW {} FLAT", sectors + 8),
+    );
+    refused_files(
+        "flat extent longer than its file",
+        &[("case.vmdk", long.as_bytes()), ("case-flat.vmdk", &flat)],
+        "shorter than the descriptor says",
+    );
+    let zero = text.replace("FLAT \"case-flat.vmdk\" 0", "ZERO \"case-flat.vmdk\"");
+    refused_files(
+        "zero extent",
+        &[("case.vmdk", zero.as_bytes()), ("case-flat.vmdk", &flat)],
+        "ZERO extent",
+    );
+    let junk = text.clone() + "junk\n";
+    refused_files(
+        "junk line",
+        &[("case.vmdk", junk.as_bytes()), ("case-flat.vmdk", &flat)],
+        "not a comment, setting or extent",
+    );
+    let unsigned = text.replacen("# Disk DescriptorFile", "# Disk Descriptor", 1);
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("case.vmdk"), unsigned.as_bytes()).unwrap();
+    assert!(!zipper::disk::sniff(&root.path().join("case.vmdk")).unwrap());
+    let sparse_raw = text.replace("FLAT \"case-flat.vmdk\" 0", "SPARSE \"case-flat.vmdk\"");
+    refused_files(
+        "sparse extent that is raw",
+        &[
+            ("case.vmdk", sparse_raw.as_bytes()),
+            ("case-flat.vmdk", &flat),
+        ],
+        "is not a VMDK sparse extent",
+    );
+    let parent = text.replace("parentCID=ffffffff", "parentCID=00000001");
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("case.vmdk"), parent.as_bytes()).unwrap();
+    fs::write(root.path().join("case-flat.vmdk"), &flat).unwrap();
+    assert_eq!(
+        zipper::choose_reader(Engine::Auto, &root.path().join("case.vmdk")).unwrap(),
+        Reader::Backend { format: None }
+    );
+    let error =
+        read_archive(&root.path().join("case.vmdk"), None, ReadOptions::default()).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("differencing VMDK"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn android_sparse_images_are_checked_before_their_disk_is_read() {
+    let disk = container_disk();
+    let image = disk_writer::android_sparse(&disk, 4096);
+    assert_eq!(extracted(&image), sample_tree());
+    let second = 28 + 12 + 4096;
+    for (case, at, value, words) in [
+        ("unknown chunk type", second, 0xCAC5u32, "unknown type"),
+        ("reserved field", second, 0x0001_CAC1, "reserved"),
+        ("chunk size", second + 8, 99, "does not match its type"),
+        ("block size", 12, 4097, "multiple of 4"),
+        ("more blocks", 16, 1, "cover fewer blocks"),
+    ] {
+        let mut damaged = image.clone();
+        let old = le32_at(&damaged, at);
+        let new = if case == "more blocks" {
+            old + value
+        } else {
+            value
+        };
+        if case == "reserved field" {
+            damaged[at + 2] = 1;
+        } else {
+            put_le32(&mut damaged, at, new);
+        }
+        refused(case, &damaged, words);
+    }
+    let mut header = image.clone();
+    header[8] = 32;
+    refused("header size", &header, "header sizes");
+    let mut fewer = image.clone();
+    let blocks = le32_at(&fewer, 16);
+    put_le32(&mut fewer, 16, blocks - 1);
+    refused("fewer blocks", &fewer, "more blocks than the image holds");
+    refused(
+        "cut in a raw chunk",
+        &image[..second - 100],
+        "past the end of the image",
+    );
+    let chunks = disk_writer::android_sparse_chunks(
+        4096,
+        3,
+        &[
+            (
+                disk_writer::SPARSE_FILL,
+                1,
+                0x5A5A_5A5Au32.to_le_bytes().to_vec(),
+            ),
+            (disk_writer::SPARSE_CRC, 1, vec![0; 4]),
+            (disk_writer::SPARSE_SKIP, 2, Vec::new()),
+        ],
+    );
+    refused(
+        "checksum chunk covering blocks",
+        &chunks.bytes,
+        "checksum chunk covers blocks",
+    );
+}
+
+#[test]
+fn truncated_containers_are_refused_or_extract_the_whole_tree() {
+    let disk = container_disk();
+    let whole = sample_tree();
+    let images: Vec<(&str, Vec<u8>)> = vec![
+        ("qcow2", disk_writer::qcow(&disk, qcow_options(3, true))),
+        ("qcow", disk_writer::qcow(&disk, qcow_options(1, false))),
+        (
+            "vdi",
+            disk_writer::vdi(
+                &disk,
+                disk_writer::Vdi {
+                    block_log: 20,
+                    fixed: false,
+                    zero_entries: false,
+                },
+            ),
+        ),
+        (
+            "vmdk",
+            disk_writer::vmdk(
+                &disk,
+                disk_writer::Vmdk {
+                    grain_sectors: 16,
+                    table_entries: 512,
+                    stream: true,
+                },
+                "case.vmdk",
+            ),
+        ),
+        ("simg", disk_writer::android_sparse(&disk, 4096)),
+    ];
+    for (extension, image) in images {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join(format!("case.{extension}"));
+        let cuts: Vec<usize> = (0..image.len().min(1 << 16))
+            .step_by(509)
+            .chain((0..image.len()).step_by(image.len() / 61 + 1))
+            .chain([image.len() - 1])
+            .collect();
+        for cut in cuts {
+            fs::write(&archive, &image[..cut]).unwrap();
+            let destination = root.path().join("out");
+            match read_archive(&archive, Some(&destination), ReadOptions::default()) {
+                Ok(_) => assert_eq!(tree(&destination), whole, "{extension} cut at {cut}"),
+                Err(_) => assert!(
+                    !destination.exists(),
+                    "{extension} cut at {cut} left output"
+                ),
+            }
+            common_deletable(root.path());
+            let _ = fs::remove_dir_all(&destination);
+        }
+    }
+}
+
+#[test]
+fn flipped_container_bytes_never_panic_or_leave_output() {
+    let disk = disk_writer::mbr(&[(0x01, 64, &sample_volume(12).bytes)], 0);
+    let qcow = disk_writer::qcow_sparse(
+        qcow_options(2, true),
+        disk.len() as u64,
+        &pieces(&disk, 4096),
+    );
+    let vdi = disk_writer::vdi_sparse(
+        disk_writer::Vdi {
+            block_log: 20,
+            fixed: false,
+            zero_entries: true,
+        },
+        disk.len() as u64,
+        &pieces(&disk, 1 << 20),
+    );
+    let vmdk = disk_writer::vmdk_sparse(
+        disk_writer::Vmdk {
+            grain_sectors: 16,
+            table_entries: 512,
+            stream: true,
+        },
+        disk.len() as u64,
+        &pieces(&disk, 8192),
+        "case.vmdk",
+    );
+    let sparse = disk_writer::android_sparse(&disk, 4096);
+    let mut qcow_places: Vec<usize> = (0..112).chain(qcow.l1_at..qcow.l1_at + 16).collect();
+    for table in &qcow.l2_at {
+        qcow_places.extend((*table..table + 4096).step_by(29));
+    }
+    let mut vmdk_places: Vec<usize> = (0..SECTOR * 2).step_by(3).collect();
+    vmdk_places.extend((vmdk.gd_at - SECTOR..vmdk.gd_at + 8).step_by(3));
+    for table in &vmdk.gt_at {
+        vmdk_places.extend((table - SECTOR..table + 2048).step_by(13));
+    }
+    vmdk_places.extend(vmdk.grain_at.iter().flat_map(|at| *at..at + 12));
+    let end = vmdk.bytes.len();
+    vmdk_places.extend(end - 3 * SECTOR..end - SECTOR + 0x50);
+    let cases: [(&str, &[u8], Vec<usize>); 4] = [
+        ("qcow2", &qcow.bytes, qcow_places),
+        (
+            "vdi",
+            &vdi.bytes,
+            (0x40..0x1C8).chain(vdi.map_at..vdi.data_at).collect(),
+        ),
+        ("vmdk", &vmdk.bytes, vmdk_places),
+        (
+            "simg",
+            &sparse,
+            (0..200).chain((0..sparse.len()).step_by(4099)).collect(),
+        ),
+    ];
+    let root = tempfile::tempdir().unwrap();
+    for (extension, image, places) in cases {
+        let archive = root.path().join(format!("case.{extension}"));
+        for (count, at) in places
+            .into_iter()
+            .filter(|at| *at < image.len())
+            .enumerate()
+        {
+            let mut damaged = image.to_vec();
+            damaged[at] ^= 0x41;
+            fs::write(&archive, &damaged).unwrap();
+            let listed = read_archive(&archive, None, ReadOptions::default());
+            if count % 16 == 0 {
+                let destination = root.path().join("out");
+                let written = read_archive(&archive, Some(&destination), ReadOptions::default());
+                assert_eq!(written.is_ok(), listed.is_ok(), "{extension} flip at {at}");
+                if written.is_err() {
+                    assert!(
+                        !destination.exists(),
+                        "{extension} flip at {at} left output"
+                    );
+                } else {
+                    common_deletable(&destination);
+                    fs::remove_dir_all(&destination).unwrap();
+                }
+            }
+        }
     }
 }
