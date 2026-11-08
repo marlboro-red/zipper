@@ -22,6 +22,7 @@ mod memory;
 mod metadata;
 mod mslz;
 pub mod native_7z;
+pub mod native_apfs;
 pub mod native_ar;
 pub mod native_arj;
 pub mod native_cab;

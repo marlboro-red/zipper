@@ -1375,10 +1375,9 @@ fn mbr_partition(start: &[u8], size: u64) -> Result<Located> {
 
 enum Located {
     Hfs,
+    Apfs,
     Inside(u64, u64),
 }
-
-const APFS_MAGIC: &[u8; 4] = b"NXSB";
 
 fn locate(volume: &mut dyn Volume) -> Result<Located> {
     let size = volume.size();
@@ -1399,8 +1398,8 @@ fn locate(volume: &mut dyn Volume) -> Result<Located> {
         }
         return mbr_partition(&start, size);
     }
-    if start.get(32..36) == Some(APFS_MAGIC) {
-        bail!("partition holds APFS, which Zipper does not read yet; {BACKEND_HINT}");
+    if crate::native_apfs::is_container(&start) {
+        return Ok(Located::Apfs);
     }
     bail!("partition holds a file system Zipper does not read; {BACKEND_HINT}")
 }
@@ -1413,6 +1412,7 @@ fn extract_volume(
 ) -> Result<()> {
     match locate(volume)? {
         Located::Hfs => hfs::read(volume, 0, tree, options),
+        Located::Apfs => crate::native_apfs::read(volume, tree, options),
         Located::Inside(start, length) => {
             ensure!(
                 depth < MAX_NESTING,
@@ -1437,6 +1437,7 @@ fn extract_volume(
 fn plan(volume: &mut dyn Volume, depth: usize) -> Result<()> {
     match locate(volume)? {
         Located::Hfs => Ok(()),
+        Located::Apfs => crate::native_apfs::plan(volume),
         Located::Inside(start, length) => {
             ensure!(
                 depth < MAX_NESTING,
@@ -1491,8 +1492,9 @@ pub fn sniff_disk(path: &Path) -> Result<bool> {
 }
 
 /// Returns whether the default engine sends this image to 7-Zip: a DMG or
-/// disk whose file system is not HFS+ or HFSX, such as APFS, or one laid out
-/// in a way Zipper leaves to 7-Zip.
+/// disk whose file system is not HFS+, HFSX or APFS, an APFS container with
+/// an encrypted, sealed or snapshot volume, or one laid out in a way Zipper
+/// leaves to 7-Zip.
 pub fn needs_backend(path: &Path) -> Result<bool> {
     let natively = || -> Result<()> {
         match Udif::open(path)? {
@@ -1519,11 +1521,12 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
 
 /// Verify and optionally extract a DMG image, a raw HFS+ or HFSX volume or
 /// an Apple partition map disk into a new directory, in the tree `7zz x`
-/// writes: the volume's own folder at the top, with files, folders, links
-/// and hard links inside. A DMG's partition must hold HFS+ or HFSX, and its
-/// CRC-32 checks must pass. A DMG holding APFS or another file system, and
-/// an image holding a file with a resource fork, are refused with a hint
-/// to use 7-Zip.
+/// writes: an HFS+ volume's own folder at the top, or an APFS container's
+/// files as `native_apfs::read_archive` writes them, with folders, links
+/// and hard links. A DMG's partition must hold HFS+, HFSX or APFS, and its
+/// CRC-32 checks must pass. A DMG holding another file system, and an
+/// image holding a file with a resource fork, are refused with a hint to
+/// use 7-Zip.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,
