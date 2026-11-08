@@ -1,0 +1,5 @@
+Every file in this folder was built on macOS by make_corpus.py from the C
+source and resource script that the script itself writes, with LLVM 21 clang,
+lld and llvm-rc, Apple clang and lipo. x64.te is x64.exe rewritten as a UEFI
+TE image by the script. No file holds third-party code beyond what the
+compilers emit. trees.json records the tree 7zz 26.05 extracted from each one.

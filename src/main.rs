@@ -10,7 +10,7 @@ use zipper::Reader;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM, xar, CAB, MSI, ISO, WIM, CHM and DMG archives and NTFS, HFS+, APFS, VHD, VHDX and FAT disk images"
+    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM, xar, CAB, MSI, ISO, WIM, CHM and DMG archives, executables, Flash files and NTFS, HFS+, APFS, VHD, VHDX, QCOW, VDI, VMDK and FAT disk images"
 )]
 struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers).
@@ -39,6 +39,7 @@ struct Cli {
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
     /// Native for ZIP, tar, cpio, ar, RPM, xar, ISO and UDF images, single compressed files, unrecognized files, and 7z, CAB, MSI, WIM, CHM, Help 2, NTFS, APFS, disk images with FAT, NTFS or APFS, and HFS+ or APFS in DMG images it decodes; 7-Zip for other recognized formats.
+    /// Native for ZIP, tar, cpio, ar, RPM, xar, ISO and UDF images, single compressed files, unrecognized files, and 7z, CAB, MSI, WIM, CHM, Help 2, NTFS, PE, COFF, TE, ELF and Mach-O files, disk images with FAT and HFS+ in DMG images it decodes; 7-Zip for other recognized formats.
     Auto,
     /// 7-Zip for every archive.
     Backend,
@@ -1026,6 +1027,11 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_chm::ReadOptions::default(),
                     )?),
+                    Reader::Exe => print(zipper::native_exe::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_exe::ReadOptions::default(),
+                    )?),
                     Reader::Ntfs => print(zipper::native_ntfs::read_archive(
                         &archive,
                         None,
@@ -1180,6 +1186,11 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_chm::ReadOptions::default(),
+                    )?),
+                    Reader::Exe => report(zipper::native_exe::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_exe::ReadOptions::default(),
                     )?),
                     Reader::Ntfs => report(zipper::native_ntfs::read_archive(
                         &archive,

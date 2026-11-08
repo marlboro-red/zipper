@@ -1,7 +1,8 @@
 use crate::{
     Control, Existing, compat, disk, native_7z, native_apfs, native_ar, native_arj, native_cab,
-    native_chm, native_cpio, native_dmg, native_flv, native_iso, native_lzh, native_msi,
-    native_ntfs, native_rpm, native_swf, native_tar, native_wim, native_xar, native_zip,
+    native_chm, native_cpio, native_dmg, native_exe, native_flv, native_iso, native_lzh,
+    native_msi, native_ntfs, native_rpm, native_swf, native_tar, native_wim, native_xar,
+    native_zip,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -13,22 +14,25 @@ pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, compound files such as MSI,
     /// ISO and UDF disc images, single compressed files, unrecognized files,
     /// CAB files and cabinet sets, LZH, ARJ, WIM and ESD images, CHM and Help 2
-    /// files, NTFS volumes, APFS containers, VHD and VHDX images and MBR and
-    /// GPT disks with FAT, NTFS or APFS, DMG images and disks holding HFS+,
-    /// HFSX or APFS, FLV and SWF files, and 7z whose methods it decodes. 7-Zip for other 7z, an
-    /// MSI whose main stream is not a CAB, a split or pre-1.13 WIM, a Help 2
-    /// file without an ITSF record, a differencing VHD or VHDX, a DMG or disk
-    /// holding another file system Zipper does not read there, an APFS
-    /// container with an encrypted, sealed or snapshot volume or a Fusion
-    /// container, and
-    /// the other formats whose signature Zipper recognizes.
+    /// files, NTFS volumes, APFS containers, VHD, VHDX, QCOW, VDI, VMDK and
+    /// Android sparse images and MBR and GPT disks with FAT, NTFS, HFS+ or
+    /// APFS, DMG images and disks holding HFS+, HFSX or APFS, FLV and SWF
+    /// files, PE, COFF, TE, ELF and Mach-O files, and 7z whose methods it
+    /// decodes. 7-Zip for other 7z, an MSI whose main stream is not a CAB, a
+    /// split or pre-1.13 WIM, a Help 2 file without an ITSF record, a
+    /// differencing disk image, a DMG or disk holding another file system
+    /// Zipper does not read there, an APFS container with an encrypted, sealed
+    /// or snapshot volume or a Fusion container, a Mach-O universal file with
+    /// the `B9 FA F1 0E` signature, and the other formats whose signature
+    /// Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
     /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, DMG,
-    /// HFS+, APFS, FLV, SWF, 7z and single compressed files, and native ZIP for
+    /// HFS+, APFS, FLV, SWF, executables, 7z and single compressed files, and
+    /// native ZIP for
     /// unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
@@ -68,6 +72,9 @@ pub enum Reader {
     Wim,
     /// The native reader for Compiled HTML Help and Help 2 files.
     Chm,
+    /// The native reader for PE images, COFF objects, TE images, ELF files,
+    /// Mach-O files and Mach-O universal files.
+    Exe,
     /// The native reader for NTFS volume images.
     Ntfs,
     /// The native reader for VHD and VHDX images and MBR and GPT disks
@@ -112,6 +119,7 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             Reader::Backend { format: None }
         }
         _ if native_dmg::sniff(archive)? => Reader::Dmg,
+        _ if native_exe::sniff(archive)? => Reader::Exe,
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
         _ if native_cpio::sniff(archive)? => Reader::Cpio,
         _ if native_ar::sniff(archive)? => Reader::Ar,
@@ -138,6 +146,8 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             }
         }
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
+        Engine::Auto if native_exe::needs_backend(archive)? => Reader::Backend { format: None },
+        _ if native_exe::sniff_damaged(archive)? => Reader::Exe,
         _ if native_ntfs::sniff(archive)? => Reader::Ntfs,
         _ if native_iso::sniff(archive)? => Reader::Iso,
         Engine::Auto if native_dmg::sniff_disk(archive)? && native_dmg::needs_backend(archive)? => {
@@ -155,6 +165,7 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_flv::sniff(archive)? => Reader::Flv,
         _ if native_swf::sniff(archive)? => Reader::Swf,
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
+        _ if native_exe::sniff_object(archive)? => Reader::Exe,
         Engine::Native => Reader::Zip { fast: false },
         Engine::NativeFast => Reader::Zip { fast: true },
         Engine::Auto => match compat::pinned_format(archive)? {
@@ -493,6 +504,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         | Reader::Iso
         | Reader::Wim
         | Reader::Chm
+        | Reader::Exe
         | Reader::Ntfs
         | Reader::Disk
         | Reader::Dmg
@@ -510,6 +522,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 Reader::Iso => native_iso::read_archive,
                 Reader::Wim => native_wim::read_archive,
                 Reader::Chm => native_chm::read_archive,
+                Reader::Exe => native_exe::read_archive,
                 Reader::Ntfs => native_ntfs::read_archive,
                 Reader::Disk => disk::read_archive,
                 Reader::Dmg => native_dmg::read_archive,

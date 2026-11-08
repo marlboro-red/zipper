@@ -33,6 +33,7 @@ pub mod native_cab;
 pub mod native_chm;
 pub mod native_cpio;
 pub mod native_dmg;
+pub mod native_exe;
 mod native_fat;
 pub mod native_flv;
 pub mod native_iso;

@@ -43,7 +43,13 @@
       ]
     },
     "COFF": {
-      "status": "backend"
+      "status": "native",
+      "note": "Objects of every machine 7-Zip knows read in process, with their sections and symbols. The corpus comes from LLVM clang.",
+      "tests": [
+        "tests/exe_corpus.rs::every_corpus_executable_extracts_the_tree_7zip_extracts",
+        "tests/exe_corpus.rs::generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
+        "tests/hostile_exe.rs::damaged_executables_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "Cab": {
       "status": "native",
@@ -89,7 +95,13 @@
       ]
     },
     "ELF": {
-      "status": "backend"
+      "status": "native",
+      "note": "Sections, or segments when a file has no sections, read in process in both classes and byte orders. The corpus comes from LLVM clang and lld.",
+      "tests": [
+        "tests/exe_corpus.rs::every_corpus_executable_extracts_the_tree_7zip_extracts",
+        "tests/exe_corpus.rs::generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
+        "tests/hostile_exe.rs::damaged_executables_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "Ext": {
       "status": "backend"
@@ -175,7 +187,13 @@
       ]
     },
     "MachO": {
-      "status": "backend"
+      "status": "native",
+      "note": "Segments, sections and symbol tables read in process. The corpus comes from Apple clang.",
+      "tests": [
+        "tests/exe_corpus.rs::every_corpus_executable_extracts_the_tree_7zip_extracts",
+        "tests/exe_corpus.rs::generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
+        "tests/hostile_exe.rs::damaged_executables_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "MsLZ": {
       "status": "native",
@@ -187,7 +205,13 @@
       ]
     },
     "Mub": {
-      "status": "backend"
+      "status": "native",
+      "note": "Mach-O universal files read in process, each slice named as 7-Zip names it. A file with the `B9 FA F1 0E` signature goes to 7-Zip. The corpus comes from lipo.",
+      "tests": [
+        "tests/exe_corpus.rs::every_corpus_executable_extracts_the_tree_7zip_extracts",
+        "tests/exe_corpus.rs::generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
+        "tests/hostile_exe.rs::damaged_executables_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "NTFS": {
       "status": "native",
@@ -202,7 +226,13 @@
       "status": "backend"
     },
     "PE": {
-      "status": "backend"
+      "status": "native",
+      "note": "Sections, the certificate, debug data, COFF symbols and resources read in process, with icons, bitmaps, string tables and version resources converted as 7-Zip converts them. The corpus comes from LLVM clang, lld and llvm-rc, since no Microsoft linker runs here.",
+      "tests": [
+        "tests/exe_corpus.rs::every_corpus_executable_extracts_the_tree_7zip_extracts",
+        "tests/exe_corpus.rs::generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
+        "tests/hostile_exe.rs::damaged_executables_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "Ppmd": {
       "status": "native",
@@ -269,7 +299,13 @@
       "status": "backend"
     },
     "TE": {
-      "status": "backend"
+      "status": "native",
+      "note": "UEFI TE images read in process. No EDK2 tool runs here, so the corpus image is a PE rewritten as TE by the corpus script.",
+      "tests": [
+        "tests/exe_corpus.rs::every_corpus_executable_extracts_the_tree_7zip_extracts",
+        "tests/exe_corpus.rs::generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
+        "tests/hostile_exe.rs::damaged_executables_are_refused_exactly_when_7zip_refuses_them"
+      ]
     },
     "UEFIc": {
       "status": "backend"

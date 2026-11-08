@@ -1,6 +1,6 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, the RPM lead, header and index readers in src/native_rpm.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, the RPM lead, header and index readers in src/native_rpm.rs, the PE, COFF, TE, ELF, Mach-O and universal header readers in src/native_exe.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
@@ -39,6 +39,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[chm-fields]` | the `native_chm` proofs | about 2 minutes in all |
 | `[swf-fields]` | the `native_swf` and `native_flv` proofs, with the FLV and SWF corpus and hostile tests | under a second each |
 | `[disk-containers]` | the `disk_qcow`, `disk_vdi`, `disk_vmdk` and `disk_sparse` proofs, with the disk corpus and hostile tests and the full container flip sweep against 7-Zip | 13 s for the slowest |
+| `[exe-fields]` | the `native_exe` and `native_exe::resources` proofs, with the executable corpus and hostile tests | a few seconds each |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
 Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jobs.
