@@ -1789,6 +1789,9 @@ item = src/pmd.rs | pub(crate) fn header(
 item = src/pmd.rs | impl Header {
 item = src/pmd.rs | pub(crate) fn stored_name(
 item = src/pmd.rs | mod proofs {
+item = src/lib.rs | pub(crate) fn field_check(
+item = src/lib.rs | pub(crate) struct BadField(
+item = src/lib.rs | pub(crate) type Field<
 
 [ntfs-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
