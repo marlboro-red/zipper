@@ -110,7 +110,14 @@
       ]
     },
     "Ext": {
-      "status": "backend"
+      "status": "native",
+      "note": "ext2, ext3 and ext4 read in process, raw and as the lone partition of a disk image, with block maps, extents, inline data, metadata checksums, hard links and links. 7-Zip cannot open inline folders or sparse block-mapped files with a zero indirect pointer, so those are checked against the source tree. A volume that needs journal recovery, or uses encryption or another feature Zipper does not read, goes to 7-Zip.",
+      "tests": [
+        "tests/ext_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
+        "tests/ext_corpus.rs::generated_volumes_extract_byte_for_byte_as_7zip_extracts_them",
+        "tests/ext_corpus.rs::the_corpus_volume_extracts_as_7zip_extracts_it_in_every_disk_container",
+        "tests/hostile_ext.rs::damaged_ext4_volumes_are_refused_when_7zip_refuses_them"
+      ]
     },
     "FAT": {
       "status": "native",

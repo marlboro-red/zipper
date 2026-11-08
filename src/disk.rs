@@ -184,6 +184,7 @@ const HFS_AT: usize = 1024;
 const EXT_SIGNATURE_AT: usize = 1080;
 const SNIFF_READ: usize = 2 << 12;
 const APFS_HEADER: usize = 1 << 12;
+const EXT_HEAD: usize = crate::native_ext::SUPERBLOCK_AT + crate::native_ext::SUPERBLOCK_FIELDS;
 
 fn le16(bytes: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([bytes[at], bytes[at + 1]])
@@ -1028,6 +1029,7 @@ enum Plan {
     Apfs(Span),
     Squashfs(Span),
     Cramfs(Span),
+    Ext(Span),
     Hfs(Span),
     Files {
         format: &'static str,
@@ -1872,6 +1874,13 @@ fn plan_span(disk: &mut Disk, span: Span, depth: u32) -> Result<Plan> {
     {
         return Ok(Plan::Cramfs(span));
     }
+    let mut head = vec![0u8; EXT_HEAD];
+    if span.length >= EXT_HEAD as u64
+        && span.view(disk).read_if_there(0, &mut head)?
+        && crate::native_ext::is_volume(&head)
+    {
+        return Ok(Plan::Ext(span));
+    }
     let mut head = vec![0u8; crate::hfs::HEADER_AREA];
     if span.length >= crate::hfs::HEADER_AREA as u64
         && span.view(disk).read_if_there(0, &mut head)?
@@ -1997,6 +2006,9 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
         Ok((Some(mut disk), Plan::Squashfs(span))) => {
             crate::native_squashfs::needs_backend_in(span.view(&mut disk))
         }
+        Ok((Some(mut disk), Plan::Ext(span))) => {
+            crate::native_ext::needs_backend_in(span.view(&mut disk))
+        }
         _ => Ok(false),
     }
 }
@@ -2038,6 +2050,10 @@ pub fn read_archive(
         Plan::Cramfs(span) => {
             let mut disk = disk.expect("a file system plan comes from an opened disk");
             crate::native_cramfs::read_volume(span.view(&mut disk), path, destination, options)
+        }
+        Plan::Ext(span) => {
+            let mut disk = disk.expect("a file system plan comes from an opened disk");
+            crate::native_ext::read_volume(span.view(&mut disk), path, destination, options)
         }
         Plan::Hfs(span) => {
             let mut disk = disk.expect("a file system plan comes from an opened disk");

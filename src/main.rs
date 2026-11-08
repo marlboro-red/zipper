@@ -1052,6 +1052,11 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_cramfs::ReadOptions::default(),
                     )?),
+                    Reader::Ext => print(zipper::native_ext::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_ext::ReadOptions::default(),
+                    )?),
                     Reader::Disk => print(zipper::disk::read_archive(
                         &archive,
                         None,
@@ -1221,6 +1226,11 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_cramfs::ReadOptions::default(),
+                    )?),
+                    Reader::Ext => report(zipper::native_ext::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_ext::ReadOptions::default(),
                     )?),
                     Reader::Disk => report(zipper::disk::read_archive(
                         &archive,

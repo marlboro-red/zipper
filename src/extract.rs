@@ -1,8 +1,8 @@
 use crate::{
     Control, Existing, compat, disk, native_7z, native_apfs, native_ar, native_arj, native_cab,
-    native_chm, native_cpio, native_cramfs, native_dmg, native_exe, native_flv, native_iso,
-    native_lzh, native_msi, native_ntfs, native_rpm, native_squashfs, native_swf, native_tar,
-    native_wim, native_xar, native_zip,
+    native_chm, native_cpio, native_cramfs, native_dmg, native_exe, native_ext, native_flv,
+    native_iso, native_lzh, native_msi, native_ntfs, native_rpm, native_squashfs, native_swf,
+    native_tar, native_wim, native_xar, native_zip,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -14,26 +14,28 @@ pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, compound files such as MSI,
     /// ISO and UDF disc images, single compressed files, unrecognized files,
     /// CAB files and cabinet sets, LZH, ARJ, WIM and ESD images, CHM and Help 2
-    /// files, NTFS volumes, APFS containers, VHD, VHDX, QCOW, VDI, VMDK and
-    /// Android sparse images and MBR and GPT disks with FAT, NTFS, HFS+ or
-    /// APFS, DMG images and disks holding HFS+, HFSX or APFS, FLV and SWF
-    /// files, PE, COFF, TE, ELF and Mach-O files, SquashFS 4.0 and CramFS
-    /// images, raw or in a disk's lone partition, and 7z whose methods it
-    /// decodes. 7-Zip for other 7z, other SquashFS versions and byte orders,
-    /// an MSI whose main stream is not a CAB, a split or pre-1.13 WIM, a Help
-    /// 2 file without an ITSF record, a differencing disk image, a DMG or
-    /// disk holding another file system Zipper does not read there, an APFS
-    /// container with an encrypted, sealed or snapshot volume or a Fusion
-    /// container, a Mach-O universal file with the `B9 FA F1 0E` signature,
-    /// and the other formats whose signature Zipper recognizes.
+    /// files, NTFS volumes, APFS containers, ext2, ext3 and ext4 volumes, VHD,
+    /// VHDX, QCOW, VDI, VMDK and Android sparse images and MBR and GPT disks
+    /// with FAT, NTFS, HFS+, APFS or ext, DMG images and disks holding HFS+,
+    /// HFSX or APFS, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files,
+    /// SquashFS 4.0 and CramFS images, raw or in a disk's lone partition, and
+    /// 7z whose methods it decodes. 7-Zip for other 7z, other SquashFS
+    /// versions and byte orders, an MSI whose main stream is not a CAB, a
+    /// split or pre-1.13 WIM, a Help 2 file without an ITSF record, a
+    /// differencing disk image, a DMG or disk holding another file system
+    /// Zipper does not read there, an APFS container with an encrypted,
+    /// sealed or snapshot volume or a Fusion container, an ext volume that
+    /// needs journal recovery or uses a feature Zipper does not read, a Mach-O
+    /// universal file with the `B9 FA F1 0E` signature, and the other formats
+    /// whose signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
     /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, DMG,
-    /// HFS+, APFS, SquashFS 4.0, CramFS, FLV, SWF, executables, 7z and single
-    /// compressed files, and native ZIP for unrecognized files.
+    /// HFS+, APFS, ext, SquashFS 4.0, CramFS, FLV, SWF, executables, 7z and
+    /// single compressed files, and native ZIP for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -89,6 +91,8 @@ pub enum Reader {
     Squashfs,
     /// The native reader for CramFS images.
     Cramfs,
+    /// The native reader for raw ext2, ext3 and ext4 volumes.
+    Ext,
     /// The native reader for Flash Video files.
     Flv,
     /// The native reader for SWF files, uncompressed or compressed with zlib
@@ -169,6 +173,10 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         }
         _ if native_squashfs::sniff(archive)? => Reader::Squashfs,
         _ if native_cramfs::sniff(archive)? => Reader::Cramfs,
+        Engine::Auto if native_ext::sniff(archive)? && native_ext::needs_backend(archive)? => {
+            Reader::Backend { format: None }
+        }
+        _ if native_ext::sniff(archive)? => Reader::Ext,
         Engine::Auto if disk::sniff(archive)? && disk::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
@@ -522,6 +530,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         | Reader::Apfs
         | Reader::Squashfs
         | Reader::Cramfs
+        | Reader::Ext
         | Reader::Flv
         | Reader::Swf => {
             let read = match reader {
@@ -542,6 +551,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 Reader::Apfs => native_apfs::read_archive,
                 Reader::Squashfs => native_squashfs::read_archive,
                 Reader::Cramfs => native_cramfs::read_archive,
+                Reader::Ext => native_ext::read_archive,
                 Reader::Flv => native_flv::read_archive,
                 Reader::Swf => native_swf::read_archive,
                 _ => native_rpm::read_archive,

@@ -36,6 +36,7 @@ pub mod native_cpio;
 pub mod native_cramfs;
 pub mod native_dmg;
 pub mod native_exe;
+pub mod native_ext;
 mod native_fat;
 pub mod native_flv;
 pub mod native_iso;

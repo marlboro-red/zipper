@@ -14,13 +14,13 @@ The reader has three layers, and each partition is a bounded `Read + Seek` view 
   - Android sparse images with raw, fill, don't-care and CRC-32 chunks.
   - A raw disk, which is its own container.
 - Partition tables. An MBR with primary, extended and logical partitions, with 512 or 4096-byte sectors as 7-Zip detects them, and a GPT with 512 or 4096-byte sectors.
-- File systems. FAT12, FAT16 and FAT32 with VFAT long names, NT lowercase flags, deleted entries, empty files, folders up to 256 deep and fragmented cluster chains. NTFS, through the [NTFS reader](ntfs-reader.md), with its rules. HFS+, through the [DMG reader's HFS+ code](dmg-reader.md), and APFS, through the [APFS reader](apfs-reader.md), with their rules.
+- File systems. FAT12, FAT16 and FAT32 with VFAT long names, NT lowercase flags, deleted entries, empty files, folders up to 256 deep and fragmented cluster chains. NTFS, through the [NTFS reader](ntfs-reader.md), with its rules. HFS+, through the [DMG reader's HFS+ code](dmg-reader.md), APFS, through the [APFS reader](apfs-reader.md), and ext2, ext3 and ext4, through the [ext reader](ext-reader.md), with their rules.
 
 ## What it writes
 
 The reader follows 7-Zip's rule for the main subfile. A disk whose partition table holds one partition, and every container, is opened again inside, down to the file system. So a QCOW image holding an MBR with one FAT partition writes the files of that FAT volume.
 
-- An NTFS volume writes the tree the NTFS reader writes for the same raw volume, an HFS+ volume the tree the DMG reader writes, and an APFS container the tree the APFS reader writes.
+- An NTFS volume writes the tree the NTFS reader writes for the same raw volume, and an HFS+ volume the tree the DMG reader writes. An APFS container writes the tree the APFS reader writes, and an ext volume the tree the ext reader writes.
 - A FAT volume writes its tree. Names come from the long name when its records and checksum match, as 7-Zip checks them, and otherwise from the short name with its NT lowercase flags. A `/` in a long name becomes `_`. A short name of spaces becomes `[NONAME]-N`, as 7-Zip names it.
 - Files get their modification time, read as local time. A file with the read-only attribute gets mode `0o444`, and every other file `0o644`. Folders get mode `0o755` and their time. The umask limits all of them.
 - A disk with several partitions writes each partition as one file, as 7-Zip does. An MBR partition is named `N.fat`, `N.ntfs` or `N.img` by its type, and a gap that an extended partition or the end of the disk leaves is named `N`. A GPT partition is named `N.name.fat` or `N.name.img`. These files get mode `0o644` and no time.
@@ -31,7 +31,8 @@ It never restores the hidden, system or archive attributes, short names beside l
 
 The default engine sends the whole image to 7-Zip, and `--zip-engine native` refuses it with the reason, in these cases:
 
-- The lone partition, or the disk inside a container, holds exFAT, UDF or any other file system that is not FAT, NTFS, HFS+ or APFS.
+- The lone partition, or the disk inside a container, holds exFAT, UDF or any other file system that is not FAT, NTFS, HFS+, APFS or ext.
+- The lone partition holds an ext volume that the ext reader leaves to 7-Zip.
 - The lone partition holds an APFS container that the APFS reader leaves to 7-Zip.
 - The lone partition holds no partition table or file system Zipper knows, such as one of zeros.
 - A GPT partition name holds `/`, `\`, `:` or a control character, since 7-Zip writes it as a path.

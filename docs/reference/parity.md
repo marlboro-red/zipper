@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 98 |
+| `native` | 99 |
 | `partial` | 1 |
-| `backend` | 8 |
+| `backend` | 7 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-12 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+11 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -42,7 +42,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `CramFS` | `native` | CramFS images of both byte orders read in process, raw and in a lone disk partition. | `every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts` in `tests/squashfs_corpus.rs`, `generated_cramfs_images_in_both_byte_orders_extract_as_7zip_extracts_them` in `tests/squashfs_corpus.rs`, `damaged_cramfs_images_are_refused_when_7zip_refuses_them` in `tests/hostile_squashfs.rs` |
 | `Dmg` | `native` | UDIF images whose file system is HFS+, HFSX or APFS read in process, with every chunk method. On macOS, extended attributes are restored as extended attributes, where 7-Zip writes each as a separate `file:name` file. Elsewhere they are skipped. A DMG holding another file system goes to 7-Zip. | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg`, `every_corpus_dmg_extracts_the_tree_7zip_extracts` in `tests/dmg_corpus.rs`, `the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them` in `tests/apfs_corpus.rs`, `generated_dmgs_of_every_chunk_method_and_form_extract_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them` in `tests/hostile_dmg.rs` |
 | `ELF` | `native` | Sections, or segments when a file has no sections, read in process in both classes and byte orders. The corpus comes from LLVM clang and lld. | `every_corpus_executable_extracts_the_tree_7zip_extracts` in `tests/exe_corpus.rs`, `generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/exe_corpus.rs`, `damaged_executables_are_refused_exactly_when_7zip_refuses_them` in `tests/hostile_exe.rs` |
-| `Ext` | `backend` |  | No proof yet. |
+| `Ext` | `native` | ext2, ext3 and ext4 read in process, raw and as the lone partition of a disk image, with block maps, extents, inline data, metadata checksums, hard links and links. 7-Zip cannot open inline folders or sparse block-mapped files with a zero indirect pointer, so those are checked against the source tree. A volume that needs journal recovery, or uses encryption or another feature Zipper does not read, goes to 7-Zip. | `every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts` in `tests/ext_corpus.rs`, `generated_volumes_extract_byte_for_byte_as_7zip_extracts_them` in `tests/ext_corpus.rs`, `the_corpus_volume_extracts_as_7zip_extracts_it_in_every_disk_container` in `tests/ext_corpus.rs`, `damaged_ext4_volumes_are_refused_when_7zip_refuses_them` in `tests/hostile_ext.rs` |
 | `FAT` | `native` | FAT12, FAT16 and FAT32 with long names read in process. | `tests/data/parity/archives/fat.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `FLV` | `native` | Read in process. A file of one stream writes its raw data and a file of audio and video writes one FLV for each, as 7-Zip does. A file whose tags stop before its end is refused, where 7-Zip warns and writes the tags before the damage. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_flv_of_every_codec_and_tag_kind_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs` |
 | `GPT` | `native` | Read in process. A lone partition that does not hold FAT, or a partition name 7-Zip writes as a path, goes to 7-Zip. | `tests/data/parity/archives/gpt.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |

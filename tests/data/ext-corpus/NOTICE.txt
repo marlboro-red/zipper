@@ -1,0 +1,35 @@
+Every image here was written for Zipper's tests by `mke2fs -d` from
+e2fsprogs 1.47.4 on macOS 26, from one source tree that `make_corpus.py`
+builds, and then compressed with `xz -9`. No file in them comes from a third
+party. `python3 make_corpus.py` writes them all again, with e2fsprogs, xz and
+7-Zip 26 or later installed.
+
+| Image | Layout |
+| --- | --- |
+| ext2-1k.img | ext2, 1 KiB blocks, 128-byte inodes, block maps |
+| ext2-triple-indirect.img | the same, with a sparse file that needs a triple indirect block |
+| ext3-2k.img | ext3, 2 KiB blocks, a journal and block maps |
+| ext4.img | ext4 as `mke2fs` makes it: extents, 64bit, flex_bg, metadata_csum, an orphan file |
+| ext4-4k.img | the same with 4 KiB blocks |
+| ext4-64k.img | the same with 64 KiB blocks, too small for a journal |
+| ext4-block-maps.img | ext4 without extents or 64bit, so block maps with checksums |
+| ext4-32bit.img | ext4 without 64bit, so 32-byte group descriptors |
+| ext4-inline.img | ext4 with inline_data |
+| ext4-uninit-bg.img | ext4 with uninit_bg and its CRC-16 descriptors instead of metadata_csum |
+| ext4-meta-bg.img | ext4 with meta_bg and without resize_inode |
+| ext4-quota.img | ext4 with quota and project, so quota files in `[SYS]` and `[UNKNOWN]` |
+
+The source tree holds small text files, files of 59 to 200 bytes around the
+inline limit, 5,000 seeded random bytes, a 300 KiB file that needs a double
+indirect block on 1 KiB blocks, a file of 400 one-block islands that needs a
+two-level extent tree, files of modes 755, 444, 600 and 4755, files dated
+1960 and 2033, hard links, short and long links, a named pipe, names in Latin,
+CJK and emoji letters, a folder of 300 files, a folder 30 levels deep, an
+empty folder, and folders of modes 555 and 750.
+
+`trees.json` holds the tree `7zz x` 26.05 extracted from each image with a
+umask of 0, split into the entries every image shares and each image's own.
+7-Zip opens no image with an inline folder, and it refuses a block-mapped
+file whose pointer to an indirect block is zero before a later block, as the
+sparse triple-indirect file's is. So those two trees come from the source
+tree under 7-Zip's mode rules and cover only the source's paths.

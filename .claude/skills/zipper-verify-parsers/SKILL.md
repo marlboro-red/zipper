@@ -43,6 +43,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[squashfs-fields]` | the four `native_squashfs::field_proofs` proofs, with the SquashFS corpus and hostile tests | 2 s for the slowest |
 | `[cramfs-fields]` | the two `native_cramfs` proofs, with the CramFS corpus and hostile tests | 1 s each |
 | `[lzo]` | `decoding_any_short_stream_never_panics_or_passes_its_block`, with the `lzop` tests in `cargo test --release --lib lzo` | 153 s |
+| `[ext-fields]` | the nine `native_ext` proofs, with the ext corpus and hostile tests and the spread flip sweeps against 7-Zip | 36 s for the slowest |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
 Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jobs.
