@@ -332,7 +332,8 @@ Done by 7 November 2026:
 
 Decided, on 8 November 2026:
 
-- The hot loop may be hand-written assembly for arm64 and x86-64, as 7-Zip's is, after every safe-Rust change tried left 7-Zip about 10% faster. The user chose it. The safe-Rust decoder stays the reference and the fallback on other targets. A differential test must show the same bytes or the same refusal as the Rust decoder on every corpus stream and on damaged and random streams.
+- Zipper stays pure Rust, with no hand-written assembly in the hot loop. The user decided this on 8 November 2026, after first allowing assembly the same morning. 7-Zip's arm64 loop is assembly, and every safe-Rust change tried left 7-Zip about 10% faster at one thread on solid Silesia, 1.335 against 1.478 s. Exit check 4's speed half stays open.
+- A study of 7-Zip's arm64 `LzmaDecOpt.S` found two shortcuts that a port must not copy. Its eight direct bits after a normalization are exact only when the range is at least 2^31, and its sign-flag compares differ from an unsigned compare on damaged streams. Valid encoder output does not reach either case.
 
 ## M14. Encrypted archives
 
