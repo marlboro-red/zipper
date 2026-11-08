@@ -17,8 +17,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | Status | Rows |
 | --- | ---: |
 | `native` | 79 |
-| `partial` | 1 |
-| `backend` | 27 |
+| `partial` | 4 |
+| `backend` | 24 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
@@ -30,7 +30,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | --- | --- | --- | --- |
 | `7z` | `native` |  | `tests/data/parity/archives/7z.7z` |
 | `APFS` | `backend` |  | `tests/data/parity/archives/apfs.img.stored.xz` |
-| `APM` | `backend` |  | `tests/data/parity/archives/apm.img.stored.xz` |
+| `APM` | `partial` | Apple partition maps holding HFS+ or HFSX read in process, raw and inside DMG images. The corpus image's files carry extended attributes, which Zipper skips, so it is checked through 7-Zip. | `tests/data/parity/archives/apm.img.stored.xz`, `partition_maps_inside_a_dmg_extract_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams` in `tests/dmg_corpus.rs` |
 | `Ar` | `native` |  | `tests/data/parity/archives/ar.a` |
 | `Arj` | `native` | Methods 0 to 4 read in process. Encrypted entries and multi-volume archives are refused. No ARJ tool is installed here, so the corpus comes from Zipper's own test writer. | `every_corpus_arj_extracts_the_tree_7zip_extracts` in `tests/arj_corpus.rs`, `generated_arj_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/arj_corpus.rs`, `token_streams_of_every_method_decode_as_7zip_decodes_them` in `tests/arj_corpus.rs`, `damaged_arj_are_refused_exactly_when_7zip_refuses_them` in `tests/arj_corpus.rs` |
 | `Base64` | `native` | Files named `*.b64` read in process when their first 4 KiB pass 7-Zip's check. Data after the padding is refused, where 7-Zip warns past the first 4 KiB. | `generated_base64_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_base64_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
@@ -40,13 +40,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Compound` | `native` | MSI, MSP, MSM and other compound files read in process, and an installer's one CAB through the CAB reader. An installer whose main stream is not a CAB goes to 7-Zip. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/msi_corpus.rs`, `generated_compound_files_extract_exactly_as_7zip_extracts_them` in `tests/msi_corpus.rs` |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
 | `CramFS` | `backend` |  | No proof yet. |
-| `Dmg` | `backend` |  | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg` |
+| `Dmg` | `partial` | UDIF images whose file system is HFS+ or HFSX read in process, with every chunk method. A DMG holding APFS or another file system, as the corpus images do, goes to 7-Zip. | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg`, `every_corpus_dmg_extracts_the_tree_7zip_extracts` in `tests/dmg_corpus.rs`, `generated_dmgs_of_every_chunk_method_and_form_extract_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them` in `tests/hostile_dmg.rs` |
 | `ELF` | `backend` |  | No proof yet. |
 | `Ext` | `backend` |  | No proof yet. |
 | `FAT` | `native` | FAT12, FAT16 and FAT32 with long names read in process. | `tests/data/parity/archives/fat.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `FLV` | `backend` |  | No proof yet. |
 | `GPT` | `native` | Read in process. A lone partition that does not hold FAT, or a partition name 7-Zip writes as a path, goes to 7-Zip. | `tests/data/parity/archives/gpt.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
-| `HFS` | `backend` |  | `tests/data/parity/archives/hfs.img.stored.xz` |
+| `HFS` | `partial` | HFS+ and HFSX read in process, raw and inside DMG images. Hard links become links. Resource forks are refused and extended attributes skipped, because 7-Zip writes them as files with `:` in their names, which the shared name check refuses. So the corpus image, whose files carry extended attributes, is checked through 7-Zip. | `tests/data/parity/archives/hfs.img.stored.xz`, `generated_volumes_extract_byte_for_byte_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams` in `tests/dmg_corpus.rs`, `damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_them` in `tests/hostile_dmg.rs` |
 | `Hxs` | `native` | Help 2 files with an ITSF record and LZX sections read in process. One without an ITSF record, which 7-Zip lists as one text item, goes to 7-Zip. No Help 2 compiler runs here, so every file comes from Zipper's own test writer. | `generated_help2_files_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/chm_corpus.rs`, `damaged_help2_files_are_refused_exactly_when_7zip_refuses_them` in `tests/chm_corpus.rs`, `a_help2_file_without_an_itsf_record_goes_to_7zip` in `tests/hostile_chm.rs` |
 | `IHex` | `backend` | Left to 7-Zip. It decodes to one file for each block of addresses, which the single-stream reader does not do. | No proof yet. |
 | `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |

@@ -7,7 +7,12 @@
       "status": "backend"
     },
     "APM": {
-      "status": "backend"
+      "status": "partial",
+      "note": "Apple partition maps holding HFS+ or HFSX read in process, raw and inside DMG images. The corpus image's files carry extended attributes, which Zipper skips, so it is checked through 7-Zip.",
+      "tests": [
+        "tests/dmg_corpus.rs::partition_maps_inside_a_dmg_extract_as_7zip_extracts_them",
+        "tests/dmg_corpus.rs::the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams"
+      ]
     },
     "Ar": {
       "status": "native"
@@ -67,7 +72,13 @@
       "status": "backend"
     },
     "Dmg": {
-      "status": "backend"
+      "status": "partial",
+      "note": "UDIF images whose file system is HFS+ or HFSX read in process, with every chunk method. A DMG holding APFS or another file system, as the corpus images do, goes to 7-Zip.",
+      "tests": [
+        "tests/dmg_corpus.rs::every_corpus_dmg_extracts_the_tree_7zip_extracts",
+        "tests/dmg_corpus.rs::generated_dmgs_of_every_chunk_method_and_form_extract_as_7zip_extracts_them",
+        "tests/hostile_dmg.rs::damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them"
+      ]
     },
     "ELF": {
       "status": "backend"
@@ -98,7 +109,13 @@
       ]
     },
     "HFS": {
-      "status": "backend"
+      "status": "partial",
+      "note": "HFS+ and HFSX read in process, raw and inside DMG images. Hard links become links. Resource forks are refused and extended attributes skipped, because 7-Zip writes them as files with `:` in their names, which the shared name check refuses. So the corpus image, whose files carry extended attributes, is checked through 7-Zip.",
+      "tests": [
+        "tests/dmg_corpus.rs::generated_volumes_extract_byte_for_byte_as_7zip_extracts_them",
+        "tests/dmg_corpus.rs::the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them_without_their_streams",
+        "tests/hostile_dmg.rs::damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_them"
+      ]
     },
     "Hxs": {
       "status": "native",

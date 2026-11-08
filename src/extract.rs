@@ -1,7 +1,7 @@
 use crate::{
     Control, Existing, compat, disk, native_7z, native_ar, native_arj, native_cab, native_chm,
-    native_cpio, native_iso, native_lzh, native_msi, native_ntfs, native_rpm, native_tar,
-    native_wim, native_xar, native_zip,
+    native_cpio, native_dmg, native_iso, native_lzh, native_msi, native_ntfs, native_rpm,
+    native_tar, native_wim, native_xar, native_zip,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -14,17 +14,19 @@ pub enum Engine {
     /// ISO and UDF disc images, single compressed files, unrecognized files,
     /// CAB files and cabinet sets, LZH, ARJ, WIM and ESD images, CHM and Help 2
     /// files, NTFS volumes, VHD and VHDX images and MBR and GPT disks with FAT,
-    /// and 7z whose methods it decodes. 7-Zip for other 7z, an MSI whose main
-    /// stream is not a CAB, a split or pre-1.13 WIM, a Help 2 file without an
-    /// ITSF record, a differencing VHD or VHDX, a disk whose file system Zipper does not read there, and
+    /// DMG images and disks holding HFS+ or HFSX, and 7z whose methods it
+    /// decodes. 7-Zip for other 7z, an MSI whose main stream is not a CAB, a
+    /// split or pre-1.13 WIM, a Help 2 file without an ITSF record, a
+    /// differencing VHD or VHDX, a DMG or disk holding APFS or another file
+    /// system Zipper does not read there, and
     /// the other formats whose signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
-    /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, 7z and single compressed
-    /// files, and native ZIP for unrecognized files.
+    /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, DMG,
+    /// HFS+, 7z and single compressed files, and native ZIP for unrecognized files.
     Native,
     /// Like `Native`, with a shared ZIP entry-buffer budget.
     NativeFast,
@@ -68,6 +70,9 @@ pub enum Reader {
     /// The native reader for VHD and VHDX images and MBR and GPT disks
     /// with FAT file systems.
     Disk,
+    /// The native reader for DMG images, raw HFS+ and HFSX volumes and
+    /// Apple partition maps.
+    Dmg,
     /// The native reader for one compressed stream that holds no tar, in a
     /// format [`crate::native_stream::Format`] names.
     Stream,
@@ -93,6 +98,10 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
                 fast: engine == Engine::NativeFast,
             }
         }
+        Engine::Auto if native_dmg::sniff(archive)? && native_dmg::needs_backend(archive)? => {
+            Reader::Backend { format: None }
+        }
+        _ if native_dmg::sniff(archive)? => Reader::Dmg,
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
         _ if native_cpio::sniff(archive)? => Reader::Cpio,
         _ if native_ar::sniff(archive)? => Reader::Ar,
@@ -121,6 +130,10 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
         _ if native_ntfs::sniff(archive)? => Reader::Ntfs,
         _ if native_iso::sniff(archive)? => Reader::Iso,
+        Engine::Auto if native_dmg::sniff_disk(archive)? && native_dmg::needs_backend(archive)? => {
+            Reader::Backend { format: None }
+        }
+        _ if native_dmg::sniff_disk(archive)? => Reader::Dmg,
         Engine::Auto if disk::sniff(archive)? && disk::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
@@ -465,7 +478,8 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         | Reader::Wim
         | Reader::Chm
         | Reader::Ntfs
-        | Reader::Disk => {
+        | Reader::Disk
+        | Reader::Dmg => {
             let read = match reader {
                 Reader::Cpio => native_cpio::read_archive,
                 Reader::Ar => native_ar::read_archive,
@@ -479,6 +493,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 Reader::Chm => native_chm::read_archive,
                 Reader::Ntfs => native_ntfs::read_archive,
                 Reader::Disk => disk::read_archive,
+                Reader::Dmg => native_dmg::read_archive,
                 _ => native_rpm::read_archive,
             };
             read(
