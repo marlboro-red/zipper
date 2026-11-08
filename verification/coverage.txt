@@ -2535,7 +2535,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [exe-fields]
-fingerprint = 63c348198fd1e764
+fingerprint = c597efeefed95c0a
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach exe-fields
 full-check = cargo kani --harness native_exe::proofs:: --harness native_exe::resources::proofs::
