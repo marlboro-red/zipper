@@ -72,9 +72,14 @@ fn target_dir() -> PathBuf {
 }
 
 fn cargo(args: &[&str]) -> Result<()> {
+    cargo_with(args, &[])
+}
+
+fn cargo_with(args: &[&str], envs: &[(&str, &str)]) -> Result<()> {
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let status = Command::new(cargo)
         .current_dir(root())
+        .envs(envs.iter().copied())
         .args(args)
         .status()?;
     ensure!(
@@ -318,7 +323,7 @@ fn gate(full: bool) -> Result<()> {
         ("clippy", || cargo(CLIPPY)),
         ("test", || {
             ensure_nextest()?;
-            cargo(CI_TESTS)
+            cargo_with(CI_TESTS, &required_7zip_comparisons_outside_ci())
         }),
         ("windows clippy", windows_clippy),
         ("release build", || {
@@ -356,6 +361,16 @@ fn gate(full: bool) -> Result<()> {
         if full { "full" } else { "fast" }
     );
     Ok(())
+}
+
+const REQUIRE_7Z: &str = "ZIPPER_PARITY_REQUIRE_7Z";
+
+fn required_7zip_comparisons_outside_ci() -> Vec<(&'static str, &'static str)> {
+    if env::var_os("GITHUB_ACTIONS").is_some() || env::var_os(REQUIRE_7Z).is_some() {
+        Vec::new()
+    } else {
+        vec![(REQUIRE_7Z, "1")]
+    }
 }
 
 const NEXTEST_INSTALL: &str = "cargo install cargo-nextest --locked";

@@ -6,7 +6,7 @@
 //! archive on a dropped row is skipped.
 //!
 //! Without 7-Zip the backend archives are skipped, unless
-//! `ZIPPER_PARITY_REQUIRE_7Z` is set, as CI sets it.
+//! `ZIPPER_PARITY_REQUIRE_7Z` is set, as `cargo xtask gate` sets it outside CI.
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
