@@ -146,6 +146,30 @@ pub fn unsquashfs() -> Option<PathBuf> {
     Some(PathBuf::from("unsquashfs")).filter(|tool| runs(tool))
 }
 
+pub fn unsquashfs_tree(image: &Path, into: &Path) -> Option<Tree> {
+    let tool = unsquashfs()?;
+    Command::new(tool)
+        .args(["-quiet", "-no-progress", "-no-xattrs", "-d"])
+        .arg(into)
+        .arg(image)
+        .output()
+        .unwrap();
+    Some(contents(&tree(into, false)))
+}
+
+pub fn unsquashfs_difference(ours: &Tree, theirs: &Tree) -> Option<String> {
+    let ours = contents(ours);
+    for (name, kind) in theirs {
+        if kind != "special" && ours.get(name) != Some(kind) {
+            return Some(format!("{name} differs from unsquashfs"));
+        }
+    }
+    let empty = sha256(b"");
+    ours.iter()
+        .find(|(name, kind)| !theirs.contains_key(*name) && **kind != empty)
+        .map(|(name, _)| format!("unsquashfs did not write {name}"))
+}
+
 pub fn mkcramfs() -> Option<PathBuf> {
     [
         PathBuf::from("mkfs.cramfs"),

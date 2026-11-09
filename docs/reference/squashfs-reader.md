@@ -72,6 +72,7 @@ The SquashFS reader never holds a table whole. It reads metadata through a cache
 - 7-Zip fails on a CramFS hole, which `mkfs.cramfs -z` writes. Zipper writes zeros, as Linux reads it.
 - 7-Zip keeps the first bytes of a block that decodes past the size its place in the file needs, and accepts the image. Zipper refuses it.
 - 7-Zip reads a data block word that has bits above its stored flag, a stored length of zero or a length past the block size, and writes bytes from elsewhere in the image. Zipper refuses the word. It also refuses a stored block of the wrong size, and a data or fragment block that lies outside the data area.
+- 7-Zip refuses some damaged zstd blocks that libzstd, the reference zstd decoder, decodes without error, such as the `zstd.sqfs` corpus image with bit 4 of byte 151 flipped. Zipper decodes zstd with libzstd and writes what `unsquashfs` writes. The hostile tests accept such a block only when the tree matches `unsquashfs`.
 - 7-Zip writes both entries of a folder that holds two of one name. Zipper refuses the folder.
 - 7-Zip writes a name that is not UTF-8 in its own way. Zipper refuses it.
 - 7-Zip extracts nothing from a CramFS image whose root inode is not a folder, and reports success. Zipper refuses it.

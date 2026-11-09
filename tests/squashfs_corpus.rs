@@ -17,7 +17,9 @@ mod sevenzip;
 #[path = "common/squashfs_trees.rs"]
 mod squashfs_trees;
 
-use squashfs_trees::{Tree, contents, noise, sevenzip_run, tree, words};
+use squashfs_trees::{
+    Tree, contents, noise, sevenzip_run, tree, unsquashfs_difference, unsquashfs_tree, words,
+};
 use std::{
     collections::BTreeMap,
     fs,
@@ -77,17 +79,6 @@ fn with_differences(theirs: &Tree, ours: &Tree, differs: &[&str], label: &str) -
     expected
 }
 
-fn unsquashfs_tree(image: &Path, into: &Path) -> Option<Tree> {
-    let tool = squashfs_trees::unsquashfs()?;
-    Command::new(tool)
-        .args(["-quiet", "-no-progress", "-no-xattrs", "-d"])
-        .arg(into)
-        .arg(image)
-        .output()
-        .unwrap();
-    Some(contents(&tree(into, false)))
-}
-
 fn check_lz4(image: &Path, ours: &Tree, work: &Path, label: &str) {
     if let Some(binary) = sevenzip_binary() {
         let (accepted, _, output) = sevenzip_run(&binary, image, &work.join("7z"), true);
@@ -99,22 +90,8 @@ fn check_lz4(image: &Path, ours: &Tree, work: &Path, label: &str) {
     let Some(theirs) = unsquashfs_tree(image, &work.join("unsquashfs")) else {
         return;
     };
-    let ours = contents(ours);
-    for (name, kind) in &theirs {
-        if kind != "special" {
-            assert_eq!(
-                ours.get(name),
-                Some(kind),
-                "{label}: {name} differs from unsquashfs"
-            );
-        }
-    }
-    let empty = squashfs_trees::sha256(b"");
-    for (name, kind) in &ours {
-        assert!(
-            theirs.contains_key(name) || *kind == empty,
-            "{label}: unsquashfs did not write {name}"
-        );
+    if let Some(difference) = unsquashfs_difference(ours, &theirs) {
+        panic!("{label}: {difference}");
     }
 }
 

@@ -12,7 +12,9 @@ mod squashfs_trees;
 #[path = "common/squashfs_writer.rs"]
 mod squashfs_writer;
 
-use squashfs_trees::{Tree, sevenzip_accepts, sevenzip_run, tree};
+use squashfs_trees::{
+    Tree, sevenzip_accepts, sevenzip_run, tree, unsquashfs_difference, unsquashfs_tree,
+};
 use squashfs_writer::{Entry, Kind, Options, ROOT, again, build, build_cramfs, file, folder, link};
 use std::{
     fs,
@@ -21,6 +23,8 @@ use std::{
 use zipper::{Engine, Reader};
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/squashfs-corpus");
+
+const ZSTD: u16 = 6;
 
 const CHECKS_7ZIP_SKIPS: &[&str] = &[
     "data block is larger than the block size",
@@ -52,6 +56,10 @@ enum Outcome {
 
 fn is_cramfs(bytes: &[u8]) -> bool {
     bytes.get(16..32) == Some(b"Compressed ROMFS")
+}
+
+fn is_zstd(bytes: &[u8]) -> bool {
+    !is_cramfs(bytes) && bytes.get(20..22) == Some(&ZSTD.to_le_bytes())
 }
 
 fn zipper_outcome(image: &Path, work: &Path, cramfs: bool) -> Outcome {
@@ -91,10 +99,16 @@ fn judge(binary: &Path, bytes: &[u8], label: &str) {
     let accepted = sevenzip_accepts(binary, &image);
     match (ours, accepted) {
         (Outcome::Refused(_), false) => {}
-        (Outcome::Extracted(tree), false) => panic!(
-            "{label}: 7-Zip refuses it and Zipper extracted {} entries",
-            tree.len()
-        ),
+        (Outcome::Extracted(tree), false) => {
+            let libzstd_decodes_it = is_zstd(bytes)
+                && unsquashfs_tree(&image, &work.path().join("unsquashfs"))
+                    .is_some_and(|theirs| unsquashfs_difference(&tree, &theirs).is_none());
+            assert!(
+                libzstd_decodes_it,
+                "{label}: 7-Zip refuses it and Zipper extracted {} entries",
+                tree.len()
+            );
+        }
         (Outcome::Refused(message), true) => assert!(
             CHECKS_7ZIP_SKIPS
                 .iter()
@@ -708,4 +722,17 @@ fn a_cramfs_link_longer_than_every_reader_allows_is_refused() {
     let entries = vec![file(ROOT, "a", b"x"), link(ROOT, "long", &target)];
     let cram = build_cramfs(&entries, false);
     refused(&cram.bytes, "longer than 4096 bytes");
+}
+
+#[test]
+fn a_zstd_block_7zip_refuses_and_libzstd_decodes_extracts_as_unsquashfs_writes_it() {
+    let Some(binary) = sevenzip_binary() else {
+        return;
+    };
+    let mut bytes = corpus("zstd.sqfs");
+    bytes[151] ^= 0x10;
+    let (work, image) = write(&bytes, false);
+    assert!(!sevenzip_accepts(&binary, &image), "7-Zip now accepts it");
+    judge(&binary, &bytes, "zstd.sqfs: byte 151 flipped");
+    drop(work);
 }
