@@ -347,6 +347,11 @@ fn emit(image: &mut Image, root: Inode, tree: &mut tree::Tree) -> Result<()> {
                 }
                 SYMLINK => {
                     ensure!(child.offset != 0, "CramFS link {path:?} has no target");
+                    ensure!(
+                        u64::from(child.size) <= crate::MAX_LINK_TARGET,
+                        "CramFS link {path:?} has a target longer than {} bytes",
+                        crate::MAX_LINK_TARGET
+                    );
                     let mut target = Vec::with_capacity(child.size as usize);
                     file_data(image, &child, &path)
                         .take(u64::from(child.size))

@@ -31,7 +31,7 @@ It never restores owners or extended attributes. 7-Zip ignores SquashFS extended
 
 The readers check the layout before they write each file, and they publish nothing on failure:
 
-- Every block, table and index lies inside the image. A data or fragment block lies before the inode table, in the data area.
+- Every block, table and index lies inside the image. A data or fragment block lies after the superblock and before the inode table, in the data area.
 - Every metadata block holds 1 to 8 KiB on disk and decodes to at most 8 KiB. The inode table's blocks end exactly at the folder table, and the folder table's at the fragment table.
 - Every inode of the table parses, and the table holds exactly the count the superblock gives, as 7-Zip parses them. Every reference names the start of an inode. A folder listing starts inside a block of the folder table and ends exactly at its size.
 - The fragment and owner tables decode to exactly the entries their counts give.
@@ -50,7 +50,7 @@ The readers check the layout before they write each file, and they publish nothi
 | Entries | at most 1,000,000, as every reader |
 | SquashFS fragments | at most one for each inode |
 | Names | at most 256 bytes |
-| Link targets | at most 4,096 bytes, as every reader |
+| Link targets | at most 4,096 bytes, as every reader, checked before a target is read |
 | SquashFS folder table | at most 1,048,576 metadata blocks |
 | Names and link targets in all | at most 64 MiB |
 | Decoded metadata blocks kept | 64, of up to 8 KiB each |

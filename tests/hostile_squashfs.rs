@@ -25,7 +25,7 @@ const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/squashfs-c
 const CHECKS_7ZIP_SKIPS: &[&str] = &[
     "data block is larger than the block size",
     "has a stored block of the wrong size",
-    "has a block past the data area",
+    "has a block outside the data area",
     "lies outside the data area",
     "is not UTF-8",
     "CramFS root inode is not a folder",
@@ -611,7 +611,7 @@ fn a_file_that_starts_near_the_end_of_the_address_space_is_refused() {
     let mut bytes = built.bytes.clone();
     let start = built.inode_at[0] + 16;
     bytes[start..start + 8].copy_from_slice(&(u64::MAX - 10).to_le_bytes());
-    refused(&bytes, "past the data area");
+    refused(&bytes, "outside the data area");
 }
 
 #[test]
@@ -691,4 +691,21 @@ fn cramfs_offsets_past_the_image_are_refused_and_offset_zero_is_empty() {
         let (_, theirs, _) = sevenzip_run(&binary, &image, &work.path().join("7z"), false);
         assert_eq!(ours, theirs);
     }
+}
+
+#[test]
+fn a_file_block_inside_the_superblock_is_refused() {
+    let entries = vec![file(ROOT, "data.bin", &[1u8; 100])];
+    let built = build(&entries, Options::default());
+    let mut bytes = built.bytes.clone();
+    put32(&mut bytes, built.inode_at[0] + 16, 0);
+    refused(&bytes, "outside the data area");
+}
+
+#[test]
+fn a_cramfs_link_longer_than_every_reader_allows_is_refused() {
+    let target = "a/".repeat(2500);
+    let entries = vec![file(ROOT, "a", b"x"), link(ROOT, "long", &target)];
+    let cram = build_cramfs(&entries, false);
+    refused(&cram.bytes, "longer than 4096 bytes");
 }

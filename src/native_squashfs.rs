@@ -952,9 +952,9 @@ impl FileData<'_, '_> {
             let end = self
                 .position
                 .checked_add(u64::from(length))
-                .filter(|end| *end <= superblock.inode_table)
+                .filter(|end| self.position >= SUPERBLOCK as u64 && *end <= superblock.inode_table)
                 .with_context(|| {
-                    format!("SquashFS file {path:?} has a block past the data area")
+                    format!("SquashFS file {path:?} has a block outside the data area")
                 })?;
             let method = superblock.method;
             let limit = self.image.disk.dictionary_limit();
