@@ -2744,6 +2744,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [cramfs-fields]
+fingerprint = b825ca6fefd0f4e7
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach cramfs-fields
 full-check = cargo kani --harness native_cramfs::proofs::
