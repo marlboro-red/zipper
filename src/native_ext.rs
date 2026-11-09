@@ -916,6 +916,12 @@ fn kind_name(mode: u16) -> &'static str {
     }
 }
 
+const UNKNOWN_KIND: u8 = 0;
+
+fn kind_matches(kind: u8, mode: u16, file_types: bool) -> bool {
+    !file_types || kind == UNKNOWN_KIND || kind == kind_code(mode)
+}
+
 fn kind_code(mode: u16) -> u8 {
     match mode & TYPE_BITS {
         REGULAR => 1,
@@ -1533,7 +1539,7 @@ impl Folders<'_> {
             })?;
         let mode = self.catalog.inodes[child].mode;
         ensure!(
-            !file_types || kind == kind_code(mode),
+            kind_matches(kind, mode, file_types),
             "ext folder {parent_number} names inode {child_number} as type {kind}, but it is a {}",
             kind_name(mode)
         );
@@ -1570,11 +1576,24 @@ impl Folders<'_> {
     }
 }
 
-fn check_dot(entry: &DirEntry, block: &[u8], name: &[u8], inode: u32, folder: u32) -> Result<()> {
+fn check_dot(
+    entry: &DirEntry,
+    block: &[u8],
+    name: &[u8],
+    inode: u32,
+    folder: u32,
+    file_types: bool,
+) -> Result<()> {
     ensure!(
         &block[entry.name.clone()] == name && entry.inode == inode,
         "ext folder {folder} does not start with its {:?} record",
         String::from_utf8_lossy(name)
+    );
+    ensure!(
+        kind_matches(entry.kind, DIRECTORY, file_types),
+        "ext folder {folder} gives its {:?} record type {}, not a folder",
+        String::from_utf8_lossy(name),
+        entry.kind
     );
     Ok(())
 }
@@ -1599,7 +1618,7 @@ fn parse_records(
             } else {
                 (b"..", parent)
             };
-            check_dot(&entry, region, name, inode, number)?;
+            check_dot(&entry, region, name, inode, number, file_types)?;
         } else if entry.inode != 0 {
             let name = region[entry.name.clone()].to_vec();
             folders.add(folder, entry.inode, &name, entry.kind, file_types)?;

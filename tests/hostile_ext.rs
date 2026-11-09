@@ -528,6 +528,51 @@ fn an_empty_record_whose_name_holds_a_nul_is_refused_as_7zip_refuses_it() {
 }
 
 #[test]
+fn record_types_follow_7zip_with_unknown_allowed() {
+    let bytes = corpus("ext2-1k.img");
+    let layout = Layout::parse(&bytes);
+    let deep = layout.lookup(&bytes, "deep");
+    let root_block = layout.blocks(&bytes, 2).data[0] as usize * layout.block_size;
+    let deep_block = layout.blocks(&bytes, deep).data[0] as usize * layout.block_size;
+    let deep_record_type = root_block + 51;
+    let binary = sevenzip_binary();
+    for (at, record) in [
+        (root_block + 7, "root ."),
+        (root_block + 19, "root .."),
+        (deep_block + 7, "deep ."),
+        (deep_block + 19, "deep .."),
+        (deep_record_type, "deep"),
+    ] {
+        for kind in [0u8, 1, 6, 7] {
+            let mut typed = bytes.clone();
+            typed[at] = kind;
+            let label = format!("{record} record of type {kind}");
+            let work = tempfile::tempdir().unwrap();
+            let image = work.path().join("typed.img");
+            fs::write(&image, &typed).unwrap();
+            let ours = zipper_outcome(&image, work.path());
+            assert_eq!(
+                matches!(ours, Outcome::Extracted(_)),
+                kind == 0,
+                "{label}: {}",
+                match ours {
+                    Outcome::Refused(message) => message,
+                    Outcome::Extracted(_) => "extracted".into(),
+                }
+            );
+            if let Some(binary) = &binary {
+                judge(binary, &typed, &label);
+                assert_eq!(
+                    ext_trees::sevenzip_accepts(binary, &image),
+                    kind == 0,
+                    "{label}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn verifying_files_of_huge_declared_holes_does_not_fill_them() {
     let mut bytes = corpus("ext4-4k.img");
     let layout = Layout::parse(&bytes);
