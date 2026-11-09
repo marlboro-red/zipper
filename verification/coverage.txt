@@ -2806,6 +2806,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [lzo]
+fingerprint = feb9ed3e410fd4ae
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach lzo
 full-check = cargo kani --harness lzo::proofs::
