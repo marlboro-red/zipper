@@ -82,7 +82,13 @@
       "status": "native"
     },
     "CramFS": {
-      "status": "backend"
+      "status": "native",
+      "note": "CramFS images of both byte orders read in process, raw and in a lone disk partition.",
+      "tests": [
+        "tests/squashfs_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
+        "tests/squashfs_corpus.rs::generated_cramfs_images_in_both_byte_orders_extract_as_7zip_extracts_them",
+        "tests/hostile_squashfs.rs::damaged_cramfs_images_are_refused_when_7zip_refuses_them"
+      ]
     },
     "Dmg": {
       "status": "native",
@@ -296,7 +302,13 @@
       "note": "Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip."
     },
     "SquashFS": {
-      "status": "backend"
+      "status": "native",
+      "note": "SquashFS 4.0 images of every compressor read in process, raw and in a lone disk partition. 7-Zip does not open LZ4 images, which Zipper reads. SquashFS versions 1 to 3 and big-endian images go to 7-Zip.",
+      "tests": [
+        "tests/squashfs_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
+        "tests/squashfs_corpus.rs::generated_images_of_every_compressor_and_block_size_extract_as_7zip_extracts_them",
+        "tests/hostile_squashfs.rs::damaged_squashfs_metadata_is_refused_when_7zip_refuses_it"
+      ]
     },
     "TE": {
       "status": "native",

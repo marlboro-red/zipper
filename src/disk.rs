@@ -1026,6 +1026,8 @@ enum Plan {
     FileSystem(Span),
     Ntfs(Span),
     Apfs(Span),
+    Squashfs(Span),
+    Cramfs(Span),
     Hfs(Span),
     Files {
         format: &'static str,
@@ -1856,6 +1858,20 @@ fn plan_span(disk: &mut Disk, span: Span, depth: u32) -> Result<Plan> {
     {
         return Ok(Plan::Apfs(span));
     }
+    let mut head = [0u8; crate::native_squashfs::SUPERBLOCK];
+    if span.length >= head.len() as u64
+        && span.view(disk).read_if_there(0, &mut head)?
+        && crate::native_squashfs::is_image(&head)
+    {
+        return Ok(Plan::Squashfs(span));
+    }
+    let mut head = [0u8; crate::native_cramfs::SUPERBLOCK];
+    if span.length >= head.len() as u64
+        && span.view(disk).read_if_there(0, &mut head)?
+        && crate::native_cramfs::is_image(&head)
+    {
+        return Ok(Plan::Cramfs(span));
+    }
     let mut head = vec![0u8; crate::hfs::HEADER_AREA];
     if span.length >= crate::hfs::HEADER_AREA as u64
         && span.view(disk).read_if_there(0, &mut head)?
@@ -1978,6 +1994,9 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
         Ok((Some(mut disk), Plan::Apfs(span))) => {
             crate::native_apfs::needs_backend_in(span.view(&mut disk))
         }
+        Ok((Some(mut disk), Plan::Squashfs(span))) => {
+            crate::native_squashfs::needs_backend_in(span.view(&mut disk))
+        }
         _ => Ok(false),
     }
 }
@@ -2011,6 +2030,14 @@ pub fn read_archive(
         Plan::Apfs(span) => {
             let mut disk = disk.expect("a file system plan comes from an opened disk");
             crate::native_apfs::read_volume(span.view(&mut disk), path, destination, options)
+        }
+        Plan::Squashfs(span) => {
+            let mut disk = disk.expect("a file system plan comes from an opened disk");
+            crate::native_squashfs::read_volume(span.view(&mut disk), path, destination, options)
+        }
+        Plan::Cramfs(span) => {
+            let mut disk = disk.expect("a file system plan comes from an opened disk");
+            crate::native_cramfs::read_volume(span.view(&mut disk), path, destination, options)
         }
         Plan::Hfs(span) => {
             let mut disk = disk.expect("a file system plan comes from an opened disk");

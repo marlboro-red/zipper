@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 96 |
+| `native` | 98 |
 | `partial` | 1 |
-| `backend` | 10 |
+| `backend` | 8 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-14 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+12 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -39,7 +39,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Chm` | `native` | Section 0 and LZX sections read in process, in the tree 7-Zip writes, with the # and $ system files and without the ::DataSpace storage. The corpus comes from chmcmd and Zipper's own test writer, since no Microsoft compiler runs here. | `every_corpus_chm_extracts_the_tree_7zip_extracts` in `tests/chm_corpus.rs`, `generated_chm_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/chm_corpus.rs`, `damaged_chm_are_refused_exactly_when_7zip_refuses_them` in `tests/chm_corpus.rs` |
 | `Compound` | `native` | MSI, MSP, MSM and other compound files read in process, and an installer's one CAB through the CAB reader. An installer whose main stream is not a CAB goes to 7-Zip. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/msi_corpus.rs`, `generated_compound_files_extract_exactly_as_7zip_extracts_them` in `tests/msi_corpus.rs` |
 | `Cpio` | `native` |  | `tests/data/parity/archives/cpio-bin.cpio`, `tests/data/parity/archives/cpio-newc.cpio`, `tests/data/parity/archives/cpio-odc.cpio` |
-| `CramFS` | `backend` |  | No proof yet. |
+| `CramFS` | `native` | CramFS images of both byte orders read in process, raw and in a lone disk partition. | `every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts` in `tests/squashfs_corpus.rs`, `generated_cramfs_images_in_both_byte_orders_extract_as_7zip_extracts_them` in `tests/squashfs_corpus.rs`, `damaged_cramfs_images_are_refused_when_7zip_refuses_them` in `tests/hostile_squashfs.rs` |
 | `Dmg` | `native` | UDIF images whose file system is HFS+, HFSX or APFS read in process, with every chunk method. On macOS, extended attributes are restored as extended attributes, where 7-Zip writes each as a separate `file:name` file. Elsewhere they are skipped. A DMG holding another file system goes to 7-Zip. | `tests/data/parity/archives/dmg-bzip2.dmg`, `tests/data/parity/archives/dmg-lzfse.dmg`, `tests/data/parity/archives/dmg-lzma.dmg`, `tests/data/parity/archives/dmg-zlib.dmg`, `every_corpus_dmg_extracts_the_tree_7zip_extracts` in `tests/dmg_corpus.rs`, `the_parity_apfs_image_and_dmgs_extract_as_7zip_extracts_them` in `tests/apfs_corpus.rs`, `generated_dmgs_of_every_chunk_method_and_form_extract_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `damaged_trailers_property_lists_and_chunks_are_refused_when_7zip_refuses_them` in `tests/hostile_dmg.rs` |
 | `ELF` | `native` | Sections, or segments when a file has no sections, read in process in both classes and byte orders. The corpus comes from LLVM clang and lld. | `every_corpus_executable_extracts_the_tree_7zip_extracts` in `tests/exe_corpus.rs`, `generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/exe_corpus.rs`, `damaged_executables_are_refused_exactly_when_7zip_refuses_them` in `tests/hostile_exe.rs` |
 | `Ext` | `backend` |  | No proof yet. |
@@ -68,7 +68,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `SWFc` | `native` | SWF compressed with zlib or LZMA reads in process, with Zipper's own LZMA decoder. A stream that decodes past its declared length, or data after the stream, is refused, where 7-Zip stops at the length or ignores the data. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_compressed_swf_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs`, `a_stream_that_decodes_past_its_declared_length_is_refused_at_that_length` in `tests/hostile_swf.rs` |
 | `Sparse` | `native` | Android sparse images read in process. A disk whose file system Zipper does not read goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_containers_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs`, `android_sparse_images_are_checked_before_their_disk_is_read` in `tests/hostile_disk.rs` |
 | `Split` | `native` | Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip. | `tests/data/parity/archives/split.7z.001` |
-| `SquashFS` | `backend` |  | No proof yet. |
+| `SquashFS` | `native` | SquashFS 4.0 images of every compressor read in process, raw and in a lone disk partition. 7-Zip does not open LZ4 images, which Zipper reads. SquashFS versions 1 to 3 and big-endian images go to 7-Zip. | `every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts` in `tests/squashfs_corpus.rs`, `generated_images_of_every_compressor_and_block_size_extract_as_7zip_extracts_them` in `tests/squashfs_corpus.rs`, `damaged_squashfs_metadata_is_refused_when_7zip_refuses_it` in `tests/hostile_squashfs.rs` |
 | `TE` | `native` | UEFI TE images read in process. No EDK2 tool runs here, so the corpus image is a PE rewritten as TE by the corpus script. | `every_corpus_executable_extracts_the_tree_7zip_extracts` in `tests/exe_corpus.rs`, `generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/exe_corpus.rs`, `damaged_executables_are_refused_exactly_when_7zip_refuses_them` in `tests/hostile_exe.rs` |
 | `UEFIc` | `backend` |  | No proof yet. |
 | `UEFIf` | `backend` |  | No proof yet. |

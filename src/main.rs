@@ -1042,6 +1042,16 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_apfs::ReadOptions::default(),
                     )?),
+                    Reader::Squashfs => print(zipper::native_squashfs::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_squashfs::ReadOptions::default(),
+                    )?),
+                    Reader::Cramfs => print(zipper::native_cramfs::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_cramfs::ReadOptions::default(),
+                    )?),
                     Reader::Disk => print(zipper::disk::read_archive(
                         &archive,
                         None,
@@ -1201,6 +1211,16 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_apfs::ReadOptions::default(),
+                    )?),
+                    Reader::Squashfs => report(zipper::native_squashfs::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_squashfs::ReadOptions::default(),
+                    )?),
+                    Reader::Cramfs => report(zipper::native_cramfs::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_cramfs::ReadOptions::default(),
                     )?),
                     Reader::Disk => report(zipper::disk::read_archive(
                         &archive,

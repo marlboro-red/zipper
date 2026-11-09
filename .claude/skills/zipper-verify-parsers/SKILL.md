@@ -1,6 +1,6 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, the RPM lead, header and index readers in src/native_rpm.rs, the PE, COFF, TE, ELF, Mach-O and universal header readers in src/native_exe.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, the RPM lead, header and index readers in src/native_rpm.rs, the PE, COFF, TE, ELF, Mach-O and universal header readers in src/native_exe.rs, the SquashFS and CramFS superblock, inode and folder readers in src/native_squashfs.rs and src/native_cramfs.rs, the LZO1X decoder in src/lzo.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
@@ -40,6 +40,9 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[swf-fields]` | the `native_swf` and `native_flv` proofs, with the FLV and SWF corpus and hostile tests | under a second each |
 | `[disk-containers]` | the `disk_qcow`, `disk_vdi`, `disk_vmdk` and `disk_sparse` proofs, with the disk corpus and hostile tests and the full container flip sweep against 7-Zip | 13 s for the slowest |
 | `[exe-fields]` | the `native_exe` and `native_exe::resources` proofs, with the executable corpus and hostile tests | a few seconds each |
+| `[squashfs-fields]` | the four `native_squashfs::field_proofs` proofs, with the SquashFS corpus and hostile tests | 2 s for the slowest |
+| `[cramfs-fields]` | the two `native_cramfs` proofs, with the CramFS corpus and hostile tests | 1 s each |
+| `[lzo]` | `decoding_any_short_stream_never_panics_or_passes_its_block`, with the `lzop` tests in `cargo test --release --lib lzo` | 153 s |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
 Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jobs.
@@ -73,6 +76,13 @@ Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jo
 | `headers_never_panic_and_their_sizes_fit_ten_digits` | the `ar` header reader never panics on any 60 bytes, and its size, time and mode fit their fields | 31 s |
 | `names_never_panic_and_long_name_lengths_fit_their_field` | the `ar` name reader never panics on any 16 bytes, and BSD name lengths and GNU offsets fit their fields | 32 s |
 | `every_size_reads_back_from_its_decimal_field` | every `ar` size below 10^10 reads back from its decimal field | 460 s |
+| `superblocks_never_panic_and_keep_their_tables_in_order` | the SquashFS superblock reader never panics on any 96 bytes, and a superblock it accepts has a block size from 4 KiB to 1 MiB, its tables in order inside the image and its root inside the inode table | 2 s |
+| `inodes_never_panic_and_keep_their_fields_in_range` | the SquashFS inode reader never panics on any base header and body of up to 40 bytes, and an inode it accepts has its type's body length, a listing that starts inside its block and a size and link target within their limits | 1 s |
+| `folder_runs_and_entries_never_panic_and_stay_in_their_block` | the SquashFS folder run holds 1 to 256 entries, and an entry points inside its inode block | 0.2 s |
+| `block_words_and_counts_stay_inside_the_block_size` | a SquashFS data block word gives a length from 1 to the block size, and a file's blocks cover its size, or all but a tail shorter than a block | 0.6 s |
+| `inodes_never_panic_and_fit_their_bit_fields` | the CramFS inode reader unpacks any 12 bytes of either byte order into fields that fit their bits, with names and offsets in whole words | 0.6 s |
+| `superblocks_never_panic_and_keep_a_folder_root` | the CramFS superblock reader never panics on any 76 bytes, accepts only a folder root, and gives a size and CRC exactly for version 2 | 1 s |
+| `decoding_any_short_stream_never_panics_or_passes_its_block` | the LZO1X decoder never panics on any input of up to 6 bytes, and never writes past an output of up to 4 bytes | 153 s |
 
 Some checks are too heavy for Kani, so exhaustive unit tests cover them:
 

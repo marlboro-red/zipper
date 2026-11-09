@@ -1,0 +1,28 @@
+Every image here was written for Zipper's tests on macOS 26 by
+`generate.py`, from a source tree that script writes itself. No file in
+them comes from a third party.
+
+The SquashFS images come from mksquashfs 4.7.5 of squashfs-tools, installed
+with `brew install squashfs`. The CramFS images come from mkfs.cramfs of
+util-linux 2.42.4, installed with `brew install util-linux`, with
+`-b 4096`, since 7-Zip reads only 4 KiB pages. The LZO files come from
+lzop 1.04, installed with `brew install lzop`.
+
+| Image | Options |
+| --- | --- |
+| gzip.sqfs, lzma.sqfs, lzo.sqfs, xz.sqfs, lz4.sqfs, zstd.sqfs | each compressor with 4 KiB blocks |
+| xz-x86-1m.sqfs | xz with the x86 branch filter and 1 MiB blocks |
+| uncompressed.sqfs | no compression of data or tables |
+| no-fragments.sqfs | no fragments, 8 KiB blocks |
+| always-fragments.sqfs | every tail in a fragment, 16 KiB blocks |
+| no-duplicates-exports.sqfs | no duplicate detection and no export table |
+| lz4-hc-zstd-options.sqfs | LZ4 high compression |
+| cramfs-little.cramfs, cramfs-big.cramfs | each byte order |
+| cramfs-holes.cramfs | explicit holes, from `-z` |
+| lzo/*.lzo | `lzop -1`, `-3`, `-7` and `-9` of the file beside them |
+
+Each SquashFS image also holds the pseudo entries generate.py lists, which
+are devices, a named pipe, a socket, a sticky folder, a locked folder and a
+setuid file. trees.json holds the tree Zipper extracts from each image,
+which tests/squashfs_corpus.rs rewrites when ZIPPER_SQUASHFS_WRITE_TREES is
+set.
