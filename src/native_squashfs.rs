@@ -41,8 +41,8 @@ const DIRECTORY_INDEX: usize = 12;
 const DIRECTORY_RUN: u32 = 256;
 const LONGEST_NAME: usize = 256;
 const LISTING_DOTS: u32 = 3;
-const LONGEST_LINK: u32 = tree::MAX_NAME as u32;
-const MAX_INODES: u32 = tree::MAX_ENTRIES as u32 + 1;
+const LONGEST_LINK: u32 = 4096;
+const MAX_INODES: u32 = 1_000_001;
 const CACHED_BLOCKS: usize = 64;
 const MAX_LISTING_BLOCKS: usize = 1 << 20;
 const DEFAULT_FILE_MODE: u32 = 0o666;
@@ -1301,13 +1301,13 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
         file: &file,
         length: file.len()?,
     };
-    Ok(volume.read_exact_at(0, &mut start).is_ok() && !native_version(&start))
+    Ok(volume.read_exact_at(0, &mut start).is_ok() && is_image(&start) && !native_version(&start))
 }
 
 pub(crate) fn needs_backend_in<V: Read + Seek>(mut volume: V) -> Result<bool> {
     let mut start = [0u8; SUPERBLOCK];
     volume.seek(SeekFrom::Start(0))?;
-    Ok(volume.read_exact(&mut start).is_ok() && !native_version(&start))
+    Ok(volume.read_exact(&mut start).is_ok() && is_image(&start) && !native_version(&start))
 }
 
 /// Verify and optionally extract a SquashFS 4.0 image held in a bounded
@@ -1351,6 +1351,12 @@ pub fn read_archive(
 #[cfg(test)]
 mod field_tests {
     use super::*;
+
+    #[test]
+    fn link_and_inode_limits_match_every_reader() {
+        assert_eq!(u64::from(LONGEST_LINK), crate::MAX_LINK_TARGET);
+        assert_eq!(MAX_INODES as usize, tree::MAX_ENTRIES + 1);
+    }
 
     #[test]
     fn file_blocks_cover_the_file_or_leave_only_a_tail_for_its_fragment() {
