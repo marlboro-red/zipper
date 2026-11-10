@@ -538,11 +538,10 @@ pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Resu
 }
 
 /// The error for an archive whose reader this build leaves out, naming its
-/// format, such as `"zip"`, `"tar"` or `"gzip"`. A library built without a
-/// format's feature, such as `zip`, `tar` or `cpio`, returns it, and writes
-/// nothing, for a ZIP or tar archive it does not read. `Engine::Native` also
-/// returns it for every other signature Zipper recognizes but this build does
-/// not read, which `Engine::Auto` hands to 7-Zip.
+/// format, such as `"zip"`, `"tar"` or `"cpio"`. `Engine::Native` returns
+/// it, and writes nothing, for every format Zipper recognizes whose feature
+/// this build leaves out. `Engine::Auto` returns it for a ZIP or tar archive
+/// it cannot read, and hands every other such format to 7-Zip.
 #[derive(Debug)]
 pub struct NotBuilt(pub String);
 

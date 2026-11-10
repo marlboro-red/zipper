@@ -8,8 +8,8 @@ use std::{
     time::SystemTime,
 };
 
-/// Options for the readers that build their tree through the shared tree
-/// writer, such as `native_cpio::read_archive`.
+/// Options for `read_archive` in each reader module that re-exports this
+/// type.
 #[derive(Clone, Copy, Default)]
 pub struct ReadOptions<'a> {
     /// Cap on declared output bytes. Without it, extraction must fit in the
