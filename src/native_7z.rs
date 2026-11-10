@@ -1935,7 +1935,7 @@ fn folder_reader(
     let packed = BufReader::with_capacity(COPY_BUFFER, packed).take(packed_size);
     Ok(match methods.as_slice() {
         [Method::Copy] => Box::new(packed),
-        [Method::Deflate] => Box::new(flate2::read::DeflateDecoder::new(packed)),
+        [Method::Deflate] => Box::new(crate::framing::Reader::raw(packed)),
         [Method::Deflate64] => Box::new(deflate64::Deflate64Decoder::with_buffer(packed)),
         [Method::Bzip2] => crate::bzip2_streams::many_streams(
             packed,
