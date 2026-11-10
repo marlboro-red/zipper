@@ -3126,8 +3126,8 @@ item = src/inflate.rs | pub(crate) struct Step<'a> {
 item = src/inflate.rs | impl Step<'_> {
 item = src/inflate.rs | struct Dynamic {
 item = src/inflate.rs | impl Dynamic {
-item = src/inflate.rs | pub(crate) struct Inflate<'w> {
-item = src/inflate.rs | impl<'w> Inflate<'w> {
+item = src/inflate.rs | pub(crate) struct Inflate<W> {
+item = src/inflate.rs | impl<W: std::ops::DerefMut<Target = [u8]>> Inflate<W> {
 item = src/inflate.rs | mod proofs {
 
 [bzip2-fields]
@@ -3213,3 +3213,45 @@ item = src/bzip2_streams.rs | fn stream_level(
 item = src/bzip2_streams.rs | impl<R: BufRead> ParallelBzip2<R> {
 item = src/bzip2_streams.rs | impl<R: BufRead> Drop for ParallelBzip2<R> {
 item = src/bzip2_streams.rs | impl<R: BufRead> Read for ParallelBzip2<R> {
+
+[deflate-framing]
+skill = .claude/skills/zipper-verify-parsers/SKILL.md
+fingerprint = 0000000000000000
+full-check = cargo xtask kani-reach deflate-framing
+full-check = cargo kani --exact --harness framing::proofs::gzip_headers_read_alike_in_any_split_and_end_where_their_fields_end
+full-check = cargo test --release --lib framing::
+item = src/framing.rs | const LARGEST_CINFO:
+item = src/framing.rs | const NO_PROGRESS:
+item = src/framing.rs | const FAILED_BEFORE:
+item = src/framing.rs | pub(crate) fn zlib_header(
+item = src/framing.rs | pub(crate) struct Adler32 {
+item = src/framing.rs | impl Default for Adler32 {
+item = src/framing.rs | const ADLER_MODULUS:
+item = src/framing.rs | const ADLER_LANES:
+item = src/framing.rs | const ADLER_BYTES_BEFORE_A_REDUCTION:
+item = src/framing.rs | impl Adler32 {
+item = src/framing.rs | pub(crate) fn adler32(
+item = src/framing.rs | pub(crate) struct Decoded {
+item = src/framing.rs | pub(crate) fn inflate_block(
+item = src/framing.rs | pub(crate) fn zlib_block(
+item = src/framing.rs | const GZIP_HEADER_CRC:
+item = src/framing.rs | const GZIP_EXTRA:
+item = src/framing.rs | const GZIP_NAME:
+item = src/framing.rs | const GZIP_COMMENT:
+item = src/framing.rs | const GZIP_RESERVED:
+item = src/framing.rs | const GZIP_FIXED_HEADER:
+item = src/framing.rs | pub(crate) const LONGEST_GZIP_TEXT:
+item = src/framing.rs | enum Field {
+item = src/framing.rs | fn crc32_byte(
+item = src/framing.rs | pub(crate) struct GzipHeader {
+item = src/framing.rs | impl GzipHeader {
+item = src/framing.rs | enum Framing {
+item = src/framing.rs | impl Framing {
+item = src/framing.rs | enum Stage {
+item = src/framing.rs | pub(crate) struct Reader<R> {
+item = src/framing.rs | fn invalid_data(
+item = src/framing.rs | fn truncated(
+item = src/framing.rs | impl<R: BufRead> Reader<R> {
+item = src/framing.rs | impl<R: BufRead> BufRead for Reader<R> {
+item = src/framing.rs | impl<R: BufRead> Read for Reader<R> {
+item = src/framing.rs | mod proofs {

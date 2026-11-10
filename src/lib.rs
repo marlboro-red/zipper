@@ -25,6 +25,7 @@ mod disk_vdi;
 mod disk_vmdk;
 pub mod duplicates;
 mod extract;
+mod framing;
 #[cfg(any(feature = "apfs", feature = "dmg", feature = "disk"))]
 mod hfs;
 #[cfg(any(
@@ -36,7 +37,6 @@ mod hfs;
 mod image;
 #[cfg(feature = "zip")]
 mod implode;
-#[cfg(feature = "zip")]
 mod inflate;
 #[cfg(any(feature = "tar", feature = "squashfs"))]
 mod lz4;
