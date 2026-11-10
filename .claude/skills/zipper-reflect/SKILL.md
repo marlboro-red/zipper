@@ -42,6 +42,7 @@ A rule with nothing enforcing it is a wish. Reflection finds repeated mistakes a
 | Archive routing that trusted 7-Zip's format detection or parsed its output | the signature allowlist in `src/compat.rs` passes `-t`, never parses output and never falls back, with one test per bypass in `tests/cli.rs` |
 | Verdict lines rewritten because the sentence lint ignored a period inside `**` | `sentences_end_inside_emphasis_and_brackets` in `xtask/src/docs.rs` |
 | A commit message citing a hash typed from memory | `.githooks/commit-msg` and `cargo xtask lint-commits` in pre-push |
+| A commit message citing the hash of a commit a rebase rewrote, four times on 10 and 11 November, which `lint-commits` passed because the old object still existed locally | `cargo xtask lint-commits` and the `commit-msg` hook accept only a hash that is an ancestor of the citing commit, with `a_hash_off_the_citing_commits_history_is_reported` in `xtask/src/commits.rs` |
 | Published numbers that their revision cannot reproduce | the `results` gate step rejects scoreboard JSON measured on a dirty tree |
 | A hand-edited results page | the `results` gate step renders `docs/results.md` from the JSON and compares |
 | A formal model that drifts from the code it describes | the `verify` gate step fingerprints the covered code in `verification/coverage.txt` |
