@@ -16,7 +16,7 @@ mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | lint-7zip-lookups | install-hooks | ci-wait | warm-cache | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | lint-7zip-lookups | install-hooks | ci-wait | warm-cache | format-tests | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -41,6 +41,7 @@ fn main() -> ExitCode {
         ["ship"] => ship(),
         ["warm-cache"] => warm_cache(),
         ["release-checks"] => release_checks(),
+        ["format-tests"] => format_tests(),
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
         ["lint-commits"] => commits::lint_unpushed(&root()),
         ["verify-sync", name] => verify::record_checked_fingerprint(&root(), name),
@@ -175,6 +176,7 @@ fn release_checks() -> Result<()> {
     verify::fail_on_owed_slow_checks(&root())?;
     verify::run_every_full_check(&root())?;
     kani::fail_on_kani_list_mismatch(&root())?;
+    format_tests()?;
     gate(true)
 }
 
@@ -279,7 +281,36 @@ const CI_TESTS: &[&str] = &[
     "--cargo-profile",
     "ci",
 ];
-const FEATURE_SUBSETS: &[&str] = &["zip", "7z", "zip,7z", "tar", "more-formats", ""];
+const EXTRA_FEATURE_SUBSETS: &[&str] = &["zip,7z", ""];
+const FEATURES_WITHOUT_LIBRARY_CODE: &[&str] = &["cli", "zstd"];
+const FORMAT_TESTS: &[(&str, &[&str])] = &[
+    ("zip", &["zip_corpus"]),
+    ("7z", &["sevenz_corpus"]),
+    ("tar", &["tar_corpus"]),
+    ("cpio", &["hostile_cpio"]),
+    ("ar", &["hostile_ar"]),
+    ("rpm", &["hostile_rpm"]),
+    ("xar", &["xar_corpus"]),
+    ("cab", &["cab_corpus", "cab_sets"]),
+    ("msi", &["msi_corpus"]),
+    ("lzh", &["lzh_corpus"]),
+    ("arj", &["arj_corpus"]),
+    ("iso", &["iso_corpus"]),
+    ("wim", &["wim_corpus"]),
+    ("chm", &["chm_corpus"]),
+    ("exe", &["exe_corpus"]),
+    ("ntfs", &["ntfs_corpus"]),
+    ("swf,flv", &["swf_corpus"]),
+    ("dmg", &["dmg_corpus"]),
+    ("disk", &["disk_corpus", "squashfs_corpus", "ext_corpus"]),
+    ("dmg,disk", &["apfs_corpus"]),
+];
+const CONSUMER_ARCHIVES: &[&str] = &[
+    "tests/data/zip-corpus/7zip-deflate.zip",
+    "tests/data/zip-corpus/manifest.tsv",
+    "tests/data/7z-corpus/7zip-bzip2-long.7z",
+    "tests/data/7z-corpus/manifest.tsv",
+];
 const SUBSET_TESTS: &[&str] = &[
     "nextest",
     "run",
@@ -322,9 +353,34 @@ const COUNTERS_TEST: &[&str] = &[
     "counters",
 ];
 
+fn cargo_features() -> Result<Vec<String>> {
+    let manifest = fs::read_to_string(root().join("Cargo.toml"))?;
+    let table = manifest
+        .split_once("\n[features]\n")
+        .context("Cargo.toml has no [features] table")?
+        .1;
+    Ok(table
+        .lines()
+        .take_while(|line| !line.starts_with('['))
+        .filter_map(|line| line.split_once(" = "))
+        .map(|(name, _)| name.trim().to_owned())
+        .filter(|name| name != "default")
+        .collect())
+}
+
+fn feature_subsets() -> Result<Vec<String>> {
+    let mut subsets = cargo_features()?;
+    subsets.extend(
+        EXTRA_FEATURE_SUBSETS
+            .iter()
+            .map(|subset| subset.to_string()),
+    );
+    Ok(subsets)
+}
+
 fn lint_feature_subsets() -> Result<()> {
-    for features in FEATURE_SUBSETS {
-        cargo(&[
+    for features in feature_subsets()? {
+        let mut args = vec![
             "clippy",
             "--package",
             "zipper",
@@ -332,11 +388,68 @@ fn lint_feature_subsets() -> Result<()> {
             "--locked",
             "--no-default-features",
             "--features",
-            features,
+            &features,
             "--",
             "-D",
             "warnings",
-        ])?;
+        ];
+        if !FEATURES_WITHOUT_LIBRARY_CODE.contains(&features.as_str()) {
+            args.extend(["-D", "unused_crate_dependencies"]);
+        }
+        cargo(&args)?;
+    }
+    Ok(())
+}
+
+fn consumer_crate() -> Result<()> {
+    let work = tempfile::tempdir()?;
+    let destination = work
+        .path()
+        .to_str()
+        .context("temporary path is not UTF-8")?;
+    cargo(
+        &[
+            &[
+                "run",
+                "--locked",
+                "--quiet",
+                "--package",
+                "zipper-consumer",
+                "--",
+                destination,
+            ],
+            CONSUMER_ARCHIVES,
+        ]
+        .concat(),
+    )
+}
+
+fn format_tests() -> Result<()> {
+    ensure_nextest()?;
+    let formats = cargo_features()?;
+    for (features, tests) in FORMAT_TESTS {
+        ensure!(
+            features
+                .split(',')
+                .all(|feature| formats.iter().any(|name| name == feature)),
+            "FORMAT_TESTS names a feature Cargo.toml lacks in {features}"
+        );
+        let mut args = vec![
+            "nextest",
+            "run",
+            "--package",
+            "zipper",
+            "--locked",
+            "--cargo-profile",
+            "ci",
+            "--no-default-features",
+            "--features",
+            features,
+        ];
+        for test in *tests {
+            args.extend(["--test", test]);
+        }
+        cargo_with(&args, &required_7zip_comparisons_outside_ci())?;
     }
     Ok(())
 }
@@ -348,6 +461,7 @@ fn warm_cache() -> Result<()> {
     ensure_nextest()?;
     cargo(&[CI_TESTS, &["--no-run"]].concat())?;
     cargo(&[SUBSET_TESTS, &["--no-run"]].concat())?;
+    cargo(&["build", "--locked", "--package", "zipper-consumer"])?;
     cargo(RELEASE_BUILD)?;
     cargo(COUNTERS_CLIPPY)?;
     cargo(&[COUNTERS_TEST, &["--no-run"]].concat())
@@ -373,6 +487,7 @@ fn gate(full: bool) -> Result<()> {
             ensure_nextest()?;
             cargo(SUBSET_TESTS)
         }),
+        ("consumer crate", consumer_crate),
         ("windows clippy", windows_clippy),
         ("release build", || {
             cargo(RELEASE_BUILD)?;

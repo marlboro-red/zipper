@@ -135,6 +135,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "warm-cache",
     "ship",
     "release-checks",
+    "format-tests",
     "lint-commit-msg",
     "lint-commits",
     "verify",

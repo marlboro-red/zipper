@@ -896,6 +896,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zipper-consumer"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "crc32fast",
+ "zipper",
+]
+
+[[package]]
 name = "zlib-rs"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
