@@ -10,7 +10,7 @@ The SquashFS reader follows the layout of squashfs-tools 4.7 and checks each str
 - Metadata blocks of up to 8 KiB, stored or compressed, for the inode table, the folder table, the fragment table and the owner table.
 - Every inode type, basic and extended. These are folders with or without an index, files, links, block and character devices, named pipes and sockets.
 - Files whose blocks are stored, compressed or sparse, with a tail in a shared fragment block or in a block of its own.
-- Every compressor 7-Zip lists. gzip uses the `flate2` crate, and zstd the `zstd` crate. LZMA and xz use Zipper's own decoder in `src/lzma.rs`, with the xz branch filters. LZO uses Zipper's own LZO1X decoder in `src/lzo.rs`, and LZ4 its own block decoder in `src/lz4.rs`. The compressor options block is skipped, since each block carries what its decoder needs.
+- Every compressor 7-Zip lists. gzip uses Zipper's own Deflate decoder in `src/inflate.rs` with zlib framing, and zstd the `zstd` crate. LZMA and xz use Zipper's own decoder in `src/lzma.rs`, with the xz branch filters. LZO uses Zipper's own LZO1X decoder in `src/lzo.rs`, and LZ4 its own block decoder in `src/lz4.rs`. The compressor options block is skipped, since each block carries what its decoder needs.
 
 The CramFS reader reads images of either byte order with 4 KiB pages compressed with zlib, as `mkfs.cramfs` writes them and 7-Zip reads them. It checks the CRC-32 of a version 2 image over the size its superblock gives. It reads a version 1 image, which has no CRC and no size, up to 256 MiB.
 

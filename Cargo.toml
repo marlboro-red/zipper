@@ -14,7 +14,6 @@ clap = { version = "4.6.7", features = ["derive"], optional = true }
 crc32fast = "1.5.3"
 ctr = { version = "0.10.1", features = ["zeroize"], optional = true }
 deflate64 = { version = "0.1.12", optional = true }
-flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"], optional = true }
 hmac = { version = "0.13.0", features = ["zeroize"], optional = true }
 md-5 = { version = "0.11.0", default-features = false, optional = true }
 pbkdf2 = { version = "0.13.0", default-features = false, features = ["hmac"], optional = true }
@@ -33,19 +32,19 @@ default = ["cli", "all-formats"]
 cli = ["dep:clap", "all-formats"]
 all-formats = ["zip", "7z", "tar", "zstd", "more-formats"]
 zip = ["dep:aes", "dep:bzip2", "dep:ctr", "dep:deflate64", "dep:hmac", "dep:pbkdf2", "dep:ppmd-rust", "dep:sha1", "dep:zeroize"]
-7z = ["dep:aes", "dep:bzip2", "dep:deflate64", "dep:flate2", "dep:ppmd-rust", "dep:zeroize"]
-tar = ["dep:bzip2", "dep:flate2", "dep:ppmd-rust"]
+7z = ["dep:aes", "dep:bzip2", "dep:deflate64", "dep:ppmd-rust", "dep:zeroize"]
+tar = ["dep:bzip2", "dep:ppmd-rust"]
 zstd = ["dep:zstd"]
 more-formats = ["apfs", "ar", "arj", "cab", "chm", "cpio", "cramfs", "disk", "dmg", "exe", "ext", "flv", "iso", "lzh", "msi", "ntfs", "rpm", "squashfs", "swf", "wim", "xar"]
-apfs = ["dep:flate2"]
+apfs = []
 ar = ["tar"]
 arj = []
-cab = ["dep:flate2"]
+cab = []
 chm = []
 cpio = []
-cramfs = ["dep:flate2"]
-disk = ["apfs", "cramfs", "ext", "ntfs", "squashfs", "dep:flate2"]
-dmg = ["apfs", "dep:bzip2", "dep:flate2"]
+cramfs = []
+disk = ["apfs", "cramfs", "ext", "ntfs", "squashfs"]
+dmg = ["apfs", "dep:bzip2"]
 exe = []
 ext = []
 flv = []
@@ -54,14 +53,11 @@ lzh = []
 msi = ["cab"]
 ntfs = []
 rpm = ["cpio", "tar"]
-squashfs = ["dep:flate2"]
-swf = ["dep:flate2"]
+squashfs = []
+swf = []
 wim = ["dep:sha1"]
-xar = ["dep:bzip2", "dep:flate2", "dep:md-5", "dep:quick-xml", "dep:sha1"]
+xar = ["dep:bzip2", "dep:md-5", "dep:quick-xml", "dep:sha1"]
 counters = []
-
-[target.'cfg(target_os = "macos")'.dependencies]
-flate2 = { version = "1.1.10", default-features = false, features = ["zlib"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.191"

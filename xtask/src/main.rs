@@ -249,23 +249,50 @@ fn ship() -> Result<()> {
     Ok(())
 }
 
-const MACOS_SYSTEM_ZLIB: &str = "/usr/lib/libz.1.dylib";
+const ZLIB_CRATES: &[&str] = &[
+    "flate2",
+    "libz-sys",
+    "libz-rs-sys",
+    "zlib-rs",
+    "miniz_oxide",
+];
 
-// RECORD(benchmarks/native-zip/system-zlib/README.md): Apple's zlib is the measured decoder.
-fn ensure_system_zlib() -> Result<()> {
-    if !cfg!(target_os = "macos") {
-        return Ok(());
-    }
-    let binary = target_dir().join("release/zipper");
-    let libraries = output("otool", &["-L", &binary.to_string_lossy()])?;
-    let zlibs: Vec<&str> = libraries
+fn ensure_no_zlib() -> Result<()> {
+    let tree = output(
+        "cargo",
+        &[
+            "tree",
+            "--package",
+            "zipper",
+            "--edges",
+            "normal",
+            "--target",
+            "all",
+            "--locked",
+            "--prefix",
+            "none",
+        ],
+    )?;
+    let mut zlibs: Vec<String> = tree
         .lines()
         .filter_map(|line| line.split_whitespace().next())
-        .filter(|library| library.contains("libz."))
+        .filter(|name| ZLIB_CRATES.contains(name))
+        .map(str::to_owned)
         .collect();
+    if cfg!(target_os = "macos") {
+        let binary = target_dir().join("release/zipper");
+        let libraries = output("otool", &["-L", &binary.to_string_lossy()])?;
+        zlibs.extend(
+            libraries
+                .lines()
+                .filter_map(|line| line.split_whitespace().next())
+                .filter(|library| library.contains("libz."))
+                .map(str::to_owned),
+        );
+    }
     ensure!(
-        zlibs == [MACOS_SYSTEM_ZLIB],
-        "release binary links {zlibs:?}, not {MACOS_SYSTEM_ZLIB}; unset PKG_CONFIG_PATH entries that point at another zlib"
+        zlibs.is_empty(),
+        "the release build depends on {zlibs:?}; Zipper decodes Deflate with src/inflate.rs"
     );
     Ok(())
 }
@@ -505,7 +532,7 @@ fn gate(full: bool) -> Result<()> {
         ("windows clippy", windows_clippy),
         ("release build", || {
             cargo(RELEASE_BUILD)?;
-            ensure_system_zlib()
+            ensure_no_zlib()
         }),
         ("release round trip", round_trip),
     ];

@@ -2,7 +2,7 @@
 
 The release build compiles no C library. Every decoder that reads archive bytes is Rust, so the checks and proofs cover all of it.
 
-Hostile archive bytes reach three C libraries today. libdeflate decodes Deflate in the opt-in `native-fast` engine. On macOS, the system zlib decodes streaming Deflate. zstd decodes ZIP Zstandard entries, `.zst` files and SquashFS. Linux and Windows already decode Deflate with zlib-rs.
+When M25 began, hostile archive bytes reached three C libraries. libdeflate decoded Deflate in the opt-in `native-fast` engine. On macOS, the system zlib decoded streaming Deflate. zstd decodes ZIP Zstandard entries, `.zst` files and SquashFS. Linux and Windows decoded Deflate with zlib-rs.
 
 Scope:
 
@@ -19,4 +19,5 @@ Exit checks:
 Done so far, by 11 November 2026:
 
 - `native-fast` is retired, and with it libdeflate, its `unsafe` calls, the shared entry-buffer budget and the 8 MiB archive cache. An adversarial review found no check weakened on the remaining engine, and both ZIP models held every rule after the change.
-- Two C libraries remain in `cargo tree -e normal`. zstd builds on every platform, and macOS links its system zlib.
+- Zipper's own Deflate decoder in `src/inflate.rs` reads every Deflate, zlib and gzip stream, in ZIP, 7z, tar and single `.gz` files, CAB, DMG, HFS+, APFS, SquashFS, CramFS, xar, SWF, QCOW and VMDK. `flate2`, zlib-rs and the system zlib left the normal dependencies. The release build step of the gate fails if a zlib crate or library comes back.
+- One C library remains in `cargo tree -e normal`. zstd builds on every platform.

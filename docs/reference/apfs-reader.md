@@ -13,7 +13,7 @@ The reader follows the APFS Reference and checks each structure as 7-Zip 26.05 c
 - Every volume the container lists, in the order of its list.
 - The inode, directory record, file extent, data stream, extended attribute, sibling link and sibling map records of each file-system tree.
 - Plain directory keys and the hashed keys of case-insensitive and normalization-insensitive volumes. The reader takes the name from either key and does not check the hash.
-- Files compressed through `com.apple.decmpfs`, stored or compressed with zlib or LZVN in the attribute, methods 3, 7 and 9, or in 64 KiB chunks of the `com.apple.ResourceFork` attribute, methods 4 and 8. These are the methods 7-Zip decodes. zlib uses the `flate2` crate, and LZVN Zipper's own decoder in `src/lzvn.rs`. A file compressed with another method, such as LZFSE in methods 11 and 12, is refused by name, as 7-Zip refuses it.
+- Files compressed through `com.apple.decmpfs`, stored or compressed with zlib or LZVN in the attribute, methods 3, 7 and 9, or in 64 KiB chunks of the `com.apple.ResourceFork` attribute, methods 4 and 8. These are the methods 7-Zip decodes. zlib uses Zipper's own Deflate decoder in `src/inflate.rs`, and LZVN its own decoder in `src/lzvn.rs`. A file compressed with another method, such as LZFSE in methods 11 and 12, is refused by name, as 7-Zip refuses it.
 
 ## What it writes
 
