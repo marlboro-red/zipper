@@ -4,23 +4,18 @@ use crate::{
 };
 use std::{
     io::{self, BufReader, Read, Seek, SeekFrom},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 #[derive(Clone)]
 pub(crate) struct Cursor {
-    file: Arc<Mutex<ArchiveFile>>,
+    file: Arc<ArchiveFile>,
     position: u64,
     length: u64,
 }
 impl Read for Cursor {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        let mut file = self
-            .file
-            .lock()
-            .map_err(|_| io::Error::other("ZIP reader lock poisoned"))?;
-        file.seek(SeekFrom::Start(self.position))?;
-        let read = file.read(bytes)?;
+        let read = self.file.read_at(bytes, self.position)?;
         counters::add(Counter::ArchiveReads, 1);
         counters::add(Counter::ArchiveBytesRead, read as u64);
         self.position += read as u64;
@@ -80,7 +75,7 @@ impl Reader {
     pub(crate) fn new(file: ArchiveFile) -> io::Result<Self> {
         let length = file.len()?;
         let cursor = Cursor {
-            file: Arc::new(Mutex::new(file)),
+            file: Arc::new(file),
             position: 0,
             length,
         };

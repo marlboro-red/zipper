@@ -534,3 +534,119 @@ fn ntfs_and_dos_only_times_are_restored_on_every_platform() -> anyhow::Result<()
     }
     Ok(())
 }
+
+fn many_entries_of_every_size() -> Vec<(String, Vec<u8>)> {
+    let mut state = 0x2545_f491_u32;
+    (0..240)
+        .map(|index| {
+            let length = match index % 8 {
+                0 => 3 * 1024 * 1024 + index * 7,
+                1 | 2 => 70_000 + index * 13,
+                _ => index * 37 % 9_000,
+            };
+            let bytes = (0..length)
+                .map(|at| {
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    if index % 3 == 0 {
+                        state as u8
+                    } else {
+                        (at % 61) as u8
+                    }
+                })
+                .collect();
+            (format!("folder-{}/entry-{index}", index % 9), bytes)
+        })
+        .collect()
+}
+
+fn zip_crate_reads(archive: &Path) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
+    let mut reader = zip::ZipArchive::new(fs::File::open(archive)?)?;
+    (0..reader.len())
+        .map(|index| {
+            let mut entry = reader.by_index(index)?;
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes)?;
+            Ok((entry.name()?.into_owned(), bytes))
+        })
+        .collect()
+}
+
+fn assert_tree_holds(
+    out: &Path,
+    expected: &[(String, Vec<u8>)],
+    label: &str,
+) -> anyhow::Result<()> {
+    for (name, bytes) in expected {
+        assert!(fs::read(out.join(name))? == *bytes, "{label}: {name}");
+    }
+    let files = walkdir::WalkDir::new(out)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .count();
+    assert_eq!(files, expected.len(), "{label}");
+    Ok(())
+}
+
+#[test]
+fn workers_sharing_one_archive_recover_the_zip_crates_bytes_at_every_width() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let entries = many_entries_of_every_size();
+    let archive = temp.path().join("shared.zip");
+    let mut writer = ZipWriter::new(fs::File::create(&archive)?);
+    for (index, (name, bytes)) in entries.iter().enumerate() {
+        let method = if index % 2 == 0 {
+            CompressionMethod::Stored
+        } else {
+            CompressionMethod::Deflated
+        };
+        writer.start_file(
+            name,
+            SimpleFileOptions::default().compression_method(method),
+        )?;
+        writer.write_all(bytes)?;
+    }
+    writer.finish()?;
+    let expected = zip_crate_reads(&archive)?;
+    assert!(
+        expected == entries,
+        "the zip crate reads back what was written"
+    );
+    let set = temp.path().join("set");
+    fs::create_dir(&set)?;
+    let whole = fs::read(&archive)?;
+    for (index, volume) in whole.chunks(1_000_003).enumerate() {
+        fs::write(set.join(format!("shared.zip.{:03}", index + 1)), volume)?;
+    }
+    assert!(whole.len() / 1_000_003 >= 8, "the set spans many volumes");
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(64).build()?;
+    for threads in [1, 4, 16, 64] {
+        let out = temp.path().join(format!("plain-{threads}"));
+        pool.install(|| {
+            zipper::native_zip::read_archive_with_options(
+                &archive,
+                Some(&out),
+                zipper::native_zip::ReadOptions {
+                    threads: Some(threads),
+                    ..Default::default()
+                },
+            )
+        })?;
+        assert_tree_holds(&out, &expected, &format!("plain at {threads} threads"))?;
+        let out = temp.path().join(format!("split-{threads}"));
+        pool.install(|| {
+            zipper::extract_archive(
+                &set.join("shared.zip.001"),
+                &out,
+                zipper::ExtractOptions {
+                    threads: Some(threads),
+                    ..Default::default()
+                },
+            )
+        })?;
+        assert_tree_holds(&out, &expected, &format!("split at {threads} threads"))?;
+    }
+    Ok(())
+}
