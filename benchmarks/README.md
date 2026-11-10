@@ -92,6 +92,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-11 | [Zipper against the Go ZIP extractors pzip and fastzip](native-zip/go-zip-tools/README.md) | Zipper extracts Silesia ZIP about 2.5 times faster at four threads. On small files `--content-only` beats both by 10 to 12%, and default Zipper ties pzip while checking far more. |
 | 2026-11-03 | [One tar writer per folder on Windows](cross-platform/tar-folder-lanes/README.md) | Kept on Windows. 10,000 flat tiny files extract 1.44× to 1.56× faster from tar, with ranges apart. Linux, where the change is off, stayed within 3%. |
 | 2026-11-03 | [Run-time CPU detection in zlib-rs](cross-platform/zlib-rs-detection/README.md) | Kept. Silesia and the random entry extract 1.38× to 1.84× faster as `.tar.gz` on Linux and Windows runners, and Silesia ZIP 1.23× to 1.26×. A synthetic ZIP entry with 25-byte matches is 1.33× to 1.36× slower but still beats bsdtar. |
 | 2026-11-02 | [Tar rows on Linux and Windows runners](cross-platform/tar-scoreboard/README.md) | Plain tar beats default bsdtar on every Linux workload and five of seven Windows ones. The gzip rows lose on the large entries, where the decoder is zlib-rs. |
