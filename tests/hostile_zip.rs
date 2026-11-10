@@ -1454,3 +1454,309 @@ fn every_cut_and_every_padding_of_each_method_is_refused() {
         }
     }
 }
+
+#[cfg(unix)]
+mod folder_spellings {
+    use super::{Raw, extended_time, leftovers, stored, write_zip};
+    use std::{
+        collections::{BTreeMap, HashMap, HashSet},
+        fs,
+        os::unix::{
+            ffi::OsStrExt,
+            fs::{DirBuilderExt, MetadataExt},
+        },
+        path::Path,
+    };
+    use zipper::native_zip::{ReadOptions, read_archive_with_options};
+
+    const UTF8_NAME: u16 = 0x800;
+    const THREADS: [usize; 3] = [1, 4, 64];
+    const RUNS: usize = 2;
+    const SPELLINGS: &[&[&str]] = &[
+        &["lib", "Lib", "LIB"],
+        &["caf\u{e9}", "cafe\u{301}", "CAF\u{c9}", "CAFE\u{301}"],
+        &["k", "K", "\u{212a}"],
+        &["src", "SRC", "Src"],
+        &[
+            "\u{c5}ngstr\u{f6}m",
+            "\u{212b}ngstro\u{308}m",
+            "a\u{30a}ngstr\u{d6}m",
+        ],
+        &["a"],
+        &["b"],
+        &["c"],
+        &["d"],
+        &["e"],
+    ];
+
+    struct Random(u64);
+
+    impl Random {
+        fn below(&mut self, bound: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % bound as u64) as usize
+        }
+    }
+
+    fn utf8(raw: Raw) -> Raw {
+        Raw {
+            local_flags: UTF8_NAME,
+            central_flags: UTF8_NAME,
+            ..raw
+        }
+    }
+
+    fn folder_entry(name: &str, mode: u32, time: u32) -> Raw {
+        utf8(Raw {
+            version_made_by: 3 << 8 | 20,
+            external: (0o40000 | mode) << 16,
+            central_extra: extended_time(time),
+            ..stored(&format!("{name}/"), b"")
+        })
+    }
+
+    fn spelled_tree(seed: u64, entries: usize) -> Vec<Raw> {
+        let mut random = Random(seed);
+        let mut folders = HashSet::new();
+        let mut archive = Vec::new();
+        for index in 0..entries {
+            let depth = random.below(5);
+            let folder: Vec<&str> = (0..depth)
+                .map(|_| {
+                    let word = SPELLINGS[random.below(SPELLINGS.len())];
+                    word[random.below(word.len())]
+                })
+                .collect();
+            let folder = folder.join("/");
+            if !folder.is_empty() && random.below(4) == 0 {
+                if folders.insert(folder.clone()) {
+                    let mode = 0o700 | random.below(0o100) as u32;
+                    let time = 1_000_000_000 + 7 * index as u32;
+                    archive.push(folder_entry(&folder, mode, time));
+                }
+                continue;
+            }
+            let name = match folder.is_empty() {
+                true => format!("f{index}"),
+                false => format!("{folder}/f{index}"),
+            };
+            archive.push(utf8(stored(&name, index.to_string().as_bytes())));
+        }
+        archive
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum Node {
+        File(Vec<u8>),
+        Folder(Option<(u32, i64)>),
+    }
+
+    fn name_of(raw: &Raw) -> (String, bool) {
+        let name = String::from_utf8(raw.name.clone()).unwrap();
+        match name.strip_suffix('/') {
+            Some(folder) => (folder.to_owned(), true),
+            None => (name, false),
+        }
+    }
+
+    fn tree(
+        root: &Path,
+        claim: impl Fn(&fs::Metadata) -> Option<(u32, i64)>,
+    ) -> BTreeMap<Vec<u8>, Node> {
+        walkdir::WalkDir::new(root)
+            .min_depth(1)
+            .into_iter()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                let path = entry.path().strip_prefix(root).unwrap();
+                let metadata = entry.metadata().unwrap();
+                let node = match metadata.is_dir() {
+                    true => Node::Folder(claim(&metadata)),
+                    false => Node::File(fs::read(entry.path()).unwrap()),
+                };
+                (path.as_os_str().as_bytes().to_vec(), node)
+            })
+            .collect()
+    }
+
+    fn make_folders_in_archive_order(root: &Path, archive: &[Raw]) {
+        let mut made = HashSet::new();
+        for raw in archive {
+            let (name, folder) = name_of(raw);
+            let parent = match folder {
+                true => name.as_str(),
+                false => name.rsplit_once('/').map_or("", |(parent, _)| parent),
+            };
+            if !parent.is_empty() && made.insert(parent.to_owned()) {
+                fs::create_dir_all(root.join(parent)).unwrap();
+            }
+        }
+    }
+
+    fn process_umask(root: &Path) -> u32 {
+        let probe = root.join("probe");
+        fs::DirBuilder::new().mode(0o777).create(&probe).unwrap();
+        let umask = !fs::metadata(&probe).unwrap().mode() & 0o777;
+        fs::remove_dir(&probe).unwrap();
+        umask
+    }
+
+    fn first_folder_entry_claims(
+        root: &Path,
+        archive: &[Raw],
+        umask: u32,
+    ) -> HashMap<(u64, u64), (u32, i64)> {
+        let mut claims = HashMap::new();
+        for raw in archive {
+            let (name, folder) = name_of(raw);
+            if folder {
+                let metadata = fs::metadata(root.join(&name)).unwrap();
+                let time = u32::from_le_bytes(raw.central_extra[5..9].try_into().unwrap());
+                claims
+                    .entry((metadata.dev(), metadata.ino()))
+                    .or_insert(((raw.external >> 16) & 0o777 & !umask, i64::from(time)));
+            }
+        }
+        claims
+    }
+
+    fn create_new_files_or_none(root: &Path, archive: &[Raw]) -> Option<()> {
+        for raw in archive {
+            let (name, folder) = name_of(raw);
+            if folder {
+                continue;
+            }
+            let created = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(root.join(&name));
+            match created {
+                Ok(_) => fs::write(root.join(&name), &raw.payload).unwrap(),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return None,
+                Err(error) => panic!("{name}: {error}"),
+            }
+        }
+        Some(())
+    }
+
+    fn one_at_a_time(root: &Path, archive: &[Raw]) -> Option<BTreeMap<Vec<u8>, Node>> {
+        make_folders_in_archive_order(root, archive);
+        let claims = first_folder_entry_claims(root, archive, process_umask(root));
+        create_new_files_or_none(root, archive)?;
+        Some(tree(root, |metadata| {
+            claims.get(&(metadata.dev(), metadata.ino())).copied()
+        }))
+    }
+
+    fn extract(archive: &Path, destination: &Path, threads: usize) -> anyhow::Result<()> {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            let options = ReadOptions {
+                threads: Some(threads),
+                ..ReadOptions::default()
+            };
+            read_archive_with_options(archive, Some(destination), options).map(drop)
+        })
+    }
+
+    fn extracted(
+        destination: &Path,
+        expected: &BTreeMap<Vec<u8>, Node>,
+    ) -> BTreeMap<Vec<u8>, Node> {
+        let mut found = tree(destination, |metadata| {
+            Some((metadata.mode() & 0o777, metadata.mtime()))
+        });
+        for (path, node) in &mut found {
+            if let (Node::Folder(restored), Some(Node::Folder(None))) = (node, expected.get(path)) {
+                *restored = None;
+            }
+        }
+        found
+    }
+
+    fn check(case: &str, archive: &[Raw]) {
+        let work = tempfile::tempdir().unwrap();
+        let reference = work.path().join("reference");
+        fs::create_dir(&reference).unwrap();
+        let expected = one_at_a_time(&reference, archive);
+        let path = work.path().join("spellings.zip");
+        write_zip(&path, archive);
+        let mut published = vec!["reference".to_owned(), "spellings.zip".to_owned()];
+        for threads in THREADS {
+            for run in 0..RUNS {
+                let out = format!("out-{threads}-{run}");
+                let destination = work.path().join(&out);
+                let result = extract(&path, &destination, threads);
+                let case = format!("{case} at {threads} threads, run {run}");
+                match &expected {
+                    Some(expected) => {
+                        result.unwrap_or_else(|error| panic!("{case}: {error:#}"));
+                        assert_eq!(
+                            extracted(&destination, expected),
+                            *expected,
+                            "{case}: differs from making each folder in turn"
+                        );
+                        published.push(out);
+                    }
+                    None => {
+                        let error = result.unwrap_err().to_string();
+                        assert!(error.contains("collides"), "{case}: {error}");
+                    }
+                }
+            }
+        }
+        let mut top: Vec<String> = fs::read_dir(work.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        top.sort();
+        published.sort();
+        assert_eq!(top, published, "{case}: output left after a failure");
+    }
+
+    #[test]
+    fn folder_spellings_merge_as_one_at_a_time_creation_does_at_any_thread_count() {
+        for seed in 1..=2 {
+            check(
+                &format!("seed {seed}"),
+                &spelled_tree(seed * 0x9e37_79b9, 2500),
+            );
+        }
+    }
+
+    #[test]
+    fn files_that_meet_under_folder_spellings_are_refused_at_any_thread_count() {
+        let mut archive = spelled_tree(0x51ed_270b, 2500);
+        archive.push(utf8(stored("LIB/caf\u{e9}/k/same", b"1")));
+        archive.push(utf8(stored("lib/CAFE\u{301}/\u{212a}/SAME", b"2")));
+        check("a collision", &archive);
+    }
+
+    #[test]
+    fn a_folder_that_cannot_be_made_leaves_nothing_at_any_thread_count() {
+        let long = "n".repeat(300);
+        let mut archive = spelled_tree(0x2545_f491, 2500);
+        let middle = archive.len() / 2;
+        archive.insert(
+            middle,
+            folder_entry(&format!("src/{long}"), 0o755, 1_000_000_000),
+        );
+        archive.push(utf8(stored(&format!("Lib/{long}/f"), b"x")));
+        let work = tempfile::tempdir().unwrap();
+        let path = work.path().join("long.zip");
+        write_zip(&path, &archive);
+        for threads in THREADS {
+            let error = extract(&path, &work.path().join("out"), threads).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("too long"),
+                "{threads} threads: {error:#}"
+            );
+            assert_eq!(leftovers(work.path()), ["long.zip"], "{threads} threads");
+        }
+    }
+}
