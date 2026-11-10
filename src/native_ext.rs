@@ -1433,14 +1433,18 @@ fn load_inodes(fs: &mut FileSystem, catalog: &mut Catalog, claims: &mut Claims) 
     for group_number in 0..fields.groups {
         let group = fs.group(group_number)?;
         let checksums = fields.descriptor_checksums();
+        fs.read_block(group.inode_bitmap, &mut bitmap)?;
         if checksums && group.flags & GROUP_INODE_UNINIT != 0 {
             ensure!(
                 group.free_inodes == per_group,
                 "the ext group {group_number} has inodes in use but marks its inodes unused"
             );
+            ensure!(
+                (0..per_group).all(|index| bitmap[(index / 8) as usize] & (1 << (index % 8)) == 0),
+                "the ext group {group_number} bitmap marks inodes in use but its inodes unused"
+            );
             continue;
         }
-        fs.read_block(group.inode_bitmap, &mut bitmap)?;
         if fields.metadata_checksums() {
             let crc = crc32c(fields.checksum_seed, &bitmap[..bitmap_bytes]);
             let crc = if fields.descriptor_size >= LARGE_DESCRIPTOR {

@@ -12,7 +12,7 @@ The reader follows the kernel's ext4 documentation:
 - Inline data in the inode and its `system.data` attribute, for files, folders and links.
 - Fast links held in the inode, and links held in blocks or inline data.
 - Folders read record by record, so hashed `dir_index` folders read as plain ones.
-- Metadata checksums, both the CRC32C of `metadata_csum` and the CRC-16 descriptors of `uninit_bg`. With either feature, the reader skips the groups whose inodes are unused and the unused tail of each inode table.
+- Metadata checksums, both the CRC32C of `metadata_csum` and the CRC-16 descriptors of `uninit_bg`. With either feature, the reader reads only the inode bitmap of a group whose inodes are unused, and skips the unused tail of each inode table.
 
 ## What it writes
 
@@ -45,7 +45,7 @@ The reader checks the whole layout before it writes anything, and it publishes n
 
 - The superblock has its signature, a block size of 1 KiB to 64 KiB, a first data block that follows the boot block, and groups that fit a bitmap block. Its inode count equals the groups times the inodes per group, and its first inode is 11. The volume ends inside its image.
 - Every checksum the volume keeps holds. Those are the checksums of the superblock, each group descriptor, each inode bitmap, each inode in use, each extent block and each folder block. A folder block without a checksum tail must be a hashed folder's index block.
-- Each group's free inode count equals its bitmap, and no inode in use lies past the group's used inodes. Every inode in use has a type and at least one link.
+- Each group's free inode count equals its bitmap, even in a group whose inodes are unused, as 7-Zip checks it, and no inode in use lies past the group's used inodes. Every inode in use has a type and at least one link.
 - Each extent node has its signature, at most the entries that fit, the depth its parent gives and no more than 5 levels. Extents follow one another in logical order inside the range their index entry gives. Every block an extent or a block map names lies inside the volume.
 - Every block a file, folder, link, journal or reserved inode uses, and every extent and indirect block that maps it, is claimed once across the volume, beside the superblock and group descriptors. So shared blocks, looping extent trees and looping block maps are refused, and no walk repeats.
 - A folder is a whole number of blocks with no hole. Each folder record has a length of at least 12 bytes that ends inside its block and holds its name. A folder starts with its `.` and `..` records, naming itself and its parent as folders, and an inline folder names its parent. No other record is named `.` or `..`, and a record that names no inode holds no NUL in its name, as 7-Zip checks it.
@@ -80,6 +80,9 @@ The reader never holds the volume's bitmaps or inode tables. It reads one group 
 - 7-Zip stops reading a folder block at a record whose length leaves the block, and drops the records after it. It writes a name that holds `/` or bytes that are not UTF-8. Zipper refuses each.
 - 7-Zip extracts files that share blocks. Zipper refuses the volume.
 - 7-Zip ignores an extent node's capacity field. Zipper refuses a node whose capacity does not fit its block, as the kernel does.
+- 7-Zip reads extents whose logical ranges overlap or run backwards. Zipper refuses them, as the kernel does.
+- 7-Zip reads a superblock of any revision. Zipper refuses a revision other than 0 or 1, whose layout it does not know.
+- 7-Zip writes a link whose target holds a NUL, cut at the NUL. Zipper refuses it.
 - 7-Zip writes an in-use inode no folder names whatever its type, and writes the entries of a folder no folder names at the top. Zipper writes only a regular file with one link this way, and refuses the rest.
 - 7-Zip ignores feature flags. Zipper sends the features above to 7-Zip.
 - 7-Zip sets a link's time. Zipper creates links without one, as its other readers do.

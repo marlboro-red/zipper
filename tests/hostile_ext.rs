@@ -39,6 +39,9 @@ const CHECKS_7ZIP_SKIPS: &[&str] = &[
     "an ext folder record",
     "a slash or NUL",
     "holds more entries than fit",
+    "extents out of order",
+    "revision is not 0 or 1",
+    "has a target with a NUL",
 ];
 
 fn sevenzip_binary() -> Option<PathBuf> {
@@ -568,6 +571,38 @@ fn record_types_follow_7zip_with_unknown_allowed() {
                     "{label}"
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn an_unused_group_whose_inode_bitmap_marks_inodes_is_refused_as_7zip_refuses_it() {
+    let bytes = corpus("ext4-block-maps.img");
+    let layout = Layout::parse(&bytes);
+    let descriptor = layout.descriptor_at(1);
+    assert_ne!(
+        u16::from_le_bytes([bytes[descriptor + 0x12], bytes[descriptor + 0x13]]) & 1,
+        0
+    );
+    let bitmap = u32::from_le_bytes(bytes[descriptor + 4..descriptor + 8].try_into().unwrap())
+        as usize
+        * layout.block_size;
+    let padding = bitmap + layout.inodes_per_group as usize / 8;
+    let binary = sevenzip_binary();
+    for (at, refused_too) in [(bitmap, true), (padding - 1, true), (padding, false)] {
+        let mut marked = bytes.clone();
+        marked[at] = 0x80;
+        let work = tempfile::tempdir().unwrap();
+        let image = work.path().join("marked.img");
+        fs::write(&image, &marked).unwrap();
+        let outcome = zipper_outcome(&image, work.path());
+        if refused_too {
+            refused(&marked, "marks inodes in use but its inodes unused");
+        } else {
+            assert!(matches!(outcome, Outcome::Extracted(_)));
+        }
+        if let Some(binary) = &binary {
+            assert_eq!(ext_trees::sevenzip_accepts(binary, &image), !refused_too);
         }
     }
 }
