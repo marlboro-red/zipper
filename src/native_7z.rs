@@ -36,6 +36,7 @@ const PARALLEL_FOLDER_MIN: u64 = 8 * 1024 * 1024;
 const SEGMENT_MIN_OUTPUT: u64 = 8 * 1024 * 1024;
 const SEGMENT_WINDOW_MAX: usize = 64;
 const SEGMENT_DECODE_STEP: usize = 8 * 1024 * 1024;
+// RECORD(benchmarks/native-7z/solid-writer-pool/README.md): four writers make solid small-file folders 1.6 times faster.
 const FILE_WRITERS: usize = 4;
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 const WRONG_PASSWORD: &str = "the password is wrong or the 7z data is damaged";
