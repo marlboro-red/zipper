@@ -156,7 +156,7 @@ item = src/native_7z.rs |     fn ppmd_properties_read_only_five_bytes(
 
 [7z-aes-properties]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 7dbbe2788278d673
+fingerprint = 71d0663dab3bf1d7
 full-check = cargo xtask kani-reach 7z-aes-properties
 full-check = cargo kani --harness sevenz_crypto::proofs::
 full-check = cargo test --release --lib sevenz_crypto
