@@ -372,15 +372,12 @@ fn decode_exact(
 ) -> Result<usize> {
     match method {
         Method::Gzip => {
-            let mut inflater = flate2::Decompress::new(true);
-            let status = inflater
-                .decompress(packed, output, flate2::FlushDecompress::Finish)
+            let decoded = crate::framing::zlib_block(&mut Vec::new(), packed, output)
                 .context("SquashFS zlib block is damaged")?;
-            ensure!(
-                status == flate2::Status::StreamEnd && inflater.total_in() == packed.len() as u64,
-                "SquashFS zlib block decodes past its size or ends early"
-            );
-            Ok(inflater.total_out() as usize)
+            let decoded = decoded.filter(|decoded| decoded.consumed == packed.len());
+            Ok(decoded
+                .context("SquashFS zlib block decodes past its size or ends early")?
+                .written)
         }
         Method::Lzo => Ok(crate::lzo::decode(packed, output)
             .map_err(|error| anyhow::anyhow!("SquashFS LZO block is damaged: {error}"))?),
@@ -1460,6 +1457,32 @@ pub fn read_archive(
     tree::extract("SquashFS", path, destination, options, |tree| {
         read(&mut volume, tree, options)
     })
+}
+
+#[cfg(test)]
+mod zlib_tests {
+    use super::*;
+
+    fn flate2_decode(packed: &[u8], output: &mut [u8]) -> Option<usize> {
+        let mut inflater = flate2::Decompress::new(true);
+        let finish = flate2::FlushDecompress::Finish;
+        let ended =
+            inflater.decompress(packed, output, finish).ok() == Some(flate2::Status::StreamEnd);
+        (ended && inflater.total_in() == packed.len() as u64)
+            .then_some(inflater.total_out() as usize)
+    }
+
+    #[test]
+    fn zlib_blocks_decode_as_flate2_decodes_them_whole_cut_and_flipped() {
+        for (packed, size) in crate::framing::oracle::block_cases(crate::framing::oracle::zlib) {
+            let (mut ours, mut theirs) = (vec![0u8; size], vec![0u8; size]);
+            let decoded = decode_exact(Method::Gzip, 0, &packed, &mut ours).ok();
+            assert_eq!(decoded, flate2_decode(&packed, &mut theirs), "{size}");
+            if let Some(length) = decoded {
+                assert_eq!(ours[..length], theirs[..length]);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
