@@ -202,17 +202,19 @@ fn inflate_grain(file: &ArchiveFile, length: u64, at: u64, grain: u64) -> io::Re
     }
     let mut input = vec![0u8; packed as usize];
     read_file_exact(file, &mut input, start)?;
-    let mut output = vec![0u8; grain as usize];
-    let mut inflater = flate2::Decompress::new(true);
-    let status = inflater
-        .decompress(&input, &mut output, flate2::FlushDecompress::Finish)
+    grain_bytes(&input, grain as usize)
+}
+
+fn grain_bytes(input: &[u8], grain: usize) -> io::Result<Vec<u8>> {
+    let mut output = vec![0u8; grain];
+    let decoded = crate::framing::zlib_block(&mut Vec::new(), input, &mut output)
         .map_err(|_| io::Error::other("a compressed VMDK grain is damaged"))?;
-    if status != flate2::Status::StreamEnd || inflater.total_in() != packed {
+    let Some(decoded) = decoded.filter(|decoded| decoded.consumed == input.len()) else {
         return Err(io::Error::other(
             "a compressed VMDK grain's stream does not end where its size says",
         ));
-    }
-    if inflater.total_out() != grain {
+    };
+    if decoded.written != grain {
         return Err(io::Error::other(
             "a compressed VMDK grain does not fill its grain",
         ));
@@ -755,6 +757,32 @@ pub(crate) fn open_descriptor(path: &Path, file: ArchiveFile, length: u64) -> Re
         start,
         Box::new(Extents { extents, last: 0 }),
     )))
+}
+
+#[cfg(test)]
+mod grain_tests {
+    use super::*;
+
+    fn flate2_grain(input: &[u8], grain: usize) -> Option<Vec<u8>> {
+        let mut output = vec![0u8; grain];
+        let mut inflater = flate2::Decompress::new(true);
+        let finish = flate2::FlushDecompress::Finish;
+        let ended =
+            inflater.decompress(input, &mut output, finish).ok() == Some(flate2::Status::StreamEnd);
+        (ended && inflater.total_in() == input.len() as u64 && inflater.total_out() == grain as u64)
+            .then_some(output)
+    }
+
+    #[test]
+    fn grains_decode_as_flate2_decodes_them_whole_cut_and_flipped() {
+        for (input, grain) in crate::framing::oracle::block_cases(crate::framing::oracle::zlib) {
+            assert_eq!(
+                grain_bytes(&input, grain).ok(),
+                flate2_grain(&input, grain),
+                "{grain}"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
