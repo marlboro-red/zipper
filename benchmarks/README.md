@@ -56,6 +56,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-11 | [ZIP workers read the archive without a lock](native-zip/lock-free-reads/README.md) | Kept. 512 MiB of stored entries extract 1.18 times faster at 64 threads, and other rows are unchanged. The serial folder setup is about 20% of four-thread extraction on the dependency sources. |
 | 2026-11-11 | [A macOS worker cap for ZIPs of mostly small files](native-zip/small-files-cap/README.md) | Kept. Four workers when files average at most 64 KiB make the dependency sources 11% and the mixed tree 10% faster at default threads, with CPU about halved. Silesia is unchanged. |
 | 2026-11-10 | [One Deflate64 decoder per ZIP entry](native-zip/deflate64-one-inflater/README.md) | Kept. A Deflate64 ZIP of Silesia extracts 1.83 times faster at one thread, 0.412 s against 0.755 s, and faster than 7-Zip at 0.530 s. Every damaged entry gets the same verdict. |
 | 2026-11-08 | [ZIP listing with Zipper's own directory reader](native-zip/own-directory-listing/README.md) | Kept. Listing takes the same time as with the `zip` crate on six archives, every range overlapping, and lists a 100,000-entry archive the old path refused. |
