@@ -104,6 +104,10 @@ fn judge(binary: &Path, bytes: &[u8], label: &str) {
     match (ours, accepted) {
         (Outcome::Refused(_), false) => {}
         (Outcome::Extracted(tree), false) => {
+            assert!(
+                !is_zstd(bytes) || squashfs_trees::unsquashfs().is_some(),
+                "{label}: 7-Zip refuses it and Zipper extracted it; install squashfs-tools so unsquashfs can judge it"
+            );
             let libzstd_decodes_it = is_zstd(bytes)
                 && unsquashfs_tree(&image, &work.path().join("unsquashfs"))
                     .is_some_and(|theirs| unsquashfs_difference(&tree, &theirs).is_none());
