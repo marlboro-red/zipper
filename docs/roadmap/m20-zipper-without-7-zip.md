@@ -5,6 +5,7 @@ The default build extracts every format in the M10 matrix with no 7-Zip installe
 Scope:
 
 - The 7-Zip backend becomes an optional build feature, then is removed when no row needs it.
+- Once Zipper reads every row, the `--zip-engine` argument and `Engine` are removed too, since `auto` and `native` then mean the same thing and nothing is left for `backend` to do.
 - The Windows package ships without 7-Zip.
 - `docs/usage.md`, the reader references and the Windows notes describe the result.
 
