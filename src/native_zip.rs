@@ -1222,7 +1222,7 @@ fn stream_entry(
         );
     } else {
         let (input_buffer, window) = buffer.split_at_mut(512 * 1024);
-        let mut inflate = crate::inflate::Inflate::new();
+        let mut inflate = crate::inflate::Inflate::new(window);
         let (mut start, mut end) = (0, 0);
         loop {
             if start == end {
@@ -1230,18 +1230,14 @@ fn stream_entry(
                 start = 0;
             }
             let step = counters::time(Counter::DecodeNanos, || {
-                inflate.decode(&input_buffer[start..end], window)
+                inflate.decode(&input_buffer[start..end])
             })?;
             start += step.consumed;
-            let produced = !step.output.is_empty();
-            emit(&window[step.output])?;
+            emit(step.output)?;
             if step.finished {
                 break;
             }
-            ensure!(
-                step.consumed > 0 || produced,
-                "truncated ZIP Deflate stream"
-            );
+            ensure!(!step.needs_input(), "truncated ZIP Deflate stream");
         }
         ensure!(
             inflate.total_in() == item.packed(),

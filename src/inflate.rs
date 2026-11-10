@@ -1,4 +1,3 @@
-use std::ops::Range;
 use std::sync::OnceLock;
 
 pub(crate) const HISTORY: usize = 32 * 1024;
@@ -683,13 +682,20 @@ enum State {
     Failed(Invalid),
 }
 
-pub(crate) struct Step {
+pub(crate) struct Step<'a> {
     pub(crate) consumed: usize,
-    pub(crate) output: Range<usize>,
+    pub(crate) output: &'a [u8],
     pub(crate) finished: bool,
 }
 
-pub(crate) struct Inflate {
+impl Step<'_> {
+    pub(crate) fn needs_input(&self) -> bool {
+        !self.finished && self.consumed == 0 && self.output.is_empty()
+    }
+}
+
+pub(crate) struct Inflate<'w> {
+    window: &'w mut [u8],
     bits: Bits,
     state: State,
     last_block: bool,
@@ -707,9 +713,11 @@ pub(crate) struct Inflate {
     total_in: u64,
 }
 
-impl Inflate {
-    pub(crate) fn new() -> Self {
+impl<'w> Inflate<'w> {
+    pub(crate) fn new(window: &'w mut [u8]) -> Self {
+        assert!(window.len() >= SMALLEST_WINDOW);
         Self {
+            window,
             bits: Bits::default(),
             state: State::BlockHeader,
             last_block: false,
@@ -732,26 +740,21 @@ impl Inflate {
         self.total_in
     }
 
-    /// Decodes raw Deflate from `input` into `window`, which must be the same
-    /// buffer of at least `SMALLEST_WINDOW` bytes on every call and must not
-    /// be written between calls, since it holds the 32 KiB of history.
-    /// `output` is the range of `window` this call filled. A call that neither
-    /// consumes nor produces anything, and is not finished, needs more input.
-    pub(crate) fn decode(&mut self, input: &[u8], window: &mut [u8]) -> Result<Step, Invalid> {
-        assert!(window.len() >= SMALLEST_WINDOW);
-        if window.len() - self.filled < OUTPUT_MARGIN {
-            window.copy_within(self.filled - HISTORY..self.filled, 0);
+    pub(crate) fn decode(&mut self, input: &[u8]) -> Result<Step<'_>, Invalid> {
+        if self.window.len() - self.filled < OUTPUT_MARGIN {
+            self.window
+                .copy_within(self.filled - HISTORY..self.filled, 0);
             self.filled = HISTORY;
         }
         let start = self.filled;
         let mut position = 0;
         let finished = self
-            .run(input, &mut position, window)
+            .run(input, &mut position)
             .inspect_err(|&invalid| self.state = State::Failed(invalid))?;
         self.total_in += position as u64;
         Ok(Step {
             consumed: position,
-            output: start..self.filled,
+            output: &self.window[start..self.filled],
             finished,
         })
     }
@@ -763,12 +766,7 @@ impl Inflate {
         }
     }
 
-    fn run(
-        &mut self,
-        input: &[u8],
-        position: &mut usize,
-        window: &mut [u8],
-    ) -> Result<bool, Invalid> {
+    fn run(&mut self, input: &[u8], position: &mut usize) -> Result<bool, Invalid> {
         loop {
             match self.state {
                 State::BlockHeader => {
@@ -810,11 +808,11 @@ impl Inflate {
                 State::Stored { remaining } => {
                     let length = remaining
                         .min(input.len() - *position)
-                        .min(window.len() - self.filled);
+                        .min(self.window.len() - self.filled);
                     if length == 0 {
                         return Ok(false);
                     }
-                    window[self.filled..self.filled + length]
+                    self.window[self.filled..self.filled + length]
                         .copy_from_slice(&input[*position..*position + length]);
                     *position += length;
                     self.filled += length;
@@ -870,7 +868,7 @@ impl Inflate {
                     self.state = State::Symbols;
                 }
                 State::Symbols => {
-                    if window.len() - self.filled < OUTPUT_MARGIN {
+                    if self.window.len() - self.filled < OUTPUT_MARGIN {
                         return Ok(false);
                     }
                     let tables = match self.fixed {
@@ -883,7 +881,7 @@ impl Inflate {
                             position: *position,
                             filled: self.filled,
                         };
-                        let (cursor, pause) = fast(tables, input, window, cursor);
+                        let (cursor, pause) = fast(tables, input, self.window, cursor);
                         self.bits = cursor.bits;
                         *position = cursor.position;
                         self.filled = cursor.filled;
@@ -904,7 +902,7 @@ impl Inflate {
                     self.bits.skip(used);
                     match symbol {
                         Symbol::Literal(byte) => {
-                            window[self.filled] = byte;
+                            self.window[self.filled] = byte;
                             self.filled += 1;
                         }
                         Symbol::EndOfBlock => self.state = self.after_block(),
@@ -912,7 +910,7 @@ impl Inflate {
                             if distance > self.filled {
                                 return Err(TOO_FAR_BACK);
                             }
-                            copy_match(window, self.filled, distance, length);
+                            copy_match(self.window, self.filled, distance, length);
                             self.filled += length;
                         }
                     }
@@ -1008,25 +1006,26 @@ mod tests {
     }
 
     fn ours(stream: &[u8], piece: usize, window: usize) -> Outcome {
-        let mut inflate = Inflate::new();
         let mut window = vec![0xa5u8; window];
+        let mut inflate = Inflate::new(&mut window);
         let mut bytes = Vec::new();
         let mut at = 0usize;
         loop {
             let end = at.saturating_add(piece).min(stream.len());
-            let Ok(step) = inflate.decode(&stream[at..end], &mut window) else {
+            let Ok(step) = inflate.decode(&stream[at..end]) else {
                 return Outcome::Refused;
             };
             at += step.consumed;
+            bytes.extend_from_slice(step.output);
+            let (finished, needs_input) = (step.finished, step.needs_input());
             assert_eq!(inflate.total_in(), at as u64);
-            bytes.extend_from_slice(&window[step.output.clone()]);
-            if step.finished {
+            if finished {
                 return Outcome::Decoded {
                     bytes,
                     consumed: at as u64,
                 };
             }
-            if step.consumed == 0 && step.output.is_empty() {
+            if needs_input {
                 assert_eq!(at, end, "a call with input left made no progress");
                 if end == stream.len() {
                     return Outcome::Refused;
@@ -1294,12 +1293,12 @@ mod tests {
     fn a_refused_stream_stays_refused_with_the_same_error() {
         let mut stream = deflated(&sample(11, 5000), 6);
         stream[0] |= 0b110;
-        let mut inflate = Inflate::new();
         let mut window = vec![0u8; SMALLEST_WINDOW];
-        let first = inflate.decode(&stream, &mut window).err().unwrap();
+        let mut inflate = Inflate::new(&mut window);
+        let first = inflate.decode(&stream).err().unwrap();
         assert_eq!(first, Invalid("Deflate block type 3 is reserved"));
         for input in [&stream[1..], &[]] {
-            assert_eq!(inflate.decode(input, &mut window).err(), Some(first));
+            assert_eq!(inflate.decode(input).err(), Some(first));
         }
     }
 
@@ -1976,7 +1975,7 @@ mod tests {
         put_dynamic_header(&mut writer, &no_end, &[0], &mut Random(1));
         let mut window = vec![0u8; SMALLEST_WINDOW];
         assert_eq!(
-            Inflate::new().decode(&writer.finish(), &mut window).err(),
+            Inflate::new(&mut window).decode(&writer.finish()).err(),
             Some(Invalid("Deflate block has no end-of-block code")),
             "a block that cannot end is refused before it decodes anything"
         );
