@@ -892,14 +892,13 @@ fn decode(method: Method, packed: &[u8], output: &mut [u8]) -> Result<()> {
         Method::Adc => crate::adc::decode(packed, output)?,
         Method::Lzfse => crate::lzfse::decode(packed, output)?,
         Method::Zlib => {
-            let mut inflater = flate2::Decompress::new(true);
-            let status = inflater
-                .decompress(packed, output, flate2::FlushDecompress::Finish)
+            let size = output.len();
+            let decoded = crate::framing::zlib_block(&mut Vec::new(), packed, output)
                 .context("DMG zlib chunk is damaged")?;
             ensure!(
-                status == flate2::Status::StreamEnd
-                    && inflater.total_out() == output.len() as u64
-                    && inflater.total_in() == packed.len() as u64,
+                decoded.is_some_and(
+                    |decoded| decoded.written == size && decoded.consumed == packed.len()
+                ),
                 "DMG zlib chunk does not fill its block exactly"
             );
         }
@@ -1555,6 +1554,31 @@ pub fn read_archive(
             )
         }
     })
+}
+
+#[cfg(test)]
+mod zlib_tests {
+    use super::*;
+
+    fn flate2_decode(packed: &[u8], output: &mut [u8]) -> bool {
+        let mut inflater = flate2::Decompress::new(true);
+        let finish = flate2::FlushDecompress::Finish;
+        inflater.decompress(packed, output, finish).ok() == Some(flate2::Status::StreamEnd)
+            && inflater.total_out() == output.len() as u64
+            && inflater.total_in() == packed.len() as u64
+    }
+
+    #[test]
+    fn zlib_chunks_decode_as_flate2_decodes_them_whole_cut_and_flipped() {
+        for (packed, size) in crate::framing::oracle::block_cases(crate::framing::oracle::zlib) {
+            let (mut ours, mut theirs) = (vec![0u8; size], vec![0u8; size]);
+            let accepted = decode(Method::Zlib, &packed, &mut ours).is_ok();
+            assert_eq!(accepted, flate2_decode(&packed, &mut theirs), "{size}");
+            if accepted {
+                assert_eq!(ours, theirs);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
