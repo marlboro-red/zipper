@@ -1332,7 +1332,7 @@ impl<R: Read> Payload<R> {
             .read_exact(header)
             .context("truncated ZIP encryption header")?;
         let started = Decryptor::start(encryption, password, header, local.zip_crypto_check);
-        crate::zip_crypto::scrub_stack();
+        crate::scrub::scrub_stack();
         let decryptor = started.map_err(|_| wrong_password(item))?;
         Ok(Self {
             data: record.take(item.packed()),
@@ -1350,7 +1350,7 @@ impl<R: Read> Payload<R> {
         let encrypted = self.decryptor.is_some();
         let streamed = self.decrypt_and_check(item, descriptor, buffer, sink);
         if encrypted {
-            crate::zip_crypto::scrub_stack();
+            crate::scrub::scrub_stack();
         }
         streamed
     }

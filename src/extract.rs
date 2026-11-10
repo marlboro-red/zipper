@@ -1,8 +1,15 @@
+#[cfg(feature = "7z")]
+use crate::native_7z;
+#[cfg(feature = "tar")]
+use crate::native_tar;
+#[cfg(feature = "zip")]
+use crate::native_zip;
+use crate::{Control, Existing, compat};
+#[cfg(feature = "more-formats")]
 use crate::{
-    Control, Existing, compat, disk, native_7z, native_apfs, native_ar, native_arj, native_cab,
-    native_chm, native_cpio, native_cramfs, native_dmg, native_exe, native_ext, native_flv,
-    native_iso, native_lzh, native_msi, native_ntfs, native_rpm, native_squashfs, native_swf,
-    native_tar, native_wim, native_xar, native_zip,
+    disk, native_apfs, native_ar, native_arj, native_cab, native_chm, native_cpio, native_cramfs,
+    native_dmg, native_exe, native_ext, native_flv, native_iso, native_lzh, native_msi,
+    native_ntfs, native_rpm, native_squashfs, native_swf, native_wim, native_xar,
 };
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -123,77 +130,161 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
                 fast: engine == Engine::NativeFast,
             }
         }
+        #[cfg(feature = "more-formats")]
         Engine::Auto if native_dmg::sniff(archive)? && native_dmg::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if native_dmg::sniff(archive)? => Reader::Dmg,
+        #[cfg(feature = "more-formats")]
         _ if native_exe::sniff(archive)? => Reader::Exe,
+        #[cfg(feature = "tar")]
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
+        #[cfg(feature = "more-formats")]
         _ if native_cpio::sniff(archive)? => Reader::Cpio,
+        #[cfg(feature = "more-formats")]
         _ if native_ar::sniff(archive)? => Reader::Ar,
+        #[cfg(feature = "more-formats")]
         _ if native_rpm::sniff(archive)? => Reader::Rpm,
+        #[cfg(feature = "more-formats")]
         _ if native_xar::sniff(archive)? => Reader::Xar,
+        #[cfg(feature = "more-formats")]
         _ if native_cab::sniff(archive)? => Reader::Cab,
+        #[cfg(feature = "more-formats")]
         _ if native_lzh::sniff(archive)? => Reader::Lzh,
+        #[cfg(feature = "more-formats")]
         _ if native_arj::sniff(archive)? => Reader::Arj,
+        #[cfg(feature = "more-formats")]
         Engine::Auto if native_msi::sniff(archive)? && native_msi::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if native_msi::sniff(archive)? => Reader::Msi,
+        #[cfg(feature = "more-formats")]
         Engine::Auto if native_wim::sniff(archive)? && native_wim::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if native_wim::sniff(archive)? => Reader::Wim,
+        #[cfg(feature = "more-formats")]
         Engine::Auto if native_chm::sniff(archive)? && native_chm::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if native_chm::sniff(archive)? => Reader::Chm,
+        #[cfg(feature = "7z")]
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
             Reader::Backend {
                 format: Some(compat::pinned_format(archive)?.unwrap_or_else(|| "-t7z".to_owned())),
             }
         }
+        #[cfg(feature = "7z")]
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
+        #[cfg(feature = "more-formats")]
         Engine::Auto if native_exe::needs_backend(archive)? => Reader::Backend { format: None },
+        #[cfg(feature = "more-formats")]
         _ if native_exe::sniff_damaged(archive)? => Reader::Exe,
+        #[cfg(feature = "more-formats")]
         _ if native_ntfs::sniff(archive)? => Reader::Ntfs,
+        #[cfg(feature = "more-formats")]
         _ if native_iso::sniff(archive)? => Reader::Iso,
+        #[cfg(feature = "more-formats")]
         Engine::Auto if native_dmg::sniff_disk(archive)? && native_dmg::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if native_dmg::sniff_disk(archive)? => Reader::Dmg,
+        #[cfg(feature = "more-formats")]
         Engine::Auto if native_apfs::sniff(archive)? && native_apfs::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if native_apfs::sniff(archive)? => Reader::Apfs,
+        #[cfg(feature = "more-formats")]
         Engine::Auto
             if native_squashfs::sniff(archive)? && native_squashfs::needs_backend(archive)? =>
         {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if native_squashfs::sniff(archive)? => Reader::Squashfs,
+        #[cfg(feature = "more-formats")]
         _ if native_cramfs::sniff(archive)? => Reader::Cramfs,
+        #[cfg(feature = "more-formats")]
         Engine::Auto if native_ext::sniff(archive)? && native_ext::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if native_ext::sniff(archive)? => Reader::Ext,
+        #[cfg(feature = "more-formats")]
         Engine::Auto if disk::sniff(archive)? && disk::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
+        #[cfg(feature = "more-formats")]
         _ if disk::sniff(archive)? => Reader::Disk,
+        #[cfg(feature = "more-formats")]
         _ if native_flv::sniff(archive)? => Reader::Flv,
+        #[cfg(feature = "more-formats")]
         _ if native_swf::sniff(archive)? => Reader::Swf,
+        #[cfg(feature = "tar")]
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
+        #[cfg(feature = "more-formats")]
         _ if native_exe::sniff_object(archive)? => Reader::Exe,
-        Engine::Native => Reader::Zip { fast: false },
-        Engine::NativeFast => Reader::Zip { fast: true },
+        Engine::Native => native_fallback(archive, false)?,
+        Engine::NativeFast => native_fallback(archive, true)?,
         Engine::Auto => match compat::pinned_format(archive)? {
             Some(format) => Reader::Backend {
                 format: Some(format),
             },
-            None => Reader::Zip { fast: false },
+            None => native_fallback(archive, false)?,
         },
     })
+}
+
+#[cfg(all(
+    feature = "zip",
+    feature = "7z",
+    feature = "tar",
+    feature = "more-formats"
+))]
+fn native_fallback(_: &Path, fast: bool) -> Result<Reader> {
+    Ok(Reader::Zip { fast })
+}
+
+#[cfg(not(all(
+    feature = "zip",
+    feature = "7z",
+    feature = "tar",
+    feature = "more-formats"
+)))]
+fn native_fallback(archive: &Path, fast: bool) -> Result<Reader> {
+    const USTAR: (&[u8], usize) = (b"ustar", 257);
+    let mut head = Vec::new();
+    crate::volumes::open(archive)?
+        .take((USTAR.1 + USTAR.0.len()) as u64)
+        .read_to_end(&mut head)?;
+    if head.get(USTAR.1..) == Some(USTAR.0) {
+        bail!(NotBuilt("tar".to_owned()));
+    }
+    if let Some(format) = compat::pinned_format(archive)? {
+        bail!(NotBuilt(format.trim_start_matches("-t").to_owned()));
+    }
+    Ok(Reader::Zip { fast })
+}
+
+#[cfg(not(all(
+    feature = "zip",
+    feature = "7z",
+    feature = "tar",
+    feature = "more-formats"
+)))]
+fn format_name(reader: &Reader) -> String {
+    match reader {
+        Reader::Zip { .. } => "zip".to_owned(),
+        Reader::SevenZip => "7z".to_owned(),
+        Reader::Stream => "compressed".to_owned(),
+        other => format!("{other:?}").to_lowercase(),
+    }
 }
 
 /// Options for [`extract_archive`].
@@ -381,15 +472,19 @@ fn lone_zip_is_another_format(archive: &Path) -> Option<&'static str> {
     if !crate::volumes::has_zip_volumes(archive).unwrap_or(false) {
         return None;
     }
+    #[cfg(feature = "7z")]
     if native_7z::sniff(archive).unwrap_or(false) {
-        Some("7z")
-    } else if native_tar::sniff(archive).is_ok_and(|tar| tar.is_some()) {
-        Some("tar")
-    } else if crate::native_stream::sniff(archive).is_ok_and(|stream| stream.is_some()) {
-        Some("compressed")
-    } else {
-        None
+        return Some("7z");
     }
+    #[cfg(feature = "tar")]
+    if native_tar::sniff(archive).is_ok_and(|tar| tar.is_some()) {
+        return Some("tar");
+    }
+    #[cfg(feature = "tar")]
+    if crate::native_stream::sniff(archive).is_ok_and(|stream| stream.is_some()) {
+        return Some("compressed");
+    }
+    None
 }
 
 fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T> {
@@ -432,6 +527,28 @@ pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Resu
     with_volumes(archive, read)
 }
 
+/// The error for an archive whose reader this build leaves out, naming its
+/// format, such as `"zip"`, `"tar"` or `"gzip"`. A library built without the
+/// `zip`, `7z`, `tar` or `more-formats` feature returns it, and writes
+/// nothing, for a ZIP or tar archive it does not read. `Engine::Native` and
+/// `Engine::NativeFast` also return it for every other signature Zipper
+/// recognizes but this build does not read, which `Engine::Auto` hands to
+/// 7-Zip.
+#[derive(Debug)]
+pub struct NotBuilt(pub String);
+
+impl std::fmt::Display for NotBuilt {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "this build of Zipper leaves out the {} reader; enable its Cargo feature",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for NotBuilt {}
+
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     let reader = choose_reader(options.engine, archive)?;
     ensure!(
@@ -444,6 +561,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         archive.display()
     );
     match reader {
+        #[cfg(feature = "zip")]
         Reader::Zip { fast } => {
             native_zip::read_archive_with_options(
                 archive,
@@ -464,6 +582,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 },
             )?;
         }
+        #[cfg(feature = "7z")]
         Reader::SevenZip => {
             native_7z::read_archive(
                 archive,
@@ -482,6 +601,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 },
             )?;
         }
+        #[cfg(feature = "tar")]
         Reader::Stream => {
             crate::native_stream::read_archive(
                 archive,
@@ -512,6 +632,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 "--path, --include, --exclude, --strip-prefix, --strip-components and --content-only need an archive read in process"
             )
         }
+        #[cfg(feature = "more-formats")]
         Reader::Cpio
         | Reader::Ar
         | Reader::Rpm
@@ -571,6 +692,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 },
             )?;
         }
+        #[cfg(feature = "tar")]
         Reader::Tar => {
             native_tar::read_archive(
                 archive,
@@ -588,6 +710,34 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 },
             )?;
         }
+        #[cfg(not(feature = "zip"))]
+        Reader::Zip { .. } => bail!(NotBuilt(format_name(&reader))),
+        #[cfg(not(feature = "7z"))]
+        Reader::SevenZip => bail!(NotBuilt(format_name(&reader))),
+        #[cfg(not(feature = "tar"))]
+        Reader::Tar | Reader::Stream => bail!(NotBuilt(format_name(&reader))),
+        #[cfg(not(feature = "more-formats"))]
+        Reader::Cpio
+        | Reader::Ar
+        | Reader::Rpm
+        | Reader::Xar
+        | Reader::Cab
+        | Reader::Lzh
+        | Reader::Arj
+        | Reader::Msi
+        | Reader::Iso
+        | Reader::Wim
+        | Reader::Chm
+        | Reader::Exe
+        | Reader::Ntfs
+        | Reader::Disk
+        | Reader::Dmg
+        | Reader::Apfs
+        | Reader::Squashfs
+        | Reader::Cramfs
+        | Reader::Ext
+        | Reader::Flv
+        | Reader::Swf => bail!(NotBuilt(format_name(&reader))),
         Reader::Backend { format } => {
             ensure!(
                 options.max_output_bytes.is_none(),

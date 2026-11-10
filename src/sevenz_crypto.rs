@@ -152,7 +152,7 @@ impl Keys {
             utf16.extend_from_slice(&unit.to_le_bytes());
         }
         let key = Arc::new(derive_key(properties, &utf16));
-        crate::zip_crypto::scrub_stack();
+        crate::scrub::scrub_stack();
         self.derived
             .push((properties.cycles_power, salt.to_vec(), Arc::clone(&key)));
         Ok(key)

@@ -1,75 +1,145 @@
+#![cfg_attr(
+    not(all(
+        feature = "zip",
+        feature = "7z",
+        feature = "tar",
+        feature = "more-formats"
+    )),
+    allow(dead_code, unused_imports)
+)]
+#[cfg(feature = "more-formats")]
 mod adc;
+#[cfg(feature = "tar")]
 mod base64;
+#[cfg(feature = "7z")]
 mod bcj2;
+#[cfg(any(feature = "7z", feature = "tar"))]
+mod bzip2_streams;
 pub mod compat;
 pub mod counters;
+#[cfg(feature = "more-formats")]
 pub mod disk;
+#[cfg(feature = "more-formats")]
 mod disk_qcow;
+#[cfg(feature = "more-formats")]
 mod disk_sparse;
+#[cfg(feature = "more-formats")]
 mod disk_vdi;
+#[cfg(feature = "more-formats")]
 mod disk_vmdk;
 pub mod duplicates;
 mod extract;
+#[cfg(feature = "more-formats")]
 mod hfs;
+#[cfg(feature = "zip")]
 mod implode;
+#[cfg(feature = "tar")]
 mod lz4;
+#[cfg(feature = "more-formats")]
 mod lzfse;
+#[cfg(feature = "more-formats")]
 mod lzh;
 mod lzma;
+#[cfg(feature = "tar")]
 mod lzma86;
+#[cfg(feature = "more-formats")]
 mod lzms;
+#[cfg(feature = "more-formats")]
 mod lznt1;
+#[cfg(feature = "more-formats")]
 mod lzo;
+#[cfg(feature = "more-formats")]
 mod lzvn;
+#[cfg(feature = "tar")]
 mod lzw;
+#[cfg(feature = "more-formats")]
 mod lzx;
 mod memory;
 mod metadata;
+#[cfg(feature = "tar")]
 mod mslz;
+#[cfg(feature = "7z")]
 pub mod native_7z;
+#[cfg(feature = "more-formats")]
 pub mod native_apfs;
+#[cfg(feature = "more-formats")]
 pub mod native_ar;
+#[cfg(feature = "more-formats")]
 pub mod native_arj;
+#[cfg(feature = "more-formats")]
 pub mod native_cab;
+#[cfg(feature = "more-formats")]
 pub mod native_chm;
+#[cfg(feature = "more-formats")]
 pub mod native_cpio;
+#[cfg(feature = "more-formats")]
 pub mod native_cramfs;
+#[cfg(feature = "more-formats")]
 pub mod native_dmg;
+#[cfg(feature = "more-formats")]
 pub mod native_exe;
+#[cfg(feature = "more-formats")]
 pub mod native_ext;
+#[cfg(feature = "more-formats")]
 mod native_fat;
+#[cfg(feature = "more-formats")]
 pub mod native_flv;
+#[cfg(feature = "more-formats")]
 pub mod native_iso;
+#[cfg(feature = "more-formats")]
 pub mod native_lzh;
+#[cfg(feature = "more-formats")]
 pub mod native_msi;
+#[cfg(feature = "more-formats")]
 pub mod native_ntfs;
+#[cfg(feature = "more-formats")]
 pub mod native_rpm;
+#[cfg(feature = "more-formats")]
 pub mod native_squashfs;
+#[cfg(feature = "tar")]
 pub mod native_stream;
+#[cfg(feature = "more-formats")]
 pub mod native_swf;
+#[cfg(feature = "tar")]
 pub mod native_tar;
+#[cfg(feature = "more-formats")]
 pub mod native_wim;
+#[cfg(feature = "more-formats")]
 pub mod native_xar;
+#[cfg(feature = "zip")]
 pub mod native_zip;
 mod ntfs_streams;
 mod pattern;
 mod placement;
+#[cfg(feature = "tar")]
 mod pmd;
 mod progress;
+#[cfg(feature = "more-formats")]
 mod quantum;
+#[cfg(any(feature = "zip", feature = "7z"))]
+mod scrub;
+#[cfg(feature = "7z")]
 mod sevenz_crypto;
+#[cfg(feature = "zip")]
 mod shrink;
 mod staging;
+#[cfg(feature = "more-formats")]
 mod udf;
 mod volumes;
 mod xattr;
+#[cfg(feature = "more-formats")]
 mod xpress;
 mod xz_filters;
+#[cfg(feature = "zip")]
 mod zip_crypto;
+#[cfg(feature = "zip")]
 mod zip_directory;
+#[cfg(feature = "zip")]
 mod zip_reader;
 use anyhow::{Context, Result, ensure};
-pub use extract::{Engine, ExtractOptions, Reader, choose_reader, extract_archive, read_volumes};
+pub use extract::{
+    Engine, ExtractOptions, NotBuilt, Reader, choose_reader, extract_archive, read_volumes,
+};
 pub use metadata::Metadata;
 pub use placement::Strip;
 pub use progress::{Cancelled, Control, Phase, Progress};

@@ -420,7 +420,12 @@ pub(crate) fn discover_harnesses(
         let scanned = scan_items(path, &module, &code);
         problems.extend(scanned.problems);
         for (harness, line, mut attributes) in scanned.harnesses {
-            attributes.extend(declaration.iter().cloned());
+            attributes.extend(
+                declaration
+                    .iter()
+                    .filter(|attribute| !is_feature_gate(attribute))
+                    .cloned(),
+            );
             match needs_tests_or_unsupported(&attributes) {
                 Ok(needs_tests) => harnesses.push(Harness {
                     path: harness,
@@ -748,8 +753,66 @@ fn kani_code_not_listed(
     Ok(problems)
 }
 
+fn is_feature_gate(attribute: &str) -> bool {
+    matches!(
+        attribute,
+        "#[cfg(feature=)]" | "#[cfg(any(feature=,feature=))]"
+    )
+}
+
 fn workspace_harnesses(root: &Path) -> Result<(Vec<Harness>, Vec<String>)> {
-    discover_harnesses(&sources(root)?, |path| read_source(root, path))
+    let (harnesses, mut problems) =
+        discover_harnesses(&sources(root)?, |path| read_source(root, path))?;
+    problems.extend(module_gates_outside_default_features(
+        &fs::read_to_string(root.join("src/lib.rs"))?,
+        &fs::read_to_string(root.join("Cargo.toml"))?,
+    ));
+    Ok((harnesses, problems))
+}
+
+fn default_features(manifest: &str) -> BTreeSet<String> {
+    let table: BTreeMap<&str, Vec<&str>> = manifest
+        .split("\n[features]\n")
+        .nth(1)
+        .unwrap_or_default()
+        .lines()
+        .take_while(|line| !line.starts_with('['))
+        .filter_map(|line| line.split_once(" = "))
+        .map(|(name, list)| {
+            let names = list
+                .trim_matches(|c| c == '[' || c == ']')
+                .split(',')
+                .map(|name| name.trim().trim_matches('"'))
+                .filter(|name| !name.is_empty() && !name.starts_with("dep:"))
+                .collect();
+            (name.trim(), names)
+        })
+        .collect();
+    let mut enabled = BTreeSet::new();
+    let mut pending = vec!["default"];
+    while let Some(name) = pending.pop() {
+        for &next in table.get(name).into_iter().flatten() {
+            if enabled.insert(next.to_owned()) {
+                pending.push(next);
+            }
+        }
+    }
+    enabled
+}
+
+fn module_gates_outside_default_features(lib: &str, manifest: &str) -> Vec<String> {
+    let enabled = default_features(manifest);
+    lib.lines()
+        .filter(|line| line.starts_with("#[cfg("))
+        .flat_map(|line| line.split("feature = \"").skip(1))
+        .filter_map(|rest| rest.split('"').next())
+        .filter(|name| !enabled.contains(*name))
+        .map(|name| {
+            format!(
+                "src/lib.rs gates a module on feature `{name}`, which the default features leave out, so `cargo kani` would skip its proofs"
+            )
+        })
+        .collect()
 }
 
 pub(crate) fn fail_on_harnesses_not_run_as_listed(root: &Path) -> Result<()> {
@@ -2040,6 +2103,17 @@ pub(crate) fn fail_on_unlisted_kani_reach(root: &Path, name: &str) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn module_gates_must_name_a_default_feature() {
+        let manifest = "[package]\nname = \"z\"\n\n[features]\ndefault = [\"cli\"]\ncli = [\"dep:clap\", \"all\"]\nall = [\"zip\"]\nzip = [\"dep:aes\"]\ncounters = []\n\n[lints]\n";
+        let lib = "#[cfg(feature = \"zip\")]\nmod a;\n#[cfg(any(feature = \"zip\", feature = \"all\"))]\nmod b;\n";
+        assert!(module_gates_outside_default_features(lib, manifest).is_empty());
+        let gated = "#[cfg(feature = \"counters\")]\nmod c;\n";
+        let problems = module_gates_outside_default_features(gated, manifest);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].contains("`counters`"));
+    }
 
     fn sources<'a>(files: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Result<String> + 'a {
         |path| {

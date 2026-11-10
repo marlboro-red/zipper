@@ -411,7 +411,6 @@ fn read_up_to(file: &mut impl Read, buffer: &mut [u8]) -> std::io::Result<usize>
 }
 
 const SNIFF_INPUT: u64 = crate::lz4::FIRST_BLOCK_INPUT_MAX;
-const BZIP2_OUTPUT_PER_EXTRA_STREAM: u64 = 4096;
 const LARGEST_DICTIONARY: u64 = 256 * 1024 * 1024;
 #[cfg(test)]
 const DECODER_OVERHEAD: u64 = 16 * 1024 * 1024;
@@ -436,11 +435,7 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
         Compression::Xz => Box::new(DecoderMemory(
             crate::lzma::XzReader::new(input).with_dictionary_limit(LARGEST_DICTIONARY),
         )),
-        Compression::Bzip2 => Box::new(Bzip2Streams {
-            decoder: Some(bzip2::bufread::BzDecoder::new(input)),
-            streams: 1,
-            decoded: 0,
-        }),
+        Compression::Bzip2 => Box::new(crate::bzip2_streams::Bzip2Streams::new(input)),
         Compression::Lzma => Box::new(lzma_decoder(input)?),
         Compression::Lzip => Box::new(crate::lzma::LzipReader::new(input, |dictionary| {
             ensure_dictionary_fits("lzip", dictionary)
@@ -504,36 +499,6 @@ impl<R: Read> Read for DecoderMemory<R> {
                 error
             }
         })
-    }
-}
-
-struct Bzip2Streams<R: BufRead> {
-    decoder: Option<bzip2::bufread::BzDecoder<R>>,
-    streams: u64,
-    decoded: u64,
-}
-
-impl<R: BufRead> Read for Bzip2Streams<R> {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        while let Some(decoder) = &mut self.decoder {
-            let read = decoder.read(buffer)?;
-            if read > 0 || buffer.is_empty() {
-                self.decoded += read as u64;
-                return Ok(read);
-            }
-            let mut input = self.decoder.take().expect("a decoder").into_inner();
-            if input.fill_buf()?.is_empty() {
-                return Ok(0);
-            }
-            if self.streams > self.decoded / BZIP2_OUTPUT_PER_EXTRA_STREAM {
-                return Err(std::io::Error::other(format!(
-                    "bzip2 has more streams than {BZIP2_OUTPUT_PER_EXTRA_STREAM} decoded bytes each; {BACKEND_HINT}"
-                )));
-            }
-            self.streams += 1;
-            self.decoder = Some(bzip2::bufread::BzDecoder::new(input));
-        }
-        Ok(0)
     }
 }
 
@@ -1709,7 +1674,8 @@ mod bzip2_stream_tests {
                 let read = decode(std::io::Cursor::new(input), Compression::Bzip2)
                     .unwrap()
                     .read_to_end(&mut output);
-                let allowed = count - 1 <= first as u64 / BZIP2_OUTPUT_PER_EXTRA_STREAM;
+                let allowed =
+                    count - 1 <= first as u64 / crate::bzip2_streams::OUTPUT_PER_EXTRA_STREAM;
                 assert_eq!(read.is_ok(), allowed, "{count} streams after {first} bytes");
                 if allowed {
                     assert_eq!(output.len(), first);

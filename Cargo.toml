@@ -7,33 +7,40 @@ version = "0.1.0-alpha.1"
 edition = "2024"
 
 [dependencies]
-aes = { version = "0.9.4", features = ["zeroize"] }
+aes = { version = "0.9.4", features = ["zeroize"], optional = true }
 anyhow = "1.0.104"
-bzip2 = "0.6.1"
-clap = { version = "4.6.7", features = ["derive"] }
+bzip2 = { version = "0.6.1", optional = true }
+clap = { version = "4.6.7", features = ["derive"], optional = true }
 crc32fast = "1.5.3"
-ctr = { version = "0.10.1", features = ["zeroize"] }
-deflate64 = "0.1.12"
-flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"] }
-hmac = { version = "0.13.0", features = ["zeroize"] }
-libdeflate-sys = "1.26.1"
-md-5 = { version = "0.11.0", default-features = false }
-pbkdf2 = { version = "0.13.0", default-features = false, features = ["hmac"] }
-ppmd-rust = "1.5.2"
-quick-xml = "0.42.0"
+ctr = { version = "0.10.1", features = ["zeroize"], optional = true }
+deflate64 = { version = "0.1.12", optional = true }
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"], optional = true }
+hmac = { version = "0.13.0", features = ["zeroize"], optional = true }
+libdeflate-sys = { version = "1.26.1", optional = true }
+md-5 = { version = "0.11.0", default-features = false, optional = true }
+pbkdf2 = { version = "0.13.0", default-features = false, features = ["hmac"], optional = true }
+ppmd-rust = { version = "1.5.2", optional = true }
+quick-xml = { version = "0.42.0", optional = true }
 rayon = "1.12.0"
-sha1 = { version = "0.11.0", default-features = false, features = ["zeroize"] }
+sha1 = { version = "0.11.0", default-features = false, features = ["zeroize"], optional = true }
 sha2 = { version = "0.11.1", default-features = false, features = ["zeroize"] }
 tempfile = "3.27.0"
 walkdir = "2.5.0"
-zeroize = "1.9.1"
-zstd = "0.14.3"
+zeroize = { version = "1.9.1", optional = true }
+zstd = { version = "0.14.3", optional = true }
 
 [features]
+default = ["cli", "all-formats"]
+cli = ["dep:clap", "all-formats"]
+all-formats = ["zip", "7z", "tar", "more-formats"]
+zip = ["dep:aes", "dep:bzip2", "dep:ctr", "dep:deflate64", "dep:flate2", "dep:hmac", "dep:libdeflate-sys", "dep:pbkdf2", "dep:ppmd-rust", "dep:sha1", "dep:zeroize", "dep:zstd"]
+7z = ["dep:aes", "dep:bzip2", "dep:deflate64", "dep:flate2", "dep:ppmd-rust", "dep:zeroize"]
+tar = ["dep:bzip2", "dep:flate2", "dep:ppmd-rust", "dep:zstd"]
+more-formats = ["tar", "dep:bzip2", "dep:flate2", "dep:md-5", "dep:quick-xml", "dep:sha1", "dep:zstd"]
 counters = []
 
 [target.'cfg(target_os = "macos")'.dependencies]
-flate2 = { version = "1.1.10", default-features = false, features = ["zlib"] }
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.191"
@@ -60,9 +67,14 @@ incremental = false
 debug-assertions = true
 overflow-checks = true
 
+[[bin]]
+name = "zipper"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [[example]]
 name = "count_zip"
-required-features = ["counters"]
+required-features = ["counters", "zip"]
 
 [dev-dependencies]
 libdeflater = "1.26.1"

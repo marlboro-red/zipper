@@ -228,15 +228,6 @@ impl Decryptor {
     }
 }
 
-const SCRUBBED_STACK: usize = 64 * 1024;
-
-#[inline(never)]
-pub(crate) fn scrub_stack() {
-    let mut area = [0u8; SCRUBBED_STACK];
-    area.zeroize();
-    std::hint::black_box(&area);
-}
-
 type KeyState = [u32; 3];
 
 const ZIP_CRYPTO_KEYS: KeyState = [0x1234_5678, 0x2345_6789, 0x3456_7890];

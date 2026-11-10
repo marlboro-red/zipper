@@ -277,6 +277,25 @@ const CI_TESTS: &[&str] = &[
     "--cargo-profile",
     "ci",
 ];
+const FEATURE_SUBSETS: &[&str] = &["zip", "7z", "zip,7z", "tar", "more-formats", ""];
+const SUBSET_TESTS: &[&str] = &[
+    "nextest",
+    "run",
+    "--package",
+    "zipper",
+    "--locked",
+    "--cargo-profile",
+    "ci",
+    "--no-default-features",
+    "--features",
+    "zip,7z",
+    "--test",
+    "feature_subset",
+    "--test",
+    "zip_corpus",
+    "--test",
+    "sevenz_corpus",
+];
 const RELEASE_BUILD: &[&str] = &["build", "--release", "--locked", "--package", "zipper"];
 const COUNTERS_CLIPPY: &[&str] = &[
     "clippy",
@@ -301,11 +320,32 @@ const COUNTERS_TEST: &[&str] = &[
     "counters",
 ];
 
+fn lint_feature_subsets() -> Result<()> {
+    for features in FEATURE_SUBSETS {
+        cargo(&[
+            "clippy",
+            "--package",
+            "zipper",
+            "--lib",
+            "--locked",
+            "--no-default-features",
+            "--features",
+            features,
+            "--",
+            "-D",
+            "warnings",
+        ])?;
+    }
+    Ok(())
+}
+
 fn warm_cache() -> Result<()> {
     cargo(CLIPPY)?;
+    lint_feature_subsets()?;
     windows_clippy()?;
     ensure_nextest()?;
     cargo(&[CI_TESTS, &["--no-run"]].concat())?;
+    cargo(&[SUBSET_TESTS, &["--no-run"]].concat())?;
     cargo(RELEASE_BUILD)?;
     cargo(COUNTERS_CLIPPY)?;
     cargo(&[COUNTERS_TEST, &["--no-run"]].concat())
@@ -324,6 +364,11 @@ fn gate(full: bool) -> Result<()> {
         ("test", || {
             ensure_nextest()?;
             cargo_with(CI_TESTS, &required_7zip_comparisons_outside_ci())
+        }),
+        ("feature subsets", || {
+            lint_feature_subsets()?;
+            ensure_nextest()?;
+            cargo(SUBSET_TESTS)
         }),
         ("windows clippy", windows_clippy),
         ("release build", || {

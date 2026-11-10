@@ -1892,9 +1892,7 @@ fn folder_reader(
         [Method::Copy] => Box::new(packed),
         [Method::Deflate] => Box::new(flate2::read::DeflateDecoder::new(packed)),
         [Method::Deflate64] => Box::new(deflate64::Deflate64Decoder::with_buffer(packed)),
-        [Method::Bzip2] => {
-            crate::native_tar::decode(packed, crate::native_tar::Compression::Bzip2)?
-        }
+        [Method::Bzip2] => Box::new(crate::bzip2_streams::Bzip2Streams::new(packed)),
         [Method::Ppmd] => {
             let (order, memory) = ppmd_parameters(&folder.output_to_packed[0].properties)?;
             let packed = crate::EndWatched {
