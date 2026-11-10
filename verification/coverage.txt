@@ -323,7 +323,7 @@ item = src/native_7z.rs | impl<R: Read> Read for ByteSwap<R> {
 
 [7z-filters]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 3d5e0787edca9e25
+fingerprint = 6213f4bfd4c8d2fb
 full-check = cargo xtask kani-reach 7z-filters
 full-check = cargo kani --harness xz_filters::proofs:: --harness native_7z::proofs::filter_properties_
 full-check = cargo test --release --lib filter
