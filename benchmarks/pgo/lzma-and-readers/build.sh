@@ -1,12 +1,14 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Builds the plain and the PGO release binaries of one commit into $1.
 # Trains on the dependency sources only, so no measured Silesia archive is in the profile.
 set -euo pipefail
 work=${1:?usage: build.sh WORK_DIR}
 root=$(git rev-parse --show-toplevel)
 cd "$root"
-profdata=$(rustc +1.96.0 --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/llvm-profdata
+host=$(rustc +1.96.0 -vV | sed -n "s/^host: //p")
+profdata=$(rustc +1.96.0 --print sysroot)/lib/rustlib/$host/bin/llvm-profdata
 deps=target/bench-corpora/dependencies
+seven=$(command -v 7zz || command -v 7z)
 mkdir -p "$work/train" "$work/raw"
 
 cargo build --release
@@ -21,10 +23,10 @@ gzip -6 -c "$work/train/deps.tar" > "$work/train/deps.tar.gz"
 zstd -q -19 -c "$work/train/deps.tar" > "$work/train/deps.tar.zst"
 bzip2 -9 -c "$work/train/deps.tar" > "$work/train/deps.tar.bz2"
 lzip -6 -c "$work/train/deps.tar" > "$work/train/deps.tar.lz"
-(cd "$deps" && 7zz a -bso0 -bd -t7z -m0=LZMA2 -mx6 "$root/$work/train/deps.7z" dependencies)
-(cd "$deps" && 7zz a -bso0 -bd -t7z -m0=LZMA -ms=off -mx6 "$root/$work/train/deps-lzma-nonsolid.7z" dependencies)
-(cd "$deps" && 7zz a -bso0 -bd -tzip -mm=Deflate -mx6 "$root/$work/train/deps.zip" dependencies)
-(cd "$deps" && 7zz a -bso0 -bd -tzip -mm=LZMA "$root/$work/train/deps-lzma.zip" dependencies)
+(cd "$deps" && "$seven" a -bso0 -bd -t7z -m0=LZMA2 -mx6 "$root/$work/train/deps.7z" dependencies)
+(cd "$deps" && "$seven" a -bso0 -bd -t7z -m0=LZMA -ms=off -mx6 "$root/$work/train/deps-lzma-nonsolid.7z" dependencies)
+(cd "$deps" && "$seven" a -bso0 -bd -tzip -mm=Deflate -mx6 "$root/$work/train/deps.zip" dependencies)
+(cd "$deps" && "$seven" a -bso0 -bd -tzip -mm=LZMA "$root/$work/train/deps-lzma.zip" dependencies)
 
 for archive in "$work"/train/deps*.*; do
   [[ $archive == *.tar ]] && continue

@@ -47,7 +47,7 @@ One deprecation warning, `fetch_update`, became `try_update` in the ZIP output b
 
 ## Limits
 
-- One Mac. A one-off run on a hosted x86-64 Linux runner times the same pair and will be recorded on its own.
+- One Mac. The [Linux x86-64 rerun](../../cross-platform/linux-x86-oneoff/README.md) found gzip tar and one-thread ZIP Deflate 2.5% to 3.2% slower with 1.99.1, in one hosted run.
 - The binaries predate the lint changes, which touch tests and one atomic call outside the timed paths.
 
 ## Reproduce
