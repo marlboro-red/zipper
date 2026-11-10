@@ -3270,7 +3270,7 @@ item = src/inflate.rs | pub(crate) struct Invalid(
 
 [zstd]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0000000000000000
+fingerprint = 2b2e0f08d0b5346b
 full-check = cargo test --release --lib zstandard
 item = src/zstandard.rs | const MAGIC:
 item = src/zstandard.rs | const SKIPPABLE_MAGIC:
@@ -3395,7 +3395,7 @@ item = src/zstandard.rs | impl<R: BufRead> Read for ZstdReader<R> {
 
 [zstd-tables]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0000000000000000
+fingerprint = 6a2a48f0c66ad897
 full-check = cargo xtask kani-reach zstd-tables
 full-check = cargo kani --harness zstandard::proofs::
 item = src/zstandard.rs | const BLOCK_MAX:
