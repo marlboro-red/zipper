@@ -295,7 +295,7 @@ The scoreboard rows came last, and M13 closed. ZIP's Shrink and Implode moved to
 
 LZMA and LZMA2 decode through Zipper's own Rust code, at least as fast as 7-Zip at one thread.
 
-A comparison on 5 November 2026 showed why. At one thread, Zipper takes 1.25× 7-Zip's time on solid Silesia, and that gap is liblzma against 7-Zip's own decoder. sevenz-rust2, whose decoder is pure Rust, also decodes an LZMA setting (`lc=8`) that liblzma refuses, so Zipper sends that archive to 7-Zip. The parallel LZMA2 segments that put Zipper ahead of sevenz-rust2 cost 347 MiB against 7-Zip's 256 MiB at default threads.
+A comparison on 5 November 2026 showed why. At one thread, Zipper takes 1.25× 7-Zip's time on solid Silesia, and that gap is liblzma against 7-Zip's own decoder. sevenz-rust2, whose decoder is written in Rust with inline assembly for one step on arm64 and x86-64, also decodes an LZMA setting (`lc=8`) that liblzma refuses, so Zipper sends that archive to 7-Zip. The parallel LZMA2 segments that put Zipper ahead of sevenz-rust2 cost 347 MiB against 7-Zip's 256 MiB at default threads.
 
 Scope:
 

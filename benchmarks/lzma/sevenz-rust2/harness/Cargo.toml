@@ -1,0 +1,14 @@
+[workspace]
+
+[package]
+name = "sevenz-rust2-extract"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+sevenz-rust2 = { version = "=0.24.2", default-features = false }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"

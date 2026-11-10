@@ -6333,6 +6333,54 @@ mod speed {
             .unwrap();
         }
     }
+
+    fn time_zipper(data: &[u8], stream: &[u8]) -> std::time::Duration {
+        let started = std::time::Instant::now();
+        let mut ours = Vec::with_capacity(data.len());
+        RawLzmaReader::new(
+            stream,
+            Properties {
+                lc: 3,
+                lp: 0,
+                pb: 2,
+            },
+            1 << 23,
+            data.len() as u64,
+        )
+        .read_to_end(&mut ours)
+        .unwrap();
+        let elapsed = started.elapsed();
+        assert!(ours == data);
+        elapsed
+    }
+
+    fn time_lzma_rust2(data: &[u8], stream: &[u8]) -> std::time::Duration {
+        let started = std::time::Instant::now();
+        let mut theirs = Vec::with_capacity(data.len());
+        lzma_rust2::LzmaReader::new(stream, data.len() as u64, 3, 0, 2, 1 << 23, None)
+            .unwrap()
+            .read_to_end(&mut theirs)
+            .unwrap();
+        let elapsed = started.elapsed();
+        assert!(theirs == data);
+        elapsed
+    }
+
+    #[test]
+    #[ignore = "a probe, run by hand with --ignored"]
+    fn decode_speed_against_lzma_rust2() {
+        let (data, stream, _) = silesia_stream();
+        for round in 0..6 {
+            let (zipper, lzma_rust2) = if round % 2 == 0 {
+                let zipper = time_zipper(&data, &stream);
+                (zipper, time_lzma_rust2(&data, &stream))
+            } else {
+                let lzma_rust2 = time_lzma_rust2(&data, &stream);
+                (time_zipper(&data, &stream), lzma_rust2)
+            };
+            eprintln!("PROBE round {round}: zipper {zipper:?}, lzma-rust2 {lzma_rust2:?}");
+        }
+    }
 }
 
 #[cfg(kani)]

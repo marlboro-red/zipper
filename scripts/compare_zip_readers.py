@@ -26,7 +26,8 @@ def main():
     parser.add_argument("--archive-format", choices=["zip", "native", "tar", "7z"], default="zip",
                         help="native, tar and 7z compare extraction by the default engine, without ZIP engine "
                              "flags; zip and 7z also accept 7-Zip itself as a `7zip` reader, and tar accepts "
-                             "`7zip-tar` (7-Zip decoding into a second 7-Zip that reads the tar) and `bsdtar`")
+                             "`7zip-tar` (7-Zip decoding into a second 7-Zip that reads the tar) and `bsdtar`; 7z also "
+                             "accepts `sevenz-rust2`, the harness in benchmarks/lzma/sevenz-rust2/harness")
     parser.add_argument("--runs", type=int, default=7)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--reader-threads", action="append", nargs=2, metavar=("LABEL", "THREADS"), default=[],
@@ -43,12 +44,13 @@ def main():
         parser.error("positive runs and threads 1..64 required")
     readers = {}
     for label, mode, binary in args.reader:
-        if label in readers or mode not in ["native", "native-fast", "7zip", "7zip-tar", "bsdtar"]:
-            parser.error("unique labels and native/native-fast/7zip/7zip-tar/bsdtar modes required")
+        if label in readers or mode not in ["native", "native-fast", "7zip", "7zip-tar", "bsdtar",
+                                           "sevenz-rust2"]:
+            parser.error("unique labels and native/native-fast/7zip/7zip-tar/bsdtar/sevenz-rust2 modes required")
         path = Path(binary).resolve(strict=True)
         readers[label] = {"mode": mode, "binary": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                           "threads": args.threads}
-    allowed = {"zip": {"native", "native-fast", "7zip"}, "7z": {"native", "7zip"},
+    allowed = {"zip": {"native", "native-fast", "7zip"}, "7z": {"native", "7zip", "sevenz-rust2"},
                "tar": {"native", "7zip-tar", "bsdtar"}}.get(args.archive_format, {"native"})
     if any(reader["mode"] not in allowed for reader in readers.values()):
         parser.error(f"{args.archive_format} comparisons accept {sorted(allowed)} readers")
@@ -105,6 +107,8 @@ def main():
                     extract = ["/bin/sh", "-c", f"{seven} x -so -bd {' '.join(threads)} {shlex.quote(str(archive))}"
                                f" | {seven} x -si -ttar -y -bd -bso0 -snl {' '.join(threads)}"
                                f" -o{shlex.quote(str(output))}"]
+                elif reader["mode"] == "sevenz-rust2":
+                    extract = [reader["binary"], str(archive), str(output), str(reader["threads"] or "auto")]
                 elif reader["mode"] == "bsdtar":
                     output.mkdir()
                     extract = [reader["binary"], "-xf", str(archive), "-C", str(output)]
