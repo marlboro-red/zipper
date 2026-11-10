@@ -23,9 +23,12 @@ pub enum Counter {
     DecodeNanos,
     /// SquashFS fragment blocks decoded or copied into the fragment cache.
     FragmentBlocksRead,
+    /// Wall time of the ZIP reader's serial folder setup before its workers
+    /// start.
+    SetupNanos,
 }
 
-pub const ALL: [Counter; 10] = [
+pub const ALL: [Counter; 11] = [
     Counter::ArchiveReads,
     Counter::ArchiveBytesRead,
     Counter::FilesCreated,
@@ -36,6 +39,7 @@ pub const ALL: [Counter; 10] = [
     Counter::MetadataCalls,
     Counter::DecodeNanos,
     Counter::FragmentBlocksRead,
+    Counter::SetupNanos,
 ];
 
 impl Counter {
@@ -51,6 +55,7 @@ impl Counter {
             Self::MetadataCalls => "metadata_calls",
             Self::DecodeNanos => "decode_nanos",
             Self::FragmentBlocksRead => "fragment_blocks_read",
+            Self::SetupNanos => "setup_nanos",
         }
     }
 }

@@ -57,6 +57,7 @@ fn one_extraction_counts_what_the_archive_holds() {
     assert!(counts[&Counter::OutputWrites] >= 6);
     assert!(counts[&Counter::ArchiveBytesRead] >= size / 2);
     assert!(counts[&Counter::DecodeNanos] > 0);
+    assert!(counts[&Counter::SetupNanos] > 0);
     #[cfg(unix)]
     assert_eq!(counts[&Counter::MetadataCalls], 6 + 1 + 1);
 }

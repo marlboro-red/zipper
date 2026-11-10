@@ -14,11 +14,14 @@ fn main() -> Result<()> {
     let root = tempfile::tempdir()?;
     let output = root.path().join("out");
     zipper::counters::take();
+    let start = std::time::Instant::now();
     zipper::native_zip::read_archive(&archive, Some(&output))?;
-    let fields: Vec<String> = zipper::counters::take()
+    let wall_nanos = start.elapsed().as_nanos();
+    let mut fields: Vec<String> = zipper::counters::take()
         .into_iter()
         .map(|(counter, value)| format!("\"{}\": {value}", counter.name()))
         .collect();
+    fields.push(format!("\"wall_nanos\": {wall_nanos}"));
     println!("{{{}}}", fields.join(", "));
     Ok(())
 }

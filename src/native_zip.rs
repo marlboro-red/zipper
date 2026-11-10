@@ -1540,13 +1540,13 @@ pub fn read_archive_with_options(
         }
         .into());
     }
-    if let Some(temp) = &staging {
-        create_directories_in_archive_order(temp.path(), &items)?;
-    }
-    let merged = match &staging {
-        Some(temp) => later_spellings_of_same_directory(temp.path(), &items)?,
-        None => HashSet::new(),
-    };
+    let merged = counters::time(Counter::SetupNanos, || match &staging {
+        Some(temp) => {
+            create_directories_in_archive_order(temp.path(), &items)?;
+            later_spellings_of_same_directory(temp.path(), &items)
+        }
+        None => Ok(HashSet::new()),
+    })?;
     let mut largest_first: Vec<_> = (0..items.len()).collect();
     largest_first.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
     let files: Vec<u64> = items
