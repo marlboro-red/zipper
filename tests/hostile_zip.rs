@@ -8,6 +8,7 @@ type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<Entry>>;
 
 const STORED: u16 = 0;
 const DEFLATED: u16 = 8;
+const DEFLATE64: u16 = 9;
 
 #[derive(Clone)]
 struct Raw {
@@ -1283,7 +1284,6 @@ fn other_methods_decode_exactly_and_refuse_damage() {
 #[test]
 fn deflate64_streams_must_end_exactly_at_their_compressed_size() {
     use std::io::Write as _;
-    const DEFLATE64: u16 = 9;
     let data: Vec<u8> = (0..3000u32).map(|n| (n * 7 % 256) as u8).collect();
     let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::none());
     encoder.write_all(&data).unwrap();
@@ -1320,6 +1320,84 @@ fn deflate64_streams_must_end_exactly_at_their_compressed_size() {
         "empty Deflate64 data",
         &[compressed("f", b"", DEFLATE64, Vec::new())],
     );
+    let header_and_abc_without_end_of_block = vec![0x4b, 0x4c, 0x4a, 0xfe];
+    assert_rejected_without_leftovers(
+        "Deflate64 without an end-of-block code",
+        &[compressed(
+            "f",
+            b"abc",
+            DEFLATE64,
+            header_and_abc_without_end_of_block,
+        )],
+    );
+}
+
+fn huffman_fixture_contents() -> Vec<u8> {
+    const MULTIPLIER: u32 = 1103515245;
+    const INCREMENT: u32 = 12345;
+    let mut seed = 1u32;
+    let block: Vec<u8> = (0..34000)
+        .map(|_| {
+            seed = seed.wrapping_mul(MULTIPLIER).wrapping_add(INCREMENT);
+            b"acgt"[(seed >> 16) as usize & 3]
+        })
+        .collect();
+    let mut data = [&block[..], &block[..]].concat();
+    data.extend_from_slice(&[b'z'; 3000]);
+    data.extend_from_slice(b"end\n");
+    data
+}
+
+fn first_local_entry_data(archive: &[u8]) -> &[u8] {
+    const COMPRESSED_SIZE_AT: usize = 18;
+    const NAME_LENGTH_AT: usize = 26;
+    const EXTRA_LENGTH_AT: usize = 28;
+    const LOCAL_HEADER: usize = 30;
+    let field = |at: usize| usize::from(u16::from_le_bytes([archive[at], archive[at + 1]]));
+    let start = LOCAL_HEADER + field(NAME_LENGTH_AT) + field(EXTRA_LENGTH_AT);
+    let length = u32::from_le_bytes(archive[COMPRESSED_SIZE_AT..][..4].try_into().unwrap());
+    &archive[start..start + length as usize]
+}
+
+#[test]
+fn a_7zip_huffman_deflate64_entry_extracts_exactly_and_refuses_damage_at_its_end() {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/zip-deflate64/7zip-huffman.zip");
+    let data = huffman_fixture_contents();
+    for (reader, read) in [
+        ("native", read_archive as Reader),
+        ("native-fast", read_archive_fast as Reader),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        read(&fixture, Some(&root.path().join("out"))).unwrap();
+        assert_eq!(
+            fs::read(root.path().join("out/d64huffman.bin")).unwrap(),
+            data,
+            "{reader}"
+        );
+    }
+    let archive = fs::read(&fixture).unwrap();
+    let stream = first_local_entry_data(&archive);
+    let length = stream.len();
+    for cut in [length - 1, length - 2, length - 3, length / 2] {
+        assert_rejected_without_leftovers(
+            &format!("the 7-Zip Deflate64 entry cut to {cut}"),
+            &[compressed("f", &data, DEFLATE64, stream[..cut].to_vec())],
+        );
+    }
+    for junk in [
+        &b"\x00"[..],
+        b"\xff",
+        b"\x00\x00",
+        b"\xff\xff",
+        b"\x00\x00\x00",
+    ] {
+        let padded = [stream, junk].concat();
+        assert_rejected_without_leftovers(
+            &format!("the 7-Zip Deflate64 entry with {} junk bytes", junk.len()),
+            &[compressed("f", &data, DEFLATE64, padded)],
+        );
+    }
 }
 
 #[test]

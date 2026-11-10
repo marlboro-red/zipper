@@ -1025,6 +1025,7 @@ fn decoder_need(item: &Item) -> Option<u64> {
     }
 }
 const OTHER_METHOD_INPUT: usize = 256 * 1024;
+const DEFLATE64_INPUT: usize = 512 * 1024;
 const LZMA_SMALLEST_DICTIONARY: u64 = 4096;
 const ZIP_DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
 
@@ -1035,32 +1036,30 @@ fn inflate64(
     buffer: &mut [u8],
     mut emit: impl FnMut(&[u8]) -> Result<()>,
 ) -> Result<()> {
-    let (input_buffer, outputs) = buffer.split_at_mut(512 * 1024);
-    let (output, spare_output) = outputs.split_at_mut(outputs.len() / 2);
-    let mut whole = deflate64::InflaterManaged::new();
-    let mut without_last_byte = deflate64::InflaterManaged::new();
+    let (input_buffer, output) = buffer.split_at_mut(DEFLATE64_INPUT);
+    let mut inflater = deflate64::InflaterManaged::new();
     let (mut position, mut used) = (0u64, 0u64);
     loop {
         let length = input.read(input_buffer)?;
         if length == 0 {
             break;
         }
-        let chunk = &input_buffer[..length];
-        used += inflate64_chunk(&mut whole, chunk, output, &mut emit)?;
-        let before_last = compressed.saturating_sub(1).saturating_sub(position);
-        let shorter = &chunk[..length.min(usize::try_from(before_last).unwrap_or(usize::MAX))];
-        inflate64_chunk(&mut without_last_byte, shorter, spare_output, &mut |_| {
-            Ok(())
-        })?;
+        let bytes_before_last = compressed.saturating_sub(1).saturating_sub(position);
+        let (before, last) = input_buffer[..length]
+            .split_at(length.min(usize::try_from(bytes_before_last).unwrap_or(usize::MAX)));
+        for piece in [before, last] {
+            used += inflate64_chunk(&mut inflater, piece, output, &mut emit)?;
+        }
         position += length as u64;
     }
+    let finished_before_its_input_ended = inflater.finished() && used < position;
     ensure!(
-        whole.finished() && used == compressed,
-        "truncated ZIP Deflate64 stream"
+        !finished_before_its_input_ended,
+        "ZIP Deflate64 stream has data after its end"
     );
     ensure!(
-        compressed == 0 || !without_last_byte.input_finished(),
-        "ZIP Deflate64 stream has data after its end"
+        inflater.finished() && used == compressed,
+        "truncated ZIP Deflate64 stream"
     );
     Ok(())
 }
@@ -2200,5 +2199,270 @@ mod entry_nesting_tests {
         assert!(EntryOnThisThread::enter(&outer).is_none());
         drop(outer_entry);
         assert!(EntryOnThisThread::enter(&outer).is_some());
+    }
+}
+
+#[cfg(test)]
+mod deflate64_entry_tests {
+    use super::*;
+
+    const ENTRY_BUFFER: usize = 1024 * 1024;
+    const HUFFMAN_FIXTURE: &[u8] = include_bytes!("../tests/data/zip-deflate64/7zip-huffman.zip");
+
+    fn huffman_fixture() -> (Vec<u8>, Vec<u8>) {
+        let read16 = |at: usize| {
+            usize::from(u16::from_le_bytes([
+                HUFFMAN_FIXTURE[at],
+                HUFFMAN_FIXTURE[at + 1],
+            ]))
+        };
+        let read32 =
+            |at: usize| u32::from_le_bytes(HUFFMAN_FIXTURE[at..at + 4].try_into().unwrap());
+        assert_eq!(read16(8), usize::from(DEFLATE64));
+        let start = 30 + read16(26) + read16(28);
+        let stream = HUFFMAN_FIXTURE[start..start + read32(18) as usize].to_vec();
+        let mut seed = 1u32;
+        let block: Vec<u8> = (0..34000)
+            .map(|_| {
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                b"acgt"[(seed >> 16) as usize & 3]
+            })
+            .collect();
+        let mut data = [&block[..], &block[..]].concat();
+        data.extend_from_slice(&[b'z'; 3000]);
+        data.extend_from_slice(b"end\n");
+        assert_eq!(data.len(), read32(22) as usize);
+        assert_eq!(crc32fast::hash(&data), read32(14));
+        (stream, data)
+    }
+
+    fn fixed_huffman(literals: &[u8], end_of_block: bool) -> Vec<u8> {
+        let mut bits = vec![true, true, false];
+        for &literal in literals {
+            assert!(literal < 144);
+            let code = 0x30 + u16::from(literal);
+            bits.extend((0..8).rev().map(|bit| code >> bit & 1 == 1));
+        }
+        if end_of_block {
+            bits.extend([false; 7]);
+        }
+        while bits.len() % 8 != 0 {
+            bits.push(!end_of_block);
+        }
+        bits.chunks(8)
+            .map(|byte| {
+                byte.iter()
+                    .rev()
+                    .fold(0u8, |sum, &bit| sum << 1 | u8::from(bit))
+            })
+            .collect()
+    }
+
+    struct Pieces<'a> {
+        bytes: &'a [u8],
+        sizes: &'a [usize],
+        turn: usize,
+    }
+
+    impl Read for Pieces<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let size = self.sizes[self.turn % self.sizes.len()];
+            self.turn += 1;
+            let length = size.min(buffer.len()).min(self.bytes.len());
+            buffer[..length].copy_from_slice(&self.bytes[..length]);
+            self.bytes = &self.bytes[length..];
+            Ok(length)
+        }
+    }
+
+    fn two_inflaters(input: &mut impl Read, compressed: u64) -> Result<Vec<u8>> {
+        let mut buffer = vec![0u8; ENTRY_BUFFER];
+        let mut out = Vec::new();
+        let (input_buffer, outputs) = buffer.split_at_mut(512 * 1024);
+        let (output, spare_output) = outputs.split_at_mut(outputs.len() / 2);
+        let mut whole = deflate64::InflaterManaged::new();
+        let mut without_last_byte = deflate64::InflaterManaged::new();
+        let (mut position, mut used) = (0u64, 0u64);
+        loop {
+            let length = input.read(input_buffer)?;
+            if length == 0 {
+                break;
+            }
+            let chunk = &input_buffer[..length];
+            used += inflate64_chunk(&mut whole, chunk, output, &mut |bytes| {
+                out.extend_from_slice(bytes);
+                Ok(())
+            })?;
+            let before_last = compressed.saturating_sub(1).saturating_sub(position);
+            let shorter = &chunk[..length.min(usize::try_from(before_last).unwrap_or(usize::MAX))];
+            inflate64_chunk(&mut without_last_byte, shorter, spare_output, &mut |_| {
+                Ok(())
+            })?;
+            position += length as u64;
+        }
+        ensure!(whole.finished() && used == compressed, "truncated");
+        ensure!(
+            compressed == 0 || !without_last_byte.input_finished(),
+            "data after its end"
+        );
+        Ok(out)
+    }
+
+    fn one_inflater(input: &mut impl Read, compressed: u64) -> Result<Vec<u8>> {
+        let mut buffer = vec![0u8; ENTRY_BUFFER];
+        let mut out = Vec::new();
+        inflate64(input, compressed, &mut buffer, |bytes| {
+            out.extend_from_slice(bytes);
+            Ok(())
+        })?;
+        Ok(out)
+    }
+
+    fn read_patterns(length: usize) -> Vec<Vec<usize>> {
+        let mut patterns = vec![vec![usize::MAX], vec![1], vec![7, 3], vec![4096, 1]];
+        patterns.extend(
+            [1, 2, 3, 9]
+                .into_iter()
+                .filter(|&before_end| length > before_end)
+                .map(|before_end| vec![length - before_end, usize::MAX]),
+        );
+        patterns
+    }
+
+    fn same_verdict(case: &str, stream: &[u8], patterns: &[Vec<usize>]) -> bool {
+        let mut accepted = None;
+        for sizes in patterns {
+            let pieces = || Pieces {
+                bytes: stream,
+                sizes,
+                turn: 0,
+            };
+            let compressed = stream.len() as u64;
+            let old = two_inflaters(&mut pieces(), compressed);
+            let new = one_inflater(&mut pieces(), compressed);
+            match (&old, &new) {
+                (Ok(old), Ok(new)) => {
+                    assert!(old == new, "{case}, reads {sizes:?}: outputs differ");
+                }
+                (Err(_), Err(_)) => {}
+                _ => panic!(
+                    "{case}, reads {sizes:?}: two inflaters {:?}, one inflater {:?}",
+                    old.as_ref().map(Vec::len),
+                    new.as_ref().map(Vec::len)
+                ),
+            }
+            assert!(
+                *accepted.get_or_insert(new.is_ok()) == new.is_ok(),
+                "{case}: the verdict depends on reads {sizes:?}"
+            );
+        }
+        accepted.unwrap()
+    }
+
+    fn damaged_variants(stream: &[u8]) -> Vec<(String, Vec<u8>)> {
+        let mut variants: Vec<(String, Vec<u8>)> = (0..stream.len())
+            .map(|cut| (format!("cut to {cut}"), stream[..cut].to_vec()))
+            .collect();
+        for junk in 1..=3 {
+            for byte in [0x00, 0x01, 0xff] {
+                let mut padded = stream.to_vec();
+                padded.extend(std::iter::repeat_n(byte, junk));
+                variants.push((format!("{junk} junk bytes {byte:#04x}"), padded));
+            }
+        }
+        for at in stream.len().saturating_sub(16)..stream.len() {
+            for flip in [0x01, 0x80, 0xff] {
+                let mut flipped = stream.to_vec();
+                flipped[at] ^= flip;
+                variants.push((format!("byte {at} xor {flip:#04x}"), flipped));
+            }
+        }
+        variants
+    }
+
+    #[test]
+    fn one_inflater_judges_every_damaged_huffman_entry_as_two_did() {
+        let (stream, data) = huffman_fixture();
+        assert_eq!(
+            one_inflater(&mut &stream[..], stream.len() as u64).unwrap(),
+            data
+        );
+        assert!(same_verdict("whole", &stream, &read_patterns(stream.len())));
+        for (case, variant) in damaged_variants(&stream) {
+            let patterns = if case.starts_with("cut") {
+                vec![
+                    vec![usize::MAX],
+                    vec![variant.len().saturating_sub(1).max(1), usize::MAX],
+                ]
+            } else {
+                read_patterns(variant.len())
+            };
+            let accepted = same_verdict(&case, &variant, &patterns);
+            assert!(!accepted || case.starts_with("byte"), "{case} was accepted");
+        }
+    }
+
+    #[test]
+    fn junk_after_the_end_and_a_cut_are_told_apart() {
+        let (stream, _) = huffman_fixture();
+        let error = |bytes: &[u8]| {
+            one_inflater(&mut &bytes[..], bytes.len() as u64)
+                .unwrap_err()
+                .to_string()
+        };
+        for junk in 1..=3 {
+            let padded = [&stream[..], &vec![0; junk]].concat();
+            assert_eq!(
+                error(&padded),
+                "ZIP Deflate64 stream has data after its end"
+            );
+        }
+        assert_eq!(
+            error(&stream[..stream.len() - 1]),
+            "truncated ZIP Deflate64 stream"
+        );
+        let mut short_read = &stream[..stream.len() - 1];
+        let error = one_inflater(&mut short_read, stream.len() as u64).unwrap_err();
+        assert_eq!(error.to_string(), "truncated ZIP Deflate64 stream");
+        let declared_longer = stream.len() as u64 + 1;
+        let error = one_inflater(&mut &stream[..], declared_longer).unwrap_err();
+        assert_eq!(error.to_string(), "truncated ZIP Deflate64 stream");
+    }
+
+    #[test]
+    fn one_inflater_judges_small_and_crafted_entries_as_two_did() {
+        use std::io::Write as _;
+        let mut stored =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::none());
+        stored
+            .write_all(&b"short text for every method, ".repeat(6))
+            .unwrap();
+        let mut no_final_block = vec![0x00, 3, 0, !3u8, !0u8];
+        no_final_block.extend_from_slice(b"abc");
+        let streams = [
+            ("stored blocks", stored.finish().unwrap(), true),
+            ("fixed Huffman", fixed_huffman(b"abc", true), true),
+            ("one fixed Huffman literal", fixed_huffman(b"a", true), true),
+            ("no end-of-block code", fixed_huffman(b"abc", false), false),
+            (
+                "one literal and no end-of-block code",
+                fixed_huffman(b"a", false),
+                false,
+            ),
+            ("no final block", no_final_block, false),
+            ("empty", Vec::new(), false),
+        ];
+        for (name, stream, valid) in streams {
+            let verdict = same_verdict(name, &stream, &read_patterns(stream.len()));
+            assert_eq!(verdict, valid, "{name}");
+            for (case, variant) in damaged_variants(&stream) {
+                let case = format!("{name}, {case}");
+                let accepted = same_verdict(&case, &variant, &read_patterns(variant.len()));
+                assert!(
+                    !accepted || !valid || case.contains("xor"),
+                    "{case} was accepted"
+                );
+            }
+        }
     }
 }
