@@ -367,26 +367,50 @@ fn symbol(tables: &Tables, bits: Bits) -> Result<Option<(Symbol, u32)>, Invalid>
     )))
 }
 
+const WIDE_ENOUGH_TO_COPY_FROM: usize = 64;
+
 #[inline(always)]
 fn copy_match(window: &mut [u8], at: usize, distance: usize, length: usize) {
     let from = at - distance;
     if distance >= 16 {
         window.copy_within(from..from + 16, at);
         window.copy_within(from + 16..from + 32, at + 16);
-        let mut copied = 32;
-        while copied < length {
-            window.copy_within(from + copied..from + copied + 16, at + copied);
-            copied += 16;
+        if length > 32 {
+            let back = if distance <= 32 {
+                2 * distance
+            } else {
+                distance
+            };
+            let mut copied = 32;
+            while copied < length {
+                let source = at + copied - back;
+                window.copy_within(source..source + 16, at + copied);
+                copied += 16;
+            }
         }
     } else if distance == 1 {
         let byte = window[from];
         window[at..at + length].fill(byte);
     } else {
-        let step = if distance >= 8 { 8 } else { distance };
-        let mut copied = 0;
-        while copied < length {
-            window.copy_within(from + copied..from + copied + 8, at + copied);
-            copied += step;
+        copy_short_period(window, at, distance, length);
+    }
+}
+
+#[inline(never)]
+fn copy_short_period(window: &mut [u8], at: usize, distance: usize, length: usize) {
+    let mut back = distance;
+    let mut copied = 0;
+    while copied < length {
+        let source = at + copied - back;
+        if back < 16 {
+            window.copy_within(source..source + 8, at + copied);
+            copied += back.min(8);
+        } else {
+            window.copy_within(source..source + 16, at + copied);
+            copied += 16;
+        }
+        if back < WIDE_ENOUGH_TO_COPY_FROM && copied + distance >= 2 * back {
+            back *= 2;
         }
     }
 }
@@ -993,6 +1017,34 @@ mod tests {
                             consumed: stream.len() as u64
                         },
                     "{size} bytes at level {level} decode to other bytes"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_match_copy_equals_a_byte_at_a_time_copy() {
+        let mut window = vec![0u8; 700];
+        let mut expected = vec![0u8; 700];
+        for distance in (1..=70).chain([255, 256, 257, 258, 259, 300]) {
+            for length in 3..=LONGEST_MATCH {
+                for (index, byte) in window.iter_mut().enumerate() {
+                    *byte = (index * 31 + index / 7 + distance) as u8;
+                }
+                expected.copy_from_slice(&window);
+                let at = distance.max(3) + distance % 5;
+                for index in at..at + length {
+                    expected[index] = expected[index - distance];
+                }
+                copy_match(&mut window, at, distance, length);
+                let written = at + length;
+                assert!(
+                    window[..written] == expected[..written],
+                    "distance {distance}, length {length}"
+                );
+                assert!(
+                    window[written + COPY_OVERRUN..] == expected[written + COPY_OVERRUN..],
+                    "distance {distance}, length {length} wrote too far"
                 );
             }
         }
