@@ -1626,16 +1626,17 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
     }
     .max(64 * 1024)
         + decryption;
-    let lzma2_only = matches!(
-        folder.output_to_packed.as_slice(),
-        [coder] if coder.id == [0x21]
+    let lzma2_behind_filters = matches!(
+        folder.output_to_packed.split_last(),
+        Some((last, filters)) if last.id == [0x21]
+            && filters.iter().all(|coder| matches!(method(coder), Ok(Method::Filter(_))))
     );
     if segments_possible
-        && lzma2_only
+        && lzma2_behind_filters
         && folder.encryption.is_none()
         && folder.size >= PARALLEL_FOLDER_MIN
     {
-        return sequential.max(SEGMENT_BUDGET);
+        return sequential.max(SEGMENT_BUDGET + filter_buffers);
     }
     sequential
 }
@@ -1868,14 +1869,10 @@ fn folder_reader(
             SWAP_BUFFER,
         )));
     }
-    if let ([Method::Lzma2], [coder]) = (methods.as_slice(), folder.output_to_packed.as_slice())
-        && folder.encryption.is_none()
-        && let Some((path, window)) = segment_threads.filter(|&(_, window)| window > 1)
-        && folder.size >= PARALLEL_FOLDER_MIN
-        && let Some(&properties) = coder.properties.first()
-        && let Some(segments) = independent_lzma2_segments(&mut file, folder, SEGMENT_MIN_OUTPUT)?
+    if let Some((path, window)) = segment_threads
+        && let Some((properties, segments)) = lzma2_segments(&mut file, folder, &methods, window)?
     {
-        return Ok(Box::new(ParallelLzma2 {
+        let segmented = Box::new(ParallelLzma2 {
             path: path.to_owned(),
             input: file,
             pack_start: SIGNATURE_HEADER + folder.pack_offset,
@@ -1889,7 +1886,12 @@ fn folder_reader(
             queue: VecDeque::new(),
             held: 0,
             front: Front::UsedUp,
-        }));
+        });
+        let filter_coders = &folder.output_to_packed[..folder.output_to_packed.len() - 1];
+        if filter_coders.is_empty() {
+            return Ok(segmented);
+        }
+        return filtered(filter_coders, segmented);
     }
     let (packed, packed_size) = packed_stream(file, folder)?;
     if let [filters @ .., Method::Lzma | Method::Lzma2] = methods.as_slice() {
@@ -1921,6 +1923,28 @@ fn folder_reader(
         }
         _ => bail!("7z folder combines methods in a way that is not supported"),
     })
+}
+
+fn lzma2_segments(
+    file: &mut ArchiveFile,
+    folder: &Folder,
+    methods: &[Method],
+    window: usize,
+) -> Result<Option<(u8, Vec<Segment>)>> {
+    if let [filters @ .., Method::Lzma2] = methods
+        && filters
+            .iter()
+            .all(|method| matches!(method, Method::Filter(_)))
+        && let [.., coder] = folder.output_to_packed.as_slice()
+        && folder.encryption.is_none()
+        && window > 1
+        && folder.size >= PARALLEL_FOLDER_MIN
+        && let Some(&properties) = coder.properties.first()
+        && let Some(segments) = independent_lzma2_segments(file, folder, SEGMENT_MIN_OUTPUT)?
+    {
+        return Ok(Some((properties, segments)));
+    }
+    Ok(None)
 }
 
 fn packed_stream(file: ArchiveFile, folder: &Folder) -> Result<(Box<dyn Read + Send>, u64)> {
@@ -4009,6 +4033,129 @@ mod tests {
             pack_size: 1,
         };
         assert_eq!(decoder_memory(&folder, true), SEGMENT_BUDGET);
+    }
+
+    const DELTA_ONE: (&[u8], &[u8]) = (&[0x03], &[0]);
+    const BCJ_X86: (&[u8], &[u8]) = (&[0x03, 0x03, 0x01, 0x03], &[]);
+
+    fn behind(filters: &[(&[u8], &[u8])], folder: Folder) -> Folder {
+        let mut output_to_packed: Vec<Coder> = filters
+            .iter()
+            .map(|&(id, properties)| Coder {
+                id: id.to_vec(),
+                properties: properties.to_vec(),
+            })
+            .collect();
+        output_to_packed.extend(folder.output_to_packed.iter().cloned());
+        Folder {
+            output_to_packed,
+            ..folder
+        }
+    }
+
+    fn encrypted_copy(folder: &Folder) -> Folder {
+        Folder {
+            encryption: Some(Box::new(Encryption {
+                properties: vec![19],
+                size: folder.pack_size,
+                key: None,
+            })),
+            ..folder.clone()
+        }
+    }
+
+    #[test]
+    fn filters_in_front_of_segmented_lzma2_reserve_the_segment_budget_and_their_buffers() {
+        let (_, folder) = uncompressed_lzma2(400, 65_536);
+        let filtered = behind(&[DELTA_ONE, BCJ_X86], folder);
+        let buffers = (DELTA_HISTORY + BRANCH_BUFFER) as u64;
+        assert_eq!(decoder_memory(&filtered, true), SEGMENT_BUDGET + buffers);
+        assert!(decoder_memory(&filtered, false) < SEGMENT_BUDGET);
+        let encrypted = encrypted_copy(&filtered);
+        assert_eq!(
+            decoder_memory(&encrypted, true),
+            decoder_memory(&encrypted, false)
+        );
+    }
+
+    #[test]
+    fn filters_in_front_of_lzma2_take_segments_only_where_plain_lzma2_does() {
+        let (file, plain) = uncompressed_lzma2(400, 65_536);
+        let path = file.path();
+        let segments = |folder: &Folder, window: usize| {
+            let methods = folder
+                .output_to_packed
+                .iter()
+                .map(method)
+                .collect::<Result<Vec<_>>>()
+                .unwrap();
+            lzma2_segments(&mut archive_file(path), folder, &methods, window)
+                .unwrap()
+                .map(|(_, segments)| segments.len())
+        };
+        let filtered = behind(&[DELTA_ONE, BCJ_X86], plain.clone());
+        assert_eq!(segments(&plain, 4), Some(4));
+        assert_eq!(segments(&filtered, 4), Some(4));
+        assert_eq!(segments(&filtered, 1), None);
+        assert_eq!(segments(&encrypted_copy(&filtered), 4), None);
+        let lzma = Folder {
+            output_to_packed: vec![Coder {
+                id: vec![0x03, 0x01, 0x01],
+                properties: vec![0x5D, 0, 0, 1, 0],
+            }],
+            ..plain.clone()
+        };
+        assert_eq!(segments(&behind(&[DELTA_ONE], lzma), 4), None);
+        let sequential = outcome(
+            folder_reader(archive_file(path), &filtered, None),
+            plain.size,
+        );
+        let segmented = outcome(
+            folder_reader(archive_file(path), &filtered, Some((path, 4))),
+            plain.size,
+        );
+        assert!(sequential.is_ok());
+        assert!(segmented == sequential);
+    }
+
+    #[test]
+    fn a_filtered_lzma2_folder_with_one_segment_decodes_as_before() {
+        let chunk = 65_536usize;
+        let mut bytes = vec![0u8; SIGNATURE_HEADER as usize];
+        for index in 0..200 {
+            bytes.push(if index == 0 { 1 } else { 2 });
+            bytes.extend_from_slice(&((chunk - 1) as u16).to_be_bytes());
+            bytes.extend((0..chunk).map(|at| (at * 7 + index) as u8));
+        }
+        bytes.push(0);
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(&bytes).unwrap();
+        let (_, template) = uncompressed_lzma2(200, chunk);
+        let folder = behind(
+            &[BCJ_X86],
+            Folder {
+                pack_size: bytes.len() as u64 - SIGNATURE_HEADER + 1,
+                ..template
+            },
+        );
+        let path = file.path();
+        let methods = check_methods(&folder).unwrap();
+        assert!(
+            lzma2_segments(&mut archive_file(path), &folder, &methods, 4)
+                .unwrap()
+                .is_none()
+        );
+        let sequential = outcome(
+            folder_reader(archive_file(path), &folder, None),
+            folder.size,
+        );
+        assert!(sequential.is_ok());
+        assert!(
+            outcome(
+                folder_reader(archive_file(path), &folder, Some((path, 4))),
+                folder.size
+            ) == sequential
+        );
     }
 
     #[test]

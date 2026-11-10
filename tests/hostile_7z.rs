@@ -1161,7 +1161,16 @@ fn stored_lzma2(data: &[u8]) -> Vec<u8> {
 }
 
 fn filter_folder_archive(filters: &[(&[u8], &[u8])], stored: &[u8]) -> Vec<u8> {
-    let packed = stored_lzma2(stored);
+    filter_folder_archive_of(filters, &stored_lzma2(stored), 18, stored.len(), None)
+}
+
+fn filter_folder_archive_of(
+    filters: &[(&[u8], &[u8])],
+    packed: &[u8],
+    lzma2_property: u8,
+    size: usize,
+    crc: Option<u32>,
+) -> Vec<u8> {
     let coder = |id: &[u8], properties: &[u8]| {
         let mut bytes = vec![id.len() as u8 | 0x20];
         bytes.extend_from_slice(id);
@@ -1181,14 +1190,18 @@ fn filter_folder_archive(filters: &[(&[u8], &[u8])], stored: &[u8]) -> Vec<u8> {
     for (id, properties) in filters {
         header.extend(coder(id, properties));
     }
-    header.extend(coder(&[0x21], &[18]));
+    header.extend(coder(&[0x21], &[lzma2_property]));
     for index in 0..filters.len() as u64 {
         header.extend(number(index));
         header.extend(number(index + 1));
     }
     header.push(12);
     for _ in 0..=filters.len() {
-        header.extend(number(stored.len() as u64));
+        header.extend(number(size as u64));
+    }
+    if let Some(crc) = crc {
+        header.extend([10, 1]);
+        header.extend_from_slice(&crc.to_le_bytes());
     }
     header.extend([0, 0, 5]);
     header.extend(number(1));
@@ -1205,7 +1218,7 @@ fn filter_folder_archive(filters: &[(&[u8], &[u8])], stored: &[u8]) -> Vec<u8> {
     start.extend_from_slice(&crc32fast::hash(&header).to_le_bytes());
     archive.extend_from_slice(&crc32fast::hash(&start).to_le_bytes());
     archive.extend_from_slice(&start);
-    archive.extend_from_slice(&packed);
+    archive.extend_from_slice(packed);
     archive.extend_from_slice(&header);
     archive
 }
@@ -1672,5 +1685,148 @@ fn a_folder_that_decodes_short_of_its_files_is_refused() {
             &bytes,
             "7z folder ends before its files do",
         );
+    }
+}
+
+const SEGMENT_CHAIN: [(&str, &[u8]); 3] = [("Delta", &[1]), ("BCJ", &[]), ("ARM64", &[])];
+
+struct FilteredSegments {
+    coders: Vec<(&'static [u8], &'static [u8])>,
+    packed: Vec<u8>,
+    property: u8,
+    size: usize,
+}
+
+impl FilteredSegments {
+    fn new() -> Self {
+        let parts: Vec<Vec<u8>> = (0..3u32)
+            .map(|part| code_like("ARM64", 9 << 20, part + 1))
+            .collect();
+        let (packed, property) = lzma2_segments(&parts);
+        FilteredSegments {
+            coders: SEGMENT_CHAIN
+                .iter()
+                .map(|&(name, properties)| (filter_id(name), properties))
+                .collect(),
+            packed,
+            property,
+            size: parts.iter().map(Vec::len).sum(),
+        }
+    }
+
+    fn archive(&self, packed: &[u8], crc: Option<u32>) -> Vec<u8> {
+        filter_folder_archive_of(&self.coders, packed, self.property, self.size, crc)
+    }
+
+    fn checked_on_one_thread(&self, damage: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
+        let (root, result) = extract_with(
+            &self.archive(&self.packed, None),
+            1,
+            zipper::Control::default(),
+        );
+        result.unwrap();
+        let decoded = fs::read(root.path().join("parent/out/a")).unwrap();
+        let mut packed = self.packed.clone();
+        damage(&mut packed);
+        self.archive(&packed, Some(crc32fast::hash(&decoded)))
+    }
+}
+
+fn extract_with(
+    bytes: &[u8],
+    threads: usize,
+    control: zipper::Control<'_>,
+) -> (tempfile::TempDir, anyhow::Result<Vec<zipper::Entry>>) {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.7z");
+    fs::write(&archive, bytes).unwrap();
+    fs::create_dir(root.path().join("parent")).unwrap();
+    let result = read_archive(
+        &archive,
+        Some(&root.path().join("parent/out")),
+        ReadOptions {
+            threads: Some(threads),
+            control,
+            ..ReadOptions::default()
+        },
+    );
+    (root, result)
+}
+
+fn parent_is_empty(root: &tempfile::TempDir) -> bool {
+    fs::read_dir(root.path().join("parent"))
+        .unwrap()
+        .next()
+        .is_none()
+}
+
+#[test]
+fn filtered_lzma2_segments_decode_in_parallel_as_7zip_decodes_them() {
+    let Some(seven_zip) = which("7zz") else {
+        return;
+    };
+    let segments = FilteredSegments::new();
+    let bytes = segments.archive(&segments.packed, None);
+    let theirs = seven_zip_extracts(&seven_zip, &bytes).expect("7-Zip refuses the chain");
+    let bytes = segments.archive(&segments.packed, Some(crc32fast::hash(&theirs)));
+    for threads in [1, 2, 4] {
+        let (root, result) = extract_with(&bytes, threads, zipper::Control::default());
+        result.unwrap_or_else(|error| panic!("{threads} threads: {error:#}"));
+        assert!(
+            fs::read(root.path().join("parent/out/a")).unwrap() == theirs,
+            "{threads} threads"
+        );
+    }
+}
+
+#[test]
+fn a_damaged_segment_behind_filters_publishes_nothing_on_every_thread_count() {
+    let segments = FilteredSegments::new();
+    for (case, damage) in [
+        ("flipped byte in the second segment", 0usize),
+        ("truncated last segment", 1),
+        ("extra end marker", 2),
+    ] {
+        let bytes = segments.checked_on_one_thread(|packed| match damage {
+            0 => {
+                let at = packed.len() / 2;
+                packed[at] ^= 0x40;
+            }
+            1 => {
+                let length = packed.len();
+                packed.truncate(length - 100);
+                packed.push(0);
+            }
+            _ => packed.insert(packed.len() / 3, 0),
+        });
+        for threads in [1, 4] {
+            let (root, result) = extract_with(&bytes, threads, zipper::Control::default());
+            assert!(result.is_err(), "{case}, {threads} threads");
+            assert!(
+                parent_is_empty(&root),
+                "{case}, {threads} threads left output"
+            );
+        }
+    }
+}
+
+#[test]
+fn cancelling_a_filtered_segmented_folder_publishes_nothing() {
+    let bytes = FilteredSegments::new().checked_on_one_thread(|_| {});
+    for threads in [1, 4] {
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let cancel_on_first_report =
+            |_: zipper::Progress| cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        let control = zipper::Control {
+            progress: Some(&cancel_on_first_report),
+            cancel: Some(&cancel),
+        };
+        let (root, result) = extract_with(&bytes, threads, control);
+        let error = result.expect_err("a cancelled extraction succeeded");
+        assert!(
+            error.is::<zipper::Cancelled>(),
+            "{threads} threads: {error:#}"
+        );
+        assert!(parent_is_empty(&root), "{threads} threads left output");
     }
 }

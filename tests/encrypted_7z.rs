@@ -520,6 +520,7 @@ struct Built {
     encrypted_header: bool,
     header_crc: bool,
     lzma2: Option<Vec<u8>>,
+    bcj_x86_in_front: bool,
 }
 
 fn properties(power: u8, salt: &[u8], iv: &[u8]) -> Vec<u8> {
@@ -553,6 +554,7 @@ fn built(data: &[u8]) -> Built {
         encrypted_header: false,
         header_crc: true,
         lzma2: None,
+        bcj_x86_in_front: false,
     }
 }
 
@@ -575,7 +577,11 @@ fn encrypted_folder(
     info.extend([0x07, 0x0B]);
     info.extend(number(1));
     info.push(0x00);
-    info.extend(number(2));
+    let bcj = built.bcj_x86_in_front && lzma2.is_some();
+    info.extend(number(2 + u64::from(bcj)));
+    if bcj {
+        info.extend(BCJ_X86_CODER);
+    }
     if lzma2.is_some() {
         info.extend([0x21, 0x21, 0x01, 18]);
     } else {
@@ -585,10 +591,15 @@ fn encrypted_folder(
     info.extend_from_slice(&AES);
     info.extend(number(built.properties.len() as u64));
     info.extend_from_slice(&built.properties);
-    info.extend(number(0));
-    info.extend(number(1));
+    for bound in 0..1 + u64::from(bcj) {
+        info.extend(number(bound));
+        info.extend(number(bound + 1));
+    }
     info.push(0x0C);
     info.extend(number(plain.len() as u64));
+    if bcj {
+        info.extend(number(plain.len() as u64));
+    }
     info.extend(number(
         (decrypted.len() as i64 + built.decrypted_delta) as u64,
     ));
@@ -966,6 +977,72 @@ fn an_encrypted_lzma2_folder_never_splits_its_packed_bytes_into_segments() {
     fs::write(&file, &archive).unwrap();
     for threads in [Some(1), Some(8)] {
         let output = work.path().join(format!("out-{threads:?}"));
+        let error = extract(
+            &file,
+            &output,
+            Some(PASSWORD),
+            Existing::Refuse,
+            &[],
+            threads,
+        )
+        .expect_err("the decrypted bytes are not LZMA2");
+        assert!(
+            format!("{error:#}").contains("the password is wrong"),
+            "{error:#}"
+        );
+        assert!(!output.exists());
+    }
+}
+
+const BCJ_X86_CODER: [u8; 5] = [0x04, 0x03, 0x03, 0x01, 0x03];
+const X86_CALL_OR_JUMP: [u8; 2] = [0xE8, 0xE9];
+
+fn without_x86_calls(mut data: Vec<u8>) -> Vec<u8> {
+    for byte in &mut data {
+        if X86_CALL_OR_JUMP.contains(byte) {
+            *byte = 0;
+        }
+    }
+    data
+}
+
+#[test]
+fn an_encrypted_solid_lzma2_folder_behind_bcj_decodes_to_its_bytes_and_never_splits() {
+    let data = without_x86_calls(noise(17 << 20, 7));
+    let mut case = built(&data);
+    case.bcj_x86_in_front = true;
+    case.lzma2 = Some(stored_lzma2_with_resets(&data));
+    let decodes = build(&case);
+    let mut packed = stored_lzma2_with_resets(&data);
+    packed.resize(packed.len().div_ceil(16) * 16, 0);
+    let key = reference_key(case.power, &case.salt, case.password);
+    case.lzma2 = Some(decrypt(&key, &case.iv, &packed));
+    let garbled = build(&case);
+    assert!(
+        garbled[32..].starts_with(&packed),
+        "the packed bytes are a valid LZMA2 stream"
+    );
+    let work = tempfile::tempdir().unwrap();
+    for threads in [Some(1), Some(8)] {
+        let file = work.path().join("decodes.7z");
+        fs::write(&file, &decodes).unwrap();
+        let output = work.path().join(format!("decodes-{threads:?}"));
+        extract(
+            &file,
+            &output,
+            Some(PASSWORD),
+            Existing::Refuse,
+            &[],
+            threads,
+        )
+        .unwrap_or_else(|error| panic!("{threads:?}: {error:#}"));
+        assert!(
+            fs::read(output.join("a.txt")).unwrap() == data,
+            "{threads:?}"
+        );
+        let file = work.path().join("garbled.7z");
+        fs::write(&file, &garbled).unwrap();
+        let output = work.path().join(format!("garbled-{threads:?}"));
         let error = extract(
             &file,
             &output,
