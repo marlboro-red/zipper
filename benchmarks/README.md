@@ -14,6 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-11 | [Doubling copy for long LZMA matches at a short distance](lzma/repeating-copy/README.md) | Kept. A 7z of 256 MiB of zeros extracts 7.3 times faster at one thread, 0.086 s against 0.630 s, and faster than 7-Zip. Silesia is unchanged. |
 | 2026-11-10 | [Zipper's LZMA decoder against sevenz-rust2](lzma/sevenz-rust2/README.md) | Kept as a record. Zipper's decoder takes 0.79 times lzma-rust2's time on the probe stream, and Silesia 7z extracts 1.25 to 1.27 times faster than with sevenz-rust2 at one thread. lzma-rust2's assembly saves it 0.8%. |
 | 2026-11-08 | [LZMA probability tables read without bounds checks](lzma/unchecked-tables/README.md) | Reverted. 3.1% fewer instructions, no commit faster than its parent, and 0.4% faster together, which does not justify `unsafe`. |
 | 2026-11-08 | [LZMA output limit stopped at the window end](lzma/window-end-limit/README.md) | Reverted. 1.8% fewer instructions and no change in probe time, ranges overlapping. |
