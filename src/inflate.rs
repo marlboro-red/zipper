@@ -1022,6 +1022,145 @@ mod tests {
         }
     }
 
+    #[derive(Debug, PartialEq, Eq)]
+    enum Looked {
+        NeedsBits,
+        Unused,
+        Symbol {
+            symbol: usize,
+            extra: u32,
+            bits: u32,
+        },
+    }
+
+    fn reference_lookup(lengths: &[u8], buffer: u64, count: u32) -> Looked {
+        let codes = canonical(lengths);
+        let used = lengths.iter().filter(|&&length| length != 0).count();
+        if used <= 1 && (used == 0 || buffer & 1 == 1) {
+            return match count {
+                0 => Looked::NeedsBits,
+                _ => Looked::Unused,
+            };
+        }
+        let mut code = 0;
+        for length in 1..=count.min(15) {
+            code = code << 1 | (buffer >> (length - 1)) as u32 & 1;
+            let Some(symbol) = codes.iter().position(|&c| c == (code, length as u8)) else {
+                continue;
+            };
+            let extra_bits = u32::from(DISTANCE_EXTRA[symbol]);
+            if length + extra_bits > count {
+                return Looked::NeedsBits;
+            }
+            return Looked::Symbol {
+                symbol,
+                extra: (buffer >> length & low_bits(extra_bits)) as u32,
+                bits: length + extra_bits,
+            };
+        }
+        Looked::NeedsBits
+    }
+
+    fn table_lookup(table: &[u32], table_bits: u32, buffer: u64, count: u32) -> Looked {
+        let Some((entry, skipped)) = lookup(table, table_bits, Bits { buffer, count }) else {
+            return Looked::NeedsBits;
+        };
+        if entry & EXCEPTIONAL != 0 {
+            assert_eq!(entry, UNUSED_CODE);
+            return Looked::Unused;
+        }
+        let base = (entry >> VALUE_SHIFT) as u16;
+        Looked::Symbol {
+            symbol: DISTANCE_BASE.iter().position(|&b| b == base).unwrap(),
+            extra: extra_bits(buffer >> skipped, entry),
+            bits: skipped + (entry & STEP_BITS_MASK),
+        }
+    }
+
+    #[test]
+    fn every_small_code_is_built_or_refused_and_read_as_a_bit_at_a_time_reference_reads_it() {
+        const SYMBOLS: usize = 7;
+        const LONGEST: u8 = 5;
+        let mut accepted = 0;
+        let mut lengths = [0u8; SYMBOLS];
+        'codes: loop {
+            let filled: u32 = lengths
+                .iter()
+                .filter(|&&length| length != 0)
+                .map(|&length| 1 << (LONGEST - length))
+                .sum();
+            let used = lengths.iter().filter(|&&length| length != 0).count();
+            let longest = lengths.iter().copied().max().unwrap();
+            let valid = filled == 1 << LONGEST || used == 0 || (used == 1 && longest == 1);
+            for table_bits in 1..=4 {
+                let mut table = [0x5a5a_5a5au32; 80];
+                let built = build_table(&mut table, &lengths, table_bits, Alphabet::Distance);
+                assert_eq!(built.is_ok(), valid, "{lengths:?} in {table_bits} bits");
+                if !valid {
+                    continue;
+                }
+                accepted += 1;
+                for buffer in 0..1u64 << 7 {
+                    for count in 0..=7 {
+                        assert_eq!(
+                            table_lookup(&table, table_bits, buffer, count),
+                            reference_lookup(&lengths, buffer & low_bits(count), count),
+                            "{lengths:?} in {table_bits} bits: {buffer:07b} with {count} bits"
+                        );
+                    }
+                }
+            }
+            for length in &mut lengths {
+                if *length < LONGEST {
+                    *length += 1;
+                    continue 'codes;
+                }
+                *length = 0;
+            }
+            break;
+        }
+        assert!(accepted > 10_000, "{accepted}");
+    }
+
+    #[test]
+    fn random_whole_alphabets_decode_every_codeword_to_its_symbol() {
+        let mut random = Random(31);
+        let mut subtables = 0;
+        for round in 0..3000 {
+            let (alphabet, symbols, table_bits, entries) = match round % 2 {
+                0 => (Alphabet::LitLen, 286, LITLEN_BITS, LITLEN_ENTRIES),
+                _ => (Alphabet::Distance, 30, DISTANCE_BITS, DISTANCE_ENTRIES),
+            };
+            let used = 2 + random.below(symbols - 1);
+            let longest = [2, 8, 9, 11, 12, 13, 15][random.below(7)];
+            let used = some_of(&mut random, symbols, used, &[]);
+            let lengths = random_code(&mut random, symbols, &used, longest);
+            let mut table = vec![0u32; entries];
+            build_table(&mut table, &lengths, table_bits, alphabet).unwrap();
+            for (symbol, &(code, length)) in canonical(&lengths).iter().enumerate() {
+                if length == 0 {
+                    continue;
+                }
+                let reversed = u64::from(code.reverse_bits() >> (32 - u32::from(length)));
+                let expected = alphabet.entry(symbol as u16, 0) & !STEP_BITS_MASK;
+                for padding in [0, u64::MAX] {
+                    let buffer = reversed | padding << length;
+                    let bits = Bits { buffer, count: 48 };
+                    let (entry, skipped) = lookup(&table, table_bits, bits).unwrap();
+                    let code_bits = (entry >> CODE_BITS_SHIFT) & CODE_BITS_MASK;
+                    assert_eq!(skipped + code_bits, u32::from(length), "round {round}");
+                    assert_eq!(
+                        entry & !(STEP_BITS_MASK | CODE_BITS_MASK << CODE_BITS_SHIFT),
+                        expected,
+                        "round {round} symbol {symbol}"
+                    );
+                    subtables += usize::from(skipped != 0);
+                }
+            }
+        }
+        assert!(subtables > 10_000);
+    }
+
     #[test]
     fn every_match_copy_equals_a_byte_at_a_time_copy() {
         let mut window = vec![0u8; 700];
