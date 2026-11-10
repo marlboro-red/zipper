@@ -15,3 +15,8 @@ Exit checks:
 1. `cargo tree -e normal` lists no `-sys` crate that compiles C, on macOS, Linux and Windows.
 2. A record for each library compares the Rust replacement with it, with ranges apart or the verdict stated as a tie.
 3. The codec rows and the scoreboard show no workload slower beyond the spread, or the record names the gap and why it is accepted.
+
+Done so far, by 11 November 2026:
+
+- `native-fast` is retired, and with it libdeflate, its `unsafe` calls, the shared entry-buffer budget and the 8 MiB archive cache. An adversarial review found no check weakened on the remaining engine, and both ZIP models held every rule after the change.
+- Two C libraries remain in `cargo tree -e normal`. zstd builds on every platform, and macOS links its system zlib.
