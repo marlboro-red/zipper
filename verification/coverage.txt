@@ -48,7 +48,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 503b628cd1ba58e6
+fingerprint = 238c597ce86c5e1d
 full-check = python3 scripts/check_model.py verification/progress-callback MCCallback.tla:callback.cfg
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
