@@ -14,6 +14,11 @@ pub enum Kind {
     Link(String),
     Fifo,
     Again(usize),
+    Tail {
+        fragment: u32,
+        offset: u32,
+        size: u32,
+    },
 }
 
 #[derive(Clone)]
@@ -54,6 +59,20 @@ pub fn link(parent: usize, name: &str, target: &str) -> Entry {
         kind: Kind::Link(target.to_owned()),
         mode: 0o777,
         modified: 1_600_000_200,
+    }
+}
+
+pub fn tail(parent: usize, name: &str, fragment: u32, offset: u32, size: u32) -> Entry {
+    Entry {
+        parent,
+        name: name.as_bytes().to_vec(),
+        kind: Kind::Tail {
+            fragment,
+            offset,
+            size,
+        },
+        mode: 0o644,
+        modified: 1_600_000_000,
     }
 }
 
@@ -119,7 +138,7 @@ fn target_of(entries: &[Entry], index: usize) -> usize {
 fn basic_kind(kind: &Kind) -> u16 {
     match kind {
         Kind::Folder => 1,
-        Kind::File(_) => 2,
+        Kind::File(_) | Kind::Tail { .. } => 2,
         Kind::Link(_) => 3,
         Kind::Fifo => 6,
         Kind::Again(_) => unreachable!(),
@@ -127,6 +146,10 @@ fn basic_kind(kind: &Kind) -> u16 {
 }
 
 pub fn build(entries: &[Entry], options: Options) -> Built {
+    build_with_fragments(entries, options, &[])
+}
+
+pub fn build_with_fragments(entries: &[Entry], options: Options, fragments: &[Vec<u8>]) -> Built {
     let count = entries.len();
     let folder_of = |index: usize| -> Vec<usize> {
         let mut children: Vec<usize> = (0..count)
@@ -164,6 +187,21 @@ pub fn build(entries: &[Entry], options: Options) -> Built {
             }
         }
     }
+    let mut fragment_entries = Vec::new();
+    for fragment in fragments {
+        let start = data.len() as u64;
+        let packed = zlib(fragment);
+        let word = if options.compress && packed.len() < fragment.len() {
+            data.extend_from_slice(&packed);
+            packed.len() as u32
+        } else {
+            data.extend_from_slice(fragment);
+            STORED_DATA | fragment.len() as u32
+        };
+        fragment_entries.extend_from_slice(&start.to_le_bytes());
+        fragment_entries.extend_from_slice(&word.to_le_bytes());
+        fragment_entries.extend_from_slice(&0u32.to_le_bytes());
+    }
     let inode_length = |index: usize| -> usize {
         match &entries[index].kind {
             Kind::Folder => 32,
@@ -171,6 +209,7 @@ pub fn build(entries: &[Entry], options: Options) -> Built {
             Kind::File(_) => 32 + 4 * block_words[index].len(),
             Kind::Link(target) => 24 + target.len(),
             Kind::Fifo => 20,
+            Kind::Tail { .. } => 32,
             Kind::Again(_) => 0,
         }
     };
@@ -291,6 +330,16 @@ pub fn build(entries: &[Entry], options: Options) -> Built {
                 inodes.extend_from_slice(target.as_bytes());
             }
             Kind::Fifo => push32(&mut inodes, 1),
+            Kind::Tail {
+                fragment,
+                offset,
+                size,
+            } => {
+                push32(&mut inodes, 96);
+                push32(&mut inodes, fragment);
+                push32(&mut inodes, offset);
+                push32(&mut inodes, size);
+            }
             Kind::Again(_) => unreachable!(),
         }
     }
@@ -299,7 +348,15 @@ pub fn build(entries: &[Entry], options: Options) -> Built {
     image.extend_from_slice(&stored_metadata(&inodes));
     let directory_table = image.len();
     image.extend_from_slice(&stored_metadata(&listings));
+    let mut fragment_blocks = Vec::new();
+    for piece in fragment_entries.chunks(METADATA) {
+        fragment_blocks.push(image.len() as u64);
+        image.extend_from_slice(&stored_metadata(piece));
+    }
     let fragment_table = image.len();
+    for block in fragment_blocks {
+        image.extend_from_slice(&block.to_le_bytes());
+    }
     let id_block = image.len();
     image.extend_from_slice(&stored_metadata(&0u32.to_le_bytes()));
     let id_table = image.len();
@@ -317,7 +374,7 @@ pub fn build(entries: &[Entry], options: Options) -> Built {
     push32(&mut superblock, inode_count as u32);
     push32(&mut superblock, 1_600_000_000);
     push32(&mut superblock, BLOCK as u32);
-    push32(&mut superblock, 0);
+    push32(&mut superblock, fragments.len() as u32);
     push16(&mut superblock, 1);
     push16(&mut superblock, 12);
     push16(&mut superblock, 0x0B);
@@ -488,6 +545,7 @@ pub fn build_cramfs(entries: &[Entry], big: bool) -> Cram {
                 data_at[index].unwrap() as u32,
             ),
             Kind::Fifo => (S_IFIFO | entry.mode, 0, 0),
+            Kind::Tail { .. } => unreachable!("CramFS has no fragment blocks"),
             Kind::Again(earlier) => {
                 let earlier = if *earlier == ROOT {
                     76 - 12

@@ -8,7 +8,7 @@ use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     io::{Read, Seek, SeekFrom},
     path::Path,
     time::{Duration, SystemTime},
@@ -891,6 +891,7 @@ impl<'v> Image<'v> {
             .is_none_or(|fragment| fragment.index != index)
         {
             let (start, length, stored) = self.fragment_entry(index)?;
+            crate::counters::add(crate::counters::Counter::FragmentBlocksRead, 1);
             let method = self.superblock().method;
             let limit = self.disk.dictionary_limit();
             let block_size = self.superblock().block_size as usize;
@@ -926,6 +927,7 @@ struct FileData<'i, 'v> {
     fragment: Option<(u32, u32)>,
     buffer: Vec<u8>,
     taken: usize,
+    zeros: u64,
 }
 
 impl FileData<'_, '_> {
@@ -941,14 +943,15 @@ impl FileData<'_, '_> {
             self.image
                 .inodes
                 .read(&mut self.image.disk, &mut self.blocks, &mut word)?;
-            self.buffer.resize(expected, 0);
             let Some((length, stored)) =
                 data_block(u32::from_le_bytes(word), superblock.block_size)
                     .map_err(|error| anyhow::anyhow!("{error} in {path:?}"))?
             else {
-                self.buffer.fill(0);
+                self.buffer.clear();
+                self.zeros = expected as u64;
                 return Ok(());
             };
+            self.buffer.resize(expected, 0);
             let end = self
                 .position
                 .checked_add(u64::from(length))
@@ -999,8 +1002,15 @@ impl Read for FileData<'_, '_> {
         if self.remaining == 0 || out.is_empty() {
             return Ok(0);
         }
-        if self.taken == self.buffer.len() {
+        if self.zeros == 0 && self.taken == self.buffer.len() {
             self.next_piece().map_err(std::io::Error::other)?;
+        }
+        if self.zeros > 0 {
+            let piece = (out.len() as u64).min(self.zeros) as usize;
+            out[..piece].fill(0);
+            self.zeros -= piece as u64;
+            self.remaining -= piece as u64;
+            return Ok(piece);
         }
         let piece = out
             .len()
@@ -1010,6 +1020,25 @@ impl Read for FileData<'_, '_> {
         self.taken += piece;
         self.remaining -= piece as u64;
         Ok(piece)
+    }
+}
+
+impl tree::Holes for FileData<'_, '_> {
+    fn skip_hole(&mut self, most: u64) -> std::io::Result<u64> {
+        let mut skipped = 0;
+        while skipped < most {
+            if self.zeros == 0 && self.taken == self.buffer.len() && self.blocks_left > 0 {
+                self.next_piece().map_err(std::io::Error::other)?;
+            }
+            if self.zeros == 0 {
+                break;
+            }
+            let piece = self.zeros.min(most - skipped);
+            self.zeros -= piece;
+            self.remaining -= piece;
+            skipped += piece;
+        }
+        Ok(skipped)
     }
 }
 
@@ -1120,41 +1149,129 @@ fn read_listing(
     Ok(())
 }
 
+struct Tail {
+    fragment: u32,
+    offset: u32,
+    listed: usize,
+    path: String,
+    reference: u64,
+}
+
+impl Tail {
+    fn held_bytes(&self) -> usize {
+        size_of::<Self>() + self.path.len()
+    }
+}
+
+struct Emitter<'o> {
+    writer: Writer<'o>,
+    block_log: u32,
+    listed: usize,
+    order: Vec<usize>,
+}
+
+impl Emitter<'_> {
+    fn note(&mut self, tree: &tree::Tree, before: usize) {
+        let added = tree.entry_count() - before;
+        self.order.extend(std::iter::repeat_n(self.listed, added));
+    }
+
+    fn file(
+        &mut self,
+        image: &mut Image,
+        tree: &mut tree::Tree,
+        path: &str,
+        reference: u64,
+    ) -> Result<()> {
+        let before = tree.entry_count();
+        if let Some(leader) = self.writer.leaders.get(&reference)
+            && self.writer.writes(path)
+        {
+            let leader = leader.clone();
+            tree.hard_link(path, &leader)?;
+            self.note(tree, before);
+            return Ok(());
+        }
+        let (inode, cursor) = image.inode_at(reference)?;
+        let Body::File {
+            start,
+            size,
+            fragment,
+            offset,
+        } = inode.body
+        else {
+            bail!("SquashFS file {path:?} changed kind between reads");
+        };
+        let mut data = FileData {
+            image,
+            path,
+            blocks: cursor,
+            blocks_left: file_blocks(size, self.block_log, fragment),
+            position: start,
+            remaining: size,
+            fragment: (fragment != NO_FRAGMENT).then_some((fragment, offset)),
+            buffer: Vec::new(),
+            taken: 0,
+            zeros: 0,
+        };
+        let modified = squashfs_time(inode.modified);
+        tree.sparse_file(path, size, file_mode(inode.mode), modified, &mut data)?;
+        ensure!(
+            data.remaining == 0,
+            "SquashFS file {path:?} is shorter than its size"
+        );
+        if inode.links > 1 && self.writer.writes(path) {
+            self.writer.leaders.insert(reference, path.to_owned());
+        }
+        self.note(tree, before);
+        Ok(())
+    }
+}
+
 fn emit(image: &mut Image, tree: &mut tree::Tree, options: ReadOptions) -> Result<()> {
-    let block_log = image.superblock().block_size.trailing_zeros();
-    let mut writer = Writer {
-        selection: crate::Selection::new(options.paths, options.include, options.exclude)?,
-        placement: crate::placement::Placement::new(options.strip)?,
-        leaders: HashMap::new(),
-        folders: HashSet::new(),
+    let mut emitter = Emitter {
+        writer: Writer {
+            selection: crate::Selection::new(options.paths, options.include, options.exclude)?,
+            placement: crate::placement::Placement::new(options.strip)?,
+            leaders: HashMap::new(),
+            folders: HashSet::new(),
+        },
+        block_log: image.superblock().block_size.trailing_zeros(),
+        listed: 0,
+        order: Vec::new(),
     };
+    let first_entry = tree.entry_count();
     let root = image.superblock().root;
     let (root_inode, _) = image.inode_at(root)?;
     ensure!(
         root_inode.kind == DIRECTORY,
         "SquashFS root inode is not a folder"
     );
-    writer.folders.insert(root);
-    let mut queue = VecDeque::from([Pending {
+    emitter.writer.folders.insert(root);
+    let mut folders = vec![Pending {
         path: String::new(),
         reference: root,
-    }]);
-    while let Some(folder) = queue.pop_front() {
+    }];
+    let mut tails = Vec::new();
+    while let Some(folder) = folders.pop() {
+        let mut inside = Vec::new();
         tree.check()?;
         let (inode, _) = image.inode_at(folder.reference)?;
         read_listing(image, &folder, &inode, |image, name, reference| {
             tree.check()?;
+            emitter.listed += 1;
             let path = join(&folder.path, &name);
             let (inode, mut cursor) = image.inode_at(reference)?;
             let modified = squashfs_time(inode.modified);
+            let before = tree.entry_count();
             match inode.body {
                 Body::Directory { .. } => {
                     ensure!(
-                        writer.folders.insert(reference),
+                        emitter.writer.folders.insert(reference),
                         "SquashFS folder {path:?} appears twice or forms a loop"
                     );
                     tree.directory(&path, folder_mode(inode.mode), modified)?;
-                    queue.push_back(Pending { path, reference });
+                    inside.push(Pending { path, reference });
                 }
                 Body::Symlink { target } => {
                     let target = image.read_text(&mut cursor, target as usize, "link target")?;
@@ -1164,43 +1281,34 @@ fn emit(image: &mut Image, tree: &mut tree::Tree, options: ReadOptions) -> Resul
                     tree.file(&path, 0, DEFAULT_FILE_MODE, modified, &mut std::io::empty())?;
                 }
                 Body::File {
-                    start,
-                    size,
-                    fragment,
-                    offset,
-                } => {
-                    if let Some(leader) = writer.leaders.get(&reference)
-                        && writer.writes(&path)
-                    {
-                        let leader = leader.clone();
-                        return tree.hard_link(&path, &leader);
-                    }
-                    let blocks = file_blocks(size, block_log, fragment);
-                    let mut data = FileData {
-                        image,
-                        path: &path,
-                        blocks: cursor,
-                        blocks_left: blocks,
-                        position: start,
-                        remaining: size,
-                        fragment: (fragment != NO_FRAGMENT).then_some((fragment, offset)),
-                        buffer: Vec::new(),
-                        taken: 0,
+                    fragment, offset, ..
+                } if fragment != NO_FRAGMENT => {
+                    let tail = Tail {
+                        fragment,
+                        offset,
+                        listed: emitter.listed,
+                        path,
+                        reference,
                     };
-                    tree.file(&path, size, file_mode(inode.mode), modified, &mut data)?;
-                    ensure!(
-                        data.remaining == 0,
-                        "SquashFS file {path:?} is shorter than its size"
-                    );
-                    if inode.links > 1 && writer.writes(&path) {
-                        writer.leaders.insert(reference, path);
-                    }
+                    tree.charge_name(tail.held_bytes())?;
+                    tails.push(tail);
+                    return Ok(());
                 }
+                Body::File { .. } => return emitter.file(image, tree, &path, reference),
             }
+            emitter.note(tree, before);
             Ok(())
         })?;
+        folders.extend(inside.into_iter().rev());
     }
-    Ok(())
+    tails.sort_by_key(|tail| (tail.fragment, tail.offset));
+    for tail in tails {
+        tree.check()?;
+        tree.release_name(tail.held_bytes());
+        emitter.listed = tail.listed;
+        emitter.file(image, tree, &tail.path, tail.reference)?;
+    }
+    tree.sort_entries_from(first_entry, &emitter.order)
 }
 
 fn native_version(bytes: &[u8; SUPERBLOCK]) -> bool {

@@ -18,12 +18,13 @@ The CramFS reader reads images of either byte order with 4 KiB pages compressed 
 
 Each reader writes the tree `7zz x` writes on macOS and Linux:
 
-- Entries are written folder by folder, in the order of each folder's listing. The root folder's own inode is not written.
+- Entries are listed folder by folder, in the order of each folder's listing, as 7-Zip lists them. The root folder's own inode is not written.
+- Files that end in a fragment block are written after the rest, in the order of their tails in the fragment blocks. So each fragment block is read once, whatever order the folders list its files in. `tests/counters.rs` checks this on files that take turns between 9 fragment blocks.
 - A file's mode is applied without its setuid, setgid and sticky bits. A folder's mode is applied, with the owner's read, write and search rights added. Devices, named pipes and sockets become empty files of mode `0o666`. The umask limits all of them.
 - Files and folders get their SquashFS modification time, in whole seconds. Folders get theirs after all files are written. CramFS keeps no times, so its entries keep the time they were written.
 - A link becomes a link to its target. Each link must stay inside the destination.
 - Names that share a SquashFS inode become hard links to the first of them that is written. CramFS keeps no inode numbers, so files that share data are written as copies, as 7-Zip writes them.
-- A sparse SquashFS block and a CramFS hole are written as zeros.
+- A sparse SquashFS block and a CramFS hole are written as zeros. `zipper test` skips a sparse SquashFS block without producing its zeros, so its time depends on the image's size, not the size the file declares.
 
 It never restores owners or extended attributes. 7-Zip ignores SquashFS extended attributes as well, so the SquashFS reader skips the attribute table and never reads it.
 

@@ -15,7 +15,10 @@ mod squashfs_writer;
 use squashfs_trees::{
     Tree, sevenzip_accepts, sevenzip_run, tree, unsquashfs_difference, unsquashfs_tree,
 };
-use squashfs_writer::{Entry, Kind, Options, ROOT, again, build, build_cramfs, file, folder, link};
+use squashfs_writer::{
+    Entry, Kind, Options, ROOT, again, build, build_cramfs, build_with_fragments, file, folder,
+    link, tail,
+};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -506,6 +509,166 @@ fn sparse_blocks_and_cramfs_holes_extract_as_zeros() {
     if let Some(accepted) = sevenzip_verdict(&bytes) {
         assert!(!accepted, "7-Zip now reads CramFS holes; compare its tree");
     }
+}
+
+fn one_byte_tails(
+    files: usize,
+    blocks: u8,
+    fragment_of: impl Fn(usize) -> u32,
+) -> (Vec<u8>, Vec<u8>) {
+    let fragments: Vec<Vec<u8>> = (0..blocks)
+        .map(|fragment| {
+            (0..squashfs_writer::BLOCK)
+                .map(|at| (at as u8).wrapping_mul(7) ^ fragment)
+                .collect()
+        })
+        .collect();
+    let mut entries = Vec::new();
+    let mut expected = Vec::new();
+    for index in 0..files {
+        let fragment = fragment_of(index);
+        let offset = index % squashfs_writer::BLOCK;
+        entries.push(tail(
+            ROOT,
+            &format!("f{index:05}"),
+            fragment,
+            offset as u32,
+            1,
+        ));
+        expected.push(fragments[fragment as usize][offset]);
+    }
+    let built = build_with_fragments(&entries, Options { compress: true }, &fragments);
+    (built.bytes, expected)
+}
+
+#[test]
+fn files_that_take_turns_between_fragment_blocks_extract_byte_exact() {
+    let files = 2000;
+    let (grouped, expected) = one_byte_tails(files, 2, |index| u32::from(index >= files / 2));
+    let ours = extracted(&grouped);
+    assert_eq!(ours.len(), files);
+    for (index, byte) in expected.iter().enumerate() {
+        let name = format!("f{index:05}");
+        assert!(
+            ours[&name].starts_with(&squashfs_trees::sha256(&[*byte])),
+            "{name}"
+        );
+    }
+    if let Some(binary) = sevenzip_binary() {
+        let (work, image) = write(&grouped, false);
+        let (accepted, theirs, output) =
+            sevenzip_run(&binary, &image, &work.path().join("7z"), true);
+        assert!(accepted, "{output}");
+        assert_eq!(ours, theirs);
+    }
+    let (few, expected) = one_byte_tails(files, 3, |index| index as u32 % 3);
+    let ours = extracted(&few);
+    for (index, byte) in expected.iter().enumerate() {
+        let name = format!("f{index:05}");
+        assert!(
+            ours[&name].starts_with(&squashfs_trees::sha256(&[*byte])),
+            "{name}"
+        );
+    }
+    let (taking_turns, expected) = one_byte_tails(files, 9, |index| index as u32 % 9);
+    let ours = extracted(&taking_turns);
+    for (index, byte) in expected.iter().enumerate() {
+        let name = format!("f{index:05}");
+        assert!(
+            ours[&name].starts_with(&squashfs_trees::sha256(&[*byte])),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_sparse_file_is_tested_without_filling_its_holes() {
+    let blocks = 64;
+    let size = blocks * squashfs_writer::BLOCK;
+    let entries = vec![file(ROOT, "sparse.bin", &vec![7u8; size])];
+    let built = build(&entries, Options::default());
+    let mut bytes = built.bytes.clone();
+    for block in 0..blocks {
+        put32(&mut bytes, built.inode_at[0] + 32 + 4 * block, 0);
+    }
+    let (_work, image) = write(&bytes, false);
+    let reported = std::sync::Mutex::new(Vec::new());
+    let progress = |progress: zipper::Progress| reported.lock().unwrap().push(progress.bytes_done);
+    let options = zipper::native_squashfs::ReadOptions {
+        control: zipper::Control {
+            progress: Some(&progress),
+            cancel: None,
+        },
+        ..Default::default()
+    };
+    let listed = zipper::native_squashfs::read_archive(&image, None, options).unwrap();
+    assert_eq!(listed[0].size, size as u64);
+    let reported = reported.into_inner().unwrap();
+    assert!(
+        reported
+            .iter()
+            .all(|done| *done == 0 || *done == size as u64),
+        "the holes were read block by block: {reported:?}"
+    );
+    assert!(reported.contains(&(size as u64)), "{reported:?}");
+    let ours = extracted(&bytes);
+    assert!(ours["sparse.bin"].starts_with(&squashfs_trees::sha256(&vec![0u8; size])));
+}
+
+#[test]
+fn entries_are_listed_folder_by_folder_in_the_order_7zip_lists_them() {
+    let entries = vec![
+        file(ROOT, "top.txt", b"6"),
+        folder(ROOT, "x"),
+        file(1, "a.txt", b"1"),
+        folder(1, "b"),
+        file(1, "c.txt", b"2"),
+        folder(1, "d"),
+        file(1, "e.txt", b"7"),
+        folder(3, "deep"),
+        file(3, "f.txt", b"3"),
+        file(7, "g.txt", b"4"),
+        file(5, "h.txt", b"5"),
+    ];
+    let bytes = build(&entries, Options::default()).bytes;
+    let (work, image) = write(&bytes, false);
+    let ours: Vec<String> = zipper::native_squashfs::read_archive(
+        &image,
+        None,
+        zipper::native_squashfs::ReadOptions::default(),
+    )
+    .unwrap()
+    .into_iter()
+    .map(|entry| entry.name)
+    .collect();
+    let folder_by_folder = [
+        "top.txt",
+        "x",
+        "x/a.txt",
+        "x/b",
+        "x/c.txt",
+        "x/d",
+        "x/e.txt",
+        "x/b/deep",
+        "x/b/f.txt",
+        "x/b/deep/g.txt",
+        "x/d/h.txt",
+    ];
+    assert_eq!(ours, folder_by_folder);
+    if let Some(binary) = sevenzip_binary() {
+        let listing = std::process::Command::new(&binary)
+            .args(["l", "-ba", "-slt"])
+            .arg(&image)
+            .output()
+            .unwrap();
+        let theirs: Vec<String> = String::from_utf8_lossy(&listing.stdout)
+            .lines()
+            .filter_map(|line| line.strip_prefix("Path = "))
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(ours, theirs);
+    }
+    drop(work);
 }
 
 fn reader_for(bytes: &[u8]) -> Reader {

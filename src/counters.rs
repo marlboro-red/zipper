@@ -21,9 +21,11 @@ pub enum Counter {
     MetadataCalls,
     /// Wall time inside Deflate decoder calls, summed across threads.
     DecodeNanos,
+    /// SquashFS fragment blocks decoded or copied into the fragment cache.
+    FragmentBlocksRead,
 }
 
-pub const ALL: [Counter; 9] = [
+pub const ALL: [Counter; 10] = [
     Counter::ArchiveReads,
     Counter::ArchiveBytesRead,
     Counter::FilesCreated,
@@ -33,6 +35,7 @@ pub const ALL: [Counter; 9] = [
     Counter::OutputBytesWritten,
     Counter::MetadataCalls,
     Counter::DecodeNanos,
+    Counter::FragmentBlocksRead,
 ];
 
 impl Counter {
@@ -47,6 +50,7 @@ impl Counter {
             Self::OutputBytesWritten => "output_bytes_written",
             Self::MetadataCalls => "metadata_calls",
             Self::DecodeNanos => "decode_nanos",
+            Self::FragmentBlocksRead => "fragment_blocks_read",
         }
     }
 }

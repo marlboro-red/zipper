@@ -669,6 +669,26 @@ pub(crate) mod tree {
     const LINKS_PER_REPORT: usize = 1024;
     pub(crate) const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
+    pub(crate) trait Holes: Read {
+        fn skip_hole(&mut self, most: u64) -> std::io::Result<u64>;
+    }
+
+    type Sink<'s> = &'s mut dyn FnMut(&[u8]) -> Result<()>;
+
+    struct NoHoles<'r>(&'r mut dyn Read);
+
+    impl Read for NoHoles<'_> {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            self.0.read(out)
+        }
+    }
+
+    impl Holes for NoHoles<'_> {
+        fn skip_hole(&mut self, _most: u64) -> std::io::Result<u64> {
+            Ok(0)
+        }
+    }
+
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Node {
         ImpliedDirectory,
@@ -857,6 +877,33 @@ pub(crate) mod tree {
             Ok(())
         }
 
+        pub(crate) fn release_name(&mut self, bytes: usize) {
+            self.metadata_bytes -= bytes;
+        }
+
+        pub(crate) fn entry_count(&self) -> usize {
+            self.entries.len()
+        }
+
+        pub(crate) fn sort_entries_from(&mut self, first: usize, order: &[usize]) -> Result<()> {
+            ensure!(
+                order.len() == self.entries.len() - first,
+                "{} listing order covers {} of {} entries",
+                self.format,
+                order.len(),
+                self.entries.len() - first
+            );
+            let mut keyed: Vec<(usize, Entry)> = order
+                .iter()
+                .copied()
+                .zip(self.entries.drain(first..))
+                .collect();
+            keyed.sort_by_key(|(key, _)| *key);
+            self.entries
+                .extend(keyed.into_iter().map(|(_, entry)| entry));
+            Ok(())
+        }
+
         pub(crate) fn charge_name(&mut self, bytes: usize) -> Result<()> {
             self.metadata_bytes += bytes;
             ensure!(
@@ -964,19 +1011,34 @@ pub(crate) mod tree {
 
         fn copy(
             &mut self,
-            data: &mut dyn Read,
+            data: &mut dyn Holes,
             size: u64,
             counted: bool,
-            mut sink: impl FnMut(&[u8]) -> Result<()>,
+            mut sink: Option<Sink>,
         ) -> Result<()> {
             let mut remaining = size;
             while remaining > 0 {
+                if sink.is_none() {
+                    let skipped = data
+                        .skip_hole(remaining)
+                        .with_context(|| format!("cannot read the {} archive", self.format))?
+                        .min(remaining);
+                    if skipped > 0 {
+                        if counted {
+                            self.tracker.add_bytes(skipped)?;
+                        }
+                        remaining -= skipped;
+                        continue;
+                    }
+                }
                 let want = remaining.min(self.buffer.len() as u64) as usize;
                 let read = data
                     .read(&mut self.buffer[..want])
                     .with_context(|| format!("cannot read the {} archive", self.format))?;
                 ensure!(read > 0, "truncated {} entry", self.format);
-                sink(&self.buffer[..read])?;
+                if let Some(sink) = sink.as_mut() {
+                    sink(&self.buffer[..read])?;
+                }
                 if counted {
                     self.tracker.add_bytes(read as u64)?;
                 }
@@ -1047,6 +1109,18 @@ pub(crate) mod tree {
             self.finish_file(written)
         }
 
+        pub(crate) fn sparse_file(
+            &mut self,
+            raw: &str,
+            size: u64,
+            mode: u32,
+            modified: Option<SystemTime>,
+            data: &mut dyn Holes,
+        ) -> Result<()> {
+            let written = self.write_data(raw, size, mode, modified, data)?;
+            self.finish_file(written)
+        }
+
         pub(crate) fn write_file(
             &mut self,
             raw: &str,
@@ -1055,18 +1129,29 @@ pub(crate) mod tree {
             modified: Option<SystemTime>,
             data: &mut dyn Read,
         ) -> Result<Option<Written>> {
+            self.write_data(raw, size, mode, modified, &mut NoHoles(data))
+        }
+
+        fn write_data(
+            &mut self,
+            raw: &str,
+            size: u64,
+            mode: u32,
+            modified: Option<SystemTime>,
+            data: &mut dyn Holes,
+        ) -> Result<Option<Written>> {
             let (name, dots) = checked_name(raw)?;
             let mode = self.metadata.file_mode(Some(mode)).unwrap_or(mode);
             let replaces = self.claim(&name, Node::File)?;
             let Some((placed, replaces)) = self.place(&name, dots, false, replaces)? else {
-                self.copy(data, size, false, |_| Ok(()))?;
+                self.copy(data, size, false, None)?;
                 return Ok(None);
             };
             self.budget.charge(size)?;
             let format = self.format;
             let file = match self.root {
                 None => {
-                    self.copy(data, size, true, |_| Ok(()))?;
+                    self.copy(data, size, true, None)?;
                     None
                 }
                 Some(root) => {
@@ -1086,10 +1171,15 @@ pub(crate) mod tree {
                                 .context(format!("cannot create {format} entry {placed:?}"))
                         }
                     })?;
-                    self.copy(data, size, true, |bytes| {
-                        file.write_all(bytes)
-                            .with_context(|| format!("cannot write {format} entry {placed:?}"))
-                    })?;
+                    self.copy(
+                        data,
+                        size,
+                        true,
+                        Some(&mut |bytes| {
+                            file.write_all(bytes)
+                                .with_context(|| format!("cannot write {format} entry {placed:?}"))
+                        }),
+                    )?;
                     Some(file)
                 }
             };
@@ -1430,6 +1520,65 @@ mod proofs {
             assert!(header.name_size <= u64::from(u16::MAX));
             assert!(header.mode <= u32::from(u16::MAX));
         }
+    }
+}
+
+#[cfg(test)]
+mod hole_tests {
+    use super::*;
+
+    struct AllHole {
+        left: u64,
+        skips: u64,
+    }
+
+    impl Read for AllHole {
+        fn read(&mut self, _out: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("read a hole byte by byte"))
+        }
+    }
+
+    impl tree::Holes for AllHole {
+        fn skip_hole(&mut self, most: u64) -> std::io::Result<u64> {
+            let skipped = most.min(self.left).min(1 << 30);
+            self.left -= skipped;
+            self.skips += 1;
+            Ok(skipped)
+        }
+    }
+
+    #[test]
+    fn holes_are_skipped_without_reading_when_no_file_is_written() {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join("unused.img");
+        let size = 1 << 50;
+        let mut hole = AllHole {
+            left: size,
+            skips: 0,
+        };
+        let listed = tree::extract("test", &archive, None, ReadOptions::default(), |tree| {
+            tree.sparse_file("hole.bin", size, 0o644, None, &mut hole)
+        })
+        .unwrap();
+        assert_eq!(listed[0].size, size);
+        assert_eq!((hole.left, hole.skips), (0, size >> 30));
+        let skipped = ["other.bin".to_owned()];
+        let mut hole = AllHole {
+            left: size,
+            skips: 0,
+        };
+        let options = ReadOptions {
+            paths: &skipped,
+            ..ReadOptions::default()
+        };
+        let into = work.path().join("out");
+        tree::extract("test", &archive, Some(&into), options, |tree| {
+            tree.sparse_file("hole.bin", size, 0o644, None, &mut hole)?;
+            tree.file("other.bin", 1, 0o644, None, &mut &b"x"[..])
+        })
+        .unwrap();
+        assert_eq!(hole.left, 0);
+        assert_eq!(std::fs::read(into.join("other.bin")).unwrap(), b"x");
     }
 }
 

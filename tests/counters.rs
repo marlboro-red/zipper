@@ -1,7 +1,10 @@
 //! With the `counters` feature, one extraction with each native engine
 //! reports exactly the files, directories and bytes the archive holds, and on
-//! Unix exactly its metadata calls.
+//! Unix exactly its metadata calls, and a SquashFS extraction reads each
+//! fragment block once, whatever order its files take turns between them.
 #![cfg(feature = "counters")]
+#[path = "common/squashfs_writer.rs"]
+mod squashfs_writer;
 
 use std::{collections::HashMap, io::Write};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
@@ -57,5 +60,60 @@ fn one_extraction_counts_what_the_archive_holds() {
         assert!(counts[&Counter::DecodeNanos] > 0, "{engine}");
         #[cfg(unix)]
         assert_eq!(counts[&Counter::MetadataCalls], 6 + 1 + 1, "{engine}");
+    }
+}
+
+#[test]
+fn squashfs_reads_each_fragment_block_once_when_files_take_turns() {
+    let blocks = 9u8;
+    let files = 2000;
+    let fragments: Vec<Vec<u8>> = (0..blocks)
+        .map(|fragment| {
+            (0..squashfs_writer::BLOCK)
+                .map(|at| (at as u8).wrapping_mul(7) ^ fragment)
+                .collect()
+        })
+        .collect();
+    let entries: Vec<_> = (0..files)
+        .map(|index| {
+            let offset = (index % squashfs_writer::BLOCK) as u32;
+            let fragment = index as u32 % u32::from(blocks);
+            squashfs_writer::tail(
+                squashfs_writer::ROOT,
+                &format!("f{index:05}"),
+                fragment,
+                offset,
+                1,
+            )
+        })
+        .collect();
+    let built = squashfs_writer::build_with_fragments(
+        &entries,
+        squashfs_writer::Options { compress: true },
+        &fragments,
+    );
+    let work = tempfile::tempdir().unwrap();
+    let image = work.path().join("turns.sqfs");
+    std::fs::write(&image, &built.bytes).unwrap();
+    for destination in [None, Some(work.path().join("out"))] {
+        take();
+        let listed = zipper::native_squashfs::read_archive(
+            &image,
+            destination.as_deref(),
+            zipper::native_squashfs::ReadOptions::default(),
+        )
+        .unwrap();
+        let counts: HashMap<Counter, u64> = take().into_iter().collect();
+        assert_eq!(counts[&Counter::FragmentBlocksRead], u64::from(blocks));
+        let names: Vec<String> = listed.into_iter().map(|entry| entry.name).collect();
+        let listing: Vec<String> = (0..files).map(|index| format!("f{index:05}")).collect();
+        assert_eq!(names, listing);
+    }
+    let out = work.path().join("out");
+    for index in 0..files {
+        let fragment = index % usize::from(blocks);
+        let offset = index % squashfs_writer::BLOCK;
+        let written = std::fs::read(out.join(format!("f{index:05}"))).unwrap();
+        assert_eq!(written, [fragments[fragment][offset]], "f{index:05}");
     }
 }
