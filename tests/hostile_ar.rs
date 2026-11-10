@@ -847,6 +847,7 @@ fn a_plain_data_tar_member_is_extracted_as_dpkg_reads_it() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "cli"), ignore = "runs the zipper binary")]
 fn a_debian_package_is_read_in_place_without_a_temporary_copy() {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("hello.deb");

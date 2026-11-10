@@ -435,6 +435,10 @@ fn generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them
 }
 
 #[test]
+#[cfg_attr(
+    not(all(feature = "zip", feature = "7z")),
+    ignore = "routes to the ZIP and 7z readers"
+)]
 fn routing_leaves_self_extracting_archives_to_their_readers() {
     let work = tempfile::tempdir().unwrap();
     let stub = fs::read(Path::new(CORPUS).join("x64.exe")).unwrap();

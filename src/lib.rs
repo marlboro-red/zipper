@@ -1,13 +1,5 @@
-#![cfg_attr(
-    not(all(
-        feature = "zip",
-        feature = "7z",
-        feature = "tar",
-        feature = "more-formats"
-    )),
-    allow(dead_code, unused_imports)
-)]
-#[cfg(feature = "more-formats")]
+#![cfg_attr(not(feature = "all-formats"), allow(dead_code, unused_imports))]
+#[cfg(feature = "dmg")]
 mod adc;
 #[cfg(feature = "tar")]
 mod base64;
@@ -17,46 +9,51 @@ mod bcj2;
 mod bzip2_streams;
 pub mod compat;
 pub mod counters;
-#[cfg(any(feature = "tar", feature = "more-formats"))]
+#[cfg(any(feature = "tar", feature = "xar"))]
 mod dictionary;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "disk")]
 pub mod disk;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "disk")]
 mod disk_qcow;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "disk")]
 mod disk_sparse;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "disk")]
 mod disk_vdi;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "disk")]
 mod disk_vmdk;
 pub mod duplicates;
 mod extract;
-#[cfg(feature = "more-formats")]
+#[cfg(any(feature = "apfs", feature = "dmg", feature = "disk"))]
 mod hfs;
-#[cfg(feature = "more-formats")]
+#[cfg(any(
+    feature = "apfs",
+    feature = "cramfs",
+    feature = "ext",
+    feature = "squashfs"
+))]
 mod image;
 #[cfg(feature = "zip")]
 mod implode;
-#[cfg(feature = "tar")]
+#[cfg(any(feature = "tar", feature = "squashfs"))]
 mod lz4;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "dmg")]
 mod lzfse;
-#[cfg(feature = "more-formats")]
+#[cfg(any(feature = "lzh", feature = "arj"))]
 mod lzh;
 mod lzma;
 #[cfg(feature = "tar")]
 mod lzma86;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "wim")]
 mod lzms;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "ntfs")]
 mod lznt1;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "squashfs")]
 mod lzo;
-#[cfg(feature = "more-formats")]
+#[cfg(any(feature = "apfs", feature = "dmg", feature = "disk"))]
 mod lzvn;
 #[cfg(feature = "tar")]
 mod lzw;
-#[cfg(feature = "more-formats")]
+#[cfg(any(feature = "cab", feature = "chm", feature = "wim"))]
 mod lzx;
 mod memory;
 mod metadata;
@@ -64,63 +61,63 @@ mod metadata;
 mod mslz;
 #[cfg(feature = "7z")]
 pub mod native_7z;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "apfs")]
 pub mod native_apfs;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "ar")]
 pub mod native_ar;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "arj")]
 pub mod native_arj;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "cab")]
 pub mod native_cab;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "chm")]
 pub mod native_chm;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "cpio")]
 pub mod native_cpio;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "cramfs")]
 pub mod native_cramfs;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "dmg")]
 pub mod native_dmg;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "exe")]
 pub mod native_exe;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "ext")]
 pub mod native_ext;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "disk")]
 mod native_fat;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "flv")]
 pub mod native_flv;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "iso")]
 pub mod native_iso;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "lzh")]
 pub mod native_lzh;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "msi")]
 pub mod native_msi;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "ntfs")]
 pub mod native_ntfs;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "rpm")]
 pub mod native_rpm;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "squashfs")]
 pub mod native_squashfs;
 #[cfg(feature = "tar")]
 pub mod native_stream;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "swf")]
 pub mod native_swf;
 #[cfg(feature = "tar")]
 pub mod native_tar;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "wim")]
 pub mod native_wim;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "xar")]
 pub mod native_xar;
 #[cfg(feature = "zip")]
 pub mod native_zip;
 mod ntfs_streams;
-#[cfg(feature = "more-formats")]
+#[cfg(any(feature = "flv", feature = "swf"))]
 mod output_name;
 mod pattern;
 mod placement;
 #[cfg(feature = "tar")]
 mod pmd;
 mod progress;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "cab")]
 mod quantum;
 #[cfg(any(feature = "zip", feature = "7z"))]
 mod scrub;
@@ -130,11 +127,11 @@ mod sevenz_crypto;
 mod shrink;
 mod staging;
 mod tree;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "iso")]
 mod udf;
 mod volumes;
 mod xattr;
-#[cfg(feature = "more-formats")]
+#[cfg(feature = "wim")]
 mod xpress;
 mod xz_filters;
 #[cfg(feature = "zip")]

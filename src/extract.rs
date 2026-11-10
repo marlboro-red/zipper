@@ -1,16 +1,52 @@
+#[cfg(feature = "disk")]
+use crate::disk;
 #[cfg(feature = "7z")]
 use crate::native_7z;
+#[cfg(feature = "apfs")]
+use crate::native_apfs;
+#[cfg(feature = "ar")]
+use crate::native_ar;
+#[cfg(feature = "arj")]
+use crate::native_arj;
+#[cfg(feature = "cab")]
+use crate::native_cab;
+#[cfg(feature = "chm")]
+use crate::native_chm;
+#[cfg(feature = "cpio")]
+use crate::native_cpio;
+#[cfg(feature = "cramfs")]
+use crate::native_cramfs;
+#[cfg(feature = "dmg")]
+use crate::native_dmg;
+#[cfg(feature = "exe")]
+use crate::native_exe;
+#[cfg(feature = "ext")]
+use crate::native_ext;
+#[cfg(feature = "flv")]
+use crate::native_flv;
+#[cfg(feature = "iso")]
+use crate::native_iso;
+#[cfg(feature = "lzh")]
+use crate::native_lzh;
+#[cfg(feature = "msi")]
+use crate::native_msi;
+#[cfg(feature = "ntfs")]
+use crate::native_ntfs;
+#[cfg(feature = "rpm")]
+use crate::native_rpm;
+#[cfg(feature = "squashfs")]
+use crate::native_squashfs;
+#[cfg(feature = "swf")]
+use crate::native_swf;
 #[cfg(feature = "tar")]
 use crate::native_tar;
+#[cfg(feature = "wim")]
+use crate::native_wim;
+#[cfg(feature = "xar")]
+use crate::native_xar;
 #[cfg(feature = "zip")]
 use crate::native_zip;
 use crate::{Control, Existing, compat};
-#[cfg(feature = "more-formats")]
-use crate::{
-    disk, native_apfs, native_ar, native_arj, native_cab, native_chm, native_cpio, native_cramfs,
-    native_dmg, native_exe, native_ext, native_flv, native_iso, native_lzh, native_msi,
-    native_ntfs, native_rpm, native_squashfs, native_swf, native_wim, native_xar,
-};
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
 
@@ -126,47 +162,47 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if crate::volumes::has_zip_volumes(archive)? || starts_with_zip_signature(archive)? => {
             Reader::Zip
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "dmg")]
         Engine::Auto if native_dmg::sniff(archive)? && native_dmg::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "dmg")]
         _ if native_dmg::sniff(archive)? => Reader::Dmg,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "exe")]
         _ if native_exe::sniff(archive)? => Reader::Exe,
         #[cfg(feature = "tar")]
         _ if native_tar::sniff(archive)?.is_some() => Reader::Tar,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "cpio")]
         _ if native_cpio::sniff(archive)? => Reader::Cpio,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "ar")]
         _ if native_ar::sniff(archive)? => Reader::Ar,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "rpm")]
         _ if native_rpm::sniff(archive)? => Reader::Rpm,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "xar")]
         _ if native_xar::sniff(archive)? => Reader::Xar,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "cab")]
         _ if native_cab::sniff(archive)? => Reader::Cab,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "lzh")]
         _ if native_lzh::sniff(archive)? => Reader::Lzh,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "arj")]
         _ if native_arj::sniff(archive)? => Reader::Arj,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "msi")]
         Engine::Auto if native_msi::sniff(archive)? && native_msi::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "msi")]
         _ if native_msi::sniff(archive)? => Reader::Msi,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "wim")]
         Engine::Auto if native_wim::sniff(archive)? && native_wim::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "wim")]
         _ if native_wim::sniff(archive)? => Reader::Wim,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "chm")]
         Engine::Auto if native_chm::sniff(archive)? && native_chm::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "chm")]
         _ if native_chm::sniff(archive)? => Reader::Chm,
         #[cfg(feature = "7z")]
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
@@ -176,55 +212,55 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         }
         #[cfg(feature = "7z")]
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "exe")]
         Engine::Auto if native_exe::needs_backend(archive)? => Reader::Backend { format: None },
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "exe")]
         _ if native_exe::sniff_damaged(archive)? => Reader::Exe,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "ntfs")]
         _ if native_ntfs::sniff(archive)? => Reader::Ntfs,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "iso")]
         _ if native_iso::sniff(archive)? => Reader::Iso,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "dmg")]
         Engine::Auto if native_dmg::sniff_disk(archive)? && native_dmg::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "dmg")]
         _ if native_dmg::sniff_disk(archive)? => Reader::Dmg,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "apfs")]
         Engine::Auto if native_apfs::sniff(archive)? && native_apfs::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "apfs")]
         _ if native_apfs::sniff(archive)? => Reader::Apfs,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "squashfs")]
         Engine::Auto
             if native_squashfs::sniff(archive)? && native_squashfs::needs_backend(archive)? =>
         {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "squashfs")]
         _ if native_squashfs::sniff(archive)? => Reader::Squashfs,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "cramfs")]
         _ if native_cramfs::sniff(archive)? => Reader::Cramfs,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "ext")]
         Engine::Auto if native_ext::sniff(archive)? && native_ext::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "ext")]
         _ if native_ext::sniff(archive)? => Reader::Ext,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "disk")]
         Engine::Auto if disk::sniff(archive)? && disk::needs_backend(archive)? => {
             Reader::Backend { format: None }
         }
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "disk")]
         _ if disk::sniff(archive)? => Reader::Disk,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "flv")]
         _ if native_flv::sniff(archive)? => Reader::Flv,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "swf")]
         _ if native_swf::sniff(archive)? => Reader::Swf,
         #[cfg(feature = "tar")]
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
-        #[cfg(feature = "more-formats")]
+        #[cfg(feature = "exe")]
         _ if native_exe::sniff_object(archive)? => Reader::Exe,
         Engine::Native => native_fallback(archive)?,
         Engine::Auto => match compat::pinned_format(archive)? {
@@ -236,29 +272,16 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     })
 }
 
-#[cfg(all(
-    feature = "zip",
-    feature = "7z",
-    feature = "tar",
-    feature = "more-formats"
-))]
-fn native_fallback(_: &Path) -> Result<Reader> {
-    Ok(Reader::Zip)
-}
-
-#[cfg(not(all(
-    feature = "zip",
-    feature = "7z",
-    feature = "tar",
-    feature = "more-formats"
-)))]
 fn native_fallback(archive: &Path) -> Result<Reader> {
+    if cfg!(feature = "all-formats") {
+        return Ok(Reader::Zip);
+    }
     const USTAR: (&[u8], usize) = (b"ustar", 257);
     let mut head = Vec::new();
     crate::volumes::open(archive)?
         .take((USTAR.1 + USTAR.0.len()) as u64)
         .read_to_end(&mut head)?;
-    if head.get(USTAR.1..) == Some(USTAR.0) {
+    if cfg!(not(feature = "tar")) && head.get(USTAR.1..) == Some(USTAR.0) {
         bail!(NotBuilt("tar".to_owned()));
     }
     if let Some(format) = compat::pinned_format(archive)? {
@@ -267,12 +290,6 @@ fn native_fallback(archive: &Path) -> Result<Reader> {
     Ok(Reader::Zip)
 }
 
-#[cfg(not(all(
-    feature = "zip",
-    feature = "7z",
-    feature = "tar",
-    feature = "more-formats"
-)))]
 fn format_name(reader: &Reader) -> String {
     match reader {
         Reader::Zip => "zip".to_owned(),
@@ -521,8 +538,8 @@ pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Resu
 }
 
 /// The error for an archive whose reader this build leaves out, naming its
-/// format, such as `"zip"`, `"tar"` or `"gzip"`. A library built without the
-/// `zip`, `7z`, `tar` or `more-formats` feature returns it, and writes
+/// format, such as `"zip"`, `"tar"` or `"gzip"`. A library built without a
+/// format's feature, such as `zip`, `tar` or `cpio`, returns it, and writes
 /// nothing, for a ZIP or tar archive it does not read. `Engine::Native` also
 /// returns it for every other signature Zipper recognizes but this build does
 /// not read, which `Engine::Auto` hands to 7-Zip.
@@ -540,6 +557,56 @@ impl std::fmt::Display for NotBuilt {
 }
 
 impl std::error::Error for NotBuilt {}
+
+type TreeReader = fn(&Path, Option<&Path>, crate::tree::ReadOptions) -> Result<Vec<crate::Entry>>;
+
+fn tree_reader(reader: &Reader) -> Option<TreeReader> {
+    match reader {
+        #[cfg(feature = "cpio")]
+        Reader::Cpio => Some(native_cpio::read_archive),
+        #[cfg(feature = "ar")]
+        Reader::Ar => Some(native_ar::read_archive),
+        #[cfg(feature = "rpm")]
+        Reader::Rpm => Some(native_rpm::read_archive),
+        #[cfg(feature = "xar")]
+        Reader::Xar => Some(native_xar::read_archive),
+        #[cfg(feature = "cab")]
+        Reader::Cab => Some(native_cab::read_archive),
+        #[cfg(feature = "lzh")]
+        Reader::Lzh => Some(native_lzh::read_archive),
+        #[cfg(feature = "arj")]
+        Reader::Arj => Some(native_arj::read_archive),
+        #[cfg(feature = "msi")]
+        Reader::Msi => Some(native_msi::read_archive),
+        #[cfg(feature = "iso")]
+        Reader::Iso => Some(native_iso::read_archive),
+        #[cfg(feature = "wim")]
+        Reader::Wim => Some(native_wim::read_archive),
+        #[cfg(feature = "chm")]
+        Reader::Chm => Some(native_chm::read_archive),
+        #[cfg(feature = "exe")]
+        Reader::Exe => Some(native_exe::read_archive),
+        #[cfg(feature = "ntfs")]
+        Reader::Ntfs => Some(native_ntfs::read_archive),
+        #[cfg(feature = "disk")]
+        Reader::Disk => Some(disk::read_archive),
+        #[cfg(feature = "dmg")]
+        Reader::Dmg => Some(native_dmg::read_archive),
+        #[cfg(feature = "apfs")]
+        Reader::Apfs => Some(native_apfs::read_archive),
+        #[cfg(feature = "squashfs")]
+        Reader::Squashfs => Some(native_squashfs::read_archive),
+        #[cfg(feature = "cramfs")]
+        Reader::Cramfs => Some(native_cramfs::read_archive),
+        #[cfg(feature = "ext")]
+        Reader::Ext => Some(native_ext::read_archive),
+        #[cfg(feature = "flv")]
+        Reader::Flv => Some(native_flv::read_archive),
+        #[cfg(feature = "swf")]
+        Reader::Swf => Some(native_swf::read_archive),
+        _ => None,
+    }
+}
 
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     let reader = choose_reader(options.engine, archive)?;
@@ -622,66 +689,6 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 "--path, --include, --exclude, --strip-prefix, --strip-components and --content-only need an archive read in process"
             )
         }
-        #[cfg(feature = "more-formats")]
-        Reader::Cpio
-        | Reader::Ar
-        | Reader::Rpm
-        | Reader::Xar
-        | Reader::Cab
-        | Reader::Lzh
-        | Reader::Arj
-        | Reader::Msi
-        | Reader::Iso
-        | Reader::Wim
-        | Reader::Chm
-        | Reader::Exe
-        | Reader::Ntfs
-        | Reader::Disk
-        | Reader::Dmg
-        | Reader::Apfs
-        | Reader::Squashfs
-        | Reader::Cramfs
-        | Reader::Ext
-        | Reader::Flv
-        | Reader::Swf => {
-            let read = match reader {
-                Reader::Cpio => native_cpio::read_archive,
-                Reader::Ar => native_ar::read_archive,
-                Reader::Xar => native_xar::read_archive,
-                Reader::Cab => native_cab::read_archive,
-                Reader::Lzh => native_lzh::read_archive,
-                Reader::Arj => native_arj::read_archive,
-                Reader::Msi => native_msi::read_archive,
-                Reader::Iso => native_iso::read_archive,
-                Reader::Wim => native_wim::read_archive,
-                Reader::Chm => native_chm::read_archive,
-                Reader::Exe => native_exe::read_archive,
-                Reader::Ntfs => native_ntfs::read_archive,
-                Reader::Disk => disk::read_archive,
-                Reader::Dmg => native_dmg::read_archive,
-                Reader::Apfs => native_apfs::read_archive,
-                Reader::Squashfs => native_squashfs::read_archive,
-                Reader::Cramfs => native_cramfs::read_archive,
-                Reader::Ext => native_ext::read_archive,
-                Reader::Flv => native_flv::read_archive,
-                Reader::Swf => native_swf::read_archive,
-                _ => native_rpm::read_archive,
-            };
-            read(
-                archive,
-                Some(destination),
-                native_cpio::ReadOptions {
-                    max_output_bytes: options.max_output_bytes,
-                    existing: options.existing,
-                    paths: options.paths,
-                    include: options.include,
-                    exclude: options.exclude,
-                    strip: options.strip,
-                    metadata: options.metadata,
-                    control: options.control,
-                },
-            )?;
-        }
         #[cfg(feature = "tar")]
         Reader::Tar => {
             native_tar::read_archive(
@@ -700,34 +707,6 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 },
             )?;
         }
-        #[cfg(not(feature = "zip"))]
-        Reader::Zip => bail!(NotBuilt(format_name(&reader))),
-        #[cfg(not(feature = "7z"))]
-        Reader::SevenZip => bail!(NotBuilt(format_name(&reader))),
-        #[cfg(not(feature = "tar"))]
-        Reader::Tar | Reader::Stream => bail!(NotBuilt(format_name(&reader))),
-        #[cfg(not(feature = "more-formats"))]
-        Reader::Cpio
-        | Reader::Ar
-        | Reader::Rpm
-        | Reader::Xar
-        | Reader::Cab
-        | Reader::Lzh
-        | Reader::Arj
-        | Reader::Msi
-        | Reader::Iso
-        | Reader::Wim
-        | Reader::Chm
-        | Reader::Exe
-        | Reader::Ntfs
-        | Reader::Disk
-        | Reader::Dmg
-        | Reader::Apfs
-        | Reader::Squashfs
-        | Reader::Cramfs
-        | Reader::Ext
-        | Reader::Flv
-        | Reader::Swf => bail!(NotBuilt(format_name(&reader))),
         Reader::Backend { format } => {
             ensure!(
                 options.max_output_bytes.is_none(),
@@ -740,6 +719,23 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 format.as_deref(),
                 options.existing,
                 options.control.cancel,
+            )?;
+        }
+        _ => {
+            let read = tree_reader(&reader).ok_or_else(|| NotBuilt(format_name(&reader)))?;
+            read(
+                archive,
+                Some(destination),
+                crate::tree::ReadOptions {
+                    max_output_bytes: options.max_output_bytes,
+                    existing: options.existing,
+                    paths: options.paths,
+                    include: options.include,
+                    exclude: options.exclude,
+                    strip: options.strip,
+                    metadata: options.metadata,
+                    control: options.control,
+                },
             )?;
         }
     }

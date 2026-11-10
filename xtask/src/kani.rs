@@ -754,10 +754,17 @@ fn kani_code_not_listed(
 }
 
 fn is_feature_gate(attribute: &str) -> bool {
-    matches!(
-        attribute,
-        "#[cfg(feature=)]" | "#[cfg(any(feature=,feature=))]"
-    )
+    let Some(condition) = attribute
+        .strip_prefix("#[cfg(")
+        .and_then(|rest| rest.strip_suffix(")]"))
+    else {
+        return false;
+    };
+    let features = condition
+        .strip_prefix("any(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or(condition);
+    features.split(',').all(|feature| feature == "feature=")
 }
 
 fn workspace_harnesses(root: &Path) -> Result<(Vec<Harness>, Vec<String>)> {
@@ -2113,6 +2120,26 @@ mod tests {
         let problems = module_gates_outside_default_features(gated, manifest);
         assert_eq!(problems.len(), 1);
         assert!(problems[0].contains("`counters`"));
+    }
+
+    #[test]
+    fn a_module_gated_on_any_number_of_features_is_a_feature_gate() {
+        for gate in [
+            "#[cfg(feature=)]",
+            "#[cfg(any(feature=,feature=))]",
+            "#[cfg(any(feature=,feature=,feature=))]",
+            "#[cfg(any(feature=,feature=,feature=,feature=))]",
+        ] {
+            assert!(is_feature_gate(gate), "{gate}");
+        }
+        for other in [
+            "#[cfg(not(feature=))]",
+            "#[cfg(any(feature=,test))]",
+            "#[cfg(all(feature=,feature=))]",
+            "#[cfg(any())]",
+        ] {
+            assert!(!is_feature_gate(other), "{other}");
+        }
     }
 
     fn sources<'a>(files: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Result<String> + 'a {

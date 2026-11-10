@@ -32,10 +32,32 @@ zstd = { version = "0.14.3", optional = true }
 default = ["cli", "all-formats"]
 cli = ["dep:clap", "all-formats"]
 all-formats = ["zip", "7z", "tar", "more-formats"]
-zip = ["dep:aes", "dep:bzip2", "dep:ctr", "dep:deflate64", "dep:flate2", "dep:hmac", "dep:pbkdf2", "dep:ppmd-rust", "dep:sha1", "dep:zeroize", "dep:zstd"]
+zip = ["zstd", "dep:aes", "dep:bzip2", "dep:ctr", "dep:deflate64", "dep:flate2", "dep:hmac", "dep:pbkdf2", "dep:ppmd-rust", "dep:sha1", "dep:zeroize"]
 7z = ["dep:aes", "dep:bzip2", "dep:deflate64", "dep:flate2", "dep:ppmd-rust", "dep:zeroize"]
-tar = ["dep:bzip2", "dep:flate2", "dep:ppmd-rust", "dep:zstd"]
-more-formats = ["tar", "dep:bzip2", "dep:flate2", "dep:md-5", "dep:quick-xml", "dep:sha1", "dep:zstd"]
+tar = ["zstd", "dep:bzip2", "dep:flate2", "dep:ppmd-rust"]
+zstd = ["dep:zstd"]
+more-formats = ["apfs", "ar", "arj", "cab", "chm", "cpio", "cramfs", "disk", "dmg", "exe", "ext", "flv", "iso", "lzh", "msi", "ntfs", "rpm", "squashfs", "swf", "wim", "xar"]
+apfs = ["dep:flate2"]
+ar = ["tar"]
+arj = []
+cab = ["dep:flate2"]
+chm = []
+cpio = []
+cramfs = ["dep:flate2"]
+disk = ["apfs", "cramfs", "ext", "ntfs", "squashfs", "dep:flate2"]
+dmg = ["apfs", "dep:bzip2", "dep:flate2"]
+exe = []
+ext = []
+flv = []
+iso = []
+lzh = []
+msi = ["cab"]
+ntfs = []
+rpm = ["cpio", "tar"]
+squashfs = ["zstd", "dep:flate2"]
+swf = ["dep:flate2"]
+wim = ["dep:sha1"]
+xar = ["dep:bzip2", "dep:flate2", "dep:md-5", "dep:quick-xml", "dep:sha1"]
 counters = []
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -76,6 +98,8 @@ name = "count_zip"
 required-features = ["counters", "zip"]
 
 [dev-dependencies]
+bzip2 = "0.6.1"
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] }
 liblzma = { version = "0.4.9", default-features = false, features = ["static"] }
 lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "optimization"] }
 serde_json = "1.0.154"

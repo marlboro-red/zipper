@@ -126,6 +126,7 @@ fn every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts() {
 }
 
 #[test]
+#[cfg_attr(not(feature = "cli"), ignore = "runs the zipper binary")]
 fn list_and_test_read_the_volume_in_process() {
     let work = tempfile::tempdir().unwrap();
     let image = work.path().join("ext4.img");
