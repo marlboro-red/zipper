@@ -12,7 +12,7 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 
 The reader supports these features:
 
-- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. XZ and LZMA decode with Zipper's own decoder in `src/lzma.rs`, the readers [tar](tar-reader.md#supported-archives) uses. An LZMA entry may end with an end marker or without one, and as in liblzma, `lc` plus `lp` above 4 is refused. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used.
+- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Deflate decodes with Zipper's own decoder in `src/inflate.rs`, which accepts and refuses the streams zlib does. XZ and LZMA decode with Zipper's own decoder in `src/lzma.rs`, the readers [tar](tar-reader.md#supported-archives) uses. An LZMA entry may end with an end marker or without one, and as in liblzma, `lc` plus `lp` above 4 is refused. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used.
 - Shrink (method 1) and Implode (method 6) entries, which PKZIP 1.x wrote. [Legacy methods](#legacy-methods) gives their rules.
 - XZ entries decode with Zipper's own xz reader, as [tar's xz](tar-reader.md#supported-archives) does. An entry holds exactly one xz stream, so stream padding or a second stream after it is refused.
 - Split sets, `name.z01` and on with `name.zip` last, as [ZIP split sets](#zip-split-sets) describes, and an archive that starts with the spanning signature, as Info-ZIP `zip -s` writes one that fits in one piece.
@@ -297,7 +297,7 @@ These options work the same way in every reader. [Usage](../usage.md#extract-int
 
 ## Streaming
 
-The reader streams every entry. Each worker reads compressed input in 64 KiB slices and decodes Deflate with zlib-rs into a 192 KiB output slice, both carved from one 256 KiB buffer.
+The reader streams every entry. Each worker owns one 1 MiB buffer. It reads compressed input into the first 512 KiB and decodes Deflate into the other 512 KiB with Zipper's own decoder in `src/inflate.rs`, which is safe Rust. That half also holds the last 32 KiB of output, the history that Deflate matches copy from, so the decoder allocates nothing.
 Streaming buffers scale with workers, not expanded file size.
 
 ## Memory model

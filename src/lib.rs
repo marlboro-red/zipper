@@ -34,7 +34,7 @@ mod hfs;
 mod image;
 #[cfg(feature = "zip")]
 mod implode;
-#[cfg(any(test, kani))]
+#[cfg(feature = "zip")]
 mod inflate;
 #[cfg(any(feature = "tar", feature = "squashfs"))]
 mod lz4;

@@ -1221,33 +1221,30 @@ fn stream_entry(
             "ZIP compressed stream ends before its compressed size"
         );
     } else {
-        let (input_buffer, output_buffer) = buffer.split_at_mut(512 * 1024);
-        let mut inflater = flate2::Decompress::new(false);
+        let (input_buffer, window) = buffer.split_at_mut(512 * 1024);
+        let mut inflate = crate::inflate::Inflate::new();
         let (mut start, mut end) = (0, 0);
         loop {
             if start == end {
                 end = input.read(input_buffer)?;
                 start = 0;
             }
-            let (consumed, produced) = (inflater.total_in(), inflater.total_out());
-            let status = counters::time(Counter::DecodeNanos, || {
-                inflater.decompress(
-                    &input_buffer[start..end],
-                    output_buffer,
-                    flate2::FlushDecompress::None,
-                )
+            let step = counters::time(Counter::DecodeNanos, || {
+                inflate.decode(&input_buffer[start..end], window)
             })?;
-            let consumed = (inflater.total_in() - consumed) as usize;
-            let produced = (inflater.total_out() - produced) as usize;
-            start += consumed;
-            emit(&output_buffer[..produced])?;
-            if status == flate2::Status::StreamEnd {
+            start += step.consumed;
+            let produced = !step.output.is_empty();
+            emit(&window[step.output])?;
+            if step.finished {
                 break;
             }
-            ensure!(consumed > 0 || produced > 0, "truncated ZIP Deflate stream");
+            ensure!(
+                step.consumed > 0 || produced,
+                "truncated ZIP Deflate stream"
+            );
         }
         ensure!(
-            inflater.total_in() == item.packed(),
+            inflate.total_in() == item.packed(),
             "ZIP Deflate stream ends before its compressed size"
         );
     }
