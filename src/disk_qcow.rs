@@ -283,12 +283,14 @@ fn inflate(
     let end = at.saturating_add(packed).min(length);
     let mut input = vec![0u8; (end - at) as usize];
     read_file_exact(file, &mut input, at)?;
+    cluster_bytes(&input, cluster)
+}
+
+fn cluster_bytes(input: &[u8], cluster: usize) -> io::Result<Vec<u8>> {
     let mut output = vec![0u8; cluster];
-    let mut inflater = flate2::Decompress::new(false);
-    inflater
-        .decompress(&input, &mut output, flate2::FlushDecompress::Finish)
+    let decoded = crate::framing::inflate_block(&mut Vec::new(), &[], input, &mut output)
         .map_err(|_| io::Error::other("a compressed QCOW cluster is damaged"))?;
-    if inflater.total_out() != cluster as u64 {
+    if decoded.is_none_or(|decoded| decoded.written != cluster) {
         return Err(io::Error::other(
             "a compressed QCOW cluster does not fill its cluster",
         ));
@@ -545,6 +547,36 @@ pub(crate) fn open(file: ArchiveFile, length: u64) -> Result<Opened> {
         header.size,
         Box::new(layer),
     )))
+}
+
+#[cfg(test)]
+mod cluster_tests {
+    use super::*;
+
+    fn flate2_cluster(input: &[u8], cluster: usize) -> (Option<Vec<u8>>, bool) {
+        let mut output = vec![0u8; cluster];
+        let mut inflater = flate2::Decompress::new(false);
+        let finish = flate2::FlushDecompress::Finish;
+        let status = inflater.decompress(input, &mut output, finish);
+        let ended = matches!(status, Ok(flate2::Status::StreamEnd));
+        let filled = status.is_ok() && inflater.total_out() == cluster as u64;
+        (filled.then_some(output), ended)
+    }
+
+    #[test]
+    fn clusters_decode_as_flate2_decodes_them_or_are_refused_for_an_unfinished_stream() {
+        let mut stricter = 0;
+        for (input, cluster) in crate::framing::oracle::block_cases(crate::framing::oracle::raw) {
+            let ours = cluster_bytes(&input, cluster).ok();
+            let (theirs, ended) = flate2_cluster(&input, cluster);
+            if ours.is_none() && theirs.is_some() && !ended {
+                stricter += 1;
+                continue;
+            }
+            assert_eq!(ours, theirs, "{cluster}");
+        }
+        assert!(stricter > 0);
+    }
 }
 
 #[cfg(kani)]
