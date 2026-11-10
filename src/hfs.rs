@@ -1,3 +1,4 @@
+use crate::framing::adler32;
 use crate::tree::{self, BACKEND_HINT};
 use crate::{Field, field_check, image::Volume};
 use anyhow::{Context, Result, bail, ensure};
@@ -478,19 +479,6 @@ pub(crate) fn decmpfs(attribute: &[u8]) -> Field<Decmpfs> {
     Ok(Decmpfs { size, stored })
 }
 
-fn adler32(bytes: &[u8]) -> u32 {
-    let (mut a, mut b) = (1u32, 0u32);
-    for chunk in bytes.chunks(5552) {
-        for &byte in chunk {
-            a += u32::from(byte);
-            b += a;
-        }
-        a %= 65521;
-        b %= 65521;
-    }
-    b << 16 | a
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ZlibEnd {
     Exact,
@@ -498,23 +486,17 @@ pub(crate) enum ZlibEnd {
 }
 
 pub(crate) fn inflate_zlib(input: &[u8], output: &mut [u8], end: ZlibEnd) -> Result<()> {
-    ensure!(
-        input.len() >= 2
-            && input[0] & 0xF == 8
-            && input[0] >> 4 <= 7
-            && input[1] & 0x20 == 0
-            && (u32::from(input[0]) << 8 | u32::from(input[1])) % 31 == 0,
-        "zlib stream has a bad header"
-    );
-    let mut inflater = flate2::Decompress::new(false);
-    let status = inflater
-        .decompress(&input[2..], output, flate2::FlushDecompress::Finish)
+    let [cmf, flg, body @ ..] = input else {
+        bail!("zlib stream has a bad header");
+    };
+    crate::framing::zlib_header(*cmf, *flg).context("zlib stream has a bad header")?;
+    let size = output.len();
+    let decoded = crate::framing::inflate_block(&mut Vec::new(), &[], body, output)
         .context("zlib stream is damaged")?;
-    ensure!(
-        status == flate2::Status::StreamEnd && inflater.total_out() == output.len() as u64,
-        "zlib stream does not decode to its declared size"
-    );
-    let rest = &input[2 + inflater.total_in() as usize..];
+    let decoded = decoded
+        .filter(|decoded| decoded.written == size)
+        .context("zlib stream does not decode to its declared size")?;
+    let rest = &body[decoded.consumed..];
     if rest.is_empty() {
         return Ok(());
     }
@@ -1863,6 +1845,51 @@ mod field_tests {
         assert!(inflate_zlib(&stream, &mut longer, ZlibEnd::Exact).is_err());
         let mut shorter = [0u8; 16];
         assert!(inflate_zlib(&stream, &mut shorter, ZlibEnd::Exact).is_err());
+    }
+
+    fn flate2_inflate_zlib(input: &[u8], output: &mut [u8], end: ZlibEnd) -> bool {
+        let header_ok = input.len() >= 2
+            && input[0] & 0xF == 8
+            && input[0] >> 4 <= 7
+            && input[1] & 0x20 == 0
+            && (u32::from(input[0]) << 8 | u32::from(input[1])) % 31 == 0;
+        if !header_ok {
+            return false;
+        }
+        let mut inflater = flate2::Decompress::new(false);
+        let finish = flate2::FlushDecompress::Finish;
+        if inflater.decompress(&input[2..], output, finish).ok() != Some(flate2::Status::StreamEnd)
+            || inflater.total_out() != output.len() as u64
+        {
+            return false;
+        }
+        let rest = &input[2 + inflater.total_in() as usize..];
+        rest.is_empty()
+            || rest.len() >= 4
+                && u32::from_be_bytes(rest[..4].try_into().unwrap()) == adler32(output)
+                && (rest.len() == 4 || end == ZlibEnd::Padded)
+    }
+
+    #[test]
+    fn zlib_streams_decode_as_flate2_decodes_them_with_and_without_checksums() {
+        for (stream, size) in crate::framing::oracle::block_cases(crate::framing::oracle::zlib) {
+            let bare = &stream[..stream.len().saturating_sub(4)];
+            let padded = [&stream[..], &[0, 0, 0, 0, 0]].concat();
+            for input in [&stream[..], bare, &padded] {
+                for end in [ZlibEnd::Exact, ZlibEnd::Padded] {
+                    let (mut ours, mut theirs) = (vec![0u8; size], vec![0u8; size]);
+                    let accepted = inflate_zlib(input, &mut ours, end).is_ok();
+                    assert_eq!(
+                        accepted,
+                        flate2_inflate_zlib(input, &mut theirs, end),
+                        "{size}"
+                    );
+                    if accepted {
+                        assert_eq!(ours, theirs);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
