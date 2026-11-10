@@ -10,10 +10,15 @@ use std::{collections::HashMap, io::Write};
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 use zipper::counters::{Counter, take};
 
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 type Reader = fn(&std::path::Path, Option<&std::path::Path>) -> anyhow::Result<Vec<zipper::Entry>>;
 
 #[test]
 fn one_extraction_counts_what_the_archive_holds() {
+    let _counting = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("input.zip");
     let mut writer = ZipWriter::new(std::fs::File::create(&archive).unwrap());
@@ -65,6 +70,9 @@ fn one_extraction_counts_what_the_archive_holds() {
 
 #[test]
 fn squashfs_reads_each_fragment_block_once_when_files_take_turns() {
+    let _counting = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let blocks = 9u8;
     let files = 2000;
     let fragments: Vec<Vec<u8>> = (0..blocks)
@@ -120,6 +128,9 @@ fn squashfs_reads_each_fragment_block_once_when_files_take_turns() {
 
 #[test]
 fn a_7z_extraction_creates_each_folder_once_for_the_files_inside_it() {
+    let _counting = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let archive = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/7z-corpus/7zip-solid-per-2-files-short.7z");
     let work = tempfile::tempdir().unwrap();
