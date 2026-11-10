@@ -3,7 +3,8 @@
 Zipper's next objective is **complete, verified extraction**, including creating
 the output tree. Decoder throughput is a component metric. This page explains the
 extraction direction set by the review of 30 October 2026, and why it looks the way
-it does. Zipper reads ZIP, tar and 7z; it no longer has a format of its own.
+it does. Zipper reads ZIP, tar, 7z and the other formats the [parity matrix](reference/parity.md)
+lists, and it has no format of its own.
 
 The review reached these conclusions:
 
@@ -102,10 +103,12 @@ These invariants remain:
 - publication only after every task succeeds
 
 Failure must drain or cancel work safely and clean up. Rename publication is not a
-claim of crash durability. Add metadata fidelity and output-size limits to the
-product contract. The fast ZIP reader currently preserves bytes and directories
-only, and the backend remains the default. A benchmark-only fast option is not yet
-the user-visible extraction engine we intend to ship.
+claim of crash durability. Metadata fidelity and output-size limits are part of
+the product contract, since [M2](roadmap/m2-metadata-fidelity.md) and
+[M8](roadmap/m8-extraction-api-for-applications.md). Since
+[M6](roadmap/m6-native-reader-as-the-default.md), Zipper's own readers are the
+default for ZIP, tar and 7z, and each restores the metadata its reference page
+lists, such as the [ZIP reader](reference/zip-reader.md).
 
 ## Each workload gets its own research track
 
