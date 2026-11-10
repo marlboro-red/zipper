@@ -25,10 +25,10 @@ jobs:
       FILE_COUNT: ${{ matrix.files }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: rustup toolchain install 1.96.0 --profile minimal
+      - run: rustup toolchain install 1.99.1 --profile minimal
       - name: Build production 8 KiB reader
         run: |
-          cargo +1.96.0 build --locked --release
+          cargo +1.99.1 build --locked --release
           suffix=''
           if [ "$RUNNER_OS" = Windows ]; then suffix=.exe; fi
           cp "target/release/zipper$suffix" "candidate$suffix"
@@ -41,7 +41,7 @@ jobs:
           assert text.count('8 * 1024') == 2
           p.write_text(text.replace('8 * 1024','256 * 1024'))
           PY
-          cargo +1.96.0 build --locked --release
+          cargo +1.99.1 build --locked --release
           mkdir results
           git diff > results/reference.patch
           git rev-parse HEAD > results/candidate-source.txt

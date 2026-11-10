@@ -20,7 +20,7 @@ jobs:
       INPUT_EXPERIMENT: ${{ inputs.experiment }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: rustup toolchain install 1.96.0 --profile minimal
+      - run: rustup toolchain install 1.99.1 --profile minimal
       - name: Validate Linux memory measurement
         run: |
           python3 - <<'PY'
@@ -36,7 +36,7 @@ jobs:
           PY
       - name: Build unchanged baseline
         run: |
-          cargo +1.96.0 build --locked --release
+          cargo +1.99.1 build --locked --release
           cp target/release/zipper /tmp/zipper-before
       - name: Apply only the selected input experiment
         run: |
@@ -61,8 +61,8 @@ jobs:
           uname -a > results/environment.txt
           lscpu >> results/environment.txt
           df -T . >> results/environment.txt
-          cargo +1.96.0 test --locked --release
-          cargo +1.96.0 build --locked --release
+          cargo +1.99.1 test --locked --release
+          cargo +1.99.1 build --locked --release
       - name: Generate and measure flat and grouped trees
         run: |
           mode=native

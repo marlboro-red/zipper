@@ -151,7 +151,7 @@ struct Budget(AtomicUsize);
 impl Budget {
     fn reserve(&self, units: usize) -> Option<Reservation<'_>> {
         self.0
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |available| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |available| {
                 available.checked_sub(units)
             })
             .ok()

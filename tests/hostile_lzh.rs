@@ -433,7 +433,7 @@ fn entries_whose_sizes_or_checks_lie_are_refused() {
         &lzh_writer::archive(&[empty]),
         "packed size",
     );
-    for digit in [b'4', b'5', b'6', b'7'] {
+    for digit in *b"4567" {
         let mut wrong = Entry::compressed(2, "a", &data, lzh_writer::method(digit), 9);
         wrong.crc ^= 0x100;
         assert_rejected_with("compressed CRC", &lzh_writer::archive(&[wrong]), "CRC-16");

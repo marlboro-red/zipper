@@ -231,7 +231,7 @@ pub fn sample(random: &mut Random, length: usize) -> Vec<u8> {
     }
 }
 
-const METHODS: [u8; 5] = [b'0', b'4', b'5', b'6', b'7'];
+const METHODS: [u8; 5] = *b"04567";
 
 fn generated(seed: u64) -> (Vec<u8>, BTreeMap<String, String>) {
     let mut random = Random(seed * 0x9E37_79B9 + 7);
@@ -374,7 +374,7 @@ fn token_streams_and_every_table_form_decode_as_7zip_decodes_them() {
     let mut random = Random(5);
     let mut accepted = [0; 2];
     for (index, tokens) in token_streams(&mut random).into_iter().enumerate() {
-        for digit in [b'4', b'5', b'6', b'7'] {
+        for digit in *b"4567" {
             let method = lzh_writer::method(digit);
             let dictionary = lzh_writer::dictionary(method);
             let fits = tokens.iter().all(|token| match token {
@@ -427,7 +427,7 @@ fn damaged_lzh_are_refused_exactly_when_7zip_refuses_them() {
     for round in 0..300 {
         let length = 1 + random.below(30_000);
         let data = sample(&mut random, length);
-        let digit = [b'4', b'5', b'6', b'7'][round % 4];
+        let digit = b"4567"[round % 4];
         let entry = Entry::compressed(1, "f", &data, lzh_writer::method(digit), random.next());
         let header = lzh_writer::entry_bytes(&Entry {
             packed: Vec::new(),

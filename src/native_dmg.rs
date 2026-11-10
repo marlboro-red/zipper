@@ -1610,7 +1610,7 @@ mod field_tests {
 
     #[test]
     fn every_short_base64_text_decodes_as_a_plain_reference_does() {
-        let alphabet = [b'A', b'Q', b'/', b'=', b' ', b'\n', b'*', b'z'];
+        let alphabet = *b"AQ/= \n*z";
         let mut cases = 0;
         for length in 0..=7 {
             let mut digits = vec![0usize; length];

@@ -51,12 +51,12 @@ jobs:
           assert re.fullmatch(r'[a-z. ]+', os.environ['FORMATS'])
           assert 1 <= int(os.environ['RUNS']) <= 31
           EOF
-      - run: rustup toolchain install 1.96.0 --profile minimal
+      - run: rustup toolchain install 1.99.1 --profile minimal
       - name: Build both revisions
         run: |
           git worktree add ../base "$BASE"
-          (cd ../base && cargo +1.96.0 build --release --locked --package zipper)
-          cargo +1.96.0 build --release --locked --package zipper
+          (cd ../base && cargo +1.99.1 build --release --locked --package zipper)
+          cargo +1.99.1 build --release --locked --package zipper
           mkdir -p target/compare-bin
           suffix=""; [ "$RUNNER_OS" = Windows ] && suffix=".exe"
           cp "../base/target/release/zipper$suffix" "target/compare-bin/before$suffix"

@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate inputs
         run: python -c 'import os; r=int(os.environ["SCOREBOARD_RUNS"]); assert 1 <= r <= 31'
-      - run: rustup toolchain install 1.96.0 --profile minimal
+      - run: rustup toolchain install 1.99.1 --profile minimal
       - name: Install Linux baselines
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y 7zip libarchive-tools
@@ -42,7 +42,7 @@ jobs:
             echo "ZIPPER_BENCH_TAR=$(command -v bsdtar)" >> "$GITHUB_ENV"
           fi
       - name: Scoreboard
-        run: cargo +1.96.0 xtask bench --runs "$SCOREBOARD_RUNS" --scoreboard-dir target/ci-scoreboard --no-render
+        run: cargo +1.99.1 xtask bench --runs "$SCOREBOARD_RUNS" --scoreboard-dir target/ci-scoreboard --no-render
       - name: File creation floor
         run: |
           mkdir -p target/bench-work/probe

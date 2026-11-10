@@ -39,8 +39,8 @@ jobs:
       - name: Validate workload limits
         run: |
           python -c 'import os; n=int(os.environ["MATRIX_FILES"]); r=int(os.environ["MATRIX_RUNS"]); assert 1 <= n <= 90000 and 1 <= r <= 31'
-      - run: rustup toolchain install 1.96.0 --profile minimal
-      - run: cargo +1.96.0 build --locked --release --examples --bin zipper
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - run: cargo +1.99.1 build --locked --release --examples --bin zipper
       - name: Install Linux baselines
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y 7zip libarchive-tools
@@ -63,7 +63,7 @@ jobs:
         run: |
           mkdir results
           python -c 'import os,platform,json; print(json.dumps({"platform": platform.platform(), "cpu": platform.processor(), "cpu_count": os.cpu_count(), "runner": os.environ.get("ImageVersion"), "cache": "uncontrolled", "filesystem_and_filters": "see platform-environment.txt"}, indent=2))' > results/environment.json
-          rustc +1.96.0 --version > results/compiler.txt
+          rustc +1.99.1 --version > results/compiler.txt
           git rev-parse HEAD > results/source.txt
       - name: Windows filesystem and filter context
         if: runner.os == 'Windows'

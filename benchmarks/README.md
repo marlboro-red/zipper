@@ -99,6 +99,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-10 | [Rust 1.99.1 in place of 1.96.0](toolchain/rust-1.99.1/README.md) | Kept. Twelve Silesia workloads extract as fast as with 1.96.0, with ratios of 0.996 to 1.052 and every range overlapping. |
 | 2026-11-10 | [Profile-guided optimization of the release binary](pgo/lzma-and-readers/README.md) | Reverted. No LZMA workload got faster, even with a profile of the measured archives. Only BZip2 tar gained, by 2.1%, and ten other workloads overlapped. |
 
 ## Add an experiment
