@@ -27,7 +27,7 @@ def seconds(value, unit):
 def main():
     work = Path(sys.argv[1])
     binaries = {"asm": work / "probe-asm", "safe": work / "probe-safe"}
-    busy = refuse_when_busy(False)
+    busy = refuse_when_busy(True)
     runs = []
     for session in range(4):
         for build in (["asm", "safe"] if session % 2 == 0 else ["safe", "asm"]):

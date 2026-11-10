@@ -1,11 +1,12 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Builds the plain and the PGO release binaries of one commit into $1.
 # Trains on the dependency sources only, so no measured Silesia archive is in the profile.
 set -euo pipefail
 work=${1:?usage: build.sh WORK_DIR}
 root=$(git rev-parse --show-toplevel)
 cd "$root"
-profdata=$(rustc +1.96.0 --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/llvm-profdata
+host=$(rustc +1.96.0 -vV | sed -n "s/^host: //p")
+profdata=$(rustc +1.96.0 --print sysroot)/lib/rustlib/$host/bin/llvm-profdata
 deps=target/bench-corpora/dependencies
 mkdir -p "$work/train" "$work/raw"
 
