@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cases for scripts/merge_coverage.py; the `hooks` gate step runs them."""
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -21,8 +22,11 @@ def document(*parts):
     return PRE + "\n".join(parts)
 
 
+CLEAN_ENV = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+
+
 def run(git, *args, check=True):
-    return subprocess.run(["git", *args], cwd=git, capture_output=True, text=True, check=check)
+    return subprocess.run(["git", *args], cwd=git, capture_output=True, text=True, check=check, env=CLEAN_ENV)
 
 
 def cases():
