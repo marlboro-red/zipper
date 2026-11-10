@@ -437,9 +437,10 @@ impl<R: BufRead> Reader<R> {
     }
 
     fn trailer(&mut self) -> io::Result<()> {
-        if !self.gather(self.framing.trailer())? {
+        if self.have < self.framing.trailer() && !self.gather(self.framing.trailer())? {
             return Ok(());
         }
+        let more = self.framing == Framing::Gzip && !self.input.fill_buf()?.is_empty();
         self.have = 0;
         let word = |at: usize| self.gathered[at..at + 4].try_into().expect("four bytes");
         if self.framing == Framing::Zlib {
@@ -458,7 +459,7 @@ impl<R: BufRead> Reader<R> {
             )));
         }
         // SPEC(RFC 1952 2.2): a gzip file is a series of members, so input after a trailer is one more.
-        if self.input.fill_buf()?.is_empty() {
+        if !more {
             self.stage = Stage::End;
         } else {
             self.inflate.restart();
@@ -1056,6 +1057,75 @@ mod tests {
             }
         }
         assert_eq!(adler32(&[255; 70_000]), reference(&[255; 70_000]));
+    }
+
+    struct InterruptsOnce<'a> {
+        bytes: &'a [u8],
+        at: usize,
+        interrupt_at: usize,
+        interrupted: bool,
+    }
+
+    impl Read for InterruptsOnce<'_> {
+        fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            let count = self.fill_buf()?.len().min(output.len());
+            output[..count].copy_from_slice(&self.bytes[self.at..self.at + count]);
+            self.consume(count);
+            Ok(count)
+        }
+    }
+
+    impl BufRead for InterruptsOnce<'_> {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            if self.at == self.interrupt_at && !self.interrupted {
+                self.interrupted = true;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            let end = match self.at < self.interrupt_at {
+                true => self.interrupt_at,
+                false => self.bytes.len(),
+            };
+            Ok(&self.bytes[self.at..end])
+        }
+
+        fn consume(&mut self, amount: usize) {
+            self.at += amount;
+        }
+    }
+
+    #[test]
+    fn an_interrupted_read_at_any_byte_is_retried_without_losing_a_member() {
+        let first = gzip(&sample(18, 300), 6);
+        let stream = [first.clone(), gzip(b"second member", 1)].concat();
+        let expected = [sample(18, 300), b"second member".to_vec()].concat();
+        for interrupt_at in 0..=stream.len() {
+            for framing in ["gzip", "zlib", "raw"] {
+                let input = match framing {
+                    "gzip" => &stream[..],
+                    "zlib" => &zlib(&expected, 6)[..],
+                    _ => &raw(&expected, 6)[..],
+                };
+                if interrupt_at > input.len() {
+                    continue;
+                }
+                let input = InterruptsOnce {
+                    bytes: input,
+                    at: 0,
+                    interrupt_at,
+                    interrupted: false,
+                };
+                let mut reader = match framing {
+                    "gzip" => Reader::gzip(input),
+                    "zlib" => Reader::zlib(input),
+                    _ => Reader::raw(input),
+                };
+                let mut bytes = Vec::new();
+                reader.read_to_end(&mut bytes).unwrap_or_else(|error| {
+                    panic!("{framing} interrupted at {interrupt_at}: {error}")
+                });
+                assert_eq!(bytes, expected, "{framing} interrupted at {interrupt_at}");
+            }
+        }
     }
 
     #[test]
