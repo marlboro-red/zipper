@@ -356,47 +356,38 @@ fn extract_tags(
 }
 
 struct ZlibBody<R> {
-    input: R,
-    inflate: flate2::Decompress,
+    inflated: crate::framing::Reader<R>,
     remaining: u64,
-    ended: bool,
 }
 
 fn data_error(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
+fn zlib_error(error: io::Error) -> io::Error {
+    match error.kind() {
+        io::ErrorKind::InvalidData => data_error("the SWF zlib stream is damaged"),
+        io::ErrorKind::UnexpectedEof => data_error("the SWF zlib stream is truncated"),
+        _ => error,
+    }
+}
+
 impl<R: BufRead> ZlibBody<R> {
-    fn step(&mut self, output: &mut [u8]) -> io::Result<usize> {
-        loop {
-            let input = self.input.fill_buf()?;
-            let at_end = input.is_empty();
-            let (before_in, before_out) = (self.inflate.total_in(), self.inflate.total_out());
-            let flush = match at_end {
-                true => flate2::FlushDecompress::Finish,
-                false => flate2::FlushDecompress::None,
-            };
-            let status = self
-                .inflate
-                .decompress(input, output, flush)
-                .map_err(|_| data_error("the SWF zlib stream is damaged"))?;
-            let consumed = (self.inflate.total_in() - before_in) as usize;
-            self.input.consume(consumed);
-            let produced = (self.inflate.total_out() - before_out) as usize;
-            self.ended = status == flate2::Status::StreamEnd;
-            if produced > 0 || self.ended {
-                return Ok(produced);
-            }
-            if at_end && consumed == 0 {
-                return Err(data_error("the SWF zlib stream is truncated"));
-            }
+    fn new(input: R, decoded: u64) -> Self {
+        Self {
+            inflated: crate::framing::Reader::zlib(input),
+            remaining: decoded,
         }
+    }
+
+    fn input(&mut self) -> &mut R {
+        self.inflated.get_mut()
     }
 }
 
 impl<R: BufRead> Read for ZlibBody<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        if buffer.is_empty() || self.ended {
+        if buffer.is_empty() {
             return Ok(0);
         }
         let mut probe = [0u8; 1];
@@ -409,18 +400,18 @@ impl<R: BufRead> Read for ZlibBody<R> {
                 &mut buffer[..want]
             }
         };
-        let produced = self.step(output)?;
+        let produced = self.inflated.read(output).map_err(zlib_error)?;
         if self.remaining == 0 && produced > 0 {
             return Err(data_error(
                 "the SWF zlib stream decodes past the length the file declares",
             ));
         }
-        self.remaining -= produced as u64;
-        if self.ended && self.remaining > 0 {
+        if produced == 0 && self.remaining > 0 {
             return Err(data_error(
                 "the SWF zlib stream ends before the length the file declares",
             ));
         }
+        self.remaining -= produced as u64;
         Ok(produced)
     }
 }
@@ -462,7 +453,7 @@ impl Uncompressed {
         );
         if let Body::Zlib(body) = &mut self.body {
             ensure!(
-                body.input.fill_buf()?.is_empty(),
+                body.input().fill_buf()?.is_empty(),
                 "the SWF file has data after its zlib stream"
             );
         }
@@ -477,12 +468,7 @@ fn opened_body(
 ) -> Result<Body> {
     let decoded = u64::from(header.length) - HEADER as u64;
     if header.compression == Compression::Zlib {
-        return Ok(Body::Zlib(ZlibBody {
-            input,
-            inflate: flate2::Decompress::new(true),
-            remaining: decoded,
-            ended: false,
-        }));
+        return Ok(Body::Zlib(ZlibBody::new(input, decoded)));
     }
     let mut bytes = [0u8; LZMA_FIELDS];
     read_exactly(&mut input, &mut bytes, "LZMA header")?;
@@ -572,6 +558,111 @@ pub fn read_archive(
         )?;
         decoded.finish()
     })
+}
+
+#[cfg(test)]
+mod zlib_tests {
+    use super::*;
+
+    struct Flate2Body<R> {
+        input: R,
+        inflate: flate2::Decompress,
+        remaining: u64,
+        ended: bool,
+    }
+
+    impl<R: BufRead> Flate2Body<R> {
+        fn step(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            loop {
+                let input = self.input.fill_buf()?;
+                let at_end = input.is_empty();
+                let (before_in, before_out) = (self.inflate.total_in(), self.inflate.total_out());
+                let flush = match at_end {
+                    true => flate2::FlushDecompress::Finish,
+                    false => flate2::FlushDecompress::None,
+                };
+                let status = self
+                    .inflate
+                    .decompress(input, output, flush)
+                    .map_err(|_| data_error("damaged"))?;
+                let consumed = (self.inflate.total_in() - before_in) as usize;
+                self.input.consume(consumed);
+                let produced = (self.inflate.total_out() - before_out) as usize;
+                self.ended = status == flate2::Status::StreamEnd;
+                if produced > 0 || self.ended {
+                    return Ok(produced);
+                }
+                if at_end && consumed == 0 {
+                    return Err(data_error("truncated"));
+                }
+            }
+        }
+    }
+
+    impl<R: BufRead> Read for Flate2Body<R> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if buffer.is_empty() || self.ended {
+                return Ok(0);
+            }
+            let mut probe = [0u8; 1];
+            let output = match self.remaining {
+                0 => &mut probe[..],
+                remaining => {
+                    let want = buffer.len().min(remaining as usize);
+                    &mut buffer[..want]
+                }
+            };
+            let produced = self.step(output)?;
+            if self.remaining == 0 && produced > 0 {
+                return Err(data_error("past"));
+            }
+            self.remaining -= produced as u64;
+            if self.ended && self.remaining > 0 {
+                return Err(data_error("short"));
+            }
+            Ok(produced)
+        }
+    }
+
+    fn read_whole(mut body: impl Read) -> Option<Vec<u8>> {
+        let mut bytes = Vec::new();
+        let mut piece = [0u8; 999];
+        loop {
+            match body.read(&mut piece).ok()? {
+                0 => break,
+                count => bytes.extend_from_slice(&piece[..count]),
+            }
+        }
+        (body.read(&mut [0u8; 1]).ok()? == 0).then_some(bytes)
+    }
+
+    #[test]
+    fn zlib_bodies_read_as_the_flate2_body_reads_them_whole_cut_and_flipped() {
+        for (stream, size) in crate::framing::oracle::block_cases(crate::framing::oracle::zlib) {
+            let ours = ZlibBody::new(&stream[..], size as u64);
+            let theirs = Flate2Body {
+                input: &stream[..],
+                inflate: flate2::Decompress::new(true),
+                remaining: size as u64,
+                ended: false,
+            };
+            let ours = read_whole(ours);
+            let theirs = read_whole(theirs);
+            let mut ours_rest = ZlibBody::new(&stream[..], size as u64);
+            let mut theirs_rest = Flate2Body {
+                input: &stream[..],
+                inflate: flate2::Decompress::new(true),
+                remaining: size as u64,
+                ended: false,
+            };
+            if ours.is_some() {
+                io::copy(&mut ours_rest, &mut io::sink()).unwrap();
+                io::copy(&mut theirs_rest, &mut io::sink()).unwrap();
+                assert_eq!(ours_rest.input().len(), theirs_rest.input.len(), "{size}");
+            }
+            assert_eq!(ours, theirs, "{size}");
+        }
+    }
 }
 
 #[cfg(test)]
