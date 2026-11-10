@@ -44,7 +44,7 @@ Kept. The check closes three ways for one archive to mean different things to di
 ## Limits
 
 - One machine, warm cache, four threads.
-- The review found hostile layouts this change does not close. A streaming reader can still see a record hidden between records, after a Deflate stream ends, or inside stored data with a fake data descriptor. The [roadmap](../../../docs/roadmap.md#m1-correctness-contract-for-zip) tracks them.
+- The review found hostile layouts this change does not close. A streaming reader can still see a record hidden between records, after a Deflate stream ends, or inside stored data with a fake data descriptor. The [roadmap](../../../docs/roadmap/m1-correctness-contract-for-zip.md) tracks them.
 - `list` reads only the central directory, so it does not run the local-header check.
 - Archives over 4 GiB and Java `jar` output were not tested.
 

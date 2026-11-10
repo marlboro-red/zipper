@@ -51,7 +51,7 @@ Kept in its final form.
 
 - The flat-file rows ran only with the first version. They contain one directory, so the change does not affect them.
 - One machine, warm cache, umask `022`. A restrictive umask makes more directories differ from their archive mode, which brings back some `chmod` calls.
-- Timestamps, symlinks and Windows attributes are not restored. The [roadmap](../../../docs/roadmap.md#m2-metadata-fidelity) tracks them.
+- Timestamps, symlinks and Windows attributes are not restored. The [roadmap](../../../docs/roadmap/m2-metadata-fidelity.md) tracks them.
 
 ## Reproduce
 

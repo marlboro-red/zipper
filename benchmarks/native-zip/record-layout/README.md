@@ -49,7 +49,7 @@ Kept. The check closes five ways to hide data from Zipper at no measured cost. I
   - a fake data descriptor inside stored data
   - a Unicode path field that renames an entry
 
-  The [roadmap](../../../docs/roadmap.md#m1-correctness-contract-for-zip) tracks them.
+  The [roadmap](../../../docs/roadmap/m1-correctness-contract-for-zip.md) tracks them.
 - `list` reads only the central directory, so it runs the first-record and ZIP64-field checks but not the per-record layout check.
 - Java `jar` output and archives over 4 GiB were not tested.
 

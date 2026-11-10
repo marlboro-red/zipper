@@ -31,7 +31,7 @@ Kept. A field must name the entry exactly as its stored name does.
 
 ## Limits
 
-- Archives that use the field as intended, such as Windows-era Info-ZIP or WinZip output with an OEM code-page name and a UTF-8 field, are rejected and left to the compatibility backend. None was available to test. The [roadmap](../../../docs/roadmap.md#m2-metadata-fidelity) tracks accepting them in M2.
+- Archives that use the field as intended, such as Windows-era Info-ZIP or WinZip output with an OEM code-page name and a UTF-8 field, are rejected and left to the compatibility backend. None was available to test. The [roadmap](../../../docs/roadmap/m2-metadata-fidelity.md) tracks accepting them in M2.
 - `list` reads only central records, so it does not see a field present only in a local header. `test` and `extract` reject it.
 - One machine, warm cache.
 

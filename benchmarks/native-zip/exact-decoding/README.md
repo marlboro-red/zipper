@@ -60,7 +60,7 @@ Kept. The change closes two ways to hide data from Zipper, costs no memory, and 
 
 - One machine, warm cache, four threads.
 - The gain applies to streamed entries larger than the old read size. Tiny files show no change.
-- A Unicode path extra field that renames an entry is still not checked. The [roadmap](../../../docs/roadmap.md#m1-correctness-contract-for-zip) tracks it.
+- A Unicode path extra field that renames an entry is still not checked. The [roadmap](../../../docs/roadmap/m1-correctness-contract-for-zip.md) tracks it.
 - Java `jar` output and archives over 4 GiB were not tested.
 
 ## Reproduce
