@@ -19,11 +19,12 @@ Done so far, by 11 November 2026:
 - [Buffered BCJ2 branch streams](../../benchmarks/native-7z/bcj2-buffered-branches/README.md). A BCJ2 7z of Silesia extracts 2.25 times faster at one thread. The review found a Deflate64 coder charged 64 KiB of its 142,368-byte state, now fixed.
 - [One Deflate64 decoder per ZIP entry](../../benchmarks/native-zip/deflate64-one-inflater/README.md). A Deflate64 ZIP of Silesia extracts 1.83 times faster at one thread, and faster than 7-Zip.
 - [Each 7z output folder created once](../../benchmarks/native-7z/create-folders-once/README.md). Kept as a cleanup, with no measured change.
-- The doubling copy for short-distance LZMA matches and parallel LZMA2 segments behind 7z filters are timed and kept, and ship next.
+- [The doubling copy for short-distance LZMA matches](../../benchmarks/lzma/repeating-copy/README.md). A 7z of 256 MiB of zeros extracts 7.3 times faster, and faster than 7-Zip.
+- [Parallel LZMA2 segments behind 7z filters](../../benchmarks/native-7z/filtered-lzma2-segments/README.md). An ARM64-filtered 7z extracts 1.29 times faster at four threads.
+- [A macOS worker cap for ZIPs of mostly small files](../../benchmarks/native-zip/small-files-cap/README.md). The dependency sources and the mixed tree extract about 10% faster at default threads. The same sweep found no wall-time gain for a cap on non-solid 7z, so 7z keeps its worker count.
 
 Still to try, from the report:
 
-- A worker cap for ZIPs and non-solid 7z that are mostly file creation, on macOS, after a thread sweep.
 - A writer pool for solid 7z folders of small files.
 - BCJ2 decoding its main stream a slice at a time.
 - One Deflate decoder per ZIP worker, and reads of the archive without a lock.
