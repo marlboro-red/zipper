@@ -225,7 +225,7 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
 ) -> Result<Box<dyn Read + Send>> {
     Ok(match compression {
         Compression::None => Box::new(input),
-        Compression::Gzip => Box::new(flate2::bufread::MultiGzDecoder::new(input)),
+        Compression::Gzip => Box::new(crate::framing::Reader::gzip(input)),
         #[cfg(feature = "zstd")]
         Compression::Zstd => Box::new(zstd::stream::read::Decoder::with_buffer(input)?),
         #[cfg(not(feature = "zstd"))]
