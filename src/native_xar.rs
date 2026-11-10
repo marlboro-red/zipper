@@ -842,7 +842,7 @@ impl Archive {
             consumed,
         };
         Ok(Inflated {
-            inner: flate2::bufread::ZlibDecoder::new(BufReader::new(raw)),
+            inner: crate::framing::Reader::zlib(BufReader::new(raw)),
             produced: 0,
             declared: self.header.toc_uncompressed,
         })
@@ -1024,7 +1024,7 @@ fn decoder<'a>(
 ) -> Result<Box<dyn Read + 'a>> {
     Ok(match encoding {
         Encoding::Stored => Box::new(input),
-        Encoding::Zlib => Box::new(flate2::bufread::ZlibDecoder::new(input)),
+        Encoding::Zlib => Box::new(crate::framing::Reader::zlib(input)),
         Encoding::Bzip2 => Box::new(bzip2::bufread::BzDecoder::new(input)),
         Encoding::Lzma if !input.fill_buf()?.starts_with(&XZ_MAGIC) => {
             let mut head = [0u8; LZMA_ALONE_HEADER];
