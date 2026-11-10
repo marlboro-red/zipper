@@ -150,6 +150,7 @@ struct Image<'v> {
     order: Order,
     end: u64,
     packed: Vec<u8>,
+    window: Vec<u8>,
 }
 
 impl Image<'_> {
@@ -225,6 +226,16 @@ struct FileData<'i, 'v> {
     taken: usize,
 }
 
+fn inflate_page(window: &mut Vec<u8>, packed: &[u8], page: &mut [u8]) -> Result<()> {
+    let size = page.len();
+    let decoded = crate::framing::zlib_block(window, packed, page)?;
+    ensure!(
+        decoded.is_some_and(|decoded| decoded.written == size && decoded.consumed == packed.len()),
+        "the block does not decode to its page"
+    );
+    Ok(())
+}
+
 impl FileData<'_, '_> {
     fn next_page(&mut self) -> Result<()> {
         let path = self.path;
@@ -250,17 +261,10 @@ impl FileData<'_, '_> {
             length <= u64::from(LARGEST_COMPRESSED_PAGE),
             "CramFS file {path:?} has a block larger than a compressed page"
         );
-        let packed = self.image.read(self.start, length as usize)?;
-        let mut inflater = flate2::Decompress::new(true);
-        let status = inflater
-            .decompress(packed, &mut self.buffer, flate2::FlushDecompress::Finish)
+        self.image.read(self.start, length as usize)?;
+        let image = &mut *self.image;
+        inflate_page(&mut image.window, &image.packed, &mut self.buffer)
             .with_context(|| format!("CramFS file {path:?} has a damaged block"))?;
-        ensure!(
-            status == flate2::Status::StreamEnd
-                && inflater.total_out() == expected as u64
-                && inflater.total_in() == length,
-            "CramFS file {path:?} has a block that does not decode to its page"
-        );
         self.start = end;
         Ok(())
     }
@@ -412,6 +416,7 @@ pub(crate) fn read(volume: &mut dyn Volume, tree: &mut tree::Tree) -> Result<()>
         order: superblock.order,
         end,
         packed: Vec::new(),
+        window: Vec::new(),
     };
     if let Some(crc) = superblock.crc {
         check_crc(&mut image, crc)?;
@@ -535,6 +540,32 @@ pub fn read_archive(
     tree::extract("CramFS", path, destination, options, |tree| {
         read(&mut volume, tree)
     })
+}
+
+#[cfg(test)]
+mod zlib_tests {
+    use super::*;
+
+    fn flate2_page(packed: &[u8], page: &mut [u8]) -> bool {
+        let mut inflater = flate2::Decompress::new(true);
+        let finish = flate2::FlushDecompress::Finish;
+        inflater.decompress(packed, page, finish).ok() == Some(flate2::Status::StreamEnd)
+            && inflater.total_out() == page.len() as u64
+            && inflater.total_in() == packed.len() as u64
+    }
+
+    #[test]
+    fn pages_decode_as_flate2_decodes_them_whole_cut_and_flipped() {
+        let mut window = Vec::new();
+        for (packed, size) in crate::framing::oracle::block_cases(crate::framing::oracle::zlib) {
+            let (mut ours, mut theirs) = (vec![0u8; size], vec![0u8; size]);
+            let accepted = inflate_page(&mut window, &packed, &mut ours).is_ok();
+            assert_eq!(accepted, flate2_page(&packed, &mut theirs), "{size}");
+            if accepted {
+                assert_eq!(ours, theirs);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
