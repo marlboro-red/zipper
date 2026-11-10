@@ -112,6 +112,12 @@ All records are local measurements. Each one names its machine, revision, run co
 | 2026-11-10 | [Linux x86-64 rerun of the sevenz-rust2, PGO and Rust 1.99.1 timings](cross-platform/linux-x86-oneoff/README.md) | No change. On one hosted runner, Zipper beat sevenz-rust2 on every 7z workload, PGO helped only BZip2, and Rust 1.99.1 was 2.5% to 3.2% slower on gzip tar and one-thread ZIP Deflate. |
 | 2026-11-10 | [Profile-guided optimization of the release binary](pgo/lzma-and-readers/README.md) | Reverted. No LZMA workload got faster, even with a profile of the measured archives. Only BZip2 tar gained, by 2.1%, and ten other workloads overlapped. |
 
+## Milestone summaries
+
+| Date | Experiment | Verdict |
+| --- | --- | --- |
+| 2026-11-11 | [Before and after the research report's changes](research-report/before-after/README.md) | Every targeted workload is faster, from 1.10 times on small-file ZIPs to 8.33 times on zero runs, and nothing else moved. Zipper now beats 7-Zip 26.06 on every ZIP row, solid small-file 7z and zero runs, and trails on plain LZMA 7z by 1.08 to 1.10 times. |
+
 ## Add an experiment
 
 1. Create `benchmarks/<area>/<experiment>/README.md` and put the raw data beside it.

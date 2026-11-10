@@ -28,6 +28,8 @@ Done so far, by 11 November 2026:
 
 - [A writer pool for solid 7z folders of small files](../../benchmarks/native-7z/solid-writer-pool/README.md). The solid dependency sources extract 1.60 times faster at default threads, and a TLA+ model of the hand-off holds 8 rules.
 
+[Before and after the research report's changes](../../benchmarks/research-report/before-after/README.md) times main before and after all of them on one machine, with 7-Zip in every row.
+
 Still to try, from the report and the read of pzip and fastzip:
 
 - One Deflate decoder per ZIP worker, and reads of the archive without a lock.
