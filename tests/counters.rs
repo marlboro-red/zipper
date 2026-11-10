@@ -117,3 +117,40 @@ fn squashfs_reads_each_fragment_block_once_when_files_take_turns() {
         assert_eq!(written, [fragments[fragment][offset]], "f{index:05}");
     }
 }
+
+#[test]
+fn a_7z_extraction_creates_each_folder_once_for_the_files_inside_it() {
+    let archive = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/7z-corpus/7zip-solid-per-2-files-short.7z");
+    let work = tempfile::tempdir().unwrap();
+    take();
+    let listed = zipper::native_7z::read_archive(
+        &archive,
+        Some(&work.path().join("out")),
+        zipper::native_7z::ReadOptions::default(),
+    )
+    .unwrap();
+    let calls = take()
+        .into_iter()
+        .find(|(counter, _)| *counter == Counter::DirectoryCreateCalls)
+        .unwrap()
+        .1;
+    let folders: std::collections::HashSet<&str> = listed
+        .iter()
+        .map(|entry| match entry.directory {
+            true => entry.name.as_str(),
+            false => entry.name.rsplit_once('/').map_or("", |(parent, _)| parent),
+        })
+        .collect();
+    let files = listed.iter().filter(|entry| !entry.directory).count();
+    assert!(
+        files > folders.len(),
+        "{files} files in {} folders",
+        folders.len()
+    );
+    assert!(
+        calls > 0 && calls <= folders.len() as u64,
+        "{calls} calls for {} folders",
+        folders.len()
+    );
+}

@@ -6,7 +6,7 @@ use crate::xz_filters::{self, BRANCH_BUFFER, DELTA_HISTORY, DeltaDecoder, Filter
 use crate::{Entry, counters, progress::Tracker, safe_path, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs,
     io::{BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -2512,6 +2512,7 @@ pub fn read_archive(
     };
     let root = staging.as_ref().map(|staging| staging.path());
     if let Some(root) = root {
+        let mut created = HashSet::new();
         for (item, _) in archive
             .items
             .iter()
@@ -2522,7 +2523,11 @@ pub fn read_archive(
                 Kind::Directory => root.join(&item.name),
                 _ => crate::parent(&root.join(&item.name)).to_owned(),
             };
-            fs::create_dir_all(folder)?;
+            if !created.contains(&folder) {
+                fs::create_dir_all(&folder)?;
+                counters::add(counters::Counter::DirectoryCreateCalls, 1);
+                created.insert(folder);
+            }
         }
     }
     let mut by_folder: Vec<Vec<usize>> = vec![Vec::new(); archive.folders.len()];
