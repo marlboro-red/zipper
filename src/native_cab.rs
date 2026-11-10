@@ -861,33 +861,32 @@ fn decoder_memory(method: Method) -> u64 {
 }
 
 struct Mszip {
-    inflate: flate2::Decompress,
+    window: Vec<u8>,
     history: Vec<u8>,
 }
 
 impl Mszip {
+    fn new() -> Self {
+        Self {
+            window: Vec::new(),
+            history: Vec::with_capacity(2 * DEFLATE_HISTORY),
+        }
+    }
+
     fn block(&mut self, packed: &[u8], output: &mut [u8], size: usize) -> Result<()> {
         let deflate = packed
             .strip_prefix(MSZIP_SIGNATURE)
             .context("CAB MSZIP block does not start with CK")?;
-        self.inflate.reset(false);
-        if !self.history.is_empty() {
-            self.inflate
-                .set_dictionary(&self.history)
-                .context("cannot give the MSZIP decoder its history")?;
-        }
-        let status = self
-            .inflate
-            .decompress(
-                deflate,
-                &mut output[..size + 1],
-                flate2::FlushDecompress::Finish,
-            )
-            .map_err(|error| anyhow::anyhow!("damaged CAB MSZIP block: {error}"))?;
+        let decoded = crate::framing::inflate_block(
+            &mut self.window,
+            &self.history,
+            deflate,
+            &mut output[..size],
+        )
+        .map_err(|error| anyhow::anyhow!("damaged CAB MSZIP block: {error}"))?;
         ensure!(
-            status == flate2::Status::StreamEnd
-                && self.inflate.total_in() == deflate.len() as u64
-                && self.inflate.total_out() == size as u64,
+            decoded.is_some_and(|decoded| decoded.consumed == deflate.len()
+                && decoded.written == size),
             "damaged CAB MSZIP block: its deflate stream does not end exactly at its {size} bytes"
         );
         if size >= DEFLATE_HISTORY {
@@ -936,12 +935,7 @@ impl Decoders {
         Ok(match method {
             Method::Stored => Decoder::Stored,
             Method::Mszip => {
-                let mut mszip = self.mszip.take().unwrap_or_else(|| {
-                    Box::new(Mszip {
-                        inflate: flate2::Decompress::new(false),
-                        history: Vec::with_capacity(2 * DEFLATE_HISTORY),
-                    })
-                });
+                let mut mszip = self.mszip.take().unwrap_or_else(|| Box::new(Mszip::new()));
                 mszip.history.clear();
                 Decoder::Mszip(mszip)
             }
@@ -1486,6 +1480,123 @@ mod proofs {
             assert!((1980..=2107).contains(&year));
             assert!((1..=12).contains(&month) && (1..=31).contains(&day));
             assert!(hour <= 23 && minute <= 59 && second <= 58);
+        }
+    }
+}
+
+#[cfg(test)]
+mod mszip_tests {
+    use super::*;
+    use crate::framing::oracle::{damaged, sample};
+
+    struct Flate2Mszip {
+        inflate: flate2::Decompress,
+        history: Vec<u8>,
+    }
+
+    impl Flate2Mszip {
+        fn block(&mut self, packed: &[u8], output: &mut [u8], size: usize) -> bool {
+            let Some(deflate) = packed.strip_prefix(MSZIP_SIGNATURE) else {
+                return false;
+            };
+            self.inflate.reset(false);
+            if !self.history.is_empty() {
+                self.inflate.set_dictionary(&self.history).unwrap();
+            }
+            let finish = flate2::FlushDecompress::Finish;
+            let Ok(status) = self
+                .inflate
+                .decompress(deflate, &mut output[..size + 1], finish)
+            else {
+                return false;
+            };
+            if status != flate2::Status::StreamEnd
+                || self.inflate.total_in() != deflate.len() as u64
+                || self.inflate.total_out() != size as u64
+            {
+                return false;
+            }
+            if size >= DEFLATE_HISTORY {
+                self.history.clear();
+            }
+            self.history
+                .extend_from_slice(&output[size.saturating_sub(DEFLATE_HISTORY)..size]);
+            let excess = self.history.len().saturating_sub(DEFLATE_HISTORY);
+            self.history.drain(..excess);
+            true
+        }
+    }
+
+    fn mszip_blocks(data: &[u8], level: u32) -> Vec<(Vec<u8>, usize)> {
+        let mut blocks = Vec::new();
+        for (index, chunk) in data.chunks(BLOCK).enumerate() {
+            let mut compress = flate2::Compress::new(flate2::Compression::new(level), false);
+            if index > 0 {
+                let start = index * BLOCK;
+                compress
+                    .set_dictionary(&data[start.saturating_sub(DEFLATE_HISTORY)..start])
+                    .unwrap();
+            }
+            let mut packed = MSZIP_SIGNATURE.to_vec();
+            packed.reserve(chunk.len() + 1024);
+            compress
+                .compress_vec(chunk, &mut packed, flate2::FlushCompress::Finish)
+                .unwrap();
+            blocks.push((packed, chunk.len()));
+        }
+        blocks
+    }
+
+    fn agree(blocks: &[(Vec<u8>, usize)], label: &str) {
+        let mut ours = Mszip::new();
+        let mut theirs = Flate2Mszip {
+            inflate: flate2::Decompress::new(false),
+            history: Vec::new(),
+        };
+        let mut ours_out = vec![0u8; BLOCK + 1];
+        let mut theirs_out = vec![0u8; BLOCK + 1];
+        for (index, (packed, size)) in blocks.iter().enumerate() {
+            let accepted = ours.block(packed, &mut ours_out, *size).is_ok();
+            let expected = theirs.block(packed, &mut theirs_out, *size);
+            assert_eq!(accepted, expected, "{label}: block {index}");
+            if !accepted {
+                return;
+            }
+            assert_eq!(
+                ours_out[..*size],
+                theirs_out[..*size],
+                "{label}: block {index}"
+            );
+            assert_eq!(ours.history, theirs.history, "{label}: block {index}");
+        }
+    }
+
+    #[test]
+    fn mszip_blocks_decode_as_flate2_decodes_them_whole_cut_and_flipped() {
+        for (seed, size) in [(1, 10), (2, BLOCK), (3, 3 * BLOCK + 777)] {
+            let data = sample(seed, size);
+            for level in [0, 1, 6, 9] {
+                let blocks = mszip_blocks(&data, level);
+                agree(&blocks, &format!("seed {seed} level {level}"));
+                for target in 0..blocks.len() {
+                    for (variant, packed) in
+                        damaged(&blocks[target].0, seed).into_iter().enumerate()
+                    {
+                        let mut hostile = blocks.clone();
+                        hostile[target].0 = packed;
+                        agree(
+                            &hostile,
+                            &format!("seed {seed} block {target} variant {variant}"),
+                        );
+                    }
+                    let mut wrong_size = blocks.clone();
+                    wrong_size[target].1 = wrong_size[target].1.saturating_sub(1);
+                    agree(
+                        &wrong_size,
+                        &format!("seed {seed} block {target} one byte short"),
+                    );
+                }
+            }
         }
     }
 }
