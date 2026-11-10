@@ -2830,6 +2830,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [ext-fields]
+fingerprint = d23c64859d5a105c
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach ext-fields
 full-check = cargo kani --harness native_ext::proofs::
