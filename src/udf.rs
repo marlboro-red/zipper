@@ -1,10 +1,10 @@
 use crate::{
     BadField, Field, field_check,
-    native_cpio::tree::{BACKEND_HINT, MAX_ENTRIES},
     native_iso::{
         Catalog, Child, DIRECTORY_MODE, Extent, Extents, FILE_MODE, Folder, Image, Kind, NO_PARENT,
         Node, SECTOR, SECTOR_BYTES, Walk, civil_time, walk_folders,
     },
+    tree::{BACKEND_HINT, MAX_ENTRIES},
 };
 use anyhow::anyhow;
 use std::time::SystemTime;

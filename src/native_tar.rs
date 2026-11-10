@@ -1,6 +1,7 @@
 //! In-process extraction of plain, gzip, zstd and xz tar archives, published
 //! only after the whole archive reads cleanly. See
 //! `docs/reference/tar-reader.md` for what it accepts and restores.
+use crate::dictionary::{DecoderMemory, LARGEST_DICTIONARY, ensure_dictionary_fits};
 use crate::progress::Tracker;
 use crate::{BadField, Field, field_check};
 use crate::{
@@ -411,7 +412,6 @@ fn read_up_to(file: &mut impl Read, buffer: &mut [u8]) -> std::io::Result<usize>
 }
 
 const SNIFF_INPUT: u64 = crate::lz4::FIRST_BLOCK_INPUT_MAX;
-const LARGEST_DICTIONARY: u64 = 256 * 1024 * 1024;
 #[cfg(test)]
 const DECODER_OVERHEAD: u64 = 16 * 1024 * 1024;
 #[cfg(test)]
@@ -457,49 +457,6 @@ fn is_over_memory(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<std::io::Error>()
         .is_some_and(|error| error.kind() == std::io::ErrorKind::OutOfMemory)
-}
-
-fn largest_dictionary() -> String {
-    format!(
-        "the largest dictionary Zipper accepts, {} MiB",
-        LARGEST_DICTIONARY >> 20
-    )
-}
-
-fn ensure_dictionary_fits(format: &str, dictionary: u64) -> std::io::Result<()> {
-    if dictionary <= LARGEST_DICTIONARY {
-        return Ok(());
-    }
-    Err(std::io::Error::new(
-        std::io::ErrorKind::OutOfMemory,
-        format!(
-            "{format} stream declares a {dictionary}-byte dictionary, more than {}; {BACKEND_HINT}",
-            largest_dictionary()
-        ),
-    ))
-}
-
-pub(crate) struct DecoderMemory<R>(pub(crate) R);
-
-impl<R: Read> Read for DecoderMemory<R> {
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        self.0.read(buffer).map_err(|error| {
-            let over = error
-                .get_ref()
-                .is_some_and(|inner| inner.is::<crate::lzma::DictionaryOverLimit>());
-            if over {
-                std::io::Error::new(
-                    std::io::ErrorKind::OutOfMemory,
-                    format!(
-                        "the stream needs a dictionary larger than {}; {BACKEND_HINT}",
-                        largest_dictionary()
-                    ),
-                )
-            } else {
-                error
-            }
-        })
-    }
 }
 
 fn checksum_matches(block: &[u8; BLOCK]) -> bool {
@@ -1916,6 +1873,7 @@ mod lzip_tests {
 #[cfg(test)]
 mod xz_tests {
     use super::*;
+    use crate::dictionary::largest_dictionary;
     use liblzma::stream::{Action, Check, Filters, LzmaOptions, Status, Stream};
 
     fn encode(chain: &[(u64, Vec<u8>)], data: &[u8], check: Check) -> Vec<u8> {

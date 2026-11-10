@@ -2,8 +2,8 @@
 //! Microsoft Help 2 (`.hxs`, ITOLITLS) files with LZX sections. See
 //! `docs/reference/chm-reader.md` for what it accepts and how its tree
 //! matches `7zz x`.
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT, MAX_ENTRIES};
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT, MAX_ENTRIES};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check, lzx};
 use anyhow::{Context, Result, bail, ensure};

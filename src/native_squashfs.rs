@@ -1,9 +1,9 @@
 //! In-process extraction of SquashFS 4.0 images, published only after the
 //! whole image reads cleanly. See `docs/reference/squashfs-reader.md` for
 //! what it accepts and restores.
-use crate::hfs::Volume;
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT};
+use crate::image::Volume;
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};

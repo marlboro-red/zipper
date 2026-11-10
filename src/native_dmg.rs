@@ -2,9 +2,10 @@
 //! zero, raw, ADC, zlib, bzip2, LZFSE and xz chunks, raw HFS+ and HFSX
 //! volumes, Apple partition maps, and GPT and MBR disks inside a DMG. See
 //! `docs/reference/dmg-reader.md` for what it accepts and restores.
-use crate::hfs::{self, Volume};
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT};
+use crate::hfs;
+use crate::image::Volume;
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT};
 use crate::volumes::ArchiveFile;
 use crate::{Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};

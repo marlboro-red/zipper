@@ -17,6 +17,8 @@ mod bcj2;
 mod bzip2_streams;
 pub mod compat;
 pub mod counters;
+#[cfg(any(feature = "tar", feature = "more-formats"))]
+mod dictionary;
 #[cfg(feature = "more-formats")]
 pub mod disk;
 #[cfg(feature = "more-formats")]
@@ -31,6 +33,8 @@ pub mod duplicates;
 mod extract;
 #[cfg(feature = "more-formats")]
 mod hfs;
+#[cfg(feature = "more-formats")]
+mod image;
 #[cfg(feature = "zip")]
 mod implode;
 #[cfg(feature = "tar")]
@@ -109,6 +113,8 @@ pub mod native_xar;
 #[cfg(feature = "zip")]
 pub mod native_zip;
 mod ntfs_streams;
+#[cfg(feature = "more-formats")]
+mod output_name;
 mod pattern;
 mod placement;
 #[cfg(feature = "tar")]
@@ -123,6 +129,7 @@ mod sevenz_crypto;
 #[cfg(feature = "zip")]
 mod shrink;
 mod staging;
+mod tree;
 #[cfg(feature = "more-formats")]
 mod udf;
 mod volumes;

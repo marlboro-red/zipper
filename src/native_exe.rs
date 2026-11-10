@@ -2,8 +2,8 @@
 //! objects, UEFI TE images, ELF files, Mach-O files and Mach-O universal
 //! files. See `docs/reference/exe-reader.md` for what it accepts and how its
 //! tree matches `7zz x`.
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, MAX_ENTRIES};
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, MAX_ENTRIES};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};

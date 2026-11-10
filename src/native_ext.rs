@@ -1,6 +1,6 @@
-use crate::hfs::Volume;
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT};
+use crate::image::Volume;
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT};
 use crate::volumes::ArchiveFile;
 use crate::{Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};

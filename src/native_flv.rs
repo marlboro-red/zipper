@@ -2,11 +2,11 @@
 //! A file of one audio or video stream extracts to that stream's raw data. A
 //! file of both extracts to one FLV file for each. See
 //! `docs/reference/swf-reader.md`.
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree;
-use crate::native_swf::{
+use crate::output_name::{
     archive_file_name, default_name, named, safe_output_name, without_trailing_spaces,
 };
+use crate::tree;
+pub use crate::tree::ReadOptions;
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, ensure};

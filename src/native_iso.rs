@@ -2,10 +2,10 @@
 //! El Torito, and for the UDF file system on the same discs.
 //! `docs/reference/iso-reader.md` gives the rules.
 
-pub use crate::native_cpio::ReadOptions;
+pub use crate::tree::ReadOptions;
 use crate::{
     Entry, Field, field_check,
-    native_cpio::tree::{self, BACKEND_HINT, Tree},
+    tree::{self, BACKEND_HINT, Tree},
     volumes::ArchiveFile,
 };
 use anyhow::{Context, Result, bail, ensure};

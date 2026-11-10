@@ -2,10 +2,11 @@
 //! uncompressed SWF extracts each tag before its end tag as one file, named
 //! by its position and tag code. A SWF compressed with zlib or LZMA extracts
 //! to the one uncompressed SWF it holds. See `docs/reference/swf-reader.md`.
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree;
+use crate::output_name::{archive_file_name, default_name, named, safe_output_name};
+use crate::tree;
+pub use crate::tree::ReadOptions;
 use crate::volumes::ArchiveFile;
-use crate::{BadField, Entry, Field, field_check, progress::Tracker, safe_path};
+use crate::{BadField, Entry, Field, field_check, progress::Tracker};
 use anyhow::{Context, Result, ensure};
 use std::{
     io::{self, BufRead, BufReader, Read, Seek, Write},
@@ -132,48 +133,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
         .take(4)
         .read_to_end(&mut bytes)?;
     Ok(matches!(bytes[..], [b'F' | b'C' | b'Z', b'W', b'S', version] if version < VERSION_LIMIT))
-}
-
-pub(crate) fn named(path: &Path) -> std::path::PathBuf {
-    crate::volumes::joined_name(path).unwrap_or_else(|| path.to_owned())
-}
-
-pub(crate) fn archive_file_name(archive: &Path) -> Result<String> {
-    Ok(archive
-        .file_name()
-        .context("the archive path has no file name")?
-        .to_string_lossy()
-        .into_owned())
-}
-
-// EXTERNAL(7-Zip 26.05): an item with no name of its own takes 7-Zip's default name.
-pub(crate) fn default_name(archive_name: &str, added: &str) -> String {
-    match archive_name.rfind('.').filter(|&dot| dot > 0) {
-        Some(dot) => format!("{}{added}", &archive_name[..dot]),
-        None if added.is_empty() => format!("{archive_name}~"),
-        None => format!("{archive_name}{added}"),
-    }
-}
-
-pub(crate) fn without_trailing_spaces(name: &str) -> &str {
-    let trailing: &[char] = if cfg!(windows) { &[' ', '.'] } else { &[' '] };
-    name.trim_end_matches(trailing)
-}
-
-pub(crate) fn safe_output_name(output: &str, archive_name: &str) -> String {
-    let output = output.replace(['\\', ':'], "_");
-    let output = match without_trailing_spaces(&output) {
-        "" | "." | ".." => "_".to_owned(),
-        trimmed => trimmed.to_owned(),
-    };
-    let output = match output.eq_ignore_ascii_case(archive_name) {
-        true => format!("{output}~"),
-        false => output,
-    };
-    [output.clone(), format!("_{output}"), "_".to_owned()]
-        .into_iter()
-        .find(|candidate| safe_path(candidate).is_ok())
-        .expect("`_` is a safe name")
 }
 
 fn read_exactly(input: &mut impl Read, bytes: &mut [u8], what: &str) -> Result<()> {
@@ -618,6 +577,7 @@ pub fn read_archive(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::safe_path;
 
     #[test]
     fn default_names_follow_7zip_on_every_short_name() {

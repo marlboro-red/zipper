@@ -1,8 +1,8 @@
 //! In-process extraction of `ar` archives in the System V, GNU and BSD
 //! forms, and of the files a Debian package installs. See
 //! `docs/reference/ar-reader.md` for what it accepts and restores.
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT, MAX_ENTRIES, MAX_NAME};
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT, MAX_ENTRIES, MAX_NAME};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check, progress::Tracker};
 use anyhow::{Context, Result, ensure};

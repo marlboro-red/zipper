@@ -1,9 +1,9 @@
 //! In-process extraction of CramFS images in either byte order, published
 //! only after the whole image reads cleanly. See
 //! `docs/reference/squashfs-reader.md` for what it accepts and restores.
-use crate::hfs::Volume;
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree;
+use crate::image::Volume;
+use crate::tree;
+pub use crate::tree::ReadOptions;
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, ensure};

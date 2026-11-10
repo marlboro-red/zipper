@@ -3,11 +3,10 @@
 //! each partition is a bounded `Read + Seek` view of it, and a file system
 //! reader takes one view. `docs/reference/disk-reader.md` gives the rules.
 
-pub use crate::native_cpio::ReadOptions;
+pub use crate::tree::ReadOptions;
 use crate::{
-    BadField, Entry, Field, field_check,
-    native_cpio::tree::{self, BACKEND_HINT},
-    native_fat,
+    BadField, Entry, Field, field_check, native_fat,
+    tree::{self, BACKEND_HINT},
     volumes::ArchiveFile,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -974,7 +973,7 @@ struct HfsVolume<'v> {
     view: View<'v>,
 }
 
-impl crate::hfs::Volume for HfsVolume<'_> {
+impl crate::image::Volume for HfsVolume<'_> {
     fn size(&self) -> u64 {
         self.view.length
     }

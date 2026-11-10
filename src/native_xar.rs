@@ -2,8 +2,8 @@
 //! published only after the table of contents and every file's checksums
 //! check out. See `docs/reference/xar-reader.md` for what it accepts and
 //! restores.
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT, Tree};
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT, Tree};
 use crate::{BadField, Entry, Field, field_check, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use quick_xml::events::{BytesStart, Event};
@@ -1047,7 +1047,7 @@ fn decoder<'a>(
                 input, properties, dictionary, size,
             ))
         }
-        Encoding::Xz | Encoding::Lzma => Box::new(crate::native_tar::DecoderMemory(
+        Encoding::Xz | Encoding::Lzma => Box::new(crate::dictionary::DecoderMemory(
             crate::lzma::XzReader::new(input).with_dictionary_limit(LARGEST_DICTIONARY),
         )),
     })

@@ -6,11 +6,15 @@
 src/bzip2_streams.rs | wraps the bzip2 crate to read concatenated streams, each after its share of output; the tar unit test each_stream_after_the_first_needs_its_share_of_output and the 7z BZip2 corpus archives cover it
 src/compat.rs | routes formats to 7-Zip by a fixed signature allowlist and parses none of 7-Zip's output; tests/cli.rs covers each bypass
 src/counters.rs | profiling counters that compile to nothing without the `counters` feature
+src/dictionary.rs | turns an LZMA dictionary over the 256 MiB limit into an out-of-memory error with a hint; the native_tar xz and lzip unit tests and tests/hostile_tar.rs, tests/hostile_rpm.rs and tests/hostile_stream.rs check each message
 src/duplicates.rs | read-only duplicate scan that writes nothing; tests/duplicates.rs covers it
 src/extract.rs | dispatch from the public API to a reader; every reader it calls has its own checks
+src/image.rs | declares the trait a file-system reader reads its volume through, and holds no code of its own
 src/main.rs | the command-line front end over the library; tests/cli.rs covers it
 src/metadata.rs | maps archive modes and times to the platform; tests/content_only.rs and tests/native_zip.rs cover it
 src/native_stream.rs | wraps the decoders other sections cover and names one output file; its unit test checks every short name, and tests/hostile_stream.rs covers each format
 src/ntfs_streams.rs | writes Windows zone marks and alternate streams from data the archive reader already checked; tests/cli.rs covers it on Windows
+src/output_name.rs | names the one output of an SWF or FLV file as 7-Zip names it; the native_swf unit test default_names_follow_7zip_on_every_short_name checks every short name
 src/pattern.rs | wildcard matching of the caller's patterns, not of archive bytes; tests/selection.rs covers it
+src/tree.rs | the tree writer that cpio and every reader after it share; it hands paths, links and publishing to placement and staging, whose checks cover them, and each reader's corpus and hostile suites cover the rest
 src/zip_reader.rs | candidate: the archive handle every ZIP worker clones and reads from; tests/handles.rs and the ZIP suites cover it, and no model checks its sharing

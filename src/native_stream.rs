@@ -358,7 +358,7 @@ pub fn read_archive(
         (Format::Compressed(Compression::Lzma), None) => {
             let decoder =
                 crate::native_tar::lzma_decoder(BufReader::new(crate::volumes::open(path)?))?;
-            Box::new(crate::native_tar::DecoderMemory(lzma.insert(decoder)))
+            Box::new(crate::dictionary::DecoderMemory(lzma.insert(decoder)))
         }
         (Format::Compressed(compression), None) => crate::native_tar::decoder(path, compression)?,
         (_, None) => anyhow::bail!("{} has no decoder", path.display()),

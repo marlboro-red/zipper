@@ -1,4 +1,4 @@
-use crate::{BadField, Field, field_check, native_cpio::tree::Tree};
+use crate::{BadField, Field, field_check, tree::Tree};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, HashSet},
@@ -580,9 +580,9 @@ impl<R: Read + Seek> Volume<R> {
             "the FAT volume's names exceed 64 MiB"
         );
         ensure!(
-            self.nodes.len() < crate::native_cpio::tree::MAX_ENTRIES,
+            self.nodes.len() < crate::tree::MAX_ENTRIES,
             "the FAT volume holds more than {} entries",
-            crate::native_cpio::tree::MAX_ENTRIES
+            crate::tree::MAX_ENTRIES
         );
         Ok(())
     }

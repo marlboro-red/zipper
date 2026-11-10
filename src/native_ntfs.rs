@@ -2,8 +2,8 @@
 //! fixups, extension records, resident and non-resident data, sparse runs
 //! and LZNT1 compression. See `docs/reference/ntfs-reader.md` for what it
 //! accepts and restores.
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT};
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT};
 use crate::{BadField, Entry, Field, field_check, lznt1};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use std::{

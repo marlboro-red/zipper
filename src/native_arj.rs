@@ -1,8 +1,8 @@
 //! In-process extraction of ARJ archives with methods 0 to 4. See
 //! `docs/reference/arj-reader.md` for what it accepts and restores.
 use crate::lzh::{self, Bits, Lzss, Window};
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT, MAX_NAME};
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT, MAX_NAME};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, ensure};

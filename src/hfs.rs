@@ -1,5 +1,5 @@
-use crate::native_cpio::tree::{self, BACKEND_HINT};
-use crate::{Field, field_check};
+use crate::tree::{self, BACKEND_HINT};
+use crate::{Field, field_check, image::Volume};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, HashSet},
@@ -7,11 +7,6 @@ use std::{
     ops::Range,
     time::SystemTime,
 };
-
-pub(crate) trait Volume {
-    fn size(&self) -> u64;
-    fn read_exact_at(&mut self, offset: u64, buffer: &mut [u8]) -> Result<()>;
-}
 
 pub(crate) const HEADER_AREA: usize = 1536;
 const RESERVED: usize = 1024;
@@ -1676,7 +1671,7 @@ fn emit(
     catalog: &Catalog,
     attributes: &Attributes,
     tree: &mut tree::Tree,
-    options: crate::native_cpio::ReadOptions,
+    options: crate::tree::ReadOptions,
 ) -> Result<()> {
     let mut writer = Writer {
         selection: crate::Selection::new(options.paths, options.include, options.exclude)?,
@@ -1768,7 +1763,7 @@ pub(crate) fn read(
     volume: &mut dyn Volume,
     base: u64,
     tree: &mut tree::Tree,
-    options: crate::native_cpio::ReadOptions,
+    options: crate::tree::ReadOptions,
 ) -> Result<()> {
     let mut start = [0u8; HEADER_AREA];
     ensure!(

@@ -2,8 +2,8 @@
 //! the -lh0-, -lz4-, -lh4- to -lh7- and -lhd- methods. See
 //! `docs/reference/lzh-reader.md` for what it accepts and restores.
 use crate::lzh::{self, Lzss, crc16};
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::{self, BACKEND_HINT, MAX_NAME};
+pub use crate::tree::ReadOptions;
+use crate::tree::{self, BACKEND_HINT, MAX_NAME};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};

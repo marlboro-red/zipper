@@ -1,9 +1,9 @@
 //! In-process extraction of the files an RPM package installs, from the
 //! newc cpio in its compressed payload. See `docs/reference/rpm-reader.md`
 //! for what it accepts and restores.
-pub use crate::native_cpio::ReadOptions;
-use crate::native_cpio::tree::BACKEND_HINT;
 use crate::native_tar::Compression;
+use crate::tree::BACKEND_HINT;
+pub use crate::tree::ReadOptions;
 use crate::{BadField, Entry, Field, field_check, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
