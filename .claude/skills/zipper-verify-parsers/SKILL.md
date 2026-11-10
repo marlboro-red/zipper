@@ -45,7 +45,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[lzo]` | `decoding_any_short_stream_never_panics_or_passes_its_block`, with the `lzop` tests in `cargo test --release --lib lzo` | 153 s |
 | `[ext-fields]` | the nine `native_ext` proofs, with the ext corpus and hostile tests and the spread flip sweeps against 7-Zip | 36 s for the slowest |
 | `[inflate]` | the three `inflate` proofs, with the zlib differential tests in `cargo test --release --lib inflate` | 2 s for the slowest |
-| `[bzip2-fields]` | the seven `bzip2` proofs | KANI_TOTAL |
+| `[bzip2-fields]` | the seven `bzip2` proofs | 389 s; marked `speed = slow` |
 | `[bzip2-blocks]` | no Kani proof; the TLA+ model in `verification/bzip2-blocks/`, `cargo test --release --lib bzip2` and `tests/bzip2_blocks.rs` | about 2 minutes |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
@@ -90,7 +90,7 @@ Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jo
 | `pulled_bits_are_the_inputs_next_bytes_and_unused_whole_bytes_go_back` | from any bit buffer of up to 47 bits, `Bits::need` of up to 48 bits takes the next input bytes in order and no byte more than it needs, never holds more than 55 bits and fails only when the input ends. `take` returns the low bits. `give_back_whole_bytes` returns only whole bytes this call took | 2 s |
 | `the_next_reversed_code_is_the_code_after_it_with_its_bits_reversed` | for every code of 1 to 15 bits, `next_reversed_code` gives the bit-reversed form of the next canonical code, and nothing after the last | 0.2 s |
 | `every_symbols_entry_keeps_its_fields_apart_and_its_value_inside_the_format` | for every symbol of the three Deflate alphabets and every code length, the table entry keeps its code length, flags and value apart. A length is 3 to 258 with up to 5 extra bits, a distance 1 to 32,768 with up to 13, and the codes outside the format are marked invalid | 0.4 s |
-| `the_scanner_returns_the_first_magic_and_never_panics` | on any input of up to SCANNER_BYTES bytes and any starting bit, `next_magic` returns the first block or end magic at or after that bit, whole inside the input, or none when there is none | SCANNER_TIME |
+| `the_scanner_returns_the_first_magic_and_never_panics` | on any input of up to 7 bytes and any starting bit, `next_magic` returns the first block or end magic at or after that bit, whole inside the input, or none when there is none | 25 s |
 | `magics_are_read_only_from_48_whole_bits` | `bits48` on any 8 bytes and any bit returns the 48 bits there in stream order, and nothing when fewer than 48 remain | 2 s |
 | `bits_come_in_stream_order_with_zeros_past_the_end` | the BZip2 bit reader, from any start in the first 3 bytes of up to 11 bytes, returns two fields of 1 to 32 bits in stream order, reads zeros past the end and counts every bit | 67 s |
 | `block_starts_never_panic_and_start_inside_the_largest_block` | `block_start` on any 15 bytes at any bit of the first byte and any level accepts only the block magic, reads exactly 105 bits and keeps the origin within the level's largest block | 2 s |
@@ -122,6 +122,7 @@ Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes b
 
 - `every_kind_of_data_at_every_level_decodes_as_the_bzip2_crate_does` covers six kinds of data at levels 1 to 9, from empty to several blocks.
 - `every_cut_and_many_bit_flips_decode_or_fail_as_the_bzip2_crate_does` cuts four streams at every length, or the last 600, and flips every one of the first 2,000 bits and 3,000 random ones. The decoder must give the crate's bytes or refuse when it refuses.
+- `bits_between_a_block_and_the_next_magic_are_refused` puts 1 to 4,000 bits after each block, which the one-thread reader refuses too.
 - `randomised_blocks_decode_as_the_bzip2_crate_does` sets the randomised bit, which no writer has set since bzip2 0.9.5, and repairs both CRCs from the crate's own output.
 - `a_magic_inside_a_block_does_not_end_it` plants each magic in spare selectors of each block. `a_magic_planted_inside_any_block_is_passed_over_by_decoding_on` and `a_planted_stream_end_and_header_inside_a_block_start_no_stream` run those streams through the reader at 1 to 4 block threads.
 - `cut_and_flipped_streams_give_the_serial_bytes_or_are_refused_as_it_refuses` compares the reader with the one-thread reader on cuts and flips of one stream of three blocks and of three streams in a row.
@@ -323,3 +324,19 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | `lzip_trailer_matches` checks the member size only past version 1 | `lzip_trailers_accept_only_their_crc_and_sizes` fails |
 | `lzma_file_header` accepts `lc` plus `lp` up to 8 | `lzma_file_headers_keep_their_fields_and_only_properties_liblzma_accepts` fails |
 | `liblzma_dictionary` does not round up to 16 bytes | the same proof fails |
+| `next_magic` tries only 7 of the 8 bit shifts of a byte | `the_scanner_finds_the_first_magic_a_bit_at_a_time_search_finds` fails |
+| `decode_block` no longer reports a block that runs past its cut | `a_magic_planted_inside_any_block_is_passed_over_by_decoding_on` fails |
+| The block reader skips a block CRC, a stream CRC before another stream, or the last stream CRC | `cut_and_flipped_streams_give_the_serial_bytes_or_are_refused_as_it_refuses` fails, each time |
+| The block reader takes the newest queued block, not the oldest | `blocks_come_out_in_order_for_every_worker_count_input_step_and_read_size` fails |
+| The block reader accepts a block that ends before its cut | `bits_between_a_block_and_the_next_magic_are_refused` fails |
+| The block reader drops the 4,096 bytes a further stream must bring | `concatenated_streams_decode_or_are_refused_as_the_serial_reader_does` fails |
+| The block reader drops the 4 MiB limit on a cut | `a_block_may_fill_the_longest_block_and_one_bit_more_is_refused` fails |
+| The block reader skips its budget check, or starts one block more than its workers | `blocks_in_flight_stay_within_the_workers_and_their_memory` fails, each time |
+| The block reader keeps the level of a stream it started past a false cut | `a_planted_stream_end_and_header_inside_a_block_start_no_stream` fails |
+| A BZip2 run of four with no length byte is accepted | `a_run_of_four_takes_the_next_byte_as_its_length_and_must_have_one` fails |
+| A randomised BZip2 block is not unrandomised | `randomised_blocks_decode_as_the_bzip2_crate_does` fails |
+| The BZip2 lookup table stores a code length with its low bit flipped | `the_lookup_decodes_every_code_as_the_bit_at_a_time_walk_does` fails |
+| BZip2 move-to-front carries the wrong byte between its 16-byte words | `moving_to_the_front_matches_a_rotation_at_every_index` fails |
+| `Blocks.tla` keeps the cursor past a false cut, or takes a truncated front as whole | TLC reports a rule broken |
+| `Blocks.tla` drops the budget check, the worker check, the join at a false cut or the join on drop | TLC reports a rule broken, each time |
+| `Blocks.tla` takes a failed front, or finishes with blocks queued | TLC reports a rule broken, each time |

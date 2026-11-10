@@ -558,7 +558,9 @@ impl<R: BufRead> Read for ParallelBzip2<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bzip2::tests::{Noise, Spare, compress, magic_bits, sample, with_spare_bits};
+    use crate::bzip2::tests::{
+        Noise, Spare, compress, magic_bits, sample, with_bits_after_block, with_spare_bits,
+    };
     use crate::bzip2::{BLOCK_MAGIC, END_MAGIC};
 
     fn reader(
@@ -689,6 +691,26 @@ mod tests {
                             );
                         }
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bits_between_a_block_and_the_next_magic_are_refused() {
+        let mut noise = Noise(30);
+        let (data, stream) = four_blocks(1, &mut noise);
+        assert_eq!(serial(&stream).as_ref(), Some(&data));
+        for block in 0..4 {
+            for extra in [1, 8, 13, 4000] {
+                let padded = with_bits_after_block(&stream, block, &vec![false; extra]);
+                assert_eq!(serial(&padded), None);
+                for workers in [1, 3] {
+                    let decoded = parallel(&padded, workers, 4096, 65536);
+                    assert!(
+                        decoded.is_err(),
+                        "block {block} extra {extra} workers {workers}"
+                    );
                 }
             }
         }

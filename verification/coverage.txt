@@ -3131,6 +3131,7 @@ item = src/inflate.rs | impl<'w> Inflate<'w> {
 item = src/inflate.rs | mod proofs {
 
 [bzip2-fields]
+speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 fingerprint = 0000000000000000
 full-check = cargo xtask kani-reach bzip2-fields

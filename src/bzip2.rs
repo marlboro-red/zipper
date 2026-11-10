@@ -941,6 +941,17 @@ pub(crate) mod tests {
         to_bytes(&new)
     }
 
+    pub(crate) fn with_bits_after_block(stream: &[u8], block: usize, extra: &[bool]) -> Vec<u8> {
+        let (level, limit) = (stream[3] - b'0', stream.len() as u64 * 8);
+        let mut end = 32;
+        for _ in 0..=block {
+            end = decode_block(stream, end, limit, level).ok().unwrap().end;
+        }
+        let mut bits = to_bits(stream);
+        bits.splice(end as usize..end as usize, extra.iter().copied());
+        to_bytes(&bits)
+    }
+
     fn ours(stream: &[u8]) -> Result<Vec<u8>, Refusal> {
         let damaged = Refusal::Damaged("test stream");
         let level = match stream {
