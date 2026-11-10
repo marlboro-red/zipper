@@ -10,6 +10,12 @@ All records are local measurements. Each one names its machine, revision, run co
 | --- | --- | --- |
 | 2026-11-03 | [Real-world archives against bsdtar](realworld/README.md) | All 248 popular ZIP, wheel, jar and tar archives extract identically with Zipper and default bsdtar, across 189,576 paths. Zipper was faster on all 248, 10.51 s against 18.11 s in total. macOS only. |
 
+## Zstandard decoder
+
+| Date | Experiment | Verdict |
+| --- | --- | --- |
+| 2026-11-11 | [Zipper's own Zstandard decoder against libzstd](zstd/own-decoder/README.md) | Kept, and not yet timed. The safe Rust decoder retires 1.01 to 1.04 times the cycles of libzstd 1.5.7 on four large streams and 1.09 times on 3,983 small frames, with 19 to 25% more instructions. Extraction timing is still owed. |
+
 ## LZMA decoder
 
 | Date | Experiment | Verdict |
