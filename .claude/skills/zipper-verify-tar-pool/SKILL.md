@@ -27,8 +27,8 @@ Each rule is an invariant in `WriterPool.tla`. TLC also checks that no state is 
 | Covered code | Model |
 | --- | --- |
 | `InFlight::take`, which waits while other chunks would pass `BYTES_IN_FLIGHT` | `DecoderTakesChunk` |
-| `Drop for Chunk`: first `spare.push(data)`, then `*bytes -= length` | `ChunkGoesToSpare`, then `ChunkFreesBudget`, two steps other threads can run between; every drop site adds to `dropping` |
-| The `spare.pop()` in `InFlight::take`, or a new `vec![0; length]` | the `spare` and `allocated` updates in `DecoderTakesChunk` |
+| `Drop for Chunk`: first `spare.push(data)`, then `*bytes -= self.charged`, which `InFlight::take` sets to the chunk's length | `ChunkGoesToSpare`, then `ChunkFreesBudget`, two steps other threads can run between; every drop site adds to `dropping` |
+| The `spare.pop()` in `InFlight::take_charged`, or a new `vec![0; charged]` | the `spare` and `allocated` updates in `DecoderTakesChunk` |
 | `Writers::send`, which counts, sends to a lane and calls `check` | `DecoderCountsJob`, `DecoderSendsJob` |
 | `Writers::drain`, `Writers::check`, `Writers::stopped` | `DecoderDrains`, the `failure` resets |
 | `Writers::close`, called by the `ClosesOnDrop` guard on every return from the scope; `Writers::new` and `writer_pool::queue`, which pick the lanes | `DecoderClosesLanes` |

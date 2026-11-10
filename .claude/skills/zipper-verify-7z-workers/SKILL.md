@@ -137,7 +137,7 @@ Each change below breaks the named rule:
 | `while let Some(&folder) = wanted.get(next.fetch_add(1, ..))` | `WorkerFetches` |
 | `tracker.check()?` at the start of `decode` | `WorkerChecksCancel` |
 | The next item of the folder, the check for data past the last file, and the folder CRC | `WorkerNextFile` |
-| `writers.flight.take(item.size)`, which waits while other chunks would pass `BYTES_IN_FLIGHT` | `WorkerTakesChunk` |
+| `writers.flight.take_whole_buffer(item.size)`, which waits while other chunks would pass `BYTES_IN_FLIGHT` | `WorkerTakesChunk` |
 | Decoding the file into the chunk and checking its CRC | `WorkerFillsChunk` |
 | `tracker.check()?` before `writers.send` | `WorkerChecksBeforeSend` |
 | `Writers::send`, its `lane.send` and its `check` | `WorkerSendsJob` |
@@ -146,7 +146,7 @@ Each change below breaks the named rule:
 | `Writers::work` and `write_job`, with `catch_unwind` around the write and the progress report | `WriterReceives`, `WriterWrites`, `WriterDropsJob` |
 | The joins of the workers, `drop(closing)`, the joins of the writers, `resume_callback_panic`, the stored failure, `writers.check()?` and `tracker.check()?` before publishing | `CallerJoinsWorkers`, `CallerJoinsWriters` |
 
-One file here is one chunk, because only a file of at most `CHUNK` bytes in a folder of more than one file goes to the pool. Larger files, the files of a one-file folder and every file at one thread take the path the folder model covers. A failed write, a panicking write and a panicking progress callback on a writer are one step, because `catch_unwind` turns each into a stored failure. The model leaves out decoder memory, which the folder model covers. A worker holds no chunk while it waits in `Memory::reserve`, and writers never wait on that memory, so the two waits form no cycle. It also leaves out the spare buffer list, which the tar pool model covers, file contents and the filesystem.
+One file here is one chunk, because only a file of at most `CHUNK` bytes in a folder of more than one file goes to the pool. `InFlight::take_whole_buffer` charges each such file a whole `CHUNK` and reuses its buffer, so the budget is exactly `BYTES_IN_FLIGHT / CHUNK` files, and the spare list argument of the tar pool model, `AllocationsBounded`, holds for 7z too. `tests/sevenz_writer_memory.rs` checks with a counting allocator that a solid folder of 96 files of about 1 MiB allocates at most 20 such buffers. Larger files, the files of a one-file folder and every file at one thread take the path the folder model covers. A failed write, a panicking write and a panicking progress callback on a writer are one step, because `catch_unwind` turns each into a stored failure. The model leaves out decoder memory, which the folder model covers. A worker holds no chunk while it waits in `Memory::reserve`, and writers never wait on that memory, so the two waits form no cycle. It also leaves out the spare buffer list, file contents and the filesystem.
 
 - The bound is 2 solid folders of 2 small files each, 2 folder workers, 2 writers, a budget of 2 chunks and 1 job per lane queue. Any file or folder can be corrupt, any write can fail, any worker can panic, and a cancel can come at any moment.
 - TLC reaches 999,837 states in `MCUnix` and 1,334,981 in `MCWindows`, and both run within a minute.

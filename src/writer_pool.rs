@@ -26,17 +26,29 @@ pub(crate) struct InFlight {
 
 impl InFlight {
     pub(crate) fn take(&self, length: usize) -> Chunk<'_> {
+        self.take_charged(length, length)
+    }
+
+    pub(crate) fn take_whole_buffer(&self, length: usize) -> Chunk<'_> {
+        assert!(length <= CHUNK, "a whole buffer holds at most one chunk");
+        self.take_charged(length, CHUNK)
+    }
+
+    fn take_charged(&self, length: usize, charged: usize) -> Chunk<'_> {
         let mut bytes = self.bytes.lock().unwrap();
-        while *bytes > 0 && *bytes + length > BYTES_IN_FLIGHT {
+        while *bytes > 0 && *bytes + charged > BYTES_IN_FLIGHT {
             bytes = self.freed.wait(bytes).unwrap();
         }
-        *bytes += length;
+        *bytes += charged;
         drop(bytes);
-        let recycled = (length == CHUNK)
+        let recycled = (charged == CHUNK)
             .then(|| self.spare.lock().unwrap().pop())
             .flatten();
+        let mut data = recycled.unwrap_or_else(|| vec![0; charged]);
+        data.resize(length, 0);
         Chunk {
-            data: recycled.unwrap_or_else(|| vec![0; length]),
+            data,
+            charged,
             flight: self,
         }
     }
@@ -44,17 +56,17 @@ impl InFlight {
 
 pub(crate) struct Chunk<'f> {
     pub(crate) data: Vec<u8>,
+    charged: usize,
     flight: &'f InFlight,
 }
 
 impl Drop for Chunk<'_> {
     fn drop(&mut self) {
         let data = std::mem::take(&mut self.data);
-        let length = data.len();
-        if length == CHUNK {
+        if self.charged == CHUNK {
             self.flight.spare.lock().unwrap().push(data);
         }
-        *self.flight.bytes.lock().unwrap() -= length;
+        *self.flight.bytes.lock().unwrap() -= self.charged;
         self.flight.freed.notify_all();
     }
 }
@@ -289,5 +301,29 @@ mod in_flight_tests {
         assert_eq!(*flight.bytes.lock().unwrap(), 0);
         let spare = flight.spare.lock().unwrap();
         assert!(!spare.is_empty() && spare.len() <= BYTES_IN_FLIGHT / CHUNK);
+    }
+
+    #[test]
+    fn whole_buffers_of_any_length_are_reused_and_never_pass_the_budget() {
+        let flight = InFlight::default();
+        std::thread::scope(|scope| {
+            for thread in 0..16 {
+                let flight = &flight;
+                scope.spawn(move || {
+                    for round in 0..200 {
+                        let length = (thread * 7919 + round * 104_729) % (CHUNK + 1);
+                        let chunk = flight.take_whole_buffer(length);
+                        assert_eq!(chunk.data.len(), length);
+                        assert!(*flight.bytes.lock().unwrap() <= BYTES_IN_FLIGHT);
+                        std::thread::yield_now();
+                        drop(chunk);
+                    }
+                });
+            }
+        });
+        assert_eq!(*flight.bytes.lock().unwrap(), 0);
+        let spare = flight.spare.lock().unwrap();
+        assert!(!spare.is_empty() && spare.len() <= BYTES_IN_FLIGHT / CHUNK);
+        assert!(spare.iter().all(|buffer| buffer.capacity() == CHUNK));
     }
 }

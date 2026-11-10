@@ -13,7 +13,7 @@ use zipper::Reader;
     about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM, xar, CAB, MSI, ISO, WIM, CHM and DMG archives, executables, Flash files and NTFS, HFS+, APFS, VHD, VHDX, QCOW, VDI, VMDK and FAT disk images"
 )]
 struct Cli {
-    /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers).
+    /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers, and a solid 7z up to 4 writers beside its decoders).
     #[arg(long, global = true)]
     threads: Option<usize>,
     /// Reader for ZIP, tar and other foreign archives. Native readers restore files, directories, modes, times and safe links.

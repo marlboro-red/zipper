@@ -136,7 +136,7 @@ WorkerNextFile(t) ==
                    lanesOpen, poolFailure, cancel, mpc, cancelAtPublish, result>>
     /\ UNCHANGED writerVars
 
-\* `writers.flight.take(item.size)` blocks while other chunks would pass the
+\* `writers.flight.take_whole_buffer(item.size)` blocks while other chunks would pass the
 \* budget.
 WorkerTakesChunk(t) ==
     /\ tpc[t] = "take"

@@ -2645,7 +2645,8 @@ pub fn read_archive(
             let pooled = pool.filter(|_| {
                 solid && write.is_some() && item.kind == Kind::File && item.size <= CHUNK as u64
             });
-            let mut chunk = pooled.map(|writers| writers.flight.take(item.size as usize));
+            let mut chunk =
+                pooled.map(|writers| writers.flight.take_whole_buffer(item.size as usize));
             let counted = chosen[index] && chunk.is_none();
             let mut output = match (write, item.kind) {
                 (Some(_), Kind::File) if chunk.is_some() => None,
@@ -2696,7 +2697,9 @@ pub fn read_archive(
                 }
                 remaining -= read as u64;
                 if let Some(output) = &mut output {
-                    output.write_all(bytes)?;
+                    output
+                        .write_all(bytes)
+                        .with_context(|| format!("cannot write 7z entry {:?}", item.name))?;
                 } else if write.is_some() && item.kind == Kind::Symlink {
                     ensure!(
                         target.len() + read <= crate::MAX_LINK_TARGET as usize,
@@ -2822,7 +2825,8 @@ pub fn read_archive(
                 &staging.path().join(&item.name),
                 item.mode.unwrap_or(0o666),
                 item.windows_attributes,
-            )?;
+            )
+            .with_context(|| format!("cannot create 7z entry {:?}", item.name))?;
             if let Some(time) = item.modified {
                 crate::set_modified_best_effort(&file, time);
             }
