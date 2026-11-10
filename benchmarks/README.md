@@ -95,6 +95,12 @@ All records are local measurements. Each one names its machine, revision, run co
 | 2026-10-29 | [Cross-platform Silesia checks](cross-platform/README.md) | Native ZIP with two workers beat direct 7-Zip on hosted runners. Wall time only. |
 
 
+## Build settings
+
+| Date | Experiment | Verdict |
+| --- | --- | --- |
+| 2026-11-10 | [Profile-guided optimization of the release binary](pgo/lzma-and-readers/README.md) | Reverted. No LZMA workload got faster, even with a profile of the measured archives. Only BZip2 tar gained, by 2.1%, and ten other workloads overlapped. |
+
 ## Add an experiment
 
 1. Create `benchmarks/<area>/<experiment>/README.md` and put the raw data beside it.
