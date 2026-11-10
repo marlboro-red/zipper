@@ -30,6 +30,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-10 | [Create each 7z output folder once](native-7z/create-folders-once/README.md) | Kept as a cleanup. The reader makes each folder once, not once per item, but every timing range on the dependency sources overlaps the old code's. |
 | 2026-11-07 | [7z branch and Delta filters on Zipper's own code](native-7z/own-filters/README.md) | Kept. Extraction time is unchanged on BCJ, ARM64, Delta and three-filter archives at one and four threads, with every range overlapping. The 7z reader no longer uses liblzma outside tests. |
 | 2026-11-08 | [7z write path with one CRC pass and no extra copy](native-7z/write-path/README.md) | Kept two changes of three. Solid Silesia extracts 1.25% faster at one thread. A window zeroed once raised memory 12 times on many small xz entries and was rejected. |
 | 2026-11-08 | [Parallel LZMA2 segments in 146 MiB](native-7z/segment-memory/README.md) | Kept. Peak memory on solid Silesia at default threads fell from 320 to 146 MiB, below 7-Zip's 257 MiB, and extraction got 0.7% faster. |
