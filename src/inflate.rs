@@ -817,8 +817,8 @@ impl Dynamic {
     }
 }
 
-pub(crate) struct Inflate<'w> {
-    window: &'w mut [u8],
+pub(crate) struct Inflate<W> {
+    window: W,
     bits: Bits,
     state: State,
     last_block: bool,
@@ -828,9 +828,14 @@ pub(crate) struct Inflate<'w> {
     total_in: u64,
 }
 
-impl<'w> Inflate<'w> {
-    pub(crate) fn new(window: &'w mut [u8]) -> Self {
-        assert!(window.len() >= SMALLEST_WINDOW);
+impl<W: std::ops::DerefMut<Target = [u8]>> Inflate<W> {
+    pub(crate) fn new(window: W) -> Self {
+        Self::with_history(window, &[])
+    }
+
+    pub(crate) fn with_history(mut window: W, history: &[u8]) -> Self {
+        assert!(window.len() >= SMALLEST_WINDOW && history.len() <= HISTORY);
+        window[..history.len()].copy_from_slice(history);
         Self {
             window,
             bits: Bits::default(),
@@ -838,13 +843,26 @@ impl<'w> Inflate<'w> {
             last_block: false,
             dynamic: None,
             uses_dynamic: false,
-            filled: 0,
+            filled: history.len(),
             total_in: 0,
         }
     }
 
+    pub(crate) fn restart(&mut self) {
+        self.bits = Bits::default();
+        self.state = State::BlockHeader;
+        self.last_block = false;
+        self.uses_dynamic = false;
+        self.filled = 0;
+        self.total_in = 0;
+    }
+
     pub(crate) fn total_in(&self) -> u64 {
         self.total_in
+    }
+
+    pub(crate) fn latest(&self, length: usize) -> &[u8] {
+        &self.window[self.filled - length..self.filled]
     }
 
     pub(crate) fn decode(&mut self, input: &[u8]) -> Result<Step<'_>, Invalid> {
@@ -963,7 +981,7 @@ impl<'w> Inflate<'w> {
                             position: *position,
                             filled: self.filled,
                         };
-                        let (cursor, pause) = fast(tables, input, self.window, cursor);
+                        let (cursor, pause) = fast(tables, input, &mut self.window, cursor);
                         self.bits = cursor.bits;
                         *position = cursor.position;
                         self.filled = cursor.filled;
@@ -992,7 +1010,7 @@ impl<'w> Inflate<'w> {
                             if distance > self.filled {
                                 return Err(TOO_FAR_BACK);
                             }
-                            copy_match(self.window, self.filled, distance, length);
+                            copy_match(&mut self.window, self.filled, distance, length);
                             self.filled += length;
                         }
                     }
@@ -1043,7 +1061,7 @@ mod tests {
 
     fn ours(stream: &[u8], piece: usize, window: usize) -> Outcome {
         let mut window = vec![0xa5u8; window];
-        let mut inflate = Inflate::new(&mut window);
+        let mut inflate = Inflate::new(&mut window[..]);
         let mut bytes = Vec::new();
         let mut at = 0usize;
         loop {
@@ -1328,9 +1346,9 @@ mod tests {
     #[test]
     fn the_decoder_keeps_its_tables_off_the_callers_stack() {
         assert!(
-            std::mem::size_of::<Inflate>() <= 128,
+            std::mem::size_of::<Inflate<&mut [u8]>>() <= 128,
             "{}",
-            std::mem::size_of::<Inflate>()
+            std::mem::size_of::<Inflate<&mut [u8]>>()
         );
     }
 
@@ -1339,7 +1357,7 @@ mod tests {
         let mut stream = deflated(&sample(11, 5000), 6);
         stream[0] |= 0b110;
         let mut window = vec![0u8; SMALLEST_WINDOW];
-        let mut inflate = Inflate::new(&mut window);
+        let mut inflate = Inflate::new(&mut window[..]);
         let first = inflate.decode(&stream).err().unwrap();
         assert_eq!(first, Invalid("Deflate block type 3 is reserved"));
         for input in [&stream[1..], &[]] {
@@ -2020,7 +2038,7 @@ mod tests {
         put_dynamic_header(&mut writer, &no_end, &[0], &mut Random(1));
         let mut window = vec![0u8; SMALLEST_WINDOW];
         assert_eq!(
-            Inflate::new(&mut window).decode(&writer.finish()).err(),
+            Inflate::new(&mut window[..]).decode(&writer.finish()).err(),
             Some(Invalid("Deflate block has no end-of-block code")),
             "a block that cannot end is refused before it decodes anything"
         );
