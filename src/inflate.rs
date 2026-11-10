@@ -6,7 +6,7 @@ pub(crate) const SMALLEST_WINDOW: usize = 2 * HISTORY;
 
 const LONGEST_MATCH: usize = 258;
 const LITERALS_BEFORE_A_REFILL: usize = 3;
-const COPY_OVERRUN: usize = 16;
+const COPY_OVERRUN: usize = 32;
 const OUTPUT_MARGIN: usize = LITERALS_BEFORE_A_REFILL + LONGEST_MATCH + COPY_OVERRUN;
 const REFILLS_IN_ONE_PASS: usize = 3;
 const FAST_INPUT: usize = REFILLS_IN_ONE_PASS * 7 + 8;
@@ -26,6 +26,9 @@ const PRECODE_SYMBOLS: usize = 19;
 const END_OF_BLOCK_SYMBOL: usize = 256;
 const MOST_LITLEN_CODES: usize = 286;
 const MOST_DISTANCE_CODES: usize = 30;
+
+const MOST_MAIN_DISTANCE_BITS: u32 = DISTANCE_BITS + 13;
+const UNCOUNTED_BITS_AFTER_A_REFILL: u32 = 1;
 
 const LITERAL: u32 = 1 << 31;
 const EXCEPTIONAL: u32 = 1 << 15;
@@ -367,21 +370,23 @@ fn symbol(tables: &Tables, bits: Bits) -> Result<Option<(Symbol, u32)>, Invalid>
 #[inline(always)]
 fn copy_match(window: &mut [u8], at: usize, distance: usize, length: usize) {
     let from = at - distance;
-    if distance >= 8 {
-        let mut copied = 0;
+    if distance >= 16 {
+        window.copy_within(from..from + 16, at);
+        window.copy_within(from + 16..from + 32, at + 16);
+        let mut copied = 32;
         while copied < length {
-            let word: [u8; 8] = window[from + copied..from + copied + 8]
-                .try_into()
-                .expect("the range is 8 bytes long");
-            window[at + copied..at + copied + 8].copy_from_slice(&word);
-            copied += 8;
+            window.copy_within(from + copied..from + copied + 16, at + copied);
+            copied += 16;
         }
     } else if distance == 1 {
         let byte = window[from];
         window[at..at + length].fill(byte);
     } else {
-        for index in at..at + length {
-            window[index] = window[index - distance];
+        let step = if distance >= 8 { 8 } else { distance };
+        let mut copied = 0;
+        while copied < length {
+            window.copy_within(from + copied..from + copied + 8, at + copied);
+            copied += step;
         }
     }
 }
@@ -412,41 +417,58 @@ fn fast(
         mut position,
         mut filled,
     } = cursor;
+    let mut valid;
     macro_rules! refill {
         () => {{
             let word: [u8; 8] = input[position..position + 8]
                 .try_into()
                 .expect("the range is 8 bytes long");
             bits |= u64::from_le_bytes(word) << count;
-            position += ((63 - count) >> 3) as usize;
+            position += ((!count >> 3) & 7) as usize;
             count |= 56;
+            valid = u64::BITS;
         }};
     }
     macro_rules! consume {
         ($entry:expr) => {{
             let before = bits;
+            debug_assert!($entry & STEP_BITS_MASK <= count);
             bits >>= $entry & STEP_BITS_MASK;
             count -= $entry & STEP_BITS_MASK;
+            valid -= $entry & STEP_BITS_MASK;
             before
         }};
     }
     macro_rules! litlen {
-        () => {
+        () => {{
+            debug_assert!(valid >= LITLEN_BITS);
             tables.litlen[(bits & low_bits(LITLEN_BITS)) as usize]
+        }};
+    }
+    macro_rules! margins {
+        () => {
+            position <= input.len()
+                && input.len() - position >= FAST_INPUT
+                && filled <= window.len()
+                && window.len() - filled >= OUTPUT_MARGIN
         };
     }
-    let exit = loop {
-        if input.len() - position < FAST_INPUT || window.len() - filled < OUTPUT_MARGIN {
-            break Ok(Pause::Margin);
-        }
-        refill!();
-        let mut entry = litlen!();
+    if !margins!() {
+        let cursor = Cursor {
+            bits: Bits {
+                buffer: bits,
+                count,
+            },
+            position,
+            filled,
+        };
+        return (cursor, Ok(Pause::Margin));
+    }
+    refill!();
+    let mut entry = litlen!();
+    let exit = 'decode: loop {
         let mut before = consume!(entry);
-        if entry & LITERAL != 0 {
-            window[filled] = (entry >> VALUE_SHIFT) as u8;
-            filled += 1;
-            entry = litlen!();
-            before = consume!(entry);
+        'symbol: {
             if entry & LITERAL != 0 {
                 window[filled] = (entry >> VALUE_SHIFT) as u8;
                 filled += 1;
@@ -455,56 +477,69 @@ fn fast(
                 if entry & LITERAL != 0 {
                     window[filled] = (entry >> VALUE_SHIFT) as u8;
                     filled += 1;
-                    continue;
+                    entry = litlen!();
+                    before = consume!(entry);
+                    if entry & LITERAL != 0 {
+                        window[filled] = (entry >> VALUE_SHIFT) as u8;
+                        filled += 1;
+                        break 'symbol;
+                    }
                 }
             }
-        }
-        if entry & EXCEPTIONAL != 0 {
-            if entry & SUBTABLE == 0 {
-                break match entry & END_OF_BLOCK != 0 {
-                    true => Ok(Pause::EndOfBlock),
-                    false => Err(INVALID_LITLEN),
-                };
-            }
-            let index = bits & low_bits((entry >> CODE_BITS_SHIFT) & CODE_BITS_MASK);
-            entry = tables.litlen[(entry >> VALUE_SHIFT) as usize + index as usize];
-            before = consume!(entry);
-            if entry & LITERAL != 0 {
-                window[filled] = (entry >> VALUE_SHIFT) as u8;
-                filled += 1;
-                continue;
-            }
             if entry & EXCEPTIONAL != 0 {
-                break match entry & END_OF_BLOCK != 0 {
-                    true => Ok(Pause::EndOfBlock),
-                    false => Err(INVALID_LITLEN),
-                };
+                if entry & SUBTABLE == 0 {
+                    break 'decode match entry & END_OF_BLOCK != 0 {
+                        true => Ok(Pause::EndOfBlock),
+                        false => Err(INVALID_LITLEN),
+                    };
+                }
+                let index = bits & low_bits((entry >> CODE_BITS_SHIFT) & CODE_BITS_MASK);
+                entry = tables.litlen[(entry >> VALUE_SHIFT) as usize + index as usize];
+                before = consume!(entry);
+                if entry & LITERAL != 0 {
+                    window[filled] = (entry >> VALUE_SHIFT) as u8;
+                    filled += 1;
+                    break 'symbol;
+                }
+                if entry & EXCEPTIONAL != 0 {
+                    break 'decode match entry & END_OF_BLOCK != 0 {
+                        true => Ok(Pause::EndOfBlock),
+                        false => Err(INVALID_LITLEN),
+                    };
+                }
             }
-        }
-        let length = ((entry >> VALUE_SHIFT) + extra_bits(before, entry)) as usize;
+            let length = ((entry >> VALUE_SHIFT) + extra_bits(before, entry)) as usize;
 
-        let mut entry = tables.distance[(bits & low_bits(DISTANCE_BITS)) as usize];
-        if entry & EXCEPTIONAL != 0 {
-            if entry & SUBTABLE == 0 {
-                break Err(INVALID_DISTANCE);
-            }
-            refill!();
-            consume!(entry);
-            let index = bits & low_bits((entry >> CODE_BITS_SHIFT) & CODE_BITS_MASK);
-            entry = tables.distance[(entry >> VALUE_SHIFT) as usize + index as usize];
+            debug_assert!(valid >= DISTANCE_BITS);
+            let mut entry = tables.distance[(bits & low_bits(DISTANCE_BITS)) as usize];
             if entry & EXCEPTIONAL != 0 {
-                break Err(INVALID_DISTANCE);
+                if entry & SUBTABLE == 0 {
+                    break 'decode Err(INVALID_DISTANCE);
+                }
+                refill!();
+                consume!(entry);
+                let index = bits & low_bits((entry >> CODE_BITS_SHIFT) & CODE_BITS_MASK);
+                entry = tables.distance[(entry >> VALUE_SHIFT) as usize + index as usize];
+                if entry & EXCEPTIONAL != 0 {
+                    break 'decode Err(INVALID_DISTANCE);
+                }
+            } else if count < MOST_MAIN_DISTANCE_BITS + LITLEN_BITS - UNCOUNTED_BITS_AFTER_A_REFILL
+            {
+                refill!();
             }
-        } else if count < entry & STEP_BITS_MASK {
-            refill!();
+            let before = consume!(entry);
+            let distance = ((entry >> VALUE_SHIFT) + extra_bits(before, entry)) as usize;
+            if distance > filled {
+                break 'decode Err(TOO_FAR_BACK);
+            }
+            copy_match(window, filled, distance, length);
+            filled += length;
         }
-        let before = consume!(entry);
-        let distance = ((entry >> VALUE_SHIFT) + extra_bits(before, entry)) as usize;
-        if distance > filled {
-            break Err(TOO_FAR_BACK);
+        entry = litlen!();
+        if !margins!() {
+            break 'decode Ok(Pause::Margin);
         }
-        copy_match(window, filled, distance, length);
-        filled += length;
+        refill!();
     };
     let cursor = Cursor {
         bits: Bits {
