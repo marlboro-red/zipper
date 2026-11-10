@@ -1412,7 +1412,7 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
         for branch in &folder.bcj2_branches {
             check_methods(branch)?;
         }
-        let memory = decoder_memory(folder, false);
+        let memory = decoder_memory(folder, 1);
         if memory > DECODER_MEMORY {
             return Err(unsupported(format!(
                 "7z BCJ2 decoders need {memory} bytes, more than the {DECODER_MEMORY}-byte decoder budget; {BACKEND_HINT}"
@@ -1591,16 +1591,17 @@ fn ppmd7_fields(properties: &[u8]) -> Option<(u32, u32)> {
     Some((u32::from(order), u32::from_le_bytes([a, b, c, d])))
 }
 
-fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
+fn decoder_memory(folder: &Folder, segment_threads: usize) -> u64 {
+    let segments_possible = segment_threads > 1;
     if !folder.bcj2_branches.is_empty() {
         return folder
             .bcj2_branches
             .iter()
-            .map(|branch| decoder_memory(branch, false) + BCJ2_BRANCH_BUFFERS)
+            .map(|branch| decoder_memory(branch, 1) + BCJ2_BRANCH_BUFFERS)
             .fold(0, u64::saturating_add);
     }
     if let Ok(Some((_, swapped))) = byte_swapped(folder) {
-        return decoder_memory(&swapped, segments_possible);
+        return decoder_memory(&swapped, segment_threads);
     }
     let decryption = if folder.encryption.is_some() {
         AES_BUFFER as u64
@@ -1618,6 +1619,9 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
     {
         Some((Ok(Method::Lzma | Method::Lzma2), coder)) => lzma_coder(coder, folder.size)
             .map_or(0, |coder| coder.memory(folder.size) + filter_buffers),
+        Some((Ok(Method::Bzip2), _)) if segments_possible => {
+            crate::bzip2_streams::memory(segment_threads)
+        }
         Some((Ok(Method::Bzip2), _)) => BZIP2_DECODER_MEMORY,
         Some((Ok(Method::Deflate64), _)) => {
             std::mem::size_of::<deflate64::InflaterManaged>() as u64
@@ -1933,7 +1937,10 @@ fn folder_reader(
         [Method::Copy] => Box::new(packed),
         [Method::Deflate] => Box::new(flate2::read::DeflateDecoder::new(packed)),
         [Method::Deflate64] => Box::new(deflate64::Deflate64Decoder::with_buffer(packed)),
-        [Method::Bzip2] => Box::new(crate::bzip2_streams::Bzip2Streams::new(packed)),
+        [Method::Bzip2] => crate::bzip2_streams::many_streams(
+            packed,
+            segment_threads.map_or(1, |(_, threads)| threads),
+        ),
         [Method::Ppmd] => {
             let (order, memory) = ppmd_parameters(&folder.output_to_packed[0].properties)?;
             let packed = crate::EndWatched {
@@ -2624,7 +2631,7 @@ pub fn read_archive(
     let decode = |folder_index: usize, buffer: &mut [u8]| -> Result<()> {
         tracker.check()?;
         let folder = &archive.folders[folder_index];
-        let _reservation = memory.reserve(decoder_memory(folder, segment_threads > 1));
+        let _reservation = memory.reserve(decoder_memory(folder, segment_threads));
         let encrypted = encrypted(folder);
         let started = folder_reader(file.reopen(path)?, folder, Some((path, segment_threads)));
         let mut reader = match started {
@@ -3000,8 +3007,8 @@ mod tests {
         );
         assert!(crate::lzma::lzma2_memory(1 << 20) > 1 << 20);
         let (_, folder) = uncompressed_lzma2(400, 65_536);
-        assert_eq!(decoder_memory(&folder, true), SEGMENT_BUDGET);
-        assert!(decoder_memory(&folder, false) < SEGMENT_BUDGET);
+        assert_eq!(decoder_memory(&folder, 2), SEGMENT_BUDGET);
+        assert!(decoder_memory(&folder, 1) < SEGMENT_BUDGET);
         let large_dictionary = Folder {
             output_to_packed: vec![Coder {
                 id: vec![0x21],
@@ -3010,9 +3017,9 @@ mod tests {
             size: 1 << 30,
             ..folder
         };
-        let sequential = decoder_memory(&large_dictionary, false);
+        let sequential = decoder_memory(&large_dictionary, 1);
         assert!(sequential > 1 << 30);
-        assert_eq!(decoder_memory(&large_dictionary, true), sequential);
+        assert_eq!(decoder_memory(&large_dictionary, 2), sequential);
     }
 
     #[test]
@@ -3026,9 +3033,9 @@ mod tests {
             })),
             ..folder.clone()
         };
-        let plain = decoder_memory(&folder, false);
-        assert_eq!(decoder_memory(&encrypted, false), plain + AES_BUFFER as u64);
-        assert_eq!(decoder_memory(&encrypted, true), plain + AES_BUFFER as u64);
+        let plain = decoder_memory(&folder, 1);
+        assert_eq!(decoder_memory(&encrypted, 1), plain + AES_BUFFER as u64);
+        assert_eq!(decoder_memory(&encrypted, 2), plain + AES_BUFFER as u64);
         let branches = |encryption: Option<Box<Encryption>>| Folder {
             output_to_packed: vec![Coder {
                 id: BCJ2.to_vec(),
@@ -3044,8 +3051,8 @@ mod tests {
             ..folder.clone()
         };
         assert_eq!(
-            decoder_memory(&branches(encrypted.encryption.clone()), true),
-            decoder_memory(&branches(None), true) + BCJ2_INPUTS as u64 * AES_BUFFER as u64
+            decoder_memory(&branches(encrypted.encryption.clone()), 2),
+            decoder_memory(&branches(None), 2) + BCJ2_INPUTS as u64 * AES_BUFFER as u64
         );
     }
 
@@ -3135,14 +3142,14 @@ mod tests {
     fn decoder_memory_counts_the_window_and_the_decoder_buffers() {
         let (_, mut folder) = uncompressed_lzma2(400, 65_536);
         let window = lzma2_dictionary(18);
-        assert!(decoder_memory(&folder, false) > window);
+        assert!(decoder_memory(&folder, 1) > window);
         folder.output_to_packed[0] = Coder {
             id: vec![0x03, 0x01, 0x01],
             properties: [vec![134], (1u32 << 20).to_le_bytes().to_vec()].concat(),
         };
-        let wide = decoder_memory(&folder, false);
+        let wide = decoder_memory(&folder, 1);
         folder.output_to_packed[0].properties[0] = 0x5D;
-        let narrow = decoder_memory(&folder, false);
+        let narrow = decoder_memory(&folder, 1);
         assert!(narrow > 1 << 20);
         assert!(
             wide >= narrow + ((0x400 << 12) - (0x400 << 3)) * 2,
@@ -3155,7 +3162,7 @@ mod tests {
                 properties: Vec::new(),
             },
         );
-        assert_eq!(decoder_memory(&folder, false), narrow + (1 << 16));
+        assert_eq!(decoder_memory(&folder, 1), narrow + (1 << 16));
         folder.output_to_packed.insert(
             0,
             Coder {
@@ -3163,7 +3170,7 @@ mod tests {
                 properties: vec![0],
             },
         );
-        assert_eq!(decoder_memory(&folder, false), narrow + (1 << 16) + 256);
+        assert_eq!(decoder_memory(&folder, 1), narrow + (1 << 16) + 256);
         folder.output_to_packed.insert(
             0,
             Coder {
@@ -3171,7 +3178,7 @@ mod tests {
                 properties: vec![0x00, 0x10, 0x00, 0x00],
             },
         );
-        assert_eq!(decoder_memory(&folder, false), narrow + (2 << 16) + 256);
+        assert_eq!(decoder_memory(&folder, 1), narrow + (2 << 16) + 256);
     }
 
     struct LzmaReader<R> {
@@ -4128,7 +4135,7 @@ mod tests {
             pack_offset: 0,
             pack_size: 1,
         };
-        assert_eq!(decoder_memory(&folder, true), SEGMENT_BUDGET);
+        assert_eq!(decoder_memory(&folder, 2), SEGMENT_BUDGET);
     }
 
     const DELTA_ONE: (&[u8], &[u8]) = (&[0x03], &[0]);
@@ -4165,13 +4172,10 @@ mod tests {
         let (_, folder) = uncompressed_lzma2(400, 65_536);
         let filtered = behind(&[DELTA_ONE, BCJ_X86], folder);
         let buffers = (DELTA_HISTORY + BRANCH_BUFFER) as u64;
-        assert_eq!(decoder_memory(&filtered, true), SEGMENT_BUDGET + buffers);
-        assert!(decoder_memory(&filtered, false) < SEGMENT_BUDGET);
+        assert_eq!(decoder_memory(&filtered, 2), SEGMENT_BUDGET + buffers);
+        assert!(decoder_memory(&filtered, 1) < SEGMENT_BUDGET);
         let encrypted = encrypted_copy(&filtered);
-        assert_eq!(
-            decoder_memory(&encrypted, true),
-            decoder_memory(&encrypted, false)
-        );
+        assert_eq!(decoder_memory(&encrypted, 2), decoder_memory(&encrypted, 1));
     }
 
     #[test]
@@ -4390,7 +4394,7 @@ mod tests {
             pack_size: 1 << 24,
         };
         let decoder = std::mem::size_of::<deflate64::InflaterManaged>() as u64;
-        assert!(decoder_memory(&deflate64, false) >= decoder);
+        assert!(decoder_memory(&deflate64, 1) >= decoder);
         let folder = Folder {
             output_to_packed: vec![Coder {
                 id: BCJ2.to_vec(),
@@ -4410,7 +4414,7 @@ mod tests {
             pack_size: 1 << 26,
         };
         let buffers = (COPY_BUFFER + BCJ2_BRANCH_BUFFER) as u64;
-        assert!(decoder_memory(&folder, false) >= BCJ2_INPUTS as u64 * (decoder + buffers));
+        assert!(decoder_memory(&folder, 1) >= BCJ2_INPUTS as u64 * (decoder + buffers));
     }
 
     #[test]

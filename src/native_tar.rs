@@ -233,7 +233,9 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
         Compression::Xz => Box::new(DecoderMemory(
             crate::lzma::XzReader::new(input).with_dictionary_limit(LARGEST_DICTIONARY),
         )),
-        Compression::Bzip2 => Box::new(crate::bzip2_streams::Bzip2Streams::new(input)),
+        Compression::Bzip2 => {
+            crate::bzip2_streams::many_streams(input, rayon::current_num_threads())
+        }
         Compression::Lzma => Box::new(lzma_decoder(input)?),
         Compression::Lzip => Box::new(crate::lzma::LzipReader::new(input, |dictionary| {
             ensure_dictionary_fits("lzip", dictionary)

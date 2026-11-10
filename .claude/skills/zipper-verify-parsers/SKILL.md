@@ -1,6 +1,6 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, the RPM lead, header and index readers in src/native_rpm.rs, the PE, COFF, TE, ELF, Mach-O and universal header readers in src/native_exe.rs, the SquashFS and CramFS superblock, inode and folder readers in src/native_squashfs.rs and src/native_cramfs.rs, the LZO1X decoder in src/lzo.rs, the raw Deflate decoder in src/inflate.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, the RPM lead, header and index readers in src/native_rpm.rs, the PE, COFF, TE, ELF, Mach-O and universal header readers in src/native_exe.rs, the SquashFS and CramFS superblock, inode and folder readers in src/native_squashfs.rs and src/native_cramfs.rs, the LZO1X decoder in src/lzo.rs, the raw Deflate decoder in src/inflate.rs, the BZip2 block scanner, block decoder and block reader in src/bzip2.rs and src/bzip2_streams.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
@@ -45,6 +45,8 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[lzo]` | `decoding_any_short_stream_never_panics_or_passes_its_block`, with the `lzop` tests in `cargo test --release --lib lzo` | 153 s |
 | `[ext-fields]` | the nine `native_ext` proofs, with the ext corpus and hostile tests and the spread flip sweeps against 7-Zip | 36 s for the slowest |
 | `[inflate]` | the three `inflate` proofs, with the zlib differential tests in `cargo test --release --lib inflate` | 2 s for the slowest |
+| `[bzip2-fields]` | the seven `bzip2` proofs | KANI_TOTAL |
+| `[bzip2-blocks]` | no Kani proof; the TLA+ model in `verification/bzip2-blocks/`, `cargo test --release --lib bzip2` and `tests/bzip2_blocks.rs` | about 2 minutes |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
 Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jobs.
@@ -88,6 +90,13 @@ Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jo
 | `pulled_bits_are_the_inputs_next_bytes_and_unused_whole_bytes_go_back` | from any bit buffer of up to 47 bits, `Bits::need` of up to 48 bits takes the next input bytes in order and no byte more than it needs, never holds more than 55 bits and fails only when the input ends. `take` returns the low bits. `give_back_whole_bytes` returns only whole bytes this call took | 2 s |
 | `the_next_reversed_code_is_the_code_after_it_with_its_bits_reversed` | for every code of 1 to 15 bits, `next_reversed_code` gives the bit-reversed form of the next canonical code, and nothing after the last | 0.2 s |
 | `every_symbols_entry_keeps_its_fields_apart_and_its_value_inside_the_format` | for every symbol of the three Deflate alphabets and every code length, the table entry keeps its code length, flags and value apart. A length is 3 to 258 with up to 5 extra bits, a distance 1 to 32,768 with up to 13, and the codes outside the format are marked invalid | 0.4 s |
+| `the_scanner_returns_the_first_magic_and_never_panics` | on any input of up to SCANNER_BYTES bytes and any starting bit, `next_magic` returns the first block or end magic at or after that bit, whole inside the input, or none when there is none | SCANNER_TIME |
+| `magics_are_read_only_from_48_whole_bits` | `bits48` on any 8 bytes and any bit returns the 48 bits there in stream order, and nothing when fewer than 48 remain | 2 s |
+| `bits_come_in_stream_order_with_zeros_past_the_end` | the BZip2 bit reader, from any start in the first 3 bytes of up to 11 bytes, returns two fields of 1 to 32 bits in stream order, reads zeros past the end and counts every bit | 67 s |
+| `block_starts_never_panic_and_start_inside_the_largest_block` | `block_start` on any 15 bytes at any bit of the first byte and any level accepts only the block magic, reads exactly 105 bits and keeps the origin within the level's largest block | 2 s |
+| `used_bytes_of_one_range_never_panic_and_come_out_in_order` | `used_bytes` with at most one range set returns the set members of that range in rising order, reads exactly 32 bits and refuses an empty map | 190 s |
+| `selectors_never_panic_and_name_only_tables_the_block_has` | `selectors` on up to 4 selectors and 2 to 6 tables keeps one table index per selector, each below the table count | 81 s |
+| `code_lengths_never_panic_and_stay_from_1_to_20` | `code_lengths` on any 5 bytes gives two lengths from 1 to 20 or refuses, through any run of steps up and down | 21 s |
 
 Some checks are too heavy for Kani, so exhaustive unit tests cover them:
 
@@ -108,6 +117,20 @@ The BCJ2 folder graph is checked by exhaustive tests, under `[7z-bcj2-graph]` in
 Run them with `cargo test --release --lib bcj2`, then `cargo xtask verify-sync 7z-bcj2-graph`.
 
 `byte_swap_reverses_every_whole_group_under_every_read_split`, under `[7z-byte-swap]`, checks the Swap2 and Swap4 reader on every length up to 13 bytes. The inner reader yields 1 to 6 bytes at a time, the caller reads 1 to 6, and the buffer holds 1, 4, 5, 7 or 64 bytes, 5,040 runs in all. Run it with `cargo test --release --lib byte_swap`, then `cargo xtask verify-sync 7z-byte-swap`.
+
+Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes blocks on several threads in `src/bzip2_streams.rs` sit under `[bzip2-blocks]`. The tar, single file, RPM and 7z readers use them with more than one thread, and one thread keeps the `bzip2` crate. The crate is the oracle of every test:
+
+- `every_kind_of_data_at_every_level_decodes_as_the_bzip2_crate_does` covers six kinds of data at levels 1 to 9, from empty to several blocks.
+- `every_cut_and_many_bit_flips_decode_or_fail_as_the_bzip2_crate_does` cuts four streams at every length, or the last 600, and flips every one of the first 2,000 bits and 3,000 random ones. The decoder must give the crate's bytes or refuse when it refuses.
+- `randomised_blocks_decode_as_the_bzip2_crate_does` sets the randomised bit, which no writer has set since bzip2 0.9.5, and repairs both CRCs from the crate's own output.
+- `a_magic_inside_a_block_does_not_end_it` plants each magic in spare selectors of each block. `a_magic_planted_inside_any_block_is_passed_over_by_decoding_on` and `a_planted_stream_end_and_header_inside_a_block_start_no_stream` run those streams through the reader at 1 to 4 block threads.
+- `cut_and_flipped_streams_give_the_serial_bytes_or_are_refused_as_it_refuses` compares the reader with the one-thread reader on cuts and flips of one stream of three blocks and of three streams in a row.
+- `a_block_may_fill_the_longest_block_and_one_bit_more_is_refused` pads a block's first code length with steps up and down to exactly 4 MiB and to 4 bits more.
+- `blocks_in_flight_stay_within_the_workers_and_their_memory` counts queued blocks and their charge after every read.
+- `the_lookup_decodes_every_code_as_the_bit_at_a_time_walk_does`, `moving_to_the_front_matches_a_rotation_at_every_index`, `used_bytes_are_the_set_bits_of_the_two_level_map`, `the_crc_is_the_bitwise_bzip2_crc_on_every_split` and `runs_expand_the_same_into_every_size_of_read` compare each kernel with a plain reference.
+- `tests/bzip2_blocks.rs` extracts every BZip2 fixture of the corpora and generated tar, 7z and ZIP archives at 1, 2, 4 and default threads, and compares the trees.
+
+The reader starts a block's thread before the block before it has confirmed where it ends. `verification/bzip2-blocks/Blocks.tla` models that for five magics in every layout of true block starts and false magics, with every set of corrupt blocks. TLC checks nine rules. `InOrder` says only true blocks go out, in stream order with none skipped. `FrontIsTrue` says the reader never acts on the result of a decoder started at a false magic. The others are `OkIsComplete`, `FailureIsReported`, `MemoryBounded`, `ThreadsBounded`, `NothingLeaks`, `NoThreadOutlivesReader` and `NoDeadlock`. Run `cargo xtask verify-sync bzip2-blocks`, which runs the model and both test sets, and `cargo xtask verify-sync bzip2-fields` for the seven Kani proofs of the scanner, the bit reader and the block header readers.
 
 The LZ4 reader in `src/lz4.rs`, under `[lz4-frames]`, has these exhaustive tests:
 

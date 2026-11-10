@@ -3,7 +3,6 @@
 # module needs a formal check or a line here. A line is `path | reason`.
 # A reason that starts with `candidate:` names a formal check still owed.
 
-src/bzip2_streams.rs | wraps the bzip2 crate to read concatenated streams, each after its share of output; the tar unit test each_stream_after_the_first_needs_its_share_of_output and the 7z BZip2 corpus archives cover it
 src/compat.rs | routes formats to 7-Zip by a fixed signature allowlist and parses none of 7-Zip's output; tests/cli.rs covers each bypass
 src/counters.rs | profiling counters that compile to nothing without the `counters` feature
 src/dictionary.rs | turns an LZMA dictionary over the 256 MiB limit into an out-of-memory error with a hint; the native_tar xz and lzip unit tests and tests/hostile_tar.rs, tests/hostile_rpm.rs and tests/hostile_stream.rs check each message
