@@ -1,0 +1,52 @@
+    Finished `release` profile [optimized + debuginfo] target(s) in 3.59s
+    Finished `release` profile [optimized + debuginfo] target(s) in 3.22s
+probe-system sha256 034ae70ddacec71f, probe-rs sha256 e89ad65fc8c2d46e
+## silesia, system build
+ours           1384.6 M instructions     629.7 M cycles  [cycles: 674.9 629.7 632.5]
+zlib           1678.2 M instructions     681.3 M cycles  [cycles: 705.8 681.3 682.2]
+libdeflate     1435.5 M instructions     636.1 M cycles  [cycles: 637.1 636.1 636.9]
+## silesia, zlib-rs build (zlib is zlib-rs)
+zlib           2867.0 M instructions     886.0 M cycles  [cycles: 886.8 887.4 886.0]
+## large-compressible, system build
+ours            280.7 M instructions      62.5 M cycles  [cycles: 63.1 62.5 64.4]
+zlib            162.0 M instructions     123.3 M cycles  [cycles: 123.3 125.3 123.6]
+libdeflate      153.8 M instructions      95.2 M cycles  [cycles: 95.2 95.8 96.1]
+## large-compressible, zlib-rs build (zlib is zlib-rs)
+zlib            232.6 M instructions     123.3 M cycles  [cycles: 123.4 123.3 123.4]
+## dependencies, system build
+ours            359.9 M instructions     153.3 M cycles  [cycles: 153.3 155.6 162.3]
+zlib            434.9 M instructions     178.1 M cycles  [cycles: 178.1 190.0 191.8]
+## dependencies, zlib-rs build (zlib is zlib-rs)
+zlib            703.8 M instructions     223.7 M cycles  [cycles: 223.7 227.3 230.1]
+## mixed, system build
+ours            145.8 M instructions      49.8 M cycles  [cycles: 49.8 52.3 53.1]
+zlib            228.0 M instructions      74.0 M cycles  [cycles: 74.0 76.8 76.6]
+## mixed, zlib-rs build (zlib is zlib-rs)
+zlib            226.3 M instructions      66.7 M cycles  [cycles: 66.7 67.3 67.8]
+## flat-tiny, system build
+ours             44.9 M instructions       9.3 M cycles  [cycles: 9.3 9.5 10.5]
+zlib            103.3 M instructions      26.4 M cycles  [cycles: 27.4 27.3 26.4]
+## flat-tiny, zlib-rs build (zlib is zlib-rs)
+zlib             72.1 M instructions      18.9 M cycles  [cycles: 20.0 18.9 20.7]
+## grouped, system build
+ours             73.9 M instructions      15.1 M cycles  [cycles: 15.1 15.3 15.8]
+zlib            139.7 M instructions      38.4 M cycles  [cycles: 39.0 39.1 38.4]
+## grouped, zlib-rs build (zlib is zlib-rs)
+zlib             79.3 M instructions      19.0 M cycles  [cycles: 19.0 19.6 19.1]
+## dependencies, libdeflate
+libdeflate      352.8 M instructions     161.2 M cycles  [cycles: 161.6 161.8 161.2]
+## runs-1, system build
+ours             25.9 M instructions       4.7 M cycles  [cycles: 4.7 4.8 4.8]
+zlib             43.1 M instructions      40.5 M cycles  [cycles: 41.1 40.5 41.3]
+## runs-1, zlib-rs build (zlib is zlib-rs)
+zlib             41.5 M instructions       5.7 M cycles  [cycles: 5.9 5.7 5.8]
+## runs-3, system build
+ours            131.9 M instructions      20.8 M cycles  [cycles: 20.8 21.4 21.7]
+zlib             43.2 M instructions      32.5 M cycles  [cycles: 32.6 32.8 32.5]
+## runs-3, zlib-rs build (zlib is zlib-rs)
+zlib            707.9 M instructions     200.3 M cycles  [cycles: 200.3 200.5 200.9]
+## runs-12, system build
+ours            125.8 M instructions      17.4 M cycles  [cycles: 18.4 18.8 17.4]
+zlib             43.2 M instructions      33.1 M cycles  [cycles: 33.1 33.3 33.2]
+## runs-12, zlib-rs build (zlib is zlib-rs)
+zlib            705.7 M instructions      95.4 M cycles  [cycles: 95.4 97.0 95.5]

@@ -1,0 +1,30 @@
+    Finished `release` profile [optimized] target(s) in 1m 15s
+before sha256 5fbd162e8ab32f19, after sha256 10b8094edf5e34cf
+## silesia at 1 threads
+before round 1: 1926877208 instructions, 801241830 cycles, 4718592 bytes peak
+after round 1: 1873640841 instructions, 762756140 cycles, 4800512 bytes peak
+before round 2: 1922482795 instructions, 798985644 cycles, 4718592 bytes peak
+after round 2: 1871111106 instructions, 760412789 cycles, 4800512 bytes peak
+before round 3: 1924463700 instructions, 800919254 cycles, 4734976 bytes peak
+after round 3: 1867614976 instructions, 756975094 cycles, 4997120 bytes peak
+## silesia at 4 threads
+before round 1: 1935414801 instructions, 842627655 cycles, 8257536 bytes peak
+after round 1: 1880493367 instructions, 795074324 cycles, 8142848 bytes peak
+before round 2: 1932123625 instructions, 841044445 cycles, 8306688 bytes peak
+after round 2: 1878400027 instructions, 793189729 cycles, 8159232 bytes peak
+before round 3: 1934787418 instructions, 839811182 cycles, 8241152 bytes peak
+after round 3: 1879407885 instructions, 798119008 cycles, 8126464 bytes peak
+## dependencies at 1 threads
+before round 1: 4937295656 instructions, 1589737296 cycles, 8159232 bytes peak
+after round 1: 4842057548 instructions, 1531026622 cycles, 8175616 bytes peak
+before round 2: 4800742548 instructions, 1543809353 cycles, 8044544 bytes peak
+after round 2: 4869385662 instructions, 1477767381 cycles, 8142848 bytes peak
+before round 3: 4927476765 instructions, 1512812459 cycles, 8093696 bytes peak
+after round 3: 4860134218 instructions, 1468301364 cycles, 8028160 bytes peak
+## dependencies at 4 threads
+before round 1: 5293975320 instructions, 3185195240 cycles, 8699904 bytes peak
+after round 1: 5195961550 instructions, 3065054600 cycles, 8568832 bytes peak
+before round 2: 5296008085 instructions, 3168126986 cycles, 8601600 bytes peak
+after round 2: 5295396734 instructions, 3144853841 cycles, 8404992 bytes peak
+before round 3: 5382690098 instructions, 3237093984 cycles, 8601600 bytes peak
+after round 3: 5284538340 instructions, 3110148938 cycles, 8536064 bytes peak
