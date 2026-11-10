@@ -10,7 +10,7 @@ The SquashFS reader follows the layout of squashfs-tools 4.7 and checks each str
 - Metadata blocks of up to 8 KiB, stored or compressed, for the inode table, the folder table, the fragment table and the owner table.
 - Every inode type, basic and extended. These are folders with or without an index, files, links, block and character devices, named pipes and sockets.
 - Files whose blocks are stored, compressed or sparse, with a tail in a shared fragment block or in a block of its own.
-- Every compressor 7-Zip lists. gzip uses Zipper's own Deflate decoder in `src/inflate.rs` with zlib framing, and zstd the `zstd` crate. LZMA and xz use Zipper's own decoder in `src/lzma.rs`, with the xz branch filters. LZO uses Zipper's own LZO1X decoder in `src/lzo.rs`, and LZ4 its own block decoder in `src/lz4.rs`. The compressor options block is skipped, since each block carries what its decoder needs.
+- Every compressor 7-Zip lists. gzip uses Zipper's own Deflate decoder in `src/inflate.rs` with zlib framing. zstd uses Zipper's own decoder in `src/zstandard.rs`. LZMA and xz use Zipper's own decoder in `src/lzma.rs`, with the xz branch filters. LZO uses Zipper's own LZO1X decoder in `src/lzo.rs`, and LZ4 its own block decoder in `src/lz4.rs`. The compressor options block is skipped, since each block carries what its decoder needs.
 
 The CramFS reader reads images of either byte order with 4 KiB pages compressed with zlib, as `mkfs.cramfs` writes them and 7-Zip reads them. It checks the CRC-32 of a version 2 image over the size its superblock gives. It reads a version 1 image, which has no CRC and no size, up to 256 MiB.
 
@@ -73,7 +73,7 @@ The SquashFS reader never holds a table whole. It reads metadata through a cache
 - 7-Zip fails on a CramFS hole, which `mkfs.cramfs -z` writes. Zipper writes zeros, as Linux reads it.
 - 7-Zip keeps the first bytes of a block that decodes past the size its place in the file needs, and accepts the image. Zipper refuses it.
 - 7-Zip reads a data block word that has bits above its stored flag, a stored length of zero or a length past the block size, and writes bytes from elsewhere in the image. Zipper refuses the word. It also refuses a stored block of the wrong size, and a data or fragment block that lies outside the data area.
-- 7-Zip refuses some damaged zstd blocks that libzstd, the reference zstd decoder, decodes without error, such as the `zstd.sqfs` corpus image with bit 4 of byte 151 flipped. Zipper decodes zstd with libzstd and writes what `unsquashfs` writes. The hostile tests accept such a block only when the tree matches `unsquashfs`.
+- 7-Zip refuses some damaged zstd blocks that libzstd, the reference zstd decoder, decodes without error, such as the `zstd.sqfs` corpus image with bit 4 of byte 151 flipped. Zipper's zstd decoder accepts and refuses what libzstd 1.5.7 does, so it writes what `unsquashfs` writes. The hostile tests accept such a block only when the tree matches `unsquashfs`.
 - 7-Zip writes both entries of a folder that holds two of one name. Zipper refuses the folder.
 - 7-Zip writes a name that is not UTF-8 in its own way. Zipper refuses it.
 - 7-Zip writes a link whose target holds a NUL, and the system cuts the target there. Zipper refuses the link.

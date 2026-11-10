@@ -325,7 +325,7 @@ const CI_TESTS: &[&str] = &[
     "ci",
 ];
 const EXTRA_FEATURE_SUBSETS: &[&str] = &["zip,7z", ""];
-const FEATURES_WITHOUT_LIBRARY_CODE: &[&str] = &["cli", "zstd"];
+const FEATURES_WITHOUT_LIBRARY_CODE: &[&str] = &["cli"];
 const FORMAT_TESTS: &[(&str, &[&str])] = &[
     ("zip", &["zip_corpus"]),
     ("7z", &["sevenz_corpus"]),

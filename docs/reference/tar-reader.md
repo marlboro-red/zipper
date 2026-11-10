@@ -58,9 +58,12 @@ The reader checks the whole archive before it publishes anything, and it publish
 | Names, implied directories and link targets | at most 64 MiB in total |
 | One pax header, GNU long name or long link | at most 1 MiB |
 | Largest xz, LZMA or lzip dictionary | 256 MiB, four times the 64 MiB of `xz -9e` |
+| Largest zstd window | 128 MiB, the window of `zstd --long=27` and the default limit of libzstd |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
 An LZMA or lzip stream whose header declares a larger dictionary is refused before decoding, with its size in the error. An xz stream is refused when one of its block headers declares a larger dictionary, before that block's dictionary is allocated. The xz limit falls between the same two dictionary sizes as liblzma's 272 MiB memory limit did, so the same streams pass. Each error names the largest dictionary accepted and points at `--zip-engine backend`.
+
+zstd decodes with Zipper's own decoder in `src/zstandard.rs`. It accepts and refuses what libzstd 1.5.7 does, with these differences. A frame whose header declares a window larger than 128 MiB is refused before its window is allocated, with the size in the error. A match that copies from further back than the frame's window is refused, where libzstd copies whatever its buffer holds. A frame that ends short of the content size in its header is refused, where libzstd's stream decoder skips that check after an empty last block. A frame in a format older than zstd 1.0 is refused. A frame that needs a dictionary is refused, as before.
 
 One thread decodes and checks the stream. A bzip2 stream is the exception, and its blocks decode on up to one thread fewer than `--threads`, as the [single file reference](stream-reader.md) describes. Four writer threads create and write the files, or the number `--threads` sets. A file larger than 1 MiB streams to one writer in order. On Windows, all files of one folder go to the same writer, because creating files in one folder from several threads is slower there. At most 16 MiB of file data waits between the decoder and the writers, so memory does not grow with file size or writer count. A repeated file name waits for every pending write before it replaces the file. A TLA+ model in `verification/tar-writer-pool/` checks every order of these steps, within a bound, for hangs, budget overruns, leaked chunks and lost write failures. The `zipper-verify-tar-pool` skill in `.claude/skills/` runs it.
 

@@ -227,7 +227,7 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
         Compression::None => Box::new(input),
         Compression::Gzip => Box::new(crate::framing::Reader::gzip(input)),
         #[cfg(feature = "zstd")]
-        Compression::Zstd => Box::new(zstd::stream::read::Decoder::with_buffer(input)?),
+        Compression::Zstd => Box::new(crate::zstandard::ZstdReader::new(input)),
         #[cfg(not(feature = "zstd"))]
         Compression::Zstd => anyhow::bail!(crate::NotBuilt("zstd".to_owned())),
         Compression::Xz => Box::new(DecoderMemory(

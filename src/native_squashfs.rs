@@ -351,12 +351,12 @@ pub(crate) fn data_block(word: u32, block_size: u32) -> Field<Option<(u32, bool)
 
 #[cfg(feature = "zstd")]
 fn zstd_block(packed: &[u8], output: &mut [u8]) -> Result<usize> {
-    let mut decoder = zstd::bulk::Decompressor::new()?;
-    decoder
-        .decompress_to_buffer(packed, output)
-        .map_err(|error| {
-            anyhow::anyhow!("SquashFS zstd block is damaged or decodes past its size: {error}")
-        })
+    crate::zstandard::decode_frames_into(packed, output).map_err(|error| {
+        anyhow::anyhow!(
+            "SquashFS zstd block is damaged or decodes past its size: {}",
+            error.0
+        )
+    })
 }
 
 #[cfg(not(feature = "zstd"))]

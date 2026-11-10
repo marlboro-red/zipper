@@ -167,7 +167,7 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `zip` | The ZIP reader with every method it decodes, including ZipCrypto and WinZip AES, and Zstandard entries with `zstd` | `aes`, `bzip2`, `ctr`, `deflate64`, `hmac`, `pbkdf2`, `ppmd-rust`, `sha1`, `zeroize` |
 | `7z` | The 7z reader with every method it decodes, including AES-256 | `aes`, `bzip2`, `deflate64`, `ppmd-rust`, `zeroize` |
 | `tar` | The tar reader and single compressed files such as `.gz`, `.xz` and `.bz2`, and `.zst` with `zstd` | `bzip2`, `ppmd-rust` |
-| `zstd` | The Zstandard decoder for ZIP entries, `.zst` files, tar and RPM payloads and SquashFS images | `zstd`, which builds C |
+| `zstd` | Zipper's own Zstandard decoder for ZIP entries, `.zst` files, tar and RPM payloads and SquashFS images | None |
 | `cpio` | The cpio reader | None |
 | `ar` | The `ar` and Debian package reader, and `tar` for the parts inside | None beyond `tar` |
 | `rpm` | The RPM reader, and `cpio` and `tar` for its payload | None beyond `tar` |
@@ -193,7 +193,7 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `all-formats` | `zip`, `7z`, `tar`, `zstd` and `more-formats` | The union of theirs |
 | `cli` | The `zipper` binary, with `all-formats` | `clap` |
 
-Every build also compiles `anyhow`, `crc32fast`, `rayon`, `sha2`, `tempfile` and `walkdir`, with `libc` and `rustix` on Unix or `windows-sys` on Windows. A feature that names another, such as `rpm` naming `tar`, also builds that reader. A `zip` and `7z` build compiles 42 crates, against 65 for the default, and compiles no C. Every reader decodes Deflate, zlib and gzip with Zipper's own decoder in `src/inflate.rs`, so no build links a zlib. A build without `zstd` refuses a ZIP Zstandard entry, a `.zst` file or tar, an RPM with a zstd payload and a zstd SquashFS image with `zipper::NotBuilt` naming `zstd`, and writes nothing. `tests/zstd_feature.rs` checks the ZIP, tar and SquashFS cases.
+Every build also compiles `anyhow`, `crc32fast`, `rayon`, `sha2`, `tempfile` and `walkdir`, with `libc` and `rustix` on Unix or `windows-sys` on Windows. A feature that names another, such as `rpm` naming `tar`, also builds that reader. A `zip` and `7z` build compiles 42 crates, against 62 for the default, and compiles no C. Every reader decodes Deflate, zlib and gzip with Zipper's own decoder in `src/inflate.rs`, so no build links a zlib. A build without `zstd` refuses a ZIP Zstandard entry, a `.zst` file or tar, an RPM with a zstd payload and a zstd SquashFS image with `zipper::NotBuilt` naming `zstd`, and writes nothing. `tests/zstd_feature.rs` checks the ZIP, tar and SquashFS cases.
 
 The `Reader` enum keeps every variant in every build. A ZIP or tar archive that the build does not read fails with `zipper::NotBuilt`, which names the format, and writes nothing. With `Engine::Native`, so does every other format whose signature Zipper knows, such as `gzip` or `7z`. `Engine::Auto` hands those to 7-Zip instead, as it does any format it recognizes but does not read. Choose `Engine::Native` to never start 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build, so a build without `zip` refuses it as `zip`.
 

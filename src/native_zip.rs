@@ -1143,7 +1143,7 @@ fn method_decoder<'a>(
             rayon::current_num_threads(),
         )),
         #[cfg(feature = "zstd")]
-        ZSTANDARD => Box::new(zstd::stream::read::Decoder::with_buffer(input)?.single_frame()),
+        ZSTANDARD => Box::new(crate::zstandard::ZstdReader::new(input).single_frame()),
         XZ => Box::new(crate::lzma::XzReader::new(input).single_stream()),
         LZMA => {
             let mut prefix = [0u8; 9];
