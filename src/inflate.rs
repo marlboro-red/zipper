@@ -153,29 +153,51 @@ fn double_up_to(table: &mut [u32], mut filled: usize, size: usize) {
     }
 }
 
+const SYMBOL_WORDS: usize = LITLEN_SYMBOLS.div_ceil(u64::BITS as usize);
+
+fn each_coded_symbol(coded: &[u64; SYMBOL_WORDS], mut visit: impl FnMut(usize)) {
+    for (word, &symbols) in coded.iter().enumerate() {
+        let mut rest = symbols;
+        while rest != 0 {
+            visit(word * u64::BITS as usize + rest.trailing_zeros() as usize);
+            rest &= rest - 1;
+        }
+    }
+}
+
 fn build_table(
     table: &mut [u32],
     lengths: &[u8],
-    table_bits: u32,
+    most_table_bits: u32,
     alphabet: Alphabet,
-) -> Result<(), Invalid> {
+) -> Result<u32, Invalid> {
     const UNUSABLE: Invalid = Invalid("Deflate code lengths do not fit their table");
+    const ONE_BIT: u32 = 1;
     let symbols = alphabet.symbols();
-    let main = 1usize << table_bits;
-    if lengths.len() > symbols.len() || table.len() < main {
+    if lengths.len() > symbols.len() || table.len() < 1 << most_table_bits.max(ONE_BIT) {
         return Err(UNUSABLE);
     }
-    let mut counts = [0u16; LONGEST_CODE + 1];
-    for &length in lengths {
-        *counts.get_mut(usize::from(length)).ok_or(UNUSABLE)? += 1;
+    let mut coded = [0u64; SYMBOL_WORDS];
+    let mut every_length = 0;
+    for (word, lengths) in coded.iter_mut().zip(lengths.chunks(u64::BITS as usize)) {
+        for (symbol, &length) in lengths.iter().enumerate() {
+            *word |= u64::from(length != 0) << symbol;
+            every_length |= length;
+        }
     }
+    if usize::from(every_length) > LONGEST_CODE {
+        return Err(UNUSABLE);
+    }
+    let length_of = |symbol: usize| usize::from(lengths[symbol]) & LONGEST_CODE;
+    let mut counts = [0u16; LONGEST_CODE + 1];
+    each_coded_symbol(&coded, |symbol| counts[length_of(symbol)] += 1);
     let Some(longest) = (1..=LONGEST_CODE).rev().find(|&length| counts[length] != 0) else {
         // EXTERNAL(zlib): a block with no distance code is valid until it uses a distance.
         if alphabet != Alphabet::Distance {
             return Err(Invalid("Deflate block has no code lengths"));
         }
-        table[..main].fill(UNUSED_CODE);
-        return Ok(());
+        table[..2].fill(UNUSED_CODE);
+        return Ok(ONE_BIT);
     };
     let mut unused = 1i32;
     for &count in &counts[1..] {
@@ -190,13 +212,11 @@ fn build_table(
         offsets[length + 1] = offsets[length] + counts[length];
     }
     let mut sorted = [0u16; LITLEN_SYMBOLS];
-    for (symbol, &length) in lengths.iter().enumerate() {
-        if length != 0 {
-            let slot = &mut offsets[usize::from(length)];
-            sorted[usize::from(*slot)] = symbol as u16;
-            *slot += 1;
-        }
-    }
+    each_coded_symbol(&coded, |symbol| {
+        let slot = &mut offsets[length_of(symbol)];
+        sorted[usize::from(*slot)] = symbol as u16;
+        *slot += 1;
+    });
 
     if unused > 0 {
         // EXTERNAL(zlib): an incomplete code is valid only as one 1-bit literal, length or distance code.
@@ -205,10 +225,11 @@ fn build_table(
         }
         table[0] = entry(symbols, sorted[0], 1);
         table[1] = UNUSED_CODE;
-        double_up_to(table, 2, main);
-        return Ok(());
+        return Ok(ONE_BIT);
     }
 
+    let table_bits = most_table_bits.min(longest as u32);
+    let main = 1usize << table_bits;
     let table_length = table_bits as usize;
     let mut sorted = sorted.iter().copied();
     let mut next_symbol = || sorted.next().ok_or(UNUSABLE);
@@ -223,7 +244,7 @@ fn build_table(
             table[code] = entry(symbols, next_symbol()?, length);
             let Some(next) = next_reversed_code(code, length) else {
                 double_up_to(table, filled, main);
-                return Ok(());
+                return Ok(table_bits);
             };
             code = next;
         }
@@ -272,7 +293,7 @@ fn build_table(
                 *slot = entry;
             }
             let Some(next) = next_reversed_code(code, length) else {
-                return Ok(());
+                return Ok(table_bits);
             };
             code = next;
         }
@@ -286,6 +307,8 @@ fn build_table(
 struct Tables {
     litlen: [u32; LITLEN_ENTRIES],
     distance: [u32; DISTANCE_ENTRIES],
+    litlen_bits: u32,
+    distance_bits: u32,
 }
 
 impl Tables {
@@ -293,17 +316,20 @@ impl Tables {
         Self {
             litlen: [0; LITLEN_ENTRIES],
             distance: [0; DISTANCE_ENTRIES],
+            litlen_bits: 0,
+            distance_bits: 0,
         }
     }
 
     fn build(&mut self, litlen: &[u8], distance: &[u8]) -> Result<(), Invalid> {
-        build_table(&mut self.litlen, litlen, LITLEN_BITS, Alphabet::LitLen)?;
-        build_table(
+        self.litlen_bits = build_table(&mut self.litlen, litlen, LITLEN_BITS, Alphabet::LitLen)?;
+        self.distance_bits = build_table(
             &mut self.distance,
             distance,
             DISTANCE_BITS,
             Alphabet::Distance,
-        )
+        )?;
+        Ok(())
     }
 }
 
@@ -398,7 +424,7 @@ const INVALID_DISTANCE: Invalid = Invalid("invalid Deflate distance code");
 const TOO_FAR_BACK: Invalid = Invalid("Deflate distance reaches before the start of the data");
 
 fn symbol(tables: &Tables, bits: Bits) -> Result<Option<(Symbol, u32)>, Invalid> {
-    let Some((entry, skipped)) = lookup(&tables.litlen, LITLEN_BITS, bits) else {
+    let Some((entry, skipped)) = lookup(&tables.litlen, tables.litlen_bits, bits) else {
         return Ok(None);
     };
     let mut used = skipped + (entry & STEP_BITS_MASK);
@@ -416,7 +442,7 @@ fn symbol(tables: &Tables, bits: Bits) -> Result<Option<(Symbol, u32)>, Invalid>
         buffer: bits.buffer >> used,
         count: bits.count - used,
     };
-    let Some((entry, skipped)) = lookup(&tables.distance, DISTANCE_BITS, rest) else {
+    let Some((entry, skipped)) = lookup(&tables.distance, tables.distance_bits, rest) else {
         return Ok(None);
     };
     if entry & EXCEPTIONAL != 0 {
@@ -507,6 +533,8 @@ fn fast(
         mut position,
         mut filled,
     } = cursor;
+    let litlen_mask = low_bits(tables.litlen_bits) & low_bits(LITLEN_BITS);
+    let distance_mask = low_bits(tables.distance_bits) & low_bits(DISTANCE_BITS);
     let mut valid;
     macro_rules! refill {
         () => {{
@@ -532,7 +560,7 @@ fn fast(
     macro_rules! litlen {
         () => {{
             debug_assert!(valid >= LITLEN_BITS);
-            tables.litlen[(bits & low_bits(LITLEN_BITS)) as usize]
+            tables.litlen[(bits & litlen_mask) as usize]
         }};
     }
     macro_rules! margins {
@@ -601,7 +629,7 @@ fn fast(
             let length = ((entry >> VALUE_SHIFT) + extra_bits(before, entry)) as usize;
 
             debug_assert!(valid >= DISTANCE_BITS);
-            let mut entry = tables.distance[(bits & low_bits(DISTANCE_BITS)) as usize];
+            let mut entry = tables.distance[(bits & distance_mask) as usize];
             if entry & EXCEPTIONAL != 0 {
                 if entry & SUBTABLE == 0 {
                     break 'decode Err(INVALID_DISTANCE);
@@ -673,6 +701,7 @@ pub(crate) struct Inflate {
     precode_lengths: [u8; PRECODE_SYMBOLS],
     lengths: [u8; LITLEN_SYMBOLS + DISTANCE_SYMBOLS],
     precode: [u32; PRECODE_ENTRIES],
+    precode_bits: u32,
     tables: Tables,
     filled: usize,
     total_in: u64,
@@ -692,6 +721,7 @@ impl Inflate {
             precode_lengths: [0; PRECODE_SYMBOLS],
             lengths: [0; LITLEN_SYMBOLS + DISTANCE_SYMBOLS],
             precode: [0; PRECODE_ENTRIES],
+            precode_bits: 0,
             tables: Tables::empty(),
             filled: 0,
             total_in: 0,
@@ -818,7 +848,7 @@ impl Inflate {
                         self.precode_lengths[usize::from(symbol)] = self.bits.take(3) as u8;
                         self.lengths_read += 1;
                     }
-                    build_table(
+                    self.precode_bits = build_table(
                         &mut self.precode,
                         &self.precode_lengths,
                         PRECODE_BITS,
@@ -902,7 +932,7 @@ impl Inflate {
         while self.lengths_read < total {
             // SPEC(RFC 1951 3.2.7): 16 repeats the last length, 17 and 18 repeat zero.
             let (symbol, code_bits, repeat_bits, repeat_base) = loop {
-                let entry = self.precode[(self.bits.buffer & low_bits(PRECODE_BITS)) as usize];
+                let entry = self.precode[(self.bits.buffer & low_bits(self.precode_bits)) as usize];
                 let symbol = entry >> VALUE_SHIFT;
                 let (repeat_bits, repeat_base) = match symbol {
                     16 => (2, 3),
@@ -1166,9 +1196,10 @@ mod tests {
                 let mut table = [0x5a5a_5a5au32; 80];
                 let built = build_table(&mut table, &lengths, table_bits, Alphabet::Distance);
                 assert_eq!(built.is_ok(), valid, "{lengths:?} in {table_bits} bits");
-                if !valid {
+                let Ok(table_bits) = built else {
                     continue;
-                }
+                };
+                assert!(table_bits <= u32::from(longest).max(1), "{lengths:?}");
                 accepted += 1;
                 for buffer in 0..1u64 << 7 {
                     for count in 0..=7 {
@@ -1206,7 +1237,7 @@ mod tests {
             let used = some_of(&mut random, symbols, used, &[]);
             let lengths = random_code(&mut random, symbols, &used, longest);
             let mut table = vec![0u32; entries];
-            build_table(&mut table, &lengths, table_bits, alphabet).unwrap();
+            let table_bits = build_table(&mut table, &lengths, table_bits, alphabet).unwrap();
             for (symbol, &(code, length)) in canonical(&lengths).iter().enumerate() {
                 if length == 0 {
                     continue;
