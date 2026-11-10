@@ -312,13 +312,13 @@ A Deflate64 entry runs one decoder. It gets the last compressed byte only after 
 Automatic native ZIP extraction on macOS uses at most four workers when both of these hold:
 
 - The archive has at least 1,024 regular files.
-- Every regular file is at most 16 KiB.
+- Its regular files average at most 64 KiB.
 
 The limit avoids the measured filesystem contention from using every CPU.
 An explicit `--threads N` overrides it.
-Verification-only reads and larger files keep their existing concurrency.
-Windows uses one worker under the same conditions when one folder holds at least 1,024 of the files, because parallel creation in one folder was slower than serial there. Linux has no cap.
-The [small-file ZIP versus bsdtar measurements](../../benchmarks/native-zip/bsdtar-comparison.md) and the [Linux and Windows scoreboard](../../benchmarks/cross-platform/scoreboard-2026-11-02/README.md) record the evidence.
+Verification-only reads and archives of larger files keep their existing concurrency.
+Windows uses one worker when the archive has at least 1,024 regular files, every one at most 16 KiB, and one folder holds at least 1,024 of them, because parallel creation in one folder was slower than serial there. Linux has no cap.
+The [small-file cap record](../../benchmarks/native-zip/small-files-cap/README.md), the [small-file ZIP versus bsdtar measurements](../../benchmarks/native-zip/bsdtar-comparison.md) and the [Linux and Windows scoreboard](../../benchmarks/cross-platform/scoreboard-2026-11-02/README.md) record the evidence.
 
 Workers take entries one at a time from the largest-first list, so no worker is left alone with a run of entries at the end. A worker reuses an idle reader and read buffer instead of creating new ones. The [one-entry-per-task measurements](../../benchmarks/native-zip/one-entry-per-task/README.md) record the evidence.
 

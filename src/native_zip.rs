@@ -878,6 +878,33 @@ fn finish(output: &mut BufWriter<OutputFile>, item: &Item) -> Result<()> {
     Ok(())
 }
 
+const CREATION_BOUND_FILES: usize = 1024;
+const CREATION_BOUND_WORKERS: usize = 4;
+const TINY_FILE: u64 = 16 * 1024;
+const SMALL_MEAN_FILE: u64 = 64 * 1024;
+
+#[derive(Clone, Copy)]
+enum CreationBound {
+    Tiny,
+    SmallMean,
+}
+
+impl CreationBound {
+    fn holds(self, file_sizes: &[u64]) -> bool {
+        if file_sizes.len() < CREATION_BOUND_FILES {
+            return false;
+        }
+        match self {
+            Self::Tiny => file_sizes.iter().all(|&size| size <= TINY_FILE),
+            Self::SmallMean => {
+                let total = file_sizes
+                    .iter()
+                    .fold(0u64, |sum, &size| sum.saturating_add(size));
+                total / file_sizes.len() as u64 <= SMALL_MEAN_FILE
+            }
+        }
+    }
+}
 const WRITE_BEHIND_MIN: u64 = 16 * 1024 * 1024;
 const WRITE_BEHIND_CHUNK: usize = 1024 * 1024;
 const WRITE_BEHIND_DEPTH: usize = 4;
@@ -1518,13 +1545,18 @@ pub fn read_archive_with_options(
     };
     let mut largest_first: Vec<_> = (0..items.len()).collect();
     largest_first.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
-    let tiny_files = staging.is_some()
-        && items.iter().filter(|item| !item.entry.directory).count() >= 1024
-        && items.iter().all(|item| item.entry.size <= 16 * 1024);
-    // RECORD(benchmarks/native-zip/bsdtar-comparison.md): macOS caps tiny-file extraction workers.
+    let files: Vec<u64> = items
+        .iter()
+        .filter(|item| !item.entry.directory)
+        .map(|item| item.entry.size)
+        .collect();
+    let writes = staging.is_some();
+    let tiny_files = writes && CreationBound::Tiny.holds(&files);
+    let mostly_small_files = writes && CreationBound::SmallMean.holds(&files);
+    // RECORD(benchmarks/native-zip/small-files-cap/README.md): macOS caps workers when small files dominate.
     // RECORD(benchmarks/cross-platform/scoreboard-2026-11-02/README.md): one Windows folder serializes creation.
-    let automatic_limit = if tiny_files && cfg!(target_os = "macos") {
-        4
+    let automatic_limit = if mostly_small_files && cfg!(target_os = "macos") {
+        CREATION_BOUND_WORKERS
     } else if tiny_files && cfg!(windows) && crowded_folder(&items) {
         1
     } else {
@@ -2324,5 +2356,29 @@ mod deflate64_entry_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod creation_bound_tests {
+    use super::*;
+
+    #[test]
+    fn small_files_cap_workers_only_when_many_and_small_on_average() {
+        let small = vec![TINY_FILE; CREATION_BOUND_FILES];
+        assert!(CreationBound::Tiny.holds(&small));
+        assert!(CreationBound::SmallMean.holds(&small));
+        assert!(!CreationBound::SmallMean.holds(&small[1..]));
+        let mut with_two_large = vec![1_000; CREATION_BOUND_FILES];
+        with_two_large[..2].fill(10 * 1024 * 1024);
+        assert!(!CreationBound::Tiny.holds(&with_two_large));
+        assert!(CreationBound::SmallMean.holds(&with_two_large));
+        let mut over = vec![SMALL_MEAN_FILE; CREATION_BOUND_FILES];
+        over[0] += CREATION_BOUND_FILES as u64;
+        assert!(!CreationBound::SmallMean.holds(&over));
+        let silesia_like = vec![17 * 1024 * 1024; 12];
+        assert!(!CreationBound::SmallMean.holds(&silesia_like));
+        let declared_huge = vec![u64::MAX; CREATION_BOUND_FILES];
+        assert!(!CreationBound::SmallMean.holds(&declared_huge));
     }
 }
