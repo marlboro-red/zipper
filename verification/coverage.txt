@@ -875,7 +875,7 @@ item = src/lzma.rs |     fn lzip_trailers_accept_only_their_crc_and_sizes(
 
 [zip-crypto]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 18046b1d5ae9af38
+fingerprint = 19e5db1cd97a8f44
 full-check = cargo xtask kani-reach zip-crypto
 full-check = cargo kani --harness zip_crypto::proofs::
 full-check = cargo test --release --lib zip_crypto
