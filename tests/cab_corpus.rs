@@ -2,7 +2,7 @@
 //! when the corpus was written, and to the tree 7-Zip extracts now where it
 //! is installed. Generated CABs of every method, Quantum and LZX window,
 //! block mix and E8 setting extract exactly as 7-Zip extracts them, and a
-//! damaged Quantum CAB is refused exactly when 7-Zip refuses it. Without 7-Zip the
+//! damaged Quantum CAB is refused exactly when 7-Zip refuses it. Without 7-Zip 26.05 or later the
 //! differential test is skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
@@ -37,23 +37,6 @@ impl Random {
     fn below(&mut self, limit: usize) -> usize {
         (self.next() % limit.max(1) as u64) as usize
     }
-}
-
-fn sevenzip() -> Option<PathBuf> {
-    let found = ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from);
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip is installed"
-    );
-    found
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -131,7 +114,7 @@ fn every_corpus_cab_extracts_the_tree_7zip_extracts() {
         recorded.keys().cloned().collect::<Vec<_>>(),
         "trees.json names exactly the corpus files"
     );
-    let binary = sevenzip();
+    let binary = sevenzip::sevenzip();
     for archive in &files {
         let name = archive.file_name().unwrap().to_string_lossy().into_owned();
         let root = tempfile::tempdir().unwrap();
@@ -235,7 +218,7 @@ fn generated_with(
 
 #[test]
 fn generated_cabs_extract_exactly_as_7zip_extracts_them() {
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         eprintln!("skipped: no 7-Zip");
         return;
     };
@@ -387,7 +370,7 @@ fn damaged_quantum_cabs_are_refused_exactly_when_7zip_refuses_them() {
 #[test]
 fn lzx_block_edges_at_chunk_ends_extract_as_7zip_extracts_them() {
     use lzx_encoder::Kind::{Aligned, Uncompressed, Verbatim};
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         eprintln!("skipped: no 7-Zip");
         return;
     };
@@ -463,7 +446,7 @@ fn lzx_block_edges_at_chunk_ends_extract_as_7zip_extracts_them() {
 #[test]
 #[ignore = "rewrites tests/data/cab-corpus; run with --ignored to regenerate"]
 fn write_the_generated_corpus() {
-    let binary = sevenzip().expect("7-Zip records the corpus trees");
+    let binary = sevenzip::sevenzip().expect("7-Zip records the corpus trees");
     let mut random = Random(0x0c0f_fee0_0000_0042);
     let text: Vec<u8> = (0..2500)
         .flat_map(|line| format!("line {line} of a cabinet corpus file\r\n").into_bytes())

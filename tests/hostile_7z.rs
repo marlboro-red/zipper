@@ -1,6 +1,8 @@
 //! Crafted 7z archives that real writers never produce. Each must be refused
 //! with nothing left behind, or extract only inside the destination, and a
 //! well-formed one must extract the same bytes at every thread count.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use std::{fs, path::Path};
 use zipper::native_7z::{ReadOptions, read_archive};
 
@@ -193,7 +195,7 @@ fn the_builder_writes_archives_7zip_reads() {
     let out = root.path().join("parent/out");
     assert_eq!(fs::read(out.join("d/a")).unwrap(), b"alpha");
     assert_eq!(fs::read(out.join("b")).unwrap(), b"");
-    if let Some(seven_zip) = which("7zz") {
+    if let Some(seven_zip) = sevenzip::sevenzip() {
         let archive = root.path().join("check.7z");
         fs::write(&archive, &bytes).unwrap();
         let status = std::process::Command::new(seven_zip)
@@ -204,14 +206,6 @@ fn the_builder_writes_archives_7zip_reads() {
             .unwrap();
         assert!(status.success(), "7-Zip rejects the builder's archive");
     }
-}
-
-fn which(tool: &str) -> Option<std::path::PathBuf> {
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|folder| folder.join(tool))
-            .find(|path| path.is_file())
-    })
 }
 
 #[test]
@@ -798,7 +792,7 @@ fn lzma_streams_end_where_7zip_ends_them() {
         fs::read(root.path().join("parent/out/src/a.txt")).unwrap(),
         b"linked text that repeats, linked text that repeats, linked text that repeats again.\n"
     );
-    let Some(seven_zip) = which("7zz") else {
+    let Some(seven_zip) = sevenzip::sevenzip() else {
         return;
     };
     let verdicts = refused
@@ -816,7 +810,7 @@ fn lzma_streams_end_where_7zip_ends_them() {
 
 #[test]
 fn bcj2_with_every_input_bound_to_its_own_coder_matches_the_source() {
-    let Some(seven_zip) = which("7zz") else {
+    let Some(seven_zip) = sevenzip::sevenzip() else {
         return;
     };
     let root = tempfile::tempdir().unwrap();
@@ -858,7 +852,7 @@ fn bcj2_with_every_input_bound_to_its_own_coder_matches_the_source() {
 
 #[test]
 fn byte_swap_archives_from_7zip_match_the_source() {
-    let Some(seven_zip) = which("7zz") else {
+    let Some(seven_zip) = sevenzip::sevenzip() else {
         return;
     };
     let root = tempfile::tempdir().unwrap();
@@ -961,7 +955,7 @@ fn a_branch_opcode_that_ends_the_output_still_takes_a_range_coder_bit() {
             words,
         )
     });
-    if let Some(seven_zip) = which("7zz") {
+    if let Some(seven_zip) = sevenzip::sevenzip() {
         assert!(seven_zip_accepts(&seven_zip, &accepted));
         for (case, bytes, _) in &refused {
             assert!(
@@ -995,7 +989,7 @@ fn a_range_coder_that_starts_with_its_code_at_the_range_is_refused() {
     let order = [0, 1, 2, 3];
     let accepted = bcj2_archive([&main, b"", &targets, honest], order, &data);
     let refused = bcj2_archive([&main, b"", &targets, at_the_range], order, &data);
-    if let Some(seven_zip) = which("7zz") {
+    if let Some(seven_zip) = sevenzip::sevenzip() {
         assert!(seven_zip_accepts(&seven_zip, &accepted));
         assert!(!seven_zip_accepts(&seven_zip, &refused));
     }
@@ -1054,7 +1048,7 @@ fn x86_like_code(length: usize, last: &[u8]) -> Vec<u8> {
 
 #[test]
 fn bcj2_archives_from_7zip_extract_as_7zip_extracts_them() {
-    let Some(seven_zip) = which("7zz") else {
+    let Some(seven_zip) = sevenzip::sevenzip() else {
         return;
     };
     let root = tempfile::tempdir().unwrap();
@@ -1349,7 +1343,7 @@ fn property_variants(name: &str) -> Vec<Vec<u8>> {
 
 #[test]
 fn filters_decode_any_bytes_and_accept_properties_as_7zip_does() {
-    let Some(seven_zip) = which("7zz") else {
+    let Some(seven_zip) = sevenzip::sevenzip() else {
         return;
     };
     let (mut same, mut both_refused) = (0, 0);
@@ -1399,7 +1393,7 @@ fn filters_decode_any_bytes_and_accept_properties_as_7zip_does() {
 
 #[test]
 fn chains_of_four_filters_decode_as_7zip_decodes_them() {
-    let Some(seven_zip) = which("7zz") else {
+    let Some(seven_zip) = sevenzip::sevenzip() else {
         return;
     };
     let chains: [&[(&str, &[u8])]; 3] = [
@@ -1452,7 +1446,7 @@ fn filter_archives_from_7zip_extract_byte_exact() {
         })
         .collect();
     assert!(archives.len() >= 9, "{} filter archives", archives.len());
-    let seven_zip = which("7zz");
+    let seven_zip = sevenzip::sevenzip();
     for archive in archives {
         let out = tempfile::tempdir().unwrap();
         read_archive(
@@ -1627,7 +1621,7 @@ fn a_solid_folder_crc_is_checked_whether_or_not_its_files_have_crcs() {
 
 #[test]
 fn the_solid_builder_writes_archives_7zip_reads() {
-    let Some(seven_zip) = which("7zz") else {
+    let Some(seven_zip) = sevenzip::sevenzip() else {
         return;
     };
     let files = solid_files();
@@ -1762,7 +1756,7 @@ fn parent_is_empty(root: &tempfile::TempDir) -> bool {
 
 #[test]
 fn filtered_lzma2_segments_decode_in_parallel_as_7zip_decodes_them() {
-    let Some(seven_zip) = which("7zz") else {
+    let Some(seven_zip) = sevenzip::sevenzip() else {
         return;
     };
     let segments = FilteredSegments::new();

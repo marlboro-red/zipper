@@ -2,7 +2,7 @@
 //! extracted when the corpus was written, and to the tree 7-Zip extracts now
 //! where it is installed. Generated FLV of every audio format and video
 //! codec, SWF of every tag form and SWF compressed with zlib and LZMA extract
-//! byte for byte as `7zz x` extracts them. Without 7-Zip the differential
+//! byte for byte as `7zz x` extracts them. Without 7-Zip 26.05 or later the differential
 //! tests are skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/sevenzip.rs"]
 mod sevenzip;

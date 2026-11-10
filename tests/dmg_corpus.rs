@@ -5,7 +5,7 @@
 //! generated HFS+ and HFSX volumes with compressed files, hard links,
 //! symlinks, deep and wide folders and Unicode names extract exactly as
 //! `7zz x` extracts them, apart from the differences
-//! `docs/reference/dmg-reader.md` lists. Without 7-Zip 26 or later the
+//! `docs/reference/dmg-reader.md` lists. Without 7-Zip 26.05 or later the
 //! differential tests are skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/dmg_writer.rs"]
 mod dmg_writer;
@@ -35,12 +35,7 @@ const PRIVATE: &str = "[HFS+ Private Data]";
 type Tree = BTreeMap<String, String>;
 
 fn sevenzip_binary() -> Option<PathBuf> {
-    let found = sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    sevenzip::sevenzip()
 }
 
 fn sha256(bytes: &[u8]) -> String {

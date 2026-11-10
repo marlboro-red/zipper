@@ -2,7 +2,8 @@
 //! when the corpus was written, and to the tree 7-Zip extracts now where it
 //! is installed. Generated ARJ of every method extract exactly as 7-Zip extracts them,
 //! and a damaged one is refused exactly when 7-Zip refuses it. Without 7-Zip
-//! the differential tests are skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is set.
+//! 26.05 or later the differential tests are skipped, unless
+//! `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/arj_writer.rs"]
 mod arj_writer;
 #[path = "common/lzh_encoder.rs"]
@@ -23,12 +24,7 @@ use zipper::native_arj::{ReadOptions, read_archive};
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/arj-corpus");
 
 fn sevenzip() -> Option<PathBuf> {
-    let found = sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    sevenzip::sevenzip()
 }
 
 fn sha256(bytes: &[u8]) -> String {

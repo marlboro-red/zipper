@@ -5,8 +5,10 @@
 //! machine, or fail with nothing published where that 7-Zip fails. A missing archive must be refused with nothing published. An
 //! archive on a dropped row is skipped.
 //!
-//! Without 7-Zip the backend archives are skipped, unless
+//! Without 7-Zip 26.05 or later the backend archives are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set, as `cargo xtask gate` sets it outside CI.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -130,18 +132,9 @@ fn unpack(record: &Value, into: &Path) -> PathBuf {
 }
 
 fn sevenzip() -> Option<PathBuf> {
-    if let Some(binary) = std::env::var_os("ZIPPER_7Z") {
-        return Some(binary.into());
-    }
-    ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
+    std::env::var_os("ZIPPER_7Z")
         .map(PathBuf::from)
+        .or_else(sevenzip::sevenzip)
 }
 
 fn zipper(
@@ -180,10 +173,6 @@ fn every_parity_archive_extracts_as_its_row_says() {
     let status = json("status.json");
     let corpus = json("archives.json");
     let backend = sevenzip();
-    assert!(
-        backend.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip was found"
-    );
     let mut counts = BTreeMap::new();
     for (name, record) in corpus["archives"].as_object().unwrap() {
         let expect = expectation(&status, name, record["row"].as_array().unwrap());

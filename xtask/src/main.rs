@@ -11,11 +11,12 @@ mod comments;
 mod commits;
 mod docs;
 mod kani;
+mod sevenzip_lookups;
 mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | install-hooks | ci-wait | warm-cache | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | lint-7zip-lookups | install-hooks | ci-wait | warm-cache | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -34,6 +35,7 @@ fn main() -> ExitCode {
         ["gate", kind @ ("fast" | "full"), "--remote"] => verify::gate_remotely(&root(), kind),
         ["lint-docs"] => docs::lint(&root()),
         ["lint-comments"] => comments::lint(&root()),
+        ["lint-7zip-lookups"] => sevenzip_lookups::lint(&root()),
         ["install-hooks"] => install_hooks(),
         ["ci-wait"] => ci_wait(),
         ["ship"] => ship(),
@@ -356,6 +358,7 @@ fn gate(full: bool) -> Result<()> {
         ("fmt", || cargo(&["fmt", "--all", "--check"])),
         ("docs", || docs::lint(&root())),
         ("comments", || comments::lint(&root())),
+        ("7-zip lookups", || sevenzip_lookups::lint(&root())),
         ("results", || scoreboard(&["check"])),
         ("hooks", hook_tests),
         ("verify", || verify::fail_on_stale_fingerprints(&root())),

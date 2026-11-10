@@ -52,12 +52,7 @@ impl Random {
 }
 
 fn sevenzip() -> Option<PathBuf> {
-    let found = sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    sevenzip::sevenzip()
 }
 
 fn sha256(bytes: &[u8]) -> String {

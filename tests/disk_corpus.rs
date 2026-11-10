@@ -5,7 +5,7 @@
 //! MBR, GPT, VHD and VHDX images must extract exactly as `7zz x` extracts
 //! them. Images from the test writer, whole and damaged, must too, or be
 //! refused for a reason `docs/reference/disk-reader.md` documents. Without
-//! 7-Zip 26 or later the differential tests are skipped, unless
+//! 7-Zip 26.05 or later the differential tests are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/mod.rs"]
 mod common;
@@ -52,12 +52,7 @@ const STRICTER: &[&str] = &[
 const SENT_TO_7ZIP: &str = "Zipper does not read it in process";
 
 fn sevenzip_binary() -> Option<PathBuf> {
-    let found = sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    sevenzip::sevenzip()
 }
 
 #[cfg(unix)]

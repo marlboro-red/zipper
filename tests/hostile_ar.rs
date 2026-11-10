@@ -2,6 +2,8 @@
 //! extracts the tar a Debian package holds, rejects each hostile layout with
 //! nothing left behind, and honours the options the tar reader takes. Where
 //! 7-Zip is installed, it is the oracle for the valid forms.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use std::{
     collections::BTreeMap,
     fs,
@@ -311,18 +313,6 @@ fn every_writer_form_extracts_byte_for_byte() {
     assert!(destination.is_dir());
 }
 
-fn sevenzip() -> Option<PathBuf> {
-    ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from)
-}
-
 fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> BTreeMap<String, String> {
     let mut flag = std::ffi::OsString::from("-o");
     flag.push(into);
@@ -351,7 +341,7 @@ fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> BTreeMap<String,
 
 #[test]
 fn archives_and_packages_extract_the_tree_7zip_extracts() {
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         eprintln!("7-Zip is not installed; skipped");
         return;
     };

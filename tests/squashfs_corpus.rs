@@ -6,7 +6,7 @@
 //! compressor options, raw and in a lone GPT partition, extract as 7-Zip
 //! extracts them and byte for byte as the files they were written from.
 //! 7-Zip 26.05 does not open LZ4 images, so those are checked against
-//! `unsquashfs` and the source bytes. Without 7-Zip 26 or later the
+//! `unsquashfs` and the source bytes. Without 7-Zip 26.05 or later the
 //! differential checks are skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is
 //! set. Without `mksquashfs`, `mkfs.cramfs` or `unsquashfs`, the checks that
 //! need them are skipped.
@@ -33,12 +33,7 @@ const COMPRESSORS: [&str; 6] = ["gzip", "lzma", "lzo", "xz", "lz4", "zstd"];
 const SEVEN_ZIP_REFUSES_LZ4: &str = "Not implemented";
 
 fn sevenzip_binary() -> Option<PathBuf> {
-    let found = sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    sevenzip::sevenzip()
 }
 
 #[derive(Clone, Copy)]

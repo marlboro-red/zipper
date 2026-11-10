@@ -11,6 +11,8 @@
 //! whose offsets do not reconcile, a prefix that holds another archive, two 7z
 //! start headers that both verify, and a 7z followed by a ZIP end record must
 //! fail before anything is published, with an error that names the offset.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -106,23 +108,6 @@ fn assert_refused(archive: &Path, names: &[&str], label: &str) -> String {
     let left: Vec<_> = fs::read_dir(root.path()).unwrap().collect();
     assert!(left.is_empty(), "{label}: left {left:?}");
     error
-}
-
-fn sevenzip() -> Option<PathBuf> {
-    let found = ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from);
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip was found"
-    );
-    found
 }
 
 fn tree_by_7zip(binary: &Path, archive: &Path) -> BTreeMap<String, String> {
@@ -354,7 +339,7 @@ const ZIPS: &[&str] = &[
 
 #[test]
 fn a_zip_after_a_stub_extracts_as_the_zip_alone_whether_or_not_its_offsets_count_the_stub() {
-    let seven = sevenzip();
+    let seven = sevenzip::sevenzip();
     let folder = tempfile::tempdir().unwrap();
     for name in ZIPS {
         let archive = fs::read(data(name)).unwrap();
@@ -567,7 +552,7 @@ fn with_magic(magic: &[u8], length: usize) -> Vec<u8> {
 
 #[test]
 fn a_7z_after_a_stub_extracts_as_the_7z_alone_and_as_7zip_extracts_it() {
-    let seven = sevenzip();
+    let seven = sevenzip::sevenzip();
     let folder = tempfile::tempdir().unwrap();
     for name in SEVEN_ZIPS {
         let archive = fs::read(data(name)).unwrap();
@@ -653,7 +638,7 @@ fn a_7z_after_a_stub_that_is_also_a_zip_is_refused() {
     let padded = [&stub(1000)[..], &seven, &zip, &[0; 65536]].concat();
     let path = written(folder.path(), "zip-in-the-tail.exe", &padded);
     assert_refused(&path, &["offset 1000"], "ZIP 65558 bytes from the end");
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         return;
     };
     let source = folder.path().join("source");

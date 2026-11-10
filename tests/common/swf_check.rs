@@ -9,12 +9,7 @@ use std::{
 pub type Tree = BTreeMap<String, String>;
 
 pub fn sevenzip_binary() -> Option<PathBuf> {
-    let found = super::sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    super::sevenzip::sevenzip()
 }
 
 pub fn sha256(bytes: &[u8]) -> String {

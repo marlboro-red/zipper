@@ -1,3 +1,5 @@
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use std::{fs, io::Write, path::Path, process::Command};
 
 fn zip_of(path: &Path, entries: &[(&str, &[u8])]) -> anyhow::Result<()> {
@@ -442,12 +444,7 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
 
 #[test]
 fn real_7zip_routes_split_prefixed_and_wrapped_zips_correctly() -> anyhow::Result<()> {
-    let Some(sevenzip) = ["7zz", "7z"].into_iter().find(|name| {
-        Command::new(name)
-            .arg("i")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }) else {
+    let Some(sevenzip) = sevenzip::sevenzip() else {
         return Ok(());
     };
     let t = tempfile::tempdir()?;
@@ -459,7 +456,7 @@ fn real_7zip_routes_split_prefixed_and_wrapped_zips_correctly() -> anyhow::Resul
     fs::write(t.path().join("prefixed.bin"), prefixed)?;
     fs::create_dir(t.path().join("tree"))?;
     fs::write(t.path().join("tree/inner.zip"), stored_zip(&[("f", 0)])?)?;
-    let tarred = Command::new(sevenzip)
+    let tarred = Command::new(&sevenzip)
         .current_dir(t.path())
         .args(["a", "-ttar", "wrapped.tar", "tree"])
         .output()?;
@@ -468,7 +465,7 @@ fn real_7zip_routes_split_prefixed_and_wrapped_zips_correctly() -> anyhow::Resul
         Command::new(env!("CARGO_BIN_EXE_zipper"))
             .current_dir(t.path())
             .args(args)
-            .env("ZIPPER_7Z", sevenzip)
+            .env("ZIPPER_7Z", &sevenzip)
             .output()
     };
     for archive in ["c.zip.001", "prefixed.bin"] {
@@ -476,7 +473,7 @@ fn real_7zip_routes_split_prefixed_and_wrapped_zips_correctly() -> anyhow::Resul
         assert!(!result.status.success(), "{archive} reached 7-Zip");
         assert!(!t.path().join("rejected").exists(), "{archive}");
     }
-    let hidden = Command::new(sevenzip)
+    let hidden = Command::new(&sevenzip)
         .current_dir(t.path())
         .args(["a", "-t7z", "-mhe=on", "-psecret", "hidden.7z", "tree"])
         .output()?;
@@ -492,7 +489,7 @@ fn real_7zip_routes_split_prefixed_and_wrapped_zips_correctly() -> anyhow::Resul
     let mut guessed = Command::new(env!("CARGO_BIN_EXE_zipper"))
         .current_dir(t.path())
         .args(["extract", "polyglot.zip", "-o", "polyglot"])
-        .env("ZIPPER_7Z", sevenzip)
+        .env("ZIPPER_7Z", &sevenzip)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -511,7 +508,7 @@ fn real_7zip_routes_split_prefixed_and_wrapped_zips_correctly() -> anyhow::Resul
         String::from_utf8_lossy(&wrapped.stderr)
     );
     assert!(t.path().join("wrapped/tree/inner.zip").is_file());
-    let split = Command::new(sevenzip)
+    let split = Command::new(&sevenzip)
         .current_dir(t.path())
         .args(["a", "-t7z", "-v200", "volumes.7z", "tree"])
         .output()?;

@@ -2,10 +2,12 @@
 //! and `productbuild`, extract to the tree their readers write. The
 //! archives in `tests/data/xar-corpus` must match the trees recorded beside
 //! them on every system. Where the tools are installed, freshly built
-//! archives must match `7zz x -txar` and `xar -x` on this machine.
+//! archives must match 7-Zip 26.05 or later and `xar -x` on this machine.
 //!
 //! The recorded trees come from `xar -x`, with the `[TOC].xml` that 7-Zip
 //! writes. `ZIPPER_WRITE_XAR_CORPUS=1` rebuilds the archives and records.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -190,10 +192,10 @@ fn zipper_tree(archive: &Path, into: &Path) -> BTreeMap<String, String> {
     tree(into)
 }
 
-fn sevenzip_tree(archive: &Path, into: &Path) -> BTreeMap<String, String> {
+fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> BTreeMap<String, String> {
     let mut flag = std::ffi::OsString::from("-o");
     flag.push(into);
-    run(Command::new("7zz")
+    run(Command::new(binary)
         .args(["x", "-y", "-txar"])
         .arg(flag)
         .arg(archive));
@@ -219,8 +221,12 @@ fn without(mut tree: BTreeMap<String, String>, names: &[&str]) -> BTreeMap<Strin
 
 #[test]
 fn freshly_built_archives_match_7zip_and_xar() {
-    if !found("7zz") || !found("xar") {
-        eprintln!("7zz or xar is not installed; skipped");
+    let Some(binary) = sevenzip::sevenzip() else {
+        eprintln!("7-Zip is not installed; skipped");
+        return;
+    };
+    if !found("xar") {
+        eprintln!("xar is not installed; skipped");
         return;
     }
     let work = tempfile::tempdir().unwrap();
@@ -230,7 +236,7 @@ fn freshly_built_archives_match_7zip_and_xar() {
     for archive in &archives {
         let name = archive.file_name().unwrap().to_string_lossy().into_owned();
         let ours = zipper_tree(archive, &work.path().join(format!("zipper-{name}")));
-        let sevenzip = sevenzip_tree(archive, &work.path().join(format!("7zz-{name}")));
+        let sevenzip = sevenzip_tree(&binary, archive, &work.path().join(format!("7zz-{name}")));
         let xar = xar_tree(archive, &work.path().join(format!("xar-{name}")));
         assert_eq!(
             without(ours.clone(), &HARD_LINKS),

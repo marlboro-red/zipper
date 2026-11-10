@@ -3,6 +3,8 @@
 //! archive gives, and 7-Zip's own volumes the tree 7-Zip extracts. A missing,
 //! truncated, repeated, swapped or extra volume must fail before anything is
 //! published, with an error that names a volume.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -151,23 +153,6 @@ fn every_native_format_reads_through_volumes_of_every_awkward_size() {
     }
 }
 
-fn sevenzip() -> Option<PathBuf> {
-    let found = ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from);
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip was found"
-    );
-    found
-}
-
 fn run_7zip(binary: &Path, folder: &Path, args: &[&str]) {
     let output = Command::new(binary)
         .current_dir(folder)
@@ -204,7 +189,7 @@ fn source_tree(folder: &Path) {
 
 #[test]
 fn volumes_7zip_writes_extract_as_7zip_extracts_them() {
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         return;
     };
     let work = tempfile::tempdir().unwrap();

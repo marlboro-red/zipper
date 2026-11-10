@@ -1,6 +1,8 @@
 //! The cpio reader extracts every form byte for byte, rejects each hostile
 //! layout with nothing left behind, and honours the options the tar reader
 //! takes. Where 7-Zip is installed, it is the oracle for the valid forms.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use std::{
     collections::BTreeMap,
     fs,
@@ -360,21 +362,9 @@ fn every_form_extracts_byte_for_byte() {
     }
 }
 
-fn sevenzip() -> Option<PathBuf> {
-    ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from)
-}
-
 #[test]
 fn every_form_extracts_the_tree_7zip_extracts() {
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         eprintln!("7-Zip is not installed; skipped");
         return;
     };

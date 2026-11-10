@@ -4,6 +4,8 @@
 //! must extract the tree 7-Zip extracts, and a gap, a repeat, a swap, an
 //! overlap, a missing or extra volume, or a disk number outside the set must
 //! fail before anything is published, with an error that names a volume.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -103,23 +105,6 @@ fn assert_refused(archive: &Path, names: &[&str], label: &str) -> String {
     error
 }
 
-fn sevenzip() -> Option<PathBuf> {
-    let found = ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from);
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip was found"
-    );
-    found
-}
-
 fn tree_by_7zip(binary: &Path, archive: &Path) -> BTreeMap<String, String> {
     let out = tempfile::tempdir().unwrap();
     let mut flag = std::ffi::OsString::from("-o");
@@ -184,7 +169,7 @@ fn info_zip_split(folder: &Path, stem: &str, flags: &[&str]) -> PathBuf {
 
 #[test]
 fn info_zip_sets_extract_as_7zip_extracts_them() {
-    let seven = sevenzip();
+    let seven = sevenzip::sevenzip();
     for stem in [SET, ONE_PIECE] {
         let folder = tempfile::tempdir().unwrap();
         let volumes = copy_set(stem, folder.path());

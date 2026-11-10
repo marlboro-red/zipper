@@ -4,6 +4,8 @@
 //! process opens files or threads while it counts them. The shared Rayon pool
 //! keeps idle threads between calls, so the counts start after a warm-up.
 mod common;
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 
 use std::{
     fs,
@@ -75,16 +77,8 @@ fn settled_threads(baseline: usize) -> usize {
     }
 }
 
-fn which(tool: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|folder| folder.join(tool))
-            .find(|path| path.is_file())
-    })
-}
-
 fn segmented_7z(work: &Path) -> Option<PathBuf> {
-    let seven_zip = which("7zz")?;
+    let seven_zip = sevenzip::sevenzip()?;
     let source = work.join("big.bin");
     let words: Vec<String> = (0..4096u32)
         .map(|word| format!("{:x} ", word.wrapping_mul(2_654_435_761)))

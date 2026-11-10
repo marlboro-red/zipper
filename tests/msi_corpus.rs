@@ -3,7 +3,7 @@
 //! where it is installed. Generated compound files of both versions, with
 //! mini and regular streams, nested storages, scattered sectors, a DIFAT and
 //! embedded CABs, extract exactly as `7zz x` extracts them. Without 7-Zip
-//! 26 or later the differential tests are skipped, unless
+//! 26.05 or later the differential tests are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set. `ZIPPER_MSI_SAMPLES` names a folder of
 //! further samples to compare.
 #[path = "common/cab_writer.rs"]
@@ -14,6 +14,8 @@ mod cfb_writer;
 mod lzx_encoder;
 #[path = "common/quantum_encoder.rs"]
 mod quantum_encoder;
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 
 use cfb_writer::{Compound, Node};
 use std::{
@@ -39,39 +41,6 @@ impl Random {
     fn below(&mut self, limit: usize) -> usize {
         (self.next() % limit.max(1) as u64) as usize
     }
-}
-
-const FIRST_7ZIP_THESE_FILES_WERE_CHECKED_AGAINST: u32 = 26;
-
-fn sevenzip() -> Option<PathBuf> {
-    let found = ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from)
-        .filter(|binary| {
-            major_version(binary)
-                .is_some_and(|major| major >= FIRST_7ZIP_THESE_FILES_WERE_CHECKED_AGAINST)
-        });
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
-}
-
-fn major_version(binary: &Path) -> Option<u32> {
-    let banner = Command::new(binary).output().ok()?.stdout;
-    let banner = String::from_utf8_lossy(&banner);
-    let after = banner.split("7-Zip").nth(1)?;
-    let number = after
-        .split_whitespace()
-        .find(|word| word.chars().next().is_some_and(|c| c.is_ascii_digit()))?;
-    number.split('.').next()?.parse().ok()
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -165,7 +134,7 @@ fn every_corpus_file_extracts_the_tree_7zip_extracts() {
         recorded.keys().cloned().collect::<Vec<_>>(),
         "trees.json names exactly the corpus files"
     );
-    let binary = sevenzip();
+    let binary = sevenzip::sevenzip();
     for archive in &files {
         let name = archive.file_name().unwrap().to_string_lossy().into_owned();
         let root = tempfile::tempdir().unwrap();
@@ -284,7 +253,7 @@ fn installer(random: &mut Random, version: u16, cabs: usize) -> Compound {
 
 #[test]
 fn generated_compound_files_extract_exactly_as_7zip_extracts_them() {
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         return;
     };
     let mut random = Random(0x5eed_c0de_0000_0016);
@@ -319,7 +288,7 @@ fn generated_compound_files_extract_exactly_as_7zip_extracts_them() {
 
 #[test]
 fn a_compound_file_with_a_difat_extracts_as_7zip_extracts_it() {
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         return;
     };
     let big: Vec<u8> = (0..7_400_000u32)
@@ -347,7 +316,7 @@ fn local_samples_extract_as_7zip_extracts_them() {
     let Some(folder) = std::env::var_os("ZIPPER_MSI_SAMPLES") else {
         return;
     };
-    let binary = sevenzip().expect("ZIPPER_MSI_SAMPLES needs 7-Zip");
+    let binary = sevenzip::sevenzip().expect("ZIPPER_MSI_SAMPLES needs 7-Zip");
     let mut samples: Vec<PathBuf> = fs::read_dir(folder)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -378,7 +347,7 @@ fn local_samples_extract_as_7zip_extracts_them() {
 #[test]
 #[ignore = "rewrites tests/data/msi-corpus; run with --ignored to regenerate"]
 fn write_the_generated_corpus() {
-    let binary = sevenzip().expect("7-Zip records the corpus trees");
+    let binary = sevenzip::sevenzip().expect("7-Zip records the corpus trees");
     let mut random = Random(0x0c0f_fee0_0000_0016);
     let mut generated = vec![
         ("generated-v4-one-cab.msi", installer(&mut random, 4, 1)),

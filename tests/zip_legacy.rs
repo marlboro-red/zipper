@@ -1,7 +1,7 @@
 //! ZIP's legacy Shrink (method 1) and Implode (method 6) entries extract in
 //! process. No current tool writes them, so test encoders in
 //! `tests/common/legacy_encoder.rs` build the streams, and Info-ZIP `unzip`
-//! or 7-Zip 26 or later, as each test names, checks each archive before
+//! or 7-Zip 26.05 or later, as each test names, checks each archive before
 //! Zipper reads it.
 #[path = "common/legacy_encoder.rs"]
 mod legacy_encoder;

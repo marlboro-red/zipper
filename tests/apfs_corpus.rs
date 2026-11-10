@@ -7,7 +7,7 @@
 //! GPT disk, extract exactly as `7zz x` extracts them, apart from the
 //! differences `docs/reference/apfs-reader.md` lists. Generated containers
 //! are also checked against the bytes they were written from. Without 7-Zip
-//! 26 or later the differential checks are skipped, unless
+//! 26.05 or later the differential checks are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/apfs_trees.rs"]
 mod apfs_trees;
@@ -44,12 +44,7 @@ pub const APFS_PARTITION: [u8; 16] = [
 ];
 
 fn sevenzip_binary() -> Option<PathBuf> {
-    let found = sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    sevenzip::sevenzip()
 }
 
 fn zipper_tree(image: &Path, into: &Path) -> anyhow::Result<Tree> {

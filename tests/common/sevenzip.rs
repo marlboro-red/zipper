@@ -3,7 +3,23 @@ use std::path::PathBuf;
 
 const THE_7ZIP_THE_TESTS_WERE_CHECKED_AGAINST: (u32, u32) = (26, 5);
 
+const REQUIRE_7Z: &str = "ZIPPER_PARITY_REQUIRE_7Z";
+
 pub fn sevenzip() -> Option<PathBuf> {
+    found_or_skipped(installed(), std::env::var_os(REQUIRE_7Z).is_some())
+}
+
+fn found_or_skipped(found: Option<PathBuf>, required: bool) -> Option<PathBuf> {
+    assert!(
+        found.is_some() || !required,
+        "{REQUIRE_7Z} is set and no 7-Zip {}.{:02} or later is on PATH as 7zz or 7z",
+        THE_7ZIP_THE_TESTS_WERE_CHECKED_AGAINST.0,
+        THE_7ZIP_THE_TESTS_WERE_CHECKED_AGAINST.1,
+    );
+    found
+}
+
+fn installed() -> Option<PathBuf> {
     ["7zz", "7z"]
         .into_iter()
         .find(|binary| {
@@ -45,4 +61,17 @@ fn only_the_7zip_the_tests_were_checked_against_or_a_newer_one_is_used() {
         "\n7-Zip [64] 16.02 : Copyright (c) 1999-2016 Igor Pavlov"
     ));
     assert!(!at("no banner"));
+}
+
+#[test]
+#[should_panic(expected = "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26.05 or later")]
+fn a_missing_7zip_fails_the_comparisons_the_gate_requires() {
+    found_or_skipped(None, true);
+}
+
+#[test]
+fn a_missing_7zip_skips_the_comparisons_outside_the_gate() {
+    assert_eq!(found_or_skipped(None, false), None);
+    let found = Some(PathBuf::from("7zz"));
+    assert_eq!(found_or_skipped(found.clone(), true), found);
 }

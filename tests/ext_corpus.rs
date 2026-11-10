@@ -9,7 +9,7 @@
 //! byte with its modes and times as the source and 7-Zip give them. The
 //! corpus volume must also extract as 7-Zip extracts it inside MBR and GPT
 //! disks, VHD, VHDX, QCOW, VDI, VMDK and Android sparse images. Without 7-Zip
-//! 26 or later the differential checks are skipped, unless
+//! 26.05 or later the differential checks are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #![cfg(unix)]
 #[path = "common/disk_writer.rs"]
@@ -32,12 +32,7 @@ use zipper::{Engine, ExtractOptions, Reader};
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/ext-corpus");
 
 fn sevenzip_binary() -> Option<PathBuf> {
-    let found = sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    sevenzip::sevenzip()
 }
 
 fn unpacked(name: &str) -> Vec<u8> {

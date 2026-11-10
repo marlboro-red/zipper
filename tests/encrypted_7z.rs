@@ -2,6 +2,8 @@
 //! archives built here with every AES property layout, extracted with the
 //! right password, a wrong one, none, and damage at every byte. `trees.json`
 //! holds the tree `7zz x` gave when the fixtures were written.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use sha2::{Digest, Sha256};
 use std::{
@@ -159,18 +161,9 @@ fn recorded_trees() -> BTreeMap<String, BTreeMap<String, String>> {
 }
 
 fn seven_zip() -> Option<PathBuf> {
-    if let Some(binary) = std::env::var_os("ZIPPER_7Z") {
-        return Some(binary.into());
-    }
-    ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
+    std::env::var_os("ZIPPER_7Z")
         .map(PathBuf::from)
+        .or_else(sevenzip::sevenzip)
 }
 
 fn run_seven_zip(binary: &Path, arguments: &[&std::ffi::OsStr], password: &str) -> bool {
@@ -289,10 +282,6 @@ fn assert_all_say(errors: &[String], words: &str, case: &str) {
 fn every_fixture_extracts_to_the_tree_7zip_gave_in_process() {
     let trees = recorded_trees();
     let live = seven_zip();
-    assert!(
-        live.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip was found"
-    );
     assert_eq!(
         trees.len(),
         FIXTURES.len(),

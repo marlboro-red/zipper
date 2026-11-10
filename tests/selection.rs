@@ -1,4 +1,6 @@
 //! Extraction of selected paths from a ZIP archive.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use std::{fs, io::Write, path::Path};
 use zip::write::SimpleFileOptions;
 use zipper::{Existing, native_zip};
@@ -202,17 +204,7 @@ fn cli_selects_from_zip_and_tar() {
 fn sevenzip() -> Option<std::path::PathBuf> {
     std::env::var_os("ZIPPER_7Z")
         .map(std::path::PathBuf::from)
-        .or_else(|| {
-            ["7zz", "7z"]
-                .into_iter()
-                .find(|binary| {
-                    std::process::Command::new(binary)
-                        .arg("i")
-                        .output()
-                        .is_ok_and(|output| output.status.success())
-                })
-                .map(std::path::PathBuf::from)
-        })
+        .or_else(sevenzip::sevenzip)
 }
 
 #[test]

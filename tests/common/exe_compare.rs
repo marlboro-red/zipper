@@ -98,12 +98,7 @@ pub fn tree(root: &Path, metadata: bool) -> BTreeMap<String, String> {
 }
 
 pub fn sevenzip() -> Option<PathBuf> {
-    let found = crate::sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    crate::sevenzip::sevenzip()
 }
 
 pub fn sevenzip_tree(

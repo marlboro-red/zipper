@@ -3,6 +3,8 @@
 //! and honours the options the cpio reader takes. Where 7-Zip is installed,
 //! it is the oracle: 7-Zip writes the payload's cpio, and the cpio it wrote
 //! extracts to the tree Zipper writes.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use std::{
     collections::BTreeMap,
     fs,
@@ -422,18 +424,6 @@ fn a_package_without_a_compressor_tag_holds_gzip_as_rpm_assumes() {
     assert_eq!(tree(&destination), sample_tree());
 }
 
-fn sevenzip() -> Option<PathBuf> {
-    ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
-        .map(PathBuf::from)
-}
-
 fn sevenzip_extract(binary: &Path, archive: &Path, into: &Path) {
     let mut flag = std::ffi::OsString::from("-o");
     flag.push(into);
@@ -453,7 +443,7 @@ fn sevenzip_extract(binary: &Path, archive: &Path, into: &Path) {
 
 #[test]
 fn every_compressor_extracts_the_tree_7zip_extracts_from_its_cpio() {
-    let Some(binary) = sevenzip() else {
+    let Some(binary) = sevenzip::sevenzip() else {
         eprintln!("7-Zip is not installed; skipped");
         return;
     };

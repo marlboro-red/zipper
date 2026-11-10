@@ -2,6 +2,8 @@
 //! extracted with the right password, a wrong one, none, and damage at every
 //! byte. `trees.json` holds the tree `7zz x` gave when the fixtures were
 //! written.
+#[path = "common/sevenzip.rs"]
+mod sevenzip;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -103,18 +105,9 @@ fn recorded_trees() -> BTreeMap<String, BTreeMap<String, String>> {
 }
 
 fn seven_zip() -> Option<PathBuf> {
-    if let Some(binary) = std::env::var_os("ZIPPER_7Z") {
-        return Some(binary.into());
-    }
-    ["7zz", "7z"]
-        .into_iter()
-        .find(|binary| {
-            Command::new(binary)
-                .arg("i")
-                .output()
-                .is_ok_and(|output| output.status.success())
-        })
+    std::env::var_os("ZIPPER_7Z")
         .map(PathBuf::from)
+        .or_else(sevenzip::sevenzip)
 }
 
 fn seven_zip_tree(binary: &Path, archive: &Path) -> BTreeMap<String, String> {
@@ -304,10 +297,6 @@ fn assert_says_wrong_password(errors: &[String], case: &str) {
 fn every_fixture_extracts_to_the_tree_7zip_gave() {
     let trees = recorded_trees();
     let live = seven_zip();
-    assert!(
-        live.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip was found"
-    );
     let names = every_fixture();
     assert_eq!(
         names.len(),
@@ -2357,7 +2346,6 @@ fn signal_once_output_grows(
 fn a_signal_during_a_7zip_extraction_stops_the_child_and_removes_staging() {
     use std::os::unix::process::ExitStatusExt;
     if seven_zip().is_none() {
-        assert!(std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none());
         return;
     }
     let work = tempfile::tempdir().unwrap();

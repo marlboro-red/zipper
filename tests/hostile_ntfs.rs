@@ -780,7 +780,6 @@ fn is_data_attribute_flags_byte(clean: &[u8], spans: &[(usize, usize)], at: usiz
 #[test]
 fn damage_sweeps_are_refused_exactly_when_7zip_refuses_them_or_by_a_listed_stricter_check() {
     let Some(binary) = sevenzip::sevenzip() else {
-        assert!(std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none());
         return;
     };
     let (clean, spans, packed) = sweep_volume();

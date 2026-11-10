@@ -3,7 +3,7 @@
 //! where it is installed. Generated discs of ISO 9660, Joliet, Rock Ridge,
 //! El Torito and UDF 1.02 to 2.60, alone and together, extract exactly as
 //! `7zz x` extracts them, including which tree a hybrid disc gives. Without
-//! 7-Zip 26 or later the differential tests are skipped, unless
+//! 7-Zip 26.05 or later the differential tests are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set. `ZIPPER_ISO_SAMPLES` names a folder of
 //! further images to compare.
 #[path = "common/iso_writer.rs"]
@@ -26,12 +26,7 @@ type Damage = Box<dyn Fn(&mut Vec<u8>)>;
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/iso-corpus");
 
 fn sevenzip_binary() -> Option<PathBuf> {
-    let found = sevenzip::sevenzip();
-    assert!(
-        found.is_some() || std::env::var_os("ZIPPER_PARITY_REQUIRE_7Z").is_none(),
-        "ZIPPER_PARITY_REQUIRE_7Z is set and no 7-Zip 26 or later is installed"
-    );
-    found
+    sevenzip::sevenzip()
 }
 
 fn sha256(bytes: &[u8]) -> String {
