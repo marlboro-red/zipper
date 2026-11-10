@@ -35,5 +35,5 @@ Done so far, by 11 November 2026:
 Still to try, from the report and the read of pzip and fastzip:
 
 - One Deflate decoder per ZIP worker, which the pure-Rust Deflate decoder of M25 will replace.
-- Creating ZIP folders in parallel, and detecting folder merges from `mkdir` results instead of a `stat` for each folder entry. The serial setup is about 20% of four-thread extraction on the dependency sources.
+- Detecting ZIP folder merges from `mkdir` results instead of a `stat` for each folder entry. [Making the folders in parallel](../../benchmarks/native-zip/parallel-folders/README.md) was tried and reverted, since APFS makes folders no faster on more threads.
 - The LZMA literal path, only after a count of mispredicted branches shows where the remaining gap to 7-Zip sits.

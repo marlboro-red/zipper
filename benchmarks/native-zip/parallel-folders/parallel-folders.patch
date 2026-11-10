@@ -1,0 +1,240 @@
+diff --git a/src/native_zip.rs b/src/native_zip.rs
+index 9dce0a7..97597ff 100644
+--- a/src/native_zip.rs
++++ b/src/native_zip.rs
+@@ -6,7 +6,7 @@ use crate::{BadField, Field, field_check};
+ use crate::{
+     Entry,
+     counters::{self, Counter},
+-    parent, safe_path,
++    safe_path,
+ };
+ use anyhow::{Context, Result, ensure};
+ use rayon::prelude::*;
+@@ -50,30 +50,154 @@ fn crowded_folder(items: &[Item]) -> bool {
+         })
+ }
+ 
++#[cfg(unix)]
+ fn later_spellings_of_same_directory(root: &Path, items: &[Item]) -> Result<HashSet<usize>> {
+-    crate::later_spellings_of_same_directory(
+-        root,
+-        items
+-            .iter()
+-            .map(|item| item.entry.directory.then_some(item.entry.name.as_str())),
+-    )
++    use std::os::unix::fs::MetadataExt;
++    let identities: Vec<(usize, (u64, u64))> = items
++        .par_iter()
++        .enumerate()
++        .filter(|(_, item)| item.entry.directory)
++        .map(|(index, item)| {
++            let metadata = fs::metadata(root.join(&item.entry.name))?;
++            Ok((index, (metadata.dev(), metadata.ino())))
++        })
++        .collect::<std::io::Result<_>>()?;
++    let mut claimed = HashSet::with_capacity(identities.len());
++    Ok(identities
++        .into_iter()
++        .filter(|&(_, identity)| !claimed.insert(identity))
++        .map(|(index, _)| index)
++        .collect())
+ }
+ 
+-fn create_directories_in_archive_order(root: &Path, items: &[Item]) -> Result<()> {
++#[cfg(not(unix))]
++fn later_spellings_of_same_directory(_: &Path, _: &[Item]) -> Result<HashSet<usize>> {
++    Ok(HashSet::new())
++}
++
++struct Folder<'a> {
++    path: &'a str,
++    made: usize,
++}
++
++impl<'a> Folder<'a> {
++    fn made_part(&self) -> &'a str {
++        &self.path[..self.made]
++    }
++
++    fn last_made_component(&self) -> &'a str {
++        let made = self.made_part();
++        made.rfind('/').map_or(made, |slash| &made[slash + 1..])
++    }
++
++    fn make_next_component(&mut self, root: &Path, made: &mut HashSet<&'a str>) -> Result<()> {
++        let start = if self.made == 0 { 0 } else { self.made + 1 };
++        self.made = self.path[start..]
++            .find('/')
++            .map_or(self.path.len(), |slash| start + slash);
++        if made.insert(self.made_part()) {
++            let path = root.join(self.made_part());
++            counters::add(Counter::DirectoryCreateCalls, 1);
++            match fs::create_dir(&path) {
++                Err(error) if !(error.kind() == std::io::ErrorKind::AlreadyExists && path.is_dir()) => {
++                    return Err(error.into());
++                }
++                _ => {}
++            }
++        }
++        Ok(())
++    }
++
++    fn key(&self) -> Option<impl Iterator<Item = u8> + 'a> {
++        name_key(self.last_made_component())
++    }
++
++    fn split_key(&self) -> impl Iterator<Item = u8> + 'a {
++        self.key().expect("every folder that splits has a key")
++    }
++
++    fn complete(&self) -> bool {
++        self.made == self.path.len()
++    }
++}
++
++const PARALLEL_FOLDER_DEPTH: usize = 8;
++
++fn folders_in_archive_order(items: &[Item]) -> Vec<Folder<'_>> {
+     let mut seen = HashSet::new();
+-    for item in items {
+-        let path = root.join(&item.entry.name);
+-        let directory = if item.entry.directory {
+-            path
+-        } else {
+-            parent(&path).to_owned()
+-        };
+-        if seen.insert(directory.clone()) {
+-            fs::create_dir_all(directory)?;
++    items
++        .iter()
++        .map(|item| {
++            let name = item.entry.name.as_str();
++            match item.entry.directory {
++                true => name,
++                false => name.rfind('/').map_or("", |slash| &name[..slash]),
++            }
++        })
++        .filter(|&path| !path.is_empty() && seen.insert(path))
++        .map(|path| Folder { path, made: 0 })
++        .collect()
++}
++
++// EXTERNAL(APFS, ext4 casefold, FAT): two ASCII names without a tilde name one folder only
++// if they match ignoring ASCII case and trailing dots and spaces. Other names can match
++// ASCII ones, as the Kelvin sign matches k and a FAT short name with a tilde its long name.
++fn name_key(component: &str) -> Option<impl Iterator<Item = u8> + '_> {
++    (cfg!(unix) && component.is_ascii() && !component.contains('~')).then(|| {
++        component
++            .trim_end_matches(['.', ' '])
++            .bytes()
++            .map(|byte| byte.to_ascii_lowercase())
++    })
++}
++
++fn create_directories_in_archive_order(root: &Path, items: &[Item]) -> Result<()> {
++    make_folders_below(root, &mut folders_in_archive_order(items), 0)
++}
++
++fn make_folders_below(root: &Path, folders: &mut [Folder<'_>], depth: usize) -> Result<()> {
++    let mut made = HashSet::new();
++    for folder in folders.iter_mut() {
++        folder.make_next_component(root, &mut made)?;
++    }
++    drop(made);
++    let deeper = folders
++        .iter()
++        .filter(|folder| !folder.complete())
++        .count();
++    if deeper == 0 {
++        return Ok(());
++    }
++    let splits = depth < PARALLEL_FOLDER_DEPTH
++        && folders.iter().all(|folder| folder.key().is_some());
++    if !splits {
++        for folder in folders.iter().filter(|folder| !folder.complete()) {
++            fs::create_dir_all(root.join(folder.path))?;
+             counters::add(Counter::DirectoryCreateCalls, 1);
+         }
++        return Ok(());
++    }
++    folders.sort_by(|left, right| {
++        right
++            .complete()
++            .cmp(&left.complete())
++            .then_with(|| left.split_key().cmp(right.split_key()))
++    });
++    let mut groups = Vec::new();
++    let complete = folders.len() - deeper;
++    let mut rest = &mut folders[complete..];
++    while let Some(first) = rest.first() {
++        let length = rest
++            .iter()
++            .take_while(|folder| folder.split_key().eq(first.split_key()))
++            .count();
++        let (group, tail) = std::mem::take(&mut rest).split_at_mut(length);
++        groups.push(group);
++        rest = tail;
+     }
+-    Ok(())
++    groups
++        .into_par_iter()
++        .try_for_each(|group| make_folders_below(root, group, depth + 1))
+ }
+ 
+ fn create_links_after_files(
+@@ -1540,13 +1664,6 @@ pub fn read_archive_with_options(
+         }
+         .into());
+     }
+-    if let Some(temp) = &staging {
+-        create_directories_in_archive_order(temp.path(), &items)?;
+-    }
+-    let merged = match &staging {
+-        Some(temp) => later_spellings_of_same_directory(temp.path(), &items)?,
+-        None => HashSet::new(),
+-    };
+     let mut largest_first: Vec<_> = (0..items.len()).collect();
+     largest_first.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
+     let files: Vec<u64> = items
+@@ -1685,7 +1802,14 @@ pub fn read_archive_with_options(
+             },
+         )
+     };
+-    let run = || -> Result<()> {
++    let run = || -> Result<HashSet<usize>> {
++        let merged = match &staging {
++            Some(temp) => {
++                create_directories_in_archive_order(temp.path(), &items)?;
++                later_spellings_of_same_directory(temp.path(), &items)?
++            }
++            None => HashSet::new(),
++        };
+         let mut pass = largest_first;
+         while !pass.is_empty() {
+             run_pass(&pass)?;
+@@ -1696,10 +1820,10 @@ pub fn read_archive_with_options(
+             );
+             pass.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
+         }
+-        Ok(())
++        Ok(merged)
+     };
+-    if rayon::current_num_threads() <= worker_limit {
+-        run()?;
++    let merged = if rayon::current_num_threads() <= worker_limit {
++        run()?
+     } else {
+         let mut threads = Vec::new();
+         let pool = rayon::ThreadPoolBuilder::new()
+@@ -1714,8 +1838,8 @@ pub fn read_archive_with_options(
+         for thread in threads {
+             let _ = thread.join();
+         }
+-        ran?;
+-    }
++        ran?
++    };
+     create_links_after_files(
+         staging.as_ref().map(|temp| temp.path()),
+         &items,

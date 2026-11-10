@@ -56,6 +56,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-11 | [ZIP folders made in parallel before the workers start](native-zip/parallel-folders/README.md) | Reverted. On APFS making folders does not get faster with more threads, and the setup moved from 53.8 to 46.4 ms at four threads with ranges overlapping. Three folder-spelling tests are kept. |
 | 2026-11-11 | [ZIP workers read the archive without a lock](native-zip/lock-free-reads/README.md) | Kept. 512 MiB of stored entries extract 1.18 times faster at 64 threads, and other rows are unchanged. The serial folder setup is about 20% of four-thread extraction on the dependency sources. |
 | 2026-11-11 | [A macOS worker cap for ZIPs of mostly small files](native-zip/small-files-cap/README.md) | Kept. Four workers when files average at most 64 KiB make the dependency sources 11% and the mixed tree 10% faster at default threads, with CPU about halved. Silesia is unchanged. |
 | 2026-11-10 | [One Deflate64 decoder per ZIP entry](native-zip/deflate64-one-inflater/README.md) | Kept. A Deflate64 ZIP of Silesia extracts 1.83 times faster at one thread, 0.412 s against 0.755 s, and faster than 7-Zip at 0.530 s. Every damaged entry gets the same verdict. |
