@@ -694,12 +694,7 @@ impl Step<'_> {
     }
 }
 
-pub(crate) struct Inflate<'w> {
-    window: &'w mut [u8],
-    bits: Bits,
-    state: State,
-    last_block: bool,
-    fixed: bool,
+struct Dynamic {
     litlen_codes: usize,
     distance_codes: usize,
     precode_codes: usize,
@@ -709,6 +704,126 @@ pub(crate) struct Inflate<'w> {
     precode: [u32; PRECODE_ENTRIES],
     precode_bits: u32,
     tables: Tables,
+}
+
+impl Dynamic {
+    fn boxed() -> Box<Self> {
+        const EMPTY: Dynamic = Dynamic {
+            litlen_codes: 0,
+            distance_codes: 0,
+            precode_codes: 0,
+            lengths_read: 0,
+            precode_lengths: [0; PRECODE_SYMBOLS],
+            lengths: [0; LITLEN_SYMBOLS + DISTANCE_SYMBOLS],
+            precode: [0; PRECODE_ENTRIES],
+            precode_bits: 0,
+            tables: Tables::empty(),
+        };
+        Box::new(EMPTY)
+    }
+
+    fn code_counts(&mut self, bits: &mut Bits) -> Result<(), Invalid> {
+        self.litlen_codes = bits.take(5) as usize + 257;
+        self.distance_codes = bits.take(5) as usize + 1;
+        self.precode_codes = bits.take(4) as usize + 4;
+        // EXTERNAL(zlib): more than 286 length or 30 distance codes is refused.
+        if self.litlen_codes > MOST_LITLEN_CODES || self.distance_codes > MOST_DISTANCE_CODES {
+            return Err(Invalid("too many Deflate length or distance codes"));
+        }
+        self.precode_lengths = [0; PRECODE_SYMBOLS];
+        self.lengths_read = 0;
+        Ok(())
+    }
+
+    fn precode(
+        &mut self,
+        bits: &mut Bits,
+        input: &[u8],
+        position: &mut usize,
+    ) -> Result<bool, Invalid> {
+        while self.lengths_read < self.precode_codes {
+            if !bits.need(3, input, position) {
+                return Ok(false);
+            }
+            let symbol = PRECODE_ORDER[self.lengths_read];
+            self.precode_lengths[usize::from(symbol)] = bits.take(3) as u8;
+            self.lengths_read += 1;
+        }
+        self.precode_bits = build_table(
+            &mut self.precode,
+            &self.precode_lengths,
+            PRECODE_BITS,
+            Alphabet::Precode,
+        )?;
+        self.lengths_read = 0;
+        Ok(true)
+    }
+
+    fn codes(
+        &mut self,
+        bits: &mut Bits,
+        input: &[u8],
+        position: &mut usize,
+    ) -> Result<bool, Invalid> {
+        const BAD_REPEAT: Invalid = Invalid("invalid Deflate code length repeat");
+        let total = self.litlen_codes + self.distance_codes;
+        while self.lengths_read < total {
+            // SPEC(RFC 1951 3.2.7): 16 repeats the last length, 17 and 18 repeat zero.
+            let (symbol, code_bits, repeat_bits, repeat_base) = loop {
+                let entry = self.precode[(bits.buffer & low_bits(self.precode_bits)) as usize];
+                let symbol = entry >> VALUE_SHIFT;
+                let (repeat_bits, repeat_base) = match symbol {
+                    16 => (2, 3),
+                    17 => (3, 3),
+                    18 => (7, 11),
+                    _ => (0, 0),
+                };
+                let code_bits = entry & STEP_BITS_MASK;
+                if code_bits + repeat_bits <= bits.count {
+                    break (symbol, code_bits, repeat_bits, repeat_base);
+                }
+                if !bits.pull(input, position) {
+                    return Ok(false);
+                }
+            };
+            bits.skip(code_bits);
+            if symbol < 16 {
+                self.lengths[self.lengths_read] = symbol as u8;
+                self.lengths_read += 1;
+                continue;
+            }
+            let repeated = match symbol {
+                16 => *self
+                    .lengths
+                    .get(self.lengths_read.wrapping_sub(1))
+                    .ok_or(BAD_REPEAT)?,
+                _ => 0,
+            };
+            let end = self.lengths_read + repeat_base + bits.take(repeat_bits) as usize;
+            self.lengths
+                .get_mut(self.lengths_read..end)
+                .filter(|_| end <= total)
+                .ok_or(BAD_REPEAT)?
+                .fill(repeated);
+            self.lengths_read = end;
+        }
+        if self.lengths[END_OF_BLOCK_SYMBOL] == 0 {
+            return Err(Invalid("Deflate block has no end-of-block code"));
+        }
+        let (litlen, distance) = self.lengths.split_at(self.litlen_codes);
+        self.tables
+            .build(litlen, &distance[..self.distance_codes])?;
+        Ok(true)
+    }
+}
+
+pub(crate) struct Inflate<'w> {
+    window: &'w mut [u8],
+    bits: Bits,
+    state: State,
+    last_block: bool,
+    dynamic: Option<Box<Dynamic>>,
+    uses_dynamic: bool,
     filled: usize,
     total_in: u64,
 }
@@ -721,16 +836,8 @@ impl<'w> Inflate<'w> {
             bits: Bits::default(),
             state: State::BlockHeader,
             last_block: false,
-            fixed: false,
-            litlen_codes: 0,
-            distance_codes: 0,
-            precode_codes: 0,
-            lengths_read: 0,
-            precode_lengths: [0; PRECODE_SYMBOLS],
-            lengths: [0; LITLEN_SYMBOLS + DISTANCE_SYMBOLS],
-            precode: [0; PRECODE_ENTRIES],
-            precode_bits: 0,
-            tables: Tables::empty(),
+            dynamic: None,
+            uses_dynamic: false,
             filled: 0,
             total_in: 0,
         }
@@ -781,11 +888,11 @@ impl<'w> Inflate<'w> {
                             State::StoredLength
                         }
                         1 => {
-                            self.fixed = true;
+                            self.uses_dynamic = false;
                             State::Symbols
                         }
                         2 => {
-                            self.fixed = false;
+                            self.uses_dynamic = true;
                             State::CodeCounts
                         }
                         _ => return Err(Invalid("Deflate block type 3 is reserved")),
@@ -824,56 +931,31 @@ impl<'w> Inflate<'w> {
                     if !self.bits.need(14, input, position) {
                         return Ok(false);
                     }
-                    self.litlen_codes = self.bits.take(5) as usize + 257;
-                    self.distance_codes = self.bits.take(5) as usize + 1;
-                    self.precode_codes = self.bits.take(4) as usize + 4;
-                    // EXTERNAL(zlib): more than 286 length or 30 distance codes is refused.
-                    if self.litlen_codes > MOST_LITLEN_CODES
-                        || self.distance_codes > MOST_DISTANCE_CODES
-                    {
-                        return Err(Invalid("too many Deflate length or distance codes"));
-                    }
-                    self.precode_lengths = [0; PRECODE_SYMBOLS];
-                    self.lengths_read = 0;
+                    let dynamic = self.dynamic.get_or_insert_with(Dynamic::boxed);
+                    dynamic.code_counts(&mut self.bits)?;
                     self.state = State::PrecodeLengths;
                 }
                 State::PrecodeLengths => {
-                    while self.lengths_read < self.precode_codes {
-                        if !self.bits.need(3, input, position) {
-                            return Ok(false);
-                        }
-                        let symbol = PRECODE_ORDER[self.lengths_read];
-                        self.precode_lengths[usize::from(symbol)] = self.bits.take(3) as u8;
-                        self.lengths_read += 1;
+                    let dynamic = self.dynamic.get_or_insert_with(Dynamic::boxed);
+                    if !dynamic.precode(&mut self.bits, input, position)? {
+                        return Ok(false);
                     }
-                    self.precode_bits = build_table(
-                        &mut self.precode,
-                        &self.precode_lengths,
-                        PRECODE_BITS,
-                        Alphabet::Precode,
-                    )?;
-                    self.lengths_read = 0;
                     self.state = State::CodeLengths;
                 }
                 State::CodeLengths => {
-                    if !self.code_lengths(input, position)? {
+                    let dynamic = self.dynamic.get_or_insert_with(Dynamic::boxed);
+                    if !dynamic.codes(&mut self.bits, input, position)? {
                         return Ok(false);
                     }
-                    if self.lengths[END_OF_BLOCK_SYMBOL] == 0 {
-                        return Err(Invalid("Deflate block has no end-of-block code"));
-                    }
-                    let (litlen, distance) = self.lengths.split_at(self.litlen_codes);
-                    self.tables
-                        .build(litlen, &distance[..self.distance_codes])?;
                     self.state = State::Symbols;
                 }
                 State::Symbols => {
                     if self.window.len() - self.filled < OUTPUT_MARGIN {
                         return Ok(false);
                     }
-                    let tables = match self.fixed {
-                        true => fixed_tables(),
-                        false => &self.tables,
+                    let tables: &Tables = match &self.dynamic {
+                        Some(dynamic) if self.uses_dynamic => &dynamic.tables,
+                        _ => fixed_tables(),
                     };
                     if input.len() - *position >= FAST_INPUT {
                         let cursor = Cursor {
@@ -922,52 +1004,6 @@ impl<'w> Inflate<'w> {
                 State::Failed(invalid) => return Err(invalid),
             }
         }
-    }
-
-    fn code_lengths(&mut self, input: &[u8], position: &mut usize) -> Result<bool, Invalid> {
-        const BAD_REPEAT: Invalid = Invalid("invalid Deflate code length repeat");
-        let total = self.litlen_codes + self.distance_codes;
-        while self.lengths_read < total {
-            // SPEC(RFC 1951 3.2.7): 16 repeats the last length, 17 and 18 repeat zero.
-            let (symbol, code_bits, repeat_bits, repeat_base) = loop {
-                let entry = self.precode[(self.bits.buffer & low_bits(self.precode_bits)) as usize];
-                let symbol = entry >> VALUE_SHIFT;
-                let (repeat_bits, repeat_base) = match symbol {
-                    16 => (2, 3),
-                    17 => (3, 3),
-                    18 => (7, 11),
-                    _ => (0, 0),
-                };
-                let code_bits = entry & STEP_BITS_MASK;
-                if code_bits + repeat_bits <= self.bits.count {
-                    break (symbol, code_bits, repeat_bits, repeat_base);
-                }
-                if !self.bits.pull(input, position) {
-                    return Ok(false);
-                }
-            };
-            self.bits.skip(code_bits);
-            if symbol < 16 {
-                self.lengths[self.lengths_read] = symbol as u8;
-                self.lengths_read += 1;
-                continue;
-            }
-            let repeated = match symbol {
-                16 => *self
-                    .lengths
-                    .get(self.lengths_read.wrapping_sub(1))
-                    .ok_or(BAD_REPEAT)?,
-                _ => 0,
-            };
-            let repeat = repeat_base + self.bits.take(repeat_bits) as usize;
-            self.lengths
-                .get_mut(self.lengths_read..self.lengths_read + repeat)
-                .filter(|_| self.lengths_read + repeat <= total)
-                .ok_or(BAD_REPEAT)?
-                .fill(repeated);
-            self.lengths_read += repeat;
-        }
-        Ok(true)
     }
 }
 
@@ -1287,6 +1323,15 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_decoder_keeps_its_tables_off_the_callers_stack() {
+        assert!(
+            std::mem::size_of::<Inflate>() <= 128,
+            "{}",
+            std::mem::size_of::<Inflate>()
+        );
     }
 
     #[test]
