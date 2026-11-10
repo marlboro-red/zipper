@@ -162,18 +162,42 @@ The default features build the CLI and every reader. A library that reads only s
 zipper = { git = "https://github.com/marlboro-red/zipper", default-features = false, features = ["zip", "7z"] }
 ```
 
-| Feature | What it builds |
-| --- | --- |
-| `zip` | The ZIP reader with every method it decodes, including ZipCrypto and WinZip AES |
-| `7z` | The 7z reader with every method it decodes, including AES-256 |
-| `tar` | The tar reader and single compressed files such as `.gz`, `.xz`, `.zst` and `.bz2` |
-| `more-formats` | Every other reader, from cpio and ISO to disk images, and `tar` with it |
-| `all-formats` | All four |
-| `cli` | The `zipper` binary, with `all-formats` |
+| Feature | What it builds | Crates it adds |
+| --- | --- | --- |
+| `zip` | The ZIP reader with every method it decodes, including ZipCrypto and WinZip AES, and `zstd` | `aes`, `bzip2`, `ctr`, `deflate64`, `flate2`, `hmac`, `pbkdf2`, `ppmd-rust`, `sha1`, `zeroize` |
+| `7z` | The 7z reader with every method it decodes, including AES-256 | `aes`, `bzip2`, `deflate64`, `flate2`, `ppmd-rust`, `zeroize` |
+| `tar` | The tar reader and single compressed files such as `.gz`, `.xz`, `.zst` and `.bz2`, and `zstd` | `bzip2`, `flate2`, `ppmd-rust` |
+| `zstd` | The Zstandard decoder that `zip`, `tar` and `squashfs` turn on | `zstd`, which builds C |
+| `cpio` | The cpio reader | None |
+| `ar` | The `ar` and Debian package reader, and `tar` for the parts inside | None beyond `tar` |
+| `rpm` | The RPM reader, and `cpio` and `tar` for its payload | None beyond `tar` |
+| `xar` | The xar and flat macOS package reader | `bzip2`, `flate2`, `md-5`, `quick-xml`, `sha1` |
+| `cab` | The CAB reader | `flate2` |
+| `msi` | The compound file reader, and `cab` for the cabinets inside | None beyond `cab` |
+| `lzh` | The LZH reader | None |
+| `arj` | The ARJ reader | None |
+| `iso` | The ISO 9660 and UDF reader | None |
+| `wim` | The WIM and ESD reader | `sha1` |
+| `chm` | The CHM and Help 2 reader | None |
+| `exe` | The PE, COFF, TE, ELF and Mach-O reader | None |
+| `ntfs` | The NTFS reader | None |
+| `squashfs` | The SquashFS reader, and `zstd` | `flate2` |
+| `cramfs` | The CramFS reader | `flate2` |
+| `ext` | The ext2, ext3 and ext4 reader | None |
+| `apfs` | The APFS reader | `flate2` |
+| `dmg` | The DMG, HFS+ and HFSX reader, and `apfs` | `bzip2`, `flate2` |
+| `disk` | The VHD, VHDX, QCOW, VDI, VMDK, Android sparse and MBR or GPT disk reader with FAT and HFS+, and `apfs`, `cramfs`, `ext`, `ntfs` and `squashfs` for the other partitions | `flate2` |
+| `swf` | The SWF reader | `flate2` |
+| `flv` | The FLV reader | None |
+| `more-formats` | Every reader from `cpio` to `flv` above | The union of theirs |
+| `all-formats` | `zip`, `7z`, `tar` and `more-formats` | The union of theirs |
+| `cli` | The `zipper` binary, with `all-formats` | `clap` |
 
-A `zip` and `7z` build compiles 49 crates, against 69 for the default. It still builds the C libraries that ZIP Deflate and Zstandard use.
+Every build also compiles `anyhow`, `crc32fast`, `rayon`, `sha2`, `tempfile` and `walkdir`, with `libc` and `rustix` on Unix or `windows-sys` on Windows. A feature that names another, such as `rpm` naming `tar`, also builds that reader. A `zip` and `7z` build compiles 49 crates, against 69 for the default. It still builds the C libraries that ZIP Deflate and Zstandard use.
 
-The `Reader` enum keeps every variant in every build. A ZIP or tar archive that the build does not read fails with `zipper::NotBuilt`, which names the format, and writes nothing. With `Engine::Native`, so does every other format whose signature Zipper knows, such as `gzip` or `7z`. `Engine::Auto` hands those to 7-Zip instead, as it does any format it recognizes but does not read. Choose `Engine::Native` to never start 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build. `cargo xtask gate` lints each feature on its own, and runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build.
+The `Reader` enum keeps every variant in every build. A ZIP or tar archive that the build does not read fails with `zipper::NotBuilt`, which names the format, and writes nothing. With `Engine::Native`, so does every other format whose signature Zipper knows, such as `gzip` or `7z`. `Engine::Auto` hands those to 7-Zip instead, as it does any format it recognizes but does not read. Choose `Engine::Native` to never start 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build, so a build without `zip` refuses it as `zip`.
+
+`cargo xtask gate` lints every feature on its own with `unused_crate_dependencies` denied, so no feature builds a crate its readers do not use. It runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build. It also runs `tests/consumer`, a crate that depends on Zipper with only `zip` and `7z`, and checks that it extracts a corpus ZIP and 7z in process to the trees their manifests record. `cargo xtask format-tests` runs each format's corpus or hostile tests in a build with only that format's feature, and `cargo xtask release-checks` runs it too. The `apfs`, `ext` and `squashfs` tests also wrap their images in disk images and DMGs, so they run with `disk` and `dmg`.
 
 When `extract_archive` or a reader returns, after success, failure or a cancel, Zipper holds no handle to the destination or the archive, and every thread it started has exited. You can rename, move or delete the destination at once. The shared Rayon pool keeps its idle threads between calls, and they hold nothing from the extraction. The 7-Zip backend is waited for before it returns. `tests/handles.rs` checks this after every reader on Unix by counting open descriptors and threads, and on Windows by renaming and deleting the destination of archives that carry a zone mark.
 
