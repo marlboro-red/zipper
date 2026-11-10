@@ -1616,6 +1616,9 @@ fn decoder_memory(folder: &Folder, segments_possible: bool) -> u64 {
         Some((Ok(Method::Lzma | Method::Lzma2), coder)) => lzma_coder(coder, folder.size)
             .map_or(0, |coder| coder.memory(folder.size) + filter_buffers),
         Some((Ok(Method::Bzip2), _)) => BZIP2_DECODER_MEMORY,
+        Some((Ok(Method::Deflate64), _)) => {
+            std::mem::size_of::<deflate64::InflaterManaged>() as u64
+        }
         Some((Ok(Method::Ppmd), coder)) => {
             ppmd_parameters(&coder.properties).map_or(0, |(_, memory)| u64::from(memory))
         }
@@ -4097,6 +4100,45 @@ mod tests {
         assert_eq!(branch.read(&mut [0]).unwrap(), 0);
         assert_eq!(branch.remaining, 0);
         assert_eq!(branch.inner.read(&mut [0]).unwrap(), 1);
+    }
+
+    #[test]
+    fn bcj2_deflate64_branches_are_charged_their_decoders_and_both_buffers() {
+        let deflate64 = Folder {
+            output_to_packed: vec![Coder {
+                id: vec![0x04, 0x01, 0x09],
+                properties: Vec::new(),
+            }],
+            bcj2_branches: Vec::new(),
+            unsupported: None,
+            encryption: None,
+            size: 1 << 24,
+            crc: None,
+            pack_offset: 0,
+            pack_size: 1 << 24,
+        };
+        let decoder = std::mem::size_of::<deflate64::InflaterManaged>() as u64;
+        assert!(decoder_memory(&deflate64, false) >= decoder);
+        let folder = Folder {
+            output_to_packed: vec![Coder {
+                id: BCJ2.to_vec(),
+                properties: Vec::new(),
+            }],
+            bcj2_branches: vec![
+                deflate64.clone(),
+                deflate64.clone(),
+                deflate64.clone(),
+                deflate64,
+            ],
+            unsupported: None,
+            encryption: None,
+            size: 1 << 26,
+            crc: None,
+            pack_offset: 0,
+            pack_size: 1 << 26,
+        };
+        let buffers = (COPY_BUFFER + BCJ2_BRANCH_BUFFER) as u64;
+        assert!(decoder_memory(&folder, false) >= BCJ2_INPUTS as u64 * (decoder + buffers));
     }
 
     #[test]
