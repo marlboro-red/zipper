@@ -290,7 +290,8 @@ struct FolderShape {
 
 const BCJ2: [u8; 4] = [0x03, 0x03, 0x01, 0x1B];
 const BCJ2_INPUTS: usize = 4;
-const BCJ2_BRANCH_BUFFERS: u64 = 2 * COPY_BUFFER as u64;
+const BCJ2_BRANCH_BUFFER: usize = COPY_BUFFER;
+const BCJ2_BRANCH_BUFFERS: u64 = (COPY_BUFFER + BCJ2_BRANCH_BUFFER) as u64;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Bcj2Branch {
@@ -1788,7 +1789,7 @@ impl<R: Read> Read for Exact<R> {
     }
 }
 
-type Branch = Exact<Box<dyn Read + Send>>;
+type Branch = Exact<BufReader<Box<dyn Read + Send>>>;
 
 struct Bcj2Folder {
     decoder: Option<crate::bcj2::Bcj2<Branch, Branch, Branch, Branch>>,
@@ -1817,13 +1818,22 @@ impl Read for Bcj2Folder {
     }
 }
 
+fn bcj2_branch(inner: Box<dyn Read + Send>, size: u64) -> Branch {
+    let capacity =
+        usize::try_from(size).map_or(BCJ2_BRANCH_BUFFER, |size| size.min(BCJ2_BRANCH_BUFFER));
+    Exact {
+        inner: BufReader::with_capacity(capacity, inner),
+        remaining: size,
+    }
+}
+
 fn bcj2_reader(file: &ArchiveFile, folder: &Folder) -> Result<Box<dyn Read + Send>> {
     let mut branches = Vec::with_capacity(BCJ2_INPUTS);
     for branch in &folder.bcj2_branches {
-        branches.push(Exact {
-            inner: folder_reader(file.try_clone()?, branch, None)?,
-            remaining: branch.size,
-        });
+        branches.push(bcj2_branch(
+            folder_reader(file.try_clone()?, branch, None)?,
+            branch.size,
+        ));
     }
     let [main, calls, jumps, decisions]: [Branch; BCJ2_INPUTS] = branches
         .try_into()
@@ -4043,6 +4053,50 @@ mod tests {
                 .contains("properties 7-Zip does not accept"),
             "{error}"
         );
+    }
+
+    struct CountedReads<R> {
+        inner: R,
+        reads: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl<R: Read> Read for CountedReads<R> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            self.reads.fetch_add(1, Ordering::Relaxed);
+            self.inner.read(buffer)
+        }
+    }
+
+    fn counted_branch(bytes: Vec<u8>, size: u64) -> (Branch, Arc<std::sync::atomic::AtomicUsize>) {
+        let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let inner = CountedReads {
+            inner: std::io::Cursor::new(bytes),
+            reads: Arc::clone(&reads),
+        };
+        (bcj2_branch(Box::new(inner), size), reads)
+    }
+
+    #[test]
+    fn bcj2_branches_reach_their_decoder_once_per_block_not_once_per_byte() {
+        let data: Vec<u8> = (0..=255).cycle().take(100_000).collect();
+        let (mut branch, reads) = counted_branch(data.clone(), data.len() as u64);
+        let mut read_back = Vec::with_capacity(data.len());
+        let mut one = [0u8; 1];
+        while branch.read(&mut one).unwrap() == 1 {
+            read_back.push(one[0]);
+        }
+        assert_eq!(read_back, data);
+        assert!(reads.load(Ordering::Relaxed) <= 2, "{reads:?}");
+    }
+
+    #[test]
+    fn bcj2_branch_bytes_past_the_size_stay_visible_through_the_buffer() {
+        let (mut branch, _) = counted_branch(vec![7; 5], 4);
+        let mut four = [0u8; 4];
+        branch.read_exact(&mut four).unwrap();
+        assert_eq!(branch.read(&mut [0]).unwrap(), 0);
+        assert_eq!(branch.remaining, 0);
+        assert_eq!(branch.inner.read(&mut [0]).unwrap(), 1);
     }
 
     #[test]

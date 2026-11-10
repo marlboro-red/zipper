@@ -358,7 +358,7 @@ item = src/xz_filters.rs | mod proofs {
 item = src/native_7z.rs |     fn filter_properties_are_read_as_7zip_reads_them(
 item = src/native_7z.rs |     const BRANCH_BUFFER:
 item = src/native_7z.rs | struct Exact<
-item = src/native_7z.rs | type Branch = Exact<Box<dyn Read + Send>>;
+item = src/native_7z.rs | type Branch = Exact<BufReader<Box<dyn Read + Send>>>;
 item = src/xz_filters.rs | const IA64_BUNDLE:
 item = src/xz_filters.rs | const RISCV_PAIR:
 item = src/xz_filters.rs | const X86_INSTRUCTION:
