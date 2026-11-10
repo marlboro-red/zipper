@@ -18,6 +18,9 @@ from process_metrics import timed
 from bench_common import inventory, refuse_when_busy, verify
 
 
+READER_MODES = ["native", "native-content-only", "7zip", "7zip-tar", "bsdtar", "sevenz-rust2", "pzip", "fastzip"]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
@@ -27,7 +30,10 @@ def main():
                         help="native, tar and 7z compare extraction by the default engine, without ZIP engine "
                              "flags; zip and 7z also accept 7-Zip itself as a `7zip` reader, and tar accepts "
                              "`7zip-tar` (7-Zip decoding into a second 7-Zip that reads the tar) and `bsdtar`; 7z also "
-                             "accepts `sevenz-rust2`, the harness in benchmarks/lzma/sevenz-rust2/harness")
+                             "accepts `sevenz-rust2`, the harness in benchmarks/lzma/sevenz-rust2/harness; zip also "
+                             "accepts `native-content-only` (Zipper with --content-only), and the Go tools `pzip` "
+                             "(its punzip CLI) and `fastzip` (a driver over its extractor), whose thread count "
+                             "also sets GOMAXPROCS")
     parser.add_argument("--runs", type=int, default=7)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--reader-threads", action="append", nargs=2, metavar=("LABEL", "THREADS"), default=[],
@@ -42,12 +48,12 @@ def main():
         parser.error("positive runs and threads 1..64 required")
     readers = {}
     for label, mode, binary in args.reader:
-        if label in readers or mode not in ["native", "7zip", "7zip-tar", "bsdtar", "sevenz-rust2"]:
-            parser.error("unique labels and native/7zip/7zip-tar/bsdtar/sevenz-rust2 modes required")
+        if label in readers or mode not in READER_MODES:
+            parser.error(f"unique labels and modes from {READER_MODES} required")
         path = Path(binary).resolve(strict=True)
         readers[label] = {"mode": mode, "binary": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                           "threads": args.threads}
-    allowed = {"zip": {"native", "7zip"}, "7z": {"native", "7zip", "sevenz-rust2"},
+    allowed = {"zip": {"native", "native-content-only", "7zip", "pzip", "fastzip"}, "7z": {"native", "7zip", "sevenz-rust2"},
                "tar": {"native", "7zip-tar", "bsdtar"}}.get(args.archive_format, {"native"})
     if any(reader["mode"] not in allowed for reader in readers.values()):
         parser.error(f"{args.archive_format} comparisons accept {sorted(allowed)} readers")
@@ -81,8 +87,8 @@ def main():
                 reader = readers[label]
                 output = Path(work) / "out"
                 prefix = [reader["binary"]]
-                if args.archive_format == "zip" and reader["mode"] != "7zip":
-                    prefix += ["--zip-engine", reader["mode"]]
+                if args.archive_format == "zip" and reader["mode"].startswith("native"):
+                    prefix += ["--zip-engine", "native"]
                 if reader["threads"] is not None:
                     prefix += ["--threads", str(reader["threads"])]
                 extract = prefix + ["extract", str(archive), "-o", str(output)]
@@ -97,6 +103,13 @@ def main():
                                f" -o{shlex.quote(str(output))}"]
                 elif reader["mode"] == "sevenz-rust2":
                     extract = [reader["binary"], str(archive), str(output), str(reader["threads"] or "auto")]
+                elif reader["mode"] == "native-content-only":
+                    extract.append("--content-only")
+                elif reader["mode"] in ("pzip", "fastzip"):
+                    count = reader["threads"]
+                    pinned = ["/usr/bin/env", f"GOMAXPROCS={count}"] if count is not None else []
+                    workers = ["-concurrency", str(count)] if count is not None else []
+                    extract = [*pinned, reader["binary"], *workers, "-d", str(output), str(archive)]
                 elif reader["mode"] == "bsdtar":
                     output.mkdir()
                     extract = [reader["binary"], "-xf", str(archive), "-C", str(output)]
