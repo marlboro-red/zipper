@@ -286,10 +286,10 @@ const FEATURES_WITHOUT_LIBRARY_CODE: &[&str] = &["cli", "zstd"];
 const FORMAT_TESTS: &[(&str, &[&str])] = &[
     ("zip", &["zip_corpus"]),
     ("7z", &["sevenz_corpus"]),
-    ("tar", &["tar_corpus"]),
+    ("tar,zstd", &["tar_corpus"]),
     ("cpio", &["hostile_cpio"]),
-    ("ar", &["hostile_ar"]),
-    ("rpm", &["hostile_rpm"]),
+    ("ar,zstd", &["hostile_ar"]),
+    ("rpm,zstd", &["hostile_rpm"]),
     ("xar", &["xar_corpus"]),
     ("cab", &["cab_corpus", "cab_sets"]),
     ("msi", &["msi_corpus"]),
@@ -302,7 +302,11 @@ const FORMAT_TESTS: &[(&str, &[&str])] = &[
     ("ntfs", &["ntfs_corpus"]),
     ("swf,flv", &["swf_corpus"]),
     ("dmg", &["dmg_corpus"]),
-    ("disk", &["disk_corpus", "squashfs_corpus", "ext_corpus"]),
+    (
+        "disk,zstd",
+        &["disk_corpus", "squashfs_corpus", "ext_corpus"],
+    ),
+    ("tar,squashfs", &["zstd_feature"]),
     ("dmg,disk", &["apfs_corpus"]),
 ];
 const CONSUMER_ARCHIVES: &[&str] = &[
@@ -328,6 +332,8 @@ const SUBSET_TESTS: &[&str] = &[
     "zip_corpus",
     "--test",
     "sevenz_corpus",
+    "--test",
+    "zstd_feature",
 ];
 const RELEASE_BUILD: &[&str] = &["build", "--release", "--locked", "--package", "zipper"];
 const COUNTERS_CLIPPY: &[&str] = &[

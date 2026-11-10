@@ -503,6 +503,9 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
             ),
             "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
         );
+        if method == ZSTANDARD && cfg!(not(feature = "zstd")) {
+            anyhow::bail!(crate::NotBuilt("zstd".to_owned()));
+        }
         let name = file.name().into_owned();
         let name = if directory {
             name.strip_suffix('/').unwrap_or(&name).to_owned()
@@ -1129,6 +1132,7 @@ fn method_decoder<'a>(
             item.entry.size,
         )),
         BZIP2 => Box::new(bzip2::bufread::BzDecoder::new(input)),
+        #[cfg(feature = "zstd")]
         ZSTANDARD => Box::new(zstd::stream::read::Decoder::with_buffer(input)?.single_frame()),
         XZ => Box::new(crate::lzma::XzReader::new(input).single_stream()),
         LZMA => {

@@ -431,7 +431,10 @@ pub(crate) fn decode<R: BufRead + Send + 'static>(
     Ok(match compression {
         Compression::None => Box::new(input),
         Compression::Gzip => Box::new(flate2::bufread::MultiGzDecoder::new(input)),
+        #[cfg(feature = "zstd")]
         Compression::Zstd => Box::new(zstd::stream::read::Decoder::with_buffer(input)?),
+        #[cfg(not(feature = "zstd"))]
+        Compression::Zstd => anyhow::bail!(crate::NotBuilt("zstd".to_owned())),
         Compression::Xz => Box::new(DecoderMemory(
             crate::lzma::XzReader::new(input).with_dictionary_limit(LARGEST_DICTIONARY),
         )),
