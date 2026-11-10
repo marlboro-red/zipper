@@ -164,7 +164,7 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 
 | Feature | What it builds | Crates it adds |
 | --- | --- | --- |
-| `zip` | The ZIP reader with every method it decodes, including ZipCrypto and WinZip AES, and Zstandard entries with `zstd` | `aes`, `bzip2`, `ctr`, `deflate64`, `flate2`, `hmac`, `pbkdf2`, `ppmd-rust`, `sha1`, `zeroize` |
+| `zip` | The ZIP reader with every method it decodes, including ZipCrypto and WinZip AES, and Zstandard entries with `zstd` | `aes`, `bzip2`, `ctr`, `deflate64`, `hmac`, `pbkdf2`, `ppmd-rust`, `sha1`, `zeroize` |
 | `7z` | The 7z reader with every method it decodes, including AES-256 | `aes`, `bzip2`, `deflate64`, `flate2`, `ppmd-rust`, `zeroize` |
 | `tar` | The tar reader and single compressed files such as `.gz`, `.xz` and `.bz2`, and `.zst` with `zstd` | `bzip2`, `flate2`, `ppmd-rust` |
 | `zstd` | The Zstandard decoder for ZIP entries, `.zst` files, tar and RPM payloads and SquashFS images | `zstd`, which builds C |

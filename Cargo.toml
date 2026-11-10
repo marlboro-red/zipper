@@ -32,7 +32,7 @@ zstd = { version = "0.14.3", optional = true }
 default = ["cli", "all-formats"]
 cli = ["dep:clap", "all-formats"]
 all-formats = ["zip", "7z", "tar", "zstd", "more-formats"]
-zip = ["dep:aes", "dep:bzip2", "dep:ctr", "dep:deflate64", "dep:flate2", "dep:hmac", "dep:pbkdf2", "dep:ppmd-rust", "dep:sha1", "dep:zeroize"]
+zip = ["dep:aes", "dep:bzip2", "dep:ctr", "dep:deflate64", "dep:hmac", "dep:pbkdf2", "dep:ppmd-rust", "dep:sha1", "dep:zeroize"]
 7z = ["dep:aes", "dep:bzip2", "dep:deflate64", "dep:flate2", "dep:ppmd-rust", "dep:zeroize"]
 tar = ["dep:bzip2", "dep:flate2", "dep:ppmd-rust"]
 zstd = ["dep:zstd"]
