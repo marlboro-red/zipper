@@ -542,6 +542,24 @@ impl Window {
         }
     }
 
+    #[cold]
+    #[inline(never)]
+    fn copy_repeating(&mut self, source: usize, distance: usize, run: usize) {
+        let position = self.position;
+        if distance == 1 {
+            let byte = self.buffer[source];
+            self.buffer[position..position + run].fill(byte);
+            return;
+        }
+        let mut done = 0;
+        while done < run {
+            let piece = (run - done).min(distance + done);
+            self.buffer
+                .copy_within(source..source + piece, position + done);
+            done += piece;
+        }
+    }
+
     fn copy(&mut self, distance: usize, length: usize) {
         let size = self.size;
         let mut left = length;
@@ -555,8 +573,10 @@ impl Window {
             let run = if distance >= COPY_CHUNK {
                 self.copy_in_chunks(source, run);
                 run
+            } else if run > distance {
+                self.copy_repeating(source, distance, run);
+                run
             } else {
-                let run = run.min(distance);
                 self.buffer.copy_within(source..source + run, self.position);
                 run
             };
@@ -2680,6 +2700,62 @@ mod tests {
             }
         }
         assert!(checked > 100_000, "{checked}");
+    }
+
+    #[test]
+    fn long_runs_at_every_short_distance_match_a_byte_at_a_time_copy_across_the_wrap() {
+        const LONGEST_MATCH: usize = 273;
+        let mut checked = 0u64;
+        for history in [16, 29, LONGEST_MATCH + 27] {
+            let mut start = Window::new(history);
+            start.make_room(u64::MAX);
+            for (index, byte) in start.buffer.iter_mut().enumerate() {
+                *byte = (index * 7 + index / 251) as u8;
+            }
+            for position in 0..start.size {
+                for full in [false, true] {
+                    let window = Window {
+                        buffer: start.buffer.clone(),
+                        position,
+                        full,
+                        ..start
+                    };
+                    for distance in (1..COPY_CHUNK).filter(|&distance| window.reaches(distance)) {
+                        for length in 0..=LONGEST_MATCH {
+                            let mut copied = Window {
+                                buffer: window.buffer.clone(),
+                                ..window
+                            };
+                            let mut reference = Window {
+                                buffer: window.buffer.clone(),
+                                ..window
+                            };
+                            copied.copy(distance, length);
+                            for _ in 0..length {
+                                let byte = reference.back(distance);
+                                reference.put(byte);
+                            }
+                            assert_eq!(
+                                (copied.position, copied.total, copied.full, copied.last),
+                                (
+                                    reference.position,
+                                    reference.total,
+                                    reference.full,
+                                    reference.last
+                                ),
+                                "history {history} position {position} full {full} distance {distance} length {length}"
+                            );
+                            assert!(
+                                copied.buffer == reference.buffer,
+                                "history {history} position {position} full {full} distance {distance} length {length}"
+                            );
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 1_000_000, "{checked}");
     }
 
     fn liblzma_raw_lzma1(
