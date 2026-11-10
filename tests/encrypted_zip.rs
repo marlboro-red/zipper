@@ -14,7 +14,6 @@ use zipper::{Engine, Existing, ExtractOptions, native_zip::PasswordNeeded};
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/encrypted-zip");
 const PASSWORD: &[u8] = b"zipper";
 const WRONG: &[u8] = b"Zipper-but-wrong";
-const ENGINES: [Engine; 2] = [Engine::Native, Engine::NativeFast];
 const AES_METHOD: u16 = 99;
 const AES_FIELD: u16 = 0x9901;
 const AES_CODE: usize = 10;
@@ -257,32 +256,37 @@ fn listing(folder: &Path) -> Vec<String> {
 
 fn assert_fails_cleanly(zip: &[u8], password: Option<&[u8]>, case: &str) -> Vec<String> {
     let mut errors = Vec::new();
-    for engine in ENGINES {
-        let work = tempfile::tempdir().unwrap();
-        let archive = work.path().join("case.zip");
-        fs::write(&archive, zip).unwrap();
-        let kept = work.path().join("kept");
-        fs::create_dir(&kept).unwrap();
-        fs::write(kept.join(TINY_NAME), b"the file that was here").unwrap();
-        let before = tree(&kept);
-        for (destination, existing) in [
-            (kept.clone(), Existing::Overwrite),
-            (work.path().join("fresh"), Existing::Refuse),
-        ] {
-            let error = extract(&archive, &destination, engine, password, existing, &[])
-                .expect_err(&format!("{case}: {engine:?} extracted into {existing:?}"));
-            errors.push(format!("{error:?}"));
-            assert_eq!(
-                tree(&kept),
-                before,
-                "{case}: {engine:?} changed the destination"
-            );
-            assert_eq!(
-                listing(work.path()),
-                ["case.zip", "kept"],
-                "{case}: {engine:?} left a staging folder or output"
-            );
-        }
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("case.zip");
+    fs::write(&archive, zip).unwrap();
+    let kept = work.path().join("kept");
+    fs::create_dir(&kept).unwrap();
+    fs::write(kept.join(TINY_NAME), b"the file that was here").unwrap();
+    let before = tree(&kept);
+    for (destination, existing) in [
+        (kept.clone(), Existing::Overwrite),
+        (work.path().join("fresh"), Existing::Refuse),
+    ] {
+        let error = extract(
+            &archive,
+            &destination,
+            Engine::Native,
+            password,
+            existing,
+            &[],
+        )
+        .expect_err(&format!("{case}: native extracted into {existing:?}"));
+        errors.push(format!("{error:?}"));
+        assert_eq!(
+            tree(&kept),
+            before,
+            "{case}: native changed the destination"
+        );
+        assert_eq!(
+            listing(work.path()),
+            ["case.zip", "kept"],
+            "{case}: native left a staging folder or output"
+        );
     }
     errors
 }
@@ -297,7 +301,7 @@ fn assert_says_wrong_password(errors: &[String], case: &str) {
 }
 
 #[test]
-fn every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines() {
+fn every_fixture_extracts_to_the_tree_7zip_gave() {
     let trees = recorded_trees();
     let live = seven_zip();
     assert!(
@@ -316,20 +320,18 @@ fn every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines() {
         if let Some(binary) = &live {
             assert_eq!(&seven_zip_tree(binary, &archive), expected, "{name}: 7-Zip");
         }
-        for engine in ENGINES {
-            let work = tempfile::tempdir().unwrap();
-            let output = work.path().join("out");
-            extract(
-                &archive,
-                &output,
-                engine,
-                Some(PASSWORD),
-                Existing::Refuse,
-                &[],
-            )
-            .unwrap_or_else(|error| panic!("{name}: {engine:?}: {error:?}"));
-            assert_eq!(&tree(&output), expected, "{name}: {engine:?}");
-        }
+        let work = tempfile::tempdir().unwrap();
+        let output = work.path().join("out");
+        extract(
+            &archive,
+            &output,
+            Engine::Native,
+            Some(PASSWORD),
+            Existing::Refuse,
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        assert_eq!(&tree(&output), expected, "{name}");
     }
 }
 
@@ -341,26 +343,24 @@ fn selected_paths_extract_only_their_entries() {
         "aes256-ppmd.zip",
         "aes128-descriptor.zip",
     ] {
-        for engine in ENGINES {
-            let work = tempfile::tempdir().unwrap();
-            let output = work.path().join("out");
-            let paths = ["sub/text.txt".to_owned()];
-            extract(
-                &fixture(name),
-                &output,
-                engine,
-                Some(PASSWORD),
-                Existing::Refuse,
-                &paths,
-            )
-            .unwrap();
-            let expected: BTreeMap<String, String> = trees[name]
-                .iter()
-                .filter(|(path, _)| *path == "sub" || *path == "sub/text.txt")
-                .map(|(path, kind)| (path.clone(), kind.clone()))
-                .collect();
-            assert_eq!(tree(&output), expected, "{name}: {engine:?}");
-        }
+        let work = tempfile::tempdir().unwrap();
+        let output = work.path().join("out");
+        let paths = ["sub/text.txt".to_owned()];
+        extract(
+            &fixture(name),
+            &output,
+            Engine::Native,
+            Some(PASSWORD),
+            Existing::Refuse,
+            &paths,
+        )
+        .unwrap();
+        let expected: BTreeMap<String, String> = trees[name]
+            .iter()
+            .filter(|(path, _)| *path == "sub" || *path == "sub/text.txt")
+            .map(|(path, kind)| (path.clone(), kind.clone()))
+            .collect();
+        assert_eq!(tree(&output), expected, "{name}");
     }
 }
 
@@ -408,19 +408,17 @@ fn a_destination_that_cannot_be_used_fails_before_the_password_is_asked_for() {
     let taken = work.path().join("taken");
     fs::create_dir(&taken).unwrap();
     fs::write(taken.join("keep.txt"), b"kept").unwrap();
-    for engine in ENGINES {
-        let error = extract(
-            &fixture("tiny-aes128.zip"),
-            &taken,
-            engine,
-            None,
-            Existing::Refuse,
-            &[],
-        )
-        .unwrap_err();
-        assert!(!error.is::<PasswordNeeded>(), "{engine:?}: {error:?}");
-        assert_eq!(listing(&taken), ["keep.txt"]);
-    }
+    let error = extract(
+        &fixture("tiny-aes128.zip"),
+        &taken,
+        Engine::Native,
+        None,
+        Existing::Refuse,
+        &[],
+    )
+    .unwrap_err();
+    assert!(!error.is::<PasswordNeeded>(), "{error:?}");
+    assert_eq!(listing(&taken), ["keep.txt"]);
     let run = zipper_command(&[
         "extract",
         fixture("tiny-aes128.zip").to_str().unwrap(),
@@ -560,25 +558,23 @@ fn a_wrong_zip_crypto_password_that_passes_the_check_byte_is_stopped_by_the_crc(
             .find(|candidate| zip_crypto_reference_check(candidate, header) == check)
             .expect("one password in 256 passes the check byte");
         let only_that_entry = [file.name.clone()];
-        for engine in ENGINES {
-            let work = tempfile::tempdir().unwrap();
-            let error = extract(
-                &fixture(name),
-                &work.path().join("out"),
-                engine,
-                Some(&lucky),
-                Existing::Refuse,
-                &only_that_entry,
-            )
-            .unwrap_err();
-            let error = format!("{error:?}");
-            assert!(error.contains("password is wrong"), "{name}: {error}");
-            assert!(
-                error.contains("CRC") || error.contains("invalid") || error.contains("size"),
-                "{name}: the check byte passed, so the data check must refuse it: {error}"
-            );
-            assert_eq!(listing(work.path()), Vec::<String>::new(), "{name}");
-        }
+        let work = tempfile::tempdir().unwrap();
+        let error = extract(
+            &fixture(name),
+            &work.path().join("out"),
+            Engine::Native,
+            Some(&lucky),
+            Existing::Refuse,
+            &only_that_entry,
+        )
+        .unwrap_err();
+        let error = format!("{error:?}");
+        assert!(error.contains("password is wrong"), "{name}: {error}");
+        assert!(
+            error.contains("CRC") || error.contains("invalid") || error.contains("size"),
+            "{name}: the check byte passed, so the data check must refuse it: {error}"
+        );
+        assert_eq!(listing(work.path()), Vec::<String>::new(), "{name}");
     }
 }
 
@@ -645,18 +641,16 @@ fn ae2_entries_ignore_the_crc_field_and_ae1_entries_check_it() {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join("case.zip");
         fs::write(&archive, &patched).unwrap();
-        for engine in ENGINES {
-            let output = work.path().join(format!("{engine:?}"));
-            let result = extract(
-                &archive,
-                &output,
-                engine,
-                Some(PASSWORD),
-                Existing::Refuse,
-                &[],
-            );
-            assert_eq!(result.is_ok(), expect_ok, "{name}: {engine:?}: {result:?}");
-        }
+        let output = work.path().join("native");
+        let result = extract(
+            &archive,
+            &output,
+            Engine::Native,
+            Some(PASSWORD),
+            Existing::Refuse,
+            &[],
+        );
+        assert_eq!(result.is_ok(), expect_ok, "{name}: {result:?}");
     }
 }
 
@@ -750,23 +744,21 @@ fn the_entry_builder_reproduces_a_working_encrypted_entry() {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join("case.zip");
         fs::write(&archive, build(&[tiny_entry(name)])).unwrap();
-        for engine in ENGINES {
-            let output = work.path().join(format!("{engine:?}"));
-            extract(
-                &archive,
-                &output,
-                engine,
-                Some(PASSWORD),
-                Existing::Refuse,
-                &[],
-            )
-            .unwrap();
-            assert_eq!(
-                fs::read(output.join(TINY_NAME)).unwrap(),
-                TINY_TEXT,
-                "{name}"
-            );
-        }
+        let output = work.path().join("native");
+        extract(
+            &archive,
+            &output,
+            Engine::Native,
+            Some(PASSWORD),
+            Existing::Refuse,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(output.join(TINY_NAME)).unwrap(),
+            TINY_TEXT,
+            "{name}"
+        );
     }
 }
 
@@ -946,45 +938,43 @@ fn selections_that_leave_out_every_encrypted_entry_need_no_password() {
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("mixed.zip");
     fs::write(&archive, build(&[plain, tiny_entry("tiny-aes192.zip")])).unwrap();
-    for engine in ENGINES {
-        let output = work.path().join(format!("{engine:?}"));
-        extract(
-            &archive,
-            &output,
-            engine,
-            None,
-            Existing::Refuse,
-            &["plain.txt".to_owned()],
-        )
-        .unwrap();
-        assert_eq!(listing(&output), ["plain.txt"]);
-        let all = work.path().join(format!("{engine:?}-all"));
-        let files_reported = std::sync::atomic::AtomicU64::new(0);
-        let count = |progress: zipper::Progress| {
-            files_reported.fetch_max(progress.files_done, std::sync::atomic::Ordering::Relaxed);
-        };
-        let error = zipper::extract_archive(
-            &archive,
-            &all,
-            ExtractOptions {
-                engine,
-                threads: Some(1),
-                control: zipper::Control {
-                    progress: Some(&count),
-                    cancel: None,
-                },
-                ..Default::default()
+    let output = work.path().join("native");
+    extract(
+        &archive,
+        &output,
+        Engine::Native,
+        None,
+        Existing::Refuse,
+        &["plain.txt".to_owned()],
+    )
+    .unwrap();
+    assert_eq!(listing(&output), ["plain.txt"]);
+    let all = work.path().join("native-all");
+    let files_reported = std::sync::atomic::AtomicU64::new(0);
+    let count = |progress: zipper::Progress| {
+        files_reported.fetch_max(progress.files_done, std::sync::atomic::Ordering::Relaxed);
+    };
+    let error = zipper::extract_archive(
+        &archive,
+        &all,
+        ExtractOptions {
+            engine: Engine::Native,
+            threads: Some(1),
+            control: zipper::Control {
+                progress: Some(&count),
+                cancel: None,
             },
-        )
-        .unwrap_err();
-        assert!(error.is::<PasswordNeeded>());
-        assert!(!all.exists());
-        assert_eq!(
-            files_reported.into_inner(),
-            0,
-            "{engine:?} wrote the plain entry before it asked for a password"
-        );
-    }
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
+    assert!(error.is::<PasswordNeeded>());
+    assert!(!all.exists());
+    assert_eq!(
+        files_reported.into_inner(),
+        0,
+        "native wrote the plain entry before it asked for a password"
+    );
 }
 
 #[cfg(unix)]

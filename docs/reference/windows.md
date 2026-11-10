@@ -24,7 +24,7 @@ Get-FileHash .\zipper-0.1.0-alpha.1-windows-x86_64.zip -Algorithm SHA256
 .\zipper.exe test files.zip
 .\zipper.exe extract files.zip --output .\unzipped
 .\zipper.exe extract source.tar.gz --output .\source
-.\zipper.exe --zip-engine native-fast --threads 4 extract files.zip --output .\unzipped
+.\zipper.exe --zip-engine native --threads 4 extract files.zip --output .\unzipped
 ```
 
 Extraction needs a new destination folder whose parent already exists, or
@@ -45,7 +45,7 @@ $env:ZIPPER_7Z = 'C:\Program Files\7-Zip\7z.exe'
 
 ## What this release supports
 
-This list describes the published early release. The current source tree no longer creates or reads `.zipper` archives, and it reads tar and 7z in process.
+This list describes the published early release. The current source tree no longer creates or reads `.zipper` archives or has the `native-fast` engine, and it reads tar and 7z in process.
 
 
 - Native archives preserve regular-file bytes and directories with UTF-8 paths.
@@ -80,8 +80,8 @@ The measurements below come from source builds, not from the downloadable alpha.
 The alpha asset has not been rebuilt as part of these experiments.
 
 - [Preliminary Windows extraction and memory measurements](https://github.com/marlboro-red/zipper/blob/main/benchmarks/extraction-matrix/README.md)
-  found a whole-buffer extraction regression. The regression prompted a
-  conservative shared-buffer default.
+  found a whole-buffer extraction regression in the `native-fast` engine, which
+  the current source tree no longer has.
 - A [write-size experiment](https://github.com/marlboro-red/zipper/blob/main/benchmarks/native-zip/windows-write-size/README.md)
-  then removed most of that penalty. It limits buffered output writes to 256 KiB.
-  The default memory budget is unchanged.
+  then removed most of that penalty with 256 KiB output writes. The streaming
+  reader's writer thread still writes in 256 KiB slices.

@@ -5,14 +5,14 @@ The default engine, `--zip-engine auto`, decides from the file's leading bytes a
 
 A ZIP the reader rejects is never handed to 7-Zip. The reader checks entries in order and stops at the first problem. An unsupported entry can therefore hide an unsafe one, and 7-Zip extracts some archives the reader refuses, such as names that collide on the filesystem. When the reader lacks a feature, such as PKWARE strong encryption or another compression method, the error names `--zip-engine backend`. Passing that flag is the user's decision.
 
-`--zip-engine native` and `--zip-engine native-fast` select the reader explicitly. `--zip-engine backend` sends every archive to 7-Zip. Whenever 7-Zip extracts, under either engine, it anchors an absolute symlink target inside its output directory. Zipper renames that directory into place, so such a link can dangle outside the destination.
+`--zip-engine native` selects the reader explicitly. `--zip-engine backend` sends every archive to 7-Zip. Whenever 7-Zip extracts, under either engine, it anchors an absolute symlink target inside its output directory. Zipper renames that directory into place, so such a link can dangle outside the destination.
 The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 
 ## Supported archives
 
 The reader supports these features:
 
-- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. XZ and LZMA decode with Zipper's own decoder in `src/lzma.rs`, the readers [tar](tar-reader.md#supported-archives) uses. An LZMA entry may end with an end marker or without one, and as in liblzma, `lc` plus `lp` above 4 is refused. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. `native-fast` buffers only Deflate entries.
+- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. XZ and LZMA decode with Zipper's own decoder in `src/lzma.rs`, the readers [tar](tar-reader.md#supported-archives) uses. An LZMA entry may end with an end marker or without one, and as in liblzma, `lc` plus `lp` above 4 is refused. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used.
 - Shrink (method 1) and Implode (method 6) entries, which PKZIP 1.x wrote. [Legacy methods](#legacy-methods) gives their rules.
 - XZ entries decode with Zipper's own xz reader, as [tar's xz](tar-reader.md#supported-archives) does. An entry holds exactly one xz stream, so stream padding or a second stream after it is refused.
 - Split sets, `name.z01` and on with `name.zip` last, as [ZIP split sets](#zip-split-sets) describes, and an archive that starts with the spanning signature, as Info-ZIP `zip -s` writes one that fits in one piece.
@@ -63,14 +63,14 @@ It never restores owners, access times, extended attributes, ACLs, file flags or
 
 ## Name normalization
 
-The native engines write each name with its stored bytes, as Info-ZIP `unzip`, Python and 7-Zip do. bsdtar on macOS rewrites names to Unicode NFD instead. APFS and NTFS ignore case, and APFS also ignores normalization, so two entries can name one file there:
+The native engine writes each name with its stored bytes, as Info-ZIP `unzip`, Python and 7-Zip do. bsdtar on macOS rewrites names to Unicode NFD instead. APFS and NTFS ignore case, and APFS also ignores normalization, so two entries can name one file there:
 
 - Two files that collide fail the extraction with an error naming the entry, and nothing is published.
 - Two directories that collide merge into one, as in `unzip` and Python. The merged directory takes the spelling, mode and time of the first entry in the central directory.
 
 ## Symlinks
 
-The native engines are stricter with symlinks than Info-ZIP `unzip` and bsdtar, which create links to any target. A symlink entry is created only when all of these hold:
+The native engine is stricter with symlinks than Info-ZIP `unzip` and bsdtar, which create links to any target. A symlink entry is created only when all of these hold:
 
 - The target is a relative UTF-8 path of at most 4,096 bytes, with no NUL byte and, on Windows, no backslash or drive letter.
 - Every `..` in the target comes before its first name, as in `../../shared/lib`.
@@ -113,8 +113,6 @@ Building and using them leaves copies on the worker's stack, so after key setup 
 The command line holds the password in a buffer that is zeroed on exit. A typed password is read from the terminal one byte at a time, into a buffer that never grows. A password given with `--password` stays in the process arguments, where other users can see it and Zipper cannot clear it, and argument parsing may leave copies in freed memory. Errors and progress reports never contain the password, and `--password` takes values that start with a hyphen, so they never reach a usage error.
 
 The header fields of an entry are not covered by the AES code. Suppose someone changes the method of an AE-2 entry to one whose output has the same size, such as stored instead of Deflate when the two sizes match. The entry then decodes without error to the wrong bytes, as in 7-Zip. AE-1 and ZipCrypto entries catch it with the CRC.
-
-`native-fast` streams encrypted entries instead of buffering them.
 
 `tests/encrypted_zip.rs` extracts archives from 7-Zip and Info-ZIP with each scheme and several methods, and compares them with the tree `7zz x` gives. It flips every byte of an encrypted entry, the CRC and the code, and checks that each run fails with the destination unchanged and no staging folder left.
 
@@ -170,7 +168,7 @@ The manifest also records each path's exact modification time where `unzip` and 
 
 `scripts/make_zip_corpus.py` extracts each archive with Python `zipfile`, Info-ZIP `unzip` 6.0, bsdtar and 7-Zip, and records in `manifest.tsv` the tree that at least three of them produce identically. `corpus.json` names any reader that disagreed. Python decodes the non-ASCII names in the Info-ZIP and `ditto` archives as CP437, because those writers store UTF-8 names without the UTF-8 flag, so it dissents on those 9 archives. No reference reader but 7-Zip reads a split set, and Info-ZIP's `zip -s 0` join wrote a truncated archive on macOS. So the manifest of the split set records the tree 7-Zip extracts only where it equals the source tree.
 
-`tests/zip_corpus.rs` requires both native engines to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on 24 of the 26 archives. They disagree on the mode of Info-ZIP's piped input, and neither reads the split set. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Add `--only` and archive names to rebuild those alone and keep the rest. The stub is generated bytes that start with `MZ` and hold no ZIP or 7z signature, because a real stub such as `unzipsfx` may not be redistributed. The readers open a self-extractor under an `.exe` name, because 7-Zip opens a file named `.zip` only from its first byte. There `unzip` exit status 1, a warning about the stub, counts as success. Java `jar` output is missing because no JDK was installed.
+`tests/zip_corpus.rs` requires the native engine to reproduce every manifest exactly, on every operating system in CI. On Unix it also compares permission bits where `unzip` and bsdtar agree, which they do on 24 of the 26 archives. They disagree on the mode of Info-ZIP's piped input, and neither reads the split set. The modes were recorded under umask `022`, and the test masks them with the current umask. Python restores no modes and 7-Zip skips directory modes, so neither votes on modes. Regenerate the corpus on macOS with `python3 -I scripts/make_zip_corpus.py`. Add `--only` and archive names to rebuild those alone and keep the rest. The stub is generated bytes that start with `MZ` and hold no ZIP or 7z signature, because a real stub such as `unzipsfx` may not be redistributed. The readers open a self-extractor under an `.exe` name, because 7-Zip opens a file named `.zip` only from its first byte. There `unzip` exit status 1, a warning about the stub, counts as success. Java `jar` output is missing because no JDK was installed.
 
 The [real-world comparison](../../benchmarks/realworld/README.md) also extracted 94 ZIP archives from PyPI, Maven, Go and GitHub with Zipper and default bsdtar. All matched, along with the 154 tar archives in the same set.
 
@@ -297,43 +295,15 @@ These options work the same way in every reader. [Usage](../usage.md#extract-int
 - `strip`, or `--strip-prefix` and `--strip-components`, places a folder's contents at the destination root, as [usage](../usage.md#extract-a-folder-at-the-output-root) describes.
 - `metadata: Metadata::ContentOnly`, or `--content-only`, writes contents and the execute bit only, as [usage](../usage.md#extract-contents-only) describes.
 
-## Engines
+## Streaming
 
-### `native`
-
-`native` streams every entry. Each worker reads compressed input in 64 KiB slices and decodes Deflate with zlib-rs into a 192 KiB output slice, both carved from one 256 KiB buffer.
+The reader streams every entry. Each worker reads compressed input in 64 KiB slices and decodes Deflate with zlib-rs into a 192 KiB output slice, both carved from one 256 KiB buffer.
 Streaming buffers scale with workers, not expanded file size.
-
-### `native-fast`
-
-`native-fast` adds a libdeflate buffer decoder.
-A shared budget covers live compressed and expanded entry buffers across workers.
-
-| Platform | Default buffer budget |
-| --- | --- |
-| ARM64 macOS | 128 MiB |
-| Other platforms | 64 MiB |
-
-`--zip-buffer-mib N` overrides the budget.
-`--zip-buffer-mib 0` forces streaming.
-Entries that cannot reserve space immediately stream through zlib-rs.
-
-For extraction, an entry also streams when both of these hold:
-
-- Its expanded size is at least 16 MiB.
-- Its compressed size is at most 1/128 of its expanded size.
-
-On the measured highly compressible workloads, streaming these entries is faster and uses much less memory.
-Integrity-only selection is unchanged.
-The [decoder-selection measurements](../../benchmarks/native-zip/decoder-selection/README.md) record the evidence.
-The [shared-budget measurements](../../benchmarks/native-zip/shared-budget/README.md) record the budget evidence.
 
 ## Memory model
 
 Parsed metadata is shared across workers.
-The `native-fast` budget is not a peak RSS cap.
-Metadata, worker state, the archive cache, and allocator-retained memory are additional to it.
-A streamed entry with a writer thread also holds five 1 MiB write buffers, outside the budget.
+A streamed entry with a writer thread also holds five 1 MiB write buffers.
 An XZ or LZMA entry's dictionary can use as much memory as the entry's size. Before starting one, a worker takes that size, at most 2 GiB, from a 2 GiB budget that all workers share. A PPMd entry takes 256 MiB. So all XZ, LZMA and PPMd decoders together use about 2 GiB at most, plus one entry larger than that. A worker waits at most one second for this memory. When the budget stays short, it records the entry and moves on, and the extraction decodes the recorded entries in another pass once the current one ends. Each pass starts with the whole budget free, so it always decodes at least one entry. A worker that waited without a limit, as the 7z reader's workers do, could hang a progress callback that runs Rayon work. Without any wait, a PPMd archive on a machine with more than 8 threads took 1.3 times as long. The [patience measurements](../../benchmarks/native-zip/decoder-memory-patience/README.md) record the evidence. An LZMA dictionary larger than its entry is cut to the entry's size, which decodes the same bytes.
 A Deflate64 entry runs one decoder. It gets the last compressed byte only after the rest. A decoder that has already finished reads nothing more, so a stream with bytes after its end leaves that byte unread and is refused.
 
@@ -362,24 +332,10 @@ A streamed entry of at least 16 MiB gets a writer thread when the pool has more 
 | Other platforms | 8 KiB |
 
 On Windows, moving seeks reset the read-ahead to 8 KiB.
-The growth adds up to 248 KiB per active file reader outside the entry-buffer budget.
+The growth adds up to 248 KiB per active file reader.
 The [platform-specific measurements](../../benchmarks/native-zip/adaptive-input/README.md) record the evidence.
 
 ## Output write size
 
-On Windows, buffered output is written in 256 KiB slices.
+On Windows, a writer thread writes its 1 MiB buffers in 256 KiB slices.
 The [large-entry measurements](../../benchmarks/native-zip/windows-write-size/README.md) show why.
-
-## Archive cache
-
-For `native-fast test` and Linux `native-fast` extraction, Zipper caches archives up to 8 MiB once.
-Independent read cursors share the cached bytes.
-Larger archives use the file reader.
-The cache stays disabled for extraction on other platforms.
-
-The 8 MiB limit covers retained archive bytes, not total peak RAM.
-Loading, conversion, metadata, and decoder buffers add memory.
-
-On the measured Linux runner, the cache improved grouped and flat tiny-file extraction by 5.9× and 2.0× at four workers.
-The [matched Linux comparisons](../../benchmarks/native-zip/linux-cache/README.md) record the evidence.
-The [threefold-speed target investigation and verification results](../../benchmarks/native-zip/threefold/README.md) cover related work.

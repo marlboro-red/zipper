@@ -19,10 +19,6 @@ struct Cli {
     /// Reader for ZIP, tar and other foreign archives. Native readers restore files, directories, modes, times and safe links.
     #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Auto)]
     zip_engine: ZipEngine,
-    /// Shared native-fast ZIP entry-buffer MiB (128 on ARM64 macOS, 64 elsewhere; 0 streams).
-    /// Metadata, worker state and verification archive cache are additional.
-    #[arg(long, global = true, value_parser = clap::value_parser!(u32).range(0..=4096))]
-    zip_buffer_mib: Option<u32>,
     /// Password for encrypted ZIP entries and 7z archives in extract and test, and for a 7z header in list.
     /// Other users can see it in the process list. Without it, Zipper asks on Unix when a selected
     /// entry or a 7z header is encrypted and standard input is a terminal, and fails otherwise.
@@ -44,8 +40,6 @@ enum ZipEngine {
     /// 7-Zip for every archive.
     Backend,
     Native,
-    /// Native ZIP with a shared entry-buffer budget and streaming fallback.
-    NativeFast,
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ExistingArg {
@@ -141,7 +135,6 @@ impl From<ZipEngine> for zipper::Engine {
             ZipEngine::Auto => zipper::Engine::Auto,
             ZipEngine::Backend => zipper::Engine::Backend,
             ZipEngine::Native => zipper::Engine::Native,
-            ZipEngine::NativeFast => zipper::Engine::NativeFast,
         }
     }
 }
@@ -806,17 +799,6 @@ fn run() -> Result<()> {
             .num_threads(n)
             .build_global()?;
     }
-    anyhow::ensure!(
-        cli.zip_buffer_mib.is_none() || cli.zip_engine == ZipEngine::NativeFast,
-        "--zip-buffer-mib requires --zip-engine native-fast"
-    );
-    let buffer_bytes = cli
-        .zip_buffer_mib
-        .map(|mib| {
-            usize::try_from(u64::from(mib) * 1024 * 1024)
-                .map_err(|_| anyhow::anyhow!("ZIP buffer budget exceeds platform address space"))
-        })
-        .transpose()?;
     match cli.command {
         Command::Duplicates { inputs, summary } => {
             anyhow::ensure!(
@@ -906,7 +888,6 @@ fn run() -> Result<()> {
                         max_output_bytes: max_extracted_bytes,
                         threads: cli.threads,
                         engine: cli.zip_engine.into(),
-                        zip_buffer_bytes: buffer_bytes,
                         control: zipper::Control {
                             progress: None,
                             cancel: cancel_on_signal(),
@@ -951,7 +932,7 @@ fn run() -> Result<()> {
                     _ if password.is_some() => anyhow::bail!(
                         "list reads no encrypted data outside a 7z header, so it takes no --password"
                     ),
-                    Reader::Zip { .. } => print(zipper::native_zip::list(&archive)?),
+                    Reader::Zip => print(zipper::native_zip::list(&archive)?),
                     Reader::Tar => print(zipper::native_tar::read_archive(
                         &archive,
                         None,
@@ -1097,19 +1078,17 @@ fn run() -> Result<()> {
             zipper::read_volumes(&archive, || {
                 let reader = zipper::choose_reader(cli.zip_engine.into(), &archive)?;
                 anyhow::ensure!(
-                    password.is_none() || matches!(reader, Reader::Zip { .. } | Reader::SevenZip),
+                    password.is_none() || matches!(reader, Reader::Zip | Reader::SevenZip),
                     "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
                     archive.display()
                 );
                 match reader {
-                    Reader::Zip { fast } => report(with_password(password, |password| {
+                    Reader::Zip => report(with_password(password, |password| {
                         zipper::native_zip::read_archive_with_options(
                             &archive,
                             None,
                             zipper::native_zip::ReadOptions {
-                                fast,
                                 threads: cli.threads,
-                                buffer_bytes,
                                 max_output_bytes: None,
                                 password,
                                 ..Default::default()

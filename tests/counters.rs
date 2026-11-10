@@ -1,4 +1,4 @@
-//! With the `counters` feature, one extraction with each native engine
+//! With the `counters` feature, one native ZIP extraction
 //! reports exactly the files, directories and bytes the archive holds, and on
 //! Unix exactly its metadata calls, and a SquashFS extraction reads each
 //! fragment block once, whatever order its files take turns between them.
@@ -11,8 +11,6 @@ use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 use zipper::counters::{Counter, take};
 
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-type Reader = fn(&std::path::Path, Option<&std::path::Path>) -> anyhow::Result<Vec<zipper::Entry>>;
 
 #[test]
 fn one_extraction_counts_what_the_archive_holds() {
@@ -48,24 +46,19 @@ fn one_extraction_counts_what_the_archive_holds() {
     writer.finish().unwrap();
     let size = std::fs::metadata(&archive).unwrap().len();
 
-    for (engine, read) in [
-        ("native", zipper::native_zip::read_archive as Reader),
-        ("native-fast", zipper::native_zip::read_archive_fast),
-    ] {
-        take();
-        let destination = work.path().join(engine);
-        read(&archive, Some(&destination)).unwrap();
-        let counts: HashMap<Counter, u64> = take().into_iter().collect();
-        assert_eq!(counts[&Counter::FilesCreated], 6, "{engine}");
-        assert_eq!(counts[&Counter::DirectoryCreateCalls], 2, "{engine}");
-        assert_eq!(counts[&Counter::SymlinksCreated], 0, "{engine}");
-        assert_eq!(counts[&Counter::OutputBytesWritten], payload, "{engine}");
-        assert!(counts[&Counter::OutputWrites] >= 6, "{engine}");
-        assert!(counts[&Counter::ArchiveBytesRead] >= size / 2, "{engine}");
-        assert!(counts[&Counter::DecodeNanos] > 0, "{engine}");
-        #[cfg(unix)]
-        assert_eq!(counts[&Counter::MetadataCalls], 6 + 1 + 1, "{engine}");
-    }
+    take();
+    let destination = work.path().join("out");
+    zipper::native_zip::read_archive(&archive, Some(&destination)).unwrap();
+    let counts: HashMap<Counter, u64> = take().into_iter().collect();
+    assert_eq!(counts[&Counter::FilesCreated], 6);
+    assert_eq!(counts[&Counter::DirectoryCreateCalls], 2);
+    assert_eq!(counts[&Counter::SymlinksCreated], 0);
+    assert_eq!(counts[&Counter::OutputBytesWritten], payload);
+    assert!(counts[&Counter::OutputWrites] >= 6);
+    assert!(counts[&Counter::ArchiveBytesRead] >= size / 2);
+    assert!(counts[&Counter::DecodeNanos] > 0);
+    #[cfg(unix)]
+    assert_eq!(counts[&Counter::MetadataCalls], 6 + 1 + 1);
 }
 
 #[test]

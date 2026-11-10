@@ -101,11 +101,7 @@ fn check(
 #[test]
 fn every_corpus_archive_strips_to_its_manifest_without_the_leading_folders() {
     let mut checked = 0;
-    for (folder, engines) in [
-        ("zip-corpus", &[Engine::Native, Engine::NativeFast][..]),
-        ("tar-corpus", &[Engine::Native]),
-        ("7z-corpus", &[Engine::Native]),
-    ] {
+    for folder in ["zip-corpus", "tar-corpus", "7z-corpus"] {
         let corpus = data(folder);
         for (name, tree) in corpus::expected(&corpus) {
             let archive = archive_file(&corpus, &name);
@@ -114,24 +110,34 @@ fn every_corpus_archive_strips_to_its_manifest_without_the_leading_folders() {
                 .filter(|(_, value)| value.is_directory())
                 .map(|(path, _)| path)
                 .collect();
-            for &engine in engines {
-                for count in 1..=3 {
-                    let expected = stripped(&tree, |_| Some(count)).filter(|tree| !tree.is_empty());
-                    let label = format!("{name} {engine:?} less {count}");
-                    check(&archive, engine, Strip::Components(count), expected, &label);
-                    checked += 1;
-                }
-                for prefix in &folders {
-                    let prefix_parts = segments(prefix);
-                    let expected = stripped(&tree, |parts| {
-                        parts
-                            .starts_with(&prefix_parts)
-                            .then_some(prefix_parts.len())
-                    });
-                    let label = format!("{name} {engine:?} under {prefix}");
-                    check(&archive, engine, Strip::Prefix(prefix), expected, &label);
-                    checked += 1;
-                }
+            for count in 1..=3 {
+                let expected = stripped(&tree, |_| Some(count)).filter(|tree| !tree.is_empty());
+                let label = format!("{name} less {count}");
+                check(
+                    &archive,
+                    Engine::Native,
+                    Strip::Components(count),
+                    expected,
+                    &label,
+                );
+                checked += 1;
+            }
+            for prefix in &folders {
+                let prefix_parts = segments(prefix);
+                let expected = stripped(&tree, |parts| {
+                    parts
+                        .starts_with(&prefix_parts)
+                        .then_some(prefix_parts.len())
+                });
+                let label = format!("{name} under {prefix}");
+                check(
+                    &archive,
+                    Engine::Native,
+                    Strip::Prefix(prefix),
+                    expected,
+                    &label,
+                );
+                checked += 1;
             }
         }
     }

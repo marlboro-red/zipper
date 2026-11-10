@@ -123,9 +123,8 @@ def main():
         commands['tar-native'] = [str(zipper), 'extract', str(plain), '-o', str(output)]
         commands['tar-gz-native'] = [str(zipper), 'extract', str(compressed), '-o', str(output)]
         for threads in sorted(set(args.threads)):
-            for mode in ['native', 'native-fast']:
-                commands[f'{mode}-{threads}'] = [str(zipper), '--zip-engine', mode,
-                    '--threads', str(threads), 'extract', str(archive), '-o', str(output)]
+            commands[f'native-{threads}'] = [str(zipper), '--zip-engine', 'native',
+                '--threads', str(threads), 'extract', str(archive), '-o', str(output)]
         for label, executable, version_args in [('7zip', args.sevenzip, ['i']), ('bsdtar', args.tar, ['--version'])]:
             if executable:
                 resolved = shutil.which(executable)

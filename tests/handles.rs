@@ -185,11 +185,6 @@ fn nothing_stays_open_after_any_extraction_returns() {
     let work = tempfile::tempdir().unwrap();
     let mut cases = vec![
         ("zip", data("zip-corpus/7zip-deflate.zip"), Engine::Native),
-        (
-            "zip fast",
-            data("zip-corpus/7zip-deflate.zip"),
-            Engine::NativeFast,
-        ),
         ("tar", data("parity/archives/tar.tar"), Engine::Native),
         ("tar.gz", data("parity/archives/tar.tar.gz"), Engine::Native),
         ("7z", data("parity/archives/7z.7z"), Engine::Native),

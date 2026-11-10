@@ -67,8 +67,6 @@ jobs:
             python scripts/compare_zip_readers.py "corpora/$layout.zip" "corpora/$layout" \
               --reader reference-native native "target/release/zipper$suffix" \
               --reader current-native native "candidate$suffix" \
-              --reader reference-fast native-fast "target/release/zipper$suffix" \
-              --reader current-fast native-fast "candidate$suffix" \
               --threads 4 --runs 7 > "results/$layout.json"
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

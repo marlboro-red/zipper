@@ -1,5 +1,5 @@
-//! Seeded mutation testing of the native ZIP readers on the reference corpus.
-//! Each case mutates one corpus archive and extracts it with both engines.
+//! Seeded mutation testing of the native ZIP reader on the reference corpus.
+//! Each case mutates one corpus archive, extracts it, then verifies it without extracting.
 //! A case passes when a reader rejects it cleanly, leaving nothing behind, or
 //! extracts it and verification agrees. Any panic fails.
 //!
@@ -13,12 +13,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     path::Path,
 };
-use zipper::{
-    Entry,
-    native_zip::{read_archive, read_archive_fast},
-};
-
-type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<Entry>>;
+use zipper::native_zip::read_archive;
 
 struct Rng(u64);
 
@@ -86,15 +81,15 @@ fn mutate(archive: &[u8], rng: &mut Rng) -> Vec<u8> {
     bytes
 }
 
-fn reader_accepts_cleanly(bytes: &[u8], read: Reader) -> bool {
+fn reader_accepts_cleanly(bytes: &[u8]) -> bool {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("case.zip");
     fs::write(&archive, bytes).unwrap();
     let parent = root.path().join("parent");
     fs::create_dir(&parent).unwrap();
     let destination = parent.join("out");
-    let extracted = read(&archive, Some(&destination));
-    let verified = read(&archive, None);
+    let extracted = read_archive(&archive, Some(&destination));
+    let verified = read_archive(&archive, None);
     common::make_tree_deletable(root.path());
     let left: Vec<_> = fs::read_dir(&parent)
         .unwrap()
@@ -159,21 +154,14 @@ fn mutated_corpus_archives_never_panic_or_leak_output() {
         let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
         let source = &archives[rng.below(archives.len())];
         let mutant = mutate(source, &mut rng);
-        for (engine, read) in [
-            ("native", read_archive as Reader),
-            ("native-fast", read_archive_fast as Reader),
-        ] {
-            match catch_unwind(AssertUnwindSafe(|| reader_accepts_cleanly(&mutant, read))) {
-                Ok(true) => accepted += 1,
-                Ok(false) => {}
-                Err(panic) => {
-                    eprintln!(
-                        "failing case: ZIPPER_FUZZ_SEED={seed} ZIPPER_FUZZ_CASES=1, engine {engine}"
-                    );
-                    resume_unwind(panic);
-                }
+        match catch_unwind(AssertUnwindSafe(|| reader_accepts_cleanly(&mutant))) {
+            Ok(true) => accepted += 1,
+            Ok(false) => {}
+            Err(panic) => {
+                eprintln!("failing case: ZIPPER_FUZZ_SEED={seed} ZIPPER_FUZZ_CASES=1");
+                resume_unwind(panic);
             }
         }
     }
-    eprintln!("{accepted} of {} extractions accepted a mutant", 2 * cases);
+    eprintln!("{accepted} of {cases} extractions accepted a mutant");
 }

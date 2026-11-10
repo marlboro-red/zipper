@@ -43,7 +43,6 @@ fn stored_deflated_zip64_and_cli_recover_exact_bytes() -> anyhow::Result<()> {
             ],
             method,
         )?;
-        zipper::native_zip::read_archive_fast(&input, None)?;
         let entries = zipper::native_zip::read_archive(&input, None)?;
         assert_eq!(entries.len(), 4);
         let out = temp.path().join(label);
@@ -116,9 +115,7 @@ fn many_tiny_entries_recover_and_failure_never_publishes() -> anyhow::Result<()>
             &path,
             None,
             zipper::native_zip::ReadOptions {
-                fast: false,
                 threads: Some(threads),
-                buffer_bytes: None,
                 max_output_bytes: None,
                 ..Default::default()
             },
@@ -138,22 +135,14 @@ fn many_tiny_entries_recover_and_failure_never_publishes() -> anyhow::Result<()>
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()?;
-        for fast in [false, true] {
-            let output = temp.path().join(format!("out-{threads}-{fast}"));
-            let entries = pool.install(|| {
-                if fast {
-                    zipper::native_zip::read_archive_fast(&path, Some(&output))
-                } else {
-                    zipper::native_zip::read_archive(&path, Some(&output))
-                }
-            })?;
-            assert_eq!(entries.len(), payloads.len());
-            for (i, data) in payloads.iter().enumerate() {
-                assert_eq!(
-                    fs::read(output.join(format!("group-{}/file-{i}", i % 7)))?,
-                    *data
-                );
-            }
+        let output = temp.path().join(format!("out-{threads}"));
+        let entries = pool.install(|| zipper::native_zip::read_archive(&path, Some(&output)))?;
+        assert_eq!(entries.len(), payloads.len());
+        for (i, data) in payloads.iter().enumerate() {
+            assert_eq!(
+                fs::read(output.join(format!("group-{}/file-{i}", i % 7)))?,
+                *data
+            );
         }
     }
     let mut damaged = fs::read(&path)?;
@@ -166,23 +155,15 @@ fn many_tiny_entries_recover_and_failure_never_publishes() -> anyhow::Result<()>
     damaged[central + 16] ^= 1;
     fs::write(&path, damaged)?;
     let pool = rayon::ThreadPoolBuilder::new().num_threads(10).build()?;
-    for fast in [false, true] {
-        let output = temp.path().join(format!("failed-{fast}"));
-        assert!(
-            pool.install(|| {
-                if fast {
-                    zipper::native_zip::read_archive_fast(&path, Some(&output))
-                } else {
-                    zipper::native_zip::read_archive(&path, Some(&output))
-                }
-            })
+    let output = temp.path().join("failed");
+    assert!(
+        pool.install(|| zipper::native_zip::read_archive(&path, Some(&output)))
             .is_err()
-        );
-        assert!(!output.exists());
-    }
+    );
+    assert!(!output.exists());
     assert_eq!(
         fs::read_dir(temp.path())?.count(),
-        5,
+        3,
         "a failed parallel extraction leaves no staging directory"
     );
     Ok(())
@@ -321,45 +302,7 @@ fn embedded_end_record_cannot_hide_real_entries() -> anyhow::Result<()> {
 }
 
 #[test]
-fn fast_zip_checks_crc_across_old_buffer_boundary() -> anyhow::Result<()> {
-    let temp = tempfile::tempdir()?;
-    let input = temp.path().join("fast.zip");
-    for size in [2 * 1024 * 1024 + 7, 64 * 1024 * 1024 + 1] {
-        let mut bytes = vec![b'A'; size];
-        bytes[size - 1] = b'Z';
-        archive(
-            &input,
-            &[("data", &bytes), ("zero", b"")],
-            CompressionMethod::Deflated,
-        )?;
-        let out = temp.path().join(format!("out-{size}"));
-        let result = Command::new(env!("CARGO_BIN_EXE_zipper"))
-            .args(["--threads", "2", "--zip-engine", "native-fast", "extract"])
-            .arg(&input)
-            .arg("-o")
-            .arg(&out)
-            .env("ZIPPER_7Z", "nonexistent-backend")
-            .output()?;
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        assert_eq!(fs::read(out.join("data"))?, bytes);
-        assert_eq!(fs::read(out.join("zero"))?, b"");
-        let mut damaged = fs::read(&input)?;
-        let at = damaged.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
-        damaged[at + 16] ^= 1;
-        fs::write(&input, damaged)?;
-        let failed = temp.path().join(format!("failed-{size}"));
-        assert!(zipper::native_zip::read_archive_fast(&input, Some(&failed)).is_err());
-        assert!(!failed.exists());
-    }
-    Ok(())
-}
-
-#[test]
-fn fast_zip_rejects_wrong_sizes_and_malformed_deflate() -> anyhow::Result<()> {
+fn zip_rejects_wrong_sizes_and_malformed_deflate() -> anyhow::Result<()> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("bad-deflate.zip");
     archive(
@@ -367,7 +310,7 @@ fn fast_zip_rejects_wrong_sizes_and_malformed_deflate() -> anyhow::Result<()> {
         &[("data", b"a repeated repeated repeated payload")],
         CompressionMethod::Deflated,
     )?;
-    zipper::native_zip::read_archive_fast(&path, None)?;
+    zipper::native_zip::read_archive(&path, None)?;
     let original = fs::read(&path)?;
     let central = original
         .windows(4)
@@ -378,7 +321,7 @@ fn fast_zip_rejects_wrong_sizes_and_malformed_deflate() -> anyhow::Result<()> {
         damaged[central + 24..central + 28].copy_from_slice(&size.to_le_bytes());
         fs::write(&path, damaged)?;
         let out = temp.path().join(format!("size-{size}"));
-        assert!(zipper::native_zip::read_archive_fast(&path, Some(&out)).is_err());
+        assert!(zipper::native_zip::read_archive(&path, Some(&out)).is_err());
         assert!(!out.exists());
     }
     fs::write(&path, &original)?;
@@ -388,14 +331,14 @@ fn fast_zip_rejects_wrong_sizes_and_malformed_deflate() -> anyhow::Result<()> {
     let mut damaged = original.clone();
     damaged[start] = RESERVED_DEFLATE_BLOCK;
     fs::write(&path, damaged)?;
-    assert!(zipper::native_zip::read_archive_fast(&path, None).is_err());
+    assert!(zipper::native_zip::read_archive(&path, None).is_err());
     let out = temp.path().join("malformed");
-    assert!(zipper::native_zip::read_archive_fast(&path, Some(&out)).is_err());
+    assert!(zipper::native_zip::read_archive(&path, Some(&out)).is_err());
     assert!(!out.exists());
     let mut short = original;
     short[central + 20..central + 24].copy_from_slice(&1u32.to_le_bytes());
     fs::write(&path, short)?;
-    assert!(zipper::native_zip::read_archive_fast(&path, None).is_err());
+    assert!(zipper::native_zip::read_archive(&path, None).is_err());
     Ok(())
 }
 
@@ -426,17 +369,10 @@ fn parallel_zip_failure_cleans_up_all_workers_outputs() -> anyhow::Result<()> {
         .0;
     damaged[at + 16] ^= 1;
     fs::write(&path, damaged)?;
-    for fast in [false, true] {
-        let out = temp.path().join("out");
-        let result = if fast {
-            zipper::native_zip::read_archive_fast(&path, Some(&out))
-        } else {
-            zipper::native_zip::read_archive(&path, Some(&out))
-        };
-        assert!(result.is_err());
-        assert!(!out.exists());
-        assert_eq!(fs::read_dir(temp.path())?.count(), 1);
-    }
+    let out = temp.path().join("out");
+    assert!(zipper::native_zip::read_archive(&path, Some(&out)).is_err());
+    assert!(!out.exists());
+    assert_eq!(fs::read_dir(temp.path())?.count(), 1);
     Ok(())
 }
 
@@ -453,74 +389,6 @@ fn windows_devices_and_aliases_are_rejected() -> anyhow::Result<()> {
 }
 
 #[test]
-fn shared_buffer_budget_streams_and_checks_crc_under_contention() -> anyhow::Result<()> {
-    let temp = tempfile::tempdir()?;
-    let input = temp.path().join("budget.zip");
-    let payload = vec![b'x'; 1024 * 1024];
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build()?;
-    archive(
-        &input,
-        &[("a", &payload), ("b", &payload), ("c", &payload)],
-        CompressionMethod::Deflated,
-    )?;
-    let original = fs::read(&input)?;
-    for buffer_bytes in [0, 1, 2 * 1024 * 1024, 8 * 1024 * 1024] {
-        let options = zipper::native_zip::ReadOptions {
-            fast: true,
-            threads: Some(4),
-            buffer_bytes: Some(buffer_bytes),
-            max_output_bytes: None,
-            ..Default::default()
-        };
-        fs::write(&input, &original)?;
-        let output = temp.path().join("out");
-        pool.install(|| {
-            zipper::native_zip::read_archive_with_options(&input, Some(&output), options)
-        })?;
-        for name in ["a", "b", "c"] {
-            assert_eq!(fs::read(output.join(name))?, payload);
-        }
-        fs::remove_dir_all(output)?;
-        let mut damaged = original.clone();
-        let at = damaged.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
-        damaged[at + 16] ^= 1;
-        fs::write(&input, damaged)?;
-        let failed = temp.path().join("failed");
-        assert!(
-            pool.install(|| zipper::native_zip::read_archive_with_options(
-                &input,
-                Some(&failed),
-                options
-            ))
-            .is_err()
-        );
-        assert!(!failed.exists());
-        assert_eq!(fs::read_dir(temp.path())?.count(), 1);
-    }
-    fs::write(&input, original)?;
-    let output = temp.path().join("cli");
-    let result = Command::new(env!("CARGO_BIN_EXE_zipper"))
-        .args([
-            "--zip-engine",
-            "native-fast",
-            "--zip-buffer-mib",
-            "0",
-            "extract",
-        ])
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .output()?;
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    assert_eq!(fs::read(output.join("a"))?, payload);
-    Ok(())
-}
-
-#[test]
 fn streaming_empty_entries_still_validate_crc_and_cleanup() -> anyhow::Result<()> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("empty.zip");
@@ -531,29 +399,23 @@ fn streaming_empty_entries_still_validate_crc_and_cleanup() -> anyhow::Result<()
             .windows(4)
             .position(|b| b == b"PK\x01\x02")
             .unwrap();
-        for fast in [false, true] {
-            let options = zipper::native_zip::ReadOptions {
-                fast,
-                threads: Some(1),
-                buffer_bytes: Some(0),
-                max_output_bytes: None,
-                ..Default::default()
-            };
-            fs::write(&path, &original)?;
-            let out = temp.path().join("out");
-            zipper::native_zip::read_archive_with_options(&path, Some(&out), options)?;
-            assert_eq!(fs::read(out.join("empty"))?, b"");
-            fs::remove_dir_all(&out)?;
-            let mut damaged = original.clone();
-            damaged[central + 16] ^= 1;
-            fs::write(&path, damaged)?;
-            assert!(zipper::native_zip::read_archive_with_options(&path, None, options).is_err());
-            assert!(
-                zipper::native_zip::read_archive_with_options(&path, Some(&out), options).is_err()
-            );
-            assert!(!out.exists());
-            assert_eq!(fs::read_dir(temp.path())?.count(), 1);
-        }
+        let options = zipper::native_zip::ReadOptions {
+            threads: Some(1),
+            max_output_bytes: None,
+            ..Default::default()
+        };
+        fs::write(&path, &original)?;
+        let out = temp.path().join("out");
+        zipper::native_zip::read_archive_with_options(&path, Some(&out), options)?;
+        assert_eq!(fs::read(out.join("empty"))?, b"");
+        fs::remove_dir_all(&out)?;
+        let mut damaged = original.clone();
+        damaged[central + 16] ^= 1;
+        fs::write(&path, damaged)?;
+        assert!(zipper::native_zip::read_archive_with_options(&path, None, options).is_err());
+        assert!(zipper::native_zip::read_archive_with_options(&path, Some(&out), options).is_err());
+        assert!(!out.exists());
+        assert_eq!(fs::read_dir(temp.path())?.count(), 1);
     }
     Ok(())
 }
@@ -573,14 +435,9 @@ fn large_entries_written_behind_decoding_match_and_fail_closed() -> anyhow::Resu
     for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
         let input = temp.path().join(format!("{method:?}.zip"));
         archive(&input, &[("big", &data)], method)?;
-        for (engine, read) in [
-            ("native", zipper::native_zip::read_archive as Reader),
-            ("native-fast", zipper::native_zip::read_archive_fast),
-        ] {
-            let out = temp.path().join(format!("{method:?}-{engine}"));
-            read(&input, Some(&out))?;
-            assert!(fs::read(out.join("big"))? == data, "{method:?} {engine}");
-        }
+        let out = temp.path().join(format!("{method:?}-native"));
+        zipper::native_zip::read_archive(&input, Some(&out))?;
+        assert!(fs::read(out.join("big"))? == data, "{method:?}");
         let original = fs::read(&input)?;
         let mut reader = zip::ZipArchive::new(fs::File::open(&input)?)?;
         let entry = reader.by_index_raw(0)?;
@@ -610,8 +467,6 @@ fn large_entries_written_behind_decoding_match_and_fail_closed() -> anyhow::Resu
     assert!(leftovers.is_empty(), "staging left behind: {leftovers:?}");
     Ok(())
 }
-
-type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<zipper::Entry>>;
 
 fn modified_seconds(path: &Path) -> i64 {
     fs::metadata(path)

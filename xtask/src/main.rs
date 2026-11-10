@@ -560,36 +560,37 @@ fn round_trip() -> Result<()> {
             "selected extraction wrote files outside tree/many"
         );
     }
-    for engine in ["native", "native-fast"] {
-        succeed(&["--zip-engine", engine, "test", "a.zip"])?;
-        for threads in ["1", "4"] {
-            let out = format!("{engine}-zip-t{threads}");
-            succeed(&[
-                "--zip-engine",
-                engine,
-                "--threads",
-                threads,
-                "extract",
-                "a.zip",
-                "-o",
-                &out,
-            ])?;
-            same_tree(&tree, &dir.join(&out).join("tree"))?;
-        }
+    succeed(&["--zip-engine", "native", "test", "a.zip"])?;
+    for threads in ["1", "4"] {
+        let out = format!("native-zip-t{threads}");
+        succeed(&[
+            "--zip-engine",
+            "native",
+            "--threads",
+            threads,
+            "extract",
+            "a.zip",
+            "-o",
+            &out,
+        ])?;
+        same_tree(&tree, &dir.join(&out).join("tree"))?;
     }
 
-    for (archive, engine) in [("a.zip", "native"), ("a.zip", "native-fast")] {
-        let bytes = fs::read(dir.join(archive))?;
-        let truncated = format!("truncated-{engine}-{archive}");
-        fs::write(dir.join(&truncated), &bytes[..bytes.len() / 2])?;
-        let out = format!("truncated-out-{engine}-{archive}");
-        let output = run(&["--zip-engine", engine, "extract", &truncated, "-o", &out])?;
-        ensure!(!output.status.success(), "truncated {archive} extracted");
-        ensure!(
-            !dir.join(&out).exists(),
-            "truncated {archive} left output behind"
-        );
-    }
+    let bytes = fs::read(dir.join("a.zip"))?;
+    fs::write(dir.join("truncated.zip"), &bytes[..bytes.len() / 2])?;
+    let output = run(&[
+        "--zip-engine",
+        "native",
+        "extract",
+        "truncated.zip",
+        "-o",
+        "truncated-out",
+    ])?;
+    ensure!(!output.status.success(), "truncated a.zip extracted");
+    ensure!(
+        !dir.join("truncated-out").exists(),
+        "truncated a.zip left output behind"
+    );
     Ok(())
 }
 
@@ -630,12 +631,7 @@ fn benchmark_smoke() -> Result<()> {
         "extraction_matrix.py exited with {status}"
     );
     let report = fs::read_to_string(report)?;
-    for needle in [
-        "\"native-1\"",
-        "\"native-fast-1\"",
-        "\"median_cpu_seconds\"",
-        "\"parity\"",
-    ] {
+    for needle in ["\"native-1\"", "\"median_cpu_seconds\"", "\"parity\""] {
         ensure!(report.contains(needle), "benchmark report lacks {needle}");
     }
     Ok(())

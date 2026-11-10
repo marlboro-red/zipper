@@ -191,7 +191,7 @@ fn info_zip_sets_extract_as_7zip_extracts_them() {
         let last = volumes.last().unwrap();
         assert_eq!(
             choose_reader(Engine::Auto, last).unwrap(),
-            Reader::Zip { fast: false },
+            Reader::Zip,
             "{stem}"
         );
         let ours = extracted_tree(last, 1);
@@ -556,7 +556,7 @@ fn a_volume_beside_a_whole_zip_is_never_joined_for_another_reader() {
         let last = folder.path().join("x.zip");
         assert_eq!(
             choose_reader(Engine::Auto, &last).unwrap(),
-            Reader::Zip { fast: false },
+            Reader::Zip,
             "{stem}"
         );
         let error = assert_refused(&last, &["x.z01"], stem);
@@ -596,10 +596,7 @@ fn other_readers_open_a_zip_with_volumes_alone_and_the_set_goes_to_the_zip_reade
     let mut bytes = fs::read(last).unwrap();
     bytes[..6].copy_from_slice(b"7z\xBC\xAF\x27\x1C");
     fs::write(last, bytes).unwrap();
-    assert_eq!(
-        choose_reader(Engine::Auto, last).unwrap(),
-        Reader::Zip { fast: false }
-    );
+    assert_eq!(choose_reader(Engine::Auto, last).unwrap(), Reader::Zip);
 }
 
 #[test]

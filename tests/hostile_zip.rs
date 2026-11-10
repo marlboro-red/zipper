@@ -1,10 +1,5 @@
 use std::{fs, path::Path};
-use zipper::{
-    Entry,
-    native_zip::{read_archive, read_archive_fast},
-};
-
-type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<Entry>>;
+use zipper::native_zip::read_archive;
 
 const STORED: u16 = 0;
 const DEFLATED: u16 = 8;
@@ -58,10 +53,10 @@ fn stored(name: &str, data: &[u8]) -> Raw {
 }
 
 fn deflated(name: &str, data: &[u8]) -> Raw {
-    let mut compressor = libdeflater::Compressor::new(libdeflater::CompressionLvl::default());
-    let mut payload = vec![0; compressor.deflate_compress_bound(data.len())];
-    let length = compressor.deflate_compress(data, &mut payload).unwrap();
-    payload.truncate(length);
+    let mut encoder =
+        flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut encoder, data).unwrap();
+    let payload = encoder.finish().unwrap();
     Raw {
         method: DEFLATED,
         payload,
@@ -193,30 +188,22 @@ fn leftovers(root: &Path) -> Vec<String> {
 }
 
 fn assert_rejected_without_leftovers(case: &str, entries: &[Raw]) {
-    for (reader, read) in [
-        ("native", read_archive as Reader),
-        ("native-fast", read_archive_fast as Reader),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip(&archive, entries);
-        fs::create_dir_all(root.path().join("outer/inner")).unwrap();
-        let destination = root.path().join("outer/inner/out");
-        let result = read(&archive, Some(&destination));
-        assert!(
-            result.is_err(),
-            "{case}: {reader} accepted a hostile archive"
-        );
-        assert_eq!(
-            leftovers(root.path()),
-            ["outer", "outer/inner"].map(|path| path.replace('/', std::path::MAIN_SEPARATOR_STR)),
-            "{case}: {reader} left output behind"
-        );
-        assert!(
-            read(&archive, None).is_err(),
-            "{case}: {reader} verification accepted a hostile archive"
-        );
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, entries);
+    fs::create_dir_all(root.path().join("outer/inner")).unwrap();
+    let destination = root.path().join("outer/inner/out");
+    let result = read_archive(&archive, Some(&destination));
+    assert!(result.is_err(), "{case}: native accepted a hostile archive");
+    assert_eq!(
+        leftovers(root.path()),
+        ["outer", "outer/inner"].map(|path| path.replace('/', std::path::MAIN_SEPARATOR_STR)),
+        "{case}: native left output behind"
+    );
+    assert!(
+        read_archive(&archive, None).is_err(),
+        "{case}: native verification accepted a hostile archive"
+    );
 }
 
 // SPEC(APPNOTE 4.5.3): a local ZIP64 field holds both sizes, original first.
@@ -428,21 +415,19 @@ fn data_descriptors_and_well_formed_records_still_extract() {
             ..deflated("unknown-sizes.txt", &text)
         },
     ];
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip(&archive, &entries);
-        let destination = root.path().join("out");
-        read(&archive, Some(&destination)).unwrap();
-        for entry in &entries {
-            let name = String::from_utf8(entry.name.clone()).unwrap();
-            let expected: &[u8] = if name == "empty.txt" { b"" } else { &text };
-            assert_eq!(
-                fs::read(destination.join(&name)).unwrap(),
-                expected,
-                "{name}"
-            );
-        }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, &entries);
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    for entry in &entries {
+        let name = String::from_utf8(entry.name.clone()).unwrap();
+        let expected: &[u8] = if name == "empty.txt" { b"" } else { &text };
+        assert_eq!(
+            fs::read(destination.join(&name)).unwrap(),
+            expected,
+            "{name}"
+        );
     }
 }
 
@@ -490,16 +475,14 @@ fn records_must_tile_the_archive_without_gaps() {
             },
         ],
     );
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip_with_tail(&archive, &[stored("a.txt", b"a")], &hidden_record);
-        assert!(
-            read(&archive, Some(&root.path().join("out"))).is_err(),
-            "record hidden before the central directory was accepted"
-        );
-        assert!(!root.path().join("out").exists());
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip_with_tail(&archive, &[stored("a.txt", b"a")], &hidden_record);
+    assert!(
+        read_archive(&archive, Some(&root.path().join("out"))).is_err(),
+        "record hidden before the central directory was accepted"
+    );
+    assert!(!root.path().join("out").exists());
 }
 
 #[test]
@@ -594,18 +577,16 @@ fn every_descriptor_form_extracts() {
             ..base.clone()
         })
         .collect();
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip(&archive, &entries);
-        let destination = root.path().join("out");
-        read(&archive, Some(&destination)).unwrap();
-        for index in 0..4 {
-            assert_eq!(
-                fs::read(destination.join(format!("form-{index}.txt"))).unwrap(),
-                text
-            );
-        }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, &entries);
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    for index in 0..4 {
+        assert_eq!(
+            fs::read(destination.join(format!("form-{index}.txt"))).unwrap(),
+            text
+        );
     }
 }
 
@@ -640,21 +621,19 @@ fn entries_hold_nothing_beyond_their_own_data() {
             ..stored("a.txt", &smuggled)
         }],
     );
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        let honest = Raw {
-            descriptor: true,
-            ..stored("stored.bin", &text)
-        };
-        write_zip(
-            &archive,
-            &[honest, stored("signature.bin", b"PK\x07\x08 is fine here")],
-        );
-        let destination = root.path().join("out");
-        read(&archive, Some(&destination)).unwrap();
-        assert_eq!(fs::read(destination.join("stored.bin")).unwrap(), text);
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    let honest = Raw {
+        descriptor: true,
+        ..stored("stored.bin", &text)
+    };
+    write_zip(
+        &archive,
+        &[honest, stored("signature.bin", b"PK\x07\x08 is fine here")],
+    );
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    assert_eq!(fs::read(destination.join("stored.bin")).unwrap(), text);
 }
 
 fn data_with_matching_descriptor(prefix: &[u8], wide: bool, rest: &[u8]) -> Vec<u8> {
@@ -697,18 +676,16 @@ fn stored_descriptor_signatures_are_judged_by_their_fields() {
     let mut nested = b"PK\x03\x04 inner header ".to_vec();
     nested.extend_from_slice(&data_with_matching_descriptor(b"inner data", false, b" more")[..]);
     nested.splice(0..0, b"outer prefix ".iter().copied());
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        let entry = Raw {
-            descriptor: true,
-            ..stored("nested.zip", &nested)
-        };
-        write_zip(&archive, &[entry]);
-        let destination = root.path().join("out");
-        read(&archive, Some(&destination)).unwrap();
-        assert_eq!(fs::read(destination.join("nested.zip")).unwrap(), nested);
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    let entry = Raw {
+        descriptor: true,
+        ..stored("nested.zip", &nested)
+    };
+    write_zip(&archive, &[entry]);
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    assert_eq!(fs::read(destination.join("nested.zip")).unwrap(), nested);
 }
 
 fn unicode_path_field(stored: &[u8], name: &str) -> Vec<u8> {
@@ -760,19 +737,17 @@ fn unicode_path_fields_cannot_rename_entries() {
         }],
     );
     let same = same_field;
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        let entry = Raw {
-            central_extra: same.clone(),
-            local_extra: same.clone(),
-            ..stored("a.txt", b"x")
-        };
-        write_zip(&archive, &[entry]);
-        let destination = root.path().join("out");
-        read(&archive, Some(&destination)).unwrap();
-        assert_eq!(fs::read(destination.join("a.txt")).unwrap(), b"x");
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    let entry = Raw {
+        central_extra: same.clone(),
+        local_extra: same.clone(),
+        ..stored("a.txt", b"x")
+    };
+    write_zip(&archive, &[entry]);
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    assert_eq!(fs::read(destination.join("a.txt")).unwrap(), b"x");
 }
 
 // EXTERNAL(APFS): names compare ignoring case and Unicode normalization.
@@ -789,16 +764,14 @@ fn names_that_collide_on_the_filesystem_fail_or_merge_in_archive_order() {
             [stored("\u{e9}.txt", b"1"), stored("e\u{301}.txt", b"2")],
         ),
     ] {
-        for read in [read_archive as Reader, read_archive_fast as Reader] {
-            let root = tempfile::tempdir().unwrap();
-            let archive = root.path().join("case.zip");
-            write_zip(&archive, &entries);
-            let error = read(&archive, Some(&root.path().join("out")))
-                .unwrap_err()
-                .to_string();
-            assert!(error.contains("collides"), "{case}: {error}");
-            assert_eq!(leftovers(root.path()), Vec::<String>::new());
-        }
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, &entries);
+        let error = read_archive(&archive, Some(&root.path().join("out")))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("collides"), "{case}: {error}");
+        assert_eq!(leftovers(root.path()), Vec::<String>::new());
     }
     // EXTERNAL(Info-ZIP unzip): a merged directory keeps the first entry's mode and time.
     let directory = |name: &str, mode: u32, time: u32| Raw {
@@ -812,40 +785,36 @@ fn names_that_collide_on_the_filesystem_fail_or_merge_in_archive_order() {
         directory("D/", 0o40750, 1_591_401_600),
         stored("d/x", b"1"),
     ];
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        for _ in 0..8 {
-            use std::os::unix::fs::{MetadataExt, PermissionsExt};
-            let root = tempfile::tempdir().unwrap();
-            let archive = root.path().join("case.zip");
-            write_zip(&archive, &entries);
-            let destination = root.path().join("out");
-            read(&archive, Some(&destination)).unwrap();
-            let metadata = fs::metadata(destination.join("d")).unwrap();
-            assert_eq!(metadata.permissions().mode() & 0o777, 0o700);
-            assert_eq!(metadata.mtime(), 631_152_000);
-        }
+    for _ in 0..8 {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, &entries);
+        let destination = root.path().join("out");
+        read_archive(&archive, Some(&destination)).unwrap();
+        let metadata = fs::metadata(destination.join("d")).unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o700);
+        assert_eq!(metadata.mtime(), 631_152_000);
     }
     // EXTERNAL(Info-ZIP unzip, Python zipfile): directories merge under the first spelling.
     for (first, second) in [("D", "d"), ("d", "D")] {
-        for read in [read_archive as Reader, read_archive_fast as Reader] {
-            for _ in 0..8 {
-                let root = tempfile::tempdir().unwrap();
-                let archive = root.path().join("case.zip");
-                write_zip(
-                    &archive,
-                    &[
-                        stored(&format!("{first}/x"), b"1"),
-                        stored(&format!("{second}/y"), b"2"),
-                    ],
-                );
-                let destination = root.path().join("out");
-                read(&archive, Some(&destination)).unwrap();
-                let names: Vec<_> = fs::read_dir(&destination)
-                    .unwrap()
-                    .map(|entry| entry.unwrap().file_name())
-                    .collect();
-                assert_eq!(names, [first]);
-            }
+        for _ in 0..8 {
+            let root = tempfile::tempdir().unwrap();
+            let archive = root.path().join("case.zip");
+            write_zip(
+                &archive,
+                &[
+                    stored(&format!("{first}/x"), b"1"),
+                    stored(&format!("{second}/y"), b"2"),
+                ],
+            );
+            let destination = root.path().join("out");
+            read_archive(&archive, Some(&destination)).unwrap();
+            let names: Vec<_> = fs::read_dir(&destination)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            assert_eq!(names, [first]);
         }
     }
 }
@@ -867,14 +836,12 @@ fn cp437_names_decode_and_may_carry_a_matching_unicode_path() {
             ..stored("x", b"x")
         },
     ] {
-        for read in [read_archive as Reader, read_archive_fast as Reader] {
-            let root = tempfile::tempdir().unwrap();
-            let archive = root.path().join("case.zip");
-            write_zip(&archive, std::slice::from_ref(&entry));
-            let destination = root.path().join("out");
-            read(&archive, Some(&destination)).unwrap();
-            assert_eq!(fs::read(destination.join("caf\u{e9}.txt")).unwrap(), b"x");
-        }
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("case.zip");
+        write_zip(&archive, std::slice::from_ref(&entry));
+        let destination = root.path().join("out");
+        read_archive(&archive, Some(&destination)).unwrap();
+        assert_eq!(fs::read(destination.join("caf\u{e9}.txt")).unwrap(), b"x");
     }
     let utf8 = "caf\u{e9}.txt".as_bytes();
     assert_rejected_without_leftovers(
@@ -929,27 +896,25 @@ fn output_that_cannot_fit_is_refused_before_writing() {
             ..stored(&format!("f{index}"), b"x")
         })
         .collect();
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip(&archive, &entries);
-        let destination = root.path().join("out");
-        let error = read(&archive, Some(&destination)).unwrap_err().to_string();
-        assert!(error.contains("free"), "{error}");
-        assert_eq!(leftovers(root.path()), Vec::<String>::new());
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, &entries);
+    let destination = root.path().join("out");
+    let error = read_archive(&archive, Some(&destination))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("free"), "{error}");
+    assert_eq!(leftovers(root.path()), Vec::<String>::new());
     let mut endless = deflated("endless.bin", &megabyte_of_zeros());
     endless.size = u32::MAX;
     endless.central_extra = [vec![1, 0, 8, 0], u64::MAX.to_le_bytes().to_vec()].concat();
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip(&archive, std::slice::from_ref(&endless));
-        let error = read(&archive, Some(&root.path().join("out")))
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("free"), "{error}");
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, std::slice::from_ref(&endless));
+    let error = read_archive(&archive, Some(&root.path().join("out")))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("free"), "{error}");
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("case.zip");
     write_zip(&archive, &[deflated("big.bin", &megabyte_of_zeros())]);
@@ -989,41 +954,37 @@ fn restored_modes_never_include_special_bits() {
         unix("sticky/", 0o041777, b""),
         unix("sticky/inside", 0o100644, b"y"),
     ];
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip(&archive, &entries);
-        let destination = root.path().join("out");
-        read(&archive, Some(&destination)).unwrap();
-        let mode = |path: &str| {
-            fs::metadata(destination.join(path))
-                .unwrap()
-                .permissions()
-                .mode()
-        };
-        assert_eq!(mode("setuid") & 0o7000, 0, "setuid bit restored");
-        assert_eq!(mode("sticky") & 0o7000, 0, "sticky bit restored");
-        assert_eq!(
-            mode("setuid") & 0o111,
-            0o111 & mode("sticky"),
-            "execute bits lost"
-        );
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, &entries);
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    let mode = |path: &str| {
+        fs::metadata(destination.join(path))
+            .unwrap()
+            .permissions()
+            .mode()
+    };
+    assert_eq!(mode("setuid") & 0o7000, 0, "setuid bit restored");
+    assert_eq!(mode("sticky") & 0o7000, 0, "sticky bit restored");
+    assert_eq!(
+        mode("setuid") & 0o111,
+        0o111 & mode("sticky"),
+        "execute bits lost"
+    );
 }
 
 #[test]
 fn an_entry_may_use_any_safe_root_name() {
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip(&archive, &[stored(".zipper-mode-probe", b"mine")]);
-        let destination = root.path().join("out");
-        read(&archive, Some(&destination)).unwrap();
-        assert_eq!(
-            fs::read(destination.join(".zipper-mode-probe")).unwrap(),
-            b"mine"
-        );
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, &[stored(".zipper-mode-probe", b"mine")]);
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    assert_eq!(
+        fs::read(destination.join(".zipper-mode-probe")).unwrap(),
+        b"mine"
+    );
 }
 
 fn dos(year: u32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> u32 {
@@ -1148,25 +1109,23 @@ fn symlinks_inside_the_destination_are_created_after_files() {
         symlink("links/chain", "file"),
         symlink("links/through", "dir/readme.txt"),
     ];
-    for read in [read_archive as Reader, read_archive_fast as Reader] {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.zip");
-        write_zip(&archive, &entries);
-        let destination = root.path().join("out");
-        read(&archive, Some(&destination)).unwrap();
-        let link = |name: &str| fs::read_link(destination.join(name)).unwrap();
-        assert_eq!(link("links/file"), Path::new("../text/readme.txt"));
-        assert_eq!(link("links/dir"), Path::new("../text"));
-        assert_eq!(fs::read(destination.join("links/chain")).unwrap(), b"hello");
-        assert_eq!(
-            fs::read(destination.join("links/through")).unwrap(),
-            b"hello"
-        );
-        assert_eq!(
-            fs::read(destination.join("links/dir/readme.txt")).unwrap(),
-            b"hello"
-        );
-    }
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("case.zip");
+    write_zip(&archive, &entries);
+    let destination = root.path().join("out");
+    read_archive(&archive, Some(&destination)).unwrap();
+    let link = |name: &str| fs::read_link(destination.join(name)).unwrap();
+    assert_eq!(link("links/file"), Path::new("../text/readme.txt"));
+    assert_eq!(link("links/dir"), Path::new("../text"));
+    assert_eq!(fs::read(destination.join("links/chain")).unwrap(), b"hello");
+    assert_eq!(
+        fs::read(destination.join("links/through")).unwrap(),
+        b"hello"
+    );
+    assert_eq!(
+        fs::read(destination.join("links/dir/readme.txt")).unwrap(),
+        b"hello"
+    );
 }
 
 #[cfg(windows)]
@@ -1232,21 +1191,16 @@ fn other_methods_decode_exactly_and_refuse_damage() {
         .flat_map(|n| (n % 251).to_le_bytes())
         .collect();
     for (method_name, method, payload) in method_payloads(&data) {
-        for (reader, read) in [
-            ("native", read_archive as Reader),
-            ("native-fast", read_archive_fast as Reader),
-        ] {
-            let root = tempfile::tempdir().unwrap();
-            let archive = root.path().join("ok.zip");
-            write_zip(&archive, &[compressed("f", &data, method, payload.clone())]);
-            read(&archive, Some(&root.path().join("out")))
-                .unwrap_or_else(|error| panic!("{method_name} {reader}: {error:#}"));
-            assert_eq!(
-                fs::read(root.path().join("out/f")).unwrap(),
-                data,
-                "{method_name}"
-            );
-        }
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("ok.zip");
+        write_zip(&archive, &[compressed("f", &data, method, payload.clone())]);
+        read_archive(&archive, Some(&root.path().join("out")))
+            .unwrap_or_else(|error| panic!("{method_name} native: {error:#}"));
+        assert_eq!(
+            fs::read(root.path().join("out/f")).unwrap(),
+            data,
+            "{method_name}"
+        );
         for cut in (0..payload.len()).step_by(payload.len().div_ceil(40)) {
             assert_rejected_without_leftovers(
                 &format!("{method_name} cut to {cut}"),
@@ -1364,18 +1318,13 @@ fn a_7zip_huffman_deflate64_entry_extracts_exactly_and_refuses_damage_at_its_end
     let fixture =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/zip-deflate64/7zip-huffman.zip");
     let data = huffman_fixture_contents();
-    for (reader, read) in [
-        ("native", read_archive as Reader),
-        ("native-fast", read_archive_fast as Reader),
-    ] {
-        let root = tempfile::tempdir().unwrap();
-        read(&fixture, Some(&root.path().join("out"))).unwrap();
-        assert_eq!(
-            fs::read(root.path().join("out/d64huffman.bin")).unwrap(),
-            data,
-            "{reader}"
-        );
-    }
+    let root = tempfile::tempdir().unwrap();
+    read_archive(&fixture, Some(&root.path().join("out"))).unwrap();
+    assert_eq!(
+        fs::read(root.path().join("out/d64huffman.bin")).unwrap(),
+        data,
+        "native"
+    );
     let archive = fs::read(&fixture).unwrap();
     let stream = first_local_entry_data(&archive);
     let length = stream.len();

@@ -38,12 +38,12 @@ fn refused_as(archive: &str, format: &str, engines: &[Engine]) {
 
 #[test]
 fn tar_and_gzip_are_refused_as_not_built() {
-    let every = [Engine::Auto, Engine::Native, Engine::NativeFast];
+    let every = [Engine::Auto, Engine::Native];
     refused_as("tar-corpus/gnutar-gnu-links.tar", "tar", &every);
     refused_as(
         "tar-corpus/gnutar-gnu-gzip.tar.gz",
         "gzip",
-        &[Engine::Native, Engine::NativeFast],
+        &[Engine::Native],
     );
 }
 

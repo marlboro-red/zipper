@@ -44,15 +44,13 @@ pub enum Engine {
     /// HFS+, APFS, ext, SquashFS 4.0, CramFS, FLV, SWF, executables, 7z and
     /// single compressed files, and native ZIP for unrecognized files.
     Native,
-    /// Like `Native`, with a shared ZIP entry-buffer budget.
-    NativeFast,
 }
 
 /// The reader an archive goes to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reader {
-    /// The native ZIP reader, with the shared entry-buffer path when `fast`.
-    Zip { fast: bool },
+    /// The native ZIP reader.
+    Zip,
     /// The native reader for plain, gzip, zstd and xz tar.
     Tar,
     /// The native 7z reader.
@@ -126,9 +124,7 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     Ok(match engine {
         Engine::Backend => Reader::Backend { format: None },
         _ if crate::volumes::has_zip_volumes(archive)? || starts_with_zip_signature(archive)? => {
-            Reader::Zip {
-                fast: engine == Engine::NativeFast,
-            }
+            Reader::Zip
         }
         #[cfg(feature = "more-formats")]
         Engine::Auto if native_dmg::sniff(archive)? && native_dmg::needs_backend(archive)? => {
@@ -230,13 +226,12 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
         #[cfg(feature = "more-formats")]
         _ if native_exe::sniff_object(archive)? => Reader::Exe,
-        Engine::Native => native_fallback(archive, false)?,
-        Engine::NativeFast => native_fallback(archive, true)?,
+        Engine::Native => native_fallback(archive)?,
         Engine::Auto => match compat::pinned_format(archive)? {
             Some(format) => Reader::Backend {
                 format: Some(format),
             },
-            None => native_fallback(archive, false)?,
+            None => native_fallback(archive)?,
         },
     })
 }
@@ -247,8 +242,8 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
     feature = "tar",
     feature = "more-formats"
 ))]
-fn native_fallback(_: &Path, fast: bool) -> Result<Reader> {
-    Ok(Reader::Zip { fast })
+fn native_fallback(_: &Path) -> Result<Reader> {
+    Ok(Reader::Zip)
 }
 
 #[cfg(not(all(
@@ -257,7 +252,7 @@ fn native_fallback(_: &Path, fast: bool) -> Result<Reader> {
     feature = "tar",
     feature = "more-formats"
 )))]
-fn native_fallback(archive: &Path, fast: bool) -> Result<Reader> {
+fn native_fallback(archive: &Path) -> Result<Reader> {
     const USTAR: (&[u8], usize) = (b"ustar", 257);
     let mut head = Vec::new();
     crate::volumes::open(archive)?
@@ -269,7 +264,7 @@ fn native_fallback(archive: &Path, fast: bool) -> Result<Reader> {
     if let Some(format) = compat::pinned_format(archive)? {
         bail!(NotBuilt(format.trim_start_matches("-t").to_owned()));
     }
-    Ok(Reader::Zip { fast })
+    Ok(Reader::Zip)
 }
 
 #[cfg(not(all(
@@ -280,7 +275,7 @@ fn native_fallback(archive: &Path, fast: bool) -> Result<Reader> {
 )))]
 fn format_name(reader: &Reader) -> String {
     match reader {
-        Reader::Zip { .. } => "zip".to_owned(),
+        Reader::Zip => "zip".to_owned(),
         Reader::SevenZip => "7z".to_owned(),
         Reader::Stream => "compressed".to_owned(),
         other => format!("{other:?}").to_lowercase(),
@@ -322,8 +317,6 @@ pub struct ExtractOptions<'a> {
     /// once, 1–64.
     pub threads: Option<usize>,
     pub engine: Engine,
-    /// Shared ZIP entry-buffer budget for `Engine::NativeFast`.
-    pub zip_buffer_bytes: Option<usize>,
     /// Extract every file into the destination itself, without its folders,
     /// as `7z e` does. Files that share a name follow `existing` in path
     /// order: `Refuse` fails, `Overwrite` keeps the last, `Skip` keeps the
@@ -530,10 +523,9 @@ pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Resu
 /// The error for an archive whose reader this build leaves out, naming its
 /// format, such as `"zip"`, `"tar"` or `"gzip"`. A library built without the
 /// `zip`, `7z`, `tar` or `more-formats` feature returns it, and writes
-/// nothing, for a ZIP or tar archive it does not read. `Engine::Native` and
-/// `Engine::NativeFast` also return it for every other signature Zipper
-/// recognizes but this build does not read, which `Engine::Auto` hands to
-/// 7-Zip.
+/// nothing, for a ZIP or tar archive it does not read. `Engine::Native` also
+/// returns it for every other signature Zipper recognizes but this build does
+/// not read, which `Engine::Auto` hands to 7-Zip.
 #[derive(Debug)]
 pub struct NotBuilt(pub String);
 
@@ -555,21 +547,19 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         options.password.is_none()
             || matches!(
                 reader,
-                Reader::Zip { .. } | Reader::SevenZip | Reader::Backend { .. }
+                Reader::Zip | Reader::SevenZip | Reader::Backend { .. }
             ),
         "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
         archive.display()
     );
     match reader {
         #[cfg(feature = "zip")]
-        Reader::Zip { fast } => {
+        Reader::Zip => {
             native_zip::read_archive_with_options(
                 archive,
                 Some(destination),
                 native_zip::ReadOptions {
-                    fast,
                     threads: options.threads,
-                    buffer_bytes: options.zip_buffer_bytes,
                     max_output_bytes: options.max_output_bytes,
                     existing: options.existing,
                     paths: options.paths,
@@ -711,7 +701,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
             )?;
         }
         #[cfg(not(feature = "zip"))]
-        Reader::Zip { .. } => bail!(NotBuilt(format_name(&reader))),
+        Reader::Zip => bail!(NotBuilt(format_name(&reader))),
         #[cfg(not(feature = "7z"))]
         Reader::SevenZip => bail!(NotBuilt(format_name(&reader))),
         #[cfg(not(feature = "tar"))]

@@ -551,13 +551,13 @@
       "status": "native",
       "note": "Read for compatibility only; ZipCrypto is weak.",
       "tests": [
-        "tests/encrypted_zip.rs::every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines"
+        "tests/encrypted_zip.rs::every_fixture_extracts_to_the_tree_7zip_gave"
       ]
     },
     "WinZip AES": {
       "status": "native",
       "tests": [
-        "tests/encrypted_zip.rs::every_fixture_extracts_to_the_tree_7zip_gave_on_both_engines"
+        "tests/encrypted_zip.rs::every_fixture_extracts_to_the_tree_7zip_gave"
       ]
     }
   },

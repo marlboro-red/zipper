@@ -32,8 +32,6 @@ def main():
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--reader-threads", action="append", nargs=2, metavar=("LABEL", "THREADS"), default=[],
                         help="override the worker count for one reader (or auto to omit --threads)")
-    parser.add_argument("--reader-buffer-mib", action="append", nargs=2, metavar=("LABEL", "MIB"), default=[],
-                        help="override shared entry-buffer budget for a native-fast reader")
     parser.add_argument("--operation", choices=["extract", "list", "test"], default="extract")
     parser.add_argument("--cooldown", type=float, default=0, help="untimed seconds after cleanup, 0..10")
     parser.add_argument("--work-dir", type=Path, help="parent for restored trees; the system temp folder by default")
@@ -44,13 +42,12 @@ def main():
         parser.error("positive runs and threads 1..64 required")
     readers = {}
     for label, mode, binary in args.reader:
-        if label in readers or mode not in ["native", "native-fast", "7zip", "7zip-tar", "bsdtar",
-                                           "sevenz-rust2"]:
-            parser.error("unique labels and native/native-fast/7zip/7zip-tar/bsdtar/sevenz-rust2 modes required")
+        if label in readers or mode not in ["native", "7zip", "7zip-tar", "bsdtar", "sevenz-rust2"]:
+            parser.error("unique labels and native/7zip/7zip-tar/bsdtar/sevenz-rust2 modes required")
         path = Path(binary).resolve(strict=True)
         readers[label] = {"mode": mode, "binary": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                           "threads": args.threads}
-    allowed = {"zip": {"native", "native-fast", "7zip"}, "7z": {"native", "7zip", "sevenz-rust2"},
+    allowed = {"zip": {"native", "7zip"}, "7z": {"native", "7zip", "sevenz-rust2"},
                "tar": {"native", "7zip-tar", "bsdtar"}}.get(args.archive_format, {"native"})
     if any(reader["mode"] not in allowed for reader in readers.values()):
         parser.error(f"{args.archive_format} comparisons accept {sorted(allowed)} readers")
@@ -61,13 +58,6 @@ def main():
             parser.error("reader thread overrides require a unique known label and count 1..64 or auto")
         readers[label]["threads"] = None if value == "auto" else int(value)
         overridden.add(label)
-    budget_overrides = set()
-    for label, value in args.reader_buffer_mib:
-        if (label not in readers or label in budget_overrides or readers[label]["mode"] != "native-fast"
-                or not value.isdigit() or not 0 <= int(value) <= 4096):
-            parser.error("buffer overrides require a unique native-fast reader and MiB 0..4096")
-        readers[label]["buffer_mib"] = int(value)
-        budget_overrides.add(label)
     source = args.source.resolve(strict=True)
     archive = args.archive.resolve(strict=True)
     expected = inventory(source)
@@ -95,8 +85,6 @@ def main():
                     prefix += ["--zip-engine", reader["mode"]]
                 if reader["threads"] is not None:
                     prefix += ["--threads", str(reader["threads"])]
-                if "buffer_mib" in reader:
-                    prefix += ["--zip-buffer-mib", str(reader["buffer_mib"])]
                 extract = prefix + ["extract", str(archive), "-o", str(output)]
                 threads = [f"-mmt={reader['threads']}"] if reader["threads"] is not None else []
                 if reader["mode"] == "7zip":

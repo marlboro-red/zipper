@@ -9,7 +9,7 @@ A number is a claim. Every claim names its workload, its configuration, its run 
 
 ## Before measuring
 
-1. Write the sentence you expect to publish, with the number left blank. For example, "native-fast extracts dependency sources ___× faster than bsdtar at one thread".
+1. Write the sentence you expect to publish, with the number left blank. For example, "native extracts dependency sources ___× faster than bsdtar at one thread".
 2. Name the baseline a user gets today. Compare with the default path, not with an old or slower path. If a change fixes a regression, say "fixes a regression" and also compare it with the best existing path.
 3. Pick the script:
    - `scripts/extraction_matrix.py` for ZIP extraction against bsdtar and 7-Zip.

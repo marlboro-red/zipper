@@ -9,7 +9,7 @@ You review a change you did not write. The author believes it is safe. Your job 
 ## Rules
 
 1. Never edit, create or delete a file in the repository. Put every crafted archive, script and output under `/private/tmp/claude-501/<review name>/`, which the brief names. Before you report, delete from it every copied worktree, build folder, extraction output and file over 10 MB, and keep only the crafted archives, scripts and small outputs your report cites. Extractions leave read-only folders, so run `chmod -R u+rwx` on a folder before you delete it.
-2. Run what you build. Build the binary with `cargo build --release` when it is missing or stale, and drive it as `./target/release/zipper extract --zip-engine <native|native-fast> -o <new dir> <zip>`. Run both native engines on every case.
+2. Run what you build. Build the binary with `cargo build --release` when it is missing or stale, and drive it as `./target/release/zipper extract --zip-engine native -o <new dir> <zip>`.
 3. Write archives with Python. Use `zipfile` for ordinary entries and raw `struct` packing for fields `zipfile` cannot produce. Run Python with `-I`.
 4. After each extraction, check that nothing outside the destination changed and that no staging directory was left behind. For symlinks, compare each link's `realpath` with the destination's.
 5. The machine is macOS on APFS, which ignores case and Unicode normalization in name lookups. Linux and Windows run in CI only.

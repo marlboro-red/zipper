@@ -35,7 +35,7 @@ fn tar(path: &Path) {
 fn each_format_goes_to_its_reader_and_merges() {
     let root = tempfile::tempdir().unwrap();
     for (name, write, reader) in [
-        ("a.zip", zip as fn(&Path), Reader::Zip { fast: false }),
+        ("a.zip", zip as fn(&Path), Reader::Zip),
         ("a.tar", tar, Reader::Tar),
     ] {
         let archive = root.path().join(name);
@@ -125,7 +125,7 @@ fn the_name_does_not_pick_the_reader() {
     zip(&archive);
     assert_eq!(
         zipper::choose_reader(Default::default(), &archive).unwrap(),
-        Reader::Zip { fast: false }
+        Reader::Zip
     );
     let destination = root.path().join("out");
     extract_archive(&archive, &destination, ExtractOptions::default()).unwrap();

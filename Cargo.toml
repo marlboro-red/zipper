@@ -16,7 +16,6 @@ ctr = { version = "0.10.1", features = ["zeroize"], optional = true }
 deflate64 = { version = "0.1.12", optional = true }
 flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"], optional = true }
 hmac = { version = "0.13.0", features = ["zeroize"], optional = true }
-libdeflate-sys = { version = "1.26.1", optional = true }
 md-5 = { version = "0.11.0", default-features = false, optional = true }
 pbkdf2 = { version = "0.13.0", default-features = false, features = ["hmac"], optional = true }
 ppmd-rust = { version = "1.5.2", optional = true }
@@ -33,7 +32,7 @@ zstd = { version = "0.14.3", optional = true }
 default = ["cli", "all-formats"]
 cli = ["dep:clap", "all-formats"]
 all-formats = ["zip", "7z", "tar", "more-formats"]
-zip = ["dep:aes", "dep:bzip2", "dep:ctr", "dep:deflate64", "dep:flate2", "dep:hmac", "dep:libdeflate-sys", "dep:pbkdf2", "dep:ppmd-rust", "dep:sha1", "dep:zeroize", "dep:zstd"]
+zip = ["dep:aes", "dep:bzip2", "dep:ctr", "dep:deflate64", "dep:flate2", "dep:hmac", "dep:pbkdf2", "dep:ppmd-rust", "dep:sha1", "dep:zeroize", "dep:zstd"]
 7z = ["dep:aes", "dep:bzip2", "dep:deflate64", "dep:flate2", "dep:ppmd-rust", "dep:zeroize"]
 tar = ["dep:bzip2", "dep:flate2", "dep:ppmd-rust", "dep:zstd"]
 more-formats = ["tar", "dep:bzip2", "dep:flate2", "dep:md-5", "dep:quick-xml", "dep:sha1", "dep:zstd"]
@@ -77,7 +76,6 @@ name = "count_zip"
 required-features = ["counters", "zip"]
 
 [dev-dependencies]
-libdeflater = "1.26.1"
 liblzma = { version = "0.4.9", default-features = false, features = ["static"] }
 lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "optimization"] }
 serde_json = "1.0.154"

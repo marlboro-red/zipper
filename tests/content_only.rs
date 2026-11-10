@@ -80,11 +80,7 @@ fn check_windows(path: &Path, label: &str) {
 fn content_only_extraction_writes_contents_and_the_execute_bit_alone() {
     let started = SystemTime::now() - Duration::from_secs(5);
     let mut checked = 0;
-    for (folder, engines) in [
-        ("zip-corpus", &[Engine::Native, Engine::NativeFast][..]),
-        ("tar-corpus", &[Engine::Native]),
-        ("7z-corpus", &[Engine::Native]),
-    ] {
+    for folder in ["zip-corpus", "tar-corpus", "7z-corpus"] {
         let corpus = data(folder);
         for (name, tree) in corpus::expected(&corpus) {
             let work = tempfile::tempdir().unwrap();
@@ -99,56 +95,53 @@ fn content_only_extraction_writes_contents_and_the_execute_bit_alone() {
                 stream.push(":Zone.Identifier");
                 fs::write(stream, "[ZoneTransfer]\r\nZoneId=3\r\n").unwrap();
             }
-            for &engine in engines {
-                let label = format!("{name} {engine:?}");
-                let root = tempfile::tempdir().unwrap();
-                let destination = root.path().join("out");
-                extract_archive(
-                    &archive,
-                    &destination,
-                    ExtractOptions {
-                        engine,
-                        metadata: Metadata::ContentOnly,
-                        ..Default::default()
-                    },
-                )
-                .unwrap_or_else(|error| panic!("{label}: {error:#}"));
-                #[cfg(unix)]
-                let default = {
-                    use std::os::unix::fs::PermissionsExt;
-                    let probe = root.path().join("umask-probe");
-                    fs::create_dir(&probe).unwrap();
-                    fs::metadata(&probe).unwrap().permissions().mode() & 0o777
-                };
-                for (path, expected) in &tree {
-                    if expected.link_target.is_some() {
-                        continue;
-                    }
-                    let found = destination.join(path);
-                    let metadata = fs::metadata(&found)
-                        .unwrap_or_else(|error| panic!("{label} {path}: {error}"));
-                    assert!(
-                        metadata.modified().unwrap() >= started,
-                        "{label}: {path} kept its time"
-                    );
-                    #[cfg(unix)]
-                    check_mode(
-                        &found,
-                        expected.mode(),
-                        expected.is_directory(),
-                        default,
-                        &label,
-                    );
-                    #[cfg(windows)]
-                    check_windows(&found, &label);
+            let root = tempfile::tempdir().unwrap();
+            let destination = root.path().join("out");
+            extract_archive(
+                &archive,
+                &destination,
+                ExtractOptions {
+                    engine: Engine::Native,
+                    metadata: Metadata::ContentOnly,
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+            #[cfg(unix)]
+            let default = {
+                use std::os::unix::fs::PermissionsExt;
+                let probe = root.path().join("umask-probe");
+                fs::create_dir(&probe).unwrap();
+                fs::metadata(&probe).unwrap().permissions().mode() & 0o777
+            };
+            for (path, expected) in &tree {
+                if expected.link_target.is_some() {
+                    continue;
                 }
-                let contents: corpus::Tree = tree
-                    .iter()
-                    .map(|(path, expected)| (path.clone(), expected.without_metadata()))
-                    .collect();
-                corpus::assert_tree_matches_manifest(root.path(), &contents, &label);
-                checked += 1;
+                let found = destination.join(path);
+                let metadata =
+                    fs::metadata(&found).unwrap_or_else(|error| panic!("{name} {path}: {error}"));
+                assert!(
+                    metadata.modified().unwrap() >= started,
+                    "{name}: {path} kept its time"
+                );
+                #[cfg(unix)]
+                check_mode(
+                    &found,
+                    expected.mode(),
+                    expected.is_directory(),
+                    default,
+                    &name,
+                );
+                #[cfg(windows)]
+                check_windows(&found, &name);
             }
+            let contents: corpus::Tree = tree
+                .iter()
+                .map(|(path, expected)| (path.clone(), expected.without_metadata()))
+                .collect();
+            corpus::assert_tree_matches_manifest(root.path(), &contents, &name);
+            checked += 1;
         }
     }
     assert!(checked > 100, "{checked}");

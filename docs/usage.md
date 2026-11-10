@@ -173,7 +173,7 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 
 A `zip` and `7z` build compiles 49 crates, against 69 for the default. It still builds the C libraries that ZIP Deflate and Zstandard use.
 
-The `Reader` enum keeps every variant in every build. A ZIP or tar archive that the build does not read fails with `zipper::NotBuilt`, which names the format, and writes nothing. With `Engine::Native` or `Engine::NativeFast`, so does every other format whose signature Zipper knows, such as `gzip` or `7z`. `Engine::Auto` hands those to 7-Zip instead, as it does any format it recognizes but does not read. Choose `Engine::Native` to never start 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build. `cargo xtask gate` lints each feature on its own, and runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build.
+The `Reader` enum keeps every variant in every build. A ZIP or tar archive that the build does not read fails with `zipper::NotBuilt`, which names the format, and writes nothing. With `Engine::Native`, so does every other format whose signature Zipper knows, such as `gzip` or `7z`. `Engine::Auto` hands those to 7-Zip instead, as it does any format it recognizes but does not read. Choose `Engine::Native` to never start 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build. `cargo xtask gate` lints each feature on its own, and runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build.
 
 When `extract_archive` or a reader returns, after success, failure or a cancel, Zipper holds no handle to the destination or the archive, and every thread it started has exited. You can rename, move or delete the destination at once. The shared Rayon pool keeps its idle threads between calls, and they hold nothing from the extraction. The 7-Zip backend is waited for before it returns. `tests/handles.rs` checks this after every reader on Unix by counting open descriptors and threads, and on Windows by renaming and deleting the destination of archives that carry a zone mark.
 
@@ -214,15 +214,8 @@ zipper test files.zip
 
 If the archive uses another compression method, PKWARE strong encryption or more than one disk, the error says so. To read it with 7-Zip, pass `--zip-engine backend`. Zipper never makes that switch itself, because 7-Zip accepts some archives the in-process reader rejects as unsafe.
 
-Pick the engine by workload:
-
-- For many tiny files, prefer the streaming `native` reader. Buffered Deflate often adds no benefit when file creation dominates.
-- For low memory consumption, use `native`.
-- `--zip-engine native-fast` adds a libdeflate buffer decoder with a shared buffer budget.
-- To change the `native-fast` buffer budget, pass `--zip-buffer-mib N`. `--zip-buffer-mib 0` forces streaming.
-
-The default is `native` because it uses little memory. On the [scoreboard](results.md), its peak stays under 9 MiB, while `native-fast` reaches 187 MiB on Silesia. `native-fast` is at most 1.10× faster on every other workload, and 1.32× faster on Silesia at one thread.
-The [ZIP reader reference](reference/zip-reader.md) lists supported features, limits, budgets, and caching rules.
+The `native` reader streams every entry, so its memory stays bounded by the worker count, not by file sizes. The [scoreboard](results.md) records its peak memory on each workload.
+The [ZIP reader reference](reference/zip-reader.md) lists supported features, limits and budgets.
 
 ### Extract an encrypted ZIP
 

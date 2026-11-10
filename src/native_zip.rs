@@ -1,5 +1,5 @@
-//! Opt-in ZIP extraction of stored and Deflate entries, published only after
-//! full verification. See `docs/reference/zip-reader.md` for what it restores.
+//! ZIP extraction, published only after full verification. See
+//! `docs/reference/zip-reader.md` for the methods it decodes and what it restores.
 use crate::zip_crypto::{AesExtra, Decryptor, Encryption};
 use crate::zip_directory::{CentralEntry, Directory, decode_name_like_zip_crate};
 use crate::{BadField, Field, field_check};
@@ -239,18 +239,8 @@ impl<T> Drop for Recycled<'_, T> {
     }
 }
 
-type ExtractEntry<'a> = dyn Fn(&mut crate::zip_reader::Reader, &mut [u8], &mut Option<ExactInflater>, usize) -> Result<()>
-    + Sync
-    + 'a;
-
-fn entry_buffer(size: usize) -> Result<Vec<u8>> {
-    let mut buffer = Vec::new();
-    buffer
-        .try_reserve_exact(size)
-        .context("cannot allocate ZIP entry buffer")?;
-    buffer.resize(size, 0);
-    Ok(buffer)
-}
+type ExtractEntry<'a> =
+    dyn Fn(&mut crate::zip_reader::Reader, &mut [u8], usize) -> Result<()> + Sync + 'a;
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub(crate) struct EntryTime {
@@ -448,13 +438,9 @@ fn open_directory(path: &Path) -> Result<(BufReader<crate::volumes::ArchiveFile>
     Ok((file, directory))
 }
 
-fn open(path: &Path, cache: bool) -> Result<Opened> {
+fn open(path: &Path) -> Result<Opened> {
     let (file, directory) = open_directory(path)?;
-    let reader = if cache {
-        crate::zip_reader::Reader::cached(file.into_inner(), 8 * 1024 * 1024)?
-    } else {
-        crate::zip_reader::Reader::new(file.into_inner())?
-    };
+    let reader = crate::zip_reader::Reader::new(file.into_inner())?;
     Ok(Opened { reader, directory })
 }
 
@@ -819,51 +805,6 @@ fn check_local_header(reader: &mut crate::zip_reader::Reader, item: &Item) -> Re
         has_descriptor: true,
         zip_crypto_check,
     })
-}
-
-struct ExactInflater(std::ptr::NonNull<libdeflate_sys::libdeflate_decompressor>);
-
-impl ExactInflater {
-    fn new() -> Self {
-        // SAFETY: the allocator takes no arguments and returns null on failure.
-        let decompressor = unsafe { libdeflate_sys::libdeflate_alloc_decompressor() };
-        Self(std::ptr::NonNull::new(decompressor).expect("libdeflate decompressor allocation"))
-    }
-
-    fn inflate(&mut self, input: &[u8], output: &mut [u8]) -> Result<usize> {
-        let (mut read, mut written) = (0, 0);
-        // SAFETY: the decompressor is live until drop and used by one thread.
-        // Both slices are valid for their stated lengths, and libdeflate writes
-        // at most `output.len()` bytes.
-        let result = unsafe {
-            libdeflate_sys::libdeflate_deflate_decompress_ex(
-                self.0.as_ptr(),
-                input.as_ptr().cast(),
-                input.len(),
-                output.as_mut_ptr().cast(),
-                output.len(),
-                &mut read,
-                &mut written,
-            )
-        };
-        ensure!(
-            result == libdeflate_sys::libdeflate_result_LIBDEFLATE_SUCCESS,
-            "invalid ZIP Deflate data"
-        );
-        ensure!(
-            read == input.len(),
-            "ZIP Deflate stream ends before its compressed size"
-        );
-        Ok(written)
-    }
-}
-
-impl Drop for ExactInflater {
-    fn drop(&mut self) {
-        // SAFETY: the pointer came from libdeflate_alloc_decompressor and is
-        // freed exactly once.
-        unsafe { libdeflate_sys::libdeflate_free_decompressor(self.0.as_ptr()) }
-    }
 }
 
 #[derive(Default)]
@@ -1426,7 +1367,7 @@ pub fn list(path: &Path) -> Result<Vec<Entry>> {
         .collect())
 }
 
-/// Verify and optionally extract a stored/Deflate ZIP. It restores files,
+/// Verify and optionally extract a ZIP. It restores files,
 /// directories, Unix modes, modification times and symlinks that stay inside
 /// the destination. The archive and destination parent must not be modified
 /// concurrently.
@@ -1434,33 +1375,12 @@ pub fn read_archive(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry
     read_archive_with_options(path, destination, ReadOptions::default())
 }
 
-/// Whole-buffer Deflate fast path for eligible entries whose compressed and
-/// decoded sizes fit the shared budget. Large, highly compressible extraction
-/// entries and entries that cannot reserve memory use bounded streaming.
-/// Integrity-only reads and Linux extraction also cache archives up to 8 MiB.
-pub fn read_archive_fast(path: &Path, destination: Option<&Path>) -> Result<Vec<Entry>> {
-    read_archive_with_options(
-        path,
-        destination,
-        ReadOptions {
-            fast: true,
-            ..ReadOptions::default()
-        },
-    )
-}
-
 /// Native ZIP decoding and concurrency options.
 #[derive(Clone, Copy, Default)]
 pub struct ReadOptions<'a> {
-    /// Use the bounded whole-buffer libdeflate path for eligible entries.
-    pub fast: bool,
     /// Override automatic concurrency with a maximum of 1–64 workers.
     /// The caller's Rayon pool remains an additional upper bound.
     pub threads: Option<usize>,
-    /// Shared compressed + decoded entry-buffer budget. Default: 128 MiB on
-    /// ARM64 macOS, 64 MiB elsewhere.
-    /// Zero forces streaming. Metadata, worker state and archive cache are extra.
-    pub buffer_bytes: Option<usize>,
     /// Cap on declared output bytes. Without it, extraction must fit in the
     /// destination filesystem's free space.
     pub max_output_bytes: Option<u64>,
@@ -1495,20 +1415,8 @@ pub fn read_archive_with_options(
         options.threads.is_none_or(|n| (1..=64).contains(&n)),
         "ZIP threads must be 1..64"
     );
-    let fast = options.fast;
     let decoder_memory = crate::memory::Memory::new(ZIP_DECODER_MEMORY);
-    let budget = Budget(AtomicUsize::new(options.buffer_bytes.unwrap_or(
-        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-            128 * 1024 * 1024
-        } else {
-            64 * 1024 * 1024
-        },
-    )));
-    // RECORD(benchmarks/native-zip/linux-cache/README.md): Linux extraction caches archives up to 8 MiB.
-    let Opened { reader, directory } = open(
-        path,
-        fast && (destination.is_none() || cfg!(target_os = "linux")),
-    )?;
+    let Opened { reader, directory } = open(path)?;
     let items = scan(&directory, true)?;
     drop(directory);
     let selection = crate::Selection::new(options.paths, options.include, options.exclude)?;
@@ -1631,7 +1539,7 @@ pub fn read_archive_with_options(
     let targets = std::sync::Mutex::new(Vec::new());
     let for_the_next_pass = std::sync::Mutex::new(Vec::new());
     let idle_workspaces = std::sync::Mutex::new(Vec::new());
-    let extract_entry: &ExtractEntry = &|raw, buffer, codec, index| -> Result<()> {
+    let extract_entry: &ExtractEntry = &|raw, buffer, index| -> Result<()> {
         tracker.check()?;
         let item = &items[index];
         let _decoder = match decoder_need(item) {
@@ -1649,27 +1557,8 @@ pub fn read_archive_with_options(
         };
         let local = check_local_header(raw, item)?;
         let descriptor = local.has_descriptor;
-        // RECORD(benchmarks/native-zip/decoder-selection/README.md): large, compressible entries stream.
-        let prefer_streaming = destination.is_some()
-            && item.entry.size >= 16 * 1024 * 1024
-            && item.compressed <= item.entry.size / 128;
-        let reservation = if fast
-            && !prefer_streaming
-            && !item.symlink
-            && item.method == DEFLATE
-            && item.encryption.is_none()
-        {
-            item.entry
-                .size
-                .checked_add(item.compressed)
-                .and_then(|bytes| usize::try_from(bytes).ok())
-                .and_then(|bytes| budget.reserve(bytes))
-        } else {
-            None
-        };
-        let buffered = reservation.is_some();
         raw.seek(SeekFrom::Start(local.data_start))?;
-        let mut payload = Payload::open(&mut *raw, item, &local, options.password)?;
+        let payload = Payload::open(&mut *raw, item, &local, options.password)?;
         if item.symlink {
             let mut target = Vec::new();
             payload.stream(item, descriptor, buffer, |bytes| {
@@ -1702,33 +1591,6 @@ pub fn read_archive_with_options(
         } else {
             None
         };
-        if buffered {
-            let mut compressed = entry_buffer(item.compressed as usize)?;
-            let mut decoded = entry_buffer(item.entry.size as usize)?;
-            payload.read_exact(&mut compressed)?;
-            let length = counters::time(Counter::DecodeNanos, || {
-                codec.as_mut().unwrap().inflate(&compressed, &mut decoded)
-            })?;
-            ensure!(
-                length as u64 == item.entry.size,
-                "ZIP decoded size mismatch"
-            );
-            ensure!(crc32fast::hash(&decoded) == item.crc, "ZIP CRC mismatch");
-            if let Some(output) = &mut output {
-                // RECORD(benchmarks/native-zip/windows-write-size/README.md): 256 KiB slices.
-                if cfg!(windows) {
-                    for chunk in decoded.chunks(256 * 1024) {
-                        output.write_all(chunk)?;
-                    }
-                } else {
-                    output.write_all(&decoded)?;
-                }
-                finish(output, item)?;
-            }
-            drop(output);
-            tracker.add_bytes(item.entry.size)?;
-            return finished(item);
-        }
         if item.entry.size >= WRITE_BEHIND_MIN
             && let Some(writer_thread) = spare_threads.reserve(1)
             && let Some(unwritten) = output.take()
@@ -1768,15 +1630,14 @@ pub fn read_archive_with_options(
         // and reuse each task's reader and buffer, which tiny entries cannot afford per task.
         entries.par_iter().with_max_len(1).try_for_each_init(
             || {
-                let workspace = Recycled::take(&idle_workspaces, || {
+                Recycled::take(&idle_workspaces, || {
                     (reader.clone(), vec![0u8; 1024 * 1024])
-                });
-                (workspace, fast.then(ExactInflater::new))
+                })
             },
-            |(workspace, codec), &index| match EntryOnThisThread::enter(&for_the_next_pass) {
+            |workspace, &index| match EntryOnThisThread::enter(&for_the_next_pass) {
                 Some(_entry) => {
                     let (raw, buffer) = &mut **workspace;
-                    extract_entry(raw, buffer, codec, index)
+                    extract_entry(raw, buffer, index)
                 }
                 None => {
                     for_the_next_pass
@@ -1995,7 +1856,6 @@ mod budget_tests {
             .is_err()
         );
         assert_eq!(budget.0.load(Ordering::Relaxed), 8);
-        assert!(entry_buffer(usize::MAX).is_err());
         assert!(budget.reserve(usize::MAX).is_none());
         assert!(budget.reserve(8).is_some());
     }

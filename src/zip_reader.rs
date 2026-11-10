@@ -7,16 +7,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-struct CountedRead<R>(R);
-impl<R: Read> Read for CountedRead<R> {
-    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        let read = self.0.read(bytes)?;
-        counters::add(Counter::ArchiveReads, 1);
-        counters::add(Counter::ArchiveBytesRead, read as u64);
-        Ok(read)
-    }
-}
-
 #[derive(Clone)]
 pub(crate) struct Cursor {
     file: Arc<Mutex<ArchiveFile>>,
@@ -85,7 +75,6 @@ pub(crate) enum Reader {
     File(BufReader<Cursor>),
     #[cfg(windows)]
     AdaptiveFile(FileReader),
-    Memory(io::Cursor<Arc<[u8]>>),
 }
 impl Reader {
     pub(crate) fn new(file: ArchiveFile) -> io::Result<Self> {
@@ -104,22 +93,6 @@ impl Reader {
             Ok(Self::File(BufReader::with_capacity(8 * 1024, cursor)))
         }
     }
-
-    pub(crate) fn cached(mut file: ArchiveFile, limit: u64) -> io::Result<Self> {
-        let read_limit = limit.checked_add(1).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "invalid archive cache limit")
-        })?;
-        if file.len()? > limit {
-            return Self::new(file);
-        }
-        file.seek(SeekFrom::Start(0))?;
-        let mut bytes = Vec::new();
-        CountedRead(file.take(read_limit)).read_to_end(&mut bytes)?;
-        if bytes.len() as u64 > limit {
-            return Err(io::Error::other("ZIP grew beyond archive cache limit"));
-        }
-        Ok(Self::Memory(io::Cursor::new(bytes.into())))
-    }
 }
 impl Clone for Reader {
     fn clone(&self) -> Self {
@@ -130,7 +103,6 @@ impl Clone for Reader {
                 cursor.position = reader.position();
                 Self::AdaptiveFile(FileReader::new(cursor))
             }
-            Self::Memory(cursor) => Self::Memory(cursor.clone()),
             #[cfg(not(windows))]
             Self::File(reader) => {
                 let mut cursor = reader.get_ref().clone();
@@ -158,8 +130,6 @@ impl Read for Reader {
                 file.sequential_bytes = file.sequential_bytes.saturating_add(read);
                 Ok(read)
             }
-
-            Self::Memory(reader) => reader.read(bytes),
         }
     }
 }
@@ -209,7 +179,6 @@ impl Seek for Reader {
                     reader.seek(SeekFrom::Start(target))
                 }
             }
-            Self::Memory(reader) => reader.seek(position),
         }
     }
 }
@@ -252,38 +221,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn cached_boundaries_and_concurrent_clones() -> io::Result<()> {
-        for length in [0, 127, 128, 129] {
-            let mut file = tempfile::tempfile()?;
-            let bytes: Vec<_> = (0..length).map(|i| (i % 251) as u8).collect();
-            std::io::Write::write_all(&mut file, &bytes)?;
-            let reader = Reader::cached(file.into(), 128)?;
-            assert_eq!(matches!(&reader, Reader::Memory(_)), length <= 128);
-            std::thread::scope(|scope| {
-                let mut handles = Vec::new();
-                for worker in 0..8 {
-                    let mut clone = reader.clone();
-                    let bytes = &bytes;
-                    handles.push(scope.spawn(move || -> io::Result<()> {
-                        for step in 0..50 {
-                            let position = (worker * 17 + step * 7) % (bytes.len() + 1);
-                            clone.seek(SeekFrom::Start(position as u64))?;
-                            let mut actual = Vec::new();
-                            clone.by_ref().take(13).read_to_end(&mut actual)?;
-                            assert_eq!(actual, bytes[position..(position + 13).min(bytes.len())]);
-                        }
-                        Ok(())
-                    }));
-                }
-                for handle in handles {
-                    handle.join().unwrap()?;
-                }
-                Ok::<_, io::Error>(())
-            })?;
-        }
-        Ok(())
-    }
     #[test]
     fn seeks_match_unbuffered_cursor_at_boundaries() -> io::Result<()> {
         let mut file = tempfile::tempfile()?;

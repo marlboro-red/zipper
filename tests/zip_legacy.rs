@@ -18,9 +18,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use zipper::native_zip::{read_archive, read_archive_fast};
-
-type Reader = fn(&Path, Option<&Path>) -> anyhow::Result<Vec<zipper::Entry>>;
+use zipper::native_zip::read_archive;
 
 fn unzip() -> Option<PathBuf> {
     let help = Command::new("unzip").arg("-v").output().ok()?;
@@ -61,17 +59,10 @@ fn seven_zip_extracts(archive: &Path) -> Option<Result<PathBuf, String>> {
     })
 }
 
-fn zipper_extracts(read: Reader, archive: &Path, label: &str) -> anyhow::Result<PathBuf> {
-    let out = archive.with_extension(format!("zipper-{label}"));
-    read(archive, Some(&out))?;
+fn zipper_extracts(archive: &Path) -> anyhow::Result<PathBuf> {
+    let out = archive.with_extension("zipper");
+    read_archive(archive, Some(&out))?;
     Ok(out)
-}
-
-fn readers() -> [(&'static str, Reader); 2] {
-    [
-        ("native", read_archive as Reader),
-        ("native-fast", read_archive_fast as Reader),
-    ]
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -102,15 +93,13 @@ fn assert_every_reader_extracts(archive: &Path, expected: &[(String, Vec<u8>)], 
         unzip_disagrees.is_empty(),
         "unzip disagrees with the test encoder on {unzip_disagrees:?}"
     );
-    for (label, read) in readers() {
-        let folder = zipper_extracts(read, archive, label)
-            .unwrap_or_else(|error| panic!("{label} refused {archive:?}: {error:#}"));
-        for (name, data) in expected {
-            assert!(
-                fs::read(folder.join(name)).unwrap() == *data,
-                "{label} extracted other bytes for {name}"
-            );
-        }
+    let folder = zipper_extracts(archive)
+        .unwrap_or_else(|error| panic!("zipper refused {archive:?}: {error:#}"));
+    for (name, data) in expected {
+        assert!(
+            fs::read(folder.join(name)).unwrap() == *data,
+            "zipper extracted other bytes for {name}"
+        );
     }
 }
 
@@ -375,14 +364,12 @@ fn assert_refused_by_unzip_and_zipper(case: &str, entry: Entry) {
     if let Some(result) = unzip_reads(&archive, "data.bin") {
         assert!(result.is_err(), "unzip accepted {case}");
     }
-    for (label, read) in readers() {
-        let out = work.path().join(label);
-        assert!(
-            read(&archive, Some(&out)).is_err(),
-            "{label} accepted {case}"
-        );
-        assert!(!out.exists(), "{label} left output behind for {case}");
-    }
+    let out = work.path().join("zipper");
+    assert!(
+        read_archive(&archive, Some(&out)).is_err(),
+        "zipper accepted {case}"
+    );
+    assert!(!out.exists(), "zipper left output behind for {case}");
 }
 
 fn assert_refused_by_7zip_and_zipper(case: &str, entry: Entry) {
@@ -392,14 +379,12 @@ fn assert_refused_by_7zip_and_zipper(case: &str, entry: Entry) {
     if let Some(result) = seven_zip_extracts(&archive) {
         assert!(result.is_err(), "7-Zip accepted {case}");
     }
-    for (label, read) in readers() {
-        let out = work.path().join(label);
-        assert!(
-            read(&archive, Some(&out)).is_err(),
-            "{label} accepted {case}"
-        );
-        assert!(!out.exists(), "{label} left output behind for {case}");
-    }
+    let out = work.path().join("zipper");
+    assert!(
+        read_archive(&archive, Some(&out)).is_err(),
+        "zipper accepted {case}"
+    );
+    assert!(!out.exists(), "zipper left output behind for {case}");
 }
 
 fn literal(byte: u8) -> (u32, u32) {
@@ -683,22 +668,19 @@ fn third_party_legacy_archives_extract_as_unzip_and_7zip_read_them() {
     ] {
         let copy = work.path().join(archive);
         fs::copy(data.join(archive), &copy).unwrap();
-        for (label, read) in readers() {
-            let folder = zipper_extracts(read, &copy, label)
-                .unwrap_or_else(|error| panic!("{label} refused {archive}: {error:#}"));
-            let extracted = fs::read(folder.join(name)).unwrap();
-            assert_eq!(extracted.len(), size, "{label} {archive}");
-            if let Some(result) = unzip_reads(&copy, name) {
-                assert!(result.unwrap() == extracted, "unzip disagrees on {archive}");
-            }
-            if let Some(result) = seven_zip_extracts(&copy) {
-                let seven =
-                    result.unwrap_or_else(|error| panic!("7-Zip refused {archive}: {error}"));
-                assert!(
-                    fs::read(seven.join(name)).unwrap() == extracted,
-                    "7-Zip disagrees on {archive}"
-                );
-            }
+        let folder = zipper_extracts(&copy)
+            .unwrap_or_else(|error| panic!("zipper refused {archive}: {error:#}"));
+        let extracted = fs::read(folder.join(name)).unwrap();
+        assert_eq!(extracted.len(), size, "zipper {archive}");
+        if let Some(result) = unzip_reads(&copy, name) {
+            assert!(result.unwrap() == extracted, "unzip disagrees on {archive}");
+        }
+        if let Some(result) = seven_zip_extracts(&copy) {
+            let seven = result.unwrap_or_else(|error| panic!("7-Zip refused {archive}: {error}"));
+            assert!(
+                fs::read(seven.join(name)).unwrap() == extracted,
+                "7-Zip disagrees on {archive}"
+            );
         }
     }
 }
@@ -785,10 +767,11 @@ fn random_shrink_streams_decode_and_fail_as_7zip_does() {
             )]),
         )
         .unwrap();
-        for (label, read) in readers() {
-            let out = work.path().join(format!("{name}-{label}"));
-            assert!(read(&one, Some(&out)).is_err(), "{label} accepted {name}");
-        }
+        let out = work.path().join(format!("{name}-zipper"));
+        assert!(
+            read_archive(&one, Some(&out)).is_err(),
+            "zipper accepted {name}"
+        );
     }
 }
 

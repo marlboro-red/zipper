@@ -30,7 +30,6 @@ CORPORA = ROOT / 'target' / 'bench-corpora'
 WORK = ROOT / 'target' / 'bench-work'
 THREADS = ['1', '4']
 COUNT_ZIP = ROOT / 'target' / 'counters' / 'release' / 'examples' / ('count_zip.exe' if platform.system() == 'Windows' else 'count_zip')
-COUNTED_ENGINES = ['native', 'native-fast']
 
 GENERATORS = {
     'flat-tiny': ['make_tiny_corpus.py', '--files', '10000', '--layout', 'flat'],
@@ -50,7 +49,8 @@ WORKLOADS = {
     'mixed': ('mixed', '.', 'Mixed tree'),
 }
 
-ROW_ORDER = ['native-auto', 'native-1', 'native-4', 'native-fast-1', 'native-fast-4', 'bsdtar-zip', '7zip', 'bsdtar-tar']
+COUNTED_ROW = 'native-1'
+ROW_ORDER = ['native-auto', 'native-1', 'native-4', 'bsdtar-zip', '7zip', 'bsdtar-tar']
 PARITY_ROW = 'bsdtar-zip'
 TAR_PARITY = {'tar-native': 'bsdtar-tar-default', 'bsdtar-tar-default': 'bsdtar-tar-default',
               'tar-gz-native': 'bsdtar-tar-gz', 'bsdtar-tar-gz': 'bsdtar-tar-gz'}
@@ -100,7 +100,7 @@ def sha256(path):
 
 
 def counted(name, result):
-    """Counters from one extraction per engine at one thread, outside timed runs."""
+    """Counters from one native extraction at one thread, outside timed runs."""
     archive = WORK / f'{name}.zip'
     if not archive.exists():
         corpus, subpath, _ = WORKLOADS[name]
@@ -108,10 +108,8 @@ def counted(name, result):
         write_zip((prepared(corpus) / subpath).resolve(), archive)
     if not archive.exists() or sha256(archive) != result['archives']['input.zip']['sha256']:
         sys.exit(f'{archive} is not the ZIP the {name} session measured')
-    rows = {}
-    for engine in COUNTED_ENGINES:
-        output = subprocess.check_output([str(COUNT_ZIP), str(archive), engine, '1'], cwd=ROOT, text=True)
-        rows[f'{engine}-1'] = json.loads(output)
+    output = subprocess.check_output([str(COUNT_ZIP), str(archive), '1'], cwd=ROOT, text=True)
+    rows = {COUNTED_ROW: json.loads(output)}
     return {'revision': git('rev-parse', 'HEAD'), 'tree_clean': not dirty_paths(), 'rows': rows}
 
 
@@ -183,7 +181,7 @@ def table(result, tar=False):
         parity_of = lambda name: rows.get(TAR_PARITY[name])
         heading = 'bsdtar time on the same file ÷ row time'
     else:
-        order = [name for name in ROW_ORDER if name in rows] + sorted(set(rows) - set(ROW_ORDER) - set(TAR_PARITY))
+        order = [name for name in ROW_ORDER if name in rows]
         parity_of = lambda name: rows.get(PARITY_ROW)
         heading = 'bsdtar-zip time ÷ row time'
     if not order:
@@ -208,11 +206,13 @@ def counter_table(result):
     if not counters:
         return []
     zip_bytes = result['archives']['input.zip']['bytes']
-    lines = [f"Counters from one extraction per engine at one thread, outside timed runs, at `{counters['revision'][:7]}`.", '',
+    lines = [f"Counters from one native extraction at one thread, outside timed runs, at `{counters['revision'][:7]}`.", '',
              '| Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls '
              '| Links | Output writes | Output MiB | Metadata calls |',
              '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
     for name, row in counters['rows'].items():
+        if name != COUNTED_ROW:
+            continue
         lines.append(f"| `{name}` | {row['decode_nanos'] / 1e6:,.2f} | {row['archive_reads']:,} "
                      f"| {row['archive_bytes_read'] / 2**20:,.1f} | {row['archive_bytes_read'] / zip_bytes:.2f} "
                      f"| {row['files_created']:,} | {row['directory_create_calls']:,} | {row['symlinks_created']:,} "
@@ -232,9 +232,9 @@ def render():
              '- Each workload is a fixed directory. `scripts/extraction_matrix.py` packs it into one Deflate',
              '  ZIP and one TAR with fixed metadata, then extracts them in interleaved, shuffled rounds.',
              '- Every extraction is compared byte for byte with the source, outside the timed region.',
-             '- `native` and `native-fast` rows are Zipper ZIP engines at 1 and 4 threads.',
+             '- `native` rows are the Zipper ZIP engine at 1 and 4 threads.',
              '  `native-auto` is the default engine with no `--threads` flag, so Zipper picks the workers.',
-             '  `bsdtar-zip` restores default metadata, which matches what the native engines restore.',
+             '  `bsdtar-zip` restores default metadata, which matches what the native engine restores.',
              '  `bsdtar-tar` uses reduced-metadata flags. `7zip` restores times and attributes.',
              '- Tar rows extract the TAR and its gzip form. `tar-native` and `tar-gz-native` run the default',
              '  engine. `bsdtar-tar-default` and `bsdtar-tar-gz` restore default metadata, as Zipper does.',

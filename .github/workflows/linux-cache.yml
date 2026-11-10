@@ -6,7 +6,7 @@ on:
       experiment:
         description: Isolated input-path change
         type: choice
-        options: [input-buffer, cache]
+        options: [input-buffer]
         default: input-buffer
 
 permissions:
@@ -41,16 +41,9 @@ jobs:
       - name: Apply only the selected input experiment
         run: |
           python3 - <<'PY'
-          import os
           from pathlib import Path
-          if os.environ['INPUT_EXPERIMENT'] == 'cache':
-              p = Path('src/native_zip.rs')
-              old = 'open(path, fast && destination.is_none())?'
-              new = 'open(path, fast && (destination.is_none() || cfg!(target_os = "linux")))?'
-              count = 1
-          else:
-              p = Path('src/zip_reader.rs')
-              old, new, count = '256 * 1024', '8 * 1024', 2
+          p = Path('src/zip_reader.rs')
+          old, new, count = '256 * 1024', '8 * 1024', 2
           text = p.read_text()
           assert text.count(old) == count, 'baseline changed; reconsider experiment'
           p.write_text(text.replace(old, new))
@@ -66,7 +59,6 @@ jobs:
       - name: Generate and measure flat and grouped trees
         run: |
           mode=native
-          if [ "$INPUT_EXPERIMENT" = cache ]; then mode=native-fast; fi
           for layout in flat grouped; do
             python3 scripts/make_tiny_corpus.py "corpora/$layout" --files 10000 --layout "$layout"
             python3 - "$layout" <<'PY'

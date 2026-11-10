@@ -447,7 +447,7 @@ fn routing_leaves_self_extracting_archives_to_their_readers() {
     fs::write(&path, [&stub[..], &zip].concat()).unwrap();
     assert_eq!(
         zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
-        zipper::Reader::Zip { fast: false }
+        zipper::Reader::Zip
     );
     let seven = fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),

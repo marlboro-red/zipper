@@ -72,13 +72,12 @@ jobs:
           extra=()
           if [ "$RUNNER_OS" = Windows ]; then
             suffix=.exe
-            extra=(--reader release-native native release/zipper.exe --reader release-fast native-fast release/zipper.exe)
+            extra=(--reader release-native native release/zipper.exe)
           fi
           for corpus in large/random large/mixed large/compressible flat grouped; do
             name=${corpus//\//-}
             python scripts/compare_zip_readers.py "corpora/$corpus.zip" "corpora/$corpus" \
               --reader before-native native "reference$suffix" --reader after-native native "target/release/zipper$suffix" \
-              --reader before-fast native-fast "reference$suffix" --reader after-fast native-fast "target/release/zipper$suffix" \
               "${extra[@]}" --runs 7 --threads 4 > "results/$name.json"
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

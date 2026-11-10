@@ -48,13 +48,12 @@ with tempfile.TemporaryDirectory() as tmp:
     run("test", archive)
     run("extract", archive, "--output", root / "default-zip")
     verify(root / "default-zip")
-    for engine in ("native", "native-fast"):
-        run("--zip-engine", engine, "test", archive)
-        destination = root / engine / "zip"
-        destination.parent.mkdir(exist_ok=True)
-        run("--zip-engine", engine, "--threads", "4", "extract", archive,
-            "--output", destination)
-        verify(destination)
+    run("--zip-engine", "native", "test", archive)
+    destination = root / "native" / "zip"
+    destination.parent.mkdir(exist_ok=True)
+    run("--zip-engine", "native", "--threads", "4", "extract", archive,
+        "--output", destination)
+    verify(destination)
 
 dist = Path("dist")
 dist.mkdir(exist_ok=True)

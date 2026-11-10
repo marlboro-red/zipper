@@ -26,7 +26,7 @@ and macOS, plus a smaller Windows diagnostic. The review kept three changes:
 - [reduced input read-ahead](../benchmarks/native-zip/input-buffer/README.md)
 
 These are bounded input-path improvements, not the full executor and output [redesign](#a-validated-plan-drives-execution)
-described below. Descriptions of the old per-worker budget on this page refer to the
+described below. The first two served only the `native-fast` engine, and left with it. Descriptions of the old per-worker budget on this page refer to the
 review baseline.
 
 ## Output work, not decoding, limits small-file extraction
@@ -76,13 +76,11 @@ The executor should account for four distinct resources:
 - Outstanding output operations and open descriptors under separate limits.
 - Metadata and index storage and format limits, reported separately from buffer use.
 
-Today a per-worker fast-ZIP allocation cap and the tar and 7z budgets do not
+Today the ZIP decoder budget and the tar and 7z budgets do not
 constitute a process-wide resource contract. Reserve buffer capacity before
 scheduling work, and release it only after all consumers finish. Streaming fallback
 must work when a whole-buffer decode does not fit. Describe an allocation budget
 honestly. It is not an exact RSS limit once libraries, stacks, and allocators count.
-[libdeflate's whole-buffer API](https://github.com/ebiggers/libdeflate) makes this
-tradeoff explicit.
 
 ### Buffers are owned and reused
 
@@ -144,8 +142,7 @@ Rapidgzip demonstrates speculative parallel decoding of arbitrary gzip data. It
 resolves unknown history through a cache and prefetch design. It is relevant prior
 art, not an already-integrated ZIP decoder. Raw Deflate entry boundaries,
 cancellation, bounded memory, CRC validation, and malicious inputs would all need
-proof and tests. Keep libdeflate or streaming fallback when parallel startup costs
-exceed the benefit. [Rapidgzip paper](https://arxiv.org/abs/2308.08955).
+proof and tests. Keep streaming when parallel startup costs exceed the benefit. [Rapidgzip paper](https://arxiv.org/abs/2308.08955).
 
 ### Mounting is a separate product
 

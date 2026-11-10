@@ -54,8 +54,6 @@ jobs:
             python scripts/compare_zip_readers.py "corpora/$corpus.zip" "corpora/$corpus" \
               --reader release-native native release/zipper.exe \
               --reader current-native native "$current" \
-              --reader release-fast native-fast release/zipper.exe \
-              --reader current-fast native-fast "$current" \
               --runs 7 --threads 4 > "results/$name.json"
           done
       - name: Compare native format on the identical archive

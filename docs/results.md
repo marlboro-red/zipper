@@ -13,9 +13,9 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 - Each workload is a fixed directory. `scripts/extraction_matrix.py` packs it into one Deflate
   ZIP and one TAR with fixed metadata, then extracts them in interleaved, shuffled rounds.
 - Every extraction is compared byte for byte with the source, outside the timed region.
-- `native` and `native-fast` rows are Zipper ZIP engines at 1 and 4 threads.
+- `native` rows are the Zipper ZIP engine at 1 and 4 threads.
   `native-auto` is the default engine with no `--threads` flag, so Zipper picks the workers.
-  `bsdtar-zip` restores default metadata, which matches what the native engines restore.
+  `bsdtar-zip` restores default metadata, which matches what the native engine restores.
   `bsdtar-tar` uses reduced-metadata flags. `7zip` restores times and attributes.
 - Tar rows extract the TAR and its gzip form. `tar-native` and `tar-gz-native` run the default
   engine. `bsdtar-tar-default` and `bsdtar-tar-gz` restore default metadata, as Zipper does.
@@ -36,18 +36,15 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 | `native-auto` | 301.50 [291.36–312.09] | 1,027.58 | 3.41 | 8.5 | 2.19× | none recorded |
 | `native-1` | 515.97 [454.47–549.96] | 484.54 | 0.94 | 7.8 | 1.28× | none recorded |
 | `native-4` | 310.50 [285.41–342.01] | 1,062.86 | 3.42 | 8.2 | 2.12× | none recorded |
-| `native-fast-1` | 505.59 [478.17–527.17] | 481.21 | 0.95 | 7.9 | 1.30× | none recorded |
-| `native-fast-4` | 300.00 [294.75–302.38] | 1,034.10 | 3.45 | 8.1 | 2.20× | none recorded |
 | `bsdtar-zip` | 658.99 [649.33–760.66] | 630.07 | 0.96 | 6.6 | 1.00× | none recorded |
 | `7zip` | 601.31 [550.96–620.49] | 560.79 | 0.93 | 5.9 | 1.10× | none recorded |
 | `bsdtar-tar` | 563.97 [544.06–605.80] | 525.50 | 0.93 | 4.3 | 1.17× | none recorded |
 
-Counters from one extraction per engine at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `native-1` | 6.69 | 7,806 | 61.0 | 21.20 | 10,000 | 1 | 0 | 8,000 | 9.1 | 10,001 |
-| `native-fast-1` | 5.41 | 7,806 | 61.0 | 21.20 | 10,000 | 1 | 0 | 8,000 | 9.1 | 10,001 |
 
 Tar rows read a TAR of 16,394,240 bytes and its gzip level 6 form of 1,600,877 bytes.
 
@@ -71,18 +68,15 @@ Tar rows read a TAR of 16,394,240 bytes and its gzip level 6 form of 1,600,877 b
 | `native-auto` | 123.72 [122.09–139.98] | 450.96 | 3.64 | 6.0 | 2.21× | none recorded |
 | `native-1` | 208.54 [205.17–226.77] | 205.15 | 0.98 | 5.3 | 1.31× | none recorded |
 | `native-4` | 122.38 [121.38–136.40] | 445.67 | 3.64 | 5.7 | 2.24× | none recorded |
-| `native-fast-1` | 207.72 [206.37–211.24] | 206.28 | 0.99 | 5.3 | 1.32× | none recorded |
-| `native-fast-4` | 123.69 [122.44–138.14] | 447.11 | 3.61 | 5.5 | 2.21× | none recorded |
 | `bsdtar-zip` | 273.67 [270.68–287.70] | 272.16 | 0.99 | 5.3 | 1.00× | none recorded |
 | `7zip` | 257.24 [246.98–277.84] | 246.85 | 0.96 | 4.6 | 1.06× | none recorded |
 | `bsdtar-tar` | 222.00 [221.07–225.49] | 220.87 | 0.99 | 4.3 | 1.23× | none recorded |
 
-Counters from one extraction per engine at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `native-1` | 9.26 | 174 | 1.3 | 1.50 | 4,000 | 41 | 0 | 4,000 | 15.6 | 4,041 |
-| `native-fast-1` | 10.51 | 174 | 1.3 | 1.50 | 4,000 | 41 | 0 | 4,000 | 15.6 | 4,041 |
 
 Tar rows read a TAR of 18,462,720 bytes and its gzip level 6 form of 109,846 bytes.
 
@@ -106,18 +100,15 @@ Tar rows read a TAR of 18,462,720 bytes and its gzip level 6 form of 109,846 byt
 | `native-auto` | 228.72 [223.92–234.84] | 1,291.75 | 5.65 | 11.9 | 1.65× | none recorded |
 | `native-1` | 337.07 [319.17–349.17] | 321.61 | 0.95 | 6.8 | 1.12× | none recorded |
 | `native-4` | 186.74 [181.23–207.49] | 591.12 | 3.17 | 7.4 | 2.03× | none recorded |
-| `native-fast-1` | 310.58 [308.45–334.71] | 309.12 | 1.00 | 7.8 | 1.22× | none recorded |
-| `native-fast-4` | 179.63 [175.38–199.72] | 573.43 | 3.19 | 8.7 | 2.11× | none recorded |
 | `bsdtar-zip` | 378.45 [374.74–384.52] | 376.87 | 1.00 | 6.4 | 1.00× | none recorded |
 | `7zip` | 446.63 [442.43–473.16] | 444.86 | 1.00 | 5.7 | 0.85× | none recorded |
 | `bsdtar-tar` | 273.88 [270.54–290.63] | 271.34 | 0.99 | 4.5 | 1.38× | none recorded |
 
-Counters from one extraction per engine at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `native-1` | 40.55 | 5,302 | 44.2 | 3.25 | 3,981 | 997 | 0 | 4,359 | 64.4 | 4,978 |
-| `native-fast-1` | 35.09 | 5,302 | 44.2 | 3.25 | 3,981 | 997 | 0 | 3,981 | 64.4 | 4,978 |
 
 Tar rows read a TAR of 71,127,040 bytes and its gzip level 6 form of 12,452,225 bytes.
 
@@ -141,18 +132,15 @@ Tar rows read a TAR of 71,127,040 bytes and its gzip level 6 form of 12,452,225 
 | `native-auto` | 61.16 [59.38–62.74] | 223.77 | 3.66 | 14.8 | 3.04× | none recorded |
 | `native-1` | 185.26 [185.08–234.92] | 183.68 | 0.99 | 3.8 | 1.01× | none recorded |
 | `native-4` | 64.85 [58.38–66.49] | 190.75 | 2.94 | 7.1 | 2.87× | none recorded |
-| `native-fast-1` | 182.07 [181.55–196.79] | 179.25 | 0.98 | 114.6 | 1.02× | none recorded |
-| `native-fast-4` | 60.04 [57.70–67.09] | 192.36 | 3.20 | 188.2 | 3.10× | none recorded |
 | `bsdtar-zip` | 186.22 [186.03–195.87] | 184.77 | 0.99 | 4.7 | 1.00× | none recorded |
 | `7zip` | 530.52 [529.89–531.52] | 528.67 | 1.00 | 4.3 | 0.35× | none recorded |
 | `bsdtar-tar` | 27.57 [27.20–53.18] | 26.30 | 0.95 | 4.2 | 6.76× | none recorded |
 
-Counters from one extraction per engine at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `native-1` | 157.70 | 151 | 65.1 | 1.00 | 12 | 1 | 0 | 485 | 202.1 | 13 |
-| `native-fast-1` | 144.43 | 26 | 65.1 | 1.00 | 12 | 1 | 0 | 12 | 202.1 | 13 |
 
 Tar rows read a TAR of 211,957,760 bytes and its gzip level 6 form of 68,228,613 bytes.
 
@@ -176,18 +164,15 @@ Tar rows read a TAR of 211,957,760 bytes and its gzip level 6 form of 68,228,613
 | `native-auto` | 45.75 [45.12–50.82] | 62.04 | 1.36 | 9.1 | 1.25× | none recorded |
 | `native-1` | 57.87 [57.29–61.54] | 56.47 | 0.98 | 3.8 | 0.98× | none recorded |
 | `native-4` | 45.08 [44.97–50.31] | 60.98 | 1.35 | 8.9 | 1.26× | none recorded |
-| `native-fast-1` | 57.67 [57.21–59.39] | 56.24 | 0.98 | 3.8 | 0.99× | none recorded |
-| `native-fast-4` | 45.21 [45.05–45.89] | 61.03 | 1.35 | 9.0 | 1.26× | none recorded |
 | `bsdtar-zip` | 56.97 [56.16–62.49] | 55.73 | 0.98 | 4.2 | 1.00× | none recorded |
 | `7zip` | 147.41 [146.67–148.26] | 145.85 | 0.99 | 3.9 | 0.39× | none recorded |
 | `bsdtar-tar` | 31.79 [31.34–34.17] | 30.65 | 0.96 | 4.2 | 1.79× | none recorded |
 
-Counters from one extraction per engine at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `native-1` | 28.92 | 5 | 0.6 | 1.01 | 1 | 1 | 0 | 513 | 256.0 | 2 |
-| `native-fast-1` | 28.83 | 5 | 0.6 | 1.01 | 1 | 1 | 0 | 513 | 256.0 | 2 |
 
 Tar rows read a TAR of 268,441,600 bytes and its gzip level 6 form of 652,142 bytes.
 
@@ -211,18 +196,15 @@ Tar rows read a TAR of 268,441,600 bytes and its gzip level 6 form of 652,142 by
 | `native-auto` | 35.75 [32.92–41.49] | 52.26 | 1.46 | 9.2 | 1.25× | none recorded |
 | `native-1` | 45.13 [44.59–49.21] | 43.73 | 0.97 | 3.8 | 0.99× | none recorded |
 | `native-4` | 33.19 [32.93–40.20] | 51.89 | 1.56 | 8.9 | 1.35× | none recorded |
-| `native-fast-1` | 44.58 [44.13–48.41] | 43.19 | 0.97 | 3.8 | 1.00× | none recorded |
-| `native-fast-4` | 33.28 [32.73–37.26] | 51.77 | 1.56 | 9.0 | 1.34× | none recorded |
 | `bsdtar-zip` | 44.70 [44.51–46.44] | 43.47 | 0.97 | 4.6 | 1.00× | none recorded |
 | `7zip` | 79.60 [78.96–83.35] | 78.14 | 0.98 | 4.3 | 0.56× | none recorded |
 | `bsdtar-tar` | 33.25 [31.54–38.76] | 30.63 | 0.92 | 4.2 | 1.34× | none recorded |
 
-Counters from one extraction per engine at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `native-1` | 3.81 | 516 | 256.1 | 1.00 | 1 | 1 | 0 | 514 | 256.0 | 2 |
-| `native-fast-1` | 3.83 | 516 | 256.1 | 1.00 | 1 | 1 | 0 | 514 | 256.0 | 2 |
 
 Tar rows read a TAR of 268,441,600 bytes and its gzip level 6 form of 268,517,566 bytes.
 
@@ -246,18 +228,15 @@ Tar rows read a TAR of 268,441,600 bytes and its gzip level 6 form of 268,517,56
 | `native-auto` | 172.56 [170.29–183.06] | 1,128.64 | 6.54 | 7.8 | 1.71× | none recorded |
 | `native-1` | 233.13 [220.82–300.67] | 222.41 | 0.95 | 5.8 | 1.26× | none recorded |
 | `native-4` | 128.58 [125.55–143.60] | 466.83 | 3.63 | 6.7 | 2.29× | none recorded |
-| `native-fast-1` | 227.17 [225.09–241.81] | 225.30 | 0.99 | 40.4 | 1.30× | none recorded |
-| `native-fast-4` | 128.00 [127.43–140.39] | 465.44 | 3.64 | 40.6 | 2.30× | none recorded |
 | `bsdtar-zip` | 294.79 [285.91–344.47] | 288.22 | 0.98 | 5.6 | 1.00× | none recorded |
 | `7zip` | 293.07 [291.62–307.81] | 291.40 | 0.99 | 5.6 | 1.01× | none recorded |
 | `bsdtar-tar` | 229.93 [226.46–232.60] | 228.33 | 0.99 | 4.3 | 1.28× | none recorded |
 
-Counters from one extraction per engine at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `native-1` | 17.36 | 222 | 20.4 | 1.02 | 4,002 | 44 | 0 | 4,070 | 47.6 | 4,046 |
-| `native-fast-1` | 18.53 | 186 | 20.4 | 1.02 | 4,002 | 44 | 0 | 4,002 | 47.6 | 4,046 |
 
 Tar rows read a TAR of 52,019,200 bytes and its gzip level 6 form of 20,030,534 bytes.
 
