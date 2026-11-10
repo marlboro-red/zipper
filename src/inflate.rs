@@ -379,9 +379,6 @@ fn lookup(table: &[u32], table_bits: u32, bits: Bits) -> Option<(u32, u32)> {
     let mut entry = table[(bits.buffer & low_bits(table_bits)) as usize];
     let mut skipped = 0;
     if entry & SUBTABLE != 0 {
-        if bits.count < table_bits {
-            return None;
-        }
         skipped = table_bits;
         let subtable_bits = (entry >> CODE_BITS_SHIFT) & CODE_BITS_MASK;
         let index = (bits.buffer >> table_bits) & low_bits(subtable_bits);
@@ -1727,6 +1724,75 @@ mod tests {
         assert!(decoded > 1000 && refused > 10_000, "{decoded} {refused}");
     }
 
+    #[test]
+    fn the_longest_codes_back_to_back_decode_as_zlib_does_at_every_bit_offset() {
+        let mut litlen = vec![0u8; 286];
+        litlen[usize::from(b'x')] = 1;
+        for length in (2..=14).filter(|&length| length != 11) {
+            litlen[length] = length as u8;
+        }
+        litlen[usize::from(b'a')] = 11;
+        litlen[256] = 15;
+        litlen[284] = 15;
+        let mut distance = vec![0u8; 30];
+        for length in (1..=14).filter(|&length| length != 8) {
+            distance[length - 1] = length as u8;
+        }
+        distance[28] = 8;
+        distance[27] = 15;
+        distance[29] = 15;
+        let far_match = |round: usize, distance_code: usize| Token::Match {
+            length_code: 284 - 257,
+            length_extra: (round % 32) as u32,
+            distance_code,
+            distance_extra: (8191 - round % 3) as u32,
+        };
+        for offset in 0..8 {
+            let mut tokens = vec![Token::Literal(b'x'); 33_000 + offset];
+            for round in 0..300 {
+                let literals = [2, 1, 0, 3, 2][round % 5];
+                tokens.extend(std::iter::repeat_n(Token::Literal(b'a'), literals));
+                tokens.push(far_match(round, 28 + round % 2));
+                if round % 7 == 0 {
+                    tokens.push(far_match(round, 29));
+                }
+            }
+            let mut produced = Vec::new();
+            for &token in &tokens {
+                match token {
+                    Token::Literal(byte) => produced.push(byte),
+                    Token::Match {
+                        length_code,
+                        length_extra,
+                        distance_code,
+                        distance_extra,
+                    } => {
+                        let back =
+                            usize::from(DISTANCE_BASE[distance_code]) + distance_extra as usize;
+                        let length = usize::from(LENGTH_BASE[length_code]) + length_extra as usize;
+                        for _ in 0..length {
+                            produced.push(produced[produced.len() - back]);
+                        }
+                    }
+                }
+            }
+            let mut writer = BitWriter::default();
+            writer.put(0b101, 3);
+            put_dynamic_header(&mut writer, &litlen, &distance, &mut Random(3));
+            put_tokens(&mut writer, &tokens, &litlen, &distance);
+            let stream = writer.finish();
+            let outcome = agrees_with_zlib(&stream, &format!("offset {offset}"));
+            assert!(
+                outcome
+                    == Outcome::Decoded {
+                        bytes: produced,
+                        consumed: stream.len() as u64
+                    },
+                "offset {offset} decodes to other bytes than it was built from"
+            );
+        }
+    }
+
     fn put_stored(writer: &mut BitWriter, length: usize, last: bool) {
         writer.put(u32::from(last), 1);
         writer.put(0, 2);
@@ -1874,6 +1940,15 @@ mod tests {
         );
         let no_end = lengths_of(257, &[(65, 1), (66, 1)]);
         assert_eq!(dynamic(&no_end, &[0], |_| {}), Outcome::Refused);
+        let mut writer = BitWriter::default();
+        writer.put(0b101, 3);
+        put_dynamic_header(&mut writer, &no_end, &[0], &mut Random(1));
+        let mut window = vec![0u8; SMALLEST_WINDOW];
+        assert_eq!(
+            Inflate::new().decode(&writer.finish(), &mut window).err(),
+            Some(Invalid("Deflate block has no end-of-block code")),
+            "a block that cannot end is refused before it decodes anything"
+        );
         let oversubscribed = lengths_of(257, &[(65, 1), (66, 1), (256, 1)]);
         assert_eq!(dynamic(&oversubscribed, &[0], |_| {}), Outcome::Refused);
         let incomplete = lengths_of(257, &[(65, 2), (256, 2)]);
@@ -1920,15 +1995,33 @@ mod tests {
     fn dynamic_headers_outside_the_format_are_refused() {
         let precode = whole_precode();
         let codes = canonical(&precode);
-        for (litlen, distance) in [(287, 1), (288, 1), (257, 31), (257, 32)] {
+        let complete = |symbols: usize, shorter: u8| -> Vec<u8> {
+            let longer_from = (2 << shorter) - symbols;
+            (0..symbols)
+                .map(|symbol| shorter + u8::from(symbol >= longer_from))
+                .collect()
+        };
+        for (litlen, distance, accepted) in [
+            (286, 30, true),
+            (287, 30, false),
+            (288, 30, false),
+            (286, 31, false),
+            (286, 32, false),
+        ] {
+            let lengths = (complete(litlen, 8), complete(distance, 4));
             let outcome = outcome_of(|writer| {
                 writer.put(0b101, 3);
                 put_code_counts(writer, litlen, distance, &precode);
-                for _ in 0..litlen + distance {
-                    writer.code(codes[8]);
+                for &length in lengths.0.iter().chain(&lengths.1) {
+                    writer.code(codes[usize::from(length)]);
                 }
+                writer.code(canonical(&lengths.0)[256]);
             });
-            assert_eq!(outcome, Outcome::Refused, "{litlen} and {distance} codes");
+            assert_eq!(
+                matches!(outcome, Outcome::Decoded { .. }),
+                accepted,
+                "{litlen} and {distance} codes"
+            );
         }
         let repeat_without_a_length = outcome_of(|writer| {
             writer.put(0b101, 3);
