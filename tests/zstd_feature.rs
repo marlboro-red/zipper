@@ -7,6 +7,10 @@ use zipper::{Engine, ExtractOptions, NotBuilt, extract_archive};
 
 #[cfg(feature = "zip")]
 const TEXT: &[u8] = b"hello\n";
+#[cfg(feature = "zip")]
+const ZSTANDARD_METHOD: u16 = 93;
+#[cfg(feature = "zip")]
+const VERSION_NEEDED_6_3: u16 = 63;
 
 #[cfg(any(feature = "tar", feature = "squashfs"))]
 fn data(name: &str) -> PathBuf {
@@ -53,9 +57,9 @@ fn zstandard_zip(name: &str, content: &[u8]) -> Vec<u8> {
     let packed = zstd_frame(content);
     let crc = crc32fast::hash(content);
     let fields = |zip: &mut Vec<u8>| {
-        zip.extend_from_slice(&63u16.to_le_bytes());
+        zip.extend_from_slice(&VERSION_NEEDED_6_3.to_le_bytes());
         zip.extend_from_slice(&0u16.to_le_bytes());
-        zip.extend_from_slice(&93u16.to_le_bytes());
+        zip.extend_from_slice(&ZSTANDARD_METHOD.to_le_bytes());
         zip.extend_from_slice(&[0, 0, 0x21, 0]);
         zip.extend_from_slice(&crc.to_le_bytes());
         zip.extend_from_slice(&(packed.len() as u32).to_le_bytes());
@@ -69,7 +73,7 @@ fn zstandard_zip(name: &str, content: &[u8]) -> Vec<u8> {
     zip.extend_from_slice(&packed);
     let central = zip.len() as u32;
     zip.extend_from_slice(b"PK\x01\x02");
-    zip.extend_from_slice(&(3u16 << 8 | 63).to_le_bytes());
+    zip.extend_from_slice(&(3u16 << 8 | VERSION_NEEDED_6_3).to_le_bytes());
     fields(&mut zip);
     zip.extend_from_slice(&[0; 6]);
     zip.extend_from_slice(&(0o100644u32 << 16).to_le_bytes());
