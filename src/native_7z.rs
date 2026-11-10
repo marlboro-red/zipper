@@ -2,6 +2,7 @@
 //! Deflate and the 7-Zip branch and delta filters. See
 //! `docs/reference/7z-reader.md` for what it accepts and restores.
 use crate::sevenz_crypto::{self, AES_BUFFER, AES_METHOD, BLOCK, CbcReader, KeyError, Keys};
+use crate::writer_pool::{self, CHUNK, ClosesOnDrop, InFlight, Job, Writers, Written};
 use crate::xz_filters::{self, BRANCH_BUFFER, DELTA_HISTORY, DeltaDecoder, Filter, read_through};
 use crate::{Entry, counters, progress::Tracker, safe_path, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
@@ -35,6 +36,7 @@ const PARALLEL_FOLDER_MIN: u64 = 8 * 1024 * 1024;
 const SEGMENT_MIN_OUTPUT: u64 = 8 * 1024 * 1024;
 const SEGMENT_WINDOW_MAX: usize = 64;
 const SEGMENT_DECODE_STEP: usize = 8 * 1024 * 1024;
+const FILE_WRITERS: usize = 4;
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 const WRONG_PASSWORD: &str = "the password is wrong or the 7z data is damaged";
 
@@ -2610,6 +2612,14 @@ pub fn read_archive(
         .min(wanted.len());
     let segment_threads =
         options.threads.unwrap_or_else(rayon::current_num_threads) / threads.max(1);
+    let flight = InFlight::default();
+    let file_writers = file_writers(
+        root.is_some(),
+        options.threads,
+        wanted.iter().map(|&folder| by_folder[folder].len()),
+    );
+    let (writers, queues) = Writers::new("7z", &flight, file_writers.max(1));
+    let pool = (file_writers > 0).then_some(&writers);
     let decode = |folder_index: usize, buffer: &mut [u8]| -> Result<()> {
         tracker.check()?;
         let folder = &archive.folders[folder_index];
@@ -2627,11 +2637,18 @@ pub fn read_archive(
             !matches!(items.as_slice(), [only] if archive.items[*only].crc == Some(expected))
         });
         let mut folder_crc = folder_check.map(|_| crc32fast::Hasher::new());
+        let solid = items.len() > 1;
         for &index in items {
             let item = &archive.items[index];
             let write = root.filter(|_| chosen[index]);
             let mut target = Vec::new();
+            let pooled = pool.filter(|_| {
+                solid && write.is_some() && item.kind == Kind::File && item.size <= CHUNK as u64
+            });
+            let mut chunk = pooled.map(|writers| writers.flight.take(item.size as usize));
+            let counted = chosen[index] && chunk.is_none();
             let mut output = match (write, item.kind) {
+                (Some(_), Kind::File) if chunk.is_some() => None,
                 (Some(root), Kind::File) => {
                     let file = crate::create_new_file(
                         &root.join(&item.name),
@@ -2645,7 +2662,7 @@ pub fn read_archive(
                                         item.name
                                     )
                                 } else {
-                                    error.into()
+                                    anyhow::Error::from(error).context(format!("cannot create 7z entry {:?}", item.name))
                                 }
                             })?;
                     counters::add(counters::Counter::FilesCreated, 1);
@@ -2657,6 +2674,10 @@ pub fn read_archive(
             let mut remaining = item.size;
             let mut held = 0u64;
             while remaining > 0 {
+                let buffer = match &mut chunk {
+                    Some(chunk) => &mut chunk.data[..],
+                    None => &mut *buffer,
+                };
                 let want = remaining.min(buffer.len() as u64) as usize;
                 let mut read = 0;
                 while read < want {
@@ -2684,7 +2705,7 @@ pub fn read_archive(
                     );
                     target.extend_from_slice(bytes);
                 }
-                if chosen[index] {
+                if counted {
                     tracker.add_bytes(std::mem::replace(&mut held, read as u64))?;
                 }
             }
@@ -2701,6 +2722,19 @@ pub fn read_archive(
                     format!("7z CRC mismatch in {:?}", item.name),
                 ));
             }
+            if let (Some(writers), Some(root), Some(chunk)) = (pooled, write, chunk) {
+                tracker.check()?;
+                writers.send(Job {
+                    path: root.join(&item.name),
+                    name: item.name.clone(),
+                    mode: item.mode.unwrap_or(0o666),
+                    attributes: item.windows_attributes,
+                    modified: item.modified,
+                    size: item.size,
+                    first: chunk,
+                    rest: None,
+                })?;
+            }
             if let Some(file) = output
                 && let Some(time) = item.modified
             {
@@ -2709,7 +2743,7 @@ pub fn read_archive(
             if write.is_some() && item.kind == Kind::Symlink {
                 targets.lock().unwrap().push((index, target));
             }
-            if chosen[index] {
+            if counted {
                 tracker.add_bytes(held)?;
                 tracker.file_done()?;
             }
@@ -2729,7 +2763,20 @@ pub fn read_archive(
     };
     let next = AtomicUsize::new(0);
     let failure = Mutex::new(None);
+    let count_written = |written: Written| match written {
+        Written::Bytes(bytes) => tracker.add_bytes(bytes),
+        Written::File => tracker.file_done(),
+    };
     std::thread::scope(|scope| {
+        let file_threads: Vec<_> = (0..file_writers)
+            .map(|index| {
+                let queue = writer_pool::queue(&queues, index);
+                let writers = &writers;
+                let count_written = &count_written;
+                scope.spawn(move || writers.work(queue, count_written))
+            })
+            .collect();
+        let closing = ClosesOnDrop(&writers);
         let workers: Vec<_> = (0..threads)
             .map(|_| {
                 scope.spawn(|| {
@@ -2746,18 +2793,25 @@ pub fn read_archive(
                 })
             })
             .collect();
-        for worker in workers {
-            if let Err(panic) = worker.join() {
+        let joined: Vec<_> = workers.into_iter().map(|worker| worker.join()).collect();
+        drop(closing);
+        let writers_joined = file_threads.into_iter().all(|thread| thread.join().is_ok());
+        writers.resume_callback_panic();
+        for worker in joined {
+            if let Err(panic) = worker {
                 std::panic::resume_unwind(panic);
             }
         }
-    });
+        ensure!(writers_joined, "a 7z writer panicked");
+        Ok(())
+    })?;
     if let Some(error) = failure
         .into_inner()
         .unwrap_or_else(|poison| poison.into_inner())
     {
         return Err(error);
     }
+    writers.check()?;
     let Some(staging) = staging else {
         tracker.finish();
         return Ok(entries);
@@ -2807,6 +2861,20 @@ pub fn read_archive(
     tracker.check()?;
     staging.publish(&directories)?;
     Ok(entries)
+}
+
+fn file_writers(
+    writes: bool,
+    threads: Option<usize>,
+    files_per_folder: impl IntoIterator<Item = usize>,
+) -> usize {
+    let threads = threads.unwrap_or_else(rayon::current_num_threads);
+    let solid = files_per_folder.into_iter().any(|files| files > 1);
+    if writes && solid && threads > 1 {
+        FILE_WRITERS.min(threads)
+    } else {
+        0
+    }
 }
 
 fn create_links(root: &Path, items: &[Item], targets: Vec<(usize, Vec<u8>)>) -> Result<()> {

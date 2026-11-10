@@ -1,6 +1,6 @@
 ---
 name: zipper-verify-7z-workers
-description: Model-check the 7z folder workers and decoder memory budget in src/native_7z.rs with TLA+. Use before committing any change to Memory, Reservation, decoder_memory, DECODER_MEMORY, the worker threads or the cancel checks in native_7z::read_archive, and when a 7z extraction hangs, uses too much memory, decodes a folder twice or publishes after a failure or cancel.
+description: Model-check the 7z folder workers, their decoder memory budget and their hand-off of small files to the writer pool in src/native_7z.rs with TLA+. Use before committing any change to Memory, Reservation, decoder_memory, DECODER_MEMORY, the worker threads, the cancel checks, FILE_WRITERS, file_writers or the writer pool calls in native_7z::read_archive, and when a 7z extraction hangs, uses too much memory, decodes a folder twice, loses a write failure or publishes after a failure or cancel.
 ---
 
 # Verify the 7z folder workers
@@ -116,3 +116,50 @@ Each change below breaks the named rule:
 | `ReaderStartsSegment` skips the window check, or the window leaves out the streaming front | `ThreadsBounded` |
 | `ReaderReturns` does not wait for the decoders | `NoThreadOutlivesReader` |
 | A dropped streaming front is never freed | `NoDeadlock` |
+
+## The writer pool hand-off
+
+`verification/7z-writer-pool/` checks how folder workers hand small files to the writer threads of `src/writer_pool.rs`, the pool the tar reader also uses. It is listed under `[7z-writer-pool]` in `verification/coverage.txt`. `cargo xtask verify-sync 7z-writer-pool` runs `FolderWriters.tla` through `MCUnix.tla` with `unix.cfg`, one lane as on Unix, and `MCWindows.tla` with `windows.cfg`, one lane per writer. All eight rules, `NoDeadlock` included, must hold in both.
+
+| Rule | In plain words | Harm if it breaks |
+| --- | --- | --- |
+| `NoDeadlock` | Every run ends, after a corrupt file, a failed write, a cancel or a panic too. | `zipper extract` hangs. |
+| `BudgetHolds` | File data waiting for the writers never passes the budget, across all folder workers. | Memory grows with file count or worker count. |
+| `NothingLeaks` | Every chunk is freed by the time the call returns. | The budget leaks until the next file waits forever. |
+| `SuccessIsComplete` | A published extraction wrote every pooled file. | A file is missing from the output. |
+| `WrittenAtMostOnce` | No file is written twice. | A second create fails or a file is truncated. |
+| `FailureIsReported` | A corrupt file, a failed write or a panic never ends in a publish. | A damaged extraction looks good. |
+| `CancelPublishesNothing` | A cancel set before the last check publishes nothing. | The destination changes after the user cancelled. |
+| `NoThreadOutlivesTheCall` | The call returns only after every folder worker and writer has exited. | A thread holds a file open after the extraction returns. |
+
+| Covered code | Model |
+| --- | --- |
+| `while let Some(&folder) = wanted.get(next.fetch_add(1, ..))` | `WorkerFetches` |
+| `tracker.check()?` at the start of `decode` | `WorkerChecksCancel` |
+| The next item of the folder, the check for data past the last file, and the folder CRC | `WorkerNextFile` |
+| `writers.flight.take(item.size)`, which waits while other chunks would pass `BYTES_IN_FLIGHT` | `WorkerTakesChunk` |
+| Decoding the file into the chunk and checking its CRC | `WorkerFillsChunk` |
+| `tracker.check()?` before `writers.send` | `WorkerChecksBeforeSend` |
+| `Writers::send`, its `lane.send` and its `check` | `WorkerSendsJob` |
+| `failure.get_or_insert(error)` and `next.store(wanted.len(), ..)` | `WorkerStoresFailure` |
+| A panic on a folder worker, such as one from a progress callback | `WorkerPanics` |
+| `Writers::work` and `write_job`, with `catch_unwind` around the write and the progress report | `WriterReceives`, `WriterWrites`, `WriterDropsJob` |
+| The joins of the workers, `drop(closing)`, the joins of the writers, `resume_callback_panic`, the stored failure, `writers.check()?` and `tracker.check()?` before publishing | `CallerJoinsWorkers`, `CallerJoinsWriters` |
+
+One file here is one chunk, because only a file of at most `CHUNK` bytes in a folder of more than one file goes to the pool. Larger files, the files of a one-file folder and every file at one thread take the path the folder model covers. A failed write, a panicking write and a panicking progress callback on a writer are one step, because `catch_unwind` turns each into a stored failure. The model leaves out decoder memory, which the folder model covers. A worker holds no chunk while it waits in `Memory::reserve`, and writers never wait on that memory, so the two waits form no cycle. It also leaves out the spare buffer list, which the tar pool model covers, file contents and the filesystem.
+
+- The bound is 2 solid folders of 2 small files each, 2 folder workers, 2 writers, a budget of 2 chunks and 1 job per lane queue. Any file or folder can be corrupt, any write can fail, any worker can panic, and a cancel can come at any moment.
+- TLC reaches 999,837 states in `MCUnix` and 1,334,981 in `MCWindows`, and both run within a minute.
+
+`scripts/plant.py` applied each change below to `MCUnix`, and TLC reported the named rule broken:
+
+| Change | Rule that breaks |
+| --- | --- |
+| `WorkerTakesChunk` no longer waits on the budget | `BudgetHolds` |
+| `WorkerChecksBeforeSend` keeps the chunk on a cancel | `NothingLeaks` |
+| `CallerJoinsWriters` skips `writers.check()` | `SuccessIsComplete` |
+| `WriterReceives` leaves the job in the queue | `WrittenAtMostOnce` |
+| `WorkerStoresFailure` drops the error | `SuccessIsComplete`, `FailureIsReported` |
+| `CallerJoinsWriters` skips the cancel check | `CancelPublishesNothing` |
+| `CallerJoinsWriters` does not wait for the writers | `NoThreadOutlivesTheCall`, `NothingLeaks` |
+| `CallerJoinsWorkers` leaves the lanes open, as if `closing` dropped after the writers' joins | `NoDeadlock` |

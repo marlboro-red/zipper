@@ -130,6 +130,8 @@ mod tree;
 #[cfg(feature = "iso")]
 mod udf;
 mod volumes;
+#[cfg(any(feature = "7z", feature = "tar"))]
+mod writer_pool;
 mod xattr;
 #[cfg(feature = "wim")]
 mod xpress;

@@ -66,9 +66,9 @@ Use these skills from `.claude/skills/` for the judgment that checks cannot make
 | [`zipper-review`](.claude/skills/zipper-review/SKILL.md) | You change archive parsing, extraction safety or concurrency. |
 | [`zipper-docs`](.claude/skills/zipper-docs/SKILL.md) | You add, move or rewrite a Markdown page or record. |
 | [`zipper-reflect`](.claude/skills/zipper-reflect/SKILL.md) | A milestone closes or the same mistake happens twice. |
-| [`zipper-verify-tar-pool`](.claude/skills/zipper-verify-tar-pool/SKILL.md) | You change the tar writer pool, its budget or its queues in `src/native_tar.rs`. |
+| [`zipper-verify-tar-pool`](.claude/skills/zipper-verify-tar-pool/SKILL.md) | You change the writer pool, its budget or its queues in `src/writer_pool.rs`, or how `src/native_tar.rs` uses it. |
 | [`zipper-verify-zip-write-behind`](.claude/skills/zipper-verify-zip-write-behind/SKILL.md) | You change `write_behind` or its buffer sizes in `src/native_zip.rs`. |
-| [`zipper-verify-7z-workers`](.claude/skills/zipper-verify-7z-workers/SKILL.md) | You change the 7z folder workers, the decoder memory budget or the cancel checks in `src/native_7z.rs`. |
+| [`zipper-verify-7z-workers`](.claude/skills/zipper-verify-7z-workers/SKILL.md) | You change the 7z folder workers, the decoder memory budget, the cancel checks or the hand-off of small files to the writer pool in `src/native_7z.rs`. |
 | [`zipper-verify-overwrite`](.claude/skills/zipper-verify-overwrite/SKILL.md) | You change extraction into an existing folder in `src/staging.rs` or the publish path. |
 | [`zipper-verify-zip-budget`](.claude/skills/zipper-verify-zip-budget/SKILL.md) | You change how ZIP workers reserve decoder memory, `Memory` in `src/memory.rs`, or the write-behind hand-off. |
 | [`zipper-verify-links`](.claude/skills/zipper-verify-links/SKILL.md) | You change the link check in `src/staging.rs`, or how links are created or checked in `src/lib.rs`. |

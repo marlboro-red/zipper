@@ -3,6 +3,9 @@
 //! `docs/reference/tar-reader.md` for what it accepts and restores.
 use crate::dictionary::{DecoderMemory, LARGEST_DICTIONARY, ensure_dictionary_fits};
 use crate::progress::Tracker;
+use crate::writer_pool::{
+    self, CHUNK, Chunk, ClosesOnDrop, InFlight, Job, QUEUED_CHUNKS_PER_FILE, Writers, Written,
+};
 use crate::{BadField, Field, field_check};
 use crate::{
     Entry,
@@ -13,13 +16,9 @@ use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::{
-        Condvar, Mutex,
-        mpsc::{Receiver, SyncSender, sync_channel},
-    },
-    time::SystemTime,
+    sync::mpsc::{SyncSender, sync_channel},
 };
 
 const BLOCK: usize = 512;
@@ -27,13 +26,7 @@ const COPY_BUFFER: usize = 1024 * 1024;
 const MAX_EXTENSION: u64 = 1024 * 1024;
 const MAX_ENTRIES: usize = 1_000_000;
 const MAX_METADATA: usize = 64 * 1024 * 1024;
-const CHUNK: usize = 1024 * 1024;
-const QUEUED_FILES: usize = 16;
-const QUEUED_CHUNKS_PER_FILE: usize = 4;
-const BYTES_IN_FLIGHT: usize = 16 * 1024 * 1024;
 const DEFAULT_WRITERS: usize = 4;
-// RECORD(benchmarks/cross-platform/tar-folder-lanes/README.md): one writer per folder is faster on Windows.
-const ONE_WRITER_PER_FOLDER: bool = cfg!(windows);
 const LINKS_PER_REPORT: usize = 1024;
 const READ_ERROR: &str = "cannot read the tar stream";
 const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
@@ -77,204 +70,6 @@ pub struct ReadOptions<'a> {
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
-}
-
-#[derive(Default)]
-struct InFlight {
-    bytes: Mutex<usize>,
-    freed: Condvar,
-    spare: Mutex<Vec<Vec<u8>>>,
-}
-
-impl InFlight {
-    fn take(&self, length: usize) -> Chunk<'_> {
-        let mut bytes = self.bytes.lock().unwrap();
-        while *bytes > 0 && *bytes + length > BYTES_IN_FLIGHT {
-            bytes = self.freed.wait(bytes).unwrap();
-        }
-        *bytes += length;
-        drop(bytes);
-        let recycled = (length == CHUNK)
-            .then(|| self.spare.lock().unwrap().pop())
-            .flatten();
-        Chunk {
-            data: recycled.unwrap_or_else(|| vec![0; length]),
-            flight: self,
-        }
-    }
-}
-
-struct Chunk<'f> {
-    data: Vec<u8>,
-    flight: &'f InFlight,
-}
-
-impl Drop for Chunk<'_> {
-    fn drop(&mut self) {
-        let data = std::mem::take(&mut self.data);
-        let length = data.len();
-        if length == CHUNK {
-            self.flight.spare.lock().unwrap().push(data);
-        }
-        *self.flight.bytes.lock().unwrap() -= length;
-        self.flight.freed.notify_all();
-    }
-}
-
-struct Job<'f> {
-    path: PathBuf,
-    name: String,
-    mode: u32,
-    modified: Option<SystemTime>,
-    size: u64,
-    first: Chunk<'f>,
-    rest: Option<Receiver<Chunk<'f>>>,
-}
-
-struct Writers<'f> {
-    lanes: Mutex<Vec<SyncSender<Job<'f>>>>,
-    flight: &'f InFlight,
-    pending: Mutex<usize>,
-    idle: Condvar,
-    failure: Mutex<Option<anyhow::Error>>,
-    callback_panic: Mutex<Option<Box<dyn std::any::Any + Send>>>,
-}
-
-#[derive(Clone, Copy)]
-enum Written {
-    Bytes(u64),
-    File,
-}
-
-impl<'f> Writers<'f> {
-    fn send(&self, job: Job<'f>) -> Result<()> {
-        *self.pending.lock().unwrap() += 1;
-        let lanes = self.lanes.lock().unwrap();
-        let lane = match lanes.len() {
-            0 | 1 => 0,
-            count => {
-                let folder = job.name.rfind('/').map_or("", |slash| &job.name[..slash]);
-                let mut hasher = std::hash::DefaultHasher::new();
-                std::hash::Hash::hash(&folder.to_lowercase(), &mut hasher);
-                std::hash::Hasher::finish(&hasher) as usize % count
-            }
-        };
-        let sent = lanes.get(lane).is_some_and(|lane| lane.send(job).is_ok());
-        ensure!(sent, "tar writers stopped");
-        self.check()
-    }
-
-    fn check(&self) -> Result<()> {
-        match self.failure.lock().unwrap().take() {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
-    }
-
-    fn stopped(&self) -> anyhow::Error {
-        self.check()
-            .err()
-            .unwrap_or_else(|| anyhow::anyhow!("tar writers stopped"))
-    }
-
-    fn drain(&self) -> Result<()> {
-        let mut pending = self.pending.lock().unwrap();
-        while *pending > 0 {
-            pending = self.idle.wait(pending).unwrap();
-        }
-        drop(pending);
-        self.check()
-    }
-
-    fn close(&self) {
-        self.lanes.lock().unwrap().clear();
-    }
-
-    fn report(&self, count: &dyn Fn(Written) -> Result<()>, written: Written) {
-        let counted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = count(written);
-        }));
-        if let Err(panic) = counted {
-            self.callback_panic.lock().unwrap().get_or_insert(panic);
-            self.failure
-                .lock()
-                .unwrap()
-                .get_or_insert_with(|| anyhow::anyhow!("the progress callback panicked"));
-        }
-    }
-
-    fn work(&self, jobs: &Mutex<Receiver<Job<'f>>>, count: &dyn Fn(Written) -> Result<()>) {
-        loop {
-            let next = jobs.lock().unwrap().recv();
-            let Ok(mut job) = next else {
-                return;
-            };
-            if self.failure.lock().unwrap().is_none() {
-                let report = |bytes: u64| self.report(count, Written::Bytes(bytes));
-                let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let (total, held) = write_job(&mut job, &report)?;
-                    self.report(count, Written::Bytes(held));
-                    if total == job.size {
-                        self.report(count, Written::File);
-                    }
-                    Ok(())
-                }))
-                .unwrap_or_else(|_| {
-                    Err(anyhow::anyhow!(
-                        "a tar writer panicked writing {:?}",
-                        job.name
-                    ))
-                });
-                if let Err(error) = written {
-                    self.failure.lock().unwrap().get_or_insert(error);
-                }
-            }
-            drop(job);
-            let mut pending = self.pending.lock().unwrap();
-            *pending -= 1;
-            if *pending == 0 {
-                self.idle.notify_all();
-            }
-        }
-    }
-}
-
-fn write_job(job: &mut Job, written: &dyn Fn(u64)) -> Result<(u64, u64)> {
-    let name = &job.name;
-    let mut file = crate::create_new_file(&job.path, job.mode, crate::windows_attributes(0, Some(job.mode))).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::AlreadyExists {
-            anyhow::anyhow!(
-                "tar entry {name:?} collides with another entry on this filesystem, which ignores case or Unicode normalization"
-            )
-        } else {
-            anyhow::Error::from(error).context(format!("cannot create tar entry {name:?}"))
-        }
-    })?;
-    counters::add(Counter::FilesCreated, 1);
-    let mut total = 0;
-    let mut held = 0;
-    let mut write = |bytes: &[u8]| -> Result<()> {
-        total += bytes.len() as u64;
-        if !bytes.is_empty() {
-            file.write_all(bytes)
-                .with_context(|| format!("cannot write tar entry {name:?}"))?;
-            written(std::mem::replace(&mut held, bytes.len() as u64));
-            counters::add(Counter::OutputWrites, 1);
-            counters::add(Counter::OutputBytesWritten, bytes.len() as u64);
-        }
-        Ok(())
-    };
-    write(&job.first.data)?;
-    if let Some(rest) = &job.rest {
-        for chunk in rest {
-            write(&chunk.data)?;
-        }
-    }
-    if let Some(time) = job.modified {
-        crate::set_modified_best_effort(&file, time);
-    }
-    drop(file);
-    Ok((total, held))
 }
 
 /// Returns the compression of a tar archive, or `None` when the file does not
@@ -1032,6 +827,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
                     path,
                     name,
                     mode,
+                    attributes: crate::windows_attributes(0, Some(mode)),
                     modified,
                     size,
                     first: chunk,
@@ -1361,25 +1157,11 @@ pub(crate) fn read_part(
         "tar writers must be between 1 and 64"
     );
     let flight = InFlight::default();
-    let lane_count = if ONE_WRITER_PER_FOLDER { count } else { 1 };
-    let (lanes, queues): (Vec<_>, Vec<_>) = (0..lane_count)
-        .map(|_| {
-            let (lane, queue) = sync_channel(QUEUED_FILES);
-            (lane, Mutex::new(queue))
-        })
-        .unzip();
-    let writers = Writers {
-        lanes: Mutex::new(lanes),
-        flight: &flight,
-        pending: Mutex::new(0),
-        idle: Condvar::new(),
-        failure: Mutex::new(None),
-        callback_panic: Mutex::new(None),
-    };
+    let (writers, queues) = Writers::new("tar", &flight, count);
     std::thread::scope(|scope| {
         let threads: Vec<_> = (0..count)
             .map(|index| {
-                let queue = &queues[index % lane_count];
+                let queue = writer_pool::queue(&queues, index);
                 let writers = &writers;
                 let count_written = &count_written;
                 scope.spawn(move || writers.work(queue, count_written))
@@ -1403,9 +1185,7 @@ pub(crate) fn read_part(
         }));
         drop(closing);
         let joined: Vec<_> = threads.into_iter().map(|thread| thread.join()).collect();
-        if let Some(panic) = writers.callback_panic.lock().unwrap().take() {
-            std::panic::resume_unwind(panic);
-        }
+        writers.resume_callback_panic();
         parsed.unwrap_or_else(|panic| std::panic::resume_unwind(panic))?;
         ensure!(joined.iter().all(Result::is_ok), "a tar writer panicked");
         writers.check()?;
@@ -1415,14 +1195,6 @@ pub(crate) fn read_part(
         publish(&extraction, &staging)?;
         Ok(extraction.entries)
     })
-}
-
-struct ClosesOnDrop<'w, 'f>(&'w Writers<'f>);
-
-impl Drop for ClosesOnDrop<'_, '_> {
-    fn drop(&mut self) {
-        self.0.close();
-    }
 }
 
 fn publish(extraction: &Extraction, staging: &crate::staging::Staging) -> Result<()> {
@@ -1446,36 +1218,6 @@ fn publish(extraction: &Extraction, staging: &crate::staging::Staging) -> Result
         })
         .collect();
     staging.publish(&directories)
-}
-
-#[cfg(test)]
-mod in_flight_tests {
-    use super::*;
-
-    #[test]
-    fn chunks_in_flight_never_exceed_the_budget_and_release_on_drop() {
-        let flight = InFlight::default();
-        let peak = Mutex::new(0usize);
-        std::thread::scope(|scope| {
-            for _ in 0..16 {
-                scope.spawn(|| {
-                    for round in 0..200 {
-                        let held = flight.take(CHUNK + round % 2);
-                        let now = *flight.bytes.lock().unwrap();
-                        let mut peak = peak.lock().unwrap();
-                        *peak = (*peak).max(now);
-                        drop(peak);
-                        std::thread::yield_now();
-                        drop(held);
-                    }
-                });
-            }
-        });
-        assert!(*peak.lock().unwrap() <= BYTES_IN_FLIGHT);
-        assert_eq!(*flight.bytes.lock().unwrap(), 0);
-        let spare = flight.spare.lock().unwrap();
-        assert!(!spare.is_empty() && spare.len() <= BYTES_IN_FLIGHT / CHUNK);
-    }
 }
 
 #[cfg(test)]
@@ -1615,6 +1357,7 @@ mod proofs {
 #[cfg(test)]
 mod bzip2_stream_tests {
     use super::*;
+    use std::io::Write;
 
     fn stream(bytes: usize) -> Vec<u8> {
         let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::fast());

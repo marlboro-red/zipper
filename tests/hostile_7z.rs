@@ -1480,7 +1480,31 @@ fn solid_copy_archive(
     folder_crc: Option<u32>,
     file_crcs: bool,
 ) -> Vec<u8> {
-    let packed: Vec<u8> = files.iter().flat_map(|(_, data)| data.clone()).collect();
+    let members: Vec<Member> = files.iter().map(|(name, data)| file(name, data)).collect();
+    let crcs = file_crcs.then(|| {
+        files
+            .iter()
+            .map(|(_, data)| crc32fast::hash(data))
+            .collect()
+    });
+    solid_members_archive(&members, folder_crc, crcs)
+}
+
+fn solid_members_archive(
+    members: &[Member],
+    folder_crc: Option<u32>,
+    file_crcs: Option<Vec<u32>>,
+) -> Vec<u8> {
+    let files: Vec<(&str, &[u8])> = members
+        .iter()
+        .map(|member| {
+            (
+                member.name.as_str(),
+                member.data.as_deref().unwrap_or_default(),
+            )
+        })
+        .collect();
+    let packed: Vec<u8> = files.iter().flat_map(|(_, data)| data.to_vec()).collect();
     let mut header = vec![1u8, 4, 6];
     header.extend(number(0));
     header.extend(number(1));
@@ -1500,24 +1524,24 @@ fn solid_copy_archive(
     for (_, data) in &files[..files.len() - 1] {
         header.extend(number(data.len() as u64));
     }
-    if file_crcs {
+    if let Some(crcs) = file_crcs {
         header.extend([10, 1]);
-        for (_, data) in files {
-            header.extend_from_slice(&crc32fast::hash(data).to_le_bytes());
+        for crc in crcs {
+            header.extend_from_slice(&crc.to_le_bytes());
         }
     }
     header.extend([0, 0, 5]);
     header.extend(number(files.len() as u64));
     let mut names = vec![0u8];
-    for (name, _) in files {
+    for (name, _) in &files {
         for unit in name.encode_utf16().chain([0]) {
             names.extend_from_slice(&unit.to_le_bytes());
         }
     }
     header.extend(property(17, &names));
     let mut attributes = vec![1u8, 0];
-    for _ in files {
-        attributes.extend_from_slice(&UNIX_FILE.to_le_bytes());
+    for member in members {
+        attributes.extend_from_slice(&member.attribute.to_le_bytes());
     }
     header.extend(property(21, &attributes));
     header.extend([0, 0]);
@@ -1822,5 +1846,268 @@ fn cancelling_a_filtered_segmented_folder_publishes_nothing() {
             "{threads} threads: {error:#}"
         );
         assert!(parent_is_empty(&root), "{threads} threads left output");
+    }
+}
+
+const POOL_FOLDERS: usize = 6;
+const POOL_FILES: usize = 240;
+
+fn pool_members() -> Vec<Member> {
+    let mut members: Vec<Member> = (0..POOL_FILES)
+        .map(|index| {
+            let length = 1 + (index * 7919) % 40_000;
+            let data: Vec<u8> = (0..length)
+                .map(|byte| (byte.wrapping_mul(2_654_435_761).wrapping_add(index) >> 13) as u8)
+                .collect();
+            file(&format!("d{}/f{index}", index % POOL_FOLDERS), &data)
+        })
+        .collect();
+    let boundary = |length: usize, seed: usize| -> Vec<u8> {
+        (0..length).map(|byte| (byte ^ seed) as u8).collect()
+    };
+    members.insert(17, file("d1/exactly-one-chunk", &boundary(1 << 20, 3)));
+    members.insert(
+        40,
+        file("d2/one-chunk-and-a-byte", &boundary((1 << 20) + 1, 5)),
+    );
+    members.insert(90, link("links/to-f0", "../d0/f0"));
+    members.push(link("d3/to-sibling", "f3"));
+    members
+}
+
+fn crcs_of(members: &[Member]) -> Vec<u32> {
+    members
+        .iter()
+        .map(|member| crc32fast::hash(member.data.as_deref().unwrap()))
+        .collect()
+}
+
+fn pool_options<'a>(threads: Option<usize>, paths: &'a [String]) -> ReadOptions<'a> {
+    ReadOptions {
+        threads,
+        paths,
+        ..ReadOptions::default()
+    }
+}
+
+fn read_with(
+    bytes: &[u8],
+    write: bool,
+    options: ReadOptions,
+) -> (tempfile::TempDir, anyhow::Result<Vec<zipper::Entry>>) {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.7z");
+    fs::write(&archive, bytes).unwrap();
+    fs::create_dir(root.path().join("parent")).unwrap();
+    let destination = root.path().join("parent/out");
+    let result = read_archive(&archive, write.then_some(destination.as_path()), options);
+    (root, result)
+}
+
+fn assert_nothing_left(root: &Path, case: &str) {
+    let left: Vec<_> = fs::read_dir(root.join("parent"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert!(left.is_empty(), "{case} left {left:?}");
+}
+
+fn assert_tree(out: &Path, members: &[Member], selected: impl Fn(&str) -> bool, case: &str) {
+    let mut expected = 0;
+    for member in members {
+        let path = out.join(&member.name);
+        if !selected(&member.name) {
+            assert!(
+                fs::symlink_metadata(&path).is_err(),
+                "{case}: {} written",
+                member.name
+            );
+            continue;
+        }
+        expected += 1;
+        let data = member.data.as_deref().unwrap();
+        if member.attribute == UNIX_LINK {
+            assert_eq!(
+                fs::read_link(&path).unwrap().as_os_str().as_encoded_bytes(),
+                data,
+                "{case}: {}",
+                member.name
+            );
+        } else {
+            assert!(
+                fs::read(&path).unwrap() == data,
+                "{case}: {} differs",
+                member.name
+            );
+        }
+    }
+    let mut found = 0;
+    let mut folders = vec![out.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for entry in fs::read_dir(folder).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                folders.push(entry.path());
+            } else {
+                found += 1;
+            }
+        }
+    }
+    assert_eq!(found, expected, "{case}: files in the output");
+}
+
+#[test]
+fn many_small_files_in_a_solid_folder_extract_byte_exact_at_every_thread_count() {
+    let members = pool_members();
+    let crcs = crcs_of(&members);
+    let all: Vec<u8> = members
+        .iter()
+        .flat_map(|member| member.data.clone().unwrap())
+        .collect();
+    let selected = [
+        "d1".to_string(),
+        "links/to-f0".to_string(),
+        "d0/f0".to_string(),
+    ];
+    for (folder_crc, file_crcs) in [
+        (None, Some(crcs.clone())),
+        (Some(crc32fast::hash(&all)), None),
+    ] {
+        let bytes = solid_members_archive(&members, folder_crc, file_crcs.clone());
+        for threads in [Some(1), Some(4), None] {
+            let case = format!("{threads:?} threads, file CRCs {}", file_crcs.is_some());
+            let (root, result) = read_with(&bytes, true, pool_options(threads, &[]));
+            result.unwrap_or_else(|error| panic!("{case}: {error:#}"));
+            assert_tree(&root.path().join("parent/out"), &members, |_| true, &case);
+            let (root, result) = read_with(&bytes, true, pool_options(threads, &selected));
+            result.unwrap_or_else(|error| panic!("{case}, selected: {error:#}"));
+            let chosen = |name: &str| {
+                selected
+                    .iter()
+                    .any(|path| name == path || name.starts_with(&format!("{path}/")))
+            };
+            assert_tree(&root.path().join("parent/out"), &members, chosen, &case);
+            let (root, result) = read_with(&bytes, false, pool_options(threads, &[]));
+            result.unwrap_or_else(|error| panic!("{case}, verify only: {error:#}"));
+            assert_nothing_left(root.path(), &case);
+        }
+    }
+}
+
+#[test]
+fn a_crc_mismatch_in_the_last_small_file_publishes_nothing() {
+    let members = pool_members();
+    let last = members
+        .iter()
+        .rposition(|member| member.attribute == UNIX_FILE)
+        .unwrap();
+    let mut crcs = crcs_of(&members);
+    crcs[last] ^= 1;
+    let bytes = solid_members_archive(&members[..=last], None, Some(crcs[..=last].to_vec()));
+    for threads in [Some(1), Some(4), None] {
+        let case = format!("{threads:?} threads");
+        let (root, result) = read_with(&bytes, true, pool_options(threads, &[]));
+        let error = format!("{:#}", result.expect_err(&case));
+        assert!(
+            error.contains(&format!("7z CRC mismatch in {:?}", members[last].name)),
+            "{case}: {error}"
+        );
+        assert_nothing_left(root.path(), &case);
+    }
+}
+
+#[test]
+fn a_file_write_that_fails_in_a_solid_folder_names_the_entry_and_publishes_nothing() {
+    let unwritable = format!("d4/{}", "n".repeat(300));
+    for position in [120, POOL_FILES + 3] {
+        let mut members = pool_members();
+        members.insert(
+            position,
+            file(&unwritable, b"no filesystem takes a name this long"),
+        );
+        let bytes = solid_members_archive(&members, None, Some(crcs_of(&members)));
+        for threads in [Some(1), Some(4), None] {
+            let case = format!("file {position} of {}, {threads:?} threads", members.len());
+            let (root, result) = read_with(&bytes, true, pool_options(threads, &[]));
+            let error = format!("{:#}", result.expect_err(&case));
+            assert!(error.contains(&unwritable), "{case}: {error}");
+            assert_nothing_left(root.path(), &case);
+        }
+    }
+}
+
+#[test]
+fn a_cancel_in_the_middle_of_a_solid_folder_publishes_nothing() {
+    let members = pool_members();
+    let bytes = solid_members_archive(&members, None, Some(crcs_of(&members)));
+    for threads in [Some(1), Some(4), None] {
+        let case = format!("{threads:?} threads");
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let seen = std::sync::Mutex::new((0u64, 0u64));
+        let watch = |progress: zipper::Progress| {
+            let mut seen = seen.lock().unwrap();
+            assert!(
+                progress.files_done >= seen.0 && progress.bytes_done >= seen.1,
+                "{case}: a count shrank"
+            );
+            *seen = (progress.files_done, progress.bytes_done);
+            if progress.files_done >= 60 {
+                cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        };
+        let options = ReadOptions {
+            control: zipper::Control {
+                progress: Some(&watch),
+                cancel: Some(&cancel),
+            },
+            ..pool_options(threads, &[])
+        };
+        let (root, result) = read_with(&bytes, true, options);
+        let error = result.expect_err(&case);
+        assert!(error.is::<zipper::Cancelled>(), "{case}: {error:#}");
+        assert_nothing_left(root.path(), &case);
+    }
+}
+
+#[test]
+fn a_progress_callback_that_panics_in_a_solid_folder_reaches_the_caller() {
+    let members: Vec<Member> = pool_members()
+        .into_iter()
+        .filter(|member| {
+            member.attribute == UNIX_FILE && member.data.as_ref().unwrap().len() < 1 << 20
+        })
+        .collect();
+    let bytes = solid_members_archive(&members, None, Some(crcs_of(&members)));
+    for threads in [Some(1), Some(4), None] {
+        let case = format!("{threads:?} threads");
+        let watch = |progress: zipper::Progress| {
+            assert!(progress.files_done < 30, "the callback gives up");
+        };
+        let options = ReadOptions {
+            control: zipper::Control {
+                progress: Some(&watch),
+                cancel: None,
+            },
+            ..pool_options(threads, &[])
+        };
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("a.7z");
+        fs::write(&archive, &bytes).unwrap();
+        fs::create_dir(root.path().join("parent")).unwrap();
+        let destination = root.path().join("parent/out");
+        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            read_archive(&archive, Some(&destination), options)
+        }));
+        let panic = read.expect_err(&case);
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .unwrap_or_default();
+        assert!(
+            message.contains("the callback gives up"),
+            "{case}: {message}"
+        );
+        assert_nothing_left(root.path(), &case);
     }
 }

@@ -306,7 +306,7 @@ fn every_fixture_extracts_to_the_tree_7zip_gave_in_process() {
             "{} goes to 7-Zip",
             fixture.name
         );
-        for threads in [Some(1), None] {
+        for threads in [Some(1), Some(4), None] {
             let work = tempfile::tempdir().unwrap();
             let output = work.path().join("out");
             extract(
@@ -317,8 +317,13 @@ fn every_fixture_extracts_to_the_tree_7zip_gave_in_process() {
                 &[],
                 threads,
             )
-            .unwrap_or_else(|error| panic!("{}: {error:#}", fixture.name));
-            assert_eq!(&tree(&output), expected, "{}", fixture.name);
+            .unwrap_or_else(|error| panic!("{} at {threads:?} threads: {error:#}", fixture.name));
+            assert_eq!(
+                &tree(&output),
+                expected,
+                "{} at {threads:?} threads",
+                fixture.name
+            );
         }
         zipper::native_7z::read_archive(
             &archive,

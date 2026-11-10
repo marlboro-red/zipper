@@ -1,11 +1,11 @@
 ---
 name: zipper-verify-tar-pool
-description: Model-check the tar writer pool in src/native_tar.rs with TLA+. Use before committing any change to InFlight, Chunk, Writers, write_job, Extraction::write_file, or the thread scope in native_tar::read_archive, and when a tar extraction hangs, leaks memory or reports success after a failed write.
+description: Model-check the tar writer pool in src/writer_pool.rs and src/native_tar.rs with TLA+. Use before committing any change to InFlight, Chunk, Writers, write_job, ClosesOnDrop, Extraction::write_file, or the thread scope in native_tar::read_archive, and when a tar extraction hangs, leaks memory or reports success after a failed write.
 ---
 
 # Verify the tar writer pool
 
-The tar reader decodes on one thread and writes files on several. A wrong order of steps hangs an extraction, holds more than 16 MiB of file data, or reports success after a write failed. Tests hit few of the possible orders. `verification/tar-writer-pool/` is a TLA+ model of the pool, and TLC checks every order of its steps within a bound.
+The tar reader decodes on one thread and writes files on several, through the pool in `src/writer_pool.rs`. The 7z reader shares that pool, and the `zipper-verify-7z-workers` skill checks its own hand-off to it. A wrong order of steps hangs an extraction, holds more than 16 MiB of file data, or reports success after a write failed. Tests hit few of the possible orders. `verification/tar-writer-pool/` is a TLA+ model of the pool, and TLC checks every order of its steps within a bound.
 
 ## The rules
 
@@ -31,7 +31,7 @@ Each rule is an invariant in `WriterPool.tla`. TLC also checks that no state is 
 | The `spare.pop()` in `InFlight::take`, or a new `vec![0; length]` | the `spare` and `allocated` updates in `DecoderTakesChunk` |
 | `Writers::send`, which counts, sends to a lane and calls `check` | `DecoderCountsJob`, `DecoderSendsJob` |
 | `Writers::drain`, `Writers::check`, `Writers::stopped` | `DecoderDrains`, the `failure` resets |
-| `Writers::close`, called by the `ClosesOnDrop` guard on every return from the scope | `DecoderClosesLanes` |
+| `Writers::close`, called by the `ClosesOnDrop` guard on every return from the scope; `Writers::new` and `writer_pool::queue`, which pick the lanes | `DecoderClosesLanes` |
 | `Writers::work` and `write_job` | `WriterReceives`, `WriterWritesFirst`, `WriterWritesRest`, `WriterDropsJob` |
 | `Extraction::write_file`, including the local `stream` sender that drops on `?` | `DecoderTakesChunk` through `DecoderFinishesFile`, `DecoderFindsCorruptInput` |
 | The `thread::scope` block in `native_tar::read_archive` | `DecoderClosesLanes`, `DecoderJoins` |

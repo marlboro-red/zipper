@@ -24,13 +24,20 @@ fn native_reader_matches_the_reference_readers() {
     );
     for (name, wanted) in &archives {
         let archive = corpus().join(format!("{name}.7z"));
-        let work = tempfile::tempdir().unwrap();
-        let destination = work.path().join("out");
-        let result = read_archive(&archive, Some(&destination), ReadOptions::default());
-        result.unwrap_or_else(|error| panic!("{name}: {error:#}"));
-        corpus::assert_tree_matches_manifest(work.path(), wanted, name);
-        read_archive(&archive, None, ReadOptions::default())
-            .unwrap_or_else(|error| panic!("{name} verification: {error:#}"));
+        for threads in [Some(1), Some(4), None] {
+            let options = ReadOptions {
+                threads,
+                ..ReadOptions::default()
+            };
+            let case = format!("{name} at {threads:?} threads");
+            let work = tempfile::tempdir().unwrap();
+            let destination = work.path().join("out");
+            let result = read_archive(&archive, Some(&destination), options);
+            result.unwrap_or_else(|error| panic!("{case}: {error:#}"));
+            corpus::assert_tree_matches_manifest(work.path(), wanted, &case);
+            read_archive(&archive, None, options)
+                .unwrap_or_else(|error| panic!("{case} verification: {error:#}"));
+        }
     }
 }
 
