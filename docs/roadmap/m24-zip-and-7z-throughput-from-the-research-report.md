@@ -26,9 +26,10 @@ Done so far, by 11 November 2026:
 - [The BCJ2 main stream copied a slice at a time](../../benchmarks/native-7z/bcj2-slice-scan/README.md). A BCJ2 7z of Silesia extracts a further 1.38 times faster at one thread, so BCJ2 is about three times faster than before this milestone.
 - [Zipper against the Go ZIP extractors pzip and fastzip](../../benchmarks/native-zip/go-zip-tools/README.md), timed as a check on the ZIP reader. Zipper is about 2.5 times faster on Silesia, and its content-only mode beats both on small files.
 
+- [A writer pool for solid 7z folders of small files](../../benchmarks/native-7z/solid-writer-pool/README.md). The solid dependency sources extract 1.60 times faster at default threads, and a TLA+ model of the hand-off holds 8 rules.
+
 Still to try, from the report and the read of pzip and fastzip:
 
-- A writer pool for solid 7z folders of small files, timed and kept, which ships next.
 - One Deflate decoder per ZIP worker, and reads of the archive without a lock.
 - A timing of the serial folder setup before the ZIP worker pool starts, and folder merges detected from `mkdir` results instead of a `stat` for each folder entry.
 - The LZMA literal path, only after a count of mispredicted branches shows where the remaining gap to 7-Zip sits.

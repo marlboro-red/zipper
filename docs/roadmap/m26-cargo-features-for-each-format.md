@@ -15,3 +15,9 @@ Exit checks:
 1. The gate lints every feature alone and the default, and builds a consumer crate with only `zip` and `7z`.
 2. Each format's corpus tests pass in a build with only that format's feature.
 3. `cargo tree` for a `zip` and `7z` build lists no crate that only another format uses.
+
+Done so far, by 11 November 2026:
+
+- Every reader has its own feature, with `more-formats` as their umbrella and `zstd` behind its own feature. The shared tree writer, the volume trait, the dictionary limit and the output-name helpers moved to their own modules, so no feature pulls in another reader's code.
+- The gate lints each feature alone with unused crate dependencies denied, and runs `tests/consumer`, a crate with only `zip` and `7z` that extracts a corpus ZIP and 7z in process. `cargo xtask format-tests` passes each format's tests in a build with only its feature, and `cargo xtask release-checks` runs it.
+- `zip`, `tar` and `squashfs` build without the C `zstd` library and refuse Zstandard data with `NotBuilt("zstd")`, writing nothing. A `zip` and `7z` build has 54 crates against 79 for the default, and compiles no C on Linux or Windows.
