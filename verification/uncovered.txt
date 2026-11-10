@@ -17,3 +17,4 @@ src/output_name.rs | names the one output of an SWF or FLV file as 7-Zip names i
 src/pattern.rs | wildcard matching of the caller's patterns, not of archive bytes; tests/selection.rs covers it
 src/tree.rs | the tree writer that cpio and every reader after it share; it hands paths, links and publishing to placement and staging, whose checks cover them, and each reader's corpus and hostile suites cover the rest
 src/zip_reader.rs | candidate: the archive handle every ZIP worker clones and reads from; tests/handles.rs and the ZIP suites cover it, and no model checks its sharing
+src/zstandard/tests.rs | the unit tests of src/zstandard.rs, with libzstd as the oracle and hand-built frames; the `[zstd]` section runs them
