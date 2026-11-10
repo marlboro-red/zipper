@@ -18,7 +18,7 @@
 
 ## Results
 
-The decoder at `c27fce7`, M cycles a round with M instructions in brackets:
+The decoder at `5d41a1c`, M cycles a round with M instructions in brackets:
 
 | Archive | Zipper | System zlib | zlib-rs | libdeflate, whole entry |
 | --- | ---: | ---: | ---: | ---: |
@@ -36,26 +36,26 @@ Kernel experiments in the order they were made. Each row is one build, in M cycl
 
 | Step | Silesia | Dependency sources | Verdict |
 | --- | ---: | ---: | --- |
-| First version, `5d94b3d` | 816.1 | 227.7 | Base |
+| First version | 816.1 | 227.7 | Base |
 | Matches copied in 16-byte pieces | 714.4 | 180.3 | Kept |
 | Margin checks that rule out a wrap | 703.1 | 179.1 | Kept |
-| Next table entry looked up before the refill | 631.6 | 163.7 | Kept, `896a143` |
+| Next table entry looked up before the refill | 631.6 | 163.7 | Kept |
 | Doubling the copy distance inside every long match | 644.1 | 165.9 | Reverted |
 | Long matches at 16 to 32 bytes read two periods back | 632.6 | 163.3 | Kept |
 | Short-period matches double their distance, inline | 632.2 | 165.0 | Reverted |
-| The same loop in a function of its own | 630.7 | 162.4 | Kept, `3513fbe` |
-| Tables built by doubling, one write a code | 627.0 | 153.8 | Kept, `d659c4c` |
+| The same loop in a function of its own | 630.7 | 162.4 | Kept |
+| Tables built by doubling, one write a code | 627.0 | 153.8 | Kept |
 | Tables no wider than the longest code | 627.6 | 154.1 | Kept |
-| Only the symbols that have a code are counted and sorted | 630.6 | 148.5 | Kept, `c2f1161` |
+| Only the symbols that have a code are counted and sorted | 630.6 | 148.5 | Kept |
 
 The last two steps aimed at small entries, in M cycles a round:
 
 | Step | `grouped` | 10,000 flat tiny files | `mixed` |
 | --- | ---: | ---: | ---: |
-| Before, at `1d63da7` | 23.4 | 17.2 | 58.0 |
+| Before | 23.4 | 17.2 | 58.0 |
 | Tables no wider than the longest code | 21.3 | 15.7 | 55.7 |
 | Only the symbols that have a code are counted and sorted | 13.9 | 12.4 | 47.7 |
-| Tables in a box, allocated at the first dynamic block, `c27fce7` | 15.1 | 9.3 | 49.8 |
+| Tables in a box, allocated at the first dynamic block | 15.1 | 9.3 | 49.8 |
 
 - The first version let LLVM vectorize the match copy, with about 25 instructions of setup before each match.
 - The margin checks cut Silesia from 1,759 to 1,453 M instructions and 11 M cycles. The bounds checks they removed were well predicted.
