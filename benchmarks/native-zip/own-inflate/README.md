@@ -1,6 +1,6 @@
-# Zipper's own Deflate decoder, in counters
+# Zipper's own Deflate decoder
 
-**Kept as the ZIP Deflate decoder. Zipper's streaming decoder in safe Rust decodes Silesia's entries in 629.7 M cycles a round, against 681.3 for Apple's system zlib and 886.0 for zlib-rs, and the dependency sources in 153.3 against 178.1 and 223.7.** These are cycle counters from one Apple M5. No wall time was measured, and nothing was measured on Linux, Windows or x86.
+**Kept as the ZIP Deflate decoder. Zipper's streaming decoder in safe Rust decodes Silesia's entries in 629.7 M cycles a round, against 681.3 for Apple's system zlib and 886.0 for zlib-rs.** In wall time on an M2 Max, a large compressible ZIP entry extracts 1.24 times faster than with the system zlib and Silesia ZIP 1.06 times faster at one thread, with ranges apart. Small-file ZIPs, which file creation limits, are unchanged. Nothing was measured on Linux, Windows or x86.
 
 ## Question
 
@@ -18,7 +18,7 @@
 
 ## Results
 
-The decoder at `5d41a1c`, M cycles a round with M instructions in brackets:
+The decoder at `824f21d`, M cycles a round with M instructions in brackets:
 
 | Archive | Zipper | System zlib | zlib-rs | libdeflate, whole entry |
 | --- | ---: | ---: | ---: | ---: |
@@ -74,6 +74,22 @@ Extraction with `zipper extract --zip-engine native`, three runs each in turn, i
 | Dependency sources | 4 | 3,168.1 to 3,237.1 | 3,065.1 to 3,144.9 | 8.60 to 8.70 MB, 8.40 to 8.57 MB |
 
 Silesia at one thread shows 0.05 to 0.08 MB more resident memory in three further runs, and 0.03 to 0.07 MB less peak memory footprint, 2.65 to 2.69 MB against 2.72 MB. The decoder's code now sits in the binary, where the system zlib's sat in a shared library. The extracted Silesia tree equals the corpus byte for byte.
+
+Wall time on a second machine, an Apple M2 Max with 12 cores, macOS 27.0, on 11 November 2026. `main` is `02f31b2` with the system zlib, prefix `398480389510be91`, and `inflate` is this change on it, prefix `10b8094edf5e34cf`. `scripts/compare_zip_readers.py --runs 7 --cooldown 2` ran each pair in shuffled order and checked every byte. No build ran, and no run lists a busy process. Median milliseconds with the range:
+
+| ZIP | Threads | `main` | `inflate` |
+| --- | --- | --- | --- |
+| Large compressible entry | 1 | 130.2 (128.9 to 137.5) | 104.9 (103.7 to 107.7) |
+| Silesia | 1 | 279.0 (271.7 to 283.2) | 262.0 (259.7 to 270.3) |
+| Silesia | default | 116.5 (114.3 to 118.7) | 113.4 (110.4 to 117.2) |
+| Dependency sources | 1 | 524.1 (512.5 to 536.2) | 515.0 (498.3 to 525.8) |
+| Dependency sources | default | 323.4 (316.5 to 333.6) | 324.1 (317.9 to 340.9) |
+| Mixed tree | default | 215.3 (212.9 to 218.3) | 215.6 (212.1 to 228.0) |
+| Flat tiny files | default | 425.2 (411.4 to 426.5) | 415.9 (412.4 to 426.7) |
+| Grouped files | default | 207.2 (205.8 to 216.3) | 204.6 (200.1 to 208.0) |
+| Large random entry | 1 | 113.4 (112.1 to 114.9) | 117.2 (112.8 to 120.4) |
+
+The first two rows have ranges apart. The rest overlap. Peak memory matched on every row. The raw JSON is in `wall-m2-max/`.
 
 ## Decision
 
