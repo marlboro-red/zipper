@@ -9,7 +9,7 @@ Can a 7z folder with branch or Delta filters in front of LZMA2 decode its LZMA2 
 ## Setup
 
 - Apple M5 with 10 cores, macOS 26.7.1, on 11 November 2026. No build, Kani or TLC ran, and no timed run lists a busy process.
-- `base` is main at `8ba0aa0`, binary SHA-256 prefix `09444d3789d2dad5`. `segments` is `7e6b7fb`, prefix `26f3a0f66ad0a7e7`, the change on `8ba0aa0`. Both are release builds.
+- `base` is main at `8ba0aa0`, binary SHA-256 prefix `09444d3789d2dad5`. `segments` is `8ba0aa0` with the change main has as `12e7edc`, prefix `26f3a0f66ad0a7e7`. Both are release builds.
 - The four solid archives of the [filters record](../own-filters/README.md), written by 7-Zip 26.05:
   - `arm64.7z`, ARM64 then LZMA2, 209,958,008 bytes of arm64 code, 35,676,314 packed;
   - `bcj.7z`, BCJ then LZMA2, 57,372,672 bytes of x86 code and data, 15,664,881 packed;
@@ -49,7 +49,7 @@ Kept.
 
 ## Reproduce
 
-Build `8ba0aa0` and `7e6b7fb` with `cargo build --release`. Then, for each archive and for `1`, `4` and `auto`:
+Build `8ba0aa0`, and `8ba0aa0` after `git cherry-pick 12e7edc`, with `cargo build --release`. Then, for each archive and for `1`, `4` and `auto`:
 
 ```sh
 python3 scripts/compare_zip_readers.py target/bench-work/7z-filters/arm64.7z \

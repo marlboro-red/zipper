@@ -9,7 +9,7 @@ Does buffering BCJ2's four input streams remove the per-byte cost of reading the
 ## Setup
 
 - Apple M5 with 10 cores, macOS 26.7.1, on 10 November 2026. No build, Kani or TLC ran, and no timed run lists a busy process.
-- `base` is main at `b98b9ee`, binary SHA-256 prefix `a08cb2c5271e1228`. `bcj2` is `cc9f186`, prefix `061ba087fba822f3`, which adds the buffering and the Deflate64 charge described below to `77e17c8`. Both are release builds. 7-Zip is 26.05.
+- `base` is main at `b98b9ee`, binary SHA-256 prefix `a08cb2c5271e1228`. `bcj2` is `77e17c8` with the buffering and the Deflate64 charge described below, which main has as `fde235c` and `e229ccb`, prefix `061ba087fba822f3`. Both are release builds. 7-Zip is 26.05.
 - `7z-bcj2.7z` is the codec scoreboard's archive, Silesia (211.9 MB) through 7-Zip's BCJ2 filter and LZMA2, 49.3 MB. `silesia.7z` is plain solid LZMA2, 49.6 MB, from the [sevenz-rust2 record](../../lzma/sevenz-rust2/README.md).
 - `scripts/compare_zip_readers.py --runs 7 --cooldown 2` ran each set after one warmup round, in shuffled order, and checked every extracted byte.
 
@@ -42,7 +42,7 @@ Eight refused archives now fail with a different message, because the buffer rea
 
 ## Reproduce
 
-Build `b98b9ee` and `cc9f186` with `cargo build --release`. Then:
+Build `b98b9ee`, and `77e17c8` after `git cherry-pick fde235c e229ccb`, with `cargo build --release`. Then:
 
 ```sh
 python3 scripts/compare_zip_readers.py target/bench-corpora/codecs/7z-bcj2.7z \

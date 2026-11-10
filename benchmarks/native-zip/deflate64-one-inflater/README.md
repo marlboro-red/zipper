@@ -9,7 +9,7 @@ Can one decoder replace the two that each Deflate64 entry ran? Commit `d7ce08d` 
 ## Setup
 
 - Apple M5 with 10 cores, macOS 26.7.1, on 10 November 2026. No build, Kani or TLC ran, and no timed run lists a busy process.
-- `base` is main at `b98b9ee`, binary SHA-256 prefix `a08cb2c5271e1228`. `deflate64` is `d8d364f`, prefix `165caa3bffc16026`, one commit on `77e17c8`. Both are release builds. 7-Zip is 26.05.
+- `base` is main at `b98b9ee`, binary SHA-256 prefix `a08cb2c5271e1228`. `deflate64` is `77e17c8` with the change main has as `3a3ea5c`, prefix `165caa3bffc16026`. Both are release builds. 7-Zip is 26.05.
 - `zip-deflate64.zip` is the codec scoreboard's archive, Silesia (211.9 MB) as 7-Zip Deflate64 entries, 63.8 MB.
 - `scripts/compare_zip_readers.py --runs 7 --cooldown 2` ran each set after one warmup round, in shuffled order, and checked every extracted byte.
 
@@ -41,7 +41,7 @@ A stream that ends early with 3 or more bytes after it now reports data after it
 
 ## Reproduce
 
-Build `b98b9ee` and `d8d364f` with `cargo build --release`. Then:
+Build `b98b9ee`, and `77e17c8` after `git cherry-pick 3a3ea5c`, with `cargo build --release`. Then:
 
 ```sh
 python3 scripts/compare_zip_readers.py target/bench-corpora/codecs/zip-deflate64.zip \

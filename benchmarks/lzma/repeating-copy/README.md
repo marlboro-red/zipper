@@ -9,7 +9,7 @@ Can long matches at a distance below 16 stop costing one `memmove` per period, w
 ## Setup
 
 - Apple M5 with 10 cores, macOS 26.7.1, on 11 November 2026. No build, Kani or TLC ran, and no timed run lists a busy process.
-- `base` is main at `da6eb8d`, binary SHA-256 prefix `5625aac77f2ba5d2`. `repeat` is `bb17cd7`, prefix `1fcdc258bf722e53`, one change on `da6eb8d`. `src/lzma.rs` did not change between them otherwise. Both are release builds. 7-Zip is 26.05.
+- `base` is main at `da6eb8d`, binary SHA-256 prefix `5625aac77f2ba5d2`. `repeat` is `da6eb8d` with the change main has as `ad0c8d4`, prefix `1fcdc258bf722e53`. `src/lzma.rs` did not change between them otherwise. Both are release builds. 7-Zip is 26.05.
 - `zeros.7z` holds one file of 268,435,456 zero bytes as LZMA2, 39,329 bytes, written by `7zz a -t7z -m0=LZMA2 -mx6`. `silesia-lzma1.7z` is Silesia (211.9 MB) as solid LZMA, 49.6 MB, from the [sevenz-rust2 record](../sevenz-rust2/README.md).
 - `scripts/compare_zip_readers.py --runs 7 --cooldown 2` ran each set after one warmup round, in shuffled order, and checked every extracted byte.
 
@@ -39,7 +39,7 @@ Kept.
 
 ## Reproduce
 
-Build `da6eb8d` and `bb17cd7` with `cargo build --release`. Make the archive with `head -c 268435456 /dev/zero > zeros/zeros.bin` and `7zz a -t7z -m0=LZMA2 -mx6 zeros.7z zeros`. Then:
+Build `da6eb8d`, and `da6eb8d` after `git cherry-pick ad0c8d4`, with `cargo build --release`. Make the archive with `head -c 268435456 /dev/zero > zeros/zeros.bin` and `7zz a -t7z -m0=LZMA2 -mx6 zeros.7z zeros`. Then:
 
 ```sh
 python3 scripts/compare_zip_readers.py zeros.7z zeros --archive-format 7z --runs 7 --cooldown 2 \
