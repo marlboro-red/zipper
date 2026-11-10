@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, BufRead, Read};
 
 const TOP: u32 = 1 << 24;
 const MODEL_BITS: u32 = 11;
@@ -42,7 +42,7 @@ pub(crate) struct Bcj2<M, C, J, R> {
     started: bool,
 }
 
-impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
+impl<M: BufRead, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
     pub(crate) fn new(main: M, calls: C, jumps: J, decisions: R, size: u64) -> Self {
         Bcj2 {
             main,
@@ -100,26 +100,47 @@ impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
         Ok(converted)
     }
 
-    fn next_byte(&mut self) -> io::Result<u8> {
-        if self.pending_start < TARGET {
-            let byte = self.pending[self.pending_start];
-            self.pending_start += 1;
-            return Ok(byte);
+    fn take_pending(&mut self, buffer: &mut [u8]) -> usize {
+        let pending = &self.pending[self.pending_start..];
+        let taken = pending.len().min(buffer.len());
+        buffer[..taken].copy_from_slice(&pending[..taken]);
+        self.pending_start += taken;
+        taken
+    }
+
+    fn copy_main(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let left = usize::try_from(self.size - self.position).unwrap_or(usize::MAX);
+        let available = self.main.fill_buf()?;
+        if available.is_empty() {
+            return Err(data_error("truncated BCJ2 main stream"));
         }
-        let current = byte(&mut self.main, "truncated BCJ2 main stream")?;
-        self.position += 1;
-        if !is_jump(self.previous, current) {
-            self.previous = current;
-            return Ok(current);
+        let window = &available[..available.len().min(buffer.len()).min(left)];
+        let mut preceding = self.previous;
+        let mut plain = 0;
+        while plain < window.len() && !is_jump(preceding, window[plain]) {
+            preceding = window[plain];
+            plain += 1;
         }
-        let index = match current {
-            0xE8 => usize::from(self.previous),
+        let opcode = window.get(plain).copied();
+        let copied = plain + usize::from(opcode.is_some());
+        buffer[..copied].copy_from_slice(&window[..copied]);
+        self.main.consume(copied);
+        self.position += copied as u64;
+        self.previous = buffer[copied - 1];
+        if let Some(opcode) = opcode {
+            self.branch(opcode, preceding)?;
+        }
+        Ok(copied)
+    }
+
+    fn branch(&mut self, opcode: u8, preceding: u8) -> io::Result<()> {
+        let index = match opcode {
+            0xE8 => usize::from(preceding),
             0xE9 => JUMP_MODEL,
             _ => BRANCH_MODEL,
         };
         if !self.decide(index)? {
-            self.previous = current;
-            return Ok(current);
+            return Ok(());
         }
         if self.size - self.position < TARGET as u64 {
             return Err(data_error(
@@ -127,7 +148,7 @@ impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
             ));
         }
         let mut target = [0u8; TARGET];
-        let stream: &mut dyn Read = if current == 0xE8 {
+        let stream: &mut dyn Read = if opcode == 0xE8 {
             &mut self.calls
         } else {
             &mut self.jumps
@@ -141,19 +162,24 @@ impl<M: Read, C: Read, J: Read, R: Read> Bcj2<M, C, J, R> {
         self.pending_start = 0;
         self.position += TARGET as u64;
         self.previous = self.pending[TARGET - 1];
-        Ok(current)
+        Ok(())
     }
 }
 
-impl<M: Read, C: Read, J: Read, R: Read> Read for Bcj2<M, C, J, R> {
+impl<M: BufRead, C: Read, J: Read, R: Read> Read for Bcj2<M, C, J, R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         if !self.started {
             self.start()?;
         }
         let mut written = 0;
-        while written < buffer.len() && (self.position < self.size || self.pending_start < TARGET) {
-            buffer[written] = self.next_byte()?;
-            written += 1;
+        while written < buffer.len() {
+            if self.pending_start < TARGET {
+                written += self.take_pending(&mut buffer[written..]);
+            } else if self.position < self.size {
+                written += self.copy_main(&mut buffer[written..])?;
+            } else {
+                break;
+            }
         }
         if written == 0 && !buffer.is_empty() && self.code != 0 {
             return Err(data_error("BCJ2 range coder does not end at zero"));
@@ -291,6 +317,337 @@ mod tests {
         )
     }
 
+    struct ByteAtATime<M, C, J, R> {
+        main: M,
+        calls: C,
+        jumps: J,
+        decisions: R,
+        probabilities: [u16; MODELS],
+        range: u32,
+        code: u32,
+        previous: u8,
+        position: u64,
+        size: u64,
+        pending: [u8; TARGET],
+        pending_start: usize,
+        started: bool,
+    }
+
+    impl<M: Read, C: Read, J: Read, R: Read> ByteAtATime<M, C, J, R> {
+        fn new(main: M, calls: C, jumps: J, decisions: R, size: u64) -> Self {
+            ByteAtATime {
+                main,
+                calls,
+                jumps,
+                decisions,
+                probabilities: [MODEL_TOTAL >> 1; MODELS],
+                range: u32::MAX,
+                code: 0,
+                previous: 0,
+                position: 0,
+                size,
+                pending: [0; TARGET],
+                pending_start: TARGET,
+                started: false,
+            }
+        }
+
+        fn start(&mut self) -> io::Result<()> {
+            if byte(&mut self.decisions, "truncated BCJ2 range coder")? != 0 {
+                return Err(data_error("BCJ2 range coder does not start at zero"));
+            }
+            for _ in 1..RANGE_CODER_HEADER {
+                self.code = (self.code << 8)
+                    | u32::from(byte(&mut self.decisions, "truncated BCJ2 range coder")?);
+            }
+            if self.code >= self.range {
+                return Err(data_error("BCJ2 range coder starts outside its range"));
+            }
+            self.started = true;
+            Ok(())
+        }
+
+        fn decide(&mut self, index: usize) -> io::Result<bool> {
+            let probability = self.probabilities[index];
+            let bound = (self.range >> MODEL_BITS) * u32::from(probability);
+            let converted = self.code >= bound;
+            if converted {
+                self.range -= bound;
+                self.code -= bound;
+                self.probabilities[index] = probability - (probability >> MOVE_BITS);
+            } else {
+                self.range = bound;
+                self.probabilities[index] =
+                    probability + ((MODEL_TOTAL - probability) >> MOVE_BITS);
+            }
+            if self.range < TOP {
+                self.range <<= 8;
+                self.code = (self.code << 8)
+                    | u32::from(byte(&mut self.decisions, "truncated BCJ2 range coder")?);
+            }
+            Ok(converted)
+        }
+
+        fn next_byte(&mut self) -> io::Result<u8> {
+            if self.pending_start < TARGET {
+                let byte = self.pending[self.pending_start];
+                self.pending_start += 1;
+                return Ok(byte);
+            }
+            let current = byte(&mut self.main, "truncated BCJ2 main stream")?;
+            self.position += 1;
+            if !is_jump(self.previous, current) {
+                self.previous = current;
+                return Ok(current);
+            }
+            let index = match current {
+                0xE8 => usize::from(self.previous),
+                0xE9 => JUMP_MODEL,
+                _ => BRANCH_MODEL,
+            };
+            if !self.decide(index)? {
+                self.previous = current;
+                return Ok(current);
+            }
+            if self.size - self.position < TARGET as u64 {
+                return Err(data_error(
+                    "BCJ2 converts a branch past the end of its output",
+                ));
+            }
+            let mut target = [0u8; TARGET];
+            let stream: &mut dyn Read = if current == 0xE8 {
+                &mut self.calls
+            } else {
+                &mut self.jumps
+            };
+            stream
+                .read_exact(&mut target)
+                .map_err(|_| data_error("truncated BCJ2 call or jump stream"))?;
+            let relative =
+                u32::from_be_bytes(target).wrapping_sub((self.position as u32).wrapping_add(4));
+            self.pending = relative.to_le_bytes();
+            self.pending_start = 0;
+            self.position += TARGET as u64;
+            self.previous = self.pending[TARGET - 1];
+            Ok(current)
+        }
+    }
+
+    impl<M: Read, C: Read, J: Read, R: Read> Read for ByteAtATime<M, C, J, R> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if !self.started {
+                self.start()?;
+            }
+            let mut written = 0;
+            while written < buffer.len()
+                && (self.position < self.size || self.pending_start < TARGET)
+            {
+                buffer[written] = self.next_byte()?;
+                written += 1;
+            }
+            if written == 0 && !buffer.is_empty() && self.code != 0 {
+                return Err(data_error("BCJ2 range coder does not end at zero"));
+            }
+            Ok(written)
+        }
+    }
+
+    struct Pieces<'a> {
+        data: &'a [u8],
+        lengths: &'a [usize],
+        piece: usize,
+        left: usize,
+    }
+
+    impl<'a> Pieces<'a> {
+        fn new(data: &'a [u8], lengths: &'a [usize]) -> Self {
+            Pieces {
+                data,
+                lengths,
+                piece: 0,
+                left: lengths[0],
+            }
+        }
+    }
+
+    impl Read for Pieces<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let available = self.fill_buf()?;
+            let read = available.len().min(buffer.len());
+            buffer[..read].copy_from_slice(&available[..read]);
+            self.consume(read);
+            Ok(read)
+        }
+    }
+
+    impl BufRead for Pieces<'_> {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            while self.left == 0 && !self.data.is_empty() {
+                self.piece = (self.piece + 1) % self.lengths.len();
+                self.left = self.lengths[self.piece].max(1);
+            }
+            Ok(&self.data[..self.left.min(self.data.len())])
+        }
+
+        fn consume(&mut self, used: usize) {
+            self.data = &self.data[used..];
+            self.left -= used;
+        }
+    }
+
+    type Outcome = Result<Vec<u8>, String>;
+
+    fn outcomes(reader: &mut impl Read, chunk: usize) -> Vec<Outcome> {
+        let mut buffer = vec![0u8; chunk];
+        let mut seen = Vec::new();
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => return seen,
+                Ok(read) => seen.push(Ok(buffer[..read].to_vec())),
+                Err(error) => {
+                    seen.push(Err(error.to_string()));
+                    return seen;
+                }
+            }
+        }
+    }
+
+    fn agrees_with_byte_at_a_time(streams: &Streams, size: u64, lengths: &[usize], chunk: usize) {
+        let (main, calls, jumps, decisions) = streams;
+        let mut reference =
+            ByteAtATime::new(&main[..], &calls[..], &jumps[..], &decisions[..], size);
+        let expected = outcomes(&mut reference, chunk);
+        let mut decoder = Bcj2::new(
+            Pieces::new(main, lengths),
+            &calls[..],
+            &jumps[..],
+            &decisions[..],
+            size,
+        );
+        let seen = outcomes(&mut decoder, chunk);
+        assert_eq!(
+            seen, expected,
+            "main {main:02x?} calls {calls:02x?} jumps {jumps:02x?} decisions {decisions:02x?} size {size} pieces {lengths:?} chunk {chunk}"
+        );
+        let (left_main, left_calls, left_jumps, left_decisions) = decoder.into_streams();
+        assert_eq!(
+            [
+                left_main.data.len(),
+                left_calls.len(),
+                left_jumps.len(),
+                left_decisions.len()
+            ],
+            [
+                reference.main.len(),
+                reference.calls.len(),
+                reference.jumps.len(),
+                reference.decisions.len()
+            ],
+            "unused bytes, main {main:02x?} size {size} pieces {lengths:?} chunk {chunk}"
+        );
+    }
+
+    struct Random(u64);
+
+    impl Random {
+        fn below(&mut self, limit: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % limit as u64) as usize
+        }
+
+        fn byte(&mut self) -> u8 {
+            const SPECIAL: [u8; 6] = [0xE8, 0xE9, 0x0F, 0x80, 0x8F, 0x85];
+            match self.below(3) {
+                0 => SPECIAL[self.below(SPECIAL.len())],
+                _ => self.below(256) as u8,
+            }
+        }
+
+        fn bytes(&mut self, length: usize) -> Vec<u8> {
+            (0..length).map(|_| self.byte()).collect()
+        }
+
+        fn bytes_below(&mut self, limit: usize) -> Vec<u8> {
+            let length = self.below(limit);
+            self.bytes(length)
+        }
+    }
+
+    #[test]
+    fn every_main_stream_split_decodes_as_the_byte_at_a_time_reference() {
+        let mut random = Random(0x9E37_79B9_7F4A_7C15);
+        let mut inputs: Vec<Vec<u8>> = vec![
+            vec![],
+            vec![0xE8],
+            vec![0x41, 0xE8],
+            vec![0x0F, 0x85],
+            vec![0x0F, 0x85, 1, 2, 3, 4],
+            vec![0x0F, 0x0F, 0x85, 0xE8, 0xE9, 1, 2, 3, 4, 0x0F],
+            vec![0xE8; 10],
+            vec![0xE8, 0x0F, 0x80, 0x0F, 0x8F, 0x0F, 0x80, 0x0F, 0x8F, 0xE9],
+            vec![0x00, 0x00, 0x0F, 0xE8, 0x0F, 0xE9, 0x0F, 0x0F, 0x8F],
+        ];
+        for length in [1, 2, 5, 9, 17, 33, 70] {
+            for _ in 0..6 {
+                inputs.push(random.bytes(length));
+            }
+        }
+        let mut checked = 0;
+        for input in &inputs {
+            for choice in 0..6u64 {
+                let streams = encode(input, |candidate| match choice {
+                    0 => false,
+                    1 => true,
+                    2 => candidate % 2 == 0,
+                    3 => candidate % 3 != 1,
+                    _ => (0x5DEE_CE66D_u64.wrapping_mul(candidate as u64 + choice) >> 17) & 1 == 1,
+                });
+                let size = input.len() as u64;
+                for first in 0..=streams.0.len() {
+                    for rest in [1, 2, 3, 7, 64] {
+                        for chunk in [1, 3, 5, 64] {
+                            agrees_with_byte_at_a_time(&streams, size, &[first, rest], chunk);
+                            checked += 1;
+                        }
+                    }
+                }
+                agrees_with_byte_at_a_time(&streams, size + 1, &[2, 5], 7);
+                agrees_with_byte_at_a_time(&streams, size.saturating_sub(1), &[3], 7);
+            }
+        }
+        assert!(checked > 50_000, "{checked}");
+    }
+
+    #[test]
+    fn random_streams_decode_or_fail_as_the_byte_at_a_time_reference() {
+        let mut random = Random(0x2545_F491_4F6C_DD1D);
+        for _ in 0..40_000 {
+            let main = random.bytes_below(24);
+            let calls = random.bytes_below(12);
+            let jumps = random.bytes_below(12);
+            let mut decisions = random.bytes_below(10);
+            if !decisions.is_empty() && random.below(8) != 0 {
+                decisions[0] = 0;
+            }
+            if decisions.len() > 1 && random.below(2) == 0 {
+                decisions[1] = random.below(0x80) as u8;
+            }
+            let size = match random.below(4) {
+                0 => main.len() as u64,
+                1 => (main.len() + calls.len() + jumps.len()) as u64,
+                2 => random.below(40) as u64,
+                _ => u64::MAX - random.below(3) as u64,
+            };
+            let first = random.below(main.len() + 1);
+            let rest = 1 + random.below(6);
+            let chunk = 1 + random.below(12);
+            let streams = (main, calls, jumps, decisions);
+            agrees_with_byte_at_a_time(&streams, size, &[first, rest], chunk);
+        }
+    }
+
     #[test]
     fn every_short_input_round_trips_under_every_conversion_choice() {
         let alphabet = [0x00, 0xE8, 0xE9, 0x0F, 0x85, 0x41];
@@ -408,16 +765,53 @@ mod tests {
 mod proofs {
     use super::*;
 
+    struct TwoPieces<'a> {
+        first: &'a [u8],
+        rest: &'a [u8],
+    }
+
+    impl Read for TwoPieces<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let available = self.fill_buf()?;
+            let read = available.len().min(buffer.len());
+            buffer[..read].copy_from_slice(&available[..read]);
+            self.consume(read);
+            Ok(read)
+        }
+    }
+
+    impl BufRead for TwoPieces<'_> {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            Ok(if self.first.is_empty() {
+                self.rest
+            } else {
+                self.first
+            })
+        }
+
+        fn consume(&mut self, used: usize) {
+            if self.first.is_empty() {
+                self.rest = &self.rest[used..];
+            } else {
+                self.first = &self.first[used..];
+            }
+        }
+    }
+
     #[kani::proof]
     #[kani::unwind(10)]
     fn decoding_any_short_streams_never_panics() {
         let main: [u8; 4] = kani::any();
+        let cut: usize = kani::any();
+        kani::assume(cut <= main.len());
         let calls: [u8; 4] = kani::any();
         let jumps: [u8; 4] = kani::any();
         let decisions: [u8; 6] = kani::any();
         let size: u64 = kani::any();
         kani::assume(size <= 8);
-        let mut decoder = Bcj2::new(&main[..], &calls[..], &jumps[..], &decisions[..], size);
+        let (first, rest) = main.split_at(cut);
+        let main = TwoPieces { first, rest };
+        let mut decoder = Bcj2::new(main, &calls[..], &jumps[..], &decisions[..], size);
         let mut buffer = [0u8; 8];
         let _ = decoder.read(&mut buffer);
     }

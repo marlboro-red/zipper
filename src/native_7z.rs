@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs,
-    io::{BufReader, Read, Seek, SeekFrom, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -1783,14 +1783,37 @@ impl<R: Read> Read for Exact<R> {
             .min(usize::try_from(self.remaining).unwrap_or(usize::MAX));
         let read = self.inner.read(&mut buffer[..wanted])?;
         if read == 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "7z BCJ2 input stream ends before its size",
-            ));
+            return Err(bcj2_input_ends_early());
         }
         self.remaining -= read as u64;
         Ok(read)
     }
+}
+
+impl<R: BufRead> BufRead for Exact<R> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if self.remaining == 0 {
+            return Ok(&[]);
+        }
+        let left = usize::try_from(self.remaining).unwrap_or(usize::MAX);
+        let available = self.inner.fill_buf()?;
+        if available.is_empty() {
+            return Err(bcj2_input_ends_early());
+        }
+        Ok(&available[..available.len().min(left)])
+    }
+
+    fn consume(&mut self, used: usize) {
+        self.inner.consume(used);
+        self.remaining -= used as u64;
+    }
+}
+
+fn bcj2_input_ends_early() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "7z BCJ2 input stream ends before its size",
+    )
 }
 
 type Branch = Exact<BufReader<Box<dyn Read + Send>>>;
@@ -4247,6 +4270,35 @@ mod tests {
         assert_eq!(branch.read(&mut [0]).unwrap(), 0);
         assert_eq!(branch.remaining, 0);
         assert_eq!(branch.inner.read(&mut [0]).unwrap(), 1);
+    }
+
+    #[test]
+    fn a_buffered_bcj2_branch_shows_only_its_size_and_refuses_a_short_stream() {
+        let (mut branch, _) = counted_branch(vec![7; 5], 4);
+        assert_eq!(branch.fill_buf().unwrap(), [7; 4]);
+        branch.consume(3);
+        assert_eq!(branch.fill_buf().unwrap(), [7]);
+        branch.consume(1);
+        assert!(branch.fill_buf().unwrap().is_empty());
+        assert_eq!(branch.inner.read(&mut [0]).unwrap(), 1);
+        let size = BCJ2_BRANCH_BUFFER + 1;
+        let (mut long, _) = counted_branch(vec![7; 2 * BCJ2_BRANCH_BUFFER], size as u64);
+        let held = long.fill_buf().unwrap().len();
+        assert_eq!(held, BCJ2_BRANCH_BUFFER);
+        long.consume(held);
+        assert_eq!(long.fill_buf().unwrap(), [7]);
+        long.consume(1);
+        assert!(long.fill_buf().unwrap().is_empty());
+        assert_eq!(long.inner.read(&mut [0]).unwrap(), 1);
+        let (mut short, _) = counted_branch(vec![7; 3], 4);
+        let held = short.fill_buf().unwrap().len();
+        assert_eq!(held, 3);
+        short.consume(held);
+        let error = short.fill_buf().unwrap_err();
+        assert!(
+            error.to_string().contains("ends before its size"),
+            "{error}"
+        );
     }
 
     #[test]

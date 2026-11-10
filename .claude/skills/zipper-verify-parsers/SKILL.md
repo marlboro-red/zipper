@@ -24,7 +24,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[zip-lzma-headers]` | `lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need` | 0.4 s |
 | `[zip-ppmd-headers]` | `ppmd_headers_stay_inside_the_decoders_bounds` | 0.1 s |
 | `[tar-numbers]` | the three `native_tar` proofs | 25 s |
-| `[bcj2-decoder]` | `decoding_any_short_streams_never_panics` | 65 s |
+| `[bcj2-decoder]` | `decoding_any_short_streams_never_panics` | 422 s |
 | `[lz4-blocks]` | `decoding_any_short_block_never_panics_or_passes_its_limit` | 136 s |
 | `[zip-directory]` | the ten `zip_directory` proofs | 706 s |
 | `[zip-crypto]`, `[split-volumes]`, `[cpio-fields]`, `[ar-fields]`, `[rpm-fields]` | each module's whole `proofs` | unchanged |
@@ -67,7 +67,7 @@ Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jo
 | `ppmd_headers_stay_inside_the_decoders_bounds` | every ZIP PPMd header `ppmd8_fields` accepts has an order, model size and restore method the decoder accepts, within its 256 MiB reservation | 1 s |
 | `ppmd_properties_read_only_five_bytes` | `ppmd7_fields` reads exactly five 7z PPMd property bytes and nothing else | 2 s |
 | `decoding_any_short_block_never_panics_or_passes_its_limit` | the LZ4 block decoder never panics on any block of up to 4 bytes after 0 or 1 byte of history, and never writes past its limit | 119 s |
-| `decoding_any_short_streams_never_panics` | the BCJ2 decoder never panics or overflows on any main, call and jump streams of 4 bytes, range coder stream of 6 bytes and output size up to 8 | 46 s |
+| `decoding_any_short_streams_never_panics` | the BCJ2 decoder never panics or overflows on any main, call and jump streams of 4 bytes, range coder stream of 6 bytes and output size up to 8, with the main stream buffered in two slices cut at any point | 422 s |
 | `newc_headers_never_panic_and_fit_their_fields` | the cpio newc reader never panics on any 110 header bytes, and every size and name size it returns fits 32 bits and pads below 4 | 54 s |
 | `odc_headers_never_panic_and_fit_their_fields` | the cpio odc reader never panics on any 76 header bytes, and its size, time and name size fit their octal fields | 49 s |
 | `binary_headers_never_panic_and_fit_their_fields` | the binary cpio reader never panics on any 26 header bytes in either byte order, and its fields fit their words | 0.4 s |
@@ -98,6 +98,7 @@ The BCJ2 folder graph is checked by exhaustive tests, under `[7z-bcj2-graph]` in
 - `every_small_folder_graph_plans_only_sound_bcj2_branches` runs `bcj2_plan` on every folder of up to 3 coders with 4-to-1, 1-to-1 or 2-to-1 streams, every list of bind pairs and every list of packed inputs, over 1,000,000 shapes. Each plan it accepts must give BCJ2's four inputs chains that follow real bind pairs to distinct packed streams, use every coder and packed stream once, and leave BCJ2's output unbound. The oracle recomputes the stream numbering on its own.
 - `every_bcj2_layout_with_up_to_four_chained_coders_is_planned` builds every valid layout of BCJ2 and up to four chained coders, at every position and in rotated orders, and checks that the plan finds exactly those chains.
 - `every_short_input_round_trips_under_every_conversion_choice` in `src/bcj2.rs` encodes every input of up to 5 bytes over the bytes that BCJ2 treats specially, under every choice of conversions. The decoder must return the input and read every stream to its end, in reads of 1, 3 and 64 bytes.
+- `every_main_stream_split_decodes_as_the_byte_at_a_time_reference` and `random_streams_decode_or_fail_as_the_byte_at_a_time_reference` in `src/bcj2.rs` compare the slice decoder with the earlier byte-at-a-time decoder, kept in the test. Encoded inputs with every conversion choice and random hostile streams must give the same bytes, the same error and the same unused input in every read. The main stream is buffered in slices cut at every offset, so an opcode and its `0F` prefix fall on both sides of an edge.
 
 Run them with `cargo test --release --lib bcj2`, then `cargo xtask verify-sync 7z-bcj2-graph`.
 
