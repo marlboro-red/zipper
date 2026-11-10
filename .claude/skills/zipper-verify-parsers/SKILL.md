@@ -1,11 +1,11 @@
 ---
 name: zipper-verify-parsers
-description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, the RPM lead, header and index readers in src/native_rpm.rs, the PE, COFF, TE, ELF, Mach-O and universal header readers in src/native_exe.rs, the SquashFS and CramFS superblock, inode and folder readers in src/native_squashfs.rs and src/native_cramfs.rs, the LZO1X decoder in src/lzo.rs, and when a parser panics or overflows on hostile input.
+description: Prove with Kani that Zipper's byte-level parsers never panic or overflow on any input up to a bound. Use before committing any change to the 7z header readers (Bytes, Malformed, check), the LZMA2 chunk header and segment plan, the ZIP time fields, end record, ZIP64 field or data descriptor in src/native_zip.rs, the tar numeric fields (octal, number, size_field) in src/native_tar.rs, the ZIP LZMA and PPMd headers and 7z PPMd properties, the BCJ2 decoder in src/bcj2.rs, the BCJ2 folder graph (`bcj2_plan`) or the 7z byte-swap reader (`ByteSwap`), the LZ4 block decoder or frame reader in src/lz4.rs, the `compress` reader in src/lzw.rs, Zipper's own LZMA, LZMA2 and xz decoder in src/lzma.rs, the cpio and `ar` header and field readers in src/native_cpio.rs and src/native_ar.rs, the RPM lead, header and index readers in src/native_rpm.rs, the PE, COFF, TE, ELF, Mach-O and universal header readers in src/native_exe.rs, the SquashFS and CramFS superblock, inode and folder readers in src/native_squashfs.rs and src/native_cramfs.rs, the LZO1X decoder in src/lzo.rs, the raw Deflate decoder in src/inflate.rs, and when a parser panics or overflows on hostile input.
 ---
 
 # Verify the parsers with Kani
 
-A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs`, `src/native_tar.rs`, `src/native_cpio.rs`, `src/native_ar.rs`, `src/native_rpm.rs`, `src/bcj2.rs`, `src/lz4.rs`, `src/zip_directory.rs`, `src/zip_crypto.rs`, `src/volumes.rs`, `src/xz_filters.rs` and `src/lzma.rs`. Each proof runs in exactly one section of `verification/coverage.txt`, and each section lists only the code its proofs reach. So an edit reruns only the proofs that reach it. The cpio, `ar` and RPM proofs sit under `[cpio-fields]`, `[ar-fields]` and `[rpm-fields]`, and `cargo xtask verify-sync cpio-fields`, `ar-fields` or `rpm-fields` runs them with their field tests.
+A parser that panics or overflows on a crafted archive crashes a library caller or, in release builds, misreads the archive silently. Tests and fuzzing try many inputs. Kani compiles the real Rust code into a logic problem and checks every input up to a bound, so a pass covers inputs nobody thought to write. The proofs are the `#[cfg(kani)] mod proofs` modules in `src/native_7z.rs`, `src/native_zip.rs`, `src/native_tar.rs`, `src/native_cpio.rs`, `src/native_ar.rs`, `src/native_rpm.rs`, `src/bcj2.rs`, `src/lz4.rs`, `src/zip_directory.rs`, `src/zip_crypto.rs`, `src/volumes.rs`, `src/xz_filters.rs`, `src/lzma.rs` and `src/inflate.rs`. Each proof runs in exactly one section of `verification/coverage.txt`, and each section lists only the code its proofs reach. So an edit reruns only the proofs that reach it. The cpio, `ar` and RPM proofs sit under `[cpio-fields]`, `[ar-fields]` and `[rpm-fields]`, and `cargo xtask verify-sync cpio-fields`, `ar-fields` or `rpm-fields` runs them with their field tests.
 
 | Section | Its proofs | Kani time |
 | --- | --- | ---: |
@@ -44,6 +44,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[cramfs-fields]` | the two `native_cramfs` proofs, with the CramFS corpus and hostile tests | 1 s each |
 | `[lzo]` | `decoding_any_short_stream_never_panics_or_passes_its_block`, with the `lzop` tests in `cargo test --release --lib lzo` | 153 s |
 | `[ext-fields]` | the nine `native_ext` proofs, with the ext corpus and hostile tests and the spread flip sweeps against 7-Zip | 36 s for the slowest |
+| `[inflate]` | the three `inflate` proofs, with the zlib differential tests in `cargo test --release --lib inflate` | 2 s for the slowest |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
 Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jobs.
@@ -84,12 +85,16 @@ Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jo
 | `inodes_never_panic_and_fit_their_bit_fields` | the CramFS inode reader unpacks any 12 bytes of either byte order into fields that fit their bits, with names and offsets in whole words | 0.6 s |
 | `superblocks_never_panic_and_keep_a_folder_root` | the CramFS superblock reader never panics on any 76 bytes, accepts only a folder root, and gives a size and CRC exactly for version 2 | 1 s |
 | `decoding_any_short_stream_never_panics_or_passes_its_block` | the LZO1X decoder never panics on any input of up to 6 bytes, and never writes past an output of up to 4 bytes | 153 s |
+| `pulled_bits_are_the_inputs_next_bytes_and_unused_whole_bytes_go_back` | from any bit buffer of up to 47 bits, `Bits::need` of up to 48 bits takes the next input bytes in order and no byte more than it needs, never holds more than 55 bits and fails only when the input ends. `take` returns the low bits. `give_back_whole_bytes` returns only whole bytes this call took | 2 s |
+| `the_next_reversed_code_is_the_code_after_it_with_its_bits_reversed` | for every code of 1 to 15 bits, `next_reversed_code` gives the bit-reversed form of the next canonical code, and nothing after the last | 0.2 s |
+| `every_symbols_entry_keeps_its_fields_apart_and_its_value_inside_the_format` | for every symbol of the three Deflate alphabets and every code length, the table entry keeps its code length, flags and value apart. A length is 3 to 258 with up to 5 extra bits, a distance 1 to 32,768 with up to 13, and the codes outside the format are marked invalid | 0.4 s |
 
 Some checks are too heavy for Kani, so exhaustive unit tests cover them:
 
 - `record_limits` sorts, which is heavy for Kani. `record_limits_accept_exactly_the_layouts_without_overlap` in `src/native_zip.rs` compares it with a plain reference on every layout of up to 3 records, about 125,000 cases.
 - `checksum_matches` over 512 symbolic bytes ran past 300 s. It reads its field with `octal`, which the proofs cover, and sums at most 512 bytes of 255.
 - The tar pax readers and the path and symlink escape checks in `src/lib.rs` use std's string search, which ran past 300 s on 2-byte inputs. `pax_times_equal_their_decimal_value_on_every_short_string`, `pax_records_split_back_into_their_exact_bytes_on_every_short_string` and the two escape tests in `src/lib.rs` check every short string instead.
+- `build_table` in `src/inflate.rs`, the Deflate table builder, has nested loops whose counts come from the code lengths. A proof on 4 symbols in 12 entries passed 8 GB without a verdict, and one on 3 symbols in 4 entries passed 5 GB. `every_small_code_is_built_or_refused_and_read_as_a_bit_at_a_time_reference_reads_it` checks it instead on every assignment of lengths 0 to 5 to 7 symbols, in tables of 1 to 4 index bits, 1,119,744 builds. A code is accepted exactly when it is complete, empty or a single 1-bit code. Each accepted table then reads every 7-bit buffer, with every count of valid bits, as a bit-at-a-time reference reads it.
 
 `SegmentPlan`, which splits an LZMA2 stream into segments that decode on their own, is too heavy for Kani. Four attempts ran out of time or memory. `segment_plans_start_at_resets_and_cover_the_folder_for_every_short_stream` in `src/native_7z.rs` checks it instead on every stream of up to four chunks of every kind, every minimum size and every folder boundary, more than 600,000 cases.
 
@@ -173,6 +178,16 @@ The `.lzma` and lzip header readers in `src/lzma.rs` have three more proofs, und
 | `lzip_trailers_accept_only_their_crc_and_sizes` | for any trailer, CRC-32, data size and decoded input, `lzip_trailer_matches` accepts only the stored CRC-32 and data size, and for version 1 the member size, without overflow | 1 s |
 
 The differential tests in `lzma::lzma_file_and_lzip_tests` and `native_tar::lzip_tests`, `native_zip::lzma_entry_tests` and `native_rpm::lzma_payload_tests` compare these readers with liblzma on every preset, the corpora, every cut and the bit flips at each boundary. `cargo xtask verify-sync lzma` runs the first.
+
+Zipper's own raw Deflate decoder in `src/inflate.rs`, under `[inflate]`, decodes ZIP Deflate entries. Its tests compare it with zlib through `flate2`. Each stream is fed in nine piece sizes from 1 byte to the whole stream, into three window sizes. The decoder must give zlib's bytes and consume zlib's count of input bytes, or both must refuse. The streams are these:
+
+- Generated data at levels 0 to 9, and with `ZIPPER_SILESIA` set, each Silesia file at levels 1, 6 and 9.
+- Every Deflate entry of every archive under `tests/data`.
+- 1,500 random streams of stored, fixed and dynamic blocks from a writer in the test. Its dynamic blocks use random complete codes of up to 15 bits, one-code and empty distance codes, and every repeat code. Each must also decode to the bytes it was built from.
+- Every cut of 40 such streams and of a level 6 stream, every single bit flip in the first 400 bytes of 60 streams, random flips, and 20,000 random byte strings.
+- Hand-built streams for each refusal, such as block type 3, 287 length codes, a repeat with no length before it, and the unused half of a one-code table.
+
+`every_match_copy_equals_a_byte_at_a_time_copy` checks the match copy at 76 distances with every length from 3 to 258, and that it writes at most 32 bytes past the match. `random_whole_alphabets_decode_every_codeword_to_its_symbol` builds 3,000 random codes in the real table sizes. Kani does not cover `build_table`, `lookup`, `symbol`, `fast`, the match copy or `Inflate::decode`. Run `cargo xtask verify-sync inflate`, which runs the proofs and `cargo test --release --lib inflate` itself.
 
 Every section that runs Kani has `cargo xtask kani-reach NAME` as its first full check, and the gate's `verify` step fails when one lacks it. The check keeps the section's item list honest. It runs Kani's code generation for the section's proofs, with each `--harness` prefix expanded to the proofs it matches. It lists every source line in each proof's goto program with `goto-instrument --list-eloc`. It fails when a reached line lies outside the section's items, and names the item to add. Kani places the code that `#[derive]` generates on the attribute line or on a field, so such a line needs the type it belongs to. A reached line that lies in no item is reported as a cut span. It honours `CARGO_TARGET_DIR`.
 
@@ -260,6 +275,25 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | A short distance starts its special probabilities one entry too far on | `short_distances_stay_inside_the_special_probabilities` fails |
 | A long distance shifts its direct bits two places too far | `long_distances_fit_32_bits` fails |
 | `bits` gives one byte more room than the padding past the end | `input_limits_keep_every_symbol_inside_the_buffer_and_the_chunk` fails |
+| The Deflate bit reader's `pull` adds 7 bits a byte | `pulled_bits_are_the_inputs_next_bytes_and_unused_whole_bytes_go_back` fails |
+| `give_back_whole_bytes` keeps a whole byte | the same proof fails, and so does `bytes_after_the_last_block_are_left_unconsumed` |
+| `next_reversed_code` keeps the bits above the one it sets | `the_next_reversed_code_is_the_code_after_it_with_its_bits_reversed` fails |
+| The end-of-block entry loses its flag | `every_symbols_entry_keeps_its_fields_apart_and_its_value_inside_the_format` fails |
+| Length code 285 gets 5 extra bits | the same proof fails |
+| The Deflate `build_table` accepts an over-subscribed code | `every_small_code_is_built_or_refused_and_read_as_a_bit_at_a_time_reference_reads_it` fails |
+| `build_table` accepts any incomplete code | the same test fails |
+| `build_table` gives the unused half of a one-code table the code | the same test fails |
+| `build_table` sizes a subtable one bit short | the same test fails |
+| The long match copy reads two periods back at distances up to 48 | `every_match_copy_equals_a_byte_at_a_time_copy` fails |
+| The short-period copy doubles its distance one step early | the same test fails |
+| The Deflate fast loop never refills before a distance | `the_longest_codes_back_to_back_decode_as_zlib_does_at_every_bit_offset` fails |
+| The fast loop refills for the distance but not for the next lookup | the same test fails |
+| The fast loop or the careful path accepts a distance one byte before the start | the zlib differential tests fail |
+| A stored block's two lengths are not compared | the zlib differential tests fail |
+| 287 length codes or 31 distance codes are accepted | `dynamic_headers_outside_the_format_are_refused` fails |
+| A block with no end-of-block code is accepted | `dynamic_codes_are_accepted_and_refused_as_zlib_does` fails |
+| A code length repeat may run one past the lengths | the zlib differential tests fail |
+| `stream_entry` accepts a Deflate stream that ends before its compressed size | `tests/hostile_zip.rs` fails |
 | The cpio `hex` reader accepts base-17 digits | `newc_headers_never_panic_and_fit_their_fields` fails |
 | The `ar` field reader accepts a digit equal to its radix | `headers_never_panic_and_their_sizes_fit_ten_digits` fails |
 | `lzip_header` accepts a base 2 logarithm of 30 | `lzip_headers_accept_only_dictionaries_from_4_kib_to_512_mib` fails |
