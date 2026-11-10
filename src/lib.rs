@@ -158,6 +158,8 @@ mod zip_crypto;
 mod zip_directory;
 #[cfg(feature = "zip")]
 mod zip_reader;
+#[cfg(feature = "zstd")]
+mod zstandard;
 use anyhow::{Context, Result, ensure};
 pub use extract::{
     Engine, ExtractOptions, NotBuilt, Reader, choose_reader, extract_archive, read_volumes,
