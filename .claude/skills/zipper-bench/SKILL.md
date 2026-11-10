@@ -26,6 +26,14 @@ A number is a claim. Every claim names its workload, its configuration, its run 
 - For a comparison with another tool, keep the 1-thread Zipper rows that the scripts add. Report wall time and CPU time side by side. The scripts refuse to compare with an external reader without a 1-thread row.
 - Profile only in runs you do not report.
 
+## Time on the second machine
+
+- Copy the exact binaries you record, so their hashes match, and copy `scripts/compare_zip_readers.py` with every module it imports.
+- Give a driver script absolute paths. Name each run's variables apart from its loop variables, and match each archive's top folder to its source folder.
+- Smoke one run with `--runs 1 --allow-busy` before a session, and keep a remote gate off the machine while it times. The busy guard refuses runs while the system's own services, such as `mediaanalysisd`, load it, so wait and retry rather than pass `--allow-busy`.
+
+On 11 November four driver mistakes, a relative path, a missing module, a clobbered variable and a wrong folder layout, each cost a session before a single row was timed.
+
 ## Vet the result
 
 Answer each question from the JSON, not from memory.

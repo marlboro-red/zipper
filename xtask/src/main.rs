@@ -78,13 +78,21 @@ fn cargo(args: &[&str]) -> Result<()> {
     cargo_with(args, &[])
 }
 
-fn cargo_with(args: &[&str], envs: &[(&str, &str)]) -> Result<()> {
+const GIT_LOCATION_VARIABLES: [&str; 3] = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"];
+
+fn cargo_command(args: &[&str], envs: &[(&str, &str)]) -> Command {
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let status = Command::new(cargo)
-        .current_dir(root())
-        .envs(envs.iter().copied())
-        .args(args)
-        .status()?;
+    let mut command = Command::new(cargo);
+    command.current_dir(root());
+    for name in GIT_LOCATION_VARIABLES {
+        command.env_remove(name);
+    }
+    command.envs(envs.iter().copied()).args(args);
+    command
+}
+
+fn cargo_with(args: &[&str], envs: &[(&str, &str)]) -> Result<()> {
+    let status = cargo_command(args, envs).status()?;
     ensure!(
         status.success(),
         "cargo {} exited with {status}",
@@ -929,4 +937,25 @@ fn same_tree(expected: &Path, actual: &Path) -> Result<()> {
         bail!("{} has unexpected {}", actual.display(), extra.display());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod cargo_command_tests {
+    use super::*;
+
+    #[test]
+    fn gate_steps_never_pass_a_hooks_git_location_to_the_tests() {
+        let command = cargo_command(&["test"], &[("ZIPPER_X", "1")]);
+        let envs: Vec<_> = command.get_envs().collect();
+        for name in GIT_LOCATION_VARIABLES {
+            assert!(
+                envs.contains(&(std::ffi::OsStr::new(name), None)),
+                "{name} reaches the tests"
+            );
+        }
+        assert!(envs.contains(&(
+            std::ffi::OsStr::new("ZIPPER_X"),
+            Some(std::ffi::OsStr::new("1"))
+        )));
+    }
 }

@@ -505,6 +505,30 @@ fn shell_quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
+const REMOTE_TOOLS_MISSING: i32 = 3;
+
+fn remote_preflight() -> String {
+    format!(
+        "missing=\"\"\n\
+         for tool in 7zz unsquashfs; do command -v $tool >/dev/null 2>&1 || missing=\"$missing $tool\"; done\n\
+         [ -x \"${{STATECHART:-$HOME/.claude/skills/statechart/scripts/statechart}}\" ] || missing=\"$missing statechart\"\n\
+         if [ -n \"$missing\" ]; then\n\
+         echo \"the second machine lacks:$missing; install them before a --remote run, or its gate skips or fails checks\" >&2\n\
+         exit {REMOTE_TOOLS_MISSING}\n\
+         fi\n"
+    )
+}
+
+fn remote_lock(base: &str) -> String {
+    format!(
+        "until mkdir {base}/target/remote-run.lock 2>/dev/null; do\n\
+         find {base}/target/remote-run.lock -maxdepth 0 -mmin +180 -exec rmdir {{}} \\; 2>/dev/null\n\
+         sleep 5\n\
+         done\n\
+         trap 'rmdir {base}/target/remote-run.lock' EXIT\n"
+    )
+}
+
 fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str]) -> String {
     let [dir, branch, head] = [dir, branch, head].map(shell_quoted);
     let xtask: Vec<String> = xtask.iter().map(|word| shell_quoted(word)).collect();
@@ -513,6 +537,9 @@ fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str]) -> String 
         "set -e\n\
          cd {dir}\n\
          base=$PWD\n\
+         {preflight}\
+         mkdir -p target\n\
+         {lock}\
          git fetch -q origin \"refs/heads/\"{branch}\n\
          mkdir -p target\n\
          run=$(mktemp -d \"$base/target/remote-sync.XXXXXX\")\n\
@@ -523,7 +550,9 @@ fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str]) -> String 
          git -C \"$run/tree\" checkout -q -- .\n\
          git worktree remove \"$run/tree\"\n\
          rmdir \"$run\"\n\
-         exit $result\n"
+         exit $result\n",
+        preflight = remote_preflight(),
+        lock = remote_lock("\"$base\""),
     )
 }
 
@@ -621,6 +650,43 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_remote_run_stops_when_the_second_machine_lacks_a_tool_the_gate_needs() {
+        let work = tempfile::tempdir().unwrap();
+        let bin = work.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let run = |path: &Path| {
+            Command::new("/bin/sh")
+                .arg("-c")
+                .arg(format!("{}echo ready", remote_preflight()))
+                .env("PATH", path)
+                .env("HOME", work.path())
+                .env_remove("STATECHART")
+                .output()
+                .unwrap()
+        };
+        let bare = run(&bin);
+        assert_eq!(bare.status.code(), Some(REMOTE_TOOLS_MISSING));
+        let message = String::from_utf8_lossy(&bare.stderr);
+        assert!(message.contains("7zz unsquashfs statechart"), "{message}");
+        let runner = work
+            .path()
+            .join(".claude/skills/statechart/scripts/statechart");
+        for tool in [bin.join("7zz"), bin.join("unsquashfs"), runner] {
+            fs::create_dir_all(tool.parent().unwrap()).unwrap();
+            fs::write(&tool, "#!/bin/sh\n").unwrap();
+            fs::set_permissions(&tool, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+                .unwrap();
+        }
+        let ready = run(&bin);
+        assert!(
+            ready.status.success(),
+            "{}",
+            String::from_utf8_lossy(&ready.stderr)
+        );
+    }
     use std::{collections::BTreeSet, path::PathBuf};
 
     #[test]

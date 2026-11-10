@@ -104,7 +104,22 @@ def check_rm(arguments, assignments, cwd):
                  "Use a fresh `mktemp -d` folder under the scratch directory, or `git checkout`/`git clean -n` for repo files.")
 
 
+PIPED_CHECK_THEN_CONTINUE = re.compile(
+    r"cargo\s+xtask\s+[a-z-]+[^|;&\n]*\|\s*(tail|head|grep|sed|cut)\b[^;&\n]*&&")
+
+
+def check_piped_checks(command):
+    unredirected = re.sub(r"\d*>&\d+|&>", " ", command)
+    if PIPED_CHECK_THEN_CONTINUE.search(unredirected) and "pipefail" not in command:
+        deny("a `cargo xtask` check piped into a filter and followed by `&&` continues even when the check "
+             "fails, since the pipe's status is the filter's. On 11 November a ship ran after a failed gate this "
+             "way, and a record was committed after a failed lint. Send the check's output to a file and test its "
+             "exit status, or add `set -o pipefail`.")
+
+
 def check(command, cwd, depth=0):
+    if depth == 0:
+        check_piped_checks(command)
     try:
         words = tokens(command)
     except ValueError:

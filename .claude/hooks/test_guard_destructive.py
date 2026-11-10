@@ -44,6 +44,27 @@ class Guard(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertTrue(denied(command))
 
+    def test_blocks_a_piped_check_that_continues_on_success_of_the_filter(self):
+        for command in [
+            "cargo xtask gate fast --remote 2>&1 | tail -18 && cargo xtask ship",
+            "cargo xtask lint-docs 2>&1 | tail -3; git add -A && git commit -m x",
+            "cargo xtask lint-docs 2>&1 | tail -3 && git commit -m x",
+            "cd /x && cargo xtask verify 2>&1 | grep stale && echo fine",
+        ]:
+            with self.subTest(command=command):
+                self.assertEqual(denied(command), "&&" in command.split("|", 1)[1].split(";")[0], command)
+
+    def test_allows_checks_whose_status_survives(self):
+        for command in [
+            "cargo xtask gate fast > log 2>&1; tail -3 log",
+            "if cargo xtask gate fast > log 2>&1; then cargo xtask ship; fi",
+            "set -o pipefail; cargo xtask gate fast | tail -3 && cargo xtask ship",
+            "cargo xtask lint-docs 2>&1 | tail -3",
+            "cargo build -q 2>&1 | tail -2 && cp a b",
+        ]:
+            with self.subTest(command=command):
+                self.assertFalse(denied(command))
+
     def test_allows(self):
         for command in [
             "rm -rf build",

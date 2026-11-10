@@ -36,6 +36,10 @@ Use exactly six level-2 headings, in this order. They are `## Question`, `## Set
 - Say what a thing does or the number it reached, not how it feels.
 - Numbered lists for sequences, bullets for everything else.
 
+## Cite commits that will exist
+
+A record names the commits its binaries came from. A rebase before shipping replaces a builder's commits, so after a rebase, cite the base on main and the commit main has for the change, with a `git cherry-pick` to rebuild the timed binary. On 11 November four records named builder commits that existed only on this machine. The commit lint checks messages, not records, since records of reverted experiments rightly name branches main never gets.
+
 ## Check before committing
 
 1. Run `cargo xtask lint-docs`. It checks dashes, colons, word lists, sentence length, links, record headings and reachability from `README.md`.
