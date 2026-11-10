@@ -38,6 +38,7 @@ const CHECKS_7ZIP_SKIPS: &[&str] = &[
     "decodes to",
     "holds two entries named",
     "unsafe archive path",
+    "has an unsafe target",
 ];
 
 fn sevenzip_binary() -> Option<PathBuf> {
@@ -735,4 +736,14 @@ fn a_zstd_block_7zip_refuses_and_libzstd_decodes_extracts_as_unsquashfs_writes_i
     assert!(!sevenzip_accepts(&binary, &image), "7-Zip now accepts it");
     judge(&binary, &bytes, "zstd.sqfs: byte 151 flipped");
     drop(work);
+}
+
+#[test]
+fn a_link_target_that_holds_a_nul_is_refused_where_7zip_cuts_it() {
+    let mut bytes = corpus("zstd.sqfs");
+    bytes[27283] ^= 0x10;
+    refused(&bytes, "has an unsafe target");
+    if let Some(accepted) = sevenzip_verdict(&bytes) {
+        assert!(accepted, "7-Zip now refuses a link target that holds a NUL");
+    }
 }
