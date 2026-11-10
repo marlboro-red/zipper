@@ -363,8 +363,9 @@ impl Bits {
     }
 
     fn give_back_whole_bytes(&mut self, position: &mut usize) {
-        *position -= (self.count >> 3) as usize;
-        self.count &= 7;
+        let bytes = (self.count as usize >> 3).min(*position);
+        *position -= bytes;
+        self.count -= 8 * bytes as u32;
         self.buffer &= low_bits(self.count);
     }
 }
@@ -654,6 +655,7 @@ enum State {
     CodeLengths,
     Symbols,
     Finished,
+    Failed(Invalid),
 }
 
 pub(crate) struct Step {
@@ -716,7 +718,9 @@ impl Inflate {
         }
         let start = self.filled;
         let mut position = 0;
-        let finished = self.run(input, &mut position, window)?;
+        let finished = self
+            .run(input, &mut position, window)
+            .inspect_err(|&invalid| self.state = State::Failed(invalid))?;
         self.total_in += position as u64;
         Ok(Step {
             consumed: position,
@@ -890,6 +894,7 @@ impl Inflate {
                     debug_assert!(self.bits.count < 8);
                     return Ok(true);
                 }
+                State::Failed(invalid) => return Err(invalid),
             }
         }
     }
@@ -1258,6 +1263,19 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_stream_stays_refused_with_the_same_error() {
+        let mut stream = deflated(&sample(11, 5000), 6);
+        stream[0] |= 0b110;
+        let mut inflate = Inflate::new();
+        let mut window = vec![0u8; SMALLEST_WINDOW];
+        let first = inflate.decode(&stream, &mut window).err().unwrap();
+        assert_eq!(first, Invalid("Deflate block type 3 is reserved"));
+        for input in [&stream[1..], &[]] {
+            assert_eq!(inflate.decode(input, &mut window).err(), Some(first));
+        }
+    }
+
+    #[test]
     fn bytes_after_the_last_block_are_left_unconsumed() {
         for level in [0, 1, 6] {
             let data = sample(7, 50_000);
@@ -1273,6 +1291,70 @@ mod tests {
                     }
             );
         }
+    }
+
+    #[test]
+    fn every_entry_of_the_zip_test_archives_decodes_as_zlib_does() {
+        use std::io::Read;
+        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let (mut decoded, mut refused) = (0, 0);
+        for file in walkdir::WalkDir::new(data).sort_by_file_name() {
+            let path = file.unwrap().into_path();
+            if path.extension().is_none_or(|extension| extension != "zip") {
+                continue;
+            }
+            let Ok(mut archive) = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()) else {
+                continue;
+            };
+            for index in 0..archive.len() {
+                let Ok(mut entry) = archive.by_index_raw(index) else {
+                    continue;
+                };
+                if entry.compression() != zip::CompressionMethod::Deflated {
+                    continue;
+                }
+                let mut packed = Vec::new();
+                if entry.read_to_end(&mut packed).is_err() {
+                    continue;
+                }
+                let label = format!("{} entry {index}", path.display());
+                match agrees_with_zlib(&packed, &label) {
+                    Outcome::Decoded { .. } => decoded += 1,
+                    Outcome::Refused => refused += 1,
+                }
+            }
+        }
+        assert!(decoded > 100 && refused > 0, "{decoded} {refused}");
+    }
+
+    #[test]
+    fn the_silesia_files_at_three_levels_decode_as_zlib_does() {
+        let Some(folder) = std::env::var_os("ZIPPER_SILESIA") else {
+            return;
+        };
+        let mut checked = 0;
+        for file in std::fs::read_dir(folder).unwrap() {
+            let path = file.unwrap().path();
+            if !path.is_file() {
+                continue;
+            }
+            let data = std::fs::read(&path).unwrap();
+            for level in [1, 6, 9] {
+                let stream = deflated(&data, level);
+                let label = format!("{} at level {level}", path.display());
+                let outcome = agrees_with_zlib(&stream, &label);
+                assert!(
+                    outcome
+                        == Outcome::Decoded {
+                            bytes: data.clone(),
+                            consumed: stream.len() as u64
+                        },
+                    "{label} decodes to other bytes"
+                );
+            }
+            checked += 1;
+        }
+        assert!(checked >= 12, "{checked}");
     }
 
     #[derive(Default)]
@@ -1878,5 +1960,113 @@ mod tests {
             put_code_counts(writer, 257, 1, &one_code);
         });
         assert_eq!(incomplete_precode, Outcome::Refused);
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn pulled_bits_are_the_inputs_next_bytes_and_unused_whole_bytes_go_back() {
+        let bytes: [u8; 6] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= bytes.len());
+        let input = &bytes[..length];
+        let count: u32 = kani::any();
+        kani::assume(count < MOST_BITS_IN_ONE_SYMBOL);
+        let buffer: u64 = kani::any();
+        kani::assume(buffer <= low_bits(count));
+        let wanted: u32 = kani::any();
+        kani::assume(wanted <= MOST_BITS_IN_ONE_SYMBOL);
+
+        let mut bits = Bits { buffer, count };
+        let mut position = 0;
+        let enough = bits.need(wanted, input, &mut position);
+        assert!(position <= length);
+        assert!(bits.count == count + 8 * position as u32);
+        assert!(bits.count < MOST_BITS_IN_ONE_SYMBOL + 8);
+        assert!(enough == (bits.count >= wanted));
+        assert!(enough || position == length);
+        assert!(position == 0 || bits.count - 8 < wanted);
+        assert!(bits.buffer <= low_bits(bits.count));
+        assert!(bits.buffer & low_bits(count) == buffer);
+        let pulled: usize = kani::any();
+        kani::assume(pulled < position);
+        assert!((bits.buffer >> (count + 8 * pulled as u32)) as u8 == input[pulled]);
+
+        let taken: u32 = kani::any();
+        kani::assume(taken <= 32 && taken <= bits.count);
+        let before = bits;
+        assert!(u64::from(bits.take(taken)) == before.buffer & low_bits(taken));
+        assert!(bits.buffer == before.buffer >> taken && bits.count == before.count - taken);
+
+        let before = (bits, position);
+        bits.give_back_whole_bytes(&mut position);
+        let returned = before.1 - position;
+        assert!(bits.count + 8 * returned as u32 == before.0.count);
+        assert!(bits.count < 8 || position == 0);
+        assert!(bits.buffer == before.0.buffer & low_bits(bits.count));
+    }
+
+    #[kani::proof]
+    fn the_next_reversed_code_is_the_code_after_it_with_its_bits_reversed() {
+        let length: usize = kani::any();
+        kani::assume(1 <= length && length <= LONGEST_CODE);
+        let code: u16 = kani::any();
+        kani::assume(u32::from(code) < 1 << length);
+        let reversed = usize::from(code.reverse_bits() >> (16 - length));
+        match next_reversed_code(reversed, length) {
+            None => assert!(u32::from(code) == (1 << length) - 1),
+            Some(next) => {
+                assert!(next == usize::from((code + 1).reverse_bits() >> (16 - length)));
+            }
+        }
+    }
+
+    #[kani::proof]
+    fn every_symbols_entry_keeps_its_fields_apart_and_its_value_inside_the_format() {
+        let code_bits: usize = kani::any();
+        kani::assume(1 <= code_bits && code_bits <= LONGEST_CODE);
+        let symbol: u16 = kani::any();
+        let before: u64 = kani::any();
+
+        if usize::from(symbol) < PRECODE_SYMBOLS {
+            let made = entry(Alphabet::Precode.symbols(), symbol, code_bits);
+            assert!(made >> VALUE_SHIFT == u32::from(symbol));
+            assert!(made & STEP_BITS_MASK == code_bits as u32);
+        }
+        if usize::from(symbol) < DISTANCE_SYMBOLS {
+            let made = entry(Alphabet::Distance.symbols(), symbol, code_bits);
+            assert!((made >> CODE_BITS_SHIFT) & CODE_BITS_MASK == code_bits as u32);
+            assert!(made & (SUBTABLE | LITERAL) == 0);
+            let extra = (made & STEP_BITS_MASK) - code_bits as u32;
+            assert!((made & EXCEPTIONAL != 0) == (usize::from(symbol) >= MOST_DISTANCE_CODES));
+            if made & EXCEPTIONAL == 0 {
+                assert!(extra <= 13 && extra_bits(before, made) < 1 << extra);
+                let farthest = (made >> VALUE_SHIFT) + (1 << extra) - 1;
+                assert!(1 <= made >> VALUE_SHIFT && farthest as usize <= HISTORY);
+            }
+        }
+        if usize::from(symbol) < LITLEN_SYMBOLS {
+            let made = entry(Alphabet::LitLen.symbols(), symbol, code_bits);
+            assert!((made >> CODE_BITS_SHIFT) & CODE_BITS_MASK == code_bits as u32);
+            assert!(made & SUBTABLE == 0);
+            let extra = (made & STEP_BITS_MASK) - code_bits as u32;
+            let symbol = usize::from(symbol);
+            assert!((made & LITERAL != 0) == (symbol < END_OF_BLOCK_SYMBOL));
+            assert!((made & END_OF_BLOCK != 0) == (symbol == END_OF_BLOCK_SYMBOL));
+            let is_length = symbol > END_OF_BLOCK_SYMBOL && symbol < MOST_LITLEN_CODES;
+            assert!((made & (LITERAL | EXCEPTIONAL) == 0) == is_length);
+            if made & LITERAL != 0 {
+                assert!(extra == 0 && (made >> VALUE_SHIFT) as u8 as usize == symbol);
+            }
+            if is_length {
+                assert!(extra <= 5 && extra_bits(before, made) < 1 << extra);
+                let longest = (made >> VALUE_SHIFT) + (1 << extra) - 1;
+                assert!(3 <= made >> VALUE_SHIFT && longest as usize <= LONGEST_MATCH);
+            }
+        }
     }
 }
