@@ -79,37 +79,78 @@ enum Alphabet {
     Distance,
 }
 
-impl Alphabet {
-    fn entry(self, symbol: u16, code_bits: u32) -> u32 {
-        let (value, extra) = match (self, usize::from(symbol)) {
-            (Alphabet::Precode, _) => (u32::from(symbol) << VALUE_SHIFT, 0),
-            (Alphabet::LitLen, 0..END_OF_BLOCK_SYMBOL) => {
-                (LITERAL | u32::from(symbol) << VALUE_SHIFT, 0)
-            }
-            (Alphabet::LitLen, END_OF_BLOCK_SYMBOL) => (EXCEPTIONAL | END_OF_BLOCK, 0),
-            (Alphabet::LitLen, length) => match length.checked_sub(END_OF_BLOCK_SYMBOL + 1) {
-                Some(index) if index < LENGTH_BASE.len() => (
-                    u32::from(LENGTH_BASE[index]) << VALUE_SHIFT,
-                    u32::from(LENGTH_EXTRA[index]),
-                ),
-                _ => (EXCEPTIONAL, 0),
-            },
-            (Alphabet::Distance, index) if index < DISTANCE_BASE.len() => (
-                u32::from(DISTANCE_BASE[index]) << VALUE_SHIFT,
-                u32::from(DISTANCE_EXTRA[index]),
-            ),
-            (Alphabet::Distance, _) => (EXCEPTIONAL, 0),
-        };
-        value | code_bits << CODE_BITS_SHIFT | (code_bits + extra)
+const fn litlen_symbols() -> [u32; LITLEN_SYMBOLS] {
+    let mut symbols = [EXCEPTIONAL; LITLEN_SYMBOLS];
+    let mut symbol = 0;
+    while symbol < END_OF_BLOCK_SYMBOL {
+        symbols[symbol] = LITERAL | (symbol as u32) << VALUE_SHIFT;
+        symbol += 1;
     }
+    symbols[END_OF_BLOCK_SYMBOL] = EXCEPTIONAL | END_OF_BLOCK;
+    let mut index = 0;
+    while index < LENGTH_BASE.len() {
+        symbols[END_OF_BLOCK_SYMBOL + 1 + index] =
+            (LENGTH_BASE[index] as u32) << VALUE_SHIFT | LENGTH_EXTRA[index] as u32;
+        index += 1;
+    }
+    symbols
+}
+
+const fn distance_symbols() -> [u32; DISTANCE_SYMBOLS] {
+    let mut symbols = [EXCEPTIONAL; DISTANCE_SYMBOLS];
+    let mut index = 0;
+    while index < DISTANCE_BASE.len() {
+        symbols[index] =
+            (DISTANCE_BASE[index] as u32) << VALUE_SHIFT | DISTANCE_EXTRA[index] as u32;
+        index += 1;
+    }
+    symbols
+}
+
+const fn precode_symbols() -> [u32; PRECODE_SYMBOLS] {
+    let mut symbols = [0; PRECODE_SYMBOLS];
+    let mut symbol = 0;
+    while symbol < PRECODE_SYMBOLS {
+        symbols[symbol] = (symbol as u32) << VALUE_SHIFT;
+        symbol += 1;
+    }
+    symbols
+}
+
+static LITLEN_SYMBOL_ENTRIES: [u32; LITLEN_SYMBOLS] = litlen_symbols();
+static DISTANCE_SYMBOL_ENTRIES: [u32; DISTANCE_SYMBOLS] = distance_symbols();
+static PRECODE_SYMBOL_ENTRIES: [u32; PRECODE_SYMBOLS] = precode_symbols();
+
+impl Alphabet {
+    fn symbols(self) -> &'static [u32] {
+        match self {
+            Alphabet::Precode => &PRECODE_SYMBOL_ENTRIES,
+            Alphabet::LitLen => &LITLEN_SYMBOL_ENTRIES,
+            Alphabet::Distance => &DISTANCE_SYMBOL_ENTRIES,
+        }
+    }
+}
+
+fn entry(symbols: &[u32], symbol: u16, code_bits: usize) -> u32 {
+    let code_bits = code_bits as u32;
+    symbols[usize::from(symbol)] + (code_bits << CODE_BITS_SHIFT) + code_bits
 }
 
 fn low_bits(count: u32) -> u64 {
     (1u64 << count) - 1
 }
 
-fn reversed_code(code: u32, length: usize) -> usize {
-    usize::from((code as u16).reverse_bits() >> (16 - length))
+fn next_reversed_code(code: usize, length: usize) -> Option<usize> {
+    let zeros = !code & ((1 << length) - 1);
+    let highest_zero = 1 << zeros.checked_ilog2()?;
+    Some(code & (highest_zero - 1) | highest_zero)
+}
+
+fn double_up_to(table: &mut [u32], mut filled: usize, size: usize) {
+    while filled < size {
+        table.copy_within(..filled, filled);
+        filled *= 2;
+    }
 }
 
 fn build_table(
@@ -119,8 +160,9 @@ fn build_table(
     alphabet: Alphabet,
 ) -> Result<(), Invalid> {
     const UNUSABLE: Invalid = Invalid("Deflate code lengths do not fit their table");
+    let symbols = alphabet.symbols();
     let main = 1usize << table_bits;
-    if lengths.len() > LITLEN_SYMBOLS || table.len() < main {
+    if lengths.len() > symbols.len() || table.len() < main {
         return Err(UNUSABLE);
     }
     let mut counts = [0u16; LONGEST_CODE + 1];
@@ -142,13 +184,6 @@ fn build_table(
             return Err(Invalid("Deflate code lengths are over-subscribed"));
         }
     }
-    if unused > 0 {
-        // EXTERNAL(zlib): an incomplete code is valid only as one 1-bit literal, length or distance code.
-        if longest != 1 || alphabet == Alphabet::Precode {
-            return Err(Invalid("Deflate code lengths are incomplete"));
-        }
-        table[..main].fill(UNUSED_CODE);
-    }
 
     let mut offsets = [0u16; LONGEST_CODE + 2];
     for length in 1..=LONGEST_CODE {
@@ -163,33 +198,60 @@ fn build_table(
         }
     }
 
+    if unused > 0 {
+        // EXTERNAL(zlib): an incomplete code is valid only as one 1-bit literal, length or distance code.
+        if longest != 1 || alphabet == Alphabet::Precode {
+            return Err(Invalid("Deflate code lengths are incomplete"));
+        }
+        table[0] = entry(symbols, sorted[0], 1);
+        table[1] = UNUSED_CODE;
+        double_up_to(table, 2, main);
+        return Ok(());
+    }
+
     let table_length = table_bits as usize;
-    let mut code = 0u32;
-    let mut next = 0;
+    let mut sorted = sorted.iter().copied();
+    let mut next_symbol = || sorted.next().ok_or(UNUSABLE);
+    let mut code = 0;
+    let mut length = 1;
+    while counts[length] == 0 {
+        length += 1;
+    }
+    let mut filled = 1 << length.min(table_length);
+    while length <= table_length {
+        for _ in 0..counts[length] {
+            table[code] = entry(symbols, next_symbol()?, length);
+            let Some(next) = next_reversed_code(code, length) else {
+                double_up_to(table, filled, main);
+                return Ok(());
+            };
+            code = next;
+        }
+        loop {
+            length += 1;
+            if length <= table_length {
+                double_up_to(table, filled, 2 * filled);
+                filled *= 2;
+            }
+            if *counts.get(length).ok_or(UNUSABLE)? != 0 {
+                break;
+            }
+        }
+    }
+
     let mut prefix = usize::MAX;
     let (mut subtable, mut end) = (0, main);
-    for length in 1..=longest {
+    loop {
         for placed in 0..counts[length] {
-            let symbol = sorted[next];
-            next += 1;
-            let reversed = reversed_code(code, length);
-            code += 1;
-            if length <= table_length {
-                let entry = alphabet.entry(symbol, length as u32);
-                for slot in table[reversed..main].iter_mut().step_by(1 << length) {
-                    *slot = entry;
-                }
-                continue;
-            }
-            if reversed & (main - 1) != prefix {
-                prefix = reversed & (main - 1);
+            if code & (main - 1) != prefix {
+                prefix = code & (main - 1);
                 subtable = end;
                 let mut subtable_length = length - table_length;
-                let mut filled = usize::from(counts[length] - placed);
-                while filled < 1 << subtable_length {
+                let mut codes = usize::from(counts[length] - placed);
+                while codes < 1 << subtable_length {
                     subtable_length += 1;
                     let longer = counts.get(table_length + subtable_length).ok_or(UNUSABLE)?;
-                    filled = (filled << 1) + usize::from(*longer);
+                    codes = (codes << 1) + usize::from(*longer);
                 }
                 end = subtable + (1 << subtable_length);
                 if end > table.len() {
@@ -201,18 +263,24 @@ fn build_table(
                     | (subtable_length as u32) << CODE_BITS_SHIFT
                     | table_bits;
             }
-            let entry = alphabet.entry(symbol, (length - table_length) as u32);
-            let first = subtable + (reversed >> table_length);
+            let entry = entry(symbols, next_symbol()?, length - table_length);
+            let first = subtable + (code >> table_length);
             for slot in table[first..end]
                 .iter_mut()
                 .step_by(1 << (length - table_length))
             {
                 *slot = entry;
             }
+            let Some(next) = next_reversed_code(code, length) else {
+                return Ok(());
+            };
+            code = next;
         }
-        code <<= 1;
+        length += 1;
+        while *counts.get(length).ok_or(UNUSABLE)? == 0 {
+            length += 1;
+        }
     }
-    Ok(())
 }
 
 struct Tables {
@@ -1142,7 +1210,7 @@ mod tests {
                     continue;
                 }
                 let reversed = u64::from(code.reverse_bits() >> (32 - u32::from(length)));
-                let expected = alphabet.entry(symbol as u16, 0) & !STEP_BITS_MASK;
+                let expected = alphabet.symbols()[symbol] & !STEP_BITS_MASK;
                 for padding in [0, u64::MAX] {
                     let buffer = reversed | padding << length;
                     let bits = Bits { buffer, count: 48 };
