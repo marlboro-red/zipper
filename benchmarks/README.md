@@ -31,6 +31,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-11 | [BCJ2 main stream copied a slice at a time](native-7z/bcj2-slice-scan/README.md) | Kept. A BCJ2 7z of Silesia extracts 1.38 times faster at one thread, 1.614 s against 2.225 s, on an M2 Max. 7-Zip takes 1.311 s. Plain LZMA2 is unchanged. |
 | 2026-11-11 | [Parallel LZMA2 segments behind 7z filters](native-7z/filtered-lzma2-segments/README.md) | Kept. An ARM64-filtered 7z extracts 1.29 times faster at four threads, 0.746 s against 0.963 s, with peak memory 37 to 141 MiB. Archives with one LZMA2 block are unchanged. |
 | 2026-11-10 | [Buffered BCJ2 branch streams](native-7z/bcj2-buffered-branches/README.md) | Kept. A BCJ2 7z of Silesia extracts 2.25 times faster at one thread, 1.650 s against 3.715 s, with ranges apart. 7-Zip takes 1.022 s. Plain LZMA2 is unchanged. |
 | 2026-11-10 | [Create each 7z output folder once](native-7z/create-folders-once/README.md) | Kept as a cleanup. The reader makes each folder once, not once per item, but every timing range on the dependency sources overlaps the old code's. |
