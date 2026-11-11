@@ -288,9 +288,9 @@ fn inflate(
 
 fn cluster_bytes(input: &[u8], cluster: usize) -> io::Result<Vec<u8>> {
     let mut output = vec![0u8; cluster];
-    let decoded = crate::framing::inflate_block(&mut Vec::new(), &[], input, &mut output)
+    let written = crate::framing::inflate_until_full(&mut Vec::new(), input, &mut output)
         .map_err(|_| io::Error::other("a compressed QCOW cluster is damaged"))?;
-    if decoded.is_none_or(|decoded| decoded.written != cluster) {
+    if written != Some(cluster) {
         return Err(io::Error::other(
             "a compressed QCOW cluster does not fill its cluster",
         ));
@@ -553,29 +553,50 @@ pub(crate) fn open(file: ArchiveFile, length: u64) -> Result<Opened> {
 mod cluster_tests {
     use super::*;
 
-    fn flate2_cluster(input: &[u8], cluster: usize) -> (Option<Vec<u8>>, bool) {
+    fn flate2_cluster(input: &[u8], cluster: usize) -> Option<Vec<u8>> {
         let mut output = vec![0u8; cluster];
         let mut inflater = flate2::Decompress::new(false);
         let finish = flate2::FlushDecompress::Finish;
         let status = inflater.decompress(input, &mut output, finish);
-        let ended = matches!(status, Ok(flate2::Status::StreamEnd));
-        let filled = status.is_ok() && inflater.total_out() == cluster as u64;
-        (filled.then_some(output), ended)
+        (status.is_ok() && inflater.total_out() == cluster as u64).then_some(output)
     }
 
     #[test]
-    fn clusters_decode_as_flate2_decodes_them_or_are_refused_for_an_unfinished_stream() {
-        let mut stricter = 0;
-        for (input, cluster) in crate::framing::oracle::block_cases(crate::framing::oracle::raw) {
+    fn clusters_decode_as_flate2_decodes_them_whole_cut_and_flipped() {
+        let cases = crate::framing::oracle::block_cases(crate::framing::oracle::raw);
+        for (input, cluster) in cases.into_iter().filter(|(_, cluster)| *cluster >= 1) {
             let ours = cluster_bytes(&input, cluster).ok();
-            let (theirs, ended) = flate2_cluster(&input, cluster);
-            if ours.is_none() && theirs.is_some() && !ended {
-                stricter += 1;
-                continue;
-            }
-            assert_eq!(ours, theirs, "{cluster}");
+            assert_eq!(ours, flate2_cluster(&input, cluster), "{cluster}");
         }
-        assert!(stricter > 0);
+    }
+
+    #[test]
+    fn a_cluster_damaged_after_it_fills_reads_as_qemu_and_flate2_read_it() {
+        let cluster = 1 << 16;
+        let data = crate::framing::oracle::sample(31, cluster);
+        for level in [1, 6, 9] {
+            let stream = crate::framing::oracle::raw(&data, level);
+            let tail = [stream.clone(), vec![0x5a; 512]].concat();
+            let mut cases = vec![stream.clone(), tail];
+            for at in stream.len().saturating_sub(4)..stream.len() {
+                for bit in 0..8 {
+                    let mut flipped = stream.clone();
+                    flipped[at] ^= 1 << bit;
+                    cases.push(flipped);
+                }
+            }
+            cases.push(stream[..stream.len() - 1].to_vec());
+            for (index, input) in cases.iter().enumerate() {
+                let ours = cluster_bytes(input, cluster).ok();
+                assert_eq!(
+                    ours,
+                    flate2_cluster(input, cluster),
+                    "level {level} case {index}"
+                );
+            }
+            assert_eq!(cluster_bytes(&cases[1], cluster).unwrap(), data);
+            assert!(cluster_bytes(&stream, cluster + 1).is_err());
+        }
     }
 }
 
