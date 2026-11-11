@@ -3804,7 +3804,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [ihex-fields]
-fingerprint = cd5bad7c01e503ce
+fingerprint = b6b79a82b709cd93
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach ihex-fields
 full-check = cargo kani --harness ihex::proofs::
