@@ -262,7 +262,7 @@ fn named_cases() -> Vec<(String, Vec<u8>)> {
         ("a G", sixteen(0x30).replacen('0', "G", 1)),
     ];
     for (label, text) in bad {
-        cases.push((label, file(&with_three_first(&[text.clone()]))));
+        cases.push((label, file(&with_three_first(std::slice::from_ref(&text)))));
         cases.push((label, file(&[sixteen(0), text])));
     }
     for tail in ["\n\n", "\r\r", "\n\r", "\0", "garbage\n"] {
