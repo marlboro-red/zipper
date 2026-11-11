@@ -1,7 +1,7 @@
 use crate::{BadField, Field, field_check};
 use anyhow::{Result, ensure};
 use std::{
-    io::{BufRead, Read},
+    io::{BufRead, BufReader, Read},
     path::Path,
 };
 
@@ -22,6 +22,7 @@ const ADDRESS_LENGTH: u8 = 2;
 const START_LENGTH: u8 = 4;
 const SEGMENT_SHIFT: u32 = 4;
 const LINEAR_SHIFT: u32 = 16;
+const OPEN_BUFFER: usize = 1 << 16;
 const AFTER_THE_END: &str = "the Intel HEX file has data after its end-of-file record";
 
 pub(crate) fn hex_digit(character: u8) -> Option<u8> {
@@ -274,6 +275,20 @@ fn starts_as_intel_hex(start: &[u8]) -> bool {
         }
     }
     true
+}
+
+// EXTERNAL(7-Zip 26.05, run as a black box): a file that passes the content check but fails a
+// record further on is not Intel HEX to 7-Zip, which goes on to other formats.
+pub(crate) fn opens(path: &Path) -> Result<bool> {
+    if !sniff(path)? {
+        return Ok(false);
+    }
+    let mut records = Records::new(BufReader::with_capacity(
+        OPEN_BUFFER,
+        crate::volumes::open(path)?,
+    ))?;
+    while let Ok(Some(_)) = records.next_data() {}
+    Ok(records.ended)
 }
 
 #[cfg(test)]

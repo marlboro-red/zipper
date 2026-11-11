@@ -117,6 +117,10 @@ pub fn read_archive(
 ) -> Result<Vec<Entry>> {
     let archive_name = archive_file_name(&named(path))?;
     let alone = safe_output_name(&default_name(&archive_name, ""), &archive_name);
+    // EXTERNAL(7-Zip): an item that stores no time gets the archive file's modification time.
+    let modified = std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok();
     tree::extract("Intel HEX", path, destination, options, |tree| {
         let sizes = run_sizes(path, || tree.check())?;
         if sizes.is_empty() {
@@ -135,7 +139,7 @@ pub fn read_archive(
                 1 => alone.clone(),
                 _ => index.to_string(),
             };
-            tree.file(&name, size, FILE_MODE, None, &mut bytes)
+            tree.file(&name, size, FILE_MODE, modified, &mut bytes)
                 .context("cannot read the Intel HEX file")?;
             bytes.end_run()?;
         }

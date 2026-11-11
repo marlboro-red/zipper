@@ -297,12 +297,12 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_flv::sniff(archive)? => Reader::Flv,
         #[cfg(feature = "swf")]
         _ if native_swf::sniff(archive)? => Reader::Swf,
-        Engine::Auto if !cfg!(feature = "ihex") && crate::ihex::sniff(archive)? => {
+        Engine::Auto if !cfg!(feature = "ihex") && crate::ihex::opens(archive)? => {
             Reader::Backend {
                 format: Some("-tihex".to_owned()),
             }
         }
-        _ if crate::ihex::sniff(archive)? => Reader::Ihex,
+        _ if crate::ihex::opens(archive)? => Reader::Ihex,
         #[cfg(feature = "tar")]
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
         #[cfg(feature = "exe")]
@@ -316,6 +316,12 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         }
         #[cfg(feature = "uefi")]
         _ if native_uefi::sniff_later_volume(archive)? => Reader::Uefi,
+        Engine::Auto if !cfg!(feature = "ihex") && crate::ihex::sniff(archive)? => {
+            Reader::Backend {
+                format: Some("-tihex".to_owned()),
+            }
+        }
+        _ if crate::ihex::sniff(archive)? => Reader::Ihex,
         Engine::Native => native_fallback(archive)?,
         Engine::Auto => match compat::pinned_format(archive)? {
             Some(format) => Reader::Backend {

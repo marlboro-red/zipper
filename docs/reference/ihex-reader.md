@@ -14,6 +14,8 @@ A file counts as Intel HEX when it starts with `:` and its first three records p
 
 So a file whose first records set an extended address is not Intel HEX to 7-Zip, and Zipper does not open it either. Files from `objcopy -O ihex` for addresses of 64 KiB and above start with such a record, and both tools refuse them.
 
+A file whose first records pass but whose other records fail goes on to the other readers, as 7-Zip goes on to other formats. So a UEFI firmware volume further into the file extracts, as in 7-Zip. When no other reader claims the file, the Intel HEX reader refuses it and gives its reason. Choosing the reader reads an Intel HEX file once to its end-of-file record, before the two passes below.
+
 ## What it writes
 
 Records are read in file order. A data record joins the run of the record before it when it starts at the byte where that run ends. Otherwise it starts a new run. Each run becomes one file:
@@ -21,6 +23,7 @@ Records are read in file order. A data record joins the run of the record before
 - One run takes the archive's name without its last extension, as 7-Zip names an item without a name of its own. `firmware.hex` writes `firmware`, `a.b.hex` writes `a.b`, and a name without an extension gains `~`.
 - Two or more runs take the names `0`, `1`, `2` and on, in the order the runs start in the file.
 - A file with no data records writes nothing.
+- Each file takes the archive file's modified time, as 7-Zip gives an item that stores no time.
 
 A record's address is added to the current base. An extended segment address record (type 02) sets the base to its value times 16, and an extended linear address record (type 04) sets it to its value times 65,536. The last one read sets the base, whichever type it is. A start address record (type 03 or 05) changes nothing. So:
 
@@ -44,14 +47,16 @@ The reader opens a file only when 7-Zip opens it:
 ## Safety checks
 
 - The output goes to a hidden staging folder and is published only when the whole file reads, as with every reader.
-- The reader reads the file twice. The first pass checks every record and counts each run's size, keeping one 8-byte size per run and nothing else. Each run is charged against free space, or `--max-extracted-bytes`, before it is written. The second pass writes the data straight to each run's file.
+- The reader reads the file twice. The first pass checks every record and counts each run's size, keeping one 8-byte size per run and no data. The tree writer keeps each run's name, as it does for every reader. Each run is charged against free space, or `--max-extracted-bytes`, before it is written. The second pass writes the data straight to each run's file.
 - `--path`, `--include`, `--exclude`, `--strip-components` and `--strip-prefix` work as with every reader.
 
 ## Differences from 7-Zip
 
 - Data after the end-of-file record is refused. 7-Zip extracts the file and warns that data follows the end of the archive.
 - A file of more than 1,000,000 runs is refused. 7-Zip reads it.
-- 7-Zip holds every run in memory. Zipper holds only the run sizes.
+- A `\` or `:` in the name of a single run's file becomes `_`, as for every name Zipper derives from the archive's name. 7-Zip keeps them on macOS and Linux.
+- A file with no data records publishes an empty destination folder. 7-Zip creates none.
+- 7-Zip holds every run in memory. Zipper holds no data, so a run of 64 MiB peaks at about 4 MB, where 7-Zip peaks at 137 MB. A file of 1,000,000 one-byte runs peaks at about 175 MB in Zipper, from the tree writer's record of each name, and at 141 MB in 7-Zip.
 
 ## Limits
 

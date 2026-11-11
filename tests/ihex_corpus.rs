@@ -411,3 +411,30 @@ fn one_run_takes_the_archive_name_and_several_take_their_numbers() {
         assert_eq!(found, names, "{archive}");
     }
 }
+
+#[test]
+fn each_file_takes_the_archive_files_modified_time_as_7zip_gives_it() {
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("firmware.hex");
+    std::fs::write(&archive, file(&[sixteen(0), sixteen(64)])).unwrap();
+    let time = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_500_000_000);
+    std::fs::File::options()
+        .write(true)
+        .open(&archive)
+        .unwrap()
+        .set_modified(time)
+        .unwrap();
+    let out = work.path().join("out");
+    let options = zipper::ExtractOptions {
+        engine: zipper::Engine::Native,
+        ..Default::default()
+    };
+    zipper::extract_archive(&archive, &out, options).unwrap();
+    for name in ["0", "1"] {
+        let modified = std::fs::metadata(out.join(name))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(modified, time, "{name}");
+    }
+}

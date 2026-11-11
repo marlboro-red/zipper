@@ -10,6 +10,9 @@ mod ihex_writer;
 mod sevenzip;
 #[path = "common/swf_check.rs"]
 mod swf_check;
+#[cfg(feature = "uefi")]
+#[path = "common/uefi_writer.rs"]
+mod uefi_writer;
 
 use ihex_writer::*;
 use std::path::Path;
@@ -225,4 +228,33 @@ fn selected_runs_extract_alone() {
     let out = work.path().join("out");
     assert_eq!(std::fs::read(out.join("1")).unwrap(), b"second");
     assert_eq!(std::fs::read_dir(&out).unwrap().count(), 1);
+}
+
+#[cfg(feature = "uefi")]
+#[test]
+fn a_firmware_volume_after_a_broken_intel_hex_start_extracts_as_7zip_extracts_it() {
+    let Some(binary) = sevenzip_binary() else {
+        return;
+    };
+    let firmware = uefi_writer::volume(vec![uefi_writer::ffs(
+        &uefi_writer::named(0x991, 1),
+        1,
+        b"one",
+    )]);
+    let mut problems = Vec::new();
+    for broken in [
+        record_with_count(DATA, 3, &[0x44], 1).replace("B8", "00"),
+        record(6, 0, &[]),
+        "garbage".to_owned(),
+    ] {
+        let records: Vec<String> = (0..3)
+            .map(|index| record(DATA, index, &[index as u8]))
+            .chain([broken.clone()])
+            .collect();
+        let mut bytes = lines(&records, "\n");
+        bytes.resize(4096, 0xFF);
+        bytes.extend_from_slice(&firmware);
+        problems.extend(judge(&binary, &bytes, "firmware.fd", &broken, STRICTER));
+    }
+    report(problems, 3, 3);
 }
