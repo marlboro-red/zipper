@@ -69,10 +69,11 @@ pub enum Engine {
     /// HFSX or APFS, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files,
     /// SquashFS 4.0 and CramFS images, raw or in a disk's lone partition,
     /// Android logical partition images, UEFI firmware volumes and capsules,
-    /// and 7z whose methods it decodes. 7-Zip for a RAR volume, a RAR 4 solid
-    /// archive or a RAR archive with encrypted headers, other 7z, other SquashFS
-    /// versions and byte orders, an MSI whose main stream is not a CAB, a
-    /// split or pre-1.13 WIM, a Help 2 file without an ITSF record, a
+    /// Intel HEX files, and 7z whose methods it decodes. 7-Zip for a RAR
+    /// volume, a RAR 4 solid archive or a RAR archive with encrypted headers,
+    /// other 7z, other SquashFS versions and byte orders, an MSI whose main
+    /// stream is not a CAB, a split or pre-1.13 WIM, a Help 2 file without an
+    /// ITSF record, a
     /// differencing disk image, a DMG or disk holding another file system
     /// Zipper does not read there, an APFS container with an encrypted,
     /// sealed or snapshot volume or a Fusion container, an ext volume that
@@ -87,8 +88,8 @@ pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, RAR, compound
     /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, DMG,
     /// HFS+, APFS, ext, SquashFS 4.0, CramFS, FLV, SWF, executables, logical
-    /// partition images, UEFI firmware, 7z and single compressed files, and
-    /// native ZIP for unrecognized files.
+    /// partition images, UEFI firmware, Intel HEX, 7z and single compressed
+    /// files, and native ZIP for unrecognized files.
     Native,
 }
 
@@ -150,6 +151,8 @@ pub enum Reader {
     Lp,
     /// The native reader for UEFI firmware volumes and capsules.
     Uefi,
+    /// The native reader for Intel HEX files.
+    Ihex,
     /// The native reader for Flash Video files.
     Flv,
     /// The native reader for SWF files, uncompressed or compressed with zlib
@@ -294,6 +297,12 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_flv::sniff(archive)? => Reader::Flv,
         #[cfg(feature = "swf")]
         _ if native_swf::sniff(archive)? => Reader::Swf,
+        Engine::Auto if !cfg!(feature = "ihex") && crate::ihex::sniff(archive)? => {
+            Reader::Backend {
+                format: Some("-tihex".to_owned()),
+            }
+        }
+        _ if crate::ihex::sniff(archive)? => Reader::Ihex,
         #[cfg(feature = "tar")]
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
         #[cfg(feature = "exe")]
@@ -664,6 +673,8 @@ fn tree_reader(reader: &Reader) -> Option<TreeReader> {
         Reader::Lp => Some(native_lp::read_archive),
         #[cfg(feature = "uefi")]
         Reader::Uefi => Some(native_uefi::read_archive),
+        #[cfg(feature = "ihex")]
+        Reader::Ihex => Some(crate::native_ihex::read_archive),
         #[cfg(feature = "flv")]
         Reader::Flv => Some(native_flv::read_archive),
         #[cfg(feature = "swf")]

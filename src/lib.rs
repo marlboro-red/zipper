@@ -43,6 +43,8 @@ mod extract;
 mod framing;
 #[cfg(any(feature = "apfs", feature = "dmg", feature = "disk"))]
 mod hfs;
+#[cfg_attr(not(feature = "ihex"), allow(dead_code))]
+mod ihex;
 #[cfg(any(
     feature = "apfs",
     feature = "cramfs",
@@ -104,6 +106,8 @@ pub mod native_ext;
 mod native_fat;
 #[cfg(feature = "flv")]
 pub mod native_flv;
+#[cfg(feature = "ihex")]
+pub mod native_ihex;
 #[cfg(feature = "iso")]
 pub mod native_iso;
 #[cfg(feature = "lp")]
@@ -135,7 +139,7 @@ pub mod native_xar;
 #[cfg(feature = "zip-deflate")]
 pub mod native_zip;
 mod ntfs_streams;
-#[cfg(any(feature = "flv", feature = "swf"))]
+#[cfg(any(feature = "flv", feature = "ihex", feature = "swf"))]
 mod output_name;
 mod pattern;
 mod placement;

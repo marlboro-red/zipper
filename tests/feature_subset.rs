@@ -48,6 +48,32 @@ fn tar_and_gzip_are_refused_as_not_built() {
 }
 
 #[test]
+fn intel_hex_is_refused_as_not_built_by_the_native_engine() {
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("firmware.hex");
+    std::fs::write(
+        &archive,
+        ":10000000000102030405060708090A0B0C0D0E0F78\n:00000001FF\n",
+    )
+    .unwrap();
+    let destination = work.path().join("out");
+    let error = extract_archive(
+        &archive,
+        &destination,
+        ExtractOptions {
+            engine: Engine::Native,
+            ..ExtractOptions::default()
+        },
+    )
+    .unwrap_err();
+    let not_built = error
+        .downcast_ref::<NotBuilt>()
+        .unwrap_or_else(|| panic!("{error:#}"));
+    assert_eq!(not_built.0, "ihex");
+    assert!(!destination.exists());
+}
+
+#[test]
 fn zip_and_7z_extract_in_the_subset_build() {
     for archive in [
         "zip-corpus/7zip-deflate.zip",

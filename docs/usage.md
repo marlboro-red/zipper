@@ -213,7 +213,8 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `flv` | The FLV reader | None |
 | `lp` | The Android logical partition (`super.img`) reader | None |
 | `uefi` | The UEFI firmware volume and capsule reader | None |
-| `more-formats` | Every reader from `cpio` to `uefi` above | The union of theirs |
+| `ihex` | The Intel HEX reader | None |
+| `more-formats` | Every reader from `cpio` to `ihex` above | The union of theirs |
 | `all-formats` | `zip`, `7z`, `tar`, `zstd` and `more-formats` | The union of theirs |
 | `cli` | The `zipper` binary, with `all-formats` | `clap` |
 

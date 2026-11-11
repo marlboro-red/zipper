@@ -1022,6 +1022,11 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_lp::ReadOptions::default(),
                     )?),
+                    Reader::Ihex => print(zipper::native_ihex::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_ihex::ReadOptions::default(),
+                    )?),
                     Reader::Flv => print(zipper::native_flv::read_archive(
                         &archive,
                         None,
@@ -1209,6 +1214,11 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_lp::ReadOptions::default(),
+                    )?),
+                    Reader::Ihex => report(zipper::native_ihex::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_ihex::ReadOptions::default(),
                     )?),
                     Reader::Flv => report(zipper::native_flv::read_archive(
                         &archive,

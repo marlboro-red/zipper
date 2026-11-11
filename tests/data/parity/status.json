@@ -166,8 +166,14 @@
       ]
     },
     "IHex": {
-      "status": "backend",
-      "note": "Left to 7-Zip. It decodes to one file for each block of addresses, which the single-stream reader does not do."
+      "status": "native",
+      "note": "Intel HEX files read in process, one file for each run of addresses, found from the content as 7-Zip finds them. Data after the end-of-file record is refused, where 7-Zip warns.",
+      "tests": [
+        "tests/ihex_corpus.rs::generated_files_of_every_record_type_extract_as_7zip_extracts_them",
+        "tests/ihex_corpus.rs::random_files_extract_or_are_refused_as_7zip_extracts_or_refuses_them",
+        "tests/ihex_corpus.rs::objcopy_files_extract_as_7zip_extracts_them",
+        "tests/hostile_ihex.rs::every_cut_and_every_changed_byte_is_refused_when_7zip_refuses_it"
+      ]
     },
     "Iso": {
       "status": "native",

@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 104 |
+| `native` | 105 |
 | `partial` | 1 |
-| `backend` | 2 |
+| `backend` | 1 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-6 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+5 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -48,7 +48,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `GPT` | `native` | Read in process. A lone partition that does not hold FAT, or a partition name 7-Zip writes as a path, goes to 7-Zip. | `tests/data/parity/archives/gpt.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `HFS` | `native` | HFS+ and HFSX read in process, raw and inside DMG images. Hard links become links. On macOS, extended attributes are restored as extended attributes, where 7-Zip writes each as a separate `file:name` file. Elsewhere they are skipped. A resource fork that is not compressed data is refused. | `tests/data/parity/archives/hfs.img.stored.xz`, `generated_volumes_extract_byte_for_byte_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `the_parity_hfs_and_apm_images_extract_as_7zip_extracts_them` in `tests/dmg_corpus.rs`, `damaged_volume_headers_btree_nodes_and_extents_are_refused_when_7zip_refuses_them` in `tests/hostile_dmg.rs` |
 | `Hxs` | `native` | Help 2 files with an ITSF record and LZX sections read in process. One without an ITSF record, which 7-Zip lists as one text item, goes to 7-Zip. No Help 2 compiler runs here, so every file comes from Zipper's own test writer. | `generated_help2_files_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/chm_corpus.rs`, `damaged_help2_files_are_refused_exactly_when_7zip_refuses_them` in `tests/chm_corpus.rs`, `a_help2_file_without_an_itsf_record_goes_to_7zip` in `tests/hostile_chm.rs` |
-| `IHex` | `backend` | Left to 7-Zip. It decodes to one file for each block of addresses, which the single-stream reader does not do. | No proof yet. |
+| `IHex` | `native` | Intel HEX files read in process, one file for each run of addresses, found from the content as 7-Zip finds them. Data after the end-of-file record is refused, where 7-Zip warns. | `generated_files_of_every_record_type_extract_as_7zip_extracts_them` in `tests/ihex_corpus.rs`, `random_files_extract_or_are_refused_as_7zip_extracts_or_refuses_them` in `tests/ihex_corpus.rs`, `objcopy_files_extract_as_7zip_extracts_them` in `tests/ihex_corpus.rs`, `every_cut_and_every_changed_byte_is_refused_when_7zip_refuses_it` in `tests/hostile_ihex.rs` |
 | `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |
 | `LP` | `native` | Android logical partition images read in process. No AOSP lpmake runs here, so a test writer builds every image from the liblp format, and 7-Zip checks each. A partition name that is not a plain relative path goes to 7-Zip. | `generated_images_extract_as_7zip_extracts_them` in `tests/lp_corpus.rs`, `every_changed_metadata_byte_with_repaired_checksums_is_refused_when_7zip_refuses_it` in `tests/hostile_lp.rs`, `every_cut_at_a_sector_or_boundary_is_refused_when_7zip_refuses_it` in `tests/hostile_lp.rs` |
 | `Lzh` | `native` | Header levels 0 to 3 and the -lh0-, -lz4-, -lh4- to -lh7- and -lhd- methods read in process. Methods 7-Zip does not read either, such as -lh1- and -lz5-, are refused. | `every_corpus_lzh_extracts_the_tree_7zip_extracts_or_the_refusal_its_record_gives` in `tests/lzh_corpus.rs`, `generated_lzh_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/lzh_corpus.rs`, `token_streams_and_every_table_form_decode_as_7zip_decodes_them` in `tests/lzh_corpus.rs`, `damaged_lzh_are_refused_exactly_when_7zip_refuses_them` in `tests/lzh_corpus.rs` |
