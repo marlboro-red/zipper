@@ -413,6 +413,26 @@ fn one_run_takes_the_archive_name_and_several_take_their_numbers() {
 }
 
 #[test]
+fn one_line_break_of_any_kind_after_the_end_record_belongs_to_it() {
+    let work = tempfile::tempdir().unwrap();
+    for (label, newline) in [("none", ""), ("LF", "\n"), ("CR", "\r"), ("CRLF", "\r\n")] {
+        let mut bytes = lines(&[sixteen(0)], newline);
+        bytes.extend(END_RECORD.as_bytes());
+        bytes.extend(newline.as_bytes());
+        let archive = work.path().join(format!("{label}.hex"));
+        std::fs::write(&archive, &bytes).unwrap();
+        let out = work.path().join(format!("{label}.out"));
+        let options = zipper::ExtractOptions {
+            engine: zipper::Engine::Native,
+            ..Default::default()
+        };
+        zipper::extract_archive(&archive, &out, options)
+            .unwrap_or_else(|error| panic!("{label}: {error:#}"));
+        assert!(out.join(label).is_file(), "{label}");
+    }
+}
+
+#[test]
 fn each_file_takes_the_archive_files_modified_time_as_7zip_gives_it() {
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("firmware.hex");

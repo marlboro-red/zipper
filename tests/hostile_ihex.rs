@@ -135,13 +135,18 @@ fn separate_runs(count: usize) -> Vec<u8> {
 }
 
 #[test]
-fn more_runs_than_the_limit_are_refused_and_publish_nothing() {
-    let (work, result) = extract(&separate_runs(MAX_RUNS + 1), native());
-    let error = result.unwrap_err();
+fn more_runs_than_the_limit_are_refused_before_a_file_is_written() {
+    let bytes = separate_runs(MAX_RUNS + 1);
+    let listed = tempfile::tempdir().unwrap();
+    let archive = listed.path().join("in.hex");
+    std::fs::write(&archive, &bytes).unwrap();
+    let error = zipper::native_ihex::read_archive(&archive, None, Default::default()).unwrap_err();
     assert!(
-        format!("{error:#}").contains("more than 1000000"),
+        format!("{error:#}").contains("more than 1000000 runs"),
         "{error:#}"
     );
+    let (work, result) = extract(&bytes, native());
+    assert!(result.is_err());
     assert!(!work.path().join("out").exists());
 }
 
