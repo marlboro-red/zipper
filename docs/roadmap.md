@@ -37,7 +37,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M22. Zipper's own ZIP directory reader](roadmap/m22-zippers-own-zip-directory-reader.md) | Done | M21 |
 | [M23. The LZMA decoder as its own crate](roadmap/m23-the-lzma-decoder-as-its-own-crate.md) | Planned | M21 |
 | [M24. ZIP and 7z throughput from the research report](roadmap/m24-zip-and-7z-throughput-from-the-research-report.md) | In progress | M22 |
-| [M25. A release build without C](roadmap/m25-a-release-build-without-c.md) | In progress | M22 |
+| [M25. A release build without C](roadmap/m25-a-release-build-without-c.md) | Done | M22 |
 | [M26. Cargo features for each format](roadmap/m26-cargo-features-for-each-format.md) | In progress | M25 |
 | [M27. LZ4 and `compress` at the reference speed](roadmap/m27-lz4-and-compress-at-the-reference-speed.md) | Planned | M25 |
 

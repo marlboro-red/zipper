@@ -16,11 +16,17 @@ Exit checks:
 2. A record for each library compares the Rust replacement with it, with ranges apart or the verdict stated as a tie.
 3. The codec rows and the scoreboard show no workload slower beyond the spread, or the record names the gap and why it is accepted.
 
-Done so far, by 11 November 2026:
+M25 closed on 11 November 2026. Every exit check passed:
+
+1. The gate's `pure rust` step fails when a crate in the build compiles or links native code, on every platform.
+2. [The Deflate record](../../benchmarks/deflate/no-zlib/README.md) and [the Zstandard record](../../benchmarks/zstd/own-decoder/README.md) compare each Rust decoder with the C library it replaced. libdeflate left with `native-fast`.
+3. The codec rows and the scoreboard show no workload slower beyond the spread.
+
+Done by 11 November 2026:
 
 - `native-fast` is retired, and with it libdeflate, its `unsafe` calls, the shared entry-buffer budget and the 8 MiB archive cache. An adversarial review found no check weakened on the remaining engine, and both ZIP models held every rule after the change.
 - Zipper's own Deflate decoder in `src/inflate.rs` reads every Deflate, zlib and gzip stream, in ZIP, 7z, tar and single `.gz` files, CAB, DMG, HFS+, APFS, SquashFS, CramFS, xar, SWF, QCOW and VMDK. `flate2`, zlib-rs and the system zlib left the normal dependencies. The release build step of the gate fails if a zlib crate or library comes back.
 - [Every Deflate decode on Zipper's own decoder](../../benchmarks/deflate/no-zlib/README.md) times as fast or faster than the system zlib on an M2 Max.
 - [Zipper's own Zstandard decoder](../../benchmarks/zstd/own-decoder/README.md) replaced libzstd in ZIP, `.zst`, tar, RPM and SquashFS. `zipper extract` is 0.88 and 0.92 times libzstd's wall time on Silesia tar at one thread on an M2 Max, and level on the other four workloads. A file of 3,983 small frames still takes 1.05 times libzstd's cycles on the M2 Max.
 - The release build compiles no C on any platform. The gate's `pure rust` step fails when a crate in the build declares a native library or builds one with `cc`, `cmake`, `pkg-config`, `bindgen`, `vcpkg` or `autotools`. On macOS it also fails when the release binary links a library outside the system.
-- Exit check 3 is open. The scoreboard was last measured on 5 November, before the Deflate, BZip2 and Zstandard decoders, and `cargo xtask bench` has to remeasure it.
+- The scoreboard and the codec rows were remeasured on an Apple M2 Max at `cb8fe53`, and the same rows at `742ddef`, before the Rust decoders, on the same machine. No Zipper row was slower beyond the spread except a `.tar.gz` of random bytes, at 1.15 times. [Copying stored Deflate blocks straight to the caller](../../benchmarks/deflate/stored-direct-copy/README.md) made that row level, at 1.01 to 1.03 times with the ranges overlapping.
