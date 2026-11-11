@@ -1063,7 +1063,7 @@ item = src/lib.rs | pub(crate) type Field<
 
 [cab-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = eb6817f088ec50f1
+fingerprint = d7a0fd2247b2b39d
 full-check = cargo xtask kani-reach cab-fields
 full-check = cargo kani --harness native_cab::proofs::
 full-check = cargo test --release --lib native_cab
