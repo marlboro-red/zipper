@@ -1,0 +1,179 @@
+{
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "cpu_count": 12,
+  "threads": 4,
+  "runs": 7,
+  "warmup_rounds": 1,
+  "archive_format": "native",
+  "operation": "extract",
+  "cooldown_seconds": 2.0,
+  "source": "silesia",
+  "input_bytes": 211938580,
+  "archive_bytes": 66217060,
+  "archive_sha256": "0f2671b93dad7413947856bd0f68d6b3ed99e6791702cf9ebd3dbd5bef5cc382",
+  "readers": {
+    "libzstd": {
+      "mode": "native",
+      "binary": "/Users/cjpark/target/timing/bin/zipper-25dcb88",
+      "sha256": "b754ba8cd9129d262083f138bdcba5aac49187327db8b19f3c5ec6f9a84b2dc0",
+      "threads": 1
+    },
+    "own": {
+      "mode": "native",
+      "binary": "/Users/cjpark/target/timing/bin/zipper-zstd3",
+      "sha256": "52f34c387b12d6771223ae0a69d6bb9ce9f08887dcc0c04a82b871700467bb95",
+      "threads": 1
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "busy_processes": [],
+  "load_average_start": [
+    2.16796875,
+    1.689453125,
+    1.5927734375
+  ],
+  "order_including_warmup": [
+    [
+      "libzstd",
+      "own"
+    ],
+    [
+      "own",
+      "libzstd"
+    ],
+    [
+      "libzstd",
+      "own"
+    ],
+    [
+      "libzstd",
+      "own"
+    ],
+    [
+      "libzstd",
+      "own"
+    ],
+    [
+      "own",
+      "libzstd"
+    ],
+    [
+      "libzstd",
+      "own"
+    ],
+    [
+      "libzstd",
+      "own"
+    ]
+  ],
+  "results": {
+    "libzstd": {
+      "samples": [
+        {
+          "seconds": 0.21695337500000011,
+          "peak_rss_bytes": 11894784,
+          "cpu_seconds": 0.23484999999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21770854199999867,
+          "peak_rss_bytes": 14188544,
+          "cpu_seconds": 0.233355,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2147799999999993,
+          "peak_rss_bytes": 11911168,
+          "cpu_seconds": 0.230207,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21450266699999787,
+          "peak_rss_bytes": 11862016,
+          "cpu_seconds": 0.23057299999999997,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2149016250000031,
+          "peak_rss_bytes": 12959744,
+          "cpu_seconds": 0.232972,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21174566699999886,
+          "peak_rss_bytes": 11878400,
+          "cpu_seconds": 0.22888099999999997,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2173450409999944,
+          "peak_rss_bytes": 11878400,
+          "cpu_seconds": 0.23446999999999998,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.2149016250000031,
+      "min_seconds": 0.21174566699999886,
+      "max_seconds": 0.21770854199999867,
+      "mib_s": 940.5251374977198,
+      "peak_rss_bytes": 14188544
+    },
+    "own": {
+      "samples": [
+        {
+          "seconds": 0.1984882499999996,
+          "peak_rss_bytes": 12910592,
+          "cpu_seconds": 0.216911,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.19582770899999957,
+          "peak_rss_bytes": 12894208,
+          "cpu_seconds": 0.213387,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.19552112499999907,
+          "peak_rss_bytes": 12910592,
+          "cpu_seconds": 0.21348499999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.1977637080000001,
+          "peak_rss_bytes": 12894208,
+          "cpu_seconds": 0.21370999999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.19635316699999805,
+          "peak_rss_bytes": 12910592,
+          "cpu_seconds": 0.21498099999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.19838816700000095,
+          "peak_rss_bytes": 12910592,
+          "cpu_seconds": 0.21637399999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.1989005000000006,
+          "peak_rss_bytes": 12910592,
+          "cpu_seconds": 0.216883,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.1977637080000001,
+      "min_seconds": 0.19552112499999907,
+      "max_seconds": 0.1989005000000006,
+      "mib_s": 1022.0296860615662,
+      "peak_rss_bytes": 12910592
+    }
+  },
+  "load_average_end": [
+    2.38232421875,
+    1.787109375,
+    1.6298828125
+  ]
+}

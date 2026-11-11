@@ -182,8 +182,13 @@ fn same_outcome(frames: &[u8], capacity: usize, what: &dyn Fn() -> String) {
             theirs.as_ref().map(Vec::len)
         );
     }
+    let libzstd_streaming_refuses = theirs.is_err();
     let whole = ours_one_shot(frames, capacity);
     let theirs = libzstd_one_shot(frames, capacity);
+    let oversized = whole.as_ref().is_err_and(|error| error.contains(PAST_SIZE));
+    if oversized && libzstd_streaming_refuses {
+        return;
+    }
     assert!(
         whole.is_err() == theirs.is_err() && (whole.is_err() || whole == theirs),
         "{}: one shot {:?} against libzstd {:?}",
@@ -1516,13 +1521,45 @@ fn a_block_that_decodes_to_more_than_the_largest_block_is_refused_as_libzstd_ref
             );
             let decoded = 40 + 1027 + matched as usize;
             let what = || format!("a block of {decoded} bytes into {} bytes", decoded + spare);
-            same_outcome(&frame, decoded + spare, &what);
             let repeated = windowed(
                 10,
                 &[compressed(true, &repeated_literals(1, 7, 40), &sequences)],
             );
-            same_outcome(&repeated, decoded + spare, &what);
+            for frame in [&frame, &repeated] {
+                same_outcome(frame, decoded + spare, &what);
+                assert!(ours_one_shot(frame, decoded + spare).is_err(), "{}", what());
+            }
         }
+    }
+}
+
+#[test]
+fn an_oversized_block_whose_literals_stay_in_the_block_is_refused_with_room_to_spare() {
+    let mut random = Random(0x0B_5E_55_ED_B1_0C_4B_11);
+    let literals: Vec<u8> = (0..16 * 40).map(|_| random.next() as u8).collect();
+    let codes = OneCodePerField {
+        literal: 23,
+        offset: 4,
+        matched: 46,
+    };
+    let sequences = one_symbol_sequences(codes, false, &[(0, 0, 0); 16]);
+    let block = compressed(true, &raw_literals(1, &literals), &sequences);
+    assert!(
+        sequences.len() >= WILDCOPY,
+        "the literals must be referenced"
+    );
+    let frame = windowed(10, &[block]);
+    let decoded = 16 * (40 + 1027);
+    assert!(libzstd(&frame).is_err());
+    for spare in [0, 4096, 2 * BLOCK_MAX] {
+        let refusal = ours_one_shot(&frame, decoded + spare);
+        assert!(
+            refusal
+                .as_ref()
+                .is_err_and(|error| error.contains(PAST_SIZE)),
+            "{spare} spare bytes: {:?}",
+            refusal.map(|bytes| bytes.len())
+        );
     }
 }
 

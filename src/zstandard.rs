@@ -1581,6 +1581,10 @@ impl Decoder {
             && capacity > target.block_max + 2 * WILDCOPY + found.length
         {
             target.at + target.block_max + WILDCOPY
+        } else if target.one_shot {
+            target
+                .capacity_end
+                .min(target.at + target.block_max + WILDCOPY)
         } else {
             target.capacity_end
         };

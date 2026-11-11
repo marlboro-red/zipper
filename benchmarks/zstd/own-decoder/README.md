@@ -1,6 +1,6 @@
 # Zipper's own Zstandard decoder against libzstd
 
-**Kept, and the gap on the M2 Max is closed. One-thread extraction of Silesia takes 0.97 to 0.98 times the cycles of libzstd 1.5.7 on an Apple M2 Max and 0.89 times on an Apple M5, in safe Rust. It took 1.12 to 1.14 times on the M2 Max while the compiler kept the sequence loop's FSE states on the stack. A file of 3,983 small frames still takes 1.05 times libzstd's cycles on the M2 Max. Every figure counts cycles or instructions on a machine that other jobs shared, and none is a wall time.** One Apple M5 and one Apple M2 Max.
+**Kept, and the gap on the M2 Max is closed. One-thread extraction of Silesia takes 0.97 to 0.98 times the cycles of libzstd 1.5.7 on an Apple M2 Max and 0.89 times on an Apple M5, in safe Rust. It took 1.12 to 1.14 times on the M2 Max while the compiler kept the sequence loop's FSE states on the stack. A file of 3,983 small frames still takes 1.05 times libzstd's cycles on the M2 Max. In wall time on a quiet M2 Max, `zipper extract` is 0.88 and 0.92 times libzstd on Silesia tar at one thread, ranges apart, and level with it on the other four workloads.** One Apple M5 and one Apple M2 Max.
 
 ## Question
 
@@ -139,17 +139,31 @@ The 3,983 frames on the M2 Max, with [`count-frames.sh`](count-frames.sh), five 
 | The decoder before this change | 798 M | 196.4 M | 195.8 M | 197.1 M | 17,973,704 |
 | The kept decoder | 717 M | 172.7 M | 171.8 M | 174.9 M | 17,990,088 |
 
+Wall time of `zipper extract` on the M2 Max, measured with `scripts/compare_zip_readers.py` with nothing else running, 7 runs in turn after one warmup and 2 s apart. The `libzstd` binary is `25dcb88`, and `own` is the sequence loop's commit. Both outputs matched the source tree byte for byte on every run. Raw samples are in [`wall-m2/`](wall-m2/).
+
+| Archive | Size | Threads | libzstd median | Range | Zipper median | Range | Ratio | CPU ratio |
+| --- | ---: | ---: | ---: | --- | ---: | --- | ---: | ---: |
+| Silesia tar, `-3` | 66,217,060 | 1 | 0.215 s | 0.212 to 0.218 | 0.198 s | 0.196 to 0.199 | 0.92 | 0.92 |
+| Silesia tar, `-19` | 52,849,367 | 1 | 0.225 s | 0.222 to 0.225 | 0.197 s | 0.191 to 0.200 | 0.88 | 0.89 |
+| Dependencies tar, `-3` | 9,025,417 | 1 | 0.410 s | 0.399 to 0.416 | 0.412 s | 0.406 to 0.425 | 1.01 | 0.99 |
+| Dependencies tar, `-3` | 9,025,417 | default | 0.291 s | 0.274 to 0.295 | 0.285 s | 0.276 to 0.295 | 0.98 | 0.99 |
+| Silesia ZIP, method 93 | 66,217,767 | 1 | 0.229 s | 0.226 to 0.239 | 0.224 s | 0.216 to 0.237 | 0.98 | 0.98 |
+| Silesia ZIP, method 93 | 66,217,767 | default | 0.099 s | 0.095 to 0.103 | 0.101 s | 0.095 to 0.102 | 1.03 | 1.06 |
+
+Peak memory stayed within 1 MB of libzstd in every row. The Silesia tar rows are the only ones with ranges apart. The dependency tar is 67 MB of small files, so file creation limits it, not decoding. Before this change, the same workloads took 1.00 to 1.12 times libzstd's wall time.
+
 The adversarial review built a ZIP of 2,000 Zstandard entries, each a 10-byte frame that declares a 128 MiB window. The first wiring zeroed a whole window for every entry, 547 MB at peak and 6.15 s of CPU against 4.9 MB and 0.14 s. The window buffer is now reserved without being touched and filled as blocks arrive, and a thread keeps its decoder for the next frame. `zipper extract` on that ZIP now retires 1,721 M instructions with a 5.1 MB peak, against 1,740 M and 5.6 MB for the libzstd build.
 
 ## Decision
 
-Kept. The decoder is wired in behind the `zstd` feature, and the `zstd` crate is now only a test oracle, so the default build no longer compiles libzstd. Extraction of Silesia takes fewer cycles than with libzstd on both machines, 0.97 to 0.98 times on the M2 Max and 0.89 times on the M5, with the ranges apart. The coordinator times `zipper extract` on the zstd workloads before this ships, and reverts the wiring if a workload is slower beyond the spread.
+Kept. The decoder is wired in behind the `zstd` feature, and the `zstd` crate is now only a test oracle, so the default build no longer compiles libzstd. Extraction of Silesia takes fewer cycles than with libzstd on both machines, 0.97 to 0.98 times on the M2 Max and 0.89 times on the M5, with the ranges apart. Wall time agrees. `zipper extract` is faster than with libzstd on Silesia tar and level on the other four workloads, with no workload slower beyond the spread.
 
 Instructions stay 6 to 7% above libzstd in extraction. Of the eight stages, stages 1, 2, 3, 5, 6 and 8 are in the kept loop. It uses no `unsafe`.
 
 ## Limits
 
-- No wall time. Cycles from `/usr/bin/time -l` moved by up to 7% for the same binary between runs while other jobs ran, so a difference of a few percent here is not established either way.
+- The cycle counts were taken while other jobs ran. Cycles from `/usr/bin/time -l` moved by up to 7% for the same binary between runs, so a difference of a few percent in them is not established either way. The wall times were taken on a quiet M2 Max only, not on the M5.
+- libzstd's wall time on Silesia tar at one thread was 0.200 s and 0.202 s in an earlier session on the same machine, against 0.225 s and 0.215 s here. Each ratio compares runs taken in turn in one session.
 - The loop's speed depends on which values rustc 1.99.1 keeps in registers, and nothing in the gate checks that. A change to `fast_sequences`, or a compiler update, can move the states back to the stack. Only a cycle count on the M2 Max shows it, since the M5 took 1.00 to 1.02 times libzstd's cycles with the states on the stack.
 - No hardware event counter was read. The dependency chain is inferred from the assembly and from cycles that did not follow instructions.
 - The M2 Max ran other agents' gates between the counts. The lowest and highest cycles in the table show what load still reached a run.
@@ -157,7 +171,7 @@ Instructions stay 6 to 7% above libzstd in extraction. Of the eight stages, stag
 - The offsets table has 512 entries where it had 256, which adds 2 KB to each decoder.
 - libzstd uses hand-written assembly for its Huffman loops on x86-64, which this record does not measure.
 - The probe decodes from memory into a 128 KiB buffer. That hid the cost of returning one block a read, which only the extraction counts showed.
-- SquashFS blocks decode through `decode_all`, one whole block at a time, which the probe does not count.
+- SquashFS blocks decode one whole block at a time through `decode_frames_into`, which the probe does not count. That path refuses a block that decodes past its frame's largest block size, whatever room the output has. libzstd's one-shot call accepts some of those blocks, while its streaming call refuses them.
 - Zipper's decoder is 98 KB above libzstd in peak memory at the window limit and 770 KB above on the 3,983 frames, where it reserves a larger buffer each time a frame needs one.
 - The 3,983 small frames take 0.98 times libzstd's cycles on the M5 and 1.05 times on the M2 Max, ranges apart on both. The record does not say which part of a small frame costs the M2 Max more.
 - A thread that has decoded a compressed block keeps one decoder, about 550 KB, until it exits.
@@ -166,4 +180,4 @@ Instructions stay 6 to 7% above libzstd in extraction. Of the eight stages, stag
 
 Build the probe with `cargo test --release --lib --no-run`. Write the streams with `zstd -3` and `zstd -19 -T0` from `target/bench-corpora/codecs/silesia.tar` and from a tar of `target/bench-corpora/dependencies`. Then run `benchmarks/zstd/own-decoder/count.sh <test binary> 3 <streams>`. The earlier stages were not kept as separate commits, so only the last row can be recounted.
 
-For the stage table, build `zipper` at `25dcb88` as `libzstd` and at this record's commit as `kept`. Put both in one folder with `count-stages.sh`, `target/bench-corpora/codecs/zip-zstd.zip` and `silesia-3.tar.zst`, which is `zstd -3 -T0 -c target/bench-corpora/codecs/silesia.tar`. Then run `./count-stages.sh libzstd kept`. Stages 1 to 7 were not kept as commits. For the frames, write each file under `target/bench-corpora/dependencies` in sorted order with `zstd -3 -c` into one file, copy the test binary as `probe-kept`, and run `./count-frames.sh` on it. The `shipped` rows need the test binary of the commit before this change as `probe-shipped`.
+For the stage table, build `zipper` at `25dcb88` as `libzstd` and at this record's commit as `kept`. Put both in one folder with `count-stages.sh`, `target/bench-corpora/codecs/zip-zstd.zip` and `silesia-3.tar.zst`, which is `zstd -3 -T0 -c target/bench-corpora/codecs/silesia.tar`. Then run `./count-stages.sh libzstd kept`. Stages 1 to 7 were not kept as commits. For the wall times, put both binaries as `zipper-25dcb88` and `zipper-zstd3` beside the archives and run `scripts/compare_zip_readers.py <archive> <source> --archive-format native --runs 7 --cooldown 2 --reader libzstd native zipper-25dcb88 --reader own native zipper-zstd3`, with `--archive-format zip` for the ZIP and `--reader-threads` for the thread count. For the frames, write each file under `target/bench-corpora/dependencies` in sorted order with `zstd -3 -c` into one file, copy the test binary as `probe-kept`, and run `./count-frames.sh` on it. The `shipped` rows need the test binary of the commit before this change as `probe-shipped`.
