@@ -1,0 +1,15 @@
+frames.zst libzstd instructions 637715295 cycles 165046264 peak 17220016
+frames.zst shipped instructions 797537951 cycles 196397153 peak 17973704
+frames.zst kept instructions 717028648 cycles 171791626 peak 17973680
+frames.zst libzstd instructions 637282102 cycles 163588334 peak 17220016
+frames.zst shipped instructions 797320958 cycles 195836918 peak 17957296
+frames.zst kept instructions 717123705 cycles 171834571 peak 17973680
+frames.zst libzstd instructions 637388391 cycles 163810815 peak 17220016
+frames.zst shipped instructions 797471438 cycles 196315753 peak 17957296
+frames.zst kept instructions 717169047 cycles 172740393 peak 17990088
+frames.zst libzstd instructions 637322946 cycles 164224063 peak 17203608
+frames.zst shipped instructions 797524501 cycles 197060509 peak 17957296
+frames.zst kept instructions 717224376 cycles 174859681 peak 17973680
+frames.zst libzstd instructions 637352529 cycles 164351719 peak 17220016
+frames.zst shipped instructions 797563818 cycles 196419239 peak 17957296
+frames.zst kept instructions 717071232 cycles 172662773 peak 17990088

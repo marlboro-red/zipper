@@ -1,0 +1,160 @@
+zip-zstd.zip libzstd instructions 2371170126 cycles 638610680 peak 5898672
+zip-zstd.zip shipped instructions 2844825340 cycles 717635208 peak 5833136
+zip-zstd.zip e2 instructions 3051498692 cycles 668488203 peak 5865904
+zip-zstd.zip e3 instructions 2989425812 cycles 665020463 peak 5849520
+zip-zstd.zip e4 instructions 2925322952 cycles 654586521 peak 5833136
+zip-zstd.zip e5 instructions 2906033935 cycles 660735342 peak 5833136
+zip-zstd.zip e6 instructions 2543191883 cycles 649250912 peak 5849520
+zip-zstd.zip e9 instructions 2508856348 cycles 627031857 peak 5816752
+zip-zstd.zip vA instructions 2522291412 cycles 629679714 peak 5849520
+zip-zstd.zip kept instructions 2514935232 cycles 619932572 peak 5833136
+zip-zstd.zip libzstd instructions 2373343494 cycles 640749581 peak 5898672
+zip-zstd.zip shipped instructions 2845499188 cycles 716686561 peak 5833136
+zip-zstd.zip e2 instructions 3051352366 cycles 666775105 peak 5833136
+zip-zstd.zip e3 instructions 2989748769 cycles 665023670 peak 5882312
+zip-zstd.zip e4 instructions 2923503414 cycles 654909468 peak 5882288
+zip-zstd.zip e5 instructions 2904191918 cycles 660213388 peak 5849544
+zip-zstd.zip e6 instructions 2545558896 cycles 648777527 peak 5849520
+zip-zstd.zip e9 instructions 2506497565 cycles 628205781 peak 5865904
+zip-zstd.zip vA instructions 2522364149 cycles 625124959 peak 5816752
+zip-zstd.zip kept instructions 2515410825 cycles 618325550 peak 5800368
+zip-zstd.zip libzstd instructions 2372762570 cycles 640287556 peak 5882288
+zip-zstd.zip shipped instructions 2844399806 cycles 724403997 peak 6128048
+zip-zstd.zip e2 instructions 3047031953 cycles 671047939 peak 5833136
+zip-zstd.zip e3 instructions 2990208999 cycles 666579623 peak 5816752
+zip-zstd.zip e4 instructions 2924184407 cycles 653272286 peak 5915080
+zip-zstd.zip e5 instructions 2902395645 cycles 661858651 peak 5816752
+zip-zstd.zip e6 instructions 2545333968 cycles 649834441 peak 5833136
+zip-zstd.zip e9 instructions 2508703534 cycles 627833495 peak 5833136
+zip-zstd.zip vA instructions 2522233555 cycles 629886562 peak 5816752
+zip-zstd.zip kept instructions 2514975264 cycles 619837080 peak 5816752
+zip-zstd.zip libzstd instructions 2370908670 cycles 641028222 peak 5898672
+zip-zstd.zip shipped instructions 2845495388 cycles 717775336 peak 5800368
+zip-zstd.zip e2 instructions 3048855734 cycles 666551261 peak 5816752
+zip-zstd.zip e3 instructions 2991870192 cycles 666384673 peak 5816728
+zip-zstd.zip e4 instructions 2922297295 cycles 654517767 peak 5849520
+zip-zstd.zip e5 instructions 2900588400 cycles 658939663 peak 5833136
+zip-zstd.zip e6 instructions 2542656822 cycles 658512709 peak 5849520
+zip-zstd.zip e9 instructions 2508732946 cycles 627623152 peak 5882288
+zip-zstd.zip vA instructions 2525332356 cycles 628904582 peak 5833136
+zip-zstd.zip kept instructions 2513076512 cycles 621559369 peak 5800368
+zip-zstd.zip libzstd instructions 2372062112 cycles 668585431 peak 6635952
+zip-zstd.zip shipped instructions 2877159583 cycles 727781957 peak 5833136
+zip-zstd.zip e2 instructions 3051577283 cycles 661129129 peak 5833136
+zip-zstd.zip e3 instructions 2992460759 cycles 668064681 peak 5833136
+zip-zstd.zip e4 instructions 2921973614 cycles 654913134 peak 5882288
+zip-zstd.zip e5 instructions 2899550106 cycles 660421687 peak 5833136
+zip-zstd.zip e6 instructions 2542899898 cycles 647708997 peak 5849520
+zip-zstd.zip e9 instructions 2508485978 cycles 628106666 peak 5882288
+zip-zstd.zip vA instructions 2521467238 cycles 628445870 peak 5833136
+zip-zstd.zip kept instructions 2512173154 cycles 618166448 peak 5816752
+zip-zstd.zip libzstd instructions 2372112014 cycles 641641737 peak 5898672
+zip-zstd.zip shipped instructions 2849058497 cycles 715945930 peak 5816752
+zip-zstd.zip e2 instructions 3049001531 cycles 667980683 peak 5833136
+zip-zstd.zip e3 instructions 2989628365 cycles 671903303 peak 6111664
+zip-zstd.zip e4 instructions 2920852261 cycles 688936931 peak 6193584
+zip-zstd.zip e5 instructions 2902323107 cycles 660361716 peak 5800368
+zip-zstd.zip e6 instructions 2544503545 cycles 650048647 peak 5865904
+zip-zstd.zip e9 instructions 2505689392 cycles 629088201 peak 5833136
+zip-zstd.zip vA instructions 2523875311 cycles 627896230 peak 5816752
+zip-zstd.zip kept instructions 2512094936 cycles 619323446 peak 5816752
+zip-zstd.zip libzstd instructions 2370692536 cycles 638740678 peak 5882288
+zip-zstd.zip shipped instructions 2845898126 cycles 717034078 peak 5816752
+zip-zstd.zip e2 instructions 3051632025 cycles 666605007 peak 5849520
+zip-zstd.zip e3 instructions 2990548960 cycles 668690308 peak 5816752
+zip-zstd.zip e4 instructions 2921451622 cycles 653090610 peak 5865904
+zip-zstd.zip e5 instructions 2901751186 cycles 661986478 peak 5833136
+zip-zstd.zip e6 instructions 2542353997 cycles 643120010 peak 5849520
+zip-zstd.zip e9 instructions 2506134263 cycles 626836990 peak 5849520
+zip-zstd.zip vA instructions 2521855987 cycles 629006835 peak 5865904
+zip-zstd.zip kept instructions 2511153555 cycles 618259520 peak 5816752
+median zip-zstd.zip       libzstd      instructions  2372.1 M  cycles  640.7 low  638.6 high  668.6 M
+median zip-zstd.zip       shipped      instructions  2845.5 M  cycles  717.6 low  715.9 high  727.8 M
+median zip-zstd.zip       e2           instructions  3051.4 M  cycles  666.8 low  661.1 high  671.0 M
+median zip-zstd.zip       e3           instructions  2990.2 M  cycles  666.6 low  665.0 high  671.9 M
+median zip-zstd.zip       e4           instructions  2922.3 M  cycles  654.6 low  653.1 high  688.9 M
+median zip-zstd.zip       e5           instructions  2902.3 M  cycles  660.4 low  658.9 high  662.0 M
+median zip-zstd.zip       e6           instructions  2543.2 M  cycles  649.3 low  643.1 high  658.5 M
+median zip-zstd.zip       e9           instructions  2508.5 M  cycles  627.8 low  626.8 high  629.1 M
+median zip-zstd.zip       vA           instructions  2522.3 M  cycles  628.9 low  625.1 high  629.9 M
+median zip-zstd.zip       kept         instructions  2513.1 M  cycles  619.3 low  618.2 high  621.6 M
+silesia-3.tar.zst libzstd instructions 2318311451 cycles 611488839 peak 11469232
+silesia-3.tar.zst shipped instructions 2804210333 cycles 694850869 peak 10944944
+silesia-3.tar.zst e2 instructions 3005415248 cycles 643995399 peak 10961328
+silesia-3.tar.zst e3 instructions 2948236353 cycles 643852961 peak 10944944
+silesia-3.tar.zst e4 instructions 2881858991 cycles 632972556 peak 13681096
+silesia-3.tar.zst e5 instructions 2861479897 cycles 634411907 peak 10944944
+silesia-3.tar.zst e6 instructions 2499274544 cycles 627167043 peak 10977736
+silesia-3.tar.zst e9 instructions 2463791317 cycles 601300310 peak 10961328
+silesia-3.tar.zst vA instructions 2477392186 cycles 608019510 peak 10961328
+silesia-3.tar.zst kept instructions 2472768972 cycles 605416893 peak 12992968
+silesia-3.tar.zst libzstd instructions 2320246658 cycles 614377980 peak 12566960
+silesia-3.tar.zst shipped instructions 2801465720 cycles 697105200 peak 11944368
+silesia-3.tar.zst e2 instructions 3007901209 cycles 645366709 peak 14107056
+silesia-3.tar.zst e3 instructions 2945944907 cycles 643788828 peak 10944944
+silesia-3.tar.zst e4 instructions 2879599717 cycles 627729627 peak 14074288
+silesia-3.tar.zst e5 instructions 2861375123 cycles 635607579 peak 10944944
+silesia-3.tar.zst e6 instructions 2502510388 cycles 628600592 peak 10961328
+silesia-3.tar.zst e9 instructions 2466768248 cycles 603547683 peak 10944944
+silesia-3.tar.zst vA instructions 2476669678 cycles 603764279 peak 10944944
+silesia-3.tar.zst kept instructions 2469986968 cycles 596531801 peak 14090672
+silesia-3.tar.zst libzstd instructions 2318892064 cycles 613798883 peak 11600328
+silesia-3.tar.zst shipped instructions 2802709913 cycles 694923162 peak 10961328
+silesia-3.tar.zst e2 instructions 3008507581 cycles 646189880 peak 10961328
+silesia-3.tar.zst e3 instructions 2945098282 cycles 645734283 peak 10977736
+silesia-3.tar.zst e4 instructions 2878751613 cycles 631327739 peak 14123440
+silesia-3.tar.zst e5 instructions 2858213391 cycles 636070196 peak 10944944
+silesia-3.tar.zst e6 instructions 2498721326 cycles 626364503 peak 12026288
+silesia-3.tar.zst e9 instructions 2462292797 cycles 601864456 peak 10977712
+silesia-3.tar.zst vA instructions 2476676945 cycles 606078336 peak 11010504
+silesia-3.tar.zst kept instructions 2469125499 cycles 595032526 peak 12976560
+silesia-3.tar.zst libzstd instructions 2317346137 cycles 610534284 peak 11583920
+silesia-3.tar.zst shipped instructions 2805810134 cycles 696222310 peak 10961328
+silesia-3.tar.zst e2 instructions 3004915105 cycles 644824038 peak 10961328
+silesia-3.tar.zst e3 instructions 2944431542 cycles 641720265 peak 10944920
+silesia-3.tar.zst e4 instructions 2877140186 cycles 630503975 peak 13582768
+silesia-3.tar.zst e5 instructions 2858523525 cycles 635598436 peak 10961328
+silesia-3.tar.zst e6 instructions 2505015092 cycles 629043157 peak 10944944
+silesia-3.tar.zst e9 instructions 2464354869 cycles 604419878 peak 10961328
+silesia-3.tar.zst vA instructions 2480804913 cycles 610503633 peak 10961328
+silesia-3.tar.zst kept instructions 2470160167 cycles 596941391 peak 14025136
+silesia-3.tar.zst libzstd instructions 2318128300 cycles 610415739 peak 13730224
+silesia-3.tar.zst shipped instructions 2803531952 cycles 696943974 peak 14057928
+silesia-3.tar.zst e2 instructions 3005029099 cycles 644955298 peak 10961328
+silesia-3.tar.zst e3 instructions 2946588353 cycles 641027453 peak 14041520
+silesia-3.tar.zst e4 instructions 2875152038 cycles 629754132 peak 13631944
+silesia-3.tar.zst e5 instructions 2858285503 cycles 638405480 peak 10977736
+silesia-3.tar.zst e6 instructions 2502261844 cycles 628245325 peak 10928560
+silesia-3.tar.zst e9 instructions 2464363252 cycles 608370384 peak 10961328
+silesia-3.tar.zst vA instructions 2479503767 cycles 607271567 peak 14123440
+silesia-3.tar.zst kept instructions 2467946792 cycles 596449370 peak 10944944
+silesia-3.tar.zst libzstd instructions 2319334693 cycles 611596210 peak 11600304
+silesia-3.tar.zst shipped instructions 2800806602 cycles 707065148 peak 10011056
+silesia-3.tar.zst e2 instructions 3007151490 cycles 682355770 peak 11747784
+silesia-3.tar.zst e3 instructions 2944476296 cycles 645474266 peak 10977712
+silesia-3.tar.zst e4 instructions 2879563130 cycles 629390122 peak 11977136
+silesia-3.tar.zst e5 instructions 2861117562 cycles 630733951 peak 12009904
+silesia-3.tar.zst e6 instructions 2501492083 cycles 622227977 peak 13074864
+silesia-3.tar.zst e9 instructions 2462985281 cycles 598926810 peak 11977136
+silesia-3.tar.zst vA instructions 2476740550 cycles 604780479 peak 12026288
+silesia-3.tar.zst kept instructions 2469940375 cycles 597176430 peak 14107056
+silesia-3.tar.zst libzstd instructions 2318750460 cycles 608652952 peak 11600304
+silesia-3.tar.zst shipped instructions 2801969600 cycles 689519127 peak 10928584
+silesia-3.tar.zst e2 instructions 3005561026 cycles 641460535 peak 10961328
+silesia-3.tar.zst e3 instructions 2947410733 cycles 640576021 peak 10944944
+silesia-3.tar.zst e4 instructions 2879688703 cycles 632115361 peak 14156232
+silesia-3.tar.zst e5 instructions 2862735619 cycles 639275465 peak 13074864
+silesia-3.tar.zst e6 instructions 2500763711 cycles 633065011 peak 13648304
+silesia-3.tar.zst e9 instructions 2465890123 cycles 606390506 peak 15892936
+silesia-3.tar.zst vA instructions 2479329213 cycles 607709541 peak 12026288
+silesia-3.tar.zst kept instructions 2472191451 cycles 603440965 peak 15057352
+median silesia-3.tar.zst  libzstd      instructions  2318.8 M  cycles  611.5 low  608.7 high  614.4 M
+median silesia-3.tar.zst  shipped      instructions  2802.7 M  cycles  696.2 low  689.5 high  707.1 M
+median silesia-3.tar.zst  e2           instructions  3005.6 M  cycles  645.0 low  641.5 high  682.4 M
+median silesia-3.tar.zst  e3           instructions  2945.9 M  cycles  643.8 low  640.6 high  645.7 M
+median silesia-3.tar.zst  e4           instructions  2879.6 M  cycles  630.5 low  627.7 high  633.0 M
+median silesia-3.tar.zst  e5           instructions  2861.1 M  cycles  635.6 low  630.7 high  639.3 M
+median silesia-3.tar.zst  e6           instructions  2501.5 M  cycles  628.2 low  622.2 high  633.1 M
+median silesia-3.tar.zst  e9           instructions  2464.4 M  cycles  603.5 low  598.9 high  608.4 M
+median silesia-3.tar.zst  vA           instructions  2477.4 M  cycles  607.3 low  603.8 high  610.5 M
+median silesia-3.tar.zst  kept         instructions  2470.0 M  cycles  596.9 low  595.0 high  605.4 M

@@ -1526,6 +1526,106 @@ fn a_block_that_decodes_to_more_than_the_largest_block_is_refused_as_libzstd_ref
     }
 }
 
+fn bit_at_a_time(container: u64, consumed: u32, count: u32) -> usize {
+    (0..count).fold(0, |value, bit| {
+        value << 1 | (container >> (63 - consumed - bit)) as usize & 1
+    })
+}
+
+#[test]
+fn a_state_keeps_its_fields_and_finds_its_next_state_as_a_bit_at_a_time_reader_does() {
+    let mut random = Random(0x5EED_0F5E_0DE5_7A7E);
+    for log in 0..=LITERAL_LENGTHS.max_log {
+        for position in 1u16..(2 << log) {
+            let (next, bits) = state_step(position, log);
+            for extra in [0u8, 1, 7, 16, 31] {
+                let base = random.next() as u32;
+                let state = SequenceState::new(base, next, extra, bits);
+                assert_eq!(
+                    (state.base(), state.next(), state.extra(), state.bits()),
+                    (
+                        base as usize,
+                        usize::from(next),
+                        u32::from(extra),
+                        u32::from(bits)
+                    )
+                );
+                assert_eq!(state.bits_read(), u32::from(extra + bits));
+                for consumed in 0..=64 - u32::from(bits) {
+                    for container in [0, u64::MAX, random.next(), random.next()] {
+                        let after = consumed + u32::from(bits);
+                        let expected =
+                            usize::from(next) + bit_at_a_time(container, consumed, bits.into());
+                        assert_eq!(state.next_state(container, 64 - after), expected);
+                        assert_eq!(
+                            state.next_state(container, 0u32.wrapping_sub(after)),
+                            expected
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_field_of_up_to_31_bits_reads_as_a_bit_at_a_time_reader_reads_it() {
+    let mut random = Random(0xB175_A7A7_1ACE_0001);
+    for count in 0..=31 {
+        for consumed in 0..=64 - count {
+            for container in [0, u64::MAX, random.next(), random.next(), random.next()] {
+                let expected = bit_at_a_time(container, consumed, count);
+                let after = consumed + count;
+                assert_eq!(bits_at(container, 64 - after, count), expected);
+                assert_eq!(
+                    bits_at(container, 0u32.wrapping_sub(after), count),
+                    expected
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_match_from_the_last_lap_that_would_copy_past_the_buffer_takes_the_careful_path() {
+    let block = padded();
+    let table = SequenceTable::<512>::new();
+    let tables = Tables {
+        literal_lengths: &table,
+        offsets: &table,
+        match_lengths: &table,
+    };
+    let literals = LiteralRun {
+        bytes: &block,
+        at: 0,
+        end: 0,
+    };
+    let (length, to, offset, matched) = (1000, 10, 60, 40);
+    let mut output = vec![0u8; length];
+    let bounds = Bounds {
+        limit: length,
+        fast_end: length - WILDCOPY,
+        earlier: length - 8,
+        window: usize::MAX,
+    };
+    let mut run = SequenceRun {
+        at: FRONT,
+        consumed: 0,
+        literal: SequenceState::new(0, 0, 0, 0),
+        offset_code: SequenceState::new(offset as u32, 0, 2, 0),
+        matched: SequenceState::new(matched as u32, 0, 0, 0),
+        repeats: [1, 4, 8],
+        to,
+        literal_at: 0,
+        left: 1,
+        largest_offset: 0,
+        rare: (0, 0, 0),
+    };
+    let stop = fast_sequences(&mut run, &block, &tables, &literals, &bounds, &mut output);
+    assert!(matches!(stop, Stop::Rare));
+    assert_eq!((run.rare, run.to, run.left), ((0, offset, matched), to, 0));
+}
+
 fn states_stay_inside_their_table(counts: &[i16; SYMBOLS], max_symbol: usize, log: u32) {
     let size = 1usize << log;
     let expected = |symbol: usize| match counts[symbol] {
@@ -1537,6 +1637,7 @@ fn states_stay_inside_their_table(counts: &[i16; SYMBOLS], max_symbol: usize, lo
     let mut held = [0usize; SYMBOLS];
     for state in &table.states[..size] {
         assert!(state.bits() <= log && state.next() + (1 << state.bits()) <= size);
+        assert_eq!(state.next() & ((1 << state.bits()) - 1), 0);
         assert_eq!(state.base(), OFFSETS.bases[state.extra() as usize] as usize);
         held[state.extra() as usize] += 1;
     }

@@ -1161,13 +1161,20 @@ impl Huffman {
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 struct SequenceState(u64);
 
+const NEXT_SHIFT: u32 = 32;
+const EXTRA_SHIFT: u32 = 42;
+const BITS_READ_SHIFT: u32 = 48;
+const REACH_SHIFT: u32 = 55;
+
 impl SequenceState {
     fn new(base: u32, next: u16, extra: u8, bits: u8) -> Self {
+        let reach = u64::from(next) | ((1 << bits) - 1);
         SequenceState(
             u64::from(base)
-                | u64::from(next) << 32
-                | u64::from(extra) << 48
-                | u64::from(bits) << 56,
+                | u64::from(next) << NEXT_SHIFT
+                | u64::from(extra) << EXTRA_SHIFT
+                | u64::from(extra + bits) << BITS_READ_SHIFT
+                | reach << REACH_SHIFT,
         )
     }
 
@@ -1178,18 +1185,40 @@ impl SequenceState {
 
     #[inline(always)]
     fn next(self) -> usize {
-        ((self.0 >> 32) & 0xFFFF) as usize
+        ((self.0 >> NEXT_SHIFT) & 0x3FF) as usize
     }
 
     #[inline(always)]
     fn extra(self) -> u32 {
-        ((self.0 >> 48) & 0xFF) as u32
+        ((self.0 >> EXTRA_SHIFT) & 0x3F) as u32
+    }
+
+    #[inline(always)]
+    fn bits_read(self) -> u32 {
+        ((self.0 >> BITS_READ_SHIFT) & 0x7F) as u32
     }
 
     #[inline(always)]
     fn bits(self) -> u32 {
-        (self.0 >> 56) as u32
+        self.bits_read() - self.extra()
     }
+
+    #[inline(always)]
+    fn reach(self) -> usize {
+        (self.0 >> REACH_SHIFT) as usize
+    }
+
+    // RECORD(benchmarks/zstd/own-decoder/README.md): one shift, OR and AND lead from an entry to the
+    // next state with no bounds check, which cut 3 to 4% of an extraction's cycles on an M2 Max.
+    #[inline(always)]
+    fn next_state(self, container: u64, shift: u32) -> usize {
+        ((container >> (shift & 63)) as usize | self.next()) & self.reach()
+    }
+}
+
+#[inline(always)]
+fn bits_at(container: u64, shift: u32, count: u32) -> usize {
+    ((container >> (shift & 63)) & ((1 << (count & 63)) - 1)) as usize
 }
 
 struct Code {
@@ -1370,7 +1399,7 @@ struct Decoder {
     literals: Box<Padded>,
     huffman: Box<Huffman>,
     literal_lengths: SequenceTable<512>,
-    offsets: SequenceTable<256>,
+    offsets: SequenceTable<512>,
     match_lengths: SequenceTable<512>,
     sequences_ready: bool,
     repeats: [usize; 3],
@@ -1606,7 +1635,7 @@ const REFILL_BEFORE_LITERAL_LENGTH: u32 = 31;
 
 struct Tables<'a> {
     literal_lengths: &'a SequenceTable<512>,
-    offsets: &'a SequenceTable<256>,
+    offsets: &'a SequenceTable<512>,
     match_lengths: &'a SequenceTable<512>,
 }
 
@@ -1703,25 +1732,6 @@ fn careful_match(
     Ok(to + length)
 }
 
-#[cold]
-#[inline(never)]
-fn long_literals(
-    output: &mut [u8],
-    to: usize,
-    literals: &Padded,
-    from: usize,
-    length: usize,
-) -> Checked<()> {
-    let (Some(target), Some(source)) = (
-        output.get_mut(to + 32..to + length),
-        literals.get(from + 32..from + length),
-    ) else {
-        return corrupt(DAMAGED_BLOCK);
-    };
-    target.copy_from_slice(source);
-    Ok(())
-}
-
 fn rest_of_literals(
     output: &mut [u8],
     to: usize,
@@ -1739,8 +1749,26 @@ fn rest_of_literals(
     Ok(to + rest)
 }
 
+struct SequenceRun {
+    at: usize,
+    consumed: u32,
+    literal: SequenceState,
+    offset_code: SequenceState,
+    matched: SequenceState,
+    repeats: [usize; 3],
+    to: usize,
+    literal_at: usize,
+    left: usize,
+    largest_offset: usize,
+    rare: (usize, usize, usize),
+}
+
+enum Stop {
+    Finished,
+    Rare,
+}
+
 // SPEC(RFC 8878 3.1.1.3.2.1.2 and 3.1.1.4): each sequence is an offset, a match length and a literal length, read backwards.
-#[inline(never)]
 fn run_sequences(
     block: &Padded,
     stream: (usize, usize),
@@ -1756,44 +1784,119 @@ fn run_sequences(
     ensure(length > 0, DAMAGED_BLOCK)?;
     let last = byte(block, start + length - 1);
     ensure(last != 0, DAMAGED_BLOCK)?;
-    let mut at = start + length - 8;
-    let mut container;
     let mut consumed = 8 - high_bit(u32::from(last));
+    let at = (start + length - 8).wrapping_sub((consumed >> 3) as usize);
+    consumed &= 7;
+    let container = le64(block, at);
+    let mut first_state = |log: u32| {
+        consumed += log;
+        bits_at(container, 64 - consumed, log) & 511
+    };
+    let literal = tables.literal_lengths.states[first_state(tables.literal_lengths.log)];
+    let offset_code = tables.offsets.states[first_state(tables.offsets.log)];
+    let matched = tables.match_lengths.states[first_state(tables.match_lengths.log)];
+    let mut run = SequenceRun {
+        at: at.wrapping_sub((consumed >> 3) as usize),
+        consumed: consumed & 7,
+        literal,
+        offset_code,
+        matched,
+        repeats: *history.repeats,
+        to,
+        literal_at: literals.at,
+        left: count,
+        largest_offset: 0,
+        rare: (0, 0, 0),
+    };
+    loop {
+        match fast_sequences(&mut run, block, tables, literals, bounds, output) {
+            Stop::Finished => break,
+            Stop::Rare => {
+                let rest = LiteralRun {
+                    bytes: literals.bytes,
+                    at: run.literal_at,
+                    end: literals.end,
+                };
+                run.to = careful_sequence(output, run.to, bounds, &rest, run.rare)?;
+                run.literal_at += run.rare.0;
+            }
+        }
+    }
+    *history.repeats = run.repeats;
+    let left = (run.at.wrapping_sub(start) as isize) * 8 + 64 - run.consumed as isize;
+    ensure(left == 0, DAMAGED_BLOCK)?;
+    Ok(Progress {
+        to: run.to,
+        literal_at: run.literal_at,
+        largest_offset: run.largest_offset,
+    })
+}
 
-    macro_rules! refill {
-        () => {
+// RECORD(benchmarks/zstd/own-decoder/README.md): a call that returns from inside this loop moves
+// its states to the stack, which costs an M2 Max 7% of an extraction's cycles.
+#[inline(never)]
+fn fast_sequences(
+    run: &mut SequenceRun,
+    block: &Padded,
+    tables: &Tables,
+    literals: &LiteralRun,
+    bounds: &Bounds,
+    output: &mut [u8],
+) -> Stop {
+    let mut at = run.at;
+    let mut consumed = run.consumed;
+    let mut literal = run.literal;
+    let mut offset_code = run.offset_code;
+    let mut matched = run.matched;
+    let [mut first, mut second, mut third] = run.repeats;
+    let mut to = run.to;
+    let mut literal_at = run.literal_at;
+    let mut left = run.left;
+    let mut largest_offset = run.largest_offset;
+
+    macro_rules! stop {
+        ($why:expr, $rare:expr) => {{
+            *run = SequenceRun {
+                at,
+                consumed,
+                literal,
+                offset_code,
+                matched,
+                repeats: [first, second, third],
+                to,
+                literal_at,
+                left,
+                largest_offset,
+                rare: $rare,
+            };
+            return $why;
+        }};
+    }
+    macro_rules! advance {
+        ($literal:expr, $matched:expr, $offset:expr, $consumed:expr) => {{
+            let states = ($literal, $matched, $offset);
+            consumed = $consumed;
             at = at.wrapping_sub((consumed >> 3) as usize);
             consumed &= 7;
-            container = le64(block, at);
-        };
-    }
-    macro_rules! take {
-        ($bits:expr) => {{
-            let bits: u32 = $bits;
-            let value = ((container << consumed) >> 1) >> (63 - bits);
-            consumed += bits;
-            value as usize
+            literal = tables.literal_lengths.states[states.0];
+            matched = tables.match_lengths.states[states.1];
+            offset_code = tables.offsets.states[states.2];
         }};
     }
 
-    refill!();
-    let mut literal_state = take!(tables.literal_lengths.log);
-    let mut offset_state = take!(tables.offsets.log);
-    let mut match_state = take!(tables.match_lengths.log);
-    refill!();
-    let [mut first, mut second, mut third] = *history.repeats;
-    let mut to = to;
-    let mut literal_at = literals.at;
-    let mut largest_offset = 0usize;
-
-    for left in (0..count).rev() {
-        let literal = tables.literal_lengths.states[literal_state & 511];
-        let matched = tables.match_lengths.states[match_state & 511];
-        let offset_code = tables.offsets.states[offset_state & 255];
+    while left > 0 {
+        left -= 1;
+        let container = le64(block, at);
+        let unread = 0u32.wrapping_sub(consumed);
         let offset_bits = offset_code.extra();
+        let match_bits = matched.extra();
+        let literal_bits = literal.extra();
+        let after_offset = unread.wrapping_sub(offset_bits);
         let offset;
         if offset_bits > 1 {
-            offset = offset_code.base().wrapping_add(take!(offset_bits));
+            offset = offset_code
+                .base()
+                .wrapping_add(bits_at(container, after_offset, offset_bits));
             third = second;
             second = first;
             first = offset;
@@ -1805,7 +1908,9 @@ fn run_sequences(
                 }
                 offset = first;
             } else {
-                let choice = offset_code.base() + usize::from(no_literals) + take!(1);
+                let choice = offset_code.base()
+                    + usize::from(no_literals)
+                    + bits_at(container, after_offset, 1);
                 let picked = match choice {
                     1 => second,
                     2 => third,
@@ -1820,77 +1925,112 @@ fn run_sequences(
                 offset = picked;
             }
         }
-        let match_bits = matched.extra();
-        let literal_bits = literal.extra();
-        let match_length = matched.base() + take!(match_bits);
+        let after_match = after_offset.wrapping_sub(match_bits);
+        let match_length = matched.base() + bits_at(container, after_match, match_bits);
+        let literal_length;
         if offset_bits + match_bits + literal_bits >= REFILL_BEFORE_LITERAL_LENGTH {
-            refill!();
-        }
-        let literal_length = literal.base() + take!(literal_bits);
-        if left != 0 {
-            literal_state = literal.next() + take!(literal.bits());
-            match_state = matched.next() + take!(matched.bits());
-            offset_state = offset_code.next() + take!(offset_code.bits());
-            refill!();
+            std::hint::cold_path();
+            consumed += offset_bits + match_bits;
+            at = at.wrapping_sub((consumed >> 3) as usize);
+            consumed &= 7;
+            let container = le64(block, at);
+            let after_literal = 64 - consumed - literal_bits;
+            literal_length = literal.base() + bits_at(container, after_literal, literal_bits);
+            if left != 0 {
+                let after_literal_state = after_literal - literal.bits();
+                let after_match_state = after_literal_state - matched.bits();
+                let after_offset_state = after_match_state - offset_code.bits();
+                advance!(
+                    literal.next_state(container, after_literal_state),
+                    matched.next_state(container, after_match_state),
+                    offset_code.next_state(container, after_offset_state),
+                    64 - after_offset_state
+                );
+            } else {
+                consumed += literal_bits;
+            }
+        } else {
+            let after_literal = after_match.wrapping_sub(literal_bits);
+            literal_length = literal.base() + bits_at(container, after_literal, literal_bits);
+            if left != 0 {
+                let after_own = unread.wrapping_sub(literal.bits_read());
+                advance!(
+                    literal.next_state(container, after_own.wrapping_sub(offset_bits + match_bits)),
+                    matched.next_state(
+                        container,
+                        after_own.wrapping_sub(offset_bits + matched.bits_read())
+                    ),
+                    offset_code.next_state(
+                        container,
+                        after_own.wrapping_sub(matched.bits_read() + offset_code.bits_read())
+                    ),
+                    consumed + literal.bits_read() + matched.bits_read() + offset_code.bits_read()
+                );
+            } else {
+                consumed += offset_bits + match_bits + literal_bits;
+            }
         }
 
         largest_offset = largest_offset.max(offset);
         let literal_stop = literal_at + literal_length;
         let end = to + literal_length + match_length;
         if literal_stop > literals.end || end > bounds.fast_end {
-            let run = LiteralRun {
-                bytes: literals.bytes,
-                at: literal_at,
-                end: literals.end,
-            };
-            to = careful_sequence(
-                output,
-                to,
-                bounds,
-                &run,
-                (literal_length, offset, match_length),
-            )?;
-            literal_at = literal_stop;
-            continue;
+            stop!(Stop::Rare, (literal_length, offset, match_length));
         }
         let from = literal_at & INDEX_MASK;
         let Some(head) = output.get_mut(to..to + 32) else {
-            return corrupt(DAMAGED_BLOCK);
+            stop!(Stop::Rare, (literal_length, offset, match_length));
         };
         head.copy_from_slice(&literals.bytes[from..from + 32]);
         if literal_length > 32 {
-            long_literals(output, to, literals.bytes, from, literal_length)?;
+            std::hint::cold_path();
+            let mut copied = 32;
+            while copied < literal_length {
+                let (Some(target), Some(source)) = (
+                    output.get_mut(to + copied..to + copied + 32),
+                    literals.bytes.get(from + copied..from + copied + 32),
+                ) else {
+                    stop!(Stop::Rare, (literal_length, offset, match_length));
+                };
+                target.copy_from_slice(source);
+                copied += 32;
+            }
         }
         to += literal_length;
         literal_at = literal_stop;
         let mut from = to.wrapping_sub(offset);
         let mut distance = offset;
         if offset > to {
+            std::hint::cold_path();
             let before = offset - to;
             if offset > bounds.window || before > bounds.earlier || before < match_length {
-                to = careful_match(output, to, bounds, offset, match_length)?;
-                continue;
+                stop!(Stop::Rare, (0, offset, match_length));
             }
             from = bounds.earlier - before;
             distance = usize::MAX;
-        }
-        let rounded = (match_length + 31) & !31;
-        if to + rounded > output.len() || from + rounded > output.len() {
-            return corrupt(DAMAGED_BLOCK);
+            if from + match_length + 32 > output.len() {
+                stop!(Stop::Rare, (0, offset, match_length));
+            }
         }
         if distance >= 32 {
-            let mut copied = 0;
-            while copied < match_length {
-                output.copy_within(from + copied..from + copied + 32, to + copied);
-                copied += 32;
+            output.copy_within(from..from + 32, to);
+            if match_length > 32 {
+                std::hint::cold_path();
+                let mut copied = 32;
+                while copied < match_length {
+                    output.copy_within(from + copied..from + copied + 32, to + copied);
+                    copied += 32;
+                }
             }
         } else if distance >= 16 {
+            std::hint::cold_path();
             let mut copied = 0;
             while copied < match_length {
                 output.copy_within(from + copied..from + copied + 16, to + copied);
                 copied += 16;
             }
         } else {
+            std::hint::cold_path();
             let mut period = distance.max(1);
             while period < 16 {
                 output.copy_within(from..from + 16, from + period);
@@ -1904,14 +2044,7 @@ fn run_sequences(
         }
         to = end;
     }
-    *history.repeats = [first, second, third];
-    let left = (at.wrapping_sub(start) as isize) * 8 + 64 - consumed as isize;
-    ensure(left == 0, DAMAGED_BLOCK)?;
-    Ok(Progress {
-        to,
-        literal_at,
-        largest_offset,
-    })
+    stop!(Stop::Finished, (0, 0, 0))
 }
 
 struct FrameHeader {

@@ -14,7 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
-| 2026-11-11 | [Zipper's own Zstandard decoder against libzstd](zstd/own-decoder/README.md) | Kept, with an open gap. On an Apple M5 the safe Rust decoder takes 1.01 to 1.04 times the cycles of libzstd 1.5.7 on large streams. On an M2 Max extraction takes 12 to 13% more cycles, all in the sequence loop, and seven attempts to close it were reverted. |
+| 2026-11-11 | [Zipper's own Zstandard decoder against libzstd](zstd/own-decoder/README.md) | Kept. One-thread extraction of Silesia takes 0.97 to 0.98 times the cycles of libzstd 1.5.7 on an Apple M2 Max and 0.89 times on an M5, in safe Rust. The M2 Max took 12 to 14% more until the sequence loop stopped keeping its FSE states on the stack. A file of 3,983 small frames still takes 1.05 times libzstd's cycles there. |
 
 ## LZMA decoder
 

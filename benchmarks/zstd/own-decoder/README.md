@@ -1,6 +1,6 @@
 # Zipper's own Zstandard decoder against libzstd
 
-**Kept, with a gap on an older core that is not closed. On an Apple M2 Max the decoder takes 12 to 13% more cycles than libzstd end to end, all of it in the sequence loop, and seven attempts to close it there failed. Zipper's safe Rust decoder retires 1.01 to 1.04 times the cycles of libzstd 1.5.7 on four large streams, and 1.09 times on a file of 3,983 small frames. It retires 19 to 25% more instructions, with peak memory within 0.8 MB. These lead figures are from an Apple M5 and count cycles and instructions only.** One Apple M5, shared with other jobs.
+**Kept, and the gap on the M2 Max is closed. One-thread extraction of Silesia takes 0.97 to 0.98 times the cycles of libzstd 1.5.7 on an Apple M2 Max and 0.89 times on an Apple M5, in safe Rust. It took 1.12 to 1.14 times on the M2 Max while the compiler kept the sequence loop's FSE states on the stack. A file of 3,983 small frames still takes 1.05 times libzstd's cycles on the M2 Max. Every figure counts cycles or instructions on a machine that other jobs shared, and none is a wall time.** One Apple M5 and one Apple M2 Max.
 
 ## Question
 
@@ -14,6 +14,9 @@ M25 asks for a release build that compiles no C. The `zstd` feature linked libzs
 - Four streams. `silesia.tar`, 211,957,760 bytes, and a tar of the dependency sources, 81,319,936 bytes, each written by `zstd -3` and by `zstd -19 -T0`.
 - Two more streams for memory. `silesia.tar` twice in a row under `zstd -3 --long=27`, which fills the 128 MiB window limit, and the 3,983 dependency source files as 3,983 frames in one file.
 - Every stage passed the differential tests against libzstd before it was counted.
+- Apple M2 Max with 12 cores, the second machine. Other agents ran their gates on it from time to time, so each count there waited until no process used a quarter of a core.
+- [`count-stages.sh`](count-stages.sh) runs `zipper extract --threads 1` on `zip-zstd.zip` and on `silesia.tar` under `zstd -3 -T0`. It runs each binary once unrecorded and then seven times in turn under `/usr/bin/time -l`, and prints every run with the median, lowest and highest cycles.
+- The ZIP holds 14,458,009 sequences and the tar stream 14,490,061, counted by a temporary counter in the decoder.
 
 ## Results
 
@@ -71,28 +74,96 @@ The same whole-process counts on the M2 Max, with [`count-extract.sh`](count-ext
 | One bounds check a match, then unchecked steps, with `unsafe` | 2,774 M | 711.1 M | 2,731 M | 686.7 M |
 | No call inside the loop, rare sequences leave it | 2,781 M | 712.8 M | 2,736 M | 688.2 M |
 
-All seven changes were reverted. None moved cycles by more than 1% in the right direction, and the two that cut the most instructions were slower. So the M2 gap is not the instruction count, the bounds checks, or the calls in the loop. In the shipped loop the compiler keeps the FSE states on the stack, and two of them stayed there with no call in the loop. Whether that round trip, or the 32-byte copies reading bytes just stored, costs the M2 its 20% was not measured.
+All seven changes were reverted. None moved cycles by more than 1% in the right direction, and the two that cut the most instructions were slower. In the shipped loop the compiler kept the FSE states on the stack. Two of them stayed there in the last row, where a rare sequence left the inner loop but its call stayed in the same function. The stages below show that this round trip was the gap.
+
+The shipped loop was disassembled from the release binary with `objdump -d`. At its head it held 19 values in registers. Seven do not change in the loop. They were the result pointer, the block, the output pointer, the output length, that length less 16 and less 32, and the start of the stream. Two more pointed at the bounds and the tables. The other ten were the output position, the count of sequences left, the bit container, its position, its bit count, the offset state, the first two repeated offsets, the literal position and the largest offset. Each sequence then made these stack accesses on its common path.
+
+| Value on the stack | Stores a sequence | Loads a sequence |
+| --- | ---: | ---: |
+| Literal length state | 1 | 1 |
+| Match length state | 1 | 1 |
+| Bit container | 1 | 1 |
+| Second repeated offset | 1 | 1 |
+| Third repeated offset | 1 on a new offset | 1 on a repeated offset |
+| Bounds, end of the literals and literal bytes, which do not change | 0 | 3 |
+
+libzstd's loop in the `25dcb88` binary keeps its three states, the container, its position and its bit count in registers. It stores the states each sequence and does not load them back on its common path.
+
+The kept loop makes no store to the stack on its common path. It loads five values that do not change, which are the block, the three tables and the end of the literals. The table entries of the three states, the container's position and bit count, the three repeated offsets, both positions, the count left and the largest offset stay in registers.
+
+Whole `zipper extract --threads 1` processes, seven runs in turn, median cycles in millions with the lowest and highest. The M2 Max rows are from one run and the M5 rows from another. Each stage builds on the one above unless it says otherwise. Raw runs are in [`stages-m2.txt`](stages-m2.txt) and [`stages-m5.txt`](stages-m5.txt).
+
+| Build | ZIP instructions | M2 Max ZIP cycles | M2 Max tar cycles | M5 ZIP cycles | M5 tar cycles |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| libzstd, `25dcb88` | 2,372 M | 640.7, 638.6 to 668.6 | 611.5, 608.7 to 614.4 | 613.8, 606.2 to 624.6 | 585.7, 580.6 to 643.7 |
+| The decoder before this change | 2,845 M | 717.6, 715.9 to 727.8 | 696.2, 689.5 to 707.1 | 616.3, 612.2 to 627.3 | 598.7, 593.7 to 654.3 |
+| 1. The loop in its own function, with no call that returns | 3,051 M | 666.8, 661.1 to 671.0 | 645.0, 641.5 to 682.4 | 598.9, 596.1 to 610.2 | 579.2, 577.3 to 597.3 |
+| 2. The bit container loaded at the head of the loop | 2,990 M | 666.6, 665.0 to 671.9 | 643.8, 640.6 to 645.7 | 600.7, 593.9 to 601.1 | 579.7, 577.0 to 599.5 |
+| 3. The first 32 literal bytes copied without a loop | 2,922 M | 654.6, 653.1 to 688.9 | 630.5, 627.7 to 633.0 | 592.8, 587.5 to 595.8 | 573.1, 568.3 to 585.8 |
+| 4. A match's first 32 bytes through one split, reverted | 2,902 M | 660.4, 658.9 to 662.0 | 635.6, 630.7 to 639.3 | 603.4, 596.6 to 604.6 | 580.1, 577.4 to 596.7 |
+| 5. Stage 4 with the copy loops marked cold | 2,543 M | 649.3, 643.1 to 658.5 | 628.2, 622.2 to 633.1 | 596.1, 585.1 to 601.9 | 576.4, 574.5 to 589.4 |
+| 6. Table entries carried, next state by shift, OR and AND | 2,508 M | 627.8, 626.8 to 629.1 | 603.5, 598.9 to 608.4 | 548.5, 544.4 to 551.6 | 527.8, 525.2 to 540.2 |
+| 7. Stage 6 without the cold marks, reverted | 2,522 M | 628.9, 625.1 to 629.9 | 607.3, 603.8 to 610.5 | 552.0, 548.8 to 558.6 | 531.8, 528.5 to 545.2 |
+| 8. Stage 6 with `copy_within` and no split, kept | 2,513 M | 619.3, 618.2 to 621.6 | 596.9, 595.0 to 605.4 | 544.8, 540.7 to 550.2 | 522.4, 521.1 to 525.7 |
+
+What each stage changed.
+
+1. The loop moved into its own function, `fast_sequences`, which makes no call that returns. A sequence that needs a careful copy writes the loop's state back and returns, and the caller copies it and calls again. That happens for 37 of the ZIP's sequences. Instructions rose by 7% and M2 Max cycles fell by 7%, since the states then stayed in registers. An earlier try, the last row of the table above, had kept the call for a rare sequence in the loop's own function.
+2. The bit container is loaded at the head of the loop, so it is not held across the copy. Cycles did not move, ranges overlapping. It stayed because stage 6 is built on it.
+3. The first 32 literal bytes are copied with one bounds check and no loop, and the range check on a match from the previous lap moved to that path. M2 Max cycles fell by about 2%.
+4. A match's first 32 bytes went through one split of the output. Reverted. Cycles rose by 1 to 2% on the M5, with the ranges apart on the ZIP. The compiler moved eight registers before and after every literal copy and put the bit count on the stack, because it weighs an inner copy loop as hotter than the loop around it.
+5. `std::hint::cold_path` marks the copy loops for literals and matches longer than 32 bytes and the copies at a distance under 32. Instructions fell by 12% and cycles stayed where stage 3 had them, ranges overlapping.
+6. The loop carries the three table entries, not the three states. Each entry holds its next state's base, the bits it reads in a sequence and the largest state it can reach. The next state is the container shifted once, OR the base, AND the largest state, which needs no bounds check. The shift for each state is two subtractions from fields of the three entries. The offsets table grew from 256 to 512 entries so that every state indexes without a mask. Cycles fell by 3 to 4% on the M2 Max and by 8% on the M5.
+7. Stage 6 without the cold marks on the copy loops. Reverted. Its medians are 0.2 to 0.8% above stage 6 in all four columns, ranges overlapping, so the marks stayed.
+8. Stage 6 with the match copied by `copy_within` as before stage 4, and no split. Kept. It is the simpler code. Its medians are 0.7 to 1.4% below stage 6 in all four columns, with the ranges apart on the M2 Max ZIP.
+
+The loop is limited by the chain of operations from one sequence's states to the next, not by its instruction count. Stage 1 retired 7% more instructions in 7% fewer cycles, and stage 5 retired 12% fewer in the same cycles. In the shipped loop two states went through a store and a load on that chain. In the kept loop the chain is a table load, a field extract, two subtractions, a shift, an OR and an AND. No hardware event counter was read, so this is inferred from the assembly and the counts.
+
+The in-process probe of the kept decoder, five runs each in turn, median cycles in millions. The four large streams are decoded three times and the two memory streams once. The dependency tar was rebuilt and is 81,977,856 bytes. Raw runs are in [`probe-m5.txt`](probe-m5.txt) and [`probe-m2.txt`](probe-m2.txt).
+
+| Stream | Machine | libzstd instructions | Zipper instructions | libzstd cycles | Zipper cycles | Ratio |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Silesia `-3` | M5 | 6,428 M | 6,888 M | 1,545.5 | 1,335.9 | 0.86 |
+| Silesia `-19` | M5 | 6,043 M | 6,444 M | 1,490.7 | 1,312.9 | 0.88 |
+| Dependencies `-3` | M5 | 1,426 M | 1,523 M | 357.5 | 315.8 | 0.88 |
+| Dependencies `-19` | M5 | 1,162 M | 1,243 M | 301.9 | 275.3 | 0.91 |
+| Silesia twice, `--long=27` | M5 | 4,260 M | 4,600 M | 1,011.5 | 915.2 | 0.90 |
+| 3,983 frames | M5 | 638 M | 717 M | 156.0 | 152.1 | 0.98 |
+| Silesia `-3` | M2 Max | 6,427 M | 6,887 M | 1,589.7 | 1,529.1 | 0.96 |
+
+The 3,983 frames on the M2 Max, with [`count-frames.sh`](count-frames.sh), five runs in turn. Raw runs are in [`frames-m2.txt`](frames-m2.txt).
+
+| Decoder | Instructions | Median cycles | Lowest | Highest | Largest peak |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| libzstd | 637 M | 164.2 M | 163.6 M | 165.0 M | 17,220,016 |
+| The decoder before this change | 798 M | 196.4 M | 195.8 M | 197.1 M | 17,973,704 |
+| The kept decoder | 717 M | 172.7 M | 171.8 M | 174.9 M | 17,990,088 |
 
 The adversarial review built a ZIP of 2,000 Zstandard entries, each a 10-byte frame that declares a 128 MiB window. The first wiring zeroed a whole window for every entry, 547 MB at peak and 6.15 s of CPU against 4.9 MB and 0.14 s. The window buffer is now reserved without being touched and filled as blocks arrive, and a thread keeps its decoder for the next frame. `zipper extract` on that ZIP now retires 1,721 M instructions with a 5.1 MB peak, against 1,740 M and 5.6 MB for the libzstd build.
 
 ## Decision
 
-Kept. The decoder is wired in behind the `zstd` feature, and the `zstd` crate is now only a test oracle, so the default build no longer compiles libzstd. On the large streams, cycles are within 1 to 4% of libzstd, which the run-to-run spread on a busy machine does not separate from level. The coordinator times `zipper extract` on the zstd workloads before this ships, and reverts the wiring if a workload is slower beyond the spread.
+Kept. The decoder is wired in behind the `zstd` feature, and the `zstd` crate is now only a test oracle, so the default build no longer compiles libzstd. Extraction of Silesia takes fewer cycles than with libzstd on both machines, 0.97 to 0.98 times on the M2 Max and 0.89 times on the M5, with the ranges apart. The coordinator times `zipper extract` on the zstd workloads before this ships, and reverts the wiring if a workload is slower beyond the spread.
 
-Instructions stay 19 to 25% above libzstd. Bounds checks on the output buffer and two shifts where libzstd uses one account for most of the gap, and they run at a higher rate of instructions per cycle. On the M5, cycles came within a few percent in safe Rust.
+Instructions stay 6 to 7% above libzstd in extraction. Of the eight stages, stages 1, 2, 3, 5, 6 and 8 are in the kept loop. It uses no `unsafe`.
 
 ## Limits
 
 - No wall time. Cycles from `/usr/bin/time -l` moved by up to 7% for the same binary between runs while other jobs ran, so a difference of a few percent here is not established either way.
-- The M2 Max gap of 12 to 13% is open. Its cause is in the sequence loop and is not identified. Hardware event counts of branch misses and store forwarding on the M2 would be the next measurement.
-- No `unsafe` was kept. The one unchecked copy tried moved M2 cycles by less than 1%.
+- The loop's speed depends on which values rustc 1.99.1 keeps in registers, and nothing in the gate checks that. A change to `fast_sequences`, or a compiler update, can move the states back to the stack. Only a cycle count on the M2 Max shows it, since the M5 took 1.00 to 1.02 times libzstd's cycles with the states on the stack.
+- No hardware event counter was read. The dependency chain is inferred from the assembly and from cycles that did not follow instructions.
+- The M2 Max ran other agents' gates between the counts. The lowest and highest cycles in the table show what load still reached a run.
+- No `unsafe` is used. The one unchecked copy tried on the shipped loop moved M2 cycles by less than 1%, and none was tried on the kept loop.
+- The offsets table has 512 entries where it had 256, which adds 2 KB to each decoder.
 - libzstd uses hand-written assembly for its Huffman loops on x86-64, which this record does not measure.
 - The probe decodes from memory into a 128 KiB buffer. That hid the cost of returning one block a read, which only the extraction counts showed.
 - SquashFS blocks decode through `decode_all`, one whole block at a time, which the probe does not count.
 - Zipper's decoder is 98 KB above libzstd in peak memory at the window limit and 770 KB above on the 3,983 frames, where it reserves a larger buffer each time a frame needs one.
-- Small frames cost 9% more cycles than libzstd, ranges apart. The record does not say which part of a small frame costs it.
+- The 3,983 small frames take 0.98 times libzstd's cycles on the M5 and 1.05 times on the M2 Max, ranges apart on both. The record does not say which part of a small frame costs the M2 Max more.
 - A thread that has decoded a compressed block keeps one decoder, about 550 KB, until it exits.
 
 ## Reproduce
 
 Build the probe with `cargo test --release --lib --no-run`. Write the streams with `zstd -3` and `zstd -19 -T0` from `target/bench-corpora/codecs/silesia.tar` and from a tar of `target/bench-corpora/dependencies`. Then run `benchmarks/zstd/own-decoder/count.sh <test binary> 3 <streams>`. The earlier stages were not kept as separate commits, so only the last row can be recounted.
+
+For the stage table, build `zipper` at `25dcb88` as `libzstd` and at this record's commit as `kept`. Put both in one folder with `count-stages.sh`, `target/bench-corpora/codecs/zip-zstd.zip` and `silesia-3.tar.zst`, which is `zstd -3 -T0 -c target/bench-corpora/codecs/silesia.tar`. Then run `./count-stages.sh libzstd kept`. Stages 1 to 7 were not kept as commits. For the frames, write each file under `target/bench-corpora/dependencies` in sorted order with `zstd -3 -c` into one file, copy the test binary as `probe-kept`, and run `./count-frames.sh` on it. The `shipped` rows need the test binary of the commit before this change as `probe-shipped`.

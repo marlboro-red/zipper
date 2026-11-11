@@ -1,0 +1,10 @@
+silesia-3.tar.zst libzstd instructions 6430708277 cycles 1606185033 peak 70664672
+silesia-3.tar.zst zipper instructions 6887105311 cycles 1530498881 peak 70582752
+silesia-3.tar.zst libzstd instructions 6427101379 cycles 1589540126 peak 70517192
+silesia-3.tar.zst zipper instructions 6885781944 cycles 1525337238 peak 70599136
+silesia-3.tar.zst libzstd instructions 6426499367 cycles 1589540751 peak 70533600
+silesia-3.tar.zst zipper instructions 6886713743 cycles 1540231135 peak 70599136
+silesia-3.tar.zst libzstd instructions 6426688428 cycles 1590525554 peak 70533600
+silesia-3.tar.zst zipper instructions 6886581172 cycles 1529084639 peak 70582752
+silesia-3.tar.zst libzstd instructions 6426698889 cycles 1589671416 peak 70533600
+silesia-3.tar.zst zipper instructions 6886275949 cycles 1527253562 peak 70582752
