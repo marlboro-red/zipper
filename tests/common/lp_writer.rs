@@ -1,7 +1,4 @@
 #![allow(dead_code)]
-//! A writer for Android logical partition images, from the liblp metadata
-//! format: 4 KiB reserved, two geometry copies, the metadata slots and
-//! their backups, then the partition data.
 use sha2::Digest;
 
 pub const SECTOR: u64 = 512;
@@ -36,6 +33,7 @@ pub struct Layout {
     pub minor: u16,
     pub groups: Vec<(&'static str, u32, u64)>,
     pub device_size: Option<u64>,
+    pub more_devices: Vec<(u64, u64)>,
 }
 
 impl Default for Layout {
@@ -48,6 +46,7 @@ impl Default for Layout {
             minor: 0,
             groups: vec![("default", 0, 0)],
             device_size: None,
+            more_devices: Vec::new(),
         }
     }
 }
@@ -132,14 +131,19 @@ pub fn build(layout: &Layout) -> Vec<u8> {
     }
     let size = layout.device_size.unwrap_or(next * SECTOR + ALIGNMENT);
     let mut device = Vec::new();
-    device.extend_from_slice(&(first_data / SECTOR).to_le_bytes());
-    device.extend_from_slice(&(ALIGNMENT as u32).to_le_bytes());
-    device.extend_from_slice(&0u32.to_le_bytes());
-    device.extend_from_slice(&size.to_le_bytes());
-    let mut name = b"super".to_vec();
-    name.resize(36, 0);
-    device.extend_from_slice(&name);
-    device.extend_from_slice(&0u32.to_le_bytes());
+    for (first, size) in [(first_data / SECTOR, size)]
+        .into_iter()
+        .chain(layout.more_devices.iter().copied())
+    {
+        device.extend_from_slice(&first.to_le_bytes());
+        device.extend_from_slice(&(ALIGNMENT as u32).to_le_bytes());
+        device.extend_from_slice(&0u32.to_le_bytes());
+        device.extend_from_slice(&size.to_le_bytes());
+        let mut name = b"super".to_vec();
+        name.resize(36, 0);
+        device.extend_from_slice(&name);
+        device.extend_from_slice(&0u32.to_le_bytes());
+    }
     let tables_parts = [
         (&partitions, 52),
         (&extents, 24),
@@ -207,8 +211,6 @@ fn le32(bytes: &[u8], at: usize) -> u32 {
     u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
 }
 
-/// Recompute the geometry, header and tables checksums of the primary
-/// geometry and every metadata slot, so that an edit reaches the fields.
 pub fn repair(image: &mut [u8], slots: u32, max_size: u32) {
     for geometry in [GEOMETRY_AT, GEOMETRY_AT + 4096] {
         if image.get(geometry..geometry + 52).is_none() || le32(image, geometry) != 0x616C_4467 {
@@ -236,10 +238,4 @@ pub fn repair(image: &mut [u8], slots: u32, max_size: u32) {
         let sum = sha256(header);
         image[at + 12..at + 44].copy_from_slice(&sum);
     }
-}
-
-/// Repair only the checksums of the primary geometry and the first slot,
-/// the copies 7-Zip reads, from a layout's slot size.
-pub fn repair_first(image: &mut [u8], max_size: u32) {
-    repair(image, 1, max_size);
 }

@@ -20,28 +20,31 @@ The reader opens an image only when 7-Zip opens it:
 - The geometry has its magic, a size of 52 bytes and a matching SHA-256 checksum. Its metadata slot size is a positive multiple of 512 bytes, and it has at least one slot. Every slot and its backup lie inside the file.
 - The metadata header has its magic and major version 10, with any minor version. It is 128 or 256 bytes long, and its SHA-256 checksum and the checksum of its tables match.
 - The tables fit in the slot after the header. Each table has its entry size, 52, 24, 48 or 64 bytes, and lies inside the tables.
-- The image holds exactly one block device. Its first logical sector lies after the metadata, and the file reaches its size and the largest maximum size of any partition group.
+- The image holds at least one block device. Each one's first logical sector lies after the metadata, counted in bytes that wrap at 2^64 as 7-Zip counts them. The file reaches each one's size and the largest maximum size of any partition group.
 - Each partition names a group and extents that the tables hold.
-- Each extent is linear or zero. A linear extent names block device 0 and lies inside the file. A zero extent names no target sector.
+- Every linear extent in the table, used or not, names a block device the image holds and lies inside the file. Its sectors are read from the image itself, whichever device it names, as 7-Zip reads them.
+- Each extent a partition uses is linear or zero, and a zero extent it uses names no target sector. An extent no partition uses may be of any other type, as in 7-Zip.
 
 ## Safety checks
 
 - The output goes to a hidden staging folder and is published only when the whole image reads, as with every reader.
 - Every check above holds before a byte is written. Each partition is charged against free space, or `--max-extracted-bytes`, before it is written, so a zero extent that declares terabytes is refused at once.
-- The reader holds the metadata tables in memory, at most the slot size and at most 64 MiB, and copies partition data in 1 MiB pieces. Two partitions may share sectors, as 7-Zip allows.
+- `zipper list`, `zipper test` and a partition left out by `--path` or `--exclude` pass over zero extents without reading them, so a zero extent of terabytes costs nothing there.
+- The reader holds the metadata tables in memory, at most the slot size and at most 64 MiB, with one record for each extent and partition, and copies partition data in 1 MiB pieces. Partitions that share extents share their records. Two partitions may share sectors, as 7-Zip allows.
 - `--path`, `--include`, `--exclude`, `--strip-components` and `--strip-prefix` work as with every reader.
 
 ## Differences from 7-Zip
 
 - A partition name that is not a plain relative path, such as one that starts with `/`, holds a `..` part, a `\` or a `:`, goes to 7-Zip under the default engine. 7-Zip rewrites such names. `--zip-engine native` refuses them.
 - Metadata tables larger than 64 MiB are refused. 7-Zip reads them.
+- Two partitions whose names differ only in case, on a file system that ignores case, are refused. 7-Zip writes the last one.
 - An image whose geometry gives a logical block size that is not a multiple of 512 bytes extracts as in 7-Zip, without its warning.
 
 ## Limits
 
 | Limit | Value |
 | --- | --- |
-| Block devices | exactly 1, as in 7-Zip |
+| Block devices | at least 1, as in 7-Zip |
 | Metadata tables | at most the slot size and 64 MiB |
 | Partitions | at most 1,000,000, the limit every tree reader shares |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |

@@ -30,6 +30,19 @@ const GROUP: usize = 48;
 const BLOCK_DEVICE: usize = 64;
 const ENTRY_SIZES: [usize; 4] = [PARTITION, EXTENT, GROUP, BLOCK_DEVICE];
 const NAME: usize = 36;
+const STRUCT_SIZE_AT: usize = 4;
+const METADATA_MAX_SIZE_AT: usize = 40;
+const METADATA_SLOT_COUNT_AT: usize = 44;
+const SLOT_COPIES: u64 = 2;
+const MAJOR_VERSION_AT: usize = 4;
+const HEADER_SIZE_AT: usize = 8;
+const TABLES_SIZE_AT: usize = 44;
+const FIRST_EXTENT_INDEX_AT: usize = 40;
+const NUM_EXTENTS_AT: usize = 44;
+const GROUP_INDEX_AT: usize = 48;
+const TARGET_TYPE_AT: usize = 8;
+const TARGET_DATA_AT: usize = 12;
+const TARGET_SOURCE_AT: usize = 20;
 const DEVICE_SIZE_AT: usize = 16;
 const GROUP_MAXIMUM_AT: usize = 40;
 const LINEAR: u32 = 0;
@@ -99,43 +112,39 @@ fn checksum_holds(bytes: &[u8], field: std::ops::Range<usize>) -> bool {
     hasher.finalize().as_slice() == &bytes[field]
 }
 
-// SPEC(AOSP liblp metadata_format.h, LpMetadataGeometry): magic, struct size, SHA-256 checksum,
-// metadata_max_size, metadata_slot_count and logical_block_size, little-endian. The primary and
-// backup copies of every metadata slot follow the two copies of the geometry.
 pub(crate) fn geometry(bytes: &[u8; GEOMETRY]) -> Field<Geometry> {
     field_check(le32(bytes, 0) == GEOMETRY_MAGIC, "not an LP image")?;
     field_check(
-        le32(bytes, 4) == GEOMETRY as u32,
+        le32(bytes, STRUCT_SIZE_AT) == GEOMETRY as u32,
         "the LP geometry has another size",
     )?;
-    let metadata_max_size = le32(bytes, 40);
+    let metadata_max_size = le32(bytes, METADATA_MAX_SIZE_AT);
     field_check(
         metadata_max_size > 0 && u64::from(metadata_max_size).is_multiple_of(SECTOR),
         "the LP metadata size is not a whole number of sectors",
     )?;
-    let metadata_slots = le32(bytes, 44);
+    let metadata_slots = le32(bytes, METADATA_SLOT_COUNT_AT);
     field_check(metadata_slots > 0, "the LP image has no metadata slot")?;
     Ok(Geometry {
         metadata_max_size,
         metadata_end: u64::from(metadata_slots)
-            .saturating_mul(2 * u64::from(metadata_max_size))
+            .saturating_mul(SLOT_COPIES * u64::from(metadata_max_size))
             .saturating_add(METADATA_AT),
     })
 }
 
-// SPEC(AOSP liblp metadata_format.h, LpMetadataHeader): a header of 128 bytes, or 256 from 10.2,
-// then four table descriptors after the checksums: an offset, an entry count and an entry size.
-// 7-Zip 26.05 reads either header size with any minor version.
+// EXTERNAL(7-Zip 26.05): a header of 128 or 256 bytes is read with any minor version, where liblp
+// ties 256 bytes to version 10.2.
 pub(crate) fn header(bytes: &[u8; HEADER], metadata_max_size: u32) -> Field<Header> {
     field_check(
         le32(bytes, 0) == HEADER_MAGIC,
         "the LP metadata header is missing",
     )?;
     field_check(
-        le16(bytes, 4) == MAJOR_VERSION,
+        le16(bytes, MAJOR_VERSION_AT) == MAJOR_VERSION,
         "the LP metadata has a major version other than 10",
     )?;
-    let size = match le32(bytes, 8) {
+    let size = match le32(bytes, HEADER_SIZE_AT) {
         128 => HEADER,
         256 => HEADER_V1_2,
         _ => {
@@ -144,7 +153,7 @@ pub(crate) fn header(bytes: &[u8; HEADER], metadata_max_size: u32) -> Field<Head
             ));
         }
     };
-    let tables_size = le32(bytes, 44);
+    let tables_size = le32(bytes, TABLES_SIZE_AT);
     field_check(
         u64::from(tables_size) + size as u64 <= u64::from(metadata_max_size)
             && tables_size <= MAX_TABLES,
@@ -178,30 +187,26 @@ pub(crate) fn header(bytes: &[u8; HEADER], metadata_max_size: u32) -> Field<Head
     })
 }
 
-// SPEC(AOSP liblp metadata_format.h, LpMetadataPartition): a name of up to 36 bytes, attributes,
-// the first extent index, the extent count and the group index.
 pub(crate) fn partition(bytes: &[u8; PARTITION]) -> Partition {
     Partition {
         name: bytes[..NAME].try_into().unwrap(),
-        first_extent: le32(bytes, 40),
-        extents: le32(bytes, 44),
-        group: le32(bytes, 48),
+        first_extent: le32(bytes, FIRST_EXTENT_INDEX_AT),
+        extents: le32(bytes, NUM_EXTENTS_AT),
+        group: le32(bytes, GROUP_INDEX_AT),
     }
 }
 
-// SPEC(AOSP liblp metadata_format.h, LpMetadataExtent): a sector count, a target type, the
-// target's first sector and its block device index. A zero extent reads as zeros.
-pub(crate) fn extent(bytes: &[u8; EXTENT]) -> Field<Extent> {
+pub(crate) fn extent(bytes: &[u8; EXTENT], devices: u32) -> Field<Extent> {
     let length = le64(bytes, 0)
         .checked_mul(SECTOR)
         .ok_or(BadField("an LP extent is too long"))?;
-    match le32(bytes, 8) {
+    match le32(bytes, TARGET_TYPE_AT) {
         LINEAR => {
             field_check(
-                le32(bytes, 20) == 0,
+                le32(bytes, TARGET_SOURCE_AT) < devices,
                 "an LP extent names a block device the image does not hold",
             )?;
-            let at = le64(bytes, 12)
+            let at = le64(bytes, TARGET_DATA_AT)
                 .checked_mul(SECTOR)
                 .filter(|at| at.checked_add(length).is_some())
                 .ok_or(BadField("an LP extent runs past the largest image"))?;
@@ -209,7 +214,7 @@ pub(crate) fn extent(bytes: &[u8; EXTENT]) -> Field<Extent> {
         }
         ZERO => {
             field_check(
-                le64(bytes, 12) == 0,
+                le64(bytes, TARGET_DATA_AT) == 0,
                 "an LP zero extent names a target sector",
             )?;
             Ok(Extent::Zero { length })
@@ -218,6 +223,16 @@ pub(crate) fn extent(bytes: &[u8; EXTENT]) -> Field<Extent> {
             "an LP extent has a target type 7-Zip does not read",
         )),
     }
+}
+
+fn linear_extent_holds(bytes: &[u8; EXTENT], devices: u32, length: u64) -> Field<()> {
+    if let Extent::Linear { at, length: size } = extent(bytes, devices)? {
+        field_check(
+            at + size <= length,
+            "an LP extent runs past the end of the image",
+        )?;
+    }
+    Ok(())
 }
 
 pub(crate) fn partition_extents(
@@ -252,7 +267,8 @@ fn output_name(partition: &Partition, index: usize) -> String {
 }
 
 struct Image {
-    partitions: Vec<(String, Vec<Extent>)>,
+    extents: Vec<Extent>,
+    partitions: Vec<(String, std::ops::Range<usize>)>,
 }
 
 fn read_exact_at(file: &ArchiveFile, length: u64, buffer: &mut [u8], at: u64) -> Result<()> {
@@ -311,39 +327,23 @@ fn open(file: &ArchiveFile) -> Result<Image> {
         "the LP metadata tables checksum does not match"
     );
     let [partitions, extents, groups, devices] = parsed.tables;
-    ensure!(
-        devices.count == 1,
-        "the LP image spans {} block devices, and 7-Zip reads only images of one",
-        devices.count
-    );
-    let device: &[u8; BLOCK_DEVICE] = entries(&tables, devices).next().unwrap();
+    ensure!(devices.count > 0, "the LP image has no block device");
     let largest_group = entries::<GROUP>(&tables, groups)
         .map(|group| le64(group, GROUP_MAXIMUM_AT))
         .max()
         .unwrap_or(0);
-    ensure!(
-        le64(device, 0)
-            .checked_mul(SECTOR)
-            .is_none_or(|first| first >= found.metadata_end),
-        "the LP block device's first logical sector lies inside the metadata"
-    );
-    ensure!(
-        le64(device, DEVICE_SIZE_AT).max(largest_group) <= length,
-        "the LP image ends before its block device or a partition group does"
-    );
-    let extent_list: Vec<Extent> = entries::<EXTENT>(&tables, extents)
-        .map(|bytes| {
-            let extent = extent(bytes)?;
-            if let Extent::Linear { at, length: size } = extent {
-                field_check(
-                    at + size <= length,
-                    "an LP extent runs past the end of the image",
-                )?;
-            }
-            Ok(extent)
-        })
-        .collect::<Field<_>>()?;
+    for device in entries::<BLOCK_DEVICE>(&tables, devices) {
+        ensure!(
+            le64(device, 0).wrapping_mul(SECTOR) >= found.metadata_end,
+            "an LP block device's first logical sector lies inside the metadata"
+        );
+        ensure!(
+            le64(device, DEVICE_SIZE_AT).max(largest_group) <= length,
+            "the LP image ends before a block device or a partition group does"
+        );
+    }
     let mut image = Image {
+        extents: vec![Extent::Zero { length: 0 }; extents.count as usize],
         partitions: Vec::with_capacity(partitions.count as usize),
     };
     for (index, bytes) in entries::<PARTITION>(&tables, partitions).enumerate() {
@@ -355,7 +355,27 @@ fn open(file: &ArchiveFile) -> Result<Image> {
         let range = partition_extents(&partition, extents.count)?;
         image
             .partitions
-            .push((output_name(&partition, index), extent_list[range].to_vec()));
+            .push((output_name(&partition, index), range));
+    }
+    let raw: Vec<&[u8; EXTENT]> = entries::<EXTENT>(&tables, extents).collect();
+    for bytes in raw
+        .iter()
+        .filter(|bytes| le32(&bytes[..], TARGET_TYPE_AT) == LINEAR)
+    {
+        linear_extent_holds(bytes, devices.count, length)?;
+    }
+    let mut used: Vec<std::ops::Range<usize>> = image
+        .partitions
+        .iter()
+        .map(|(_, range)| range.clone())
+        .collect();
+    used.sort_unstable_by_key(|range| range.start);
+    let mut checked = 0;
+    for range in used {
+        for index in range.start.max(checked)..range.end {
+            image.extents[index] = extent(raw[index], devices.count)?;
+        }
+        checked = checked.max(range.end);
     }
     Ok(image)
 }
@@ -364,6 +384,30 @@ struct Extents<'f> {
     file: &'f ArchiveFile,
     extents: &'f [Extent],
     within: u64,
+}
+
+impl tree::Holes for Extents<'_> {
+    fn skip_hole(&mut self, most: u64) -> std::io::Result<u64> {
+        self.skip_finished();
+        let Some(&Extent::Zero { length }) = self.extents.first() else {
+            return Ok(0);
+        };
+        let skipped = (length - self.within).min(most);
+        self.within += skipped;
+        Ok(skipped)
+    }
+}
+
+impl Extents<'_> {
+    fn skip_finished(&mut self) {
+        while let Some(extent) = self.extents.first() {
+            if extent.length() > self.within {
+                return;
+            }
+            self.extents = &self.extents[1..];
+            self.within = 0;
+        }
+    }
 }
 
 impl Read for Extents<'_> {
@@ -426,8 +470,9 @@ pub fn read_archive(
     let file = crate::volumes::open(path)?;
     let image = open(&file)?;
     tree::extract("LP", path, destination, options, |tree| {
-        for (name, extents) in &image.partitions {
+        for (name, range) in &image.partitions {
             tree.check()?;
+            let extents = &image.extents[range.clone()];
             let size = extents
                 .iter()
                 .try_fold(0u64, |sum, extent| sum.checked_add(extent.length()))
@@ -437,7 +482,7 @@ pub fn read_archive(
                 extents,
                 within: 0,
             };
-            tree.file(name, size, FILE_MODE, None, &mut data)?;
+            tree.sparse_file(name, size, FILE_MODE, None, &mut data)?;
         }
         Ok(())
     })
@@ -475,7 +520,7 @@ mod proofs {
     #[kani::proof]
     fn extents_never_panic_and_end_inside_64_bits() {
         let bytes: [u8; EXTENT] = kani::any();
-        match extent(&bytes) {
+        match extent(&bytes, kani::any()) {
             Ok(Extent::Linear { at, length }) => {
                 assert!(at.checked_add(length).is_some());
                 assert!(at % SECTOR == 0 && length % SECTOR == 0);

@@ -206,9 +206,58 @@ fn chosen_extents_sizes_and_slots_read_as_7zip_reads_them() {
         repair(&mut bytes, 1, 65536);
         cases.push((label.to_owned(), bytes));
     }
+    let two = |second: (u64, u64)| Layout {
+        partitions: shared(),
+        device_size: Some(4096),
+        more_devices: vec![second],
+        ..Layout::default()
+    };
+    cases.push(("a second block device".to_owned(), build(&two((600, 4096)))));
+    cases.push((
+        "a second block device inside the metadata".to_owned(),
+        build(&two((0, 4096))),
+    ));
+    cases.push((
+        "a second block device past the end of the file".to_owned(),
+        build(&two((600, 1 << 40))),
+    ));
+    let mut first_wraps = small.clone();
+    let devices = METADATA_AT + header_size(0) + tables_size(&small) - 64;
+    first_wraps[devices..devices + 8].copy_from_slice(&(1u64 << 55).to_le_bytes());
+    repair(&mut first_wraps, 1, 65536);
+    cases.push((
+        "a first sector whose byte offset wraps to zero".to_owned(),
+        first_wraps,
+    ));
+    let tables = METADATA_AT + header_size(0);
+    for (label, kind, target, device) in [
+        ("an unused extent of type 2", 2u8, 0u8, 0u8),
+        ("an unused zero extent with a target", 1, 5, 0),
+        (
+            "an unused linear extent past the end of the file",
+            0,
+            0x40,
+            0,
+        ),
+        (
+            "an unused linear extent on a device the image lacks",
+            0,
+            1,
+            1,
+        ),
+        ("an unused zero extent on a device the image lacks", 1, 0, 1),
+    ] {
+        let mut unused = small.clone();
+        unused[tables + 2 * 52 + 44] = 1;
+        let last = tables + 3 * 52 + 5 * 24;
+        unused[last + 8] = kind;
+        unused[last + 15] = target;
+        unused[last + 20] = device;
+        repair(&mut unused, 1, 65536);
+        cases.push((label.to_owned(), unused));
+    }
     let mut beyond = small.clone();
     beyond[GEOMETRY_AT + 44..GEOMETRY_AT + 48].copy_from_slice(&64u32.to_le_bytes());
-    let devices = METADATA_AT + header_size(0) + tables_size(&small) - 64;
     beyond[devices..devices + 8].copy_from_slice(&(1u64 << 40).to_le_bytes());
     repair(&mut beyond, 1, 65536);
     cases.push((
@@ -216,7 +265,31 @@ fn chosen_extents_sizes_and_slots_read_as_7zip_reads_them() {
         beyond,
     ));
     let checked = cases.len();
-    report(judge_all(&binary, cases), checked, 8);
+    report(judge_all(&binary, cases), checked, 17);
+}
+
+#[test]
+fn a_huge_zero_partition_lists_and_selects_without_reading_its_zeros() {
+    let layout = Layout {
+        partitions: vec![
+            partition("big", vec![zero(1 << 40)]),
+            partition("small", vec![linear(8, b"small")]),
+        ],
+        ..Layout::default()
+    };
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("super.img");
+    std::fs::write(&archive, build(&layout)).unwrap();
+    let entries = zipper::native_lp::read_archive(&archive, None, Default::default()).unwrap();
+    assert_eq!(entries[0].size, 1 << 49);
+    let out = work.path().join("out");
+    let paths = ["small.img".to_owned()];
+    let options = zipper::ExtractOptions {
+        paths: &paths,
+        ..Default::default()
+    };
+    zipper::extract_archive(&archive, &out, options).unwrap();
+    assert_eq!(std::fs::read(out.join("small.img")).unwrap().len(), 8 * 512);
 }
 
 #[test]
