@@ -178,7 +178,13 @@
       ]
     },
     "LP": {
-      "status": "backend"
+      "status": "native",
+      "note": "Android logical partition images read in process. No AOSP lpmake runs here, so a test writer builds every image from the liblp format, and 7-Zip checks each. A partition name that is not a plain relative path goes to 7-Zip.",
+      "tests": [
+        "tests/lp_corpus.rs::generated_images_extract_as_7zip_extracts_them",
+        "tests/hostile_lp.rs::every_changed_metadata_byte_with_repaired_checksums_is_refused_when_7zip_refuses_it",
+        "tests/hostile_lp.rs::every_cut_at_a_sector_or_boundary_is_refused_when_7zip_refuses_it"
+      ]
     },
     "Lzh": {
       "status": "native",

@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 99 |
+| `native` | 100 |
 | `partial` | 1 |
-| `backend` | 7 |
+| `backend` | 6 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-11 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+10 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -50,7 +50,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Hxs` | `native` | Help 2 files with an ITSF record and LZX sections read in process. One without an ITSF record, which 7-Zip lists as one text item, goes to 7-Zip. No Help 2 compiler runs here, so every file comes from Zipper's own test writer. | `generated_help2_files_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/chm_corpus.rs`, `damaged_help2_files_are_refused_exactly_when_7zip_refuses_them` in `tests/chm_corpus.rs`, `a_help2_file_without_an_itsf_record_goes_to_7zip` in `tests/hostile_chm.rs` |
 | `IHex` | `backend` | Left to 7-Zip. It decodes to one file for each block of addresses, which the single-stream reader does not do. | No proof yet. |
 | `Iso` | `native` | ISO 9660 with Joliet, Rock Ridge and El Torito read in process, in the tree 7-Zip chooses. | `tests/data/parity/archives/iso.iso.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/iso_corpus.rs`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs` |
-| `LP` | `backend` |  | No proof yet. |
+| `LP` | `native` | Android logical partition images read in process. No AOSP lpmake runs here, so a test writer builds every image from the liblp format, and 7-Zip checks each. A partition name that is not a plain relative path goes to 7-Zip. | `generated_images_extract_as_7zip_extracts_them` in `tests/lp_corpus.rs`, `every_changed_metadata_byte_with_repaired_checksums_is_refused_when_7zip_refuses_it` in `tests/hostile_lp.rs`, `every_cut_at_a_sector_or_boundary_is_refused_when_7zip_refuses_it` in `tests/hostile_lp.rs` |
 | `Lzh` | `native` | Header levels 0 to 3 and the -lh0-, -lz4-, -lh4- to -lh7- and -lhd- methods read in process. Methods 7-Zip does not read either, such as -lh1- and -lz5-, are refused. | `every_corpus_lzh_extracts_the_tree_7zip_extracts_or_the_refusal_its_record_gives` in `tests/lzh_corpus.rs`, `generated_lzh_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/lzh_corpus.rs`, `token_streams_and_every_table_form_decode_as_7zip_decodes_them` in `tests/lzh_corpus.rs`, `damaged_lzh_are_refused_exactly_when_7zip_refuses_them` in `tests/lzh_corpus.rs` |
 | `MBR` | `native` | Primary, extended and logical partitions read in process. A lone partition that does not hold FAT goes to 7-Zip. | `tests/data/parity/archives/mbr.img.stored.xz`, `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |
 | `MachO` | `native` | Segments, sections and symbol tables read in process. The corpus comes from Apple clang. | `every_corpus_executable_extracts_the_tree_7zip_extracts` in `tests/exe_corpus.rs`, `generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/exe_corpus.rs`, `damaged_executables_are_refused_exactly_when_7zip_refuses_them` in `tests/hostile_exe.rs` |

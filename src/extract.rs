@@ -26,6 +26,8 @@ use crate::native_ext;
 use crate::native_flv;
 #[cfg(feature = "iso")]
 use crate::native_iso;
+#[cfg(feature = "lp")]
+use crate::native_lp;
 #[cfg(feature = "lzh")]
 use crate::native_lzh;
 #[cfg(feature = "msi")]
@@ -61,24 +63,26 @@ pub enum Engine {
     /// VHDX, QCOW, VDI, VMDK and Android sparse images and MBR and GPT disks
     /// with FAT, NTFS, HFS+, APFS or ext, DMG images and disks holding HFS+,
     /// HFSX or APFS, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files,
-    /// SquashFS 4.0 and CramFS images, raw or in a disk's lone partition, and
-    /// 7z whose methods it decodes. 7-Zip for other 7z, other SquashFS
+    /// SquashFS 4.0 and CramFS images, raw or in a disk's lone partition,
+    /// Android logical partition images, and 7z whose methods it decodes. 7-Zip for other 7z, other SquashFS
     /// versions and byte orders, an MSI whose main stream is not a CAB, a
     /// split or pre-1.13 WIM, a Help 2 file without an ITSF record, a
     /// differencing disk image, a DMG or disk holding another file system
     /// Zipper does not read there, an APFS container with an encrypted,
     /// sealed or snapshot volume or a Fusion container, an ext volume that
     /// needs journal recovery or uses a feature Zipper does not read, a Mach-O
-    /// universal file with the `B9 FA F1 0E` signature, and the other formats
-    /// whose signature Zipper recognizes.
+    /// universal file with the `B9 FA F1 0E` signature, a logical partition
+    /// image whose partition names are not plain relative paths, and the other
+    /// formats whose signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
     /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, DMG,
-    /// HFS+, APFS, ext, SquashFS 4.0, CramFS, FLV, SWF, executables, 7z and
-    /// single compressed files, and native ZIP for unrecognized files.
+    /// HFS+, APFS, ext, SquashFS 4.0, CramFS, FLV, SWF, executables, logical
+    /// partition images, 7z and single compressed files, and native ZIP for
+    /// unrecognized files.
     Native,
 }
 
@@ -134,6 +138,8 @@ pub enum Reader {
     Cramfs,
     /// The native reader for raw ext2, ext3 and ext4 volumes.
     Ext,
+    /// The native reader for Android logical partition images.
+    Lp,
     /// The native reader for Flash Video files.
     Flv,
     /// The native reader for SWF files, uncompressed or compressed with zlib
@@ -216,6 +222,12 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         Engine::Auto if native_exe::needs_backend(archive)? => Reader::Backend { format: None },
         #[cfg(feature = "exe")]
         _ if native_exe::sniff_damaged(archive)? => Reader::Exe,
+        #[cfg(feature = "lp")]
+        Engine::Auto if native_lp::sniff(archive)? && native_lp::needs_backend(archive)? => {
+            Reader::Backend { format: None }
+        }
+        #[cfg(feature = "lp")]
+        _ if native_lp::sniff(archive)? => Reader::Lp,
         #[cfg(feature = "ntfs")]
         _ if native_ntfs::sniff(archive)? => Reader::Ntfs,
         #[cfg(feature = "iso")]
@@ -603,6 +615,8 @@ fn tree_reader(reader: &Reader) -> Option<TreeReader> {
         Reader::Cramfs => Some(native_cramfs::read_archive),
         #[cfg(feature = "ext")]
         Reader::Ext => Some(native_ext::read_archive),
+        #[cfg(feature = "lp")]
+        Reader::Lp => Some(native_lp::read_archive),
         #[cfg(feature = "flv")]
         Reader::Flv => Some(native_flv::read_archive),
         #[cfg(feature = "swf")]

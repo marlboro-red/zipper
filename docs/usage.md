@@ -196,7 +196,8 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `disk` | The VHD, VHDX, QCOW, VDI, VMDK, Android sparse and MBR or GPT disk reader with FAT and HFS+, and `apfs`, `cramfs`, `ext`, `ntfs` and `squashfs` for the other partitions | None |
 | `swf` | The SWF reader | None |
 | `flv` | The FLV reader | None |
-| `more-formats` | Every reader from `cpio` to `flv` above | The union of theirs |
+| `lp` | The Android logical partition (`super.img`) reader | None |
+| `more-formats` | Every reader from `cpio` to `lp` above | The union of theirs |
 | `all-formats` | `zip`, `7z`, `tar`, `zstd` and `more-formats` | The union of theirs |
 | `cli` | The `zipper` binary, with `all-formats` | `clap` |
 

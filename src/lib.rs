@@ -103,6 +103,8 @@ mod native_fat;
 pub mod native_flv;
 #[cfg(feature = "iso")]
 pub mod native_iso;
+#[cfg(feature = "lp")]
+pub mod native_lp;
 #[cfg(feature = "lzh")]
 pub mod native_lzh;
 #[cfg(feature = "msi")]

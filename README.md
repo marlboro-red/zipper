@@ -45,6 +45,7 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [FLV and SWF reader reference](docs/reference/swf-reader.md) covers Flash Video files and SWF files, uncompressed or compressed with zlib or LZMA, and how they differ from 7-Zip.
 - [SquashFS and CramFS reader reference](docs/reference/squashfs-reader.md) covers SquashFS 4.0 images of every compressor and CramFS images of both byte orders, raw and in a lone disk partition, and how they differ from 7-Zip.
 - [Executable reader reference](docs/reference/exe-reader.md) covers PE images with their resources, COFF objects, TE images, ELF files, Mach-O files and Mach-O universal files, and how they differ from 7-Zip.
+- [LP reader reference](docs/reference/lp-reader.md) covers Android logical partition images, the `super.img` of dynamic partitions, and how they differ from 7-Zip.
 - [Single compressed file reference](docs/reference/stream-reader.md) covers gzip, bzip2, xz, zstd and LZMA files that hold no tar.
 - [7-Zip parity](docs/reference/parity.md) lists every format, method and switch 7-Zip extracts with, and how Zipper handles each.
 - [Duplicate-checking reference](docs/reference/duplicates.md) describes the `duplicates` command.

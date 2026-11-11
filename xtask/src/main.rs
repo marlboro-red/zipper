@@ -406,6 +406,7 @@ const FORMAT_TESTS: &[(&str, &[&str])] = &[
     ("exe", &["exe_corpus"]),
     ("ntfs", &["ntfs_corpus"]),
     ("swf,flv", &["swf_corpus"]),
+    ("lp", &["lp_corpus", "hostile_lp"]),
     ("dmg", &["dmg_corpus"]),
     (
         "disk,zstd",
