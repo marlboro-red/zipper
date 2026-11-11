@@ -1060,7 +1060,7 @@ item = src/lib.rs | pub(crate) type Field<
 
 [cab-fields]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = f847ff69eabc1068
+fingerprint = eb6817f088ec50f1
 full-check = cargo xtask kani-reach cab-fields
 full-check = cargo kani --harness native_cab::proofs::
 full-check = cargo test --release --lib native_cab
@@ -1120,7 +1120,7 @@ item = src/quantum.rs | pub(crate) fn decoder_memory(
 
 [lzx]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = d74078f95d5b955f
+fingerprint = 9695267912b4775c
 full-check = cargo test --release --lib lzx
 full-check = cargo test --release --test cab_corpus
 full-check = cargo test --release --test cab_sets
@@ -1185,7 +1185,7 @@ item = src/lib.rs | pub(crate) type Field<
 
 [quantum]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = fe81a07d33e8b5ba
+fingerprint = 5ab11cec7ef2ed91
 full-check = cargo xtask kani-reach quantum
 full-check = cargo kani --harness quantum::proofs::
 full-check = cargo test --release --lib quantum
@@ -2647,7 +2647,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [squashfs-fields]
-fingerprint = b0f4bb22986b8c61
+fingerprint = c2c4bb3c39753c92
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach squashfs-fields
 full-check = cargo kani --harness native_squashfs::field_proofs::
@@ -2747,7 +2747,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [cramfs-fields]
-fingerprint = b825ca6fefd0f4e7
+fingerprint = 5d44bc498321065e
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach cramfs-fields
 full-check = cargo kani --harness native_cramfs::proofs::
@@ -3043,7 +3043,7 @@ item = src/writer_pool.rs | impl Drop for ClosesOnDrop<
 
 [inflate]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 1ef9a0440a8358da
+fingerprint = cbb9d28179f5a1fe
 full-check = cargo xtask kani-reach inflate
 full-check = cargo kani --harness inflate::proofs::
 full-check = cargo test --release --lib inflate
@@ -3216,7 +3216,7 @@ item = src/bzip2_streams.rs | impl<R: BufRead> Read for ParallelBzip2<R> {
 
 [deflate-framing]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0000000000000000
+fingerprint = 39730f405f120b6f
 full-check = cargo xtask kani-reach deflate-framing
 full-check = cargo kani --exact --harness framing::proofs::gzip_headers_read_alike_in_any_split_and_end_where_their_fields_end
 full-check = cargo test --release --lib framing::
@@ -3255,3 +3255,4 @@ item = src/framing.rs | impl<R: BufRead> Reader<R> {
 item = src/framing.rs | impl<R: BufRead> BufRead for Reader<R> {
 item = src/framing.rs | impl<R: BufRead> Read for Reader<R> {
 item = src/framing.rs | mod proofs {
+item = src/inflate.rs | pub(crate) struct Invalid(
