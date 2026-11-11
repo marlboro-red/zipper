@@ -31,6 +31,8 @@ It has these fields. A missing field means none.
 9. Never weaken a check, test or rule to get green. A check that fails for a reason outside your scope is a finding, not a fix.
 10. Commit, then run `cargo xtask gate fast --remote` last. It runs the gate on a second machine at your committed head, so other builders' tests do not slow yours. Use plain `cargo xtask gate fast` only when `--remote` reports that `git config zipper.remoteHost` is unset or the host is unreachable. If the `hooks` step fails only because the worktree sits under a scratch folder, say so and give the other steps' results.
 11. Run a long check with `run_in_background: true` and wait for its completion notice. Never write a loop that sleeps until a log line or a process appears, and never start a second waiter for work you already wait on. The guard hook refuses such loops.
+12. Never open 7-Zip's source, unRAR's source, or any GPL or LGPL code, and never port another project's code into Zipper. Use format specifications, code under BSD, MIT, Apache, zlib or public-domain licences, and other tools run as black boxes. Name every source you used in the reader's reference page.
+13. Before your first edit, and after any pause, run `git rev-parse --show-toplevel` and confirm it is your own worktree. Never edit another builder's worktree or the main checkout.
 
 ## Report
 
