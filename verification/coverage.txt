@@ -3555,6 +3555,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [rar-fields]
+speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach rar-fields
 full-check = cargo kani --harness native_rar::proofs:: --harness rar5_lz::proofs:: --harness rar4::proofs:: --harness rar4_lz::proofs::
