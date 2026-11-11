@@ -29,7 +29,21 @@ It never restores security descriptors, short names, the hidden, system or archi
 
 ## Alternate data streams
 
-7-Zip writes an NTFS alternate data stream on macOS and Linux as a file named `file:stream`. Zipper's shared name check refuses a `:` in every reader, so Zipper refuses a WIM with a named stream, and the error suggests `--zip-engine backend`. The roadmap's Windows option, which writes each stream as an NTFS stream of its file through `src/ntfs_streams.rs`, is not built yet.
+A WIM can store NTFS alternate data streams beside a file's data. 7-Zip 26.05 on macOS writes each one as a file named `file:stream`, both by default and with `-sns`. With `-sns-` it skips them. Zipper's shared name check refuses a `:` in every reader, so by default Zipper refuses a WIM with a named stream. The error names `--alternate-streams` and `--zip-engine backend`.
+
+`zipper extract --alternate-streams`, or `alternate_streams: true` in `ExtractOptions`, writes them on Windows:
+
+- Each named stream of a file is written as the NTFS stream `file:stream` through `src/ntfs_streams.rs`. It is written after the file's data and before the file gets its time and read-only attribute back, inside the staging folder. So a failure anywhere publishes nothing, as for every other entry.
+- A read-only file is made writable while its streams are written, then made read-only again.
+- A stream of a hard link group is written once, with the first file of the group, and the other names share it.
+- A stream counts against free space or `--max-extracted-bytes`, like a file. Its data passes the SHA-1 check of its resource.
+- A file that the selection or strip leaves out gets no streams.
+- With `--content-only`, a stored `Zone.Identifier` stream is not written, as no Mark of the Web is. Without it, the archive's own mark, when it has one, replaces a stored `Zone.Identifier`.
+- A destination whose file system keeps no named streams, such as FAT, is refused.
+
+The option checks every stream name before anything is written, on every platform. A name is refused when it is empty or not valid UTF-16, or when it is longer than 255 UTF-16 units, as NTFS allows. It is also refused when it holds a control character or one of `\ / : * ? " < > |`, or when it ends with a dot or a space, which Windows drops. A Windows device name such as `CON`, `NUL`, `COM1` or `LPT9`, with or without an extension, is refused. Two streams of one file whose names differ only in case are refused, since NTFS compares stream names that way. A stream whose data the blob table lacks is refused. A named stream on a folder, a link or the image root is refused, because a staged folder merges into an existing destination and its streams would not move with it.
+
+Off Windows the option keeps a WIM without named streams extracting as before. A WIM with a named stream is refused before anything is written, and the error says that Zipper writes NTFS streams only on Windows. A library call with the option and no destination reads every stream and checks its SHA-1 on every platform. `zipper test` and `zipper list` take no option, so they refuse a WIM with a named stream. Every reader other than WIM refuses the option.
 
 wimlib stores a second unnamed stream with no data beside each link. 7-Zip writes it as an empty file `name:_` beside the link. Zipper skips it. An unnamed second stream that holds data is refused.
 
@@ -47,6 +61,7 @@ The reader checks the whole layout before it publishes anything, and it publishe
 - Each 8-byte unit of metadata is claimed by at most one directory entry, stream entry or list end. So a folder list that points back at an earlier list, or two folders that share a list, are refused, and the walk cannot loop.
 - The root list holds one unnamed folder, as WIM 1.13 writes it. A link folder with entries under it is refused.
 - Names pass the same checks as tar names. `..`, `.`, empty names, backslashes, `:` and NUL are refused, and so is a name that is not valid UTF-16. A folder that holds two entries of one name, after a `/` becomes `_`, is refused.
+- With `--alternate-streams`, stream names pass the checks in the section on alternate data streams.
 - Every file names data that the blob table holds. 7-Zip writes such a file empty. Zipper refuses the WIM.
 - An encrypted ESD is refused.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
@@ -61,6 +76,7 @@ The reader checks the whole layout before it publishes anything, and it publishe
 | Entries in one image | at most 1,000,000, as the shared tree allows |
 | Paths of one image | at most 64 MiB in total |
 | Reparse data of one link | at most 64 KiB |
+| Alternate data streams kept for one image | at most 1,000,000, with at most 64 MiB of names |
 | Chunks in one solid resource | at most 2^20 |
 | Decoder memory | one chunk and its packed bytes, at most 64 MiB each, and one LZX window of up to 2 MiB |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
@@ -82,7 +98,7 @@ The last column is `zipper list` on a cpio archive of the same paths, which uses
 
 `tests/wim_corpus.rs` requires every WIM in `tests/data/wim-corpus` to extract to the tree 7-Zip extracted when it was written, and to the tree 7-Zip extracts where it is installed. Where `wimlib-imagex` is installed, it also captures seeded trees with every method at 12 chunk sizes and layouts, solid and not. Each image must extract byte for byte to its source tree and to the tree 7-Zip extracts. The reader differs from 7-Zip 26.05 on purpose in these cases:
 
-- 7-Zip writes an alternate data stream as a file named `file:stream`. Zipper refuses the WIM.
+- 7-Zip writes an alternate data stream as a file named `file:stream`. Zipper refuses the WIM, and writes the stream as an NTFS stream only on Windows with `--alternate-streams`.
 - 7-Zip writes an empty file `name:_` beside each link that wimlib stores. Zipper does not write it.
 - 7-Zip refuses a relative link with `..` in it, such as `../hello.txt`, and writes an empty file in its place. Zipper creates the link when it stays inside the destination.
 - 7-Zip writes an absolute link as an absolute path into the destination, from the destination's root even when the WIM holds several images. Zipper writes a relative link to the same name inside the image's own folder.

@@ -379,6 +379,13 @@ pub struct ExtractOptions<'a> {
     /// encrypted. The tar and single-file readers and the 7-Zip backend
     /// refuse it.
     pub password: Option<&'a [u8]>,
+    /// Write each NTFS alternate data stream a WIM stores as a named stream
+    /// `file:name` of its file, after the file's data and before the file is
+    /// published. Only the WIM reader on Windows writes them, onto a
+    /// destination whose file system keeps named streams. Elsewhere a WIM
+    /// with a named stream is refused, as it is without this option, and
+    /// every other reader refuses the option.
+    pub alternate_streams: bool,
 }
 
 fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Result<()> {
@@ -658,6 +665,11 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
         archive.display()
     );
+    ensure!(
+        !options.alternate_streams || matches!(reader, Reader::Wim),
+        "--alternate-streams applies only to WIM images read in process, and {} is not one",
+        archive.display()
+    );
     match reader {
         #[cfg(feature = "zip-deflate")]
         Reader::Zip => {
@@ -774,6 +786,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                     strip: options.strip,
                     metadata: options.metadata,
                     control: options.control,
+                    alternate_streams: options.alternate_streams,
                 },
             )?;
         }

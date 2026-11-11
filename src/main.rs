@@ -110,6 +110,11 @@ enum Command {
         /// keep only the execute bit, and folders get the default mode.
         #[arg(long)]
         content_only: bool,
+        /// Write the NTFS alternate data streams of a WIM image as named
+        /// streams `file:name`. Windows only, onto a file system that keeps
+        /// them. Without it, a WIM with a named stream is refused.
+        #[arg(long)]
+        alternate_streams: bool,
         /// Refuse archives whose declared output exceeds this many bytes. By
         /// default, the output of every archive read in process, including a
         /// single compressed file, must fit in free space.
@@ -848,6 +853,7 @@ fn run() -> Result<()> {
             strip_prefix,
             strip_components,
             content_only,
+            alternate_streams,
             overwrite,
             existing,
             max_extracted_bytes,
@@ -898,6 +904,7 @@ fn run() -> Result<()> {
                             zipper::Metadata::Restore
                         },
                         max_output_bytes: max_extracted_bytes,
+                        alternate_streams,
                         threads: cli.threads,
                         engine: cli.zip_engine.into(),
                         control: zipper::Control {

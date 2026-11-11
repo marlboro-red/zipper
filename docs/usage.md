@@ -105,6 +105,20 @@ target/release/zipper extract toolchain.tar.gz --output tools --content-only
 - Library callers set `metadata: Metadata::ContentOnly` in `ExtractOptions`. `tests/content_only.rs` extracts every archive of the ZIP, tar and 7z corpora this way and checks contents, modes, times and, on Windows, attributes and zone marks.
 - The 7-Zip backend refuses it, because 7-Zip restores times and attributes itself.
 
+## Extract the alternate data streams of a WIM
+
+A WIM image can store NTFS alternate data streams beside its files. Zipper refuses such an image by default. On Windows, pass `--alternate-streams` to write each one as a named stream of its file:
+
+```sh
+target/release/zipper extract install.wim --output image --alternate-streams
+```
+
+- Each stream name is checked before anything is written, and streams on folders and links are refused.
+- A destination whose file system keeps no named streams, such as FAT, is refused.
+- On macOS and Linux, a WIM with a named stream is refused with the option too, because those systems have no NTFS streams.
+- Library callers set `alternate_streams: true` in `ExtractOptions`. Every reader other than WIM refuses it.
+- The [WIM reader reference](reference/wim-reader.md#alternate-data-streams) lists every check.
+
 ## Extract without folders, or through pipes
 
 `--flat` puts every file in the output folder itself, without its folders, as `7z e` does. Files that share a name follow `--existing` in path order. The default refuses them, `overwrite` keeps the last, `skip` keeps the first, and the rename modes number the others `name_1.ext` and on. An archive with links is refused, because flattening breaks their targets:

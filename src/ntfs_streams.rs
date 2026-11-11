@@ -98,3 +98,149 @@ fn holds_named_streams(folder: &Path) -> Result<bool> {
     );
     Ok(flags & FILE_NAMED_STREAMS != 0)
 }
+
+// EXTERNAL(NTFS): a stream name holds at most 255 UTF-16 units, as a file name does.
+pub(crate) const MAX_STREAM_NAME: usize = 255;
+pub(crate) const MARK_OF_THE_WEB: &str = "Zone.Identifier";
+pub(crate) const WRITES_STREAMS: bool = cfg!(windows);
+const FORBIDDEN: &[char] = &['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
+const DEVICES: [&str; 6] = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"];
+const NUMBERED_DEVICES: [&str; 2] = ["COM", "LPT"];
+const DEVICE_DIGITS: &str = "0123456789\u{b9}\u{b2}\u{b3}";
+
+fn is_device_name(name: &str) -> bool {
+    let base = name.split('.').next().unwrap_or_default().trim_end();
+    let upper = base.to_ascii_uppercase();
+    DEVICES.contains(&upper.as_str())
+        || NUMBERED_DEVICES.iter().any(|device| {
+            upper.strip_prefix(device).is_some_and(|digit| {
+                let mut chars = digit.chars();
+                matches!(
+                    (chars.next(), chars.next()),
+                    (Some(only), None) if DEVICE_DIGITS.contains(only)
+                )
+            })
+        })
+}
+
+pub(crate) fn stream_name_problem(name: &str) -> Option<&'static str> {
+    let units = name.encode_utf16().count();
+    if units == 0 {
+        Some("is empty")
+    } else if units > MAX_STREAM_NAME {
+        Some("is longer than 255 UTF-16 units")
+    } else if name
+        .chars()
+        .any(|c| c.is_control() || FORBIDDEN.contains(&c))
+    {
+        Some(
+            "holds a control character, a path separator, a colon or another character Windows refuses",
+        )
+    } else if name.ends_with(['.', ' ']) {
+        Some("ends with a dot or a space, which Windows drops")
+    } else if is_device_name(name) {
+        Some("is a reserved Windows device name")
+    } else {
+        None
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn destination_keeps_streams(root: &Path) -> Result<bool> {
+    holds_named_streams(root)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn destination_keeps_streams(_: &Path) -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(windows)]
+pub(crate) fn create_stream(file: &Path, name: &str) -> std::io::Result<std::fs::File> {
+    let mut stream = file.as_os_str().to_owned();
+    stream.push(":");
+    stream.push(name);
+    std::fs::File::options()
+        .write(true)
+        .create_new(true)
+        .open(stream)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn create_stream(_: &Path, _: &str) -> std::io::Result<std::fs::File> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "NTFS alternate data streams are written only on Windows",
+    ))
+}
+
+#[cfg(windows)]
+#[expect(
+    clippy::permissions_set_readonly_false,
+    reason = "Windows only, where it clears FILE_ATTRIBUTE_READONLY"
+)]
+pub(crate) fn make_writable(file: &std::fs::File) -> Result<Option<std::fs::Permissions>> {
+    let locked = file.metadata()?.permissions();
+    if !locked.readonly() {
+        return Ok(None);
+    }
+    let mut writable = locked.clone();
+    writable.set_readonly(false);
+    file.set_permissions(writable)?;
+    Ok(Some(locked))
+}
+
+#[cfg(not(windows))]
+pub(crate) fn make_writable(_: &std::fs::File) -> Result<Option<std::fs::Permissions>> {
+    Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_names_that_windows_would_change_or_refuse_are_refused() {
+        let longest = "x".repeat(255);
+        let longest_pairs = "\u{1F600}".repeat(127);
+        for good in [
+            "Zone.Identifier",
+            "second",
+            "a b",
+            "$DATA",
+            "CONSOLE",
+            "COM10",
+            "LPTX",
+            "é名",
+            &longest,
+            &longest_pairs,
+        ] {
+            assert_eq!(stream_name_problem(good), None, "{good:?}");
+        }
+        let long = "x".repeat(256);
+        let long_pairs = "\u{1F600}".repeat(128);
+        let mut bad = vec![
+            "",
+            &long,
+            &long_pairs,
+            "x.",
+            "x ",
+            ".",
+            "con",
+            "NUL.txt",
+            "Aux ",
+            "com1",
+            "LPT9.log",
+            "COM\u{b9}",
+            "conout$",
+            "a\u{7f}b",
+        ];
+        let controls: Vec<String> = (0..0x20u8).map(|c| format!("a{}b", c as char)).collect();
+        let forbidden: Vec<String> = "\\/:*?\"<>|".chars().map(|c| format!("a{c}b")).collect();
+        bad.extend(controls.iter().map(String::as_str));
+        bad.extend(forbidden.iter().map(String::as_str));
+        for name in bad {
+            assert!(stream_name_problem(name).is_some(), "{name:?}");
+        }
+    }
+}

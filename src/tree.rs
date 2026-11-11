@@ -33,6 +33,10 @@ pub struct ReadOptions<'a> {
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
+    /// Write the NTFS alternate data streams a WIM stores, as
+    /// [`crate::ExtractOptions::alternate_streams`] describes. Other readers
+    /// ignore it.
+    pub alternate_streams: bool,
 }
 
 pub(crate) const MAX_ENTRIES: usize = 1_000_000;
@@ -124,6 +128,7 @@ pub(crate) struct Tree<'a> {
     link_attributes: Vec<(usize, String, Vec<u8>)>,
     link_attribute_bytes: usize,
     attributes_kept: Option<bool>,
+    streams_kept: Option<bool>,
     entries: Vec<Entry>,
     budget: Budget,
     tracker: &'a Tracker<'a>,
@@ -205,6 +210,7 @@ pub(crate) fn extract(
         link_attributes: Vec::new(),
         link_attribute_bytes: 0,
         attributes_kept: None,
+        streams_kept: None,
         entries: Vec::new(),
         budget: Budget {
             limit: options.max_output_bytes,
@@ -643,6 +649,58 @@ impl<'a> Tree<'a> {
                 Ok(())
             }
         }
+    }
+
+    pub(crate) fn writes_to_disk(&self) -> bool {
+        self.root.is_some()
+    }
+
+    pub(crate) fn stream(
+        &mut self,
+        written: Option<&mut Written>,
+        name: &str,
+        size: u64,
+        data: &mut dyn Read,
+    ) -> Result<()> {
+        let Some(written) = written else {
+            return Ok(());
+        };
+        let format = self.format;
+        let skipped = !self.metadata.restores()
+            && name.eq_ignore_ascii_case(crate::ntfs_streams::MARK_OF_THE_WEB);
+        let (Some(root), Some(file), false) = (self.root, &written.file, skipped) else {
+            return self.copy(&mut NoHoles(data), size, false, None);
+        };
+        let kept = match self.streams_kept {
+            Some(kept) => kept,
+            None => *self
+                .streams_kept
+                .insert(crate::ntfs_streams::destination_keeps_streams(root)?),
+        };
+        ensure!(
+            kept,
+            "{format} entry {:?} has alternate data streams, and the file system of {} keeps none",
+            written.placed,
+            root.display()
+        );
+        self.budget.charge(size)?;
+        if !written.unlocked {
+            written.locked_permissions = crate::ntfs_streams::make_writable(file)?;
+            written.unlocked = true;
+        }
+        let what = format!("stream {name:?} of {format} entry {:?}", written.placed);
+        let mut stream = crate::ntfs_streams::create_stream(&root.join(&written.placed), name)
+            .with_context(|| format!("cannot create {what}"))?;
+        self.copy(
+            &mut NoHoles(data),
+            size,
+            true,
+            Some(&mut |bytes| {
+                stream
+                    .write_all(bytes)
+                    .with_context(|| format!("cannot write {what}"))
+            }),
+        )
     }
 
     pub(crate) fn symlink(&mut self, raw: &str, target: String) -> Result<()> {
