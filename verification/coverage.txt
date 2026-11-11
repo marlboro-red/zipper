@@ -3241,6 +3241,7 @@ item = src/framing.rs | impl Default for Adler32 {
 item = src/framing.rs | const ADLER_MODULUS:
 item = src/framing.rs | const ADLER_BLOCK:
 item = src/framing.rs | const ADLER_RUN:
+item = src/framing.rs | const _:
 item = src/framing.rs | const ADLER_BYTES_BEFORE_A_REDUCTION:
 item = src/framing.rs | impl Adler32 {
 item = src/framing.rs | pub(crate) fn adler32(
