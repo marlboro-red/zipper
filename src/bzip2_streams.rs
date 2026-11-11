@@ -1,6 +1,6 @@
 use crate::bzip2::{
-    BYTES_PER_LEVEL, Block, END_BITS, MAGIC_BITS, Magic, MsbFirstCrc32, Refusal, Runs, bits48,
-    decode_block, magic_at, next_magic,
+    BYTES_PER_LEVEL, Block, END_BITS, MAGIC_BITS, Magic, MsbFirstCrc32, Refusal, Runs, Walk,
+    bits48, decode_block, magic_at, next_magic,
 };
 use std::collections::VecDeque;
 use std::io::{BufRead, Read};
@@ -14,12 +14,15 @@ const USUAL_BLOCK_INPUT: u64 = 1024 * 1024;
 const READ_STEP: usize = 256 * 1024;
 const MOST_WORKERS: usize = 16;
 const DECODED_IN_PLACE_BELOW: usize = 8 * 1024;
+const MOST_DECODERS_WALKING_FROM_BOTH_ENDS: usize = 4;
 const WORK_PER_BLOCK_BYTE: u64 = 6;
 const LARGEST_BLOCK_WORK: u64 = WORK_PER_BLOCK_BYTE * 9 * BYTES_PER_LEVEL as u64;
 const PER_WORKER: u64 = 2 * USUAL_BLOCK_INPUT + LARGEST_BLOCK_WORK;
 const FREED_WORK_KEPT_RESIDENT: u64 = LARGEST_BLOCK_WORK;
-const BESIDE_THE_WORKERS: u64 = 3 * LONGEST_BLOCK as u64 + 2 * LARGEST_BLOCK_WORK;
+const SECOND_WALK: u64 = 4 * 9 * BYTES_PER_LEVEL as u64;
+const BESIDE_THE_WORKERS: u64 = 3 * LONGEST_BLOCK as u64 + 2 * LARGEST_BLOCK_WORK + SECOND_WALK;
 
+#[cfg(test)]
 pub(crate) struct Bzip2Streams<R: BufRead> {
     decoder: Option<bzip2::bufread::BzDecoder<R>>,
     streams: u64,
@@ -32,6 +35,7 @@ fn too_many_streams() -> std::io::Error {
     ))
 }
 
+#[cfg(test)]
 impl<R: BufRead> Read for Bzip2Streams<R> {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         while let Some(decoder) = &mut self.decoder {
@@ -54,6 +58,7 @@ impl<R: BufRead> Read for Bzip2Streams<R> {
     }
 }
 
+#[cfg(test)]
 impl<R: BufRead> Bzip2Streams<R> {
     pub(crate) fn new(input: R) -> Self {
         Self {
@@ -75,11 +80,21 @@ pub(crate) fn memory(threads: usize) -> u64 {
 pub(crate) fn many_streams<'a, R: BufRead + Send + 'a>(
     input: R,
     threads: usize,
+    decoders_at_once: usize,
 ) -> Box<dyn Read + Send + 'a> {
-    match block_workers(threads) {
-        0 => Box::new(Bzip2Streams::new(input)),
-        workers => Box::new(ParallelBzip2::new(input, workers)),
-    }
+    Box::new(ParallelBzip2::new(
+        input,
+        block_workers(threads),
+        AfterAStream::AnotherMayStart,
+        decoders_at_once,
+    ))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AfterAStream {
+    AnotherMayStart,
+    NothingMayFollow,
+    TheRestIsLeft,
 }
 
 enum Stage {
@@ -131,6 +146,9 @@ struct Front {
 
 pub(crate) struct ParallelBzip2<R: BufRead> {
     input: R,
+    after_a_stream: AfterAStream,
+    on_threads: bool,
+    walk_in_place: Walk,
     workers: usize,
     budget: u64,
     charged: u64,
@@ -184,9 +202,22 @@ fn stream_level(header: &[u8]) -> Option<u8> {
 }
 
 impl<R: BufRead> ParallelBzip2<R> {
-    pub(crate) fn new(input: R, workers: usize) -> Self {
+    pub(crate) fn new(
+        input: R,
+        workers: usize,
+        after_a_stream: AfterAStream,
+        decoders_at_once: usize,
+    ) -> Self {
+        let few = workers == 0 && decoders_at_once <= MOST_DECODERS_WALKING_FROM_BOTH_ENDS;
         ParallelBzip2 {
             input,
+            after_a_stream,
+            on_threads: workers > 0,
+            walk_in_place: if few {
+                Walk::FromBothEnds
+            } else {
+                Walk::Onward
+            },
             workers: workers.max(1),
             budget: workers.max(1) as u64 * PER_WORKER,
             charged: 0,
@@ -286,7 +317,9 @@ impl<R: BufRead> ParallelBzip2<R> {
         while self.blocks_queued < self.workers && self.holds(MAGIC_BITS)? {
             let started = match magic_at(&self.held, self.held_bit(self.cursor)) {
                 Some(Magic::Block) => self.start_block()?,
-                Some(Magic::End) => self.queue_the_end_before_another_stream()?,
+                Some(Magic::End) if self.after_a_stream == AfterAStream::AnotherMayStart => {
+                    self.queue_the_end_before_another_stream()?
+                }
                 _ => false,
             };
             if !started {
@@ -307,24 +340,26 @@ impl<R: BufRead> ParallelBzip2<R> {
         if self.blocks_queued > 0 && self.charged + charge > self.budget {
             return Ok(false);
         }
-        let bytes = bytes.to_vec();
         let (start, limit, level) = (
             self.cursor - first_byte * 8,
             cut - first_byte * 8,
             self.level,
         );
         let (sender, decoded) = sync_channel(1);
-        let thread = if bytes.len() < DECODED_IN_PLACE_BELOW {
-            let _ = sender.send(decode_block(&bytes, start, limit, level));
+        let thread = if !self.on_threads {
+            let _ = sender.send(decode_block(bytes, start, limit, level, self.walk_in_place));
+            None
+        } else if bytes.len() < DECODED_IN_PLACE_BELOW {
+            let _ = sender.send(decode_block(bytes, start, limit, level, Walk::Onward));
             None
         } else {
-            let (theirs, sent) = (Arc::new(bytes), sender.clone());
+            let (theirs, sent) = (Arc::new(bytes.to_vec()), sender.clone());
             let ours = Arc::clone(&theirs);
             let spawned = std::thread::Builder::new().spawn(move || {
-                let _ = sent.send(decode_block(&theirs, start, limit, level));
+                let _ = sent.send(decode_block(&theirs, start, limit, level, Walk::Onward));
             });
             if spawned.is_err() {
-                let _ = sender.send(decode_block(&ours, start, limit, level));
+                let _ = sender.send(decode_block(&ours, start, limit, level, Walk::Onward));
             }
             spawned.ok()
         };
@@ -418,7 +453,10 @@ impl<R: BufRead> ParallelBzip2<R> {
                     Ok(block) if block.end == cut - queued.first_byte * 8 => {
                         self.emit(block);
                         self.release_what_is_confirmed();
-                        self.start_blocks()
+                        if self.on_threads {
+                            self.start_blocks()?;
+                        }
+                        Ok(())
                     }
                     Ok(_) => Err(damaged(UNMARKED_END)),
                     Err(Refusal::Damaged(message)) => Err(damaged(message)),
@@ -458,7 +496,7 @@ impl<R: BufRead> ParallelBzip2<R> {
             let start = self.held_bit(self.cursor);
             let longest = start + LONGEST_BLOCK as u64 * 8;
             let limit = longest.min(held as u64 * 8);
-            match decode_block(&self.held, start, limit, self.level) {
+            match decode_block(&self.held, start, limit, self.level, self.walk_in_place) {
                 Ok(block) => {
                     self.cursor = block.end + self.held_at * 8;
                     self.searched = self.cursor;
@@ -500,8 +538,17 @@ impl<R: BufRead> ParallelBzip2<R> {
             self.stage = Stage::Finished;
             return Ok(());
         }
-        self.stage = Stage::Header;
-        self.another_stream_may_start()
+        match self.after_a_stream {
+            AfterAStream::AnotherMayStart => {
+                self.stage = Stage::Header;
+                self.another_stream_may_start()
+            }
+            AfterAStream::NothingMayFollow => Err(damaged("data follows the bzip2 stream")),
+            AfterAStream::TheRestIsLeft => {
+                self.stage = Stage::Finished;
+                Ok(())
+            }
+        }
     }
 
     fn read_front(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
@@ -571,6 +618,8 @@ mod tests {
         ParallelBzip2::new(
             std::io::BufReader::with_capacity(input_step, stream),
             workers,
+            AfterAStream::AnotherMayStart,
+            1 + workers % 8,
         )
     }
 
@@ -609,7 +658,7 @@ mod tests {
         let mut noise = Noise(21);
         for kind in 0..6 {
             let (data, stream) = four_blocks(kind, &mut noise);
-            for workers in [1, 2, 3, 8] {
+            for workers in [0, 1, 2, 3, 8] {
                 for (input_step, read_step) in [(13, 1 << 17), (4096, 4096), (1 << 20, 333)] {
                     let decoded = parallel(&stream, workers, input_step, read_step);
                     assert!(
@@ -659,7 +708,7 @@ mod tests {
                 .collect(),
         );
         for (case, stream) in cases.iter().enumerate() {
-            for workers in [1, 3] {
+            for workers in [0, 1, 3] {
                 assert_eq!(
                     parallel(stream, workers, 4096, 4096).ok(),
                     serial(stream),
@@ -681,7 +730,7 @@ mod tests {
                 let again = with_spare_bits(&once, 3 - block, Spare::Selectors, &magic_bits(magic));
                 for planted in [&once, &again] {
                     assert_eq!(serial(planted).as_ref(), Some(&data));
-                    for workers in [1, 2, 4] {
+                    for workers in [0, 1, 2, 4] {
                         for input_step in [29, 1 << 20] {
                             let decoded = parallel(planted, workers, input_step, 65536);
                             assert!(
@@ -705,12 +754,45 @@ mod tests {
             for extra in [1, 8, 13, 4000] {
                 let padded = with_bits_after_block(&stream, block, &vec![false; extra]);
                 assert_eq!(serial(&padded), None);
-                for workers in [1, 3] {
+                for workers in [0, 1, 3] {
                     let decoded = parallel(&padded, workers, 4096, 65536);
                     assert!(
                         decoded.is_err(),
                         "block {block} extra {extra} workers {workers}"
                     );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn one_stream_alone_refuses_or_leaves_what_follows_it_as_the_bzip2_crate_does() {
+        let mut noise = Noise(31);
+        let (data, stream) = four_blocks(1, &mut noise);
+        let small = compress(&sample(1, 5000, &mut noise), 9);
+        for (follows, tail) in [
+            (false, &b""[..]),
+            (true, b"\0"),
+            (true, &small),
+            (true, b"BZ"),
+        ] {
+            let whole = [&stream[..], tail].concat();
+            let mut crate_input = &whole[..];
+            let mut crate_decoded = Vec::new();
+            bzip2::bufread::BzDecoder::new(&mut crate_input)
+                .read_to_end(&mut crate_decoded)
+                .unwrap();
+            assert!(crate_decoded == data && crate_input.is_empty() != follows);
+            for workers in [0, 2] {
+                for (after, refused) in [
+                    (AfterAStream::NothingMayFollow, follows),
+                    (AfterAStream::TheRestIsLeft, false),
+                ] {
+                    let mut reader = ParallelBzip2::new(&whole[..], workers, after, 1);
+                    let mut decoded = Vec::new();
+                    let outcome = reader.read_to_end(&mut decoded);
+                    assert_eq!(outcome.is_err(), refused, "{workers} {follows}");
+                    assert!(refused || decoded == data, "{workers} {follows}");
                 }
             }
         }
@@ -732,7 +814,7 @@ mod tests {
                 .count();
             assert_eq!(whole_byte_ends, 1, "the planted end, not the true one");
             assert_eq!(serial(&stream).as_ref(), Some(&data));
-            for workers in [1, 3] {
+            for workers in [0, 1, 3] {
                 let decoded = parallel(&stream, workers, 1 << 16, 65536);
                 assert!(
                     decoded.as_ref().ok() == Some(&data),
@@ -763,7 +845,7 @@ mod tests {
             .filter(|cut| *cut < 400 || *cut + 400 > stream.len() || cut % 37 == 0);
         for cut in cuts {
             assert_eq!(serial(&stream[..cut]), None);
-            for workers in [1, 3] {
+            for workers in [0, 1, 3] {
                 let decoded = parallel(&stream[..cut], workers, 4096, 65536);
                 assert!(decoded.is_err(), "cut {cut} workers {workers}");
             }
@@ -780,7 +862,7 @@ mod tests {
             let mut flipped = stream.clone();
             flipped[bit / 8] ^= 0x80 >> (bit % 8);
             let expected = serial(&flipped);
-            for workers in [1, 3] {
+            for workers in [0, 1, 3] {
                 assert_eq!(
                     parallel(&flipped, workers, 4096, 65536).ok(),
                     expected,
@@ -801,7 +883,11 @@ mod tests {
                 stream.clone()
             };
             let limit = stream.len() as u64 * 8;
-            let block_bits = decode_block(&stream, 32, limit, 1).ok().unwrap().end - 32;
+            let block_bits = decode_block(&stream, 32, limit, 1, Walk::Onward)
+                .ok()
+                .unwrap()
+                .end
+                - 32;
             let room = LONGEST_BLOCK as u64 * 8 - block_bits;
             let steps = |bits: u64| {
                 std::iter::repeat_n([true, false, true, true], (bits / 4) as usize)
@@ -811,7 +897,7 @@ mod tests {
             let fits = with_spare_bits(&stream, 0, Spare::LengthSteps, &steps(room));
             let too_long = with_spare_bits(&stream, 0, Spare::LengthSteps, &steps(room + 4));
             assert_eq!(serial(&too_long).as_ref(), Some(&data));
-            for workers in [1, 3] {
+            for workers in [0, 1, 3] {
                 let decoded = parallel(&fits, workers, 1 << 16, 65536);
                 assert!(decoded.ok().as_ref() == Some(&data), "{planted} {workers}");
                 let refused = parallel(&too_long, workers, 1 << 16, 65536);

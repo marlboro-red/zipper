@@ -120,7 +120,7 @@ Run them with `cargo test --release --lib bcj2`, then `cargo xtask verify-sync 7
 
 `byte_swap_reverses_every_whole_group_under_every_read_split`, under `[7z-byte-swap]`, checks the Swap2 and Swap4 reader on every length up to 13 bytes. The inner reader yields 1 to 6 bytes at a time, the caller reads 1 to 6, and the buffer holds 1, 4, 5, 7 or 64 bytes, 5,040 runs in all. Run it with `cargo test --release --lib byte_swap`, then `cargo xtask verify-sync 7z-byte-swap`.
 
-Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes blocks on several threads in `src/bzip2_streams.rs` sit under `[bzip2-blocks]`. The tar, single file, RPM and 7z readers use them with more than one thread, and one thread keeps the `bzip2` crate. The crate is the oracle of every test:
+Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes blocks on several threads in `src/bzip2_streams.rs` sit under `[bzip2-blocks]`. The tar, single file, RPM, 7z, ZIP, xar and DMG readers all use them, and with one thread the reader decodes each block in place. The `bzip2` crate is a test dependency only, and it is the oracle of every test:
 
 - `every_kind_of_data_at_every_level_decodes_as_the_bzip2_crate_does` covers six kinds of data at levels 1 to 9, from empty to several blocks.
 - `every_cut_and_many_bit_flips_decode_or_fail_as_the_bzip2_crate_does` cuts four streams at every length, or the last 600, and flips every one of the first 2,000 bits and 3,000 random ones. The decoder must give the crate's bytes or refuse when it refuses.
@@ -129,6 +129,7 @@ Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes b
 - `a_magic_inside_a_block_does_not_end_it` plants each magic in spare selectors of each block. `a_magic_planted_inside_any_block_is_passed_over_by_decoding_on` and `a_planted_stream_end_and_header_inside_a_block_start_no_stream` run those streams through the reader at 1 to 4 block threads.
 - `cut_and_flipped_streams_give_the_serial_bytes_or_are_refused_as_it_refuses` compares the reader with the one-thread reader on cuts and flips of one stream of three blocks and of three streams in a row.
 - `a_block_may_fill_the_longest_block_and_one_bit_more_is_refused` pads a block's first code length with steps up and down to exactly 4 MiB and to 4 bits more.
+- `one_stream_alone_refuses_or_leaves_what_follows_it_as_the_bzip2_crate_does` covers the two single-stream modes. ZIP and DMG refuse data after the stream, and xar leaves it.
 - `blocks_in_flight_stay_within_the_workers_and_their_memory` counts queued blocks and their charge after every read.
 - `the_lookup_decodes_every_code_as_the_bit_at_a_time_walk_does`, `moving_to_the_front_matches_a_rotation_at_every_index`, `used_bytes_are_the_set_bits_of_the_two_level_map`, `the_crc_is_the_bitwise_bzip2_crc_on_every_split` and `runs_expand_the_same_into_every_size_of_read` compare each kernel with a plain reference.
 - `tests/bzip2_blocks.rs` extracts every BZip2 fixture of the corpora and generated tar, 7z and ZIP archives at 1, 2, 4 and default threads, and compares the trees.
@@ -356,6 +357,9 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | A randomised BZip2 block is not unrandomised | `randomised_blocks_decode_as_the_bzip2_crate_does` fails |
 | The BZip2 lookup table stores a code length with its low bit flipped | `the_lookup_decodes_every_code_as_the_bit_at_a_time_walk_does` fails |
 | BZip2 move-to-front carries the wrong byte between its 16-byte words | `moving_to_the_front_matches_a_rotation_at_every_index` fails |
+| A single BZip2 stream accepts data after it where none may follow, or reads what xar leaves as another stream | `one_stream_alone_refuses_or_leaves_what_follows_it_as_the_bzip2_crate_does` fails, each time |
+| The walk from both ends trusts a broken cycle, or drops the middle byte of an odd block | the crate differential tests fail, each time |
+| The reader with no threads skips the 4 MiB block limit | `a_block_may_fill_the_longest_block_and_one_bit_more_is_refused` fails |
 | `Blocks.tla` keeps the cursor past a false cut, or takes a truncated front as whole | TLC reports a rule broken |
 | `Blocks.tla` drops the budget check, the worker check, the join at a false cut or the join on drop | TLC reports a rule broken, each time |
 | `Blocks.tla` takes a failed front, or finishes with blocks queued | TLC reports a rule broken, each time |

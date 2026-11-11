@@ -1131,7 +1131,12 @@ fn method_decoder<'a>(
             item.flags,
             item.entry.size,
         )),
-        BZIP2 => Box::new(bzip2::bufread::BzDecoder::new(input)),
+        BZIP2 => Box::new(crate::bzip2_streams::ParallelBzip2::new(
+            input,
+            0,
+            crate::bzip2_streams::AfterAStream::NothingMayFollow,
+            rayon::current_num_threads(),
+        )),
         #[cfg(feature = "zstd")]
         ZSTANDARD => Box::new(zstd::stream::read::Decoder::with_buffer(input)?.single_frame()),
         XZ => Box::new(crate::lzma::XzReader::new(input).single_stream()),

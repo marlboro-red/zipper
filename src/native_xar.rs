@@ -1025,7 +1025,12 @@ fn decoder<'a>(
     Ok(match encoding {
         Encoding::Stored => Box::new(input),
         Encoding::Zlib => Box::new(crate::framing::Reader::zlib(input)),
-        Encoding::Bzip2 => Box::new(bzip2::bufread::BzDecoder::new(input)),
+        Encoding::Bzip2 => Box::new(crate::bzip2_streams::ParallelBzip2::new(
+            input,
+            0,
+            crate::bzip2_streams::AfterAStream::TheRestIsLeft,
+            1,
+        )),
         Encoding::Lzma if !input.fill_buf()?.starts_with(&XZ_MAGIC) => {
             let mut head = [0u8; LZMA_ALONE_HEADER];
             read_exactly(&mut input, &mut head, "LZMA header")?;

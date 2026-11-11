@@ -903,16 +903,19 @@ fn decode(method: Method, packed: &[u8], output: &mut [u8]) -> Result<()> {
             );
         }
         Method::Bzip2 => {
-            let mut decoder = bzip2::Decompress::new(false);
-            let status = decoder
-                .decompress(packed, output)
-                .map_err(|error| anyhow::anyhow!("DMG bzip2 chunk is damaged: {error}"))?;
-            ensure!(
-                status == bzip2::Status::StreamEnd
-                    && decoder.total_out() == output.len() as u64
-                    && decoder.total_in() == packed.len() as u64,
-                "DMG bzip2 chunk does not fill its block exactly"
+            let mut decoder = crate::bzip2_streams::ParallelBzip2::new(
+                packed,
+                0,
+                crate::bzip2_streams::AfterAStream::NothingMayFollow,
+                rayon::current_num_threads(),
             );
+            let filled = decoder.read_exact(output).is_ok();
+            let ended = filled
+                && decoder
+                    .read(&mut [0])
+                    .map_err(|error| anyhow::anyhow!("DMG bzip2 chunk is damaged: {error}"))?
+                    == 0;
+            ensure!(ended, "DMG bzip2 chunk does not fill its block exactly");
         }
         Method::Xz => {
             let mut reader =

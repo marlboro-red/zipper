@@ -5,9 +5,21 @@ mod adc;
 mod base64;
 #[cfg(feature = "7z")]
 mod bcj2;
-#[cfg(any(feature = "7z", feature = "tar", feature = "zip"))]
+#[cfg(any(
+    feature = "7z",
+    feature = "tar",
+    feature = "zip",
+    feature = "dmg",
+    feature = "xar"
+))]
 mod bzip2;
-#[cfg(any(feature = "7z", feature = "tar", feature = "zip"))]
+#[cfg(any(
+    feature = "7z",
+    feature = "tar",
+    feature = "zip",
+    feature = "dmg",
+    feature = "xar"
+))]
 mod bzip2_streams;
 pub mod compat;
 pub mod counters;

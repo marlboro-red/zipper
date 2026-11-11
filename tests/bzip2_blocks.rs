@@ -81,6 +81,8 @@ fn every_bzip2_fixture_extracts_the_same_at_one_two_four_and_default_threads() {
         ("parity/archives/7z-bzip2.7z", None),
         ("parity/archives/rpm-bzip2.rpm", None),
         ("parity/archives/zip-bzip2.zip", None),
+        ("parity/archives/dmg-bzip2.dmg", None),
+        ("xar-corpus/bzip2.xar", None),
     ] {
         same_at_every_thread_count(&data.join(fixture), password);
     }

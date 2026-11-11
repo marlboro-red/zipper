@@ -30,7 +30,6 @@ const MAX_HEADER_LAYERS: usize = 4;
 const COPY_BUFFER: usize = 1024 * 1024;
 const SWAP_BUFFER: usize = 64 * 1024;
 const DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
-const BZIP2_DECODER_MEMORY: u64 = 4 * 1024 * 1024;
 const SEGMENT_BUDGET: u64 = 224 * 1024 * 1024;
 const PARALLEL_FOLDER_MIN: u64 = 8 * 1024 * 1024;
 const SEGMENT_MIN_OUTPUT: u64 = 8 * 1024 * 1024;
@@ -1619,10 +1618,7 @@ fn decoder_memory(folder: &Folder, segment_threads: usize) -> u64 {
     {
         Some((Ok(Method::Lzma | Method::Lzma2), coder)) => lzma_coder(coder, folder.size)
             .map_or(0, |coder| coder.memory(folder.size) + filter_buffers),
-        Some((Ok(Method::Bzip2), _)) if segments_possible => {
-            crate::bzip2_streams::memory(segment_threads)
-        }
-        Some((Ok(Method::Bzip2), _)) => BZIP2_DECODER_MEMORY,
+        Some((Ok(Method::Bzip2), _)) => crate::bzip2_streams::memory(segment_threads),
         Some((Ok(Method::Deflate64), _)) => {
             std::mem::size_of::<deflate64::InflaterManaged>() as u64
         }
@@ -1940,6 +1936,7 @@ fn folder_reader(
         [Method::Bzip2] => crate::bzip2_streams::many_streams(
             packed,
             segment_threads.map_or(1, |(_, threads)| threads),
+            rayon::current_num_threads(),
         ),
         [Method::Ppmd] => {
             let (order, memory) = ppmd_parameters(&folder.output_to_packed[0].properties)?;
