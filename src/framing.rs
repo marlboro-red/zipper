@@ -581,7 +581,7 @@ impl<R: BufRead> Read for Reader<R> {
         while self.held == 0 && matches!(self.stage, Stage::Header | Stage::Trailer) {
             self.step()?;
         }
-        if self.held == 0 && self.stage == Stage::Body {
+        if self.held == 0 && self.stage == Stage::Body && self.inflate.may_copy_stored() {
             let written = self
                 .stored_body(output)
                 .map_err(|error| self.failed_on(error))?;
@@ -1209,6 +1209,69 @@ mod tests {
                     panic!("{framing} interrupted at {interrupt_at}: {error}")
                 });
                 assert_eq!(bytes, expected, "{framing} interrupted at {interrupt_at}");
+            }
+        }
+    }
+
+    struct InterruptsEverySecondFill<'a> {
+        bytes: &'a [u8],
+        fills: usize,
+    }
+
+    impl Read for InterruptsEverySecondFill<'_> {
+        fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            let count = self.fill_buf()?.len().min(output.len());
+            output[..count].copy_from_slice(&self.bytes[..count]);
+            self.consume(count);
+            Ok(count)
+        }
+    }
+
+    impl BufRead for InterruptsEverySecondFill<'_> {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            self.fills += 1;
+            if self.fills.is_multiple_of(2) {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            Ok(self.bytes)
+        }
+
+        fn consume(&mut self, amount: usize) {
+            self.bytes = &self.bytes[amount..];
+        }
+    }
+
+    #[test]
+    fn a_source_that_interrupts_every_second_fill_still_makes_progress() {
+        let data = [sample(19, 40_000), vec![7; 70_000], sample(20, 3_000)].concat();
+        for level in [0, 6] {
+            for (framing, stream) in framed(&data, level) {
+                let input = InterruptsEverySecondFill {
+                    bytes: &stream,
+                    fills: 0,
+                };
+                let mut reader = match framing {
+                    "raw" => Reader::raw(input),
+                    "zlib" => Reader::zlib(input),
+                    _ => Reader::gzip(input),
+                };
+                let (mut bytes, mut piece) = (Vec::new(), vec![0u8; 4096]);
+                let mut interrupted_in_a_row = 0;
+                loop {
+                    match reader.read(&mut piece) {
+                        Ok(0) => break,
+                        Ok(count) => {
+                            bytes.extend_from_slice(&piece[..count]);
+                            interrupted_in_a_row = 0;
+                        }
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                            interrupted_in_a_row += 1;
+                            assert!(interrupted_in_a_row < 100, "{framing} level {level} stalls");
+                        }
+                        Err(error) => panic!("{framing} level {level}: {error}"),
+                    }
+                }
+                assert_eq!(bytes, data, "{framing} level {level}");
             }
         }
     }

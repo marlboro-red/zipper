@@ -868,6 +868,13 @@ impl<W: std::ops::DerefMut<Target = [u8]>> Inflate<W> {
         self.total_in
     }
 
+    pub(crate) fn may_copy_stored(&self) -> bool {
+        matches!(
+            self.state,
+            State::BlockHeader | State::StoredLength | State::Stored { .. }
+        )
+    }
+
     pub(crate) fn latest(&self, length: usize) -> &[u8] {
         &self.window[self.filled - length..self.filled]
     }
