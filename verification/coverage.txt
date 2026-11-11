@@ -3433,7 +3433,7 @@ item = src/zstandard.rs | fn block_header(
 item = src/zstandard.rs | mod proofs {
 
 [lp-fields]
-fingerprint = 0000000000000000
+fingerprint = 5cfed2cdf74eea32
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach lp-fields
 full-check = cargo kani --harness native_lp::proofs::
@@ -3492,7 +3492,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [uefi-fields]
-fingerprint = 0000000000000000
+fingerprint = 298099ba3729ca36
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach uefi-fields
 full-check = cargo kani --harness native_uefi::proofs::
