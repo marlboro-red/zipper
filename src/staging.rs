@@ -113,18 +113,45 @@ type Entry = (u64, u64);
 
 #[cfg(unix)]
 fn entry_key(root: &Path, entry: &walkdir::DirEntry) -> Entry {
-    use std::hash::{Hash, Hasher};
     use walkdir::DirEntryExt;
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    entry
-        .path()
-        .strip_prefix(root)
-        .unwrap_or(entry.path())
-        .hash(&mut hasher);
-    (entry.ino(), hasher.finish())
+    key(
+        entry.ino(),
+        entry.path().strip_prefix(root).unwrap_or(entry.path()),
+    )
 }
 
-const MOST_PARENTS_MADE_AGAIN: usize = 8;
+#[cfg(unix)]
+fn key(ino: u64, relative: &Path) -> Entry {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    relative.hash(&mut hasher);
+    (ino, hasher.finish())
+}
+
+const MOST_TIMES_A_PARENT_IS_MADE_AGAIN: usize = 64;
+
+enum MadeAgain {
+    Made,
+    Existed,
+    ParentVanished,
+}
+
+fn make_folder_again(placed: &Path) -> std::io::Result<MadeAgain> {
+    match fs::create_dir(placed) {
+        Ok(()) => Ok(MadeAgain::Made),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(MadeAgain::Existed),
+        Err(error) if parent_vanished(&error) => Ok(MadeAgain::ParentVanished),
+        Err(error) => Err(error),
+    }
+}
+
+fn parent_vanished(error: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    let invalid = rustix::io::Errno::from_io_error(error) == Some(rustix::io::Errno::INVAL);
+    #[cfg(not(unix))]
+    let invalid = false;
+    invalid || error.kind() == std::io::ErrorKind::NotFound
+}
 
 pub(crate) struct Staging {
     temp: std::sync::Mutex<Option<tempfile::TempDir>>,
@@ -334,16 +361,13 @@ impl Staging {
         let mut aside = None;
         let mut spellings = Spellings::new();
         let mut index = 0;
-        let mut parents_made_again = 0;
+        let mut parents_made_again = Vec::new();
         while let Some(step) = steps.get(index) {
             check()?;
             match step {
                 Step::Create(path) => {
                     if let Err(error) = Self::create(staged(path), placed(path), done) {
-                        if parents_made_again < MOST_PARENTS_MADE_AGAIN
-                            && self.make_vanished_parents_again(path, done)?
-                        {
-                            parents_made_again += 1;
+                        if self.make_vanished_parents_again(path, done, &mut parents_made_again)? {
                             continue;
                         }
                         let Some(merged) = self.plan_merge_into_appeared_folder(path) else {
@@ -373,38 +397,50 @@ impl Staging {
             }
             after_each(step);
             index += 1;
-            parents_made_again = 0;
+            parents_made_again.clear();
         }
         Ok(steps)
     }
 
-    fn make_vanished_parents_again(&self, path: &Path, done: &mut Vec<Done>) -> Result<bool> {
+    fn make_vanished_parents_again(
+        &self,
+        path: &Path,
+        done: &mut Vec<Done>,
+        times_made: &mut Vec<usize>,
+    ) -> Result<bool> {
         let mut parents: Vec<&Path> = path
             .ancestors()
             .skip(1)
             .filter(|parent| !parent.as_os_str().is_empty())
             .collect();
         parents.reverse();
+        times_made.resize(parents.len(), 0);
         let mut made = false;
-        for parent in parents {
+        let mut depth = 0;
+        while let Some(parent) = parents.get(depth) {
             let placed = self.destination.join(parent);
             match fs::symlink_metadata(&placed) {
-                Ok(metadata) if metadata.is_dir() => continue,
+                Ok(metadata) if metadata.is_dir() => {
+                    depth += 1;
+                    continue;
+                }
                 Ok(_) => return Ok(false),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => {
                     return Err(error).with_context(|| format!("cannot read {}", placed.display()));
                 }
             }
-            match fs::create_dir(&placed) {
-                Ok(()) => {
-                    done.push(Done::MadeAgain(placed));
-                    made = true;
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => made = true,
-                Err(error) => {
-                    return Err(error).with_context(|| format!("cannot make {}", placed.display()));
-                }
+            if times_made[depth] == MOST_TIMES_A_PARENT_IS_MADE_AGAIN {
+                return Ok(false);
+            }
+            times_made[depth] += 1;
+            made = true;
+            match make_folder_again(&placed)
+                .with_context(|| format!("cannot make {}", placed.display()))?
+            {
+                MadeAgain::Made => done.push(Done::MadeAgain(placed)),
+                MadeAgain::Existed => {}
+                MadeAgain::ParentVanished => depth = 0,
             }
         }
         Ok(made)
@@ -534,17 +570,9 @@ impl Staging {
 
     #[cfg(unix)]
     fn unlock_created(&self, done: &[Done]) {
-        use std::os::unix::fs::PermissionsExt;
         for step in done {
             if let Done::Folder { to, ours, .. } = step {
-                for entry in only_ours(to, ours, false).flatten() {
-                    if let Ok(metadata) = entry.metadata()
-                        && metadata.is_dir()
-                    {
-                        let mode = metadata.permissions().mode() | 0o700;
-                        let _ = fs::set_permissions(entry.path(), fs::Permissions::from_mode(mode));
-                    }
-                }
+                unlock_only_ours(to, to, ours);
             }
         }
     }
@@ -576,7 +604,13 @@ impl Staging {
                                 .with_context(|| format!("cannot swap {} back", placed.display()))
                         }),
                         Done::MadeAgain(folder) => match fs::remove_dir(folder) {
-                            Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                            Err(error)
+                                if [
+                                    std::io::ErrorKind::DirectoryNotEmpty,
+                                    std::io::ErrorKind::NotFound,
+                                ]
+                                .contains(&error.kind()) =>
+                            {
                                 Ok(())
                             }
                             removed => removed
@@ -629,6 +663,24 @@ impl Staging {
             left.join(", "),
             self.root.display()
         ))
+    }
+}
+
+#[cfg(unix)]
+fn unlock_only_ours(root: &Path, folder: &Path, ours: &HashSet<Entry>) {
+    use std::os::unix::fs::{DirEntryExt, PermissionsExt};
+    if let Ok(metadata) = fs::symlink_metadata(folder) {
+        let mode = metadata.permissions().mode() | 0o700;
+        let _ = fs::set_permissions(folder, fs::Permissions::from_mode(mode));
+    }
+    for entry in fs::read_dir(folder).into_iter().flatten().flatten() {
+        let path = entry.path();
+        let relative = path.strip_prefix(root).unwrap_or(&path);
+        if entry.file_type().is_ok_and(|kind| kind.is_dir())
+            && ours.contains(&key(entry.ino(), relative))
+        {
+            unlock_only_ours(root, &path, ours);
+        }
     }
 }
 
@@ -1338,11 +1390,29 @@ mod tests {
         assert_eq!(fs::read(merge.destination.join("x")).unwrap(), b"old x");
     }
 
+    #[test]
+    fn a_parent_that_vanishes_while_its_child_is_made_is_reported_as_vanished() {
+        let root = tempfile::tempdir().unwrap();
+        let child = root.path().join("gone/child");
+        assert!(matches!(
+            make_folder_again(&child),
+            Ok(MadeAgain::ParentVanished)
+        ));
+        assert!(matches!(
+            make_folder_again(&root.path().join("here")),
+            Ok(MadeAgain::Made)
+        ));
+        assert!(matches!(
+            make_folder_again(&root.path().join("here")),
+            Ok(MadeAgain::Existed)
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn an_unlock_for_cleanup_leaves_the_modes_of_another_extraction_folders() {
         let merge = merge();
-        fs::create_dir(merge.staging.path().join("d/h")).unwrap();
+        fs::create_dir_all(merge.staging.path().join("d/h/k")).unwrap();
         let steps = vec![Step::Create("d".into())];
         let mut done = Vec::new();
         merge
@@ -1352,7 +1422,8 @@ mod tests {
                 set_mode(&merge.destination.join("d/other"), 0o555);
             })
             .unwrap();
-        set_mode(&merge.destination.join("d/h"), 0o555);
+        set_mode(&merge.destination.join("d/h/k"), 0o300);
+        set_mode(&merge.destination.join("d/h"), 0o300);
         merge.staging.unlock_created(&done);
         let mode = |path: &str| {
             use std::os::unix::fs::PermissionsExt;
@@ -1362,7 +1433,8 @@ mod tests {
                 .mode()
                 & 0o777
         };
-        assert_eq!(mode("d/h"), 0o755);
+        assert_eq!(mode("d/h"), 0o700);
+        assert_eq!(mode("d/h/k"), 0o700);
         assert_eq!(mode("d/other"), 0o555);
         set_mode(&merge.destination.join("d/other"), 0o755);
     }

@@ -16,7 +16,7 @@ Several `--overwrite` extractions can run at once into one destination folder on
 The archives may share folder names, such as `bin/` and `lib/`, but no file path.
 
 - No run fails because another run created a shared folder first. A run that finds a folder another run created after its plan merges into that folder.
-- No run fails because another run's undo removed a shared folder. A run that finds such a folder gone makes it again and continues, and its own undo removes it again only if it is then empty.
+- No run fails because another run's undo removed a shared folder. A run that finds such a folder gone makes it again and continues, and its own undo removes it again only if it is then empty. For each file it places, a run makes each parent folder again at most 64 times. A run that needs more fails with the error of its last rename and undoes its work.
 - Every run that succeeds has published every one of its files with the archive's bytes.
 - No hidden `.zipper-` folder is left after a run that succeeds or fails, unless an undo fails as the usage page describes.
 - A run that fails before publication, such as one with a damaged archive, changes nothing in the destination. The other runs are not affected.
