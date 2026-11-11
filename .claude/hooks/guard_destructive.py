@@ -108,6 +108,18 @@ PIPED_CHECK_THEN_CONTINUE = re.compile(
     r"cargo\s+xtask\s+[a-z-]+[^|;&\n]*\|\s*(tail|head|grep|sed|cut)\b[^;&\n]*&&")
 
 
+CHECK_THEN_SEMICOLON_THEN_PUBLISH = re.compile(
+    r"xtask(?:\s+--)?\s+(?:gate|lint-[a-z0-9-]+|verify|check-minimums|format-tests)\b[^\n;&|]*;(?!\s*then\b)"
+    r"[^\n]*?\b(?:git\s+commit|git\s+push|xtask\s+ship)\b")
+
+
+def check_semicolon_checks(command):
+    if CHECK_THEN_SEMICOLON_THEN_PUBLISH.search(re.sub(r"\d*>&\d+|&>", " ", command)):
+        deny("a `cargo xtask` check followed by `;` lets the commit, push or ship after it run when the check "
+             "fails. On 11 November a record was committed after `lint-docs` failed this way. Join them with `&&`, "
+             "or put the check in an `if`.")
+
+
 def check_piped_checks(command):
     unredirected = re.sub(r"\d*>&\d+|&>", " ", command)
     if PIPED_CHECK_THEN_CONTINUE.search(unredirected) and "pipefail" not in command:
@@ -131,6 +143,7 @@ def check_polling_loops(command):
 def check(command, cwd, depth=0):
     if depth == 0:
         check_piped_checks(command)
+        check_semicolon_checks(command)
         check_polling_loops(command)
     try:
         words = tokens(command)

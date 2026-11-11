@@ -54,6 +54,25 @@ class Guard(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(denied(command), "&&" in command.split("|", 1)[1].split(";")[0], command)
 
+    def test_blocks_a_check_whose_failure_a_semicolon_ignores(self):
+        for command in [
+            'cargo run -q -p xtask -- lint-docs; echo "docs $?"; git add benchmarks && git commit -q -m x',
+            "cargo xtask gate fast > log 2>&1; cargo xtask ship",
+            "cargo xtask lint-commits; git push origin HEAD",
+        ]:
+            with self.subTest(command=command):
+                self.assertTrue(denied(command))
+
+    def test_allows_a_check_that_guards_what_follows(self):
+        for command in [
+            "if cargo run -q -p xtask -- lint-docs; then git add docs && git commit -m x; fi",
+            "cargo xtask lint-docs && git commit -m x",
+            "cargo xtask gate fast > log 2>&1; tail -3 log",
+            'cargo run -q -p xtask -- lint-docs; echo "docs $?"',
+        ]:
+            with self.subTest(command=command):
+                self.assertFalse(denied(command))
+
     def test_blocks_a_loop_that_sleeps_until_work_finishes(self):
         for command in [
             "until grep -q '^rc=' /tmp/x/sync.out; do sleep 20; done; cat /tmp/x/sync.out",

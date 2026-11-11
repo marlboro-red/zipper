@@ -109,6 +109,48 @@ fn cargo_with(args: &[&str], envs: &[(&str, &str)]) -> Result<()> {
 
 const CI_APPEAR_ATTEMPTS: u32 = 24;
 const CI_APPEAR_INTERVAL: Duration = Duration::from_secs(5);
+const NETWORK_ATTEMPTS: u32 = 4;
+const NETWORK_BACKOFF: Duration = Duration::from_secs(15);
+const TRANSIENT_NETWORK_ERRORS: &[&str] = &[
+    "HTTP 5",
+    "Could not resolve host",
+    "Recv failure",
+    "unable to access",
+    "Connection reset",
+    "Connection refused",
+    "timed out",
+    "Can't assign requested address",
+    "error connecting to api.github.com",
+];
+
+fn is_transient_network_error(message: &str) -> bool {
+    TRANSIENT_NETWORK_ERRORS
+        .iter()
+        .any(|error| message.contains(error))
+}
+
+fn with_network_retries<T>(what: &str, mut attempt: impl FnMut() -> Result<T>) -> Result<T> {
+    let mut tried = 1;
+    loop {
+        match attempt() {
+            Err(error)
+                if tried < NETWORK_ATTEMPTS
+                    && is_transient_network_error(&format!("{error:#}")) =>
+            {
+                eprintln!(
+                    "xtask: {what} hit a network error, retrying ({tried} of {NETWORK_ATTEMPTS}): {error:#}"
+                );
+                std::thread::sleep(NETWORK_BACKOFF * tried);
+                tried += 1;
+            }
+            outcome => return outcome,
+        }
+    }
+}
+
+fn github(args: &[&str]) -> Result<String> {
+    with_network_retries("gh", || output("gh", args))
+}
 
 fn output(program: &str, args: &[&str]) -> Result<String> {
     let output = Command::new(program)
@@ -139,19 +181,16 @@ fn ci_run(head: &str) -> Result<String> {
     );
     let mut run = String::new();
     for _ in 0..CI_APPEAR_ATTEMPTS {
-        run = output(
-            "gh",
-            &[
-                "run",
-                "list",
-                "--commit",
-                head,
-                "--json",
-                "databaseId",
-                "--jq",
-                ".[0].databaseId // empty",
-            ],
-        )?;
+        run = github(&[
+            "run",
+            "list",
+            "--commit",
+            head,
+            "--json",
+            "databaseId",
+            "--jq",
+            ".[0].databaseId // empty",
+        ])?;
         if !run.is_empty() {
             break;
         }
@@ -162,16 +201,28 @@ fn ci_run(head: &str) -> Result<String> {
 }
 
 fn watch_ci_run(run: &str, head: &str) -> Result<()> {
-    let watched = Command::new("gh")
-        .current_dir(root())
-        .args(["run", "watch", run, "--exit-status", "--interval", "15"])
-        .stdout(std::process::Stdio::null())
-        .status()?;
-    println!(
-        "{}",
-        output(
-            "gh",
-            &[
+    for _ in 0..NETWORK_ATTEMPTS {
+        let _ = Command::new("gh")
+            .current_dir(root())
+            .args(["run", "watch", run, "--interval", "15"])
+            .stdout(std::process::Stdio::null())
+            .status()?;
+        let state = github(&[
+            "run",
+            "view",
+            run,
+            "--json",
+            "status,conclusion",
+            "--jq",
+            r#""\(.status) \(.conclusion)""#,
+        ])?;
+        if !state.starts_with("completed") {
+            eprintln!("xtask: watching CI run {run} stopped while it was {state}; watching again");
+            continue;
+        }
+        println!(
+            "{}",
+            github(&[
                 "run",
                 "view",
                 run,
@@ -179,11 +230,15 @@ fn watch_ci_run(run: &str, head: &str) -> Result<()> {
                 "conclusion,jobs",
                 "--jq",
                 r#""run \(.conclusion)", (.jobs[] | "\(.name) \(.conclusion)")"#
-            ]
-        )?
-    );
-    ensure!(watched.success(), "CI run {run} for {head} failed");
-    Ok(())
+            ])?
+        );
+        ensure!(
+            state == "completed success",
+            "CI run {run} for {head} failed"
+        );
+        return Ok(());
+    }
+    bail!("CI run {run} for {head} did not complete while watched {NETWORK_ATTEMPTS} times")
 }
 
 fn release_checks() -> Result<()> {
@@ -203,16 +258,7 @@ fn ship() -> Result<()> {
     let head = output("git", &["rev-parse", "HEAD"])?;
     let branch = format!("ci/{}", &head[..12]);
     let push = |args: &[&str]| -> Result<()> {
-        let status = Command::new("git")
-            .current_dir(root())
-            .args(args)
-            .status()?;
-        ensure!(
-            status.success(),
-            "git {} exited with {status}",
-            args.join(" ")
-        );
-        Ok(())
+        with_network_retries("git push", || output("git", args).map(drop))
     };
     push(&[
         "push",
@@ -227,8 +273,7 @@ fn ship() -> Result<()> {
             "linux" => "ubuntu",
             other => other,
         };
-        let jobs = output(
-            "gh",
+        let jobs = github(
             &["run", "view", &run, "--json", "jobs", "--jq",
               r#".jobs[] | "\(.name)\t\(.conclusion)\t\(.steps | length)""#],
         )?;
@@ -1030,5 +1075,41 @@ mod cargo_command_tests {
             std::ffi::OsStr::new("ZIPPER_X"),
             Some(std::ffi::OsStr::new("1"))
         )));
+    }
+}
+
+#[cfg(test)]
+mod network_retry_tests {
+    use super::{is_transient_network_error, with_network_retries};
+    use std::cell::Cell;
+
+    #[test]
+    fn the_network_errors_seen_on_11_november_are_retried_and_a_failed_run_is_not() {
+        for seen in [
+            "gh run view exited with exit status: 1: failed to get jobs: HTTP 502: Server Error (https://api.github.com/repos/o/r/actions/runs/1/jobs?per_page=100)",
+            "git push exited with exit status: 128: fatal: unable to access 'https://github.com/o/r/': Could not resolve host: github.com",
+            "git push exited with exit status: 128: fatal: unable to access 'https://github.com/o/r/': Recv failure: Can't assign requested address",
+            "error connecting to api.github.com",
+        ] {
+            assert!(is_transient_network_error(seen), "{seen}");
+        }
+        for failure in [
+            "CI run 42 for abc failed",
+            "git push exited with exit status: 1: ! [rejected] HEAD -> main (non-fast-forward)",
+            "gh run list exited with exit status: 1: HTTP 404: Not Found",
+        ] {
+            assert!(!is_transient_network_error(failure), "{failure}");
+        }
+    }
+
+    #[test]
+    fn a_rejected_push_is_tried_once() {
+        let tries = Cell::new(0);
+        let outcome: anyhow::Result<()> = with_network_retries("push", || {
+            tries.set(tries.get() + 1);
+            anyhow::bail!("! [rejected] non-fast-forward")
+        });
+        assert!(outcome.is_err());
+        assert_eq!(tries.get(), 1);
     }
 }
