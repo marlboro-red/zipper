@@ -50,7 +50,7 @@ item = src/native_7z.rs | pub fn read_archive(
 
 [progress-callback]
 skill = .claude/skills/zipper-verify-progress/SKILL.md
-fingerprint = 496ff9718d569f90
+fingerprint = df30339cfd73390a
 full-check = python3 scripts/check_model.py verification/progress-callback MCCallback.tla:callback.cfg
 item = src/progress.rs | pub struct Control<'a> {
 item = src/progress.rs | pub(crate) struct Tracker<'a> {
@@ -84,7 +84,7 @@ item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
 skill = .claude/skills/zipper-verify-zip-budget/SKILL.md
-fingerprint = a034025d2c09613d
+fingerprint = d1cf1822c65bc877
 full-check = python3 scripts/check_model.py verification/zip-decoder-budget MCZip.tla:zip.cfg
 item = src/native_zip.rs | const ZIP_DECODER_MEMORY:
 item = src/native_zip.rs | fn stream_entry(
@@ -3163,7 +3163,7 @@ item = src/bzip2.rs | mod proofs {
 
 [bzip2-blocks]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 1f0fb4066cbcacca
+fingerprint = afe721f829df76b9
 full-check = python3 scripts/check_model.py verification/bzip2-blocks MCBlocks.tla:blocks.cfg MCBlocks.tla:no-budget.cfg
 full-check = cargo test --release --lib bzip2
 full-check = cargo test --release --test bzip2_blocks
