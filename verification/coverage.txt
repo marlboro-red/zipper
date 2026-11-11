@@ -1858,7 +1858,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [squashfs-fields]
-fingerprint = caeaec8faef99c1a
+fingerprint = e99b0c5a68c86951
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach squashfs-fields
 full-check = cargo kani --harness native_squashfs::field_proofs::
