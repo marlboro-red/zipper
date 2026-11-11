@@ -1,0 +1,7 @@
+samples 1566 over 8 runs, functions with 5 or more samples in a run
+  46.0%     721  _RNvNtCsgvgHGKG02qY_6zipper7inflate4fast
+  32.6%     511  _RNvMs_NtCsgvgHGKG02qY_6zipper7framingNtB4_7Adler326update
+  17.1%     268  write
+   2.4%      37  _platform_memmove
+   1.5%      24  __psynch_cvwait
+   0.3%       5  _RNvNtCsgvgHGKG02qY_6zipper7inflate11build_table

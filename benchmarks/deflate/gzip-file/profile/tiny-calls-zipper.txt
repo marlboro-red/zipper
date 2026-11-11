@@ -1,0 +1,42 @@
+process_ms 1.466
+write       calls      1  ms    0.049  bytes 6
+open        calls     55  ms    0.536  bytes 0
+close       calls     55  ms    0.066  bytes 0
+mkdir       calls      2  ms    0.061  bytes 0
+rename      calls      1  ms    0.103  bytes 0
+stat        calls      4  ms    0.006  bytes 0
+lstat       calls      3  ms    0.004  bytes 0
+fstat       calls     73  ms    0.026  bytes 0
+statfs      calls      1  ms    0.004  bytes 0
+mmap        calls     15  ms    0.025  bytes 1966080
+fcntl       calls    108  ms    0.023  bytes 0
+pread       calls     49  ms    0.025  bytes 673
+madvise     calls      3  ms    0.003  bytes 688128
+process_ms 1.271
+write       calls      1  ms    0.014  bytes 6
+open        calls     55  ms    0.530  bytes 0
+close       calls     55  ms    0.038  bytes 0
+mkdir       calls      2  ms    0.051  bytes 0
+rename      calls      1  ms    0.097  bytes 0
+stat        calls      4  ms    0.006  bytes 0
+lstat       calls      3  ms    0.005  bytes 0
+fstat       calls     73  ms    0.025  bytes 0
+statfs      calls      1  ms    0.002  bytes 0
+mmap        calls     15  ms    0.014  bytes 1966080
+fcntl       calls    108  ms    0.022  bytes 0
+pread       calls     49  ms    0.027  bytes 673
+madvise     calls      3  ms    0.002  bytes 688128
+process_ms 1.253
+write       calls      1  ms    0.013  bytes 6
+open        calls     55  ms    0.524  bytes 0
+close       calls     55  ms    0.034  bytes 0
+mkdir       calls      2  ms    0.042  bytes 0
+rename      calls      1  ms    0.090  bytes 0
+stat        calls      4  ms    0.006  bytes 0
+lstat       calls      3  ms    0.005  bytes 0
+fstat       calls     73  ms    0.025  bytes 0
+statfs      calls      1  ms    0.002  bytes 0
+mmap        calls     15  ms    0.022  bytes 1966080
+fcntl       calls    108  ms    0.022  bytes 0
+pread       calls     49  ms    0.020  bytes 673
+madvise     calls      3  ms    0.002  bytes 688128

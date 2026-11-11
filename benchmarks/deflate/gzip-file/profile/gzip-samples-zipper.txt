@@ -1,0 +1,6 @@
+samples 1167 over 12 runs, functions with 5 or more samples in a run
+  79.7%     930  _RNvNtCsgvgHGKG02qY_6zipper7inflate4fast
+  10.9%     127  write
+   5.5%      64  _platform_memmove
+   3.9%      46  _RNvMCs7oe36UeclqM_9crc32fastNtB2_6Hasher6update
+tiny input: median 4.03 ms, range 3.91 to 4.53, 40 runs

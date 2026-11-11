@@ -1,0 +1,243 @@
+{
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "cpu_count": 12,
+  "threads": 4,
+  "runs": 11,
+  "warmup_rounds": 1,
+  "archive_format": "zip",
+  "operation": "extract",
+  "cooldown_seconds": 0,
+  "source": "dependencies",
+  "input_bytes": 67479735,
+  "archive_bytes": 14278317,
+  "archive_sha256": "04a63dd1e6b93d723e5ee626b022281316be3c9b01c5b0c1dc23b46a8544aa44",
+  "readers": {
+    "old": {
+      "mode": "native",
+      "binary": "target/timing/fable-gzip/bin/zipper-base",
+      "sha256": "86874b9b8ef050f3941edc2cc8f437856d094cec490471c38f6e20314babf941",
+      "threads": 4
+    },
+    "new": {
+      "mode": "native",
+      "binary": "target/timing/fable-gzip/bin/zipper-final2",
+      "sha256": "c88893ab14b5750db2edc8e9b78a438c277c73fbdf123cfa68b8418b2e827b3a",
+      "threads": 4
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "busy_processes": [],
+  "load_average_start": [
+    2.34912109375,
+    2.24365234375,
+    3.02734375
+  ],
+  "order_including_warmup": [
+    [
+      "old",
+      "new"
+    ],
+    [
+      "new",
+      "old"
+    ],
+    [
+      "old",
+      "new"
+    ],
+    [
+      "old",
+      "new"
+    ],
+    [
+      "old",
+      "new"
+    ],
+    [
+      "new",
+      "old"
+    ],
+    [
+      "old",
+      "new"
+    ],
+    [
+      "old",
+      "new"
+    ],
+    [
+      "new",
+      "old"
+    ],
+    [
+      "old",
+      "new"
+    ],
+    [
+      "old",
+      "new"
+    ],
+    [
+      "new",
+      "old"
+    ]
+  ],
+  "results": {
+    "old": {
+      "samples": [
+        {
+          "seconds": 0.26652483400539495,
+          "peak_rss_bytes": 8765440,
+          "cpu_seconds": 0.860258,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2580194170004688,
+          "peak_rss_bytes": 8503296,
+          "cpu_seconds": 0.833421,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.26822845899732783,
+          "peak_rss_bytes": 8765440,
+          "cpu_seconds": 0.857766,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2785429999930784,
+          "peak_rss_bytes": 8732672,
+          "cpu_seconds": 0.867447,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.27183408400742337,
+          "peak_rss_bytes": 8749056,
+          "cpu_seconds": 0.8639039999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2643577090057079,
+          "peak_rss_bytes": 8945664,
+          "cpu_seconds": 0.8591939999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.26623166698846035,
+          "peak_rss_bytes": 9682944,
+          "cpu_seconds": 0.853762,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.26760370799456723,
+          "peak_rss_bytes": 8896512,
+          "cpu_seconds": 0.8515699999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2647737500083167,
+          "peak_rss_bytes": 8749056,
+          "cpu_seconds": 0.8452299999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2752689159970032,
+          "peak_rss_bytes": 8830976,
+          "cpu_seconds": 0.844521,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.26687391599989496,
+          "peak_rss_bytes": 8781824,
+          "cpu_seconds": 0.853424,
+          "verified_bytes": 67479735
+        }
+      ],
+      "median_seconds": 0.26687391599989496,
+      "min_seconds": 0.2580194170004688,
+      "max_seconds": 0.2785429999930784,
+      "mib_s": 241.13892849470247,
+      "peak_rss_bytes": 9682944
+    },
+    "new": {
+      "samples": [
+        {
+          "seconds": 0.2610944589978317,
+          "peak_rss_bytes": 9322496,
+          "cpu_seconds": 0.8418129999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.26793124999676365,
+          "peak_rss_bytes": 9011200,
+          "cpu_seconds": 0.870209,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.26670516599551775,
+          "peak_rss_bytes": 9011200,
+          "cpu_seconds": 0.8512379999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2661362920043757,
+          "peak_rss_bytes": 8863744,
+          "cpu_seconds": 0.8551839999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2606087909953203,
+          "peak_rss_bytes": 10010624,
+          "cpu_seconds": 0.8491449999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.26846616600232664,
+          "peak_rss_bytes": 8880128,
+          "cpu_seconds": 0.850545,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.26450320800358895,
+          "peak_rss_bytes": 8945664,
+          "cpu_seconds": 0.8504769999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.27197566599352285,
+          "peak_rss_bytes": 9404416,
+          "cpu_seconds": 0.859334,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2773275000072317,
+          "peak_rss_bytes": 8978432,
+          "cpu_seconds": 0.869587,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.2618943749985192,
+          "peak_rss_bytes": 9093120,
+          "cpu_seconds": 0.8487169999999999,
+          "verified_bytes": 67479735
+        },
+        {
+          "seconds": 0.267563750006957,
+          "peak_rss_bytes": 8863744,
+          "cpu_seconds": 0.8628809999999999,
+          "verified_bytes": 67479735
+        }
+      ],
+      "median_seconds": 0.26670516599551775,
+      "min_seconds": 0.2606087909953203,
+      "max_seconds": 0.2773275000072317,
+      "mib_s": 241.29150219940408,
+      "peak_rss_bytes": 10010624
+    }
+  },
+  "load_average_end": [
+    3.16845703125,
+    2.44677734375,
+    3.07763671875
+  ]
+}

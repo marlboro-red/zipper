@@ -1,0 +1,6 @@
+true               1.69 ms (1.53 to 1.88)
+zipper --version   2.63 ms (2.37 to 2.89)
+zipper tiny gz     3.98 ms (3.72 to 5.36)
+base tiny gz       3.98 ms (3.80 to 7.97)
+libdeflate tiny    2.33 ms (2.11 to 2.55)
+gzip tiny          1.78 ms (1.64 to 1.99)

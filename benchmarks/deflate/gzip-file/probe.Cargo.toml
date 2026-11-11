@@ -1,0 +1,16 @@
+[package]
+name = "checksum-probe"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+crc32fast = "=1.5.3"
+
+[features]
+libdeflate = []
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[workspace]

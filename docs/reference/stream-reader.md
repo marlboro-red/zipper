@@ -53,6 +53,7 @@ A name stored inside a gzip header is ignored, because it could hold a path. A f
 - A Base64 file with anything but spaces after its `=` padding is refused. 7-Zip extracts such a file with a warning when the extra data lies past the first 4 KiB.
 - A PPMd file with data after its end marker is refused. 7-Zip extracts the first file of such a file and ignores the rest, which may be a second file that PPMd itself wrote.
 - An xz, LZMA or lzip stream with a dictionary larger than the [tar reader's limit](tar-reader.md#limits), 256 MiB, is refused. An lzma86 stream is refused when its window, the dictionary or the declared size if smaller, is larger than 256 MiB. A zstd frame with a window larger than 128 MiB is refused, as the [tar reader](tar-reader.md#limits) refuses it.
+- A gzip file is read 1 MiB at a time and decoded into a window of 544 KiB, and each decoded piece is written from that window. Pieces under 64 KiB, such as the members of a file with many small members, are merged in a buffer of that size first. The reader holds no other copy of the data, whatever the file's size. The [gzip and zlib record](../../benchmarks/deflate/gzip-file/README.md) measured the sizes.
 - A truncated stream is refused at every length, and data after the last stream is refused, except in `compress`, as above.
 - `--path`, `--include` and `--exclude` select the one decoded file by its output name.
 

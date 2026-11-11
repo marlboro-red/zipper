@@ -1,0 +1,14 @@
+Peak memory of `zipper extract silesia.dmg`, bytes, from /usr/bin/time -l, three runs a row. `stage8` is the build after stage 8.
+build threads  maximum resident set size  peak memory footprint
+base  default  76054528   73859576
+base  default  75972608   73777656
+base  default  144736256  142606888
+base  1        75677696   73499104
+base  1        75694080   73515488
+base  1        75677696   73499104
+stage8 default  76021760   73843192
+stage8 default  75972608   73794040
+stage8 default  75972608   73794040
+stage8 1        75628544   73466336
+stage8 1        75644928   73482720
+stage8 1        75644928   73482720

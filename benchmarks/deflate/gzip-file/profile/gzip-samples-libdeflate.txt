@@ -1,0 +1,4 @@
+samples 1088 over 12 runs, functions with 5 or more samples in a run
+  76.9%     837  libdeflate_deflate_decompress_ex
+  23.1%     251  write
+tiny input: median 2.42 ms, range 2.34 to 2.66, 40 runs

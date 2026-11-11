@@ -224,6 +224,8 @@ The framing in `src/framing.rs`, under `[deflate-framing]`, wraps that decoder f
 - `every_gzip_header_flag_and_member_count_reads_as_multigzdecoder_reads_it` tries every flag byte with three sets of fields and good and bad header CRCs, alone and as two members, cut and flipped. `gzip_names_and_comments_stop_at_flate2s_limit` checks names and comments of 65,534 to 65,536 bytes.
 - The reader tests run every framing of generated data at levels 0, 1, 6 and 9, cut and flipped. They feed input in pieces of 1 to 65,536 bytes and read output in pieces of 1 byte to 1 MiB. Each must give flate2's bytes and leave flate2's count of input unread, or both must refuse. The gzip corpus files are cut at every length and flipped in every byte.
 - The block tests compare each block function with `flate2::Decompress` and `Finish` into outputs one byte short, exact and longer, with and without a preset history.
+- `a_gzip_reader_with_any_window_hands_out_what_flate2_reads_whole_cut_and_flipped` reads through `fill_buf` from windows of 64 KiB to 544 KiB, as the single-file reader does. `a_read_fills_the_callers_buffer_until_the_stream_ends` and `an_error_after_decoded_bytes_reaches_the_next_read_with_its_own_message` cover a read that takes several decode steps. The Adler-32 tests compare every length up to 700 bytes and the block and run edges with a byte-at-a-time sum, and start from the largest sums over the largest bytes.
+- `src/crc32.rs` folds a gzip member's CRC-32 with carry-less multiplies on aarch64 CPUs that have `aes` and `sha3`. Its tests compare every length up to 1,700 bytes at four offsets and three splits with a bit-at-a-time CRC, and long inputs in ten piece sizes with crc32fast. `cargo xtask verify-sync deflate-framing` runs them.
 
 CAB, DMG, HFS+, SquashFS, CramFS, QCOW, VMDK and SWF each have a test that runs their old `flate2` code beside the new one on the same cut and flipped streams. The tar, 7z and xar readers call `Reader` alone. Run `cargo xtask verify-sync deflate-framing`.
 
@@ -346,6 +348,11 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | The gzip reader stops after one member | `gzip_fixtures_read_as_flate2_reads_them_whole_cut_and_flipped` fails |
 | A gzip trailer is gathered again after an interrupted read | `an_interrupted_read_at_any_byte_is_retried_without_losing_a_member` fails |
 | A failed reader reads on | `a_failed_trailer_stays_failed_when_the_right_trailer_follows` fails |
+| An error that follows decoded bytes in one read is dropped | `an_error_after_decoded_bytes_reaches_the_next_read_with_its_own_message` fails |
+| A read returns after one decode step | `a_read_fills_the_callers_buffer_until_the_stream_ends` fails |
+| The gzip reader with its own window size skips the gzip framing | `a_gzip_reader_with_any_window_hands_out_what_flate2_reads_whole_cut_and_flipped` fails |
+| Adler-32 loses the weight of a block, or a run grows to twice 5,504 bytes | `adler32_matches_a_byte_at_a_time_reference_in_every_split` fails |
+| The CRC-32 fold's constant is one bit off, or the running CRC is left out of the first lane | `every_length_offset_and_split_gives_the_bit_at_a_time_crc` fails |
 | MSZIP drops its history, or DMG, SquashFS, CramFS, VMDK, QCOW or SWF drops a size or end check | that caller's test against its old `flate2` code fails |
 | Length code 285 gets 5 extra bits | the same proof fails |
 | The Deflate `build_table` accepts an over-subscribed code | `every_small_code_is_built_or_refused_and_read_as_a_bit_at_a_time_reference_reads_it` fails |

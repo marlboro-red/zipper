@@ -1,0 +1,14 @@
+process_ms 451.439
+write       calls   6582  ms   53.103  bytes 211949278
+open        calls     28  ms    0.857  bytes 0
+close       calls     28  ms    2.019  bytes 0
+mkdir       calls      2  ms    0.090  bytes 0
+rename      calls      1  ms    0.118  bytes 0
+stat        calls      4  ms    0.011  bytes 0
+lstat       calls      3  ms    0.005  bytes 0
+fstat       calls     20  ms    0.009  bytes 0
+statfs      calls      1  ms    0.003  bytes 0
+mmap        calls     15  ms    0.026  bytes 1966080
+fcntl       calls     28  ms    0.007  bytes 0
+pread       calls     87  ms    3.711  bytes 68232215
+madvise     calls     13  ms    0.029  bytes 851968

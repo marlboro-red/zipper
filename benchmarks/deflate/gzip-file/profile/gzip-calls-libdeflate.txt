@@ -1,0 +1,27 @@
+process_ms 213.221
+write       calls      1  ms   28.883  bytes 211938580
+open        calls      3  ms    0.034  bytes 0
+close       calls      3  ms    0.005  bytes 0
+fstat       calls      4  ms    0.005  bytes 0
+mmap        calls      2  ms    0.004  bytes 68260725
+munmap      calls      1  ms    0.257  bytes 68227957
+fcntl       calls      1  ms    0.000  bytes 0
+madvise     calls      1  ms    0.001  bytes 68227957
+process_ms 216.427
+write       calls      1  ms   32.131  bytes 211938580
+open        calls      3  ms    0.033  bytes 0
+close       calls      3  ms    0.004  bytes 0
+fstat       calls      4  ms    0.005  bytes 0
+mmap        calls      2  ms    0.003  bytes 68260725
+munmap      calls      1  ms    0.249  bytes 68227957
+fcntl       calls      1  ms    0.000  bytes 0
+madvise     calls      1  ms    0.001  bytes 68227957
+process_ms 223.124
+write       calls      1  ms   38.617  bytes 211938580
+open        calls      3  ms    0.034  bytes 0
+close       calls      3  ms    0.004  bytes 0
+fstat       calls      4  ms    0.005  bytes 0
+mmap        calls      2  ms    0.003  bytes 68260725
+munmap      calls      1  ms    0.252  bytes 68227957
+fcntl       calls      1  ms    0.000  bytes 0
+madvise     calls      1  ms    0.001  bytes 68227957

@@ -3231,6 +3231,7 @@ fingerprint = 3e8e051ea2e96489
 full-check = cargo xtask kani-reach deflate-framing
 full-check = cargo kani --exact --harness framing::proofs::gzip_headers_read_alike_in_any_split_and_end_where_their_fields_end
 full-check = cargo test --release --lib framing::
+full-check = cargo test --release --lib crc32::
 item = src/framing.rs | const LARGEST_CINFO:
 item = src/framing.rs | const NO_PROGRESS:
 item = src/framing.rs | const FAILED_BEFORE:
@@ -3271,6 +3272,10 @@ item = src/framing.rs | impl<R: BufRead> Reader<R> {
 item = src/framing.rs | impl<R: BufRead> BufRead for Reader<R> {
 item = src/framing.rs | impl<R: BufRead> Read for Reader<R> {
 item = src/framing.rs | mod proofs {
+item = src/crc32.rs | pub(crate) struct Crc32 {
+item = src/crc32.rs | impl Crc32 {
+item = src/crc32.rs | fn continued(
+item = src/crc32.rs | mod folding {
 item = src/inflate.rs | pub(crate) struct Invalid(
 
 [zstd]

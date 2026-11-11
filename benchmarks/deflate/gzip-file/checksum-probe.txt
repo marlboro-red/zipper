@@ -1,0 +1,24 @@
+every candidate matches its reference
+211938580 bytes, best of 9 rounds, milliseconds for the whole file and GB/s
+                                  32 KiB pieces     512 KiB pieces          one piece
+crc32 crc32fast 1.5.3           12.80 ms  16.6     8.02 ms  26.4     7.68 ms  27.6
+crc32 fold 4 lanes              14.41 ms  14.7    14.36 ms  14.8    14.38 ms  14.7
+crc32 fold 8 lanes               7.86 ms  27.0     7.73 ms  27.4     7.73 ms  27.4
+crc32 fold 12 lanes              8.17 ms  25.9     7.97 ms  26.6     7.93 ms  26.7
+crc32 fold 16 lanes              8.15 ms  26.0     7.84 ms  27.0     7.81 ms  27.2
+crc32 vector fold 4              7.05 ms  30.1     6.95 ms  30.5     6.93 ms  30.6
+crc32 vector fold 8              4.92 ms  43.0     4.66 ms  45.5     4.63 ms  45.8
+crc32 vector fold 12             5.11 ms  41.5     4.66 ms  45.4     4.63 ms  45.8
+crc32 vector fold 4 eor3         5.17 ms  41.0     5.07 ms  41.8     5.06 ms  41.9
+crc32 vector fold 8 eor3         4.10 ms  51.7     3.84 ms  55.2     3.84 ms  55.2
+crc32 vector fold 12 eor3        4.33 ms  48.9     3.85 ms  55.1     3.83 ms  55.3
+crc32 vector fold 16 eor3        4.38 ms  48.4     3.87 ms  54.8     3.83 ms  55.3
+adler32 zipper 16 lanes        101.78 ms   2.1   102.20 ms   2.1   102.10 ms   2.1
+adler32 columns of 128           7.99 ms  26.5     8.12 ms  26.1     8.18 ms  25.9
+adler32 columns of 32           55.68 ms   3.8    55.75 ms   3.8    55.56 ms   3.8
+adler32 columns of 64            4.29 ms  49.4     4.19 ms  50.6     4.18 ms  50.7
+adler32 nmax 16                101.97 ms   2.1   102.23 ms   2.1   102.13 ms   2.1
+adler32 nmax 32                 27.77 ms   7.6    27.75 ms   7.6    27.78 ms   7.6
+adler32 nmax 64                 15.91 ms  13.3    15.90 ms  13.3    15.89 ms  13.3
+crc32 libdeflate                 3.48 ms  60.9     3.48 ms  60.8     3.48 ms  60.8
+adler32 libdeflate               3.52 ms  60.2     3.53 ms  60.0     3.52 ms  60.1

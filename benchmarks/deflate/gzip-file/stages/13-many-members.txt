@@ -1,0 +1,5 @@
+Instructions retired and peak memory of `zipper extract` on 400,000 one-byte gzip members, from /usr/bin/time -l.
+build                 maximum resident set size  instructions retired
+base                  5832704                    611711332
+after stage 1 to 8    5455872                    11243933726
+final                 5488640                    557914541
