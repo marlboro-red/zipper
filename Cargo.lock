@@ -816,6 +816,7 @@ name = "xtask"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "serde_json",
  "tempfile",
  "walkdir",
  "zip",

@@ -12,12 +12,13 @@ mod commits;
 mod docs;
 mod kani;
 mod private_paths;
+mod pure_rust;
 mod sevenzip_lookups;
 mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | install-hooks | ci-wait | warm-cache | format-tests | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | install-hooks | ci-wait | warm-cache | format-tests | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -38,6 +39,7 @@ fn main() -> ExitCode {
         ["lint-comments"] => comments::lint(&root()),
         ["lint-7zip-lookups"] => sevenzip_lookups::lint(&root()),
         ["lint-private-paths"] => private_paths::lint(&root()),
+        ["lint-pure-rust"] => pure_rust::lint(&root()),
         ["install-hooks"] => install_hooks(),
         ["ci-wait"] => ci_wait(),
         ["ship"] => ship(),
@@ -278,10 +280,13 @@ fn ensure_no_zlib() -> Result<()> {
     let mut zlibs = zlib_crates_in(&tree);
     if cfg!(target_os = "macos") {
         let binary = target_dir().join("release/zipper");
-        zlibs.extend(zlib_libraries_in(&output(
-            "otool",
-            &["-L", &binary.to_string_lossy()],
-        )?));
+        let linked = output("otool", &["-L", &binary.to_string_lossy()])?;
+        let native = pure_rust::non_system_libraries(&linked);
+        ensure!(
+            native.is_empty(),
+            "the release binary links {native:?}; Zipper builds from Rust only"
+        );
+        zlibs.extend(zlib_libraries_in(&linked));
     }
     ensure!(
         zlibs.is_empty(),
@@ -525,6 +530,7 @@ fn gate(full: bool) -> Result<()> {
         ("comments", || comments::lint(&root())),
         ("7-zip lookups", || sevenzip_lookups::lint(&root())),
         ("private paths", || private_paths::lint(&root())),
+        ("pure rust", || pure_rust::lint(&root())),
         ("results", || scoreboard(&["check"])),
         ("hooks", hook_tests),
         ("verify", || verify::fail_on_stale_fingerprints(&root())),
