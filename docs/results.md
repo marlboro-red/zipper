@@ -27,225 +27,225 @@ such as the Silesia frontier, the dependency sweeps and the Windows runs.
 
 - 10,000 input files and 9,536,000 input bytes.
 - A ZIP of 3,015,491 bytes.
-- Revision `05233ac`, recorded 2026-11-02.
+- Revision `cb8fe53`, recorded 2026-11-11.
 - 7 measured rounds after one warmup.
-- `macOS-26.7.1-arm64-arm-64bit` on `arm64` with 10 logical CPUs.
+- `macOS-27.0-arm64-arm-64bit-Mach-O` on `arm64` with 12 logical CPUs.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-auto` | 301.50 [291.36–312.09] | 1,027.58 | 3.41 | 8.5 | 2.19× | none recorded |
-| `native-1` | 515.97 [454.47–549.96] | 484.54 | 0.94 | 7.8 | 1.28× | none recorded |
-| `native-4` | 310.50 [285.41–342.01] | 1,062.86 | 3.42 | 8.2 | 2.12× | none recorded |
-| `bsdtar-zip` | 658.99 [649.33–760.66] | 630.07 | 0.96 | 6.6 | 1.00× | none recorded |
-| `7zip` | 601.31 [550.96–620.49] | 560.79 | 0.93 | 5.9 | 1.10× | none recorded |
-| `bsdtar-tar` | 563.97 [544.06–605.80] | 525.50 | 0.93 | 4.3 | 1.17× | none recorded |
+| `native-auto` | 394.20 [388.12–419.96] | 1,489.53 | 3.78 | 10.5 | 2.44× | none recorded |
+| `native-1` | 755.23 [732.48–798.08] | 748.31 | 0.99 | 9.8 | 1.27× | none recorded |
+| `native-4` | 395.90 [384.64–407.87] | 1,508.80 | 3.81 | 10.0 | 2.43× | none recorded |
+| `bsdtar-zip` | 962.61 [940.89–995.64] | 957.36 | 0.99 | 5.8 | 1.00× | none recorded |
+| `7zip` | 849.33 [818.96–895.27] | 843.62 | 0.99 | 6.4 | 1.13× | none recorded |
+| `bsdtar-tar` | 800.37 [779.01–821.02] | 793.40 | 0.99 | 3.4 | 1.20× | none recorded |
 
-Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `cb8fe53`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-1` | 6.69 | 7,806 | 61.0 | 21.20 | 10,000 | 1 | 0 | 8,000 | 9.1 | 10,001 |
+| `native-1` | 4.50 | 7,714 | 60.3 | 20.96 | 10,000 | 1 | 0 | 8,000 | 9.1 | 10,001 |
 
 Tar rows read a TAR of 16,394,240 bytes and its gzip level 6 form of 1,600,877 bytes.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar time on the same file ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tar-native` | 314.04 [291.40–364.51] | 1,109.68 | 3.53 | 6.5 | 1.96× | none recorded |
-| `bsdtar-tar-default` | 616.95 [604.16–714.89] | 588.38 | 0.95 | 4.3 | 1.00× | none recorded |
-| `tar-gz-native` | 325.91 [296.80–379.84] | 1,185.74 | 3.64 | 6.7 | 1.91× | none recorded |
-| `bsdtar-tar-gz` | 623.13 [591.59–699.43] | 591.12 | 0.95 | 4.4 | 1.00× | none recorded |
+| `tar-native` | 396.23 [381.64–401.81] | 1,556.73 | 3.93 | 7.9 | 2.27× | none recorded |
+| `bsdtar-tar-default` | 901.40 [884.20–934.37] | 896.41 | 0.99 | 3.4 | 1.00× | none recorded |
+| `tar-gz-native` | 396.76 [387.10–401.10] | 1,568.67 | 3.95 | 7.8 | 2.28× | none recorded |
+| `bsdtar-tar-gz` | 904.67 [882.39–922.65] | 899.64 | 0.99 | 3.5 | 1.00× | none recorded |
 
 ## 4,000 grouped files
 
 - 4,000 input files and 16,366,890 input bytes.
 - A ZIP of 943,008 bytes.
-- Revision `05233ac`, recorded 2026-11-02.
+- Revision `cb8fe53`, recorded 2026-11-11.
 - 7 measured rounds after one warmup.
-- `macOS-26.7.1-arm64-arm-64bit` on `arm64` with 10 logical CPUs.
+- `macOS-27.0-arm64-arm-64bit-Mach-O` on `arm64` with 12 logical CPUs.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-auto` | 123.72 [122.09–139.98] | 450.96 | 3.64 | 6.0 | 2.21× | none recorded |
-| `native-1` | 208.54 [205.17–226.77] | 205.15 | 0.98 | 5.3 | 1.31× | none recorded |
-| `native-4` | 122.38 [121.38–136.40] | 445.67 | 3.64 | 5.7 | 2.24× | none recorded |
-| `bsdtar-zip` | 273.67 [270.68–287.70] | 272.16 | 0.99 | 5.3 | 1.00× | none recorded |
-| `7zip` | 257.24 [246.98–277.84] | 246.85 | 0.96 | 4.6 | 1.06× | none recorded |
-| `bsdtar-tar` | 222.00 [221.07–225.49] | 220.87 | 0.99 | 4.3 | 1.23× | none recorded |
+| `native-auto` | 176.70 [175.49–184.07] | 675.99 | 3.83 | 7.1 | 2.29× | none recorded |
+| `native-1` | 310.61 [301.95–313.63] | 308.54 | 0.99 | 6.3 | 1.30× | none recorded |
+| `native-4` | 176.58 [172.83–180.88] | 666.22 | 3.77 | 6.9 | 2.29× | none recorded |
+| `bsdtar-zip` | 404.40 [401.36–415.97] | 402.64 | 1.00 | 4.5 | 1.00× | none recorded |
+| `7zip` | 366.37 [352.50–374.90] | 361.55 | 0.99 | 5.0 | 1.10× | none recorded |
+| `bsdtar-tar` | 328.67 [321.65–341.73] | 324.14 | 0.99 | 3.4 | 1.23× | none recorded |
 
-Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `cb8fe53`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-1` | 9.26 | 174 | 1.3 | 1.50 | 4,000 | 41 | 0 | 4,000 | 15.6 | 4,041 |
+| `native-1` | 5.49 | 130 | 1.0 | 1.13 | 4,000 | 41 | 0 | 4,000 | 15.6 | 4,041 |
 
 Tar rows read a TAR of 18,462,720 bytes and its gzip level 6 form of 109,846 bytes.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar time on the same file ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tar-native` | 125.26 [123.53–141.47] | 487.52 | 3.89 | 5.3 | 2.00× | none recorded |
-| `bsdtar-tar-default` | 250.98 [245.92–268.54] | 246.62 | 0.98 | 4.3 | 1.00× | none recorded |
-| `tar-gz-native` | 124.77 [124.05–137.02] | 504.79 | 4.05 | 4.5 | 1.98× | none recorded |
-| `bsdtar-tar-gz` | 247.59 [246.11–250.32] | 246.46 | 1.00 | 3.5 | 1.00× | none recorded |
+| `tar-native` | 177.92 [174.60–193.97] | 703.80 | 3.96 | 6.7 | 2.08× | none recorded |
+| `bsdtar-tar-default` | 370.71 [362.18–377.77] | 368.87 | 1.00 | 3.5 | 1.00× | none recorded |
+| `tar-gz-native` | 175.40 [174.51–183.23] | 703.63 | 4.01 | 6.7 | 2.16× | none recorded |
+| `bsdtar-tar-gz` | 378.19 [363.30–407.73] | 373.78 | 0.99 | 2.7 | 1.00× | none recorded |
 
 ## Rust dependency sources
 
 - 3,981 input files and 67,479,735 input bytes.
 - A ZIP of 14,278,317 bytes.
-- Revision `05233ac`, recorded 2026-11-02.
+- Revision `cb8fe53`, recorded 2026-11-11.
 - 7 measured rounds after one warmup.
-- `macOS-26.7.1-arm64-arm-64bit` on `arm64` with 10 logical CPUs.
+- `macOS-27.0-arm64-arm-64bit-Mach-O` on `arm64` with 12 logical CPUs.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-auto` | 228.72 [223.92–234.84] | 1,291.75 | 5.65 | 11.9 | 1.65× | none recorded |
-| `native-1` | 337.07 [319.17–349.17] | 321.61 | 0.95 | 6.8 | 1.12× | none recorded |
-| `native-4` | 186.74 [181.23–207.49] | 591.12 | 3.17 | 7.4 | 2.03× | none recorded |
-| `bsdtar-zip` | 378.45 [374.74–384.52] | 376.87 | 1.00 | 6.4 | 1.00× | none recorded |
-| `7zip` | 446.63 [442.43–473.16] | 444.86 | 1.00 | 5.7 | 0.85× | none recorded |
-| `bsdtar-tar` | 273.88 [270.54–290.63] | 271.34 | 0.99 | 4.5 | 1.38× | none recorded |
+| `native-auto` | 317.77 [311.39–323.00] | 1,198.84 | 3.77 | 9.3 | 1.88× | none recorded |
+| `native-1` | 519.23 [499.45–544.29] | 511.54 | 0.99 | 8.1 | 1.15× | none recorded |
+| `native-4` | 283.50 [279.65–289.91] | 887.23 | 3.13 | 8.9 | 2.11× | none recorded |
+| `bsdtar-zip` | 597.13 [586.20–622.24] | 589.67 | 0.99 | 5.5 | 1.00× | none recorded |
+| `7zip` | 667.58 [654.97–684.46] | 661.48 | 0.99 | 6.3 | 0.89× | none recorded |
+| `bsdtar-tar` | 436.74 [424.94–454.99] | 431.24 | 0.99 | 3.6 | 1.37× | none recorded |
 
-Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `cb8fe53`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-1` | 40.55 | 5,302 | 44.2 | 3.25 | 3,981 | 997 | 0 | 4,359 | 64.4 | 4,978 |
+| `native-1` | 45.16 | 5,241 | 43.8 | 3.21 | 3,981 | 997 | 0 | 4,359 | 64.4 | 4,978 |
 
 Tar rows read a TAR of 71,127,040 bytes and its gzip level 6 form of 12,452,225 bytes.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar time on the same file ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tar-native` | 177.86 [175.29–192.99] | 756.58 | 4.25 | 10.1 | 1.80× | none recorded |
-| `bsdtar-tar-default` | 320.55 [315.14–380.97] | 317.79 | 0.99 | 4.8 | 1.00× | none recorded |
-| `tar-gz-native` | 199.25 [194.78–208.50] | 808.94 | 4.06 | 10.4 | 1.80× | none recorded |
-| `bsdtar-tar-gz` | 359.64 [357.09–376.67] | 357.37 | 0.99 | 4.9 | 1.00× | none recorded |
+| `tar-native` | 277.35 [269.60–282.24] | 1,277.89 | 4.61 | 11.1 | 1.85× | none recorded |
+| `bsdtar-tar-default` | 513.32 [506.98–517.51] | 508.81 | 0.99 | 3.9 | 1.00× | none recorded |
+| `tar-gz-native` | 286.28 [281.19–297.41] | 1,320.03 | 4.61 | 11.8 | 2.04× | none recorded |
+| `bsdtar-tar-gz` | 583.11 [568.06–587.99] | 571.76 | 0.98 | 4.0 | 1.00× | none recorded |
 
 ## Silesia
 
 - 12 input files and 211,938,580 input bytes.
 - A ZIP of 68,221,755 bytes.
-- Revision `05233ac`, recorded 2026-11-02.
+- Revision `cb8fe53`, recorded 2026-11-11.
 - 7 measured rounds after one warmup.
-- `macOS-26.7.1-arm64-arm-64bit` on `arm64` with 10 logical CPUs.
+- `macOS-27.0-arm64-arm-64bit-Mach-O` on `arm64` with 12 logical CPUs.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-auto` | 61.16 [59.38–62.74] | 223.77 | 3.66 | 14.8 | 3.04× | none recorded |
-| `native-1` | 185.26 [185.08–234.92] | 183.68 | 0.99 | 3.8 | 1.01× | none recorded |
-| `native-4` | 64.85 [58.38–66.49] | 190.75 | 2.94 | 7.1 | 2.87× | none recorded |
-| `bsdtar-zip` | 186.22 [186.03–195.87] | 184.77 | 0.99 | 4.7 | 1.00× | none recorded |
-| `7zip` | 530.52 [529.89–531.52] | 528.67 | 1.00 | 4.3 | 0.35× | none recorded |
-| `bsdtar-tar` | 27.57 [27.20–53.18] | 26.30 | 0.95 | 4.2 | 6.76× | none recorded |
+| `native-auto` | 77.36 [72.91–84.01] | 259.84 | 3.36 | 16.5 | 3.02× | none recorded |
+| `native-1` | 219.11 [216.55–238.01] | 210.74 | 0.96 | 4.8 | 1.07× | none recorded |
+| `native-4` | 74.12 [72.13–81.52] | 234.18 | 3.16 | 8.2 | 3.15× | none recorded |
+| `bsdtar-zip` | 233.65 [230.28–239.29] | 226.63 | 0.97 | 3.8 | 1.00× | none recorded |
+| `7zip` | 679.63 [659.66–710.23] | 672.48 | 0.99 | 4.7 | 0.34× | none recorded |
+| `bsdtar-tar` | 42.46 [41.97–70.80] | 35.27 | 0.83 | 3.4 | 5.50× | none recorded |
 
-Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `cb8fe53`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-1` | 157.70 | 151 | 65.1 | 1.00 | 12 | 1 | 0 | 485 | 202.1 | 13 |
+| `native-1` | 172.20 | 150 | 65.1 | 1.00 | 12 | 1 | 0 | 574 | 202.1 | 13 |
 
 Tar rows read a TAR of 211,957,760 bytes and its gzip level 6 form of 68,228,613 bytes.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar time on the same file ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tar-native` | 20.49 [20.40–23.27] | 38.37 | 1.87 | 14.9 | 1.33× | none recorded |
-| `bsdtar-tar-default` | 27.24 [26.99–57.58] | 25.98 | 0.95 | 4.3 | 1.00× | none recorded |
-| `tar-gz-native` | 188.87 [188.50–204.28] | 203.57 | 1.08 | 10.9 | 1.06× | none recorded |
-| `bsdtar-tar-gz` | 200.27 [196.71–225.69] | 195.82 | 0.98 | 4.4 | 1.00× | none recorded |
+| `tar-native` | 33.99 [32.67–49.30] | 51.55 | 1.52 | 19.0 | 1.28× | none recorded |
+| `bsdtar-tar-default` | 43.56 [41.91–93.64] | 36.01 | 0.83 | 3.4 | 1.00× | none recorded |
+| `tar-gz-native` | 203.60 [202.31–208.26] | 224.07 | 1.10 | 14.1 | 1.22× | none recorded |
+| `bsdtar-tar-gz` | 249.36 [246.17–257.06] | 240.83 | 0.97 | 3.5 | 1.00× | none recorded |
 
 ## One large compressible entry
 
 - 1 input file and 268,435,456 input bytes.
 - A ZIP of 652,263 bytes.
-- Revision `05233ac`, recorded 2026-11-02.
+- Revision `cb8fe53`, recorded 2026-11-11.
 - 7 measured rounds after one warmup.
-- `macOS-26.7.1-arm64-arm-64bit` on `arm64` with 10 logical CPUs.
+- `macOS-27.0-arm64-arm-64bit-Mach-O` on `arm64` with 12 logical CPUs.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-auto` | 45.75 [45.12–50.82] | 62.04 | 1.36 | 9.1 | 1.25× | none recorded |
-| `native-1` | 57.87 [57.29–61.54] | 56.47 | 0.98 | 3.8 | 0.98× | none recorded |
-| `native-4` | 45.08 [44.97–50.31] | 60.98 | 1.35 | 8.9 | 1.26× | none recorded |
-| `bsdtar-zip` | 56.97 [56.16–62.49] | 55.73 | 0.98 | 4.2 | 1.00× | none recorded |
-| `7zip` | 147.41 [146.67–148.26] | 145.85 | 0.99 | 3.9 | 0.39× | none recorded |
-| `bsdtar-tar` | 31.79 [31.34–34.17] | 30.65 | 0.96 | 4.2 | 1.79× | none recorded |
+| `native-auto` | 44.74 [42.46–83.01] | 66.59 | 1.49 | 10.4 | 2.04× | none recorded |
+| `native-1` | 71.02 [65.87–86.86] | 56.41 | 0.79 | 4.8 | 1.28× | none recorded |
+| `native-4` | 42.90 [40.61–84.12] | 64.97 | 1.51 | 10.2 | 2.13× | none recorded |
+| `bsdtar-zip` | 91.24 [89.09–121.21] | 81.51 | 0.89 | 3.4 | 1.00× | none recorded |
+| `7zip` | 213.22 [210.82–225.54] | 202.83 | 0.95 | 4.2 | 0.43× | none recorded |
+| `bsdtar-tar` | 53.42 [50.35–70.61] | 42.58 | 0.80 | 3.3 | 1.71× | none recorded |
 
-Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `cb8fe53`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-1` | 28.92 | 5 | 0.6 | 1.01 | 1 | 1 | 0 | 513 | 256.0 | 2 |
+| `native-1` | 16.37 | 4 | 0.6 | 1.01 | 1 | 1 | 0 | 549 | 256.0 | 2 |
 
 Tar rows read a TAR of 268,441,600 bytes and its gzip level 6 form of 652,142 bytes.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar time on the same file ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tar-native` | 26.92 [25.16–31.60] | 43.58 | 1.62 | 11.8 | 1.28× | none recorded |
-| `bsdtar-tar-default` | 34.38 [31.87–34.86] | 31.31 | 0.91 | 4.2 | 1.00× | none recorded |
-| `tar-gz-native` | 63.26 [63.21–70.91] | 79.08 | 1.25 | 7.6 | 0.98× | none recorded |
-| `bsdtar-tar-gz` | 61.96 [61.67–62.23] | 60.93 | 0.98 | 4.0 | 1.00× | none recorded |
+| `tar-native` | 45.76 [41.89–67.63] | 59.01 | 1.29 | 12.0 | 1.19× | none recorded |
+| `bsdtar-tar-default` | 54.43 [50.87–57.91] | 43.23 | 0.79 | 3.3 | 1.00× | none recorded |
+| `tar-gz-native` | 45.93 [45.27–84.39] | 69.53 | 1.51 | 12.2 | 2.61× | none recorded |
+| `bsdtar-tar-gz` | 120.02 [115.38–120.64] | 108.83 | 0.91 | 3.1 | 1.00× | none recorded |
 
 ## One large random entry
 
 - 1 input file and 268,435,456 input bytes.
 - A ZIP of 268,517,563 bytes.
-- Revision `05233ac`, recorded 2026-11-02.
+- Revision `cb8fe53`, recorded 2026-11-11.
 - 7 measured rounds after one warmup.
-- `macOS-26.7.1-arm64-arm-64bit` on `arm64` with 10 logical CPUs.
+- `macOS-27.0-arm64-arm-64bit-Mach-O` on `arm64` with 12 logical CPUs.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-auto` | 35.75 [32.92–41.49] | 52.26 | 1.46 | 9.2 | 1.25× | none recorded |
-| `native-1` | 45.13 [44.59–49.21] | 43.73 | 0.97 | 3.8 | 0.99× | none recorded |
-| `native-4` | 33.19 [32.93–40.20] | 51.89 | 1.56 | 8.9 | 1.35× | none recorded |
-| `bsdtar-zip` | 44.70 [44.51–46.44] | 43.47 | 0.97 | 4.6 | 1.00× | none recorded |
-| `7zip` | 79.60 [78.96–83.35] | 78.14 | 0.98 | 4.3 | 0.56× | none recorded |
-| `bsdtar-tar` | 33.25 [31.54–38.76] | 30.63 | 0.92 | 4.2 | 1.34× | none recorded |
+| `native-auto` | 49.29 [46.96–67.09] | 73.51 | 1.49 | 10.4 | 1.42× | none recorded |
+| `native-1` | 78.04 [72.49–90.22] | 64.45 | 0.83 | 4.7 | 0.90× | none recorded |
+| `native-4` | 46.98 [46.00–80.03] | 73.44 | 1.56 | 9.9 | 1.49× | none recorded |
+| `bsdtar-zip` | 69.99 [68.38–143.86] | 60.18 | 0.86 | 3.8 | 1.00× | none recorded |
+| `7zip` | 126.75 [123.99–165.10] | 114.69 | 0.90 | 4.6 | 0.55× | none recorded |
+| `bsdtar-tar` | 53.67 [52.38–85.41] | 42.84 | 0.80 | 3.3 | 1.30× | none recorded |
 
-Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `cb8fe53`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-1` | 3.81 | 516 | 256.1 | 1.00 | 1 | 1 | 0 | 514 | 256.0 | 2 |
+| `native-1` | 4.79 | 515 | 256.1 | 1.00 | 1 | 1 | 0 | 1,059 | 256.0 | 2 |
 
 Tar rows read a TAR of 268,441,600 bytes and its gzip level 6 form of 268,517,566 bytes.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar time on the same file ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tar-native` | 27.04 [24.99–31.17] | 43.45 | 1.61 | 11.8 | 1.18× | none recorded |
-| `bsdtar-tar-default` | 31.90 [31.51–34.18] | 30.76 | 0.96 | 4.2 | 1.00× | none recorded |
-| `tar-gz-native` | 52.90 [52.71–57.00] | 71.86 | 1.36 | 9.9 | 0.94× | none recorded |
-| `bsdtar-tar-gz` | 49.88 [49.31–50.29] | 48.69 | 0.98 | 4.3 | 1.00× | none recorded |
+| `tar-native` | 43.84 [42.35–80.40] | 58.18 | 1.33 | 12.0 | 1.20× | none recorded |
+| `bsdtar-tar-default` | 52.41 [51.54–78.64] | 42.77 | 0.82 | 3.3 | 1.00× | none recorded |
+| `tar-gz-native` | 53.79 [51.84–174.78] | 78.53 | 1.46 | 12.2 | 1.57× | none recorded |
+| `bsdtar-tar-gz` | 84.53 [81.95–138.46] | 72.79 | 0.86 | 3.4 | 1.00× | none recorded |
 
 ## Mixed tree
 
 - 4,002 input files and 49,921,328 input bytes.
 - A ZIP of 20,909,821 bytes.
-- Revision `05233ac`, recorded 2026-11-02.
+- Revision `cb8fe53`, recorded 2026-11-11.
 - 7 measured rounds after one warmup.
-- `macOS-26.7.1-arm64-arm-64bit` on `arm64` with 10 logical CPUs.
+- `macOS-27.0-arm64-arm-64bit-Mach-O` on `arm64` with 12 logical CPUs.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar-zip time ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-auto` | 172.56 [170.29–183.06] | 1,128.64 | 6.54 | 7.8 | 1.71× | none recorded |
-| `native-1` | 233.13 [220.82–300.67] | 222.41 | 0.95 | 5.8 | 1.26× | none recorded |
-| `native-4` | 128.58 [125.55–143.60] | 466.83 | 3.63 | 6.7 | 2.29× | none recorded |
-| `bsdtar-zip` | 294.79 [285.91–344.47] | 288.22 | 0.98 | 5.6 | 1.00× | none recorded |
-| `7zip` | 293.07 [291.62–307.81] | 291.40 | 0.99 | 5.6 | 1.01× | none recorded |
-| `bsdtar-tar` | 229.93 [226.46–232.60] | 228.33 | 0.99 | 4.3 | 1.28× | none recorded |
+| `native-auto` | 192.07 [180.20–195.78] | 709.84 | 3.70 | 8.0 | 2.28× | none recorded |
+| `native-1` | 342.84 [328.65–353.27] | 339.26 | 0.99 | 6.4 | 1.28× | none recorded |
+| `native-4` | 182.90 [177.49–187.55] | 684.27 | 3.74 | 7.9 | 2.39× | none recorded |
+| `bsdtar-zip` | 437.17 [435.29–438.90] | 430.85 | 0.99 | 4.8 | 1.00× | none recorded |
+| `7zip` | 428.32 [416.49–435.81] | 424.78 | 0.99 | 6.0 | 1.02× | none recorded |
+| `bsdtar-tar` | 341.51 [337.65–347.62] | 338.08 | 0.99 | 3.4 | 1.28× | none recorded |
 
-Counters from one native extraction at one thread, outside timed runs, at `05233ac`.
+Counters from one native extraction at one thread, outside timed runs, at `cb8fe53`.
 
 | Engine | Decode ms | Archive reads | Archive MiB read | Read ÷ ZIP size | Files | Directory calls | Links | Output writes | Output MiB | Metadata calls |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `native-1` | 17.36 | 222 | 20.4 | 1.02 | 4,002 | 44 | 0 | 4,070 | 47.6 | 4,046 |
+| `native-1` | 15.32 | 176 | 20.1 | 1.01 | 4,002 | 44 | 0 | 4,108 | 47.6 | 4,046 |
 
 Tar rows read a TAR of 52,019,200 bytes and its gzip level 6 form of 20,030,534 bytes.
 
 | Reader | Wall ms, median [range] | CPU ms | Cores | Peak MiB | bsdtar time on the same file ÷ row time | Drift from previous session |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tar-native` | 130.15 [128.26–144.62] | 503.90 | 3.87 | 13.2 | 2.01× | none recorded |
-| `bsdtar-tar-default` | 262.02 [254.03–277.23] | 255.20 | 0.97 | 4.3 | 1.00× | none recorded |
-| `tar-gz-native` | 139.70 [138.88–159.86] | 524.85 | 3.76 | 10.4 | 1.93× | none recorded |
-| `bsdtar-tar-gz` | 269.87 [263.35–280.21] | 265.59 | 0.98 | 4.4 | 1.00× | none recorded |
+| `tar-native` | 185.36 [181.93–191.91] | 724.18 | 3.91 | 13.6 | 2.13× | none recorded |
+| `bsdtar-tar-default` | 395.07 [384.41–402.22] | 391.19 | 0.99 | 3.5 | 1.00× | none recorded |
+| `tar-gz-native` | 196.04 [191.62–200.69] | 742.90 | 3.79 | 11.8 | 2.08× | none recorded |
+| `bsdtar-tar-gz` | 408.27 [395.59–443.77] | 400.94 | 0.98 | 3.6 | 1.00× | none recorded |
 
 ## Codecs
 
