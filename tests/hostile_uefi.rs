@@ -264,7 +264,28 @@ fn compressed_sections_that_declare_more_than_the_budget_are_refused_before_they
     )]);
     let (result, _work) = extract(&image);
     let error = format!("{:#}", result.unwrap_err());
-    assert!(error.contains("decode to more than 256 MiB"), "{error}");
+    assert!(error.contains("need more than 256 MiB"), "{error}");
+    let mut windowed = lzma_alone(b"tiny");
+    windowed[1..5].copy_from_slice(&(256u32 << 20).to_le_bytes());
+    windowed[5..13].copy_from_slice(&(200u64 << 20).to_le_bytes());
+    let image = volume(vec![ffs(
+        &named(1, 1),
+        7,
+        &sections(&[guided(LZMA, &windowed, 1, &[])]),
+    )]);
+    let (result, _work) = extract(&image);
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(error.contains("need more than 256 MiB"), "{error}");
+}
+
+#[test]
+fn more_files_and_sections_than_the_entry_limit_are_refused_before_they_are_kept() {
+    let empty = section(0x19, b"");
+    let body = empty.repeat(1_100_000);
+    let image = volume(vec![ffs(&named(1, 1), 7, &body)]);
+    let (result, _work) = extract(&image);
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(error.contains("more than 1000000"), "{error}");
 }
 
 #[test]

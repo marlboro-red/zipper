@@ -258,6 +258,37 @@ pub fn generated() -> Vec<(String, Vec<u8>)> {
         built[at] = 0;
         built
     }));
+    let crc_inner = sections(&[pe(b"MZ"), raw(b"r")]);
+    let crc = crc32fast::hash(&crc_inner).to_le_bytes();
+    cases.push((
+        "CRC32 sections with other data offsets".to_owned(),
+        volume(vec![
+            driver(1, &[guided(CRC32, &crc_inner, 2, &[])]),
+            driver(
+                2,
+                &[guided(CRC32, &crc_inner, 2, &[&crc[..], b"XXXX"].concat())],
+            ),
+            driver(3, &[guided(CRC32, &sections(&[pe(b"MZ")]), 2, &[])]),
+        ]),
+    ));
+    let mut damaged_lzma = lzma_section(&sections(&[pe(b"MZ")]));
+    let last = damaged_lzma.len() - 3;
+    damaged_lzma[last] ^= 0x55;
+    cases.push((
+        "a header error, then a damaged LZMA section, then a volume".to_owned(),
+        [
+            volume(vec![
+                ffs(
+                    &name(1),
+                    7,
+                    &[&section(0x10, b"MZ")[..], &[0x40, 0, 0, 0x10]].concat(),
+                ),
+                driver(2, &[damaged_lzma]),
+            ]),
+            one.clone(),
+        ]
+        .concat(),
+    ));
     cases.push(("a capsule".to_owned(), capsule(CAPSULE, &nested_files, 28)));
     cases.push((
         "a capsule with a long header".to_owned(),

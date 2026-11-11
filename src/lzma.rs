@@ -1123,7 +1123,7 @@ impl<R: Read> RawLzmaReader<R> {
     }
 }
 
-pub(crate) const LZMA_FILE_HEADER: usize = 13;
+const LZMA_FILE_HEADER: usize = 13;
 const LZMA_FILE_UNKNOWN_SIZE: u64 = u64::MAX;
 // EXTERNAL(liblzma lzma_decoder.c, lzma_lzma_lclppb_decode): a .lzma file with lc + lp above 4 is refused.
 const LZMA_FILE_LC_PLUS_LP_MAX: u32 = 4;

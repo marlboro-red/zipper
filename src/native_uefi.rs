@@ -57,7 +57,12 @@ const PEI_DEPEX: u8 = 0x1B;
 const COMPRESSION_HEADER: usize = 5;
 const NOT_COMPRESSED: u8 = 0;
 pub(crate) const GUID_HEADER: usize = 20;
-const CRC32_FIELD: usize = 4;
+const CRC32_DATA_AT: usize = SECTION_HEADER + GUID_HEADER + 4;
+const CRC32_NAME: &str = "CRC";
+const LZMA_HEADER: usize = 13;
+const LZMA_DICTIONARY_AT: usize = 1;
+const LZMA_SIZE_AT: usize = 5;
+const LZMA_SMALLEST_WINDOW: u64 = 1 << 12;
 const LZMA: [u8; 16] = guid(
     0xEE4E_5898,
     0x3914,
@@ -83,6 +88,7 @@ const DEPEX_OPCODES_WITH_GUID: std::ops::RangeInclusive<u8> = 0..=2;
 const NESTING_LIMIT: usize = 64;
 const LARGEST_VOLUME: u64 = 512 << 20;
 const SCAN_CHUNK: usize = 1 << 20;
+const MAX_PATH: usize = 4096;
 const DECODED_BUDGET: u64 = 256 << 20;
 const CANDIDATE_LIMIT: usize = 16;
 const SNIFF_WINDOW: u64 = 1 << 20;
@@ -302,6 +308,13 @@ fn short_name(guid: &[u8]) -> String {
     format!("{:08X}", le32(guid, 0))
 }
 
+fn guid_section_name(guid: &[u8; 16]) -> String {
+    match *guid == CRC32 {
+        true => CRC32_NAME.to_owned(),
+        false => short_name(guid),
+    }
+}
+
 fn foreign_volume_name(volume: &[u8]) -> String {
     let file_system = &volume[FILE_SYSTEM_AT..FILE_SYSTEM_AT + 16];
     match file_system.iter().all(|&byte| byte == 0xFF) {
@@ -379,6 +392,7 @@ enum Content {
 enum Failure {
     Format(&'static str),
     Headers(&'static str),
+    Refused(&'static str),
 }
 
 impl From<BadField> for Failure {
@@ -401,7 +415,7 @@ fn reserve(decoded: &mut u64, size: u64) -> Parsed<usize> {
     *decoded = decoded.saturating_add(size);
     format_check(
         *decoded <= DECODED_BUDGET,
-        "UEFI compressed sections decode to more than 256 MiB",
+        "UEFI compressed sections and their windows need more than 256 MiB",
     )?;
     Ok(size as usize)
 }
@@ -409,11 +423,23 @@ fn reserve(decoded: &mut u64, size: u64) -> Parsed<usize> {
 struct Parser {
     buffers: Vec<Vec<u8>>,
     decoded: u64,
+    entries: usize,
+    headers_error: Option<&'static str>,
 }
 
 impl Parser {
     fn bytes(&self, at: Bytes) -> &[u8] {
         &self.buffers[at.buffer][at.start..at.end]
+    }
+
+    fn count_entry(&mut self) -> Parsed<()> {
+        self.entries += 1;
+        match self.entries > tree::MAX_ENTRIES {
+            true => Err(Failure::Refused(
+                "the UEFI image has more than 1000000 files and sections",
+            )),
+            false => Ok(()),
+        }
     }
 
     fn sub(at: Bytes, start: usize, end: usize) -> Bytes {
@@ -511,6 +537,7 @@ impl Parser {
                     }
                 }
             };
+            self.count_entry()?;
             items.push(render(node));
         }
         Ok(items)
@@ -527,11 +554,28 @@ impl Parser {
             true => Failure::Headers(message),
             false => Failure::Format(message),
         };
+        let mut nodes = Vec::new();
+        match self.section_list(at, depth, ui, &mut nodes, structure) {
+            Err(Failure::Headers(message)) => {
+                self.headers_error.get_or_insert(message);
+                Ok(nodes)
+            }
+            other => other.map(|()| nodes),
+        }
+    }
+
+    fn section_list(
+        &mut self,
+        at: Bytes,
+        depth: usize,
+        ui: &mut Option<String>,
+        nodes: &mut Vec<Node>,
+        structure: impl Fn(&'static str) -> Failure,
+    ) -> Parsed<()> {
         format_check(
             depth <= NESTING_LIMIT,
             "UEFI volumes and sections nest too deeply",
         )?;
-        let mut nodes = Vec::new();
         let mut offset = 0;
         let length = at.end - at.start;
         while offset < length {
@@ -556,9 +600,10 @@ impl Parser {
                     "a UEFI section's padding runs past its file",
                 )?;
             }
-            self.section(kind, section, body, depth, ui, &mut nodes)?;
+            self.count_entry()?;
+            self.section(kind, section, body, depth, ui, nodes)?;
         }
-        Ok(nodes)
+        Ok(())
     }
 
     fn section(
@@ -596,11 +641,7 @@ impl Parser {
                     section.end - section.start,
                 )?;
                 let payload = Self::sub(section, header.data_offset, section.end - section.start);
-                if header.guid == CRC32 {
-                    format_check(
-                        content.len() >= GUID_HEADER + CRC32_FIELD,
-                        "a UEFI CRC32 section is cut",
-                    )?;
+                if header.guid == CRC32 && header.data_offset == CRC32_DATA_AT {
                     let stored = le32(content, GUID_HEADER);
                     format_check(
                         crc32fast::hash(self.bytes(payload)) == stored,
@@ -614,7 +655,7 @@ impl Parser {
                     _ => {
                         if header.data_offset > SECTION_HEADER + GUID_HEADER {
                             nodes.push(Node::Leaf {
-                                label: short_name(&header.guid) + PROPERTIES,
+                                label: guid_section_name(&header.guid) + PROPERTIES,
                                 named: true,
                                 data: Self::sub(
                                     section,
@@ -630,7 +671,7 @@ impl Parser {
                 let children = self.sections(payload, depth + 1, &mut inner_ui, true)?;
                 nodes.push(Node::Container {
                     file: false,
-                    name: inner_ui.unwrap_or_else(|| short_name(&header.guid)),
+                    name: inner_ui.unwrap_or_else(|| guid_section_name(&header.guid)),
                     children,
                 });
             }
@@ -665,21 +706,25 @@ impl Parser {
     fn decode_lzma(&mut self, payload: Bytes) -> Parsed<Bytes> {
         let data = &self.buffers[payload.buffer][payload.start..payload.end];
         format_check(
-            data.len() >= crate::lzma::LZMA_FILE_HEADER,
+            data.len() >= LZMA_HEADER,
             "a UEFI LZMA section is cut inside its header",
         )?;
         let properties = crate::lzma::Properties::from_byte(data[0]).ok_or(Failure::Format(
             "a UEFI LZMA section's properties are out of range",
         ))?;
-        let dictionary = le32(data, 1);
-        let size = u64::from_le_bytes(data[5..crate::lzma::LZMA_FILE_HEADER].try_into().unwrap());
+        let dictionary = le32(data, LZMA_DICTIONARY_AT);
+        let size = u64::from_le_bytes(data[LZMA_SIZE_AT..LZMA_HEADER].try_into().unwrap());
         format_check(
             size != u64::MAX,
             "a UEFI LZMA section does not give its size",
         )?;
+        let window = u64::from(dictionary)
+            .max(LZMA_SMALLEST_WINDOW)
+            .min(size.max(1));
+        reserve(&mut self.decoded, window)?;
         let size = reserve(&mut self.decoded, size)?;
         let mut decoded = vec![0u8; size];
-        let input = &data[crate::lzma::LZMA_FILE_HEADER..];
+        let input = &data[LZMA_HEADER..];
         let mut reader =
             crate::lzma::RawLzmaReader::new(input, properties, dictionary, size as u64)
                 .requiring_a_clean_end()
@@ -905,6 +950,8 @@ fn parser_of(data: Vec<u8>) -> (Parser, Bytes) {
         Parser {
             buffers: vec![data],
             decoded: 0,
+            entries: 0,
+            headers_error: None,
         },
         whole,
     )
@@ -926,8 +973,9 @@ fn open(path: &Path) -> Result<Image> {
         )?;
         let (mut parser, whole) = parser_of(data);
         match open_capsule(&mut parser, whole, 0..whole.end) {
+            Ok(_) if parser.headers_error.is_some() => bail!("{}", parser.headers_error.unwrap()),
             Ok(items) => return Ok(Image { parser, items }),
-            Err(Failure::Headers(message)) => bail!("{message}"),
+            Err(Failure::Headers(message) | Failure::Refused(message)) => bail!("{message}"),
             Err(Failure::Format(message)) => refusal = message,
         }
     }
@@ -942,22 +990,25 @@ fn open(path: &Path) -> Result<Image> {
         let data = read_range(&file, start, declared.min(length - start))?;
         let (mut parser, whole) = parser_of(data);
         match parser.volume(whole, 0) {
+            Ok(_) if parser.headers_error.is_some() => bail!("{}", parser.headers_error.unwrap()),
             Ok(items) => return Ok(Image { parser, items }),
-            Err(Failure::Headers(message)) => bail!("{message}"),
+            Err(Failure::Headers(message) | Failure::Refused(message)) => bail!("{message}"),
             Err(Failure::Format(message)) => refusal = message,
         }
     }
     bail!("{refusal}")
 }
 
-fn paths(items: &[Item], prefix: &str, out: &mut Vec<String>) {
-    for item in items {
-        let path = format!("{prefix}{}", item.name);
-        if let Content::Folder(children) = &item.content {
-            paths(children, &format!("{path}/"), out);
-        }
-        out.push(path);
-    }
+fn names_are_plain(items: &[Item], prefix: usize) -> bool {
+    items.iter().all(|item| {
+        let length = prefix + item.name.len();
+        let plain = length <= MAX_PATH && crate::safe_path(&item.name).is_ok();
+        plain
+            && match &item.content {
+                Content::Folder(children) => names_are_plain(children, length + 1),
+                Content::Data(_) => true,
+            }
+    })
 }
 
 fn emit(tree: &mut tree::Tree, parser: &Parser, items: &[Item], prefix: &str) -> Result<()> {
@@ -1011,9 +1062,7 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
     let Ok(image) = open(path) else {
         return Ok(false);
     };
-    let mut names = Vec::new();
-    paths(&image.items, "", &mut names);
-    Ok(names.iter().any(|name| crate::safe_path(name).is_err()))
+    Ok(!names_are_plain(&image.items, 0))
 }
 
 /// Verify and optionally extract a UEFI firmware volume or capsule into a
