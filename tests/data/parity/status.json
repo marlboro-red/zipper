@@ -432,7 +432,7 @@
     },
     "wim": {
       "status": "native",
-      "note": "WIM and ESD with stored, XPRESS, LZX and LZMS resources, solid or not. A split WIM goes to 7-Zip, and alternate data streams are refused.",
+      "note": "WIM and ESD with stored, XPRESS, LZX and LZMS resources, solid or not. A split WIM goes to 7-Zip. Alternate data streams are refused, and written as NTFS streams on Windows with `--alternate-streams`.",
       "tests": [
         "tests/wim_corpus.rs::every_corpus_wim_extracts_the_tree_7zip_extracts",
         "tests/wim_corpus.rs::generated_wims_of_every_method_and_chunk_size_extract_byte_for_byte_as_7zip_extracts_them",
