@@ -79,6 +79,8 @@ class Guard(unittest.TestCase):
             'while ! grep -q "^exit" /tmp/x/verify.log; do sleep 10; done',
             'while pgrep -f "plants.sh" >/dev/null; do sleep 15; done; tail -5 log',
             "zsh -c 'until test -f done.txt; do\n  sleep 5\ndone'",
+            "caffeinate -t 600; tail -5 gate.log",
+            "until grep -q exit log; do caffeinate -i -t 30; done",
         ]:
             with self.subTest(command=command):
                 self.assertTrue(denied(command))
@@ -89,6 +91,7 @@ class Guard(unittest.TestCase):
             "while read -r p; do kill $p; done < pids.txt",
             "for f in *.json; do python3 -c 'import json' $f; done",
             "zsh scripts/wait_for_quiet.sh; sleep 1",
+            "caffeinate -i cargo xtask gate fast > log 2>&1",
         ]:
             with self.subTest(command=command):
                 self.assertFalse(denied(command))

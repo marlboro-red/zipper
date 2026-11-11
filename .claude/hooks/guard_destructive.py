@@ -133,6 +133,9 @@ POLLING_LOOP = re.compile(r"\b(until|while)\b.*?\bdo\b(?P<body>.*?)\bdone\b", re
 
 
 def check_polling_loops(command):
+    if re.search(r"\bcaffeinate\b[^\n;&|]*\s-t\b", command):
+        deny("`caffeinate -t` used as a timer is a sleep that waits for work the harness already watches. "
+             "Run the work with `run_in_background: true` and wait for its completion notice.")
     if any(re.search(r"\bsleep\b", loop.group("body")) for loop in POLLING_LOOP.finditer(command)):
         deny("a loop that sleeps until a log line or process appears waits for work the harness already "
              "watches. On 11 November builders left 66 such loops behind, one more each time they waited. "
