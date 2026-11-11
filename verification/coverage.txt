@@ -1258,7 +1258,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [wim-fields]
-fingerprint = 556434bd553ed653
+fingerprint = d9809a6a7c66d9f0
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach wim-fields
 full-check = cargo kani --harness native_wim::proofs:: --harness xpress::proofs::
