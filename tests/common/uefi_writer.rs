@@ -1,6 +1,4 @@
 #![allow(dead_code)]
-//! A writer for UEFI firmware volumes, files, sections and capsules, from
-//! the UEFI Platform Initialization specification, volume 3.
 
 pub const FFS2: &str = "8C8CE578-8A3D-4F1C-9935-896185C32DD3";
 pub const FFS3: &str = "5473C07A-3DCB-4DCA-BD6F-1E9689E7349A";

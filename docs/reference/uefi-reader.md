@@ -32,7 +32,7 @@ Two outputs of the same path write one, the last, as `7zz x -y` does. A user int
 Zipper refuses a file that 7-Zip refuses:
 
 - A volume has the `_FVH` signature, the FFS1 or FFS2 file system and erased bytes of one. Its block map fills its header up to the terminator, its header checksum holds, and it lies inside the data that holds it. 7-Zip refuses FFS3 volumes and volumes that erase to zero.
-- A file header sums to zero, and the file lies inside its volume. Its state sets the data valid bit and none of the bits for marked for update, deleted and header invalid. A file that asks for a data checksum matches it.
+- A file header sums to zero, and the file lies inside its volume, so a large file, whose 24-bit size is zero, is refused as 7-Zip refuses it. Its state sets the data valid bit and none of the bits for marked for update, deleted and header invalid. A file that asks for a data checksum matches it.
 - A section lies inside its file and does not use the extended size form, which 7-Zip refuses. After a section that does not end its list, the padding to 4 bytes and a whole section header fit before the end. A GUID-defined section's data lies inside it, and a CRC32 section matches its data.
 - An LZMA section gives its size, decodes to exactly that size and ends there, with an end marker or a clean range coder and no more input. A compression section that is compressed is refused, because 7-Zip does not decode EFI compression.
 - A volume section holds at least 56 bytes.

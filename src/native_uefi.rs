@@ -26,6 +26,15 @@ const FFS2: [u8; 16] = guid(
     [0x99, 0x35, 0x89, 0x61, 0x85, 0xC3, 0x2D, 0xD3],
 );
 const ERASE_POLARITY: u32 = 0x800;
+const LENGTH_AT: usize = 32;
+const ATTRIBUTES_AT: usize = 44;
+const HEADER_LENGTH_AT: usize = 48;
+const DATA_CHECKSUM_AT: usize = 17;
+const FILE_TYPE_AT: usize = 18;
+const FILE_ATTRIBUTES_AT: usize = 19;
+const FILE_SIZE_AT: usize = 20;
+const STATE_AT: usize = 23;
+const GUID_DATA_OFFSET_AT: usize = 16;
 const BLOCK_MAP_ENTRY: usize = 8;
 pub(crate) const FILE_HEADER: usize = 24;
 const FILE_ALIGNMENT: usize = 8;
@@ -68,7 +77,7 @@ const CAPSULE: [u8; 16] = guid(
     [0xB6, 0x9A, 0xE3, 0xA9, 0x43, 0xF7, 0x2F, 0xCC],
 );
 pub(crate) const CAPSULE_HEADER: usize = 28;
-const DEPEX_PUSH_OPERAND: usize = 16;
+const DEPEX_GUID_OPERAND: usize = 16;
 const DEPEX_LAST_OPCODE: u8 = 0x09;
 const DEPEX_OPCODES_WITH_GUID: std::ops::RangeInclusive<u8> = 0..=2;
 const NESTING_LIMIT: usize = 64;
@@ -112,9 +121,8 @@ pub(crate) enum VolumeKind {
     Volume { length: u64, header_length: usize },
 }
 
-// SPEC(UEFI PI 1.8 vol. 3, 3.2.1.1 EFI_FIRMWARE_VOLUME_HEADER): a zero vector, the file system
-// GUID, the volume length, the `_FVH` signature, attributes, the header length and checksum,
-// the extended header offset and the revision. A block map follows up to the header length.
+// SPEC(UEFI PI 1.8 vol. 3, EFI_FIRMWARE_VOLUME_HEADER): a block map follows the fixed fields up
+// to the header length.
 pub(crate) fn volume_header(bytes: &[u8; VOLUME_HEADER]) -> Field<VolumeKind> {
     let file_system = &bytes[FILE_SYSTEM_AT..FILE_SYSTEM_AT + 16];
     if &bytes[SIGNATURE_AT..SIGNATURE_AT + 4] != SIGNATURE
@@ -123,11 +131,11 @@ pub(crate) fn volume_header(bytes: &[u8; VOLUME_HEADER]) -> Field<VolumeKind> {
         return Ok(VolumeKind::Foreign);
     }
     field_check(
-        le32(bytes, 44) & ERASE_POLARITY != 0,
+        le32(bytes, ATTRIBUTES_AT) & ERASE_POLARITY != 0,
         "a UEFI volume erases to zero bytes, which 7-Zip does not read",
     )?;
-    let header_length = usize::from(le16(bytes, 48));
-    let length = u64::from_le_bytes(bytes[32..40].try_into().unwrap());
+    let header_length = usize::from(le16(bytes, HEADER_LENGTH_AT));
+    let length = u64::from_le_bytes(bytes[LENGTH_AT..LENGTH_AT + 8].try_into().unwrap());
     field_check(
         header_length >= VOLUME_HEADER + BLOCK_MAP_ENTRY && header_length.is_multiple_of(2),
         "a UEFI volume header has no room for its block map",
@@ -161,36 +169,34 @@ pub(crate) struct FileHeader {
     pub(crate) data_checksum: u8,
 }
 
-// SPEC(UEFI PI 1.8 vol. 3, 2.2.3 EFI_FFS_FILE_HEADER): the name GUID, the header and data
-// checksums, the type, attributes, a 24-bit size and the state, whose bits are inverted in a
-// volume that erases to ones. The header sums to zero without the data checksum and state.
+// SPEC(UEFI PI 1.8 vol. 3, EFI_FFS_FILE_HEADER): the header sums to zero without the data
+// checksum and the state, whose bits are inverted in a volume that erases to ones.
 pub(crate) fn file_header(bytes: &[u8; FILE_HEADER]) -> Field<FileHeader> {
     let sum = bytes
         .iter()
         .enumerate()
-        .filter(|(at, _)| *at != 17 && *at != 23)
+        .filter(|(at, _)| *at != DATA_CHECKSUM_AT && *at != STATE_AT)
         .fold(0u8, |sum, (_, byte)| sum.wrapping_add(*byte));
     field_check(sum == 0, "a UEFI file header checksum does not match")?;
-    let state = !bytes[23];
+    let state = !bytes[STATE_AT];
     field_check(
         state & FILE_STATE_REQUIRED != 0 && state & FILE_STATE_REFUSED == 0,
         "a UEFI file is not in a state 7-Zip reads",
     )?;
-    let size = le24(bytes, 20) as usize;
+    let size = le24(bytes, FILE_SIZE_AT) as usize;
     field_check(
         size >= FILE_HEADER,
         "a UEFI file is shorter than its header",
     )?;
     Ok(FileHeader {
-        kind: bytes[18],
-        attributes: bytes[19],
+        kind: bytes[FILE_TYPE_AT],
+        attributes: bytes[FILE_ATTRIBUTES_AT],
         size,
-        data_checksum: bytes[17],
+        data_checksum: bytes[DATA_CHECKSUM_AT],
     })
 }
 
-// SPEC(UEFI PI 1.8 vol. 3, 2.2.4 EFI_COMMON_SECTION_HEADER): a 24-bit size that counts the
-// header, and the type. 7-Zip 26.05 refuses the extended size form.
+// SPEC(UEFI PI 1.8 vol. 3, EFI_COMMON_SECTION_HEADER): the 24-bit size counts the header.
 pub(crate) fn section_header(bytes: &[u8; SECTION_HEADER]) -> Field<(usize, u8)> {
     let size = le24(bytes, 0);
     field_check(
@@ -210,10 +216,10 @@ pub(crate) struct GuidSection {
     pub(crate) data_offset: usize,
 }
 
-// SPEC(UEFI PI 1.8 vol. 3, 2.2.4.6 EFI_GUID_DEFINED_SECTION): the section definition GUID, then
-// the offset of the data from the start of the section, and attributes.
+// SPEC(UEFI PI 1.8 vol. 3, EFI_GUID_DEFINED_SECTION): the data offset counts from the start of
+// the section.
 pub(crate) fn guid_section(bytes: &[u8; GUID_HEADER], section_size: usize) -> Field<GuidSection> {
-    let data_offset = usize::from(le16(bytes, 16));
+    let data_offset = usize::from(le16(bytes, GUID_DATA_OFFSET_AT));
     field_check(
         data_offset >= SECTION_HEADER + GUID_HEADER && data_offset <= section_size,
         "a UEFI GUID section's data lies outside it",
@@ -224,9 +230,8 @@ pub(crate) fn guid_section(bytes: &[u8; GUID_HEADER], section_size: usize) -> Fi
     })
 }
 
-// SPEC(UEFI PI 1.8 vol. 2, 13.3 Dependency Expression Instruction Set): opcodes 0 to 9, where
-// BEFORE, AFTER and PUSH take a GUID. 7-Zip 26.05 reads every byte as an opcode, END included,
-// and needs no END.
+// EXTERNAL(7-Zip 26.05): every byte of a dependency expression is read as an opcode, END
+// included, and no END is needed.
 pub(crate) fn depex_holds(bytes: &[u8]) -> bool {
     let mut at = 0;
     while let Some(&opcode) = bytes.get(at) {
@@ -235,10 +240,10 @@ pub(crate) fn depex_holds(bytes: &[u8]) -> bool {
         }
         at += 1;
         if DEPEX_OPCODES_WITH_GUID.contains(&opcode) {
-            if bytes.len() - at < DEPEX_PUSH_OPERAND {
+            if bytes.len() - at < DEPEX_GUID_OPERAND {
                 return false;
             }
-            at += DEPEX_PUSH_OPERAND;
+            at += DEPEX_GUID_OPERAND;
         }
     }
     true
@@ -787,8 +792,7 @@ struct Image {
     items: Vec<Item>,
 }
 
-// SPEC(UEFI 2.10, 8.5.3 EFI_CAPSULE_HEADER): the capsule GUID, the header size, flags and the
-// image size, which counts the header.
+// SPEC(UEFI 2.10, 8.5.3 EFI_CAPSULE_HEADER): the image size counts the header.
 pub(crate) fn capsule_header(
     bytes: &[u8; CAPSULE_HEADER],
     length: u64,
@@ -1001,9 +1005,8 @@ pub fn sniff_later_volume(path: &Path) -> Result<bool> {
     Ok(candidates(&head).any(|start| is_volume_at(&head, start)))
 }
 
-/// Returns whether the default engine should send the image to 7-Zip: one
-/// that writes a name that is not a plain relative path, which 7-Zip
-/// writes as it is.
+/// Returns whether a name in the image is not a plain relative path, so the
+/// default engine sends it to 7-Zip.
 pub fn needs_backend(path: &Path) -> Result<bool> {
     let Ok(image) = open(path) else {
         return Ok(false);
@@ -1062,7 +1065,7 @@ mod proofs {
         let bytes: [u8; FILE_HEADER] = kani::any();
         if let Ok(header) = file_header(&bytes) {
             assert!(header.size >= FILE_HEADER && header.size < 1 << 24);
-            assert!(!bytes[23] & FILE_STATE_REQUIRED != 0);
+            assert!(!bytes[STATE_AT] & FILE_STATE_REQUIRED != 0);
         }
     }
 
