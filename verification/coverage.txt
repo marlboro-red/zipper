@@ -3045,7 +3045,7 @@ item = src/writer_pool.rs | impl Drop for ClosesOnDrop<
 
 [inflate]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = b9d63629a4ef97fc
+fingerprint = fd04da0d9f82bce4
 full-check = cargo xtask kani-reach inflate
 full-check = cargo kani --harness inflate::proofs::
 full-check = cargo test --release --lib inflate
