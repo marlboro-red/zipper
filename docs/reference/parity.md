@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 102 |
+| `native` | 104 |
 | `partial` | 1 |
-| `backend` | 4 |
+| `backend` | 2 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-8 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+6 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -61,8 +61,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `PE` | `native` | Sections, the certificate, debug data, COFF symbols and resources read in process, with icons, bitmaps, string tables and version resources converted as 7-Zip converts them. The corpus comes from LLVM clang, lld and llvm-rc, since no Microsoft linker runs here. | `every_corpus_executable_extracts_the_tree_7zip_extracts` in `tests/exe_corpus.rs`, `generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/exe_corpus.rs`, `damaged_executables_are_refused_exactly_when_7zip_refuses_them` in `tests/hostile_exe.rs` |
 | `Ppmd` | `native` | var.H and var.I files read in process. Files come from the `ppmd-rust` encoders. A file with data after its end marker is refused, where 7-Zip ignores the rest. | `generated_pmd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_pmd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
 | `QCOW` | `native` | QCOW versions 1, 2 and 3 read in process, with zlib clusters. An image with a backing file, or a disk whose file system Zipper does not read, goes to 7-Zip. Encrypted, external-data, extended-L2 and zstd images are refused, as 7-Zip refuses them. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_containers_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs`, `qemu_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `qcow_images_are_checked_before_their_disk_is_read` in `tests/hostile_disk.rs` |
-| `Rar` | `backend` |  | No proof yet. |
-| `Rar5` | `backend` |  | No proof yet. |
+| `Rar` | `native` | RAR 4 archives that are not solid read in process with Zipper's own RAR 2.9 decoder, with PPMd blocks that start a model and the standard filters libarchive recognizes. Solid archives, volumes, encrypted archives, RAR 1.5 and 2.0 compression and PPMd blocks that continue a model go to 7-Zip. | `every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_extracts` in `tests/rar_corpus.rs`, `every_damaged_or_unsupported_corpus_archive_is_refused_and_leaves_nothing` in `tests/rar_corpus.rs`, `every_rar4_cut_is_refused_or_extracts_entries_of_the_original_tree` in `tests/hostile_rar.rs`, `every_rar4_bit_flip_is_refused_or_extracts_the_original_tree` in `tests/hostile_rar.rs`, `each_hostile_rar4_layout_is_refused_and_leaves_nothing` in `tests/hostile_rar.rs` |
+| `Rar5` | `native` | RAR 5 archives read in process with Zipper's own decoder, stored, compressed and solid, with the delta, E8, E8E9 and ARM filters. Volumes, encrypted archives, junctions and file copies go to 7-Zip. | `every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_extracts` in `tests/rar_corpus.rs`, `every_damaged_or_unsupported_corpus_archive_is_refused_and_leaves_nothing` in `tests/rar_corpus.rs`, `a_selected_path_extracts_only_its_entries_with_the_recorded_bytes_even_late_in_a_solid_stream` in `tests/rar_corpus.rs`, `every_cut_of_every_corpus_archive_is_refused` in `tests/hostile_rar.rs`, `every_bit_flip_is_refused_or_extracts_the_original_tree` in `tests/hostile_rar.rs`, `each_hostile_layout_is_refused_and_leaves_nothing` in `tests/hostile_rar.rs` |
 | `Rpm` | `native` |  | `tests/data/parity/archives/rpm-bzip2.rpm`, `tests/data/parity/archives/rpm-gzip.rpm`, `tests/data/parity/archives/rpm-lzma.rpm`, `tests/data/parity/archives/rpm-xz.rpm`, `tests/data/parity/archives/rpm-zstd.rpm` |
 | `SWF` | `native` | Uncompressed SWF reads in process, one file per tag, as 7-Zip writes them. Data after the declared length is refused, where 7-Zip warns. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_swf_of_every_tag_form_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs` |
 | `SWFc` | `native` | SWF compressed with zlib or LZMA reads in process, with Zipper's own LZMA decoder. A stream that decodes past its declared length, or data after the stream, is refused, where 7-Zip stops at the length or ignores the data. | `every_corpus_file_extracts_the_tree_7zip_extracts` in `tests/swf_corpus.rs`, `generated_compressed_swf_extract_as_7zip_extracts_them` in `tests/swf_corpus.rs`, `every_cut_and_a_sampled_flip_of_each_small_file_is_refused_when_7zip_refuses_it` in `tests/hostile_swf.rs`, `a_stream_that_decodes_past_its_declared_length_is_refused_at_that_length` in `tests/hostile_swf.rs` |

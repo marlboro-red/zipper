@@ -24,9 +24,44 @@
   "test_read_format_rar5_skip_block_extra_bytes.rar",
   "test_read_format_rar5_truncated_huff.rar",
   "test_read_format_rar5_unpacked_size_exceeds_declared.rar",
-  "test_read_format_rar5_window_buf_and_size_desync.rar"
+  "test_read_format_rar5_window_buf_and_size_desync.rar",
+  "test_read_format_rar_endarc_huge.rar",
+  "test_read_format_rar_invalid1.rar",
+  "test_read_format_rar_overflow.rar",
+  "test_read_format_rar_ppmd_use_after_free.rar",
+  "test_read_format_rar_ppmd_use_after_free2.rar",
+  "test_read_format_rar_seek_data_cursor0.rar",
+  "test_read_format_rar_symlink_huge.rar",
+  "test_read_format_rar_unbound_staticdata.rar"
+ ],
+ "crc_only": [
+  "test_read_format_rar_filter_incomplete_block.rar"
  ],
  "good": {
+  "test_read_format_rar.rar": {
+   "test.txt": {
+    "mode": "0o644",
+    "sha256": "5a5f16e01faf8adf92eb4499a2d3e93010c4b41dbb7f698f4a8466d9f58e6dd2"
+   },
+   "testdir": {
+    "dir": true
+   },
+   "testdir/test.txt": {
+    "mode": "0o644",
+    "sha256": "5a5f16e01faf8adf92eb4499a2d3e93010c4b41dbb7f698f4a8466d9f58e6dd2"
+   },
+   "testemptydir": {
+    "dir": true
+   },
+   "testlink": {
+    "link": "test.txt"
+   }
+  },
+  "test_read_format_rar3_lowdist_reset.rar": {
+   "lowdist-reset.bin": {
+    "sha256": "353d5f7a0789034186922e5834f666f36fa1f98e18f53fb4140b336ba090a923"
+   }
+  },
   "test_read_format_rar5_arm.rar": {
    "elf-Linux-ARMv7-ls": {
     "mode": "0o755",
@@ -321,11 +356,130 @@
     "mtime": 1787302909,
     "sha256": "c70b2aeb60e6e3759a38ce3f2c8b2fb36e522d040b94967f4aa51cb5d96327b1"
    }
+  },
+  "test_read_format_rar_compress_best.rar": {
+   "LibarchiveAddingTest.html": {
+    "mode": "0o644",
+    "sha256": "ee16390e87152d7dec632ae2b37566da6135966e46b5166e6f40a1c827fa61ad"
+   },
+   "testdir": {
+    "dir": true
+   },
+   "testdir/LibarchiveAddingTest.html": {
+    "mode": "0o644",
+    "sha256": "ee16390e87152d7dec632ae2b37566da6135966e46b5166e6f40a1c827fa61ad"
+   },
+   "testdir/test.txt": {
+    "mode": "0o644",
+    "sha256": "5a5f16e01faf8adf92eb4499a2d3e93010c4b41dbb7f698f4a8466d9f58e6dd2"
+   },
+   "testemptydir": {
+    "dir": true
+   },
+   "testlink": {
+    "link": "LibarchiveAddingTest.html"
+   }
+  },
+  "test_read_format_rar_compress_normal.rar": {
+   "LibarchiveAddingTest.html": {
+    "mode": "0o644",
+    "sha256": "ee16390e87152d7dec632ae2b37566da6135966e46b5166e6f40a1c827fa61ad"
+   },
+   "testdir": {
+    "dir": true
+   },
+   "testdir/LibarchiveAddingTest.html": {
+    "mode": "0o644",
+    "sha256": "ee16390e87152d7dec632ae2b37566da6135966e46b5166e6f40a1c827fa61ad"
+   },
+   "testdir/test.txt": {
+    "mode": "0o644",
+    "sha256": "5a5f16e01faf8adf92eb4499a2d3e93010c4b41dbb7f698f4a8466d9f58e6dd2"
+   },
+   "testemptydir": {
+    "dir": true
+   },
+   "testlink": {
+    "link": "LibarchiveAddingTest.html"
+   }
+  },
+  "test_read_format_rar_filter.rar": {
+   "bsdcat.exe": {
+    "mode": "0o644",
+    "sha256": "a961532b3a196e0b2c0126ad6f35d511c9fdfeadacbe78a1b15dc221251ad9a2"
+   }
+  },
+  "test_read_format_rar_multi_lzss_blocks.rar": {
+   "multi_lzss_blocks_test.txt": {
+    "mode": "0o644",
+    "sha256": "49a84a381599f749f93beaf486f3d661883d45659d9f46bfde9d34f72644f208"
+   }
+  },
+  "test_read_format_rar_noeof.rar": {
+   "test.txt": {
+    "mode": "0o644",
+    "sha256": "5a5f16e01faf8adf92eb4499a2d3e93010c4b41dbb7f698f4a8466d9f58e6dd2"
+   }
+  },
+  "test_read_format_rar_subblock.rar": {
+   "test.txt": {
+    "mode": "0o644",
+    "sha256": "5a5f16e01faf8adf92eb4499a2d3e93010c4b41dbb7f698f4a8466d9f58e6dd2"
+   }
+  },
+  "test_read_format_rar_unicode.rar": {
+   "abcdefghijklmnopqrs\u30c6\u30b9\u30c8.txt": {
+    "mode": "0o664",
+    "sha256": "84674f2bcd7325f909505e1532c6a07fdd33d441168618f5aa24f8346f6bec6e"
+   },
+   "\u8868\u3060\u3088": {
+    "dir": true
+   },
+   "\u8868\u3060\u3088/\u30d5\u30a1\u30a4\u30eb": {
+    "link": "\u6f22\u5b57\u9577\u3044\u30d5\u30a1\u30a4\u30eb\u540dlong-filename-in-\u6f22\u5b57.txt"
+   },
+   "\u8868\u3060\u3088/\u65b0\u3057\u3044\u30d5\u30a9\u30eb\u30c0": {
+    "dir": true
+   },
+   "\u8868\u3060\u3088/\u65b0\u3057\u3044\u30d5\u30a9\u30eb\u30c0/\u65b0\u898f\u30c6\u30ad\u30b9\u30c8 \u30c9\u30ad\u30e5\u30e1\u30f3\u30c8.txt": {
+    "mode": "0o644",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "\u8868\u3060\u3088/\u6f22\u5b57\u9577\u3044\u30d5\u30a1\u30a4\u30eb\u540dlong-filename-in-\u6f22\u5b57.txt": {
+    "mode": "0o644",
+    "sha256": "7faabe854be71defacd1fd3b0403f2c54f446dd60a46db60b7d823cf988a6deb"
+   }
+  },
+  "test_read_format_rar_windows.rar": {
+   "test.txt": {
+    "mode": "0o644",
+    "sha256": "2d45c5f87d1b6cef59a1d67a0ddeea9c75a7df81e5b64d30ecff39199b411bd9"
+   },
+   "testdir": {
+    "dir": true
+   },
+   "testdir/test.txt": {
+    "mode": "0o644",
+    "sha256": "2d45c5f87d1b6cef59a1d67a0ddeea9c75a7df81e5b64d30ecff39199b411bd9"
+   },
+   "testemptydir": {
+    "dir": true
+   },
+   "testshortcut.lnk": {
+    "mode": "0o644",
+    "sha256": "08b633f146f22534956b11bbc92e85f3f975e2820ecb892f958db5ae7bd7cf1f"
+   }
   }
  },
  "unsupported": [
   "test_read_format_rar5_encrypted.rar",
   "test_read_format_rar5_encrypted_filenames.rar",
-  "test_read_format_rar5_multiarchive.part01.rar"
+  "test_read_format_rar5_multiarchive.part01.rar",
+  "test_read_format_rar_encryption_data.rar",
+  "test_read_format_rar_encryption_header.rar",
+  "test_read_format_rar_encryption_partially.rar",
+  "test_read_format_rar4_encrypted.rar",
+  "test_read_format_rar_multivolume.part0001.rar",
+  "test_read_format_rar_ppmd_lzss_conversion.rar"
  ]
 }

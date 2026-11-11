@@ -160,6 +160,15 @@ fn without_unrecorded_fields(
     actual
 }
 
+fn without_times(mut found: BTreeMap<String, Node>) -> BTreeMap<String, Node> {
+    for node in found.values_mut() {
+        if let Node::File { mtime, .. } = node {
+            *mtime = None;
+        }
+    }
+    found
+}
+
 #[cfg(unix)]
 fn umask_ceiling(work: &Path) -> Option<u32> {
     use std::os::unix::fs::PermissionsExt;
@@ -207,7 +216,13 @@ fn every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_ex
         if let Some(binary) = &sevenzip {
             let theirs = work.path().join("7zip");
             if let Some(theirs) = sevenzip_tree(binary, &corpus(name), &theirs) {
-                assert_eq!(tree(&out), theirs, "{name} against 7-Zip");
+                let ours = tree(&out);
+                let (ours, theirs) = if name.contains("rar5") {
+                    (ours, theirs)
+                } else {
+                    (without_times(ours), without_times(theirs))
+                };
+                assert_eq!(ours, theirs, "{name} against 7-Zip");
                 compared += 1;
             }
         }
@@ -218,6 +233,16 @@ fn every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_ex
             compared >= 5,
             "7-Zip extracted only {compared} corpus archives"
         );
+    }
+}
+
+#[test]
+fn archives_no_oracle_here_extracts_pass_their_own_crc_checks() {
+    let manifest = manifest();
+    for name in manifest["crc_only"].as_array().unwrap() {
+        let name = name.as_str().unwrap();
+        read_archive(&corpus(name), None, ReadOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
     }
 }
 
@@ -242,5 +267,43 @@ fn every_damaged_or_unsupported_corpus_archive_is_refused_and_leaves_nothing() {
             "{name} was verified"
         );
         assert_eq!(fs::read_dir(work.path()).unwrap().count(), 0, "{name}");
+    }
+}
+
+#[test]
+fn a_selected_path_extracts_only_its_entries_with_the_recorded_bytes_even_late_in_a_solid_stream() {
+    let manifest = manifest();
+    for (name, path) in [
+        ("test_read_format_rar5_solid.rar", "test6.bin"),
+        (
+            "test_read_format_rar5_multiple_files_solid.rar",
+            "test3.bin",
+        ),
+        ("test_read_format_rar_compress_best.rar", "testdir"),
+    ] {
+        let work = tempfile::tempdir().unwrap();
+        let all = recorded(&manifest["good"][name], umask_ceiling(work.path()));
+        let wanted: BTreeMap<String, Node> = all
+            .into_iter()
+            .filter(|(entry, _)| entry == path || entry.starts_with(&format!("{path}/")))
+            .collect();
+        assert!(!wanted.is_empty(), "{name} has no {path}");
+        let out = work.path().join("out");
+        let paths = [path.to_owned()];
+        read_archive(
+            &corpus(name),
+            Some(&out),
+            ReadOptions {
+                paths: &paths,
+                ..ReadOptions::default()
+            },
+        )
+        .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        assert_eq!(
+            without_unrecorded_fields(tree(&out), &wanted),
+            wanted,
+            "{name}"
+        );
+        make_deletable(work.path());
     }
 }

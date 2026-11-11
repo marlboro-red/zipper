@@ -197,7 +197,7 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `msi` | The compound file reader, and `cab` for the cabinets inside | None beyond `cab` |
 | `lzh` | The LZH reader | None |
 | `arj` | The ARJ reader | None |
-| `rar` | The RAR 5 reader | None |
+| `rar` | The RAR 5 and RAR 4 reader | `ppmd-rust` |
 | `iso` | The ISO 9660 and UDF reader | None |
 | `wim` | The WIM and ESD reader | `sha1` |
 | `chm` | The CHM and Help 2 reader | None |

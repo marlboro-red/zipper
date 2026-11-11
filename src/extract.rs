@@ -62,15 +62,15 @@ use std::{io::Read, path::Path};
 pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, compound files such as MSI,
     /// ISO and UDF disc images, single compressed files, unrecognized files,
-    /// CAB files and cabinet sets, LZH, ARJ, RAR 5, WIM and ESD images, CHM and Help 2
+    /// CAB files and cabinet sets, LZH, ARJ, RAR, WIM and ESD images, CHM and Help 2
     /// files, NTFS volumes, APFS containers, ext2, ext3 and ext4 volumes, VHD,
     /// VHDX, QCOW, VDI, VMDK and Android sparse images and MBR and GPT disks
     /// with FAT, NTFS, HFS+, APFS or ext, DMG images and disks holding HFS+,
     /// HFSX or APFS, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files,
     /// SquashFS 4.0 and CramFS images, raw or in a disk's lone partition,
     /// Android logical partition images, UEFI firmware volumes and capsules,
-    /// and 7z whose methods it decodes. 7-Zip for RAR 4, a RAR 5 volume or
-    /// archive with encrypted headers, other 7z, other SquashFS
+    /// and 7z whose methods it decodes. 7-Zip for a RAR volume, a RAR 4 solid
+    /// archive or a RAR archive with encrypted headers, other 7z, other SquashFS
     /// versions and byte orders, an MSI whose main stream is not a CAB, a
     /// split or pre-1.13 WIM, a Help 2 file without an ITSF record, a
     /// differencing disk image, a DMG or disk holding another file system
@@ -84,7 +84,7 @@ pub enum Engine {
     Auto,
     /// 7-Zip for every archive.
     Backend,
-    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, RAR 5, compound
+    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, RAR, compound
     /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, DMG,
     /// HFS+, APFS, ext, SquashFS 4.0, CramFS, FLV, SWF, executables, logical
     /// partition images, UEFI firmware, 7z and single compressed files, and
@@ -116,7 +116,7 @@ pub enum Reader {
     Lzh,
     /// The native reader for ARJ archives.
     Arj,
-    /// The native reader for RAR 5 archives.
+    /// The native reader for RAR 5 and RAR 4 archives.
     Rar,
     /// The native reader for compound files: Windows Installer packages and
     /// documents such as `.doc`, `.xls` and `.msg`.

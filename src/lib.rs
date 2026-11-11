@@ -145,6 +145,10 @@ mod progress;
 #[cfg(feature = "cab")]
 mod quantum;
 #[cfg(feature = "rar")]
+mod rar4;
+#[cfg(feature = "rar")]
+mod rar4_lz;
+#[cfg(feature = "rar")]
 mod rar5_lz;
 #[cfg(any(feature = "zip-deflate", feature = "7z"))]
 mod scrub;

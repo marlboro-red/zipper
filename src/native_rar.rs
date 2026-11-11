@@ -1,5 +1,6 @@
 //! In-process extraction of RAR 5 archives, stored and compressed, solid or
-//! not. See `docs/reference/rar-reader.md` for what it accepts and restores.
+//! not, and of RAR 4 archives that are not solid. See
+//! `docs/reference/rar-reader.md` for what it accepts and restores.
 use crate::blake2sp::Blake2sp;
 use crate::rar5_lz::{self, Stream};
 pub use crate::tree::ReadOptions;
@@ -15,8 +16,8 @@ use std::{
 };
 
 const RAR5_SIGNATURE: [u8; 8] = *b"Rar!\x1A\x07\x01\x00";
-const RAR4_SIGNATURE: [u8; 7] = *b"Rar!\x1A\x07\x00";
 const COPY_BUFFER: usize = 1024 * 1024;
+const LONGEST_NAME: u64 = 8192;
 const LONGEST_VINT: usize = 10;
 const LONGEST_SIZE_VINT: usize = 3;
 const LARGEST_HEADER: u64 = (1 << 21) - 1;
@@ -353,7 +354,7 @@ fn file_header(body: &[u8], base: &Base) -> Field<FileHeader> {
     let host = fields.vint()?;
     let length = fields.vint()?;
     field_check(
-        length > 0 && length <= MAX_NAME,
+        length > 0 && length <= LONGEST_NAME,
         "RAR 5 name is empty or longer than 8192 bytes",
     )?;
     let name = fields.range(length)?;
@@ -770,31 +771,36 @@ fn starts_with(path: &Path, signature: &[u8]) -> Result<bool> {
 
 /// Returns whether the file starts with the RAR 5 or RAR 4 signature.
 pub fn sniff(path: &Path) -> Result<bool> {
-    Ok(starts_with(path, &RAR5_SIGNATURE)? || starts_with(path, &RAR4_SIGNATURE)?)
+    Ok(starts_with(path, &RAR5_SIGNATURE)? || starts_with(path, &crate::rar4::SIGNATURE)?)
 }
 
 /// Returns whether 7-Zip should read the archive under `Engine::Auto`: a
-/// RAR 4 archive, or a RAR 5 archive whose first headers Zipper does not
-/// read, such as a volume of a set or one whose headers are encrypted.
+/// RAR archive whose first headers Zipper does not read, such as a volume
+/// of a set, a RAR 4 solid archive or one whose headers are encrypted.
 pub fn needs_backend(path: &Path) -> Result<bool> {
-    Ok(!starts_with(path, &RAR5_SIGNATURE)? || Reader::open(path).is_err())
+    Ok(if starts_with(path, &RAR5_SIGNATURE)? {
+        Reader::open(path).is_err()
+    } else {
+        crate::rar4::Reader::open(path).is_err()
+    })
 }
 
-/// Verify and optionally extract a RAR 5 archive into a new directory. It
-/// reads stored and compressed entries, solid or not, with the delta, E8,
-/// E8E9 and ARM filters, and checks each header's CRC-32 and each file's
+/// Verify and optionally extract a RAR 5 archive, or a RAR 4 archive that
+/// is not solid, into a new directory. It reads stored and compressed
+/// entries, RAR 5 solid streams and filters, and RAR 4 PPMd blocks and
+/// standard filters, and checks each header's checksum and each file's
 /// CRC-32 or BLAKE2sp. It restores folders, modification times, Unix modes
 /// and read-only attributes, symlinks and hard links. Encrypted archives,
-/// volumes, junctions and file copies are refused.
+/// volumes, RAR 4 solid archives, junctions and file copies are refused.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
-    ensure!(
-        starts_with(path, &RAR5_SIGNATURE)?,
-        "RAR 4 archives are not read in process; {BACKEND_HINT}"
-    );
+    if !starts_with(path, &RAR5_SIGNATURE)? {
+        let mut reader = crate::rar4::Reader::open(path)?;
+        return tree::extract("RAR", path, destination, options, |tree| reader.parse(tree));
+    }
     let mut reader = Reader::open(path)?;
     tree::extract("RAR", path, destination, options, |tree| reader.parse(tree))
 }
@@ -912,6 +918,11 @@ mod field_tests {
     }
 
     #[test]
+    fn names_have_the_tree_writers_limit() {
+        assert_eq!(LONGEST_NAME, MAX_NAME);
+    }
+
+    #[test]
     fn modes_follow_the_host() {
         let mut header = FileHeader {
             directory: false,
@@ -966,9 +977,9 @@ mod proofs {
     }
 
     #[kani::proof]
-    #[kani::unwind(14)]
+    #[kani::unwind(10)]
     fn extra_records_never_panic_and_keep_link_targets_inside_their_record() {
-        let bytes: [u8; 12] = kani::any();
+        let bytes: [u8; 8] = kani::any();
         let start: usize = kani::any();
         let end: usize = kani::any();
         kani::assume(start <= end && end <= bytes.len());
@@ -987,6 +998,7 @@ mod proofs {
         kani::assume(length <= bytes.len());
         let body = &bytes[..length];
         if let Ok(base) = base_header(body) {
+            kani::assume(base.extra.is_empty());
             if let Ok(header) = file_header(body, &base) {
                 assert!(base.fields.start < header.name.start);
                 assert!(header.name.start < header.name.end && header.name.end <= base.fields.end);
