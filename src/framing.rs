@@ -372,7 +372,7 @@ pub(crate) struct Reader<R> {
 #[derive(Default)]
 struct Checks {
     adler: Adler32,
-    crc: crc32fast::Hasher,
+    crc: crate::crc32::Crc32,
     size: u32,
 }
 

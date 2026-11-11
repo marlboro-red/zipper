@@ -23,6 +23,7 @@ mod bzip2;
 mod bzip2_streams;
 pub mod compat;
 pub mod counters;
+mod crc32;
 #[cfg(any(feature = "tar", feature = "xar"))]
 mod dictionary;
 #[cfg(feature = "disk")]
