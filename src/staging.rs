@@ -103,9 +103,28 @@ enum Done {
         from: PathBuf,
         to: PathBuf,
         moved: Identity,
-        ours: HashSet<u64>,
+        ours: HashSet<Entry>,
     },
+    MadeAgain(PathBuf),
 }
+
+#[cfg(unix)]
+type Entry = (u64, u64);
+
+#[cfg(unix)]
+fn entry_key(root: &Path, entry: &walkdir::DirEntry) -> Entry {
+    use std::hash::{Hash, Hasher};
+    use walkdir::DirEntryExt;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    entry
+        .path()
+        .strip_prefix(root)
+        .unwrap_or(entry.path())
+        .hash(&mut hasher);
+    (entry.ino(), hasher.finish())
+}
+
+const MOST_PARENTS_MADE_AGAIN: usize = 8;
 
 pub(crate) struct Staging {
     temp: std::sync::Mutex<Option<tempfile::TempDir>>,
@@ -289,7 +308,7 @@ impl Staging {
         if published.is_ok() {
             published = crate::unix_modes::apply_with_default(&self.destination, &created, default)
                 .and_then(|()| check())
-                .inspect_err(|_| self.unlock_created(&steps));
+                .inspect_err(|_| self.unlock_created(&done));
         }
         #[cfg(not(unix))]
         if published.is_ok() {
@@ -315,11 +334,18 @@ impl Staging {
         let mut aside = None;
         let mut spellings = Spellings::new();
         let mut index = 0;
+        let mut parents_made_again = 0;
         while let Some(step) = steps.get(index) {
             check()?;
             match step {
                 Step::Create(path) => {
                     if let Err(error) = Self::create(staged(path), placed(path), done) {
+                        if parents_made_again < MOST_PARENTS_MADE_AGAIN
+                            && self.make_vanished_parents_again(path, done)?
+                        {
+                            parents_made_again += 1;
+                            continue;
+                        }
                         let Some(merged) = self.plan_merge_into_appeared_folder(path) else {
                             return Err(error);
                         };
@@ -347,8 +373,41 @@ impl Staging {
             }
             after_each(step);
             index += 1;
+            parents_made_again = 0;
         }
         Ok(steps)
+    }
+
+    fn make_vanished_parents_again(&self, path: &Path, done: &mut Vec<Done>) -> Result<bool> {
+        let mut parents: Vec<&Path> = path
+            .ancestors()
+            .skip(1)
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .collect();
+        parents.reverse();
+        let mut made = false;
+        for parent in parents {
+            let placed = self.destination.join(parent);
+            match fs::symlink_metadata(&placed) {
+                Ok(metadata) if metadata.is_dir() => continue,
+                Ok(_) => return Ok(false),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(error).with_context(|| format!("cannot read {}", placed.display()));
+                }
+            }
+            match fs::create_dir(&placed) {
+                Ok(()) => {
+                    done.push(Done::MadeAgain(placed));
+                    made = true;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => made = true,
+                Err(error) => {
+                    return Err(error).with_context(|| format!("cannot make {}", placed.display()));
+                }
+            }
+        }
+        Ok(made)
     }
 
     fn plan_merge_into_appeared_folder(&self, path: &Path) -> Option<Result<Vec<Step>>> {
@@ -374,15 +433,14 @@ impl Staging {
 
     #[cfg(unix)]
     fn create(staged: PathBuf, placed: PathBuf, done: &mut Vec<Done>) -> Result<()> {
-        use walkdir::DirEntryExt;
         if !fs::symlink_metadata(&staged).is_ok_and(|metadata| metadata.is_dir()) {
             return Self::move_into_place(staged, placed, done);
         }
         let ours = walkdir::WalkDir::new(&staged)
             .min_depth(1)
             .into_iter()
-            .map(|entry| entry.map(|entry| entry.ino()))
-            .collect::<Result<HashSet<u64>, _>>()?;
+            .map(|entry| entry.map(|entry| entry_key(&staged, &entry)))
+            .collect::<Result<HashSet<Entry>, _>>()?;
         rename_without_replacing(&staged, &placed)?;
         let moved = identity(&placed);
         done.push(Done::Folder {
@@ -475,23 +533,63 @@ impl Staging {
     }
 
     #[cfg(unix)]
-    fn unlock_created(&self, steps: &[Step]) {
-        for step in steps {
-            if let Step::Create(path) = step {
-                crate::unix_modes::unlock_tree_for_cleanup(&self.destination.join(path));
+    fn unlock_created(&self, done: &[Done]) {
+        use std::os::unix::fs::PermissionsExt;
+        for step in done {
+            if let Done::Folder { to, ours, .. } = step {
+                for entry in only_ours(to, ours, false).flatten() {
+                    if let Ok(metadata) = entry.metadata()
+                        && metadata.is_dir()
+                    {
+                        let mode = metadata.permissions().mode() | 0o700;
+                        let _ = fs::set_permissions(entry.path(), fs::Permissions::from_mode(mode));
+                    }
+                }
             }
         }
     }
 
     fn undo(&self, done: &[Done], error: anyhow::Error) -> anyhow::Error {
-        let left: Vec<String> = done
-            .iter()
-            .rev()
-            .filter_map(|step| {
-                let undone = match step {
-                    Done::Moved { from, to, moved } => {
-                        ensure_unchanged(to, *moved).and_then(|()| {
-                            rename_without_replacing(to, from).map_err(|error| {
+        let left: Vec<String> =
+            done.iter()
+                .rev()
+                .filter_map(|step| {
+                    let undone = match step {
+                        Done::Moved { from, to, moved } => {
+                            ensure_unchanged(to, *moved).and_then(|()| {
+                                rename_without_replacing(to, from).map_err(|error| {
+                                    anyhow::anyhow!(
+                                        "cannot move {} back to {}: {}",
+                                        to.display(),
+                                        from.display(),
+                                        error.root_cause()
+                                    )
+                                })
+                            })
+                        }
+                        Done::Swapped {
+                            staged,
+                            placed,
+                            new,
+                        } => ensure_unchanged(placed, *new).and_then(|()| {
+                            swap(staged, placed)
+                                .with_context(|| format!("cannot swap {} back", placed.display()))
+                        }),
+                        Done::MadeAgain(folder) => match fs::remove_dir(folder) {
+                            Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                                Ok(())
+                            }
+                            removed => removed
+                                .with_context(|| format!("cannot remove {}", folder.display())),
+                        },
+                        #[cfg(unix)]
+                        Done::Folder {
+                            from,
+                            to,
+                            moved,
+                            ours,
+                        } => ensure_unchanged(to, *moved).and_then(|()| {
+                            move_back_only_ours(from, to, ours).map_err(|error| {
                                 anyhow::anyhow!(
                                     "cannot move {} back to {}: {}",
                                     to.display(),
@@ -499,51 +597,27 @@ impl Staging {
                                     error.root_cause()
                                 )
                             })
-                        })
-                    }
-                    Done::Swapped {
-                        staged,
-                        placed,
-                        new,
-                    } => ensure_unchanged(placed, *new).and_then(|()| {
-                        swap(staged, placed)
-                            .with_context(|| format!("cannot swap {} back", placed.display()))
-                    }),
-                    #[cfg(unix)]
-                    Done::Folder {
-                        from,
-                        to,
-                        moved,
-                        ours,
-                    } => ensure_unchanged(to, *moved).and_then(|()| {
-                        move_back_only_ours(from, to, ours).map_err(|error| {
-                            anyhow::anyhow!(
-                                "cannot move {} back to {}: {}",
-                                to.display(),
-                                from.display(),
-                                error.root_cause()
-                            )
-                        })
-                    }),
-                };
+                        }),
+                    };
 
-                let describe = || match step {
-                    Done::Moved { from, to, .. } => {
-                        format!("{} moved from {}", to.display(), from.display())
-                    }
-                    #[cfg(unix)]
-                    Done::Folder { from, to, .. } => {
-                        format!("{} moved from {}", to.display(), from.display())
-                    }
-                    Done::Swapped { staged, placed, .. } => {
-                        format!("{} swapped with {}", placed.display(), staged.display())
-                    }
-                };
-                undone
-                    .err()
-                    .map(|undo| format!("{} ({undo:#})", describe()))
-            })
-            .collect();
+                    let describe = || match step {
+                        Done::Moved { from, to, .. } => {
+                            format!("{} moved from {}", to.display(), from.display())
+                        }
+                        #[cfg(unix)]
+                        Done::Folder { from, to, .. } => {
+                            format!("{} moved from {}", to.display(), from.display())
+                        }
+                        Done::MadeAgain(folder) => format!("{} made again", folder.display()),
+                        Done::Swapped { staged, placed, .. } => {
+                            format!("{} swapped with {}", placed.display(), staged.display())
+                        }
+                    };
+                    undone
+                        .err()
+                        .map(|undo| format!("{} ({undo:#})", describe()))
+                })
+                .collect();
         if left.is_empty() {
             return error;
         }
@@ -559,14 +633,20 @@ impl Staging {
 }
 
 #[cfg(unix)]
-fn move_back_only_ours(from: &Path, to: &Path, ours: &HashSet<u64>) -> Result<()> {
-    use walkdir::DirEntryExt;
-    let walk = |contents_first| {
-        walkdir::WalkDir::new(to)
-            .contents_first(contents_first)
-            .into_iter()
-            .filter_entry(|entry| entry.depth() == 0 || ours.contains(&entry.ino()))
-    };
+fn only_ours<'a>(
+    to: &'a Path,
+    ours: &'a HashSet<Entry>,
+    contents_first: bool,
+) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> + 'a {
+    walkdir::WalkDir::new(to)
+        .contents_first(contents_first)
+        .into_iter()
+        .filter_entry(move |entry| entry.depth() == 0 || ours.contains(&entry_key(to, entry)))
+}
+
+#[cfg(unix)]
+fn move_back_only_ours(from: &Path, to: &Path, ours: &HashSet<Entry>) -> Result<()> {
+    let walk = |contents_first| only_ours(to, ours, contents_first);
     for entry in walk(false) {
         let entry = entry?;
         let back = join_rest(from, entry.path().strip_prefix(to)?);
@@ -1220,7 +1300,10 @@ mod tests {
             .unwrap_err();
         assert_eq!(checks.get(), 3);
         let error = merge.staging.undo(&done, error);
-        assert!(error.downcast_ref::<crate::Cancelled>().is_some(), "{error:#}");
+        assert!(
+            error.downcast_ref::<crate::Cancelled>().is_some(),
+            "{error:#}"
+        );
         let mut after = tree(&merge.destination, merge.staging.path());
         assert_eq!(
             after.remove(Path::new("d/other")).unwrap().1.unwrap(),
@@ -1228,7 +1311,60 @@ mod tests {
         );
         assert!(after.remove(Path::new("d")).unwrap().1.is_none());
         assert_eq!(after, before);
-        assert_eq!(fs::read(merge.staging.path().join("d/f")).unwrap(), b"new f");
+        assert_eq!(
+            fs::read(merge.staging.path().join("d/f")).unwrap(),
+            b"new f"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_another_extraction_removes_in_its_undo_is_made_again() {
+        let merge = merge();
+        let steps = vec![Step::Replace("x".into()), Step::Create("e/g".into())];
+        let mut done = Vec::new();
+        let carried = merge
+            .staging
+            .carry_out(steps, &mut done, &mut || Ok(()), |step| {
+                if matches!(step, Step::Replace(_)) {
+                    fs::remove_dir(merge.destination.join("e")).unwrap();
+                }
+            });
+        carried.unwrap_or_else(|error| panic!("{error:#}"));
+        assert_eq!(fs::read(merge.destination.join("e/g")).unwrap(), b"new g");
+        let error = merge.staging.undo(&done, anyhow::anyhow!("later step"));
+        assert_eq!(format!("{error:#}"), "later step");
+        assert!(!merge.destination.join("e").exists());
+        assert_eq!(fs::read(merge.destination.join("x")).unwrap(), b"old x");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unlock_for_cleanup_leaves_the_modes_of_another_extraction_folders() {
+        let merge = merge();
+        fs::create_dir(merge.staging.path().join("d/h")).unwrap();
+        let steps = vec![Step::Create("d".into())];
+        let mut done = Vec::new();
+        merge
+            .staging
+            .carry_out(steps, &mut done, &mut || Ok(()), |_| {
+                fs::create_dir(merge.destination.join("d/other")).unwrap();
+                set_mode(&merge.destination.join("d/other"), 0o555);
+            })
+            .unwrap();
+        set_mode(&merge.destination.join("d/h"), 0o555);
+        merge.staging.unlock_created(&done);
+        let mode = |path: &str| {
+            use std::os::unix::fs::PermissionsExt;
+            fs::metadata(merge.destination.join(path))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        assert_eq!(mode("d/h"), 0o755);
+        assert_eq!(mode("d/other"), 0o555);
+        set_mode(&merge.destination.join("d/other"), 0o755);
     }
 
     #[cfg(unix)]

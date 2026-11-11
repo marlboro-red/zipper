@@ -6,7 +6,10 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::Barrier,
+    sync::{
+        Barrier, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use zip::write::SimpleFileOptions;
@@ -144,7 +147,17 @@ fn extract_all(
     destination: &Path,
     round: usize,
 ) -> Vec<anyhow::Result<Vec<zipper::Entry>>> {
+    extract_cancelling(archives, destination, round, |_| false)
+}
+
+fn extract_cancelling(
+    archives: &[Archive],
+    destination: &Path,
+    round: usize,
+    cancels: impl Fn(usize) -> bool + Sync,
+) -> Vec<anyhow::Result<Vec<zipper::Entry>>> {
     let barrier = Barrier::new(archives.len());
+    let cancels = &cancels;
     std::thread::scope(|scope| {
         let handles: Vec<_> = archives
             .iter()
@@ -152,18 +165,45 @@ fn extract_all(
             .map(|(index, archive)| {
                 let barrier = &barrier;
                 scope.spawn(move || {
+                    let cancel = AtomicBool::new(false);
+                    let finishing = OnceLock::new();
+                    let returned = AtomicBool::new(false);
+                    let progress = |progress: zipper::Progress| {
+                        if progress.phase == zipper::Phase::Finishing {
+                            let _ = finishing.set(());
+                        }
+                    };
                     barrier.wait();
                     let delay = (index * 7919 + round * 104_729) % 5;
                     std::thread::sleep(Duration::from_millis(delay as u64));
-                    native_zip::read_archive_with_options(
-                        &archive.path,
-                        Some(destination),
-                        native_zip::ReadOptions {
-                            existing: Existing::Overwrite,
-                            threads: Some(1 + (index + round) % 3),
-                            ..Default::default()
-                        },
-                    )
+                    std::thread::scope(|inner| {
+                        if cancels(index) {
+                            inner.spawn(|| {
+                                while finishing.get().is_none() && !returned.load(Ordering::SeqCst)
+                                {
+                                    std::thread::sleep(Duration::from_micros(50));
+                                }
+                                let after = (index * 131 + round * 977) % 2500;
+                                std::thread::sleep(Duration::from_micros(after as u64));
+                                cancel.store(true, Ordering::SeqCst);
+                            });
+                        }
+                        let result = native_zip::read_archive_with_options(
+                            &archive.path,
+                            Some(destination),
+                            native_zip::ReadOptions {
+                                existing: Existing::Overwrite,
+                                threads: Some(1 + (index + round) % 3),
+                                control: zipper::Control {
+                                    progress: Some(&progress),
+                                    cancel: Some(&cancel),
+                                },
+                                ..Default::default()
+                            },
+                        );
+                        returned.store(true, Ordering::SeqCst);
+                        result
+                    })
                 })
             })
             .collect();
@@ -318,4 +358,60 @@ fn a_file_two_archives_share_ends_whole_from_one_of_them() {
             "round {round}"
         );
     }
+}
+
+#[test]
+fn runs_cancelled_while_they_publish_undo_only_their_own_files() {
+    let rounds = setting("ZIPPER_CONCURRENT_ROUNDS", 6) * 2;
+    let count = setting("ZIPPER_CONCURRENT_ARCHIVES", 8);
+    let source = tempfile::tempdir().unwrap();
+    let archives: Vec<Archive> = (0..count)
+        .map(|archive| write_archive(source.path(), archive, &members(archive, 300)))
+        .collect();
+    let (mut cancelled, mut late) = (0, 0);
+    for round in 0..rounds {
+        let start = STARTS[round % STARTS.len()];
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("out");
+        prepare(&destination, start);
+        let cancels = |index: usize| index % 2 == 1;
+        let results = extract_cancelling(&archives, &destination, round, cancels);
+        let mut expected = Tree::new();
+        for (index, (archive, result)) in archives.iter().zip(&results).enumerate() {
+            match result {
+                Ok(_) => {
+                    late += usize::from(cancels(index));
+                    expected.extend(archive.files.clone());
+                }
+                Err(error)
+                    if cancels(index) && error.downcast_ref::<zipper::Cancelled>().is_some() =>
+                {
+                    cancelled += 1
+                }
+                Err(error) => {
+                    panic!("round {round} from {start:?}: archive {index} failed: {error:#}")
+                }
+            }
+        }
+        assert_eq!(
+            leftovers(root.path()),
+            Vec::<PathBuf>::new(),
+            "round {round}"
+        );
+        let actual = if destination.exists() {
+            files_on_disk(&destination)
+        } else {
+            Tree::new()
+        };
+        assert_eq!(
+            actual.keys().collect::<Vec<_>>(),
+            expected.keys().collect::<Vec<_>>(),
+            "round {round} from {start:?}"
+        );
+        assert!(actual == expected, "round {round}: some bytes differ");
+    }
+    assert!(
+        cancelled > 0,
+        "no run was cancelled, {late} cancels came too late"
+    );
 }
