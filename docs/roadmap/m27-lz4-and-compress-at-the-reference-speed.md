@@ -1,0 +1,17 @@
+# M27. LZ4 and `compress` at the reference speed
+
+Zipper extracts `.tar.lz4` and `.tar.Z` as fast as the fastest reference tool, in Rust and with every check it has today.
+
+The codec rows of [Results](../results.md) at `cb8fe53`, on an Apple M2 Max at one thread, show the two largest gaps against a reference. A Silesia `.tar.lz4` takes 335 ms in Zipper against 102 ms in bsdtar, 3.3 times as long. A Silesia `.tar.Z` takes 1,120 ms against 413 ms in 7-Zip, 2.7 times as long. Both gaps predate M25, and M13 recorded them first.
+
+Scope:
+
+- Profile `src/lz4.rs`, `src/lzw.rs` and the tar reader's path for each before changing code, and name what limits each one.
+- Study how the reference decodes each format, by its source or by disassembly, and measure the gap stage by stage.
+- Keep each change that a record shows faster with ranges apart, in safe Rust where a measured gain does not need `unsafe`.
+
+Exit checks:
+
+1. A record for each codec times Zipper against its reference on the second machine, interleaved, with the ranges apart or the verdict stated as a tie.
+2. The codec rows of the scoreboard show each codec level with its reference or faster, or the record names the gap left and why only assembly could close it.
+3. The LZ4 and `compress` parser proofs and tests still pass, and a planted break shows each new check can fail.
