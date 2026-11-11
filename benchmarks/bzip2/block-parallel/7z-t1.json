@@ -14,13 +14,13 @@
   "readers": {
     "main": {
       "mode": "native",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/timing/bin/zipper-25dcb88",
+      "binary": "target/timing/bin/zipper-25dcb88",
       "sha256": "b754ba8cd9129d262083f138bdcba5aac49187327db8b19f3c5ec6f9a84b2dc0",
       "threads": 1
     },
     "blocks": {
       "mode": "native",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/timing/bin/zipper-bz2",
+      "binary": "target/timing/bin/zipper-bz2",
       "sha256": "ceaa3f8652428ed82a9ebccad277a9f713b485b9f0d3ff8898d3c16899a71d49",
       "threads": 1
     },

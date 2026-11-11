@@ -14,19 +14,19 @@
   "readers": {
     "before": {
       "mode": "native",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/segmem/before",
+      "binary": "target/segmem/before",
       "sha256": "fd005fc8ea80d0580df5ab65e15cffb81c98dd1de8f82a3098a8274442b19285",
       "threads": 1
     },
     "after": {
       "mode": "native",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/segmem/after",
+      "binary": "target/segmem/after",
       "sha256": "db5d7377b39de0e1569de9b4d88524c5ae72dbb53e2bbc603aca5d2940d26809",
       "threads": 1
     },
     "7zip": {
       "mode": "7zip",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/tools/7zz",
+      "binary": "target/tools/7zz",
       "sha256": "60e4afd68d86a4b709e2f7993fb4566955bb7659a7f8d62a66390dfc50c742ca",
       "threads": 1
     }

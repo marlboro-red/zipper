@@ -14,25 +14,25 @@
   "readers": {
     "zipper": {
       "mode": "native",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/timing/bin/zipper-main4",
+      "binary": "target/timing/bin/zipper-main4",
       "sha256": "2283d2b452c667aab0573848f249c6f8b9c687ac672b2b6eff97018d75e66c31",
       "threads": null
     },
     "content-only": {
       "mode": "native-content-only",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/timing/bin/zipper-main4",
+      "binary": "target/timing/bin/zipper-main4",
       "sha256": "2283d2b452c667aab0573848f249c6f8b9c687ac672b2b6eff97018d75e66c31",
       "threads": null
     },
     "pzip": {
       "mode": "pzip",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/timing/bin/punzip",
+      "binary": "target/timing/bin/punzip",
       "sha256": "8645a7baeebf12497781183ba4f1a892e466d3373975ab8dc58de925f2ef414b",
       "threads": null
     },
     "fastzip": {
       "mode": "fastzip",
-      "binary": "/Users/cjpark/Desktop/Projects/zipper-kani/target/timing/bin/fastzip-extract",
+      "binary": "target/timing/bin/fastzip-extract",
       "sha256": "b127e2ddefbaf8cf1c1e1956c5d09117b5799a6995fc007caf581c34df969545",
       "threads": null
     }

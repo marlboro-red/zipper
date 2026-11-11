@@ -130,6 +130,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "lint-docs",
     "lint-comments",
     "lint-7zip-lookups",
+    "lint-private-paths",
     "install-hooks",
     "ci-wait",
     "warm-cache",
