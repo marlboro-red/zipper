@@ -14,7 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
-| 2026-11-11 | [Zipper's own Zstandard decoder against libzstd](zstd/own-decoder/README.md) | Kept, and not yet timed. The safe Rust decoder retires 1.01 to 1.04 times the cycles of libzstd 1.5.7 on four large streams and 1.09 times on 3,983 small frames, with 19 to 25% more instructions. Extraction timing is still owed. |
+| 2026-11-11 | [Zipper's own Zstandard decoder against libzstd](zstd/own-decoder/README.md) | Kept, with an open gap. On an Apple M5 the safe Rust decoder takes 1.01 to 1.04 times the cycles of libzstd 1.5.7 on large streams. On an M2 Max extraction takes 12 to 13% more cycles, all in the sequence loop, and seven attempts to close it were reverted. |
 
 ## LZMA decoder
 

@@ -1,6 +1,6 @@
 # Zipper's own Zstandard decoder against libzstd
 
-**Kept, and not yet timed. Zipper's safe Rust decoder retires 1.01 to 1.04 times the cycles of libzstd 1.5.7 on four large streams, and 1.09 times on a file of 3,983 small frames. It retires 19 to 25% more instructions, with peak memory within 0.8 MB. This record counts cycles and instructions only, and the extraction timing that decides shipping is still owed.** One Apple M5, shared with other jobs.
+**Kept, with a gap on an older core that is not closed. On an Apple M2 Max the decoder takes 12 to 13% more cycles than libzstd end to end, all of it in the sequence loop, and seven attempts to close it there failed. Zipper's safe Rust decoder retires 1.01 to 1.04 times the cycles of libzstd 1.5.7 on four large streams, and 1.09 times on a file of 3,983 small frames. It retires 19 to 25% more instructions, with peak memory within 0.8 MB. These lead figures are from an Apple M5 and count cycles and instructions only.** One Apple M5, shared with other jobs.
 
 ## Question
 
@@ -55,7 +55,23 @@ Whole `zipper extract --threads 1` processes on this machine, five runs in turn,
 | `silesia.tar` under `zstd -3 -T0` | one block a read | 2,796 M | 608.9 M | 596.7 M |
 | `silesia.tar` under `zstd -3 -T0` | a full buffer a read | 2,795 M | 613.7 M | 606.9 M |
 
-On an Apple M2 Max the coordinator timed the build that returned one block a read. ZIP Zstandard Silesia took 266.1 ms against 228.9 ms at one thread, and Silesia `.tar.zst` 226.1 ms against 202.5 ms, ranges apart. The build that fills the buffer has not been timed there.
+On an Apple M2 Max the coordinator timed the build that returned one block a read. ZIP Zstandard Silesia took 266.1 ms against 228.9 ms at one thread, and Silesia `.tar.zst` 226.1 ms against 202.5 ms, ranges apart. The build that fills the buffer took 250.8 ms against 228.6 ms on the ZIP and 225.3 ms against 201.7 ms on the tar, ranges apart.
+
+The same whole-process counts on the M2 Max, with [`count-extract.sh`](count-extract.sh), five runs in turn, median. The in-process probe there took 1,795 M cycles against 1,589 M on Silesia `-3`. A sampled profile put the sequence loop at 20% more samples than libzstd's, and the Huffman loops, the checksum and the table builders level.
+
+| Build on the M2 Max | ZIP instructions | ZIP cycles | Tar instructions | Tar cycles |
+| --- | ---: | ---: | ---: | ---: |
+| libzstd, `25dcb88` | 2,370 M | 640.2 M | 2,313 M | 606.6 M |
+| The shipped decoder, `f5b5db9` | 2,844 M | 716.9 M | 2,799 M | 687.7 M |
+| Sequences decoded 64 at a time, then copied | 2,833 M | 758.6 M | 2,791 M | 736.1 M |
+| Largest offset tracked only where a block can pass the window | 2,802 M | 713.4 M | 2,758 M | 690.9 M |
+| That, and a match's first 32 bytes through one split | 2,609 M | 734.8 M | 2,568 M | 711.0 M |
+| Literals copied 16 bytes at a time | 2,845 M | 742.5 M | 2,800 M | 718.2 M |
+| Literals and matches copied 16 bytes at a time | 2,827 M | 733.3 M | 2,783 M | 709.8 M |
+| One bounds check a match, then unchecked steps, with `unsafe` | 2,774 M | 711.1 M | 2,731 M | 686.7 M |
+| No call inside the loop, rare sequences leave it | 2,781 M | 712.8 M | 2,736 M | 688.2 M |
+
+All seven changes were reverted. None moved cycles by more than 1% in the right direction, and the two that cut the most instructions were slower. So the M2 gap is not the instruction count, the bounds checks, or the calls in the loop. In the shipped loop the compiler keeps the FSE states on the stack, and two of them stayed there with no call in the loop. Whether that round trip, or the 32-byte copies reading bytes just stored, costs the M2 its 20% was not measured.
 
 The adversarial review built a ZIP of 2,000 Zstandard entries, each a 10-byte frame that declares a 128 MiB window. The first wiring zeroed a whole window for every entry, 547 MB at peak and 6.15 s of CPU against 4.9 MB and 0.14 s. The window buffer is now reserved without being touched and filled as blocks arrive, and a thread keeps its decoder for the next frame. `zipper extract` on that ZIP now retires 1,721 M instructions with a 5.1 MB peak, against 1,740 M and 5.6 MB for the libzstd build.
 
@@ -63,12 +79,13 @@ The adversarial review built a ZIP of 2,000 Zstandard entries, each a 10-byte fr
 
 Kept. The decoder is wired in behind the `zstd` feature, and the `zstd` crate is now only a test oracle, so the default build no longer compiles libzstd. On the large streams, cycles are within 1 to 4% of libzstd, which the run-to-run spread on a busy machine does not separate from level. The coordinator times `zipper extract` on the zstd workloads before this ships, and reverts the wiring if a workload is slower beyond the spread.
 
-Instructions stay 19 to 25% above libzstd. Bounds checks on the output buffer and two shifts where libzstd uses one account for most of the gap, and they run at a higher rate of instructions per cycle. No `unsafe` was tried, because cycles came within a few percent without it.
+Instructions stay 19 to 25% above libzstd. Bounds checks on the output buffer and two shifts where libzstd uses one account for most of the gap, and they run at a higher rate of instructions per cycle. On the M5, cycles came within a few percent in safe Rust.
 
 ## Limits
 
 - No wall time. Cycles from `/usr/bin/time -l` moved by up to 7% for the same binary between runs while other jobs ran, so a difference of a few percent here is not established either way.
-- The counts come from one Apple M5. On an M2 Max the tar path was 11% slower in wall time where this machine counts 1 to 2% more cycles. The decoder retires 19 to 25% more instructions than libzstd, which a narrower core may not absorb.
+- The M2 Max gap of 12 to 13% is open. Its cause is in the sequence loop and is not identified. Hardware event counts of branch misses and store forwarding on the M2 would be the next measurement.
+- No `unsafe` was kept. The one unchecked copy tried moved M2 cycles by less than 1%.
 - libzstd uses hand-written assembly for its Huffman loops on x86-64, which this record does not measure.
 - The probe decodes from memory into a 128 KiB buffer. That hid the cost of returning one block a read, which only the extraction counts showed.
 - SquashFS blocks decode through `decode_all`, one whole block at a time, which the probe does not count.
