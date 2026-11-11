@@ -664,12 +664,14 @@ fn filters_after_a_program_reset_and_empty_filters_at_the_end_extract() {
     }
 }
 
+#[cfg(unix)]
 #[derive(Default)]
 struct BitWriter {
     bytes: Vec<u8>,
     bits: usize,
 }
 
+#[cfg(unix)]
 impl BitWriter {
     fn put(&mut self, value: u64, count: u32) {
         for bit in (0..count).rev() {
@@ -684,6 +686,7 @@ impl BitWriter {
     }
 }
 
+#[cfg(unix)]
 fn run_of_one_byte_with_fixed_width_tables(repeats: usize) -> (Vec<u8>, u64) {
     let mut writer = BitWriter::default();
     for _ in 0..20 {
