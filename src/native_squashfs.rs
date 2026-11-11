@@ -368,11 +368,12 @@ fn decode_exact(
     method: Method,
     dictionary_limit: u64,
     packed: &[u8],
+    window: &mut Vec<u8>,
     output: &mut [u8],
 ) -> Result<usize> {
     match method {
         Method::Gzip => {
-            let decoded = crate::framing::zlib_block(&mut Vec::new(), packed, output)
+            let decoded = crate::framing::zlib_block(window, packed, output)
                 .context("SquashFS zlib block is damaged")?;
             let decoded = decoded.filter(|decoded| decoded.consumed == packed.len());
             Ok(decoded
@@ -478,6 +479,7 @@ struct Disk<'v> {
     volume: &'v mut dyn Volume,
     superblock: Superblock,
     packed: Vec<u8>,
+    window: Vec<u8>,
 }
 
 impl Disk<'_> {
@@ -491,6 +493,13 @@ impl Disk<'_> {
         self.packed.resize(length, 0);
         self.volume.read_exact_at(offset, &mut self.packed)?;
         Ok(&self.packed)
+    }
+
+    fn decode_at(&mut self, offset: u64, length: usize, output: &mut [u8]) -> Result<usize> {
+        self.read_at(offset, length)?;
+        let limit = self.dictionary_limit();
+        let method = self.superblock.method;
+        decode_exact(method, limit, &self.packed, &mut self.window, output)
     }
 
     fn dictionary_limit(&self) -> u64 {
@@ -527,15 +536,12 @@ impl Metadata {
             (1..=METADATA_BLOCK).contains(&length) && position + 2 + length as u64 <= self.end,
             "SquashFS {name} block has a bad length"
         );
-        let method = disk.superblock.method;
-        let limit = disk.dictionary_limit();
-        let packed = disk.read_at(position + 2, length)?;
         let mut data = vec![0u8; METADATA_BLOCK];
         let decoded = if header & METADATA_UNCOMPRESSED != 0 {
-            data[..length].copy_from_slice(packed);
+            data[..length].copy_from_slice(disk.read_at(position + 2, length)?);
             length
         } else {
-            decode_exact(method, limit, packed, &mut data)
+            disk.decode_at(position + 2, length, &mut data)
                 .with_context(|| format!("SquashFS {name} block is damaged"))?
         };
         data.truncate(decoded);
@@ -699,6 +705,7 @@ impl<'v> Image<'v> {
             volume,
             superblock,
             packed: Vec::new(),
+            window: Vec::new(),
         };
         let fragment_blocks = read_index(
             &mut disk,
@@ -895,15 +902,14 @@ impl<'v> Image<'v> {
         {
             let (start, length, stored) = self.fragment_entry(index)?;
             crate::counters::add(crate::counters::Counter::FragmentBlocksRead, 1);
-            let method = self.superblock().method;
-            let limit = self.disk.dictionary_limit();
             let block_size = self.superblock().block_size as usize;
-            let packed = self.disk.read_at(start, length as usize)?;
             let data = if stored {
-                packed.to_vec()
+                self.disk.read_at(start, length as usize)?.to_vec()
             } else {
                 let mut data = vec![0u8; block_size];
-                let decoded = decode_exact(method, limit, packed, &mut data)
+                let decoded = self
+                    .disk
+                    .decode_at(start, length as usize, &mut data)
                     .with_context(|| format!("SquashFS fragment block {index} is damaged"))?;
                 data.truncate(decoded);
                 data
@@ -962,17 +968,18 @@ impl FileData<'_, '_> {
                 .with_context(|| {
                     format!("SquashFS file {path:?} has a block outside the data area")
                 })?;
-            let method = superblock.method;
-            let limit = self.image.disk.dictionary_limit();
-            let packed = self.image.disk.read_at(self.position, length as usize)?;
             if stored {
+                let packed = self.image.disk.read_at(self.position, length as usize)?;
                 ensure!(
                     packed.len() == expected,
                     "SquashFS file {path:?} has a stored block of the wrong size"
                 );
                 self.buffer.copy_from_slice(packed);
             } else {
-                let decoded = decode_exact(method, limit, packed, &mut self.buffer)
+                let decoded = self
+                    .image
+                    .disk
+                    .decode_at(self.position, length as usize, &mut self.buffer)
                     .with_context(|| format!("SquashFS file {path:?} is damaged"))?;
                 ensure!(
                     decoded == expected,
@@ -1476,7 +1483,7 @@ mod zlib_tests {
     fn zlib_blocks_decode_as_flate2_decodes_them_whole_cut_and_flipped() {
         for (packed, size) in crate::framing::oracle::block_cases(crate::framing::oracle::zlib) {
             let (mut ours, mut theirs) = (vec![0u8; size], vec![0u8; size]);
-            let decoded = decode_exact(Method::Gzip, 0, &packed, &mut ours).ok();
+            let decoded = decode_exact(Method::Gzip, 0, &packed, &mut Vec::new(), &mut ours).ok();
             assert_eq!(decoded, flate2_decode(&packed, &mut theirs), "{size}");
             if let Some(length) = decoded {
                 assert_eq!(ours[..length], theirs[..length]);
