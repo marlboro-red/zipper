@@ -585,7 +585,7 @@ fn fast(
     let mut entry = litlen!();
     let exit = 'decode: loop {
         let mut before = consume!(entry);
-        'symbol: {
+        entry = 'symbol: {
             if entry & LITERAL != 0 {
                 window[filled] = (entry >> VALUE_SHIFT) as u8;
                 filled += 1;
@@ -599,7 +599,7 @@ fn fast(
                     if entry & LITERAL != 0 {
                         window[filled] = (entry >> VALUE_SHIFT) as u8;
                         filled += 1;
-                        break 'symbol;
+                        break 'symbol litlen!();
                     }
                 }
             }
@@ -616,7 +616,7 @@ fn fast(
                 if entry & LITERAL != 0 {
                     window[filled] = (entry >> VALUE_SHIFT) as u8;
                     filled += 1;
-                    break 'symbol;
+                    break 'symbol litlen!();
                 }
                 if entry & EXCEPTIONAL != 0 {
                     break 'decode match entry & END_OF_BLOCK != 0 {
@@ -649,10 +649,11 @@ fn fast(
             if distance > filled {
                 break 'decode Err(TOO_FAR_BACK);
             }
+            let after_the_match = litlen!();
             copy_match(window, filled, distance, length);
             filled += length;
-        }
-        entry = litlen!();
+            after_the_match
+        };
         if !margins!() {
             break 'decode Ok(Pause::Margin);
         }
