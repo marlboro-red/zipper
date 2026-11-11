@@ -458,6 +458,7 @@ fn says_nothing_about_the_volumes(error: &anyhow::Error) -> bool {
         cause.is::<crate::Cancelled>()
             || cause.is::<crate::DestinationRefused>()
             || cause.is::<crate::OverLimit>()
+            || cause.is::<NotBuilt>()
     })
 }
 

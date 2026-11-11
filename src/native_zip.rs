@@ -1849,7 +1849,7 @@ pub fn read_archive_with_options(
     Ok(items.into_iter().map(|item| item.entry).collect())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "zip-lzma"))]
 mod lzma_entry_tests {
     use super::*;
     use crate::lzma::lzma_file_and_lzip_tests::{
@@ -1969,6 +1969,7 @@ mod budget_tests {
     use super::*;
     use std::sync::Barrier;
 
+    #[cfg(feature = "zip-bzip2")]
     #[test]
     fn a_bzip2_entry_reserves_what_one_decoder_in_place_can_hold() {
         let few = method_need(BZIP2, 1, 1).unwrap();
@@ -2220,7 +2221,7 @@ mod entry_nesting_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "zip-deflate64"))]
 mod deflate64_entry_tests {
     use super::*;
 

@@ -222,7 +222,8 @@ The readers' own checks catch the rest. Every failure while reading a joined set
 
 - a cancel;
 - a destination that exists, is not a folder, or where the staging folder cannot be created;
-- the `--max-extracted-bytes` cap or the free-space refusal.
+- the `--max-extracted-bytes` cap or the free-space refusal;
+- `zipper::NotBuilt`, for a method or encryption the build leaves out, so a library can still find it in the error.
 
 The line never claims a volume is damaged. For a set, it names the first and last volume and says to rename a whole first volume. It adds that a damaged archive may have a missing next volume, a truncated last volume, or a volume that is repeated or out of order. A volume that holds the same bytes as an earlier one is named. That check hashes each volume once, compares a volume only with the first of its length and hash, and stops after reading 256 MiB. For a file read alone, the line says why. The reader's advice to pass `--zip-engine backend` for a split volume is left out whenever the line is added. A volume that cannot be opened is named by its path.
 

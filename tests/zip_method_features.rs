@@ -170,9 +170,9 @@ impl Case {
             .join(self.archive)
     }
 
-    fn extract(&self, engine: Engine, destination: &Path) -> anyhow::Result<()> {
+    fn extract(&self, archive: &Path, engine: Engine, destination: &Path) -> anyhow::Result<()> {
         extract_archive(
-            &self.path(),
+            archive,
             destination,
             ExtractOptions {
                 engine,
@@ -198,20 +198,37 @@ impl Case {
     }
 }
 
+fn split_in_two_volumes(archive: &Path, folder: &Path) -> PathBuf {
+    let bytes = std::fs::read(archive).unwrap();
+    let (first, second) = bytes.split_at(bytes.len() / 2);
+    let name = archive.file_name().unwrap().to_str().unwrap();
+    std::fs::write(folder.join(format!("{name}.002")), second).unwrap();
+    let first_volume = folder.join(format!("{name}.001"));
+    std::fs::write(&first_volume, first).unwrap();
+    first_volume
+}
+
 #[test]
 fn an_entry_reads_when_its_method_and_encryption_are_built_and_is_refused_otherwise() {
+    let volumes = tempfile::tempdir().unwrap();
     for case in CASES {
-        for engine in [Engine::Native, Engine::Auto] {
+        let whole = case.path();
+        let split = split_in_two_volumes(&whole, volumes.path());
+        for (archive, engine) in [
+            (&whole, Engine::Native),
+            (&whole, Engine::Auto),
+            (&split, Engine::Native),
+        ] {
             let work = tempfile::tempdir().unwrap();
             let destination = work.path().join("out");
-            let extracted = case.extract(engine, &destination);
+            let extracted = case.extract(archive, engine, &destination);
             match case.missing_feature() {
                 Some(feature) => {
                     let error = extracted.expect_err(case.archive);
                     let not_built = error
                         .downcast_ref::<NotBuilt>()
-                        .unwrap_or_else(|| panic!("{}: {error:#}", case.archive));
-                    assert_eq!(not_built.0, feature, "{}", case.archive);
+                        .unwrap_or_else(|| panic!("{}: {error:#}", archive.display()));
+                    assert_eq!(not_built.0, feature, "{}", archive.display());
                     assert_eq!(
                         std::fs::read_dir(work.path()).unwrap().count(),
                         0,
@@ -220,7 +237,7 @@ fn an_entry_reads_when_its_method_and_encryption_are_built_and_is_refused_otherw
                     );
                 }
                 None => {
-                    extracted.unwrap_or_else(|error| panic!("{}: {error:#}", case.archive));
+                    extracted.unwrap_or_else(|error| panic!("{}: {error:#}", archive.display()));
                     case.assert_extracted(&std::fs::read(destination.join(case.file)).unwrap());
                 }
             }

@@ -451,6 +451,19 @@ const DEFLATE_SUBSET_TESTS: &[&str] = &[
     "--test",
     "zstd_feature",
 ];
+const DEFLATE_UNIT_TESTS_BUILD: &[&str] = &[
+    "test",
+    "--package",
+    "zipper",
+    "--locked",
+    "--profile",
+    "ci",
+    "--no-default-features",
+    "--features",
+    "zip-deflate",
+    "--lib",
+    "--no-run",
+];
 const SUBSET_TESTS: &[&str] = &[
     "nextest",
     "run",
@@ -645,6 +658,7 @@ fn warm_cache() -> Result<()> {
     cargo(&[CI_TESTS, &["--no-run"]].concat())?;
     cargo(&[SUBSET_TESTS, &["--no-run"]].concat())?;
     cargo(&[DEFLATE_SUBSET_TESTS, &["--no-run"]].concat())?;
+    cargo(DEFLATE_UNIT_TESTS_BUILD)?;
     cargo(&["build", "--locked", "--package", "zipper-consumer"])?;
     cargo(&[
         "build",
@@ -679,7 +693,8 @@ fn gate(full: bool) -> Result<()> {
             lint_feature_subsets()?;
             ensure_nextest()?;
             cargo(SUBSET_TESTS)?;
-            cargo(DEFLATE_SUBSET_TESTS)
+            cargo(DEFLATE_SUBSET_TESTS)?;
+            cargo(DEFLATE_UNIT_TESTS_BUILD)
         }),
         ("consumer crate", consumer_crate),
         ("windows clippy", windows_clippy),
