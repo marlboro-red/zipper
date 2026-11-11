@@ -17,7 +17,7 @@ The user decided on 4 November 2026 that Zipper reads RAR with its own decoder a
 
 A RAR 5 archive is the signature, a main header, a header for each file or service record, and an end of archive header. Each header carries a CRC-32 of its bytes. The reader supports these features:
 
-- Stored entries and the five compression methods, with dictionaries from 128 KiB to 4 GiB. Compression version 0 and version 1 with the flag that marks a version 0 stream are read.
+- Stored entries and the five compression methods, with dictionaries from 128 KiB to 2 GiB. Compression version 0 and version 1 with the flag that marks a version 0 stream are read.
 - The delta, E8, E8E9 and ARM filters.
 - Solid archives, where each file continues the window, tables and distances of the file before it.
 - Folders, Unix and Windows symlinks and hard links. A Windows symlink's `\` separators become `/`, and its target passes the same checks as a Unix one. A `\??\` or UNC target then starts with `/` and is refused. On macOS and Linux a drive target such as `C:\x` becomes the relative link `C:/x`, which stays inside the destination. Windows refuses it.
@@ -87,12 +87,12 @@ The reader checks every entry before it publishes anything, and it publishes not
 | One header | at most 2 MiB, as the technote allows |
 | One name | at most 8,192 bytes |
 | All names | at most 64 MiB |
-| Dictionary | at most 4 GiB, the RAR 5 maximum. RAR 4 uses a 4 MiB window, the RAR 3 maximum |
+| Dictionary | at most 2 GiB, the decoder budget the 7z reader also uses. RAR 4 uses a 4 MiB window, the RAR 3 maximum |
 | PPMd model | at most 256 MiB, the most a RAR 4 block can ask for |
 | PPMd models in one file | 1 GiB of models, plus 64 bytes of model for each byte decoded, since each new model is filled with zeros |
-| Decoder memory | the window, grown as the stream writes it up to the dictionary, one block of up to 16 MiB and one filter of up to 4 MiB |
+| Decoder memory | the window, grown as the stream writes it up to the dictionary, one block of up to 16 MiB and one filter of up to 4 MiB. A RAR 4 window and its largest PPMd model fit the same 2 GiB budget |
 
-The window grows only as data arrives, so a small file declaring a 4 GiB dictionary allocates no more than about twice its size. Growth uses a fallible allocation, so a window the machine cannot hold is an error, not an abort. A stream of runs does grow it, though. An adversarial review built a 768 KiB archive with a 4 GiB dictionary and 1 GiB of zeros, and `zipper test` peaked at 1.08 GB of resident memory. The 7z reader caps its decoders at 2 GiB in all, and the RAR reader at the 4 GiB RAR 5 allows. The reader keeps only the tree that the cpio reader also uses, with each name. On a RAR 5 archive of 300,000 empty stored files whose names total 60 MB, `zipper test` peaked at 189 MB of resident memory, and `7zz t`, which read every RAR before this reader, at 133 MB. On the same files in RAR 4 they peaked at 173 MB and 133 MB. `--threads` has no effect on RAR.
+Each RAR 5 file's dictionary is charged against a 2 GiB decoder budget, the one the 7z reader uses, before any window is allocated. A file that declares more is refused, with a hint to use `--zip-engine backend`. An adversarial review built a 768 KiB archive with a 4 GiB dictionary and 1 GiB of zeros, which raised `zipper test` to 1.08 GB of resident memory before the budget. `tests/hostile_rar.rs` builds a 90 KB file that declares a 4 GiB dictionary and decodes to 328 MB. Before the budget `zipper test` extracted it at 541 MB of resident memory, and now the test requires a refusal that raises peak memory by less than 64 MiB. The window grows only as data arrives, so a small file with a large dictionary allocates no more than about twice its size. Growth uses a fallible allocation, so a window the machine cannot hold is an error, not an abort. The reader keeps only the tree that the cpio reader also uses, with each name. On a RAR 5 archive of 300,000 empty stored files whose names total 60 MB, `zipper test` peaked at 189 MB of resident memory, and `7zz t`, which read every RAR before this reader, at 133 MB. On the same files in RAR 4 they peaked at 173 MB and 133 MB. `--threads` has no effect on RAR.
 
 ## Differences from 7-Zip
 

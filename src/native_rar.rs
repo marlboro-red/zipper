@@ -645,6 +645,11 @@ impl Reader {
                 Data::Stored(reader.take(packed))
             }
             Method::Compressed { dictionary, solid } => {
+                ensure!(
+                    dictionary <= rar5_lz::DECODER_MEMORY,
+                    "RAR 5 entry {name:?} needs a {dictionary}-byte window, more than the {}-byte decoder budget; {BACKEND_HINT}",
+                    rar5_lz::DECODER_MEMORY
+                );
                 let started = if solid {
                     stream.continue_solid_file(dictionary, header.unpacked)
                 } else {

@@ -663,3 +663,95 @@ fn filters_after_a_program_reset_and_empty_filters_at_the_end_extract() {
         assert!(verifies(&bytes), "{name}");
     }
 }
+
+#[derive(Default)]
+struct BitWriter {
+    bytes: Vec<u8>,
+    bits: usize,
+}
+
+impl BitWriter {
+    fn put(&mut self, value: u64, count: u32) {
+        for bit in (0..count).rev() {
+            if self.bits.is_multiple_of(8) {
+                self.bytes.push(0);
+            }
+            if value >> bit & 1 == 1 {
+                *self.bytes.last_mut().unwrap() |= 0x80 >> (self.bits % 8);
+            }
+            self.bits += 1;
+        }
+    }
+}
+
+fn run_of_one_byte_with_fixed_width_tables(repeats: usize) -> (Vec<u8>, u64) {
+    let mut writer = BitWriter::default();
+    for _ in 0..20 {
+        writer.put(5, 4);
+    }
+    for (count, bits) in [(306, 9), (64, 6), (16, 4), (44, 6)] {
+        for _ in 0..count {
+            writer.put(bits, 5);
+        }
+    }
+    writer.put(7, 9);
+    writer.put(262 + 43, 9);
+    writer.put(511, 9);
+    writer.put(0, 6);
+    for _ in 0..repeats {
+        writer.put(257, 9);
+    }
+    let size = writer.bytes.len();
+    let last_bits = match writer.bits % 8 {
+        0 => 8,
+        bits => bits,
+    };
+    let size_bytes = size.to_le_bytes();
+    let flags = 0x80 | 0x40 | (2 << 3) | (last_bits as u8 - 1);
+    let check = 0x5A ^ flags ^ size_bytes[0] ^ size_bytes[1] ^ size_bytes[2];
+    let mut packed = vec![flags, check, size_bytes[0], size_bytes[1], size_bytes[2]];
+    packed.extend(writer.bytes);
+    (packed, 1 + 4097 * (repeats as u64 + 1))
+}
+
+#[cfg(unix)]
+fn peak_resident_bytes() -> u64 {
+    let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+    // SAFETY: `usage` is a valid, writable rusage for getrusage to fill.
+    assert_eq!(unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) }, 0);
+    let peak = usage.ru_maxrss as u64;
+    if cfg!(target_os = "macos") {
+        peak
+    } else {
+        peak * 1024
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_dictionary_past_the_decoder_budget_is_refused_before_its_window_grows() {
+    let (packed, size) = run_of_one_byte_with_fixed_width_tables(80_000);
+    let power = 15;
+    let mut fields = vint(0);
+    fields.extend(vint(size));
+    fields.extend(vint(0o100644));
+    fields.extend(vint((3 << 7) | (power << 10)));
+    fields.extend(vint(1));
+    fields.extend(vint(1));
+    fields.push(b'z');
+    let mut bytes = b"Rar!\x1A\x07\x01\x00".to_vec();
+    bytes.extend(block(1, 0, &vint(0), &[], &[]));
+    bytes.extend(block(2, 0, &fields, &[], &packed));
+    bytes.extend(block(5, 0, &vint(0), &[], &[]));
+    let before = peak_resident_bytes();
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("a.rar");
+    fs::write(&archive, &bytes).unwrap();
+    let error = read_archive(&archive, None, ReadOptions::default()).unwrap_err();
+    assert!(format!("{error:#}").contains("decoder budget"), "{error:#}");
+    assert!(
+        peak_resident_bytes() < before + (64 << 20),
+        "the refused archive raised peak memory by {} bytes",
+        peak_resident_bytes() - before
+    );
+}

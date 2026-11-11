@@ -26,6 +26,7 @@ const E8_FILE_SIZE: u32 = 0x100_0000;
 pub(crate) const LARGEST_PPMD_MEMORY: u32 = 256 << 20;
 const PPMD_MODEL_ALLOWANCE: u64 = 4 * LARGEST_PPMD_MEMORY as u64;
 const PPMD_MODEL_BYTES_PER_OUTPUT: u64 = 64;
+const _: () = assert!(WINDOW + LARGEST_PPMD_MEMORY as u64 <= crate::rar5_lz::DECODER_MEMORY);
 const LOW_OFFSET_REPEAT: u16 = 16;
 const LOW_OFFSET_REPEATS: u32 = 15;
 const DEFAULT_ESCAPE: u8 = 2;

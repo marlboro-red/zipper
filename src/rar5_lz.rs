@@ -4,6 +4,7 @@ use std::{
 };
 
 pub(crate) const LARGEST_DICTIONARY: u64 = 4 << 30;
+pub(crate) const DECODER_MEMORY: u64 = 2 << 30;
 const SMALLEST_WINDOW: u64 = 1 << 18;
 const BLOCK_PADDING: usize = 32;
 const QUICK_BITS: u32 = 10;

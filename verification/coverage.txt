@@ -3640,6 +3640,7 @@ full-check = cargo test --release --lib blake2sp
 full-check = cargo test --release --test rar_corpus
 full-check = cargo test --release --test hostile_rar
 item = src/rar5_lz.rs | const SMALLEST_WINDOW:
+item = src/rar5_lz.rs | pub(crate) const DECODER_MEMORY:
 item = src/rar5_lz.rs | const BLOCK_PADDING:
 item = src/rar5_lz.rs | const QUICK_BITS:
 item = src/rar5_lz.rs | const LONGEST_CODE:
@@ -3729,6 +3730,7 @@ item = src/rar4_lz.rs | const E8_FILE_SIZE:
 item = src/rar4_lz.rs | pub(crate) const LARGEST_PPMD_MEMORY:
 item = src/rar4_lz.rs | const PPMD_MODEL_ALLOWANCE:
 item = src/rar4_lz.rs | const PPMD_MODEL_BYTES_PER_OUTPUT:
+item = src/rar4_lz.rs | const _: () =
 item = src/rar4_lz.rs | const LOW_OFFSET_REPEAT:
 item = src/rar4_lz.rs | const LOW_OFFSET_REPEATS:
 item = src/rar4_lz.rs | const DEFAULT_ESCAPE:
