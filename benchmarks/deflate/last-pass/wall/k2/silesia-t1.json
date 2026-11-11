@@ -1,0 +1,243 @@
+{
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "cpu_count": 12,
+  "threads": 4,
+  "runs": 11,
+  "warmup_rounds": 1,
+  "archive_format": "zip",
+  "operation": "extract",
+  "cooldown_seconds": 0.0,
+  "source": "silesia",
+  "input_bytes": 211938580,
+  "archive_bytes": 68221755,
+  "archive_sha256": "c71d02c06a121ae1b08068e00932eb6748ced30f908846bb88d3fe0f29dfd728",
+  "readers": {
+    "p1": {
+      "mode": "native",
+      "binary": "target/timing/fable-deflate/bin/zipper-p1",
+      "sha256": "cf119cfcb010f017e3a5d9c4e5cdfde420ea66da0a4a9108c8848a5733b25546",
+      "threads": 1
+    },
+    "k2": {
+      "mode": "native",
+      "binary": "target/timing/fable-deflate/bin/zipper-k2",
+      "sha256": "95dbc7bec33e2168c980ba31f0d02f102c97ce3f9781d515c6e8ea3b50254c1b",
+      "threads": 1
+    }
+  },
+  "verification": "direct bytes, file sizes and tree membership",
+  "errors": 0,
+  "busy_processes": [],
+  "load_average_start": [
+    1.99267578125,
+    2.203125,
+    2.09375
+  ],
+  "order_including_warmup": [
+    [
+      "p1",
+      "k2"
+    ],
+    [
+      "k2",
+      "p1"
+    ],
+    [
+      "p1",
+      "k2"
+    ],
+    [
+      "p1",
+      "k2"
+    ],
+    [
+      "p1",
+      "k2"
+    ],
+    [
+      "k2",
+      "p1"
+    ],
+    [
+      "p1",
+      "k2"
+    ],
+    [
+      "p1",
+      "k2"
+    ],
+    [
+      "k2",
+      "p1"
+    ],
+    [
+      "p1",
+      "k2"
+    ],
+    [
+      "p1",
+      "k2"
+    ],
+    [
+      "k2",
+      "p1"
+    ]
+  ],
+  "results": {
+    "p1": {
+      "samples": [
+        {
+          "seconds": 0.22895945900000014,
+          "peak_rss_bytes": 4964352,
+          "cpu_seconds": 0.208947,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.214853709,
+          "peak_rss_bytes": 4997120,
+          "cpu_seconds": 0.208124,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2239359999999999,
+          "peak_rss_bytes": 4964352,
+          "cpu_seconds": 0.209088,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21542870900000022,
+          "peak_rss_bytes": 4980736,
+          "cpu_seconds": 0.20892299999999997,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.22369362500000012,
+          "peak_rss_bytes": 4997120,
+          "cpu_seconds": 0.209094,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21625424999999998,
+          "peak_rss_bytes": 4997120,
+          "cpu_seconds": 0.20832499999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2127404580000003,
+          "peak_rss_bytes": 4980736,
+          "cpu_seconds": 0.205686,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21437654200000011,
+          "peak_rss_bytes": 4980736,
+          "cpu_seconds": 0.20687899999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2133592919999998,
+          "peak_rss_bytes": 4997120,
+          "cpu_seconds": 0.20695699999999997,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2135544170000001,
+          "peak_rss_bytes": 5013504,
+          "cpu_seconds": 0.206868,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21533225000000034,
+          "peak_rss_bytes": 4997120,
+          "cpu_seconds": 0.20860499999999998,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.21533225000000034,
+      "min_seconds": 0.2127404580000003,
+      "max_seconds": 0.22895945900000014,
+      "mib_s": 938.6442597502744,
+      "peak_rss_bytes": 5013504
+    },
+    "k2": {
+      "samples": [
+        {
+          "seconds": 0.2516535409999999,
+          "peak_rss_bytes": 5013504,
+          "cpu_seconds": 0.209608,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21697466700000012,
+          "peak_rss_bytes": 4980736,
+          "cpu_seconds": 0.207764,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21563820899999997,
+          "peak_rss_bytes": 4964352,
+          "cpu_seconds": 0.20865099999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21594887500000004,
+          "peak_rss_bytes": 4997120,
+          "cpu_seconds": 0.20898799999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21542533300000022,
+          "peak_rss_bytes": 4980736,
+          "cpu_seconds": 0.208302,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.2131167920000001,
+          "peak_rss_bytes": 4997120,
+          "cpu_seconds": 0.20610499999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21321741700000008,
+          "peak_rss_bytes": 4997120,
+          "cpu_seconds": 0.20604599999999998,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21711975000000017,
+          "peak_rss_bytes": 5013504,
+          "cpu_seconds": 0.20592799999999997,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21438774999999932,
+          "peak_rss_bytes": 4980736,
+          "cpu_seconds": 0.207308,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21835183300000072,
+          "peak_rss_bytes": 4980736,
+          "cpu_seconds": 0.209343,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.21664887499999974,
+          "peak_rss_bytes": 4980736,
+          "cpu_seconds": 0.209329,
+          "verified_bytes": 211938580
+        }
+      ],
+      "median_seconds": 0.21594887500000004,
+      "min_seconds": 0.2131167920000001,
+      "max_seconds": 0.2516535409999999,
+      "mib_s": 935.9640350134322,
+      "peak_rss_bytes": 5013504
+    }
+  },
+  "load_average_end": [
+    2.0732421875,
+    2.21630859375,
+    2.0986328125
+  ]
+}

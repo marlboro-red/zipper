@@ -300,7 +300,7 @@ These options work the same way in every reader. [Usage](../usage.md#extract-int
 
 ## Streaming
 
-The reader streams every entry. Each worker owns one 1 MiB buffer. It reads compressed input into the first 512 KiB and decodes Deflate into the other 512 KiB with Zipper's own decoder in `src/inflate.rs`, which is safe Rust. That half also holds the last 32 KiB of output, the history that Deflate matches copy from, so the decoder allocates nothing.
+The reader streams every entry. Each worker owns one 1 MiB buffer. It reads compressed input into the first 480 KiB and decodes Deflate into the other 544 KiB with Zipper's own decoder in `src/inflate.rs`, which is safe Rust. That part also holds the last 32 KiB of output, the history that Deflate matches copy from, so the decoder allocates nothing. The 512 KiB beside the history hold a whole read of stored blocks, so incompressible data leaves in one write a read.
 Streaming buffers scale with workers, not expanded file size.
 
 ## Memory model

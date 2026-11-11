@@ -880,8 +880,20 @@ impl<W: std::ops::DerefMut<Target = [u8]>> Inflate<W> {
         &self.window[self.filled - length..self.filled]
     }
 
+    fn room(&self) -> usize {
+        self.window.len() - self.filled
+    }
+
+    fn moving_history_widens_the_room_for_stored_input(&self, input: &[u8]) -> bool {
+        matches!(self.state, State::Stored { .. })
+            && input.len() > self.room()
+            && self.filled > HISTORY
+    }
+
     pub(crate) fn decode(&mut self, input: &[u8]) -> Result<Step<'_>, Invalid> {
-        if self.window.len() - self.filled < OUTPUT_MARGIN {
+        if self.room() < OUTPUT_MARGIN
+            || self.moving_history_widens_the_room_for_stored_input(input)
+        {
             self.window
                 .copy_within(self.filled - HISTORY..self.filled, 0);
             self.filled = HISTORY;

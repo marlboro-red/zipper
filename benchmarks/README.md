@@ -66,6 +66,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-11 | [A last pass over Deflate ZIP extraction](deflate/last-pass/README.md) | Kept two changes of seventeen experiments. The decoder takes 1.2% less time on Silesia, and a read of stored blocks reaches the file in one write instead of two. No wall-time row moves beyond its range. The decoder already takes 0.975 times libdeflate's cycles. |
 | 2026-11-11 | [ZIP folders made in parallel before the workers start](native-zip/parallel-folders/README.md) | Reverted. On APFS making folders does not get faster with more threads, and the setup moved from 53.8 to 46.4 ms at four threads with ranges overlapping. Three folder-spelling tests are kept. |
 | 2026-11-11 | [ZIP workers read the archive without a lock](native-zip/lock-free-reads/README.md) | Kept. 512 MiB of stored entries extract 1.18 times faster at 64 threads, and other rows are unchanged. The serial folder setup is about 20% of four-thread extraction on the dependency sources. |
 | 2026-11-11 | [Zipper's own Deflate decoder](native-zip/own-inflate/README.md) | Kept as the ZIP Deflate decoder, in safe Rust. It takes 629.7 M cycles on Silesia against 681.3 for Apple's zlib, and a large compressible entry extracts 1.24 times faster in wall time on an M2 Max. Small-file ZIPs are unchanged. |

@@ -1,0 +1,123 @@
+Decode probe on a second machine, an Apple M2 Max, 11 November 2026.
+Each line is one build of probe.rs with one variant of src/inflate.rs.
+A sample is one process that times ROUNDS decodes of every Deflate entry, in milliseconds a round.
+Columns: variant, median, minimum, maximum, ratio to the first line of its group, samples.
+`base` is 736e11b. `p1` is the kept change, the lookup after a match made before the copy.
+
+== table widths, silesia.zip, 3 rounds
+base           median   171.838  min   171.115  max   171.949  x1.0000  171.12 171.84 171.79 171.92 171.95
+ll10           median   174.841  min   174.782  max   175.241  x1.0175  175.24 175.00 174.78 174.83 174.84
+ll12           median   172.337  min   171.957  max   172.435  x1.0029  172.29 172.41 171.96 172.34 172.44
+d9             median   171.380  min   171.244  max   171.817  x0.9973  171.82 171.36 171.68 171.38 171.24
+d7             median   172.507  min   172.406  max   172.580  x1.0039  172.54 172.58 172.49 172.41 172.51
+== table widths, dependencies.zip, 10 rounds
+base           median    42.967  min    42.868  max    43.011  x1.0000  42.87 43.01 42.91 42.97 43.00
+ll10           median    43.202  min    43.140  max    43.420  x1.0055  43.18 43.35 43.20 43.14 43.42
+ll12           median    43.827  min    43.647  max    43.872  x1.0200  43.65 43.83 43.87 43.83 43.81
+d9             median    43.007  min    42.948  max    43.010  x1.0009  42.97 43.01 42.95 43.01 43.01
+d7             median    43.306  min    43.184  max    43.406  x1.0079  43.18 43.35 43.30 43.41 43.31
+
+== 8-byte copies for distances 8 to 15, and two margin compares, silesia.zip
+base           median   171.913  min   171.757  max   172.040  x1.0000  172.04 171.76 172.01 171.91 171.91
+copy8          median   175.983  min   175.348  max   176.126  x1.0237  175.35 175.87 176.13 175.98 176.04
+margins2       median   174.329  min   174.082  max   174.801  x1.0141  174.33 174.35 174.80 174.08 174.30
+== the same, dependencies.zip
+base           median    43.000  min    42.962  max    43.060  x1.0000  43.06 43.04 43.00 42.98 42.96
+copy8          median    43.708  min    43.654  max    43.836  x1.0165  43.67 43.65 43.83 43.84 43.71
+margins2       median    43.224  min    43.041  max    43.300  x1.0052  43.04 43.20 43.22 43.26 43.30
+
+== refill before every distance, silesia.zip then dependencies.zip
+base           median   172.188  min   171.766  max   172.323  x1.0000  172.32 171.77 172.19 172.01 172.25
+refillalways   median   173.598  min   173.444  max   173.835  x1.0082  173.55 173.84 173.60 173.61 173.44
+base           median    43.027  min    42.758  max    43.123  x1.0000  42.96 42.76 43.03 43.09 43.12
+refillalways   median    43.387  min    43.247  max    43.659  x1.0084  43.25 43.39 43.66 43.38 43.42
+
+== lookup before the copy (preload), and a second 16-byte copy only past 16 bytes (copy16), silesia.zip then dependencies.zip
+base           median   172.198  min   171.889  max   172.432  x1.0000  171.89 172.30 172.20 172.43 172.18
+preload        median   169.844  min   169.770  max   170.147  x0.9863  170.15 169.81 169.77 169.91 169.84
+copy16         median   175.424  min   175.190  max   175.630  x1.0187  175.63 175.42 175.19 175.47 175.26
+base           median    42.992  min    42.923  max    43.084  x1.0000  43.08 43.02 42.99 42.98 42.92
+preload        median    42.417  min    42.204  max    42.467  x0.9866  42.20 42.45 42.34 42.42 42.47
+copy16         median    46.431  min    46.317  max    46.575  x1.0800  46.47 46.43 46.41 46.32 46.58
+
+== three forms of the lookup before the copy; p1 is the kept form, p3 also moves it before the distance arithmetic
+base           median   172.081  min   172.071  max   172.311  x1.0000  172.31 172.07 172.08 172.26 172.07
+preload        median   169.884  min   168.829  max   170.054  x0.9872  169.88 170.05 168.83 169.94 169.74
+p1             median   169.811  min   169.626  max   170.019  x0.9868  169.71 169.81 169.94 170.02 169.63
+p3             median   169.979  min   169.397  max   170.031  x0.9878  169.40 170.03 169.73 169.98 170.02
+base           median    43.025  min    42.896  max    43.110  x1.0000  42.94 43.02 43.11 42.90 43.03
+preload        median    42.376  min    42.233  max    42.454  x0.9849  42.26 42.23 42.45 42.38 42.44
+p1             median    42.504  min    42.467  max    42.555  x0.9879  42.50 42.53 42.50 42.47 42.55
+p3             median    42.502  min    42.292  max    42.802  x0.9878  42.50 42.54 42.80 42.47 42.29
+
+== lookup before the literal store (q1), on p1
+base           median   172.173  min   172.007  max   172.351  x1.0000  172.01 172.17 172.17 172.35 172.20
+p1             median   169.794  min   168.819  max   169.916  x0.9862  169.79 168.82 169.34 169.92 169.89
+q1             median   169.472  min   168.598  max   169.649  x0.9843  169.65 169.51 169.35 168.60 169.47
+base           median    43.011  min    42.784  max    43.052  x1.0000  42.99 42.78 43.02 43.01 43.05
+p1             median    42.551  min    42.502  max    42.565  x0.9893  42.56 42.56 42.55 42.50 42.52
+q1             median    42.482  min    42.479  max    42.723  x0.9877  42.48 42.48 42.48 42.56 42.72
+
+== runs of one byte filled in the out-of-line copy (r5), on p1: silesia, dependencies, large-compressible
+p1             median   169.437  min   168.960  max   169.923  x1.0000  169.38 169.44 169.72 169.92 168.96
+r5             median   173.407  min   173.203  max   173.486  x1.0234  173.20 173.41 173.34 173.49 173.46
+p1             median    42.428  min    42.371  max    42.472  x1.0000  42.43 42.38 42.47 42.47 42.37
+r5             median    43.047  min    42.997  max    43.163  x1.0146  43.00 43.05 43.16 43.03 43.13
+p1             median    15.800  min    15.764  max    15.808  x1.0000  15.78 15.80 15.81 15.81 15.76
+r5             median    15.758  min    15.750  max    15.812  x0.9973  15.75 15.76 15.81 15.80 15.75
+
+== runs of one byte written as 16-byte stores (r7), on p1: silesia, dependencies, large-compressible
+p1             median   169.529  min   169.468  max   169.667  x1.0000  169.59 169.67 169.47 169.53 169.53
+r7             median   169.636  min   169.036  max   169.965  x1.0006  169.65 169.04 169.97 169.53 169.64
+p1             median    42.452  min    42.343  max    42.548  x1.0000  42.38 42.55 42.34 42.46 42.45
+r7             median    42.366  min    42.306  max    42.519  x0.9980  42.31 42.36 42.41 42.37 42.52
+p1             median    15.793  min    15.727  max    15.834  x1.0000  15.83 15.73 15.83 15.79 15.79
+r7             median    15.739  min    15.635  max    15.828  x0.9966  15.63 15.76 15.71 15.83 15.74
+
+== window size with the CRC-32 in the sink, silesia.zip, base, 3 rounds, 5 samples: median, minimum, maximum
+window 65536     177.747  177.609  177.904
+window 98304     175.281  175.156  175.413
+window 131072    174.151  173.935  174.250
+window 262144    174.719  174.243  174.740
+window 524288    174.842  174.561  175.026
+window 1048576   174.629  174.261  174.740
+
+== the kept decoder on six archives, 7 samples: silesia, dependencies, mixed, grouped, flat-tiny, large-compressible
+base           median   172.151  min   171.614  max   172.562  x1.0000  172.15 172.50 171.61 171.62 172.08 172.56 172.42
+p1             median   170.011  min   169.772  max   170.195  x0.9876  169.90 169.77 170.19 170.01 169.83 170.03 170.05
+base           median    43.048  min    42.992  max    43.096  x1.0000  43.09 43.10 42.99 43.05 43.05 43.03 43.05
+p1             median    42.528  min    42.320  max    42.648  x0.9879  42.32 42.52 42.52 42.53 42.55 42.65 42.60
+base           median    13.936  min    13.880  max    13.972  x1.0000  13.94 13.89 13.97 13.96 13.92 13.96 13.88
+p1             median    13.566  min    13.523  max    13.595  x0.9735  13.52 13.57 13.60 13.55 13.57 13.54 13.59
+base           median     4.313  min     4.283  max     4.420  x1.0000  4.31 4.29 4.32 4.29 4.42 4.28 4.33
+p1             median     4.359  min     4.302  max     4.416  x1.0107  4.30 4.37 4.31 4.36 4.37 4.36 4.42
+base           median     2.655  min     2.621  max     2.663  x1.0000  2.65 2.66 2.62 2.64 2.66 2.66 2.65
+p1             median     2.654  min     2.647  max     2.666  x0.9996  2.65 2.67 2.65 2.66 2.65 2.65 2.66
+base           median    15.804  min    15.768  max    15.842  x1.0000  15.78 15.82 15.80 15.81 15.84 15.78 15.77
+p1             median    15.814  min    15.785  max    15.858  x1.0006  15.81 15.86 15.82 15.83 15.81 15.79 15.81
+
+== literal pairs that fit one 11-bit lookup, counted in the fast loop over one decode of each archive
+silesia.zip       iterations 23967552  first symbol a literal 13858836  second a literal too 8075538  both in 11 bits 311255  in 12 bits 843238
+dependencies.zip  iterations  5047440  first symbol a literal  2261834  second a literal too 1490261  both in 11 bits 301571  in 12 bits 596835
+mixed.zip         iterations  1262863  first symbol a literal   785054  second a literal too  515743  both in 11 bits 512289  in 12 bits 515739
+
+== against libdeflate 1.26 and the macOS system zlib, the own-inflate record's probe and measure.py, base, M instructions and M cycles a round
+silesia.zip
+ours           1383.1 M instructions     612.3 M cycles  [cycles: 612.3 620.9 616.0]
+libdeflate     1434.4 M instructions     628.2 M cycles  [cycles: 629.6 630.7 628.2]
+zlib           1748.5 M instructions     678.5 M cycles  [cycles: 685.7 680.2 678.5]
+dependencies.zip
+ours            358.6 M instructions     153.2 M cycles  [cycles: 153.3 153.2 158.6]
+libdeflate      354.3 M instructions     160.2 M cycles  [cycles: 160.2 164.5 165.8]
+
+== counters of `examples/count_zip` at one thread on large-random.zip
+base       archive_reads 515  output_writes 1059
+this change archive_reads 549  output_writes 548
+== and on silesia.zip
+base       archive_reads 150  output_writes 574
+this change archive_reads 157  output_writes 554
+
+== instructions retired and cycles of one extraction of large-random.zip at one thread, /usr/bin/time -l
+base                                   437752505 instructions  225323721 cycles
+copy_stored into a third 512 KiB       399821326 instructions  215404659 cycles
+this change                            405816561 instructions  215757945 cycles

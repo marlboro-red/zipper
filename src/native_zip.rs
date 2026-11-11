@@ -1061,6 +1061,10 @@ fn method_need(method: u16, size: u64, decoders_at_once: usize) -> Option<u64> {
 }
 const OTHER_METHOD_INPUT: usize = 256 * 1024;
 const DEFLATE64_INPUT: usize = 512 * 1024;
+const WORKER_BUFFER: usize = 1024 * 1024;
+// RECORD(benchmarks/deflate/last-pass/README.md): a read of stored blocks fits one decode step.
+const DEFLATE_INPUT: usize = 480 * 1024;
+const _: () = assert!(DEFLATE_INPUT <= WORKER_BUFFER - DEFLATE_INPUT - crate::inflate::HISTORY);
 const LZMA_SMALLEST_DICTIONARY: u64 = 4096;
 const ZIP_DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
 
@@ -1338,7 +1342,7 @@ fn stream_entry(
             "ZIP compressed stream ends before its compressed size"
         );
     } else {
-        let (input_buffer, window) = buffer.split_at_mut(512 * 1024);
+        let (input_buffer, window) = buffer.split_at_mut(DEFLATE_INPUT);
         let mut inflate = crate::inflate::Inflate::new(window);
         let (mut start, mut end) = (0, 0);
         loop {
@@ -1777,7 +1781,7 @@ pub fn read_archive_with_options(
         entries.par_iter().with_max_len(1).try_for_each_init(
             || {
                 Recycled::take(&idle_workspaces, || {
-                    (reader.clone(), vec![0u8; 1024 * 1024])
+                    (reader.clone(), vec![0u8; WORKER_BUFFER])
                 })
             },
             |workspace, &index| match EntryOnThisThread::enter(&for_the_next_pass) {
@@ -2507,5 +2511,45 @@ mod creation_bound_tests {
         assert!(!CreationBound::SmallMean.holds(&silesia_like));
         let declared_huge = vec![u64::MAX; CREATION_BOUND_FILES];
         assert!(!CreationBound::SmallMean.holds(&declared_huge));
+    }
+}
+
+#[cfg(test)]
+mod deflate_entry_tests {
+    use super::*;
+
+    #[test]
+    fn stored_blocks_take_one_decode_step_per_read() {
+        let mut seed = 7u32;
+        let data: Vec<u8> = (0..4 * WORKER_BUFFER)
+            .map(|_| {
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                (seed >> 16) as u8
+            })
+            .collect();
+        let mut encoder =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::none());
+        encoder.write_all(&data).unwrap();
+        let stream = encoder.finish().unwrap();
+
+        let mut window = vec![0u8; WORKER_BUFFER - DEFLATE_INPUT];
+        let mut inflate = crate::inflate::Inflate::new(&mut window[..]);
+        let mut decoded = Vec::new();
+        let (mut reads, mut steps) = (0, 0);
+        'reads: for read in stream.chunks(DEFLATE_INPUT) {
+            reads += 1;
+            let mut start = 0;
+            while start < read.len() {
+                let step = inflate.decode(&read[start..]).unwrap();
+                start += step.consumed;
+                steps += usize::from(!step.output.is_empty());
+                decoded.extend_from_slice(step.output);
+                if step.finished {
+                    break 'reads;
+                }
+            }
+        }
+        assert!(decoded == data);
+        assert!(steps <= reads + 1, "{steps} steps for {reads} reads");
     }
 }
