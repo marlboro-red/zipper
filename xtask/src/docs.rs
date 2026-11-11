@@ -132,6 +132,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "lint-7zip-lookups",
     "lint-private-paths",
     "lint-pure-rust",
+    "check-minimums",
     "install-hooks",
     "ci-wait",
     "warm-cache",

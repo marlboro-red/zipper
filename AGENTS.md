@@ -7,6 +7,7 @@
 - Preserve remote history.
 - Aim for the fastest safe extraction of ZIP, tar and 7z. Do not gain throughput by discarding a safety check or correctness.
 - Add no dependency that compiles or links C or another native library. A C library may be a dev-dependency used as a test oracle. The gate's `pure rust` step enforces this.
+- Keep Zipper building on the `rust-version` in `Cargo.toml` with every dependency at the minimum `Cargo.toml` declares. Raise a minimum only when the code needs it. The full gate's `dependency minimums` step checks both.
 
 ## Engineering approach
 
