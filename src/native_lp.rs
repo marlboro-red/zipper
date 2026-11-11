@@ -372,8 +372,12 @@ fn open(file: &ArchiveFile) -> Result<Image> {
     used.sort_unstable_by_key(|range| range.start);
     let mut checked = 0;
     for range in used {
-        for index in range.start.max(checked)..range.end {
-            image.extents[index] = extent(raw[index], devices.count)?;
+        let start = range.start.max(checked).min(range.end);
+        for (slot, bytes) in image.extents[start..range.end]
+            .iter_mut()
+            .zip(&raw[start..range.end])
+        {
+            *slot = extent(bytes, devices.count)?;
         }
         checked = checked.max(range.end);
     }
