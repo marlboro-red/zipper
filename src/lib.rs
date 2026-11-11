@@ -121,6 +121,8 @@ pub mod native_stream;
 pub mod native_swf;
 #[cfg(feature = "tar")]
 pub mod native_tar;
+#[cfg(feature = "uefi")]
+pub mod native_uefi;
 #[cfg(feature = "wim")]
 pub mod native_wim;
 #[cfg(feature = "xar")]

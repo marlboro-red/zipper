@@ -16,13 +16,13 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 
 | Status | Rows |
 | --- | ---: |
-| `native` | 100 |
+| `native` | 102 |
 | `partial` | 1 |
-| `backend` | 6 |
+| `backend` | 4 |
 | `missing` | 3 |
 | `dropped` | 2 |
 
-10 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+8 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -70,8 +70,8 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `Split` | `native` | Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip. | `tests/data/parity/archives/split.7z.001` |
 | `SquashFS` | `native` | SquashFS 4.0 images of every compressor read in process, raw and in a lone disk partition. 7-Zip does not open LZ4 images, which Zipper reads. SquashFS versions 1 to 3 and big-endian images go to 7-Zip. | `every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts` in `tests/squashfs_corpus.rs`, `generated_images_of_every_compressor_and_block_size_extract_as_7zip_extracts_them` in `tests/squashfs_corpus.rs`, `damaged_squashfs_metadata_is_refused_when_7zip_refuses_it` in `tests/hostile_squashfs.rs` |
 | `TE` | `native` | UEFI TE images read in process. No EDK2 tool runs here, so the corpus image is a PE rewritten as TE by the corpus script. | `every_corpus_executable_extracts_the_tree_7zip_extracts` in `tests/exe_corpus.rs`, `generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/exe_corpus.rs`, `damaged_executables_are_refused_exactly_when_7zip_refuses_them` in `tests/hostile_exe.rs` |
-| `UEFIc` | `backend` |  | No proof yet. |
-| `UEFIf` | `backend` |  | No proof yet. |
+| `UEFIc` | `native` | UEFI capsules read in process, with LZMA sections and nested volumes, named as 7-Zip names them. No EDK2 tool runs here, so a test writer builds volumes from the UEFI PI format, and QEMU's firmware images are checked where installed. A name that is not a plain relative path goes to 7-Zip. | `generated_volumes_and_capsules_extract_as_7zip_extracts_them` in `tests/uefi_corpus.rs`, `qemu_firmware_images_extract_as_7zip_extracts_them` in `tests/uefi_corpus.rs`, `random_volumes_cut_and_flipped_are_refused_when_7zip_refuses_them` in `tests/hostile_uefi.rs`, `every_cut_of_a_small_volume_and_capsule_is_refused_when_7zip_refuses_it` in `tests/hostile_uefi.rs` |
+| `UEFIf` | `native` | UEFI firmware volumes read in process, with LZMA sections and nested volumes, named as 7-Zip names them. No EDK2 tool runs here, so a test writer builds volumes from the UEFI PI format, and QEMU's firmware images are checked where installed. A name that is not a plain relative path goes to 7-Zip. | `generated_volumes_and_capsules_extract_as_7zip_extracts_them` in `tests/uefi_corpus.rs`, `qemu_firmware_images_extract_as_7zip_extracts_them` in `tests/uefi_corpus.rs`, `random_volumes_cut_and_flipped_are_refused_when_7zip_refuses_them` in `tests/hostile_uefi.rs`, `every_cut_of_a_small_volume_and_capsule_is_refused_when_7zip_refuses_it` in `tests/hostile_uefi.rs` |
 | `Udf` | `native` | UDF 1.02 to 2.60 with metadata partitions read in process. A UDF tree 7-Zip cannot open gives way to ISO 9660, as in 7-Zip. | `tests/data/parity/archives/udf.iso.stored.xz`, `generated_discs_extract_exactly_as_7zip_extracts_them` in `tests/iso_corpus.rs`, `a_udf_tree_7zip_cannot_open_falls_back_to_iso_9660_as_7zip_does` in `tests/iso_corpus.rs` |
 | `VDI` | `native` | Dynamic, static and undo VDI images with 1 MiB blocks read in process. A differencing VDI, or a disk whose file system Zipper does not read, goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `damaged_containers_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs`, `qemu_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `vdi_images_are_checked_before_their_disk_is_read` in `tests/hostile_disk.rs` |
 | `VHD` | `native` | Fixed and dynamic VHD read in process. A differencing VHD, or a disk that does not hold FAT, goes to 7-Zip. | `every_corpus_image_extracts_the_tree_7zip_extracts` in `tests/disk_corpus.rs`, `writer_images_extract_as_7zip_extracts_them_in_every_container` in `tests/disk_corpus.rs`, `tool_images_extract_as_7zip_extracts_them` in `tests/disk_corpus.rs`, `damaged_images_are_refused_exactly_when_7zip_refuses_them` in `tests/disk_corpus.rs` |

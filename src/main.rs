@@ -988,6 +988,11 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_dmg::ReadOptions::default(),
                     )?),
+                    Reader::Uefi => print(zipper::native_uefi::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_uefi::ReadOptions::default(),
+                    )?),
                     Reader::Lp => print(zipper::native_lp::read_archive(
                         &archive,
                         None,
@@ -1165,6 +1170,11 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_dmg::ReadOptions::default(),
+                    )?),
+                    Reader::Uefi => report(zipper::native_uefi::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_uefi::ReadOptions::default(),
                     )?),
                     Reader::Lp => report(zipper::native_lp::read_archive(
                         &archive,

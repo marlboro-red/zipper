@@ -333,10 +333,24 @@
       ]
     },
     "UEFIc": {
-      "status": "backend"
+      "status": "native",
+      "note": "UEFI capsules read in process, with LZMA sections and nested volumes, named as 7-Zip names them. No EDK2 tool runs here, so a test writer builds volumes from the UEFI PI format, and QEMU's firmware images are checked where installed. A name that is not a plain relative path goes to 7-Zip.",
+      "tests": [
+        "tests/uefi_corpus.rs::generated_volumes_and_capsules_extract_as_7zip_extracts_them",
+        "tests/uefi_corpus.rs::qemu_firmware_images_extract_as_7zip_extracts_them",
+        "tests/hostile_uefi.rs::random_volumes_cut_and_flipped_are_refused_when_7zip_refuses_them",
+        "tests/hostile_uefi.rs::every_cut_of_a_small_volume_and_capsule_is_refused_when_7zip_refuses_it"
+      ]
     },
     "UEFIf": {
-      "status": "backend"
+      "status": "native",
+      "note": "UEFI firmware volumes read in process, with LZMA sections and nested volumes, named as 7-Zip names them. No EDK2 tool runs here, so a test writer builds volumes from the UEFI PI format, and QEMU's firmware images are checked where installed. A name that is not a plain relative path goes to 7-Zip.",
+      "tests": [
+        "tests/uefi_corpus.rs::generated_volumes_and_capsules_extract_as_7zip_extracts_them",
+        "tests/uefi_corpus.rs::qemu_firmware_images_extract_as_7zip_extracts_them",
+        "tests/hostile_uefi.rs::random_volumes_cut_and_flipped_are_refused_when_7zip_refuses_them",
+        "tests/hostile_uefi.rs::every_cut_of_a_small_volume_and_capsule_is_refused_when_7zip_refuses_it"
+      ]
     },
     "Udf": {
       "status": "native",

@@ -42,6 +42,8 @@ use crate::native_squashfs;
 use crate::native_swf;
 #[cfg(feature = "tar")]
 use crate::native_tar;
+#[cfg(feature = "uefi")]
+use crate::native_uefi;
 #[cfg(feature = "wim")]
 use crate::native_wim;
 #[cfg(feature = "xar")]
@@ -64,7 +66,8 @@ pub enum Engine {
     /// with FAT, NTFS, HFS+, APFS or ext, DMG images and disks holding HFS+,
     /// HFSX or APFS, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files,
     /// SquashFS 4.0 and CramFS images, raw or in a disk's lone partition,
-    /// Android logical partition images, and 7z whose methods it decodes. 7-Zip for other 7z, other SquashFS
+    /// Android logical partition images, UEFI firmware volumes and capsules,
+    /// and 7z whose methods it decodes. 7-Zip for other 7z, other SquashFS
     /// versions and byte orders, an MSI whose main stream is not a CAB, a
     /// split or pre-1.13 WIM, a Help 2 file without an ITSF record, a
     /// differencing disk image, a DMG or disk holding another file system
@@ -72,8 +75,8 @@ pub enum Engine {
     /// sealed or snapshot volume or a Fusion container, an ext volume that
     /// needs journal recovery or uses a feature Zipper does not read, a Mach-O
     /// universal file with the `B9 FA F1 0E` signature, a logical partition
-    /// image whose partition names are not plain relative paths, and the other
-    /// formats whose signature Zipper recognizes.
+    /// image or UEFI firmware whose names are not plain relative paths, and the
+    /// other formats whose signature Zipper recognizes.
     #[default]
     Auto,
     /// 7-Zip for every archive.
@@ -81,8 +84,8 @@ pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound
     /// files, disc images, WIM, NTFS, CHM, Help 2, disk images with FAT, DMG,
     /// HFS+, APFS, ext, SquashFS 4.0, CramFS, FLV, SWF, executables, logical
-    /// partition images, 7z and single compressed files, and native ZIP for
-    /// unrecognized files.
+    /// partition images, UEFI firmware, 7z and single compressed files, and
+    /// native ZIP for unrecognized files.
     Native,
 }
 
@@ -140,6 +143,8 @@ pub enum Reader {
     Ext,
     /// The native reader for Android logical partition images.
     Lp,
+    /// The native reader for UEFI firmware volumes and capsules.
+    Uefi,
     /// The native reader for Flash Video files.
     Flv,
     /// The native reader for SWF files, uncompressed or compressed with zlib
@@ -228,6 +233,12 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         }
         #[cfg(feature = "lp")]
         _ if native_lp::sniff(archive)? => Reader::Lp,
+        #[cfg(feature = "uefi")]
+        Engine::Auto if native_uefi::sniff(archive)? && native_uefi::needs_backend(archive)? => {
+            Reader::Backend { format: None }
+        }
+        #[cfg(feature = "uefi")]
+        _ if native_uefi::sniff(archive)? => Reader::Uefi,
         #[cfg(feature = "ntfs")]
         _ if native_ntfs::sniff(archive)? => Reader::Ntfs,
         #[cfg(feature = "iso")]
@@ -274,6 +285,15 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
         #[cfg(feature = "exe")]
         _ if native_exe::sniff_object(archive)? => Reader::Exe,
+        #[cfg(feature = "uefi")]
+        Engine::Auto
+            if native_uefi::sniff_later_volume(archive)?
+                && native_uefi::needs_backend(archive)? =>
+        {
+            Reader::Backend { format: None }
+        }
+        #[cfg(feature = "uefi")]
+        _ if native_uefi::sniff_later_volume(archive)? => Reader::Uefi,
         Engine::Native => native_fallback(archive)?,
         Engine::Auto => match compat::pinned_format(archive)? {
             Some(format) => Reader::Backend {
@@ -617,6 +637,8 @@ fn tree_reader(reader: &Reader) -> Option<TreeReader> {
         Reader::Ext => Some(native_ext::read_archive),
         #[cfg(feature = "lp")]
         Reader::Lp => Some(native_lp::read_archive),
+        #[cfg(feature = "uefi")]
+        Reader::Uefi => Some(native_uefi::read_archive),
         #[cfg(feature = "flv")]
         Reader::Flv => Some(native_flv::read_archive),
         #[cfg(feature = "swf")]
