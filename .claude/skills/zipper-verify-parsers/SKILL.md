@@ -314,6 +314,14 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | `give_back_whole_bytes` keeps a whole byte | the same proof fails, and so does `bytes_after_the_last_block_are_left_unconsumed` |
 | `next_reversed_code` keeps the bits above the one it sets | `the_next_reversed_code_is_the_code_after_it_with_its_bits_reversed` fails |
 | The end-of-block entry loses its flag | `every_symbols_entry_keeps_its_fields_apart_and_its_value_inside_the_format` fails |
+| The gzip header reader accepts reserved flag bit 5 or 7 | `gzip_headers_read_alike_in_any_split_and_end_where_their_fields_end` fails |
+| The gzip extra length is read big-endian | the same proof fails |
+| The zlib header allows a window of 64 KiB or a preset dictionary | `every_zlib_header_is_accepted_exactly_when_zlib_accepts_it` fails |
+| The gzip header CRC, ISIZE or the zlib Adler-32 goes unchecked | the gzip flag test or the cut and flipped reader and block tests fail |
+| The gzip reader stops after one member | `gzip_fixtures_read_as_flate2_reads_them_whole_cut_and_flipped` fails |
+| A gzip trailer is gathered again after an interrupted read | `an_interrupted_read_at_any_byte_is_retried_without_losing_a_member` fails |
+| A failed reader reads on | `a_failed_trailer_stays_failed_when_the_right_trailer_follows` fails |
+| MSZIP drops its history, or DMG, SquashFS, CramFS, VMDK, QCOW or SWF drops a size or end check | that caller's test against its old `flate2` code fails |
 | Length code 285 gets 5 extra bits | the same proof fails |
 | The Deflate `build_table` accepts an over-subscribed code | `every_small_code_is_built_or_refused_and_read_as_a_bit_at_a_time_reference_reads_it` fails |
 | `build_table` accepts any incomplete code | the same test fails |

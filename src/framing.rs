@@ -1129,6 +1129,18 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_trailer_stays_failed_when_the_right_trailer_follows() {
+        let stream = zlib(b"checked", 6);
+        let (body, trailer) = stream.split_at(stream.len() - 4);
+        let wrong: Vec<u8> = trailer.iter().map(|byte| byte ^ 1).collect();
+        let damaged = [body, &wrong, trailer].concat();
+        let mut reader = Reader::zlib(&damaged[..]);
+        let mut bytes = Vec::new();
+        assert!(reader.read_to_end(&mut bytes).is_err());
+        assert!(reader.read(&mut [0u8; 64]).is_err());
+    }
+
+    #[test]
     fn the_header_crc_matches_crc32fast() {
         let bytes = sample(17, 1_000);
         let register = bytes
