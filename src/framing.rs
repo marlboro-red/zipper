@@ -36,24 +36,35 @@ impl Default for Adler32 {
 }
 
 const ADLER_MODULUS: u32 = 65521;
-const ADLER_LANES: usize = 16;
+const ADLER_BLOCK: usize = 64;
 const ADLER_BYTES_BEFORE_A_REDUCTION: usize = 5552;
+const ADLER_RUN: usize = ADLER_BYTES_BEFORE_A_REDUCTION / ADLER_BLOCK * ADLER_BLOCK;
+const _: () = assert!(ADLER_RUN / ADLER_BLOCK * u8::MAX as usize <= u16::MAX as usize);
 
 impl Adler32 {
+    // RECORD(benchmarks/deflate/gzip-file/README.md): one 16-bit sum for each byte position of a
+    // 64-byte block, weighted once a run, was the fastest of the seven safe forms timed.
     pub(crate) fn update(&mut self, bytes: &[u8]) {
         let (mut a, mut b) = (self.a, self.b);
-        for run in bytes.chunks(ADLER_BYTES_BEFORE_A_REDUCTION) {
-            let mut lanes = run.chunks_exact(ADLER_LANES);
-            for lane in &mut lanes {
-                let (mut sum, mut weighted) = (0u32, 0u32);
-                for (index, &byte) in lane.iter().enumerate() {
-                    sum += u32::from(byte);
-                    weighted += (ADLER_LANES - index) as u32 * u32::from(byte);
+        for run in bytes.chunks(ADLER_RUN) {
+            let mut blocks = run.chunks_exact(ADLER_BLOCK);
+            let mut position_sums = [0u16; ADLER_BLOCK];
+            let mut a_before_each_block = 0u32;
+            for block in &mut blocks {
+                let block: &[u8; ADLER_BLOCK] = block.try_into().expect("a whole block");
+                a_before_each_block += a;
+                let mut sum = 0u32;
+                for position in 0..ADLER_BLOCK {
+                    sum += u32::from(block[position]);
+                    position_sums[position] += u16::from(block[position]);
                 }
-                b += ADLER_LANES as u32 * a + weighted;
                 a += sum;
             }
-            for &byte in lanes.remainder() {
+            b += ADLER_BLOCK as u32 * a_before_each_block;
+            for (position, &sum) in position_sums.iter().enumerate() {
+                b += (ADLER_BLOCK - position) as u32 * u32::from(sum);
+            }
+            for &byte in blocks.remainder() {
                 a += u32::from(byte);
                 b += a;
             }
@@ -1180,31 +1191,55 @@ mod tests {
         }
     }
 
+    fn adler32_a_byte_at_a_time(start: Adler32, bytes: &[u8]) -> u32 {
+        let (mut a, mut b) = (start.a, start.b);
+        for &byte in bytes {
+            a = (a + u32::from(byte)) % ADLER_MODULUS;
+            b = (b + a) % ADLER_MODULUS;
+        }
+        b << 16 | a
+    }
+
     #[test]
     fn adler32_matches_a_byte_at_a_time_reference_in_every_split() {
-        fn reference(bytes: &[u8]) -> u32 {
-            let (mut a, mut b) = (1u32, 0u32);
-            for &byte in bytes {
-                a = (a + u32::from(byte)) % 65521;
-                b = (b + a) % 65521;
-            }
-            b << 16 | a
-        }
         let bytes: Vec<u8> = (0..70_000u32)
             .map(|index| (255 - index % 7) as u8 ^ (index >> 9) as u8)
             .collect();
-        for length in [0, 1, 15, 16, 17, 5551, 5552, 5553, 11_104, 70_000] {
-            let expected = reference(&bytes[..length]);
-            assert_eq!(adler32(&bytes[..length]), expected, "{length}");
-            for split in [1, 16, 5000, 5552] {
-                let split = split.min(length);
-                let mut adler = Adler32::default();
-                adler.update(&bytes[..split]);
-                adler.update(&bytes[split..length]);
-                assert_eq!(adler.sum(), expected, "{length} split at {split}");
+        let lengths = (0..=700).chain([
+            5503, 5504, 5505, 5551, 5552, 5553, 11_007, 11_008, 11_009, 11_104, 70_000,
+        ]);
+        for length in lengths {
+            for offset in [0, 1, 63] {
+                let piece = &bytes[offset..][..length.min(bytes.len() - offset)];
+                let expected = adler32_a_byte_at_a_time(Adler32::default(), piece);
+                assert_eq!(adler32(piece), expected, "{length} from {offset}");
+                for split in [1, 16, 63, 64, 65, 5000, 5504, 5552] {
+                    let split = split.min(piece.len());
+                    let mut adler = Adler32::default();
+                    adler.update(&piece[..split]);
+                    adler.update(&piece[split..]);
+                    assert_eq!(adler.sum(), expected, "{length} split at {split}");
+                }
             }
         }
-        assert_eq!(adler32(&[255; 70_000]), reference(&[255; 70_000]));
+    }
+
+    #[test]
+    fn adler32_never_overflows_from_the_largest_sums_over_the_largest_bytes() {
+        let largest = Adler32 {
+            a: ADLER_MODULUS - 1,
+            b: ADLER_MODULUS - 1,
+        };
+        let bytes = [255u8; 70_000];
+        for length in (0..=200).chain([5503, 5504, 5505, 5552, 5553, 11_008, 70_000]) {
+            let mut adler = largest;
+            adler.update(&bytes[..length]);
+            assert_eq!(
+                adler.sum(),
+                adler32_a_byte_at_a_time(largest, &bytes[..length]),
+                "{length}"
+            );
+        }
     }
 
     struct InterruptsOnce<'a> {
