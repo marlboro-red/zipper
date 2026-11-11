@@ -273,28 +273,36 @@ fn ensure_no_zlib() -> Result<()> {
             "none",
         ],
     )?;
-    let mut zlibs: Vec<String> = tree
-        .lines()
-        .filter_map(|line| line.split_whitespace().next())
-        .filter(|name| ZLIB_CRATES.contains(name))
-        .map(str::to_owned)
-        .collect();
+    let mut zlibs = zlib_crates_in(&tree);
     if cfg!(target_os = "macos") {
         let binary = target_dir().join("release/zipper");
-        let libraries = output("otool", &["-L", &binary.to_string_lossy()])?;
-        zlibs.extend(
-            libraries
-                .lines()
-                .filter_map(|line| line.split_whitespace().next())
-                .filter(|library| library.contains("libz."))
-                .map(str::to_owned),
-        );
+        zlibs.extend(zlib_libraries_in(&output(
+            "otool",
+            &["-L", &binary.to_string_lossy()],
+        )?));
     }
     ensure!(
         zlibs.is_empty(),
         "the release build depends on {zlibs:?}; Zipper decodes Deflate with src/inflate.rs"
     );
     Ok(())
+}
+
+fn zlib_crates_in(tree: &str) -> Vec<String> {
+    tree.lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|name| ZLIB_CRATES.contains(name))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn zlib_libraries_in(otool: &str) -> Vec<String> {
+    otool
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|library| library.contains("libz."))
+        .map(str::to_owned)
+        .collect()
 }
 
 type Step = fn() -> Result<()>;
@@ -964,6 +972,32 @@ fn same_tree(expected: &Path, actual: &Path) -> Result<()> {
         bail!("{} has unexpected {}", actual.display(), extra.display());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod zlib_check_tests {
+    use super::*;
+
+    #[test]
+    fn every_zlib_crate_in_a_tree_and_every_linked_libz_is_named() {
+        let clean = "zipper v0.1.0 (/z)\ncrc32fast v1.5.3\nlibbz2-rs-sys v0.2.6\nzstd-sys v2.1.2\n";
+        assert!(zlib_crates_in(clean).is_empty());
+        for name in [
+            "flate2",
+            "libz-sys",
+            "libz-rs-sys",
+            "zlib-rs",
+            "miniz_oxide",
+        ] {
+            let tree = format!("{clean}{name} v1.0.0\n");
+            assert_eq!(zlib_crates_in(&tree), [name.to_string()], "{name}");
+        }
+        let linked = "target/release/zipper:\n\t/usr/lib/libz.1.dylib (compatibility version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)\n";
+        assert_eq!(zlib_libraries_in(linked), ["/usr/lib/libz.1.dylib"]);
+        let unlinked =
+            "target/release/zipper:\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0)\n";
+        assert!(zlib_libraries_in(unlinked).is_empty());
+    }
 }
 
 #[cfg(test)]
