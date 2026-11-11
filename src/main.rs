@@ -773,13 +773,25 @@ fn exit_for_unwritable_listing(error: std::io::Error) -> ! {
     std::process::exit(1);
 }
 
+fn says_more_than_cancelled(error: &anyhow::Error) -> bool {
+    !(error.is::<zipper::Cancelled>() && error.chain().count() == 1)
+}
+
 fn main() -> std::process::ExitCode {
     let ran = run();
+    let printed_first = ran.as_ref().is_err_and(says_more_than_cancelled);
+    if let Err(error) = &ran
+        && printed_first
+    {
+        eprintln!("Error: {error:?}");
+    }
     raise_signals_that_ended_the_run(ran.is_ok());
     match ran {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("Error: {error:?}");
+            if !printed_first {
+                eprintln!("Error: {error:?}");
+            }
             if error.is::<PromptInterrupted>() {
                 std::process::ExitCode::from(INTERRUPTED)
             } else {
@@ -1284,5 +1296,17 @@ mod tests {
             signals_that_ended_the_run(false),
             [libc::SIGTERM, libc::SIGHUP]
         );
+    }
+
+    #[test]
+    fn an_error_that_says_more_than_cancelled_is_printed_before_a_signal_ends_the_run() {
+        let cancelled = || anyhow::Error::from(zipper::Cancelled);
+        assert!(!says_more_than_cancelled(&cancelled()));
+        assert!(says_more_than_cancelled(&cancelled().context(
+            "extraction failed and could not undo out/x moved from s/x"
+        )));
+        assert!(says_more_than_cancelled(&anyhow::anyhow!(
+            "cannot move out/x into place"
+        )));
     }
 }
