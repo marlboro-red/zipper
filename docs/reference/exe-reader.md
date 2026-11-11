@@ -77,7 +77,7 @@ The reader holds the section, segment or load command table, each item's name an
 | ELF file of 65,535 sections with 54-byte names | 7.8 MB | 36 MB | 38 MB | 3 MB | 10 MB | 11 MB |
 | PE image of 65,000 sections | 2.6 MB | 24 MB | 26 MB | 3 MB | 20 MB | 20 MB |
 
-`write_executables_at_the_documented_limits` in `tests/hostile_exe.rs` writes these files. Most of the PE resource figure is the shared tree, which holds every path, as in the [CHM reader](chm-reader.md#limits).
+`write_executables_at_the_documented_limits` in `tests/hostile_exe.rs` writes these files. Most of the PE resource figure is the shared tree, which holds every path.
 
 ## Extraction options
 

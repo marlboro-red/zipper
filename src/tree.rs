@@ -44,8 +44,6 @@ pub struct ReadOptions<'a> {
 pub(crate) const MAX_ENTRIES: usize = 1_000_000;
 pub(crate) const MAX_NAME: u64 = 8192;
 const MAX_METADATA: usize = 64 * 1024 * 1024;
-const MAX_LINK_ATTRIBUTES: usize = 64 * 1024 * 1024;
-const LINK_ATTRIBUTE_ENTRY: usize = 128;
 const COPY_BUFFER: usize = 1024 * 1024;
 const LINKS_PER_REPORT: usize = 1024;
 pub(crate) const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
@@ -127,9 +125,6 @@ pub(crate) struct Tree<'a> {
     directory_index: HashMap<String, usize>,
     hard_links: Vec<(String, String)>,
     symlinks: Vec<(String, String)>,
-    link_attributes: Vec<(usize, String, Vec<u8>)>,
-    link_attribute_bytes: usize,
-    attributes_kept: Option<bool>,
     streams_kept: Option<bool>,
     entries: Vec<Entry>,
     budget: Budget,
@@ -149,12 +144,6 @@ pub(crate) struct Written {
     file: Option<fs::File>,
     unlocked: bool,
     locked_permissions: Option<fs::Permissions>,
-}
-
-pub(crate) enum Owner<'w> {
-    File(&'w mut Written),
-    Folder(&'w str),
-    Link(usize),
 }
 
 fn leading_dots(raw: &str) -> usize {
@@ -209,9 +198,6 @@ pub(crate) fn extract(
         directory_index: HashMap::new(),
         hard_links: Vec::new(),
         symlinks: Vec::new(),
-        link_attributes: Vec::new(),
-        link_attribute_bytes: 0,
-        attributes_kept: None,
         streams_kept: None,
         entries: Vec::new(),
         budget: Budget {
@@ -599,60 +585,6 @@ impl<'a> Tree<'a> {
         self.tracker.file_done()
     }
 
-    pub(crate) fn writes_attributes(&self) -> bool {
-        crate::xattr::WRITES && self.root.is_some() && self.metadata.restores()
-    }
-
-    pub(crate) fn set_attribute(
-        &mut self,
-        owner: &mut Owner,
-        name: &str,
-        value: Vec<u8>,
-    ) -> Result<()> {
-        let Some(root) = self.root.filter(|_| self.writes_attributes()) else {
-            return Ok(());
-        };
-        let kept = match self.attributes_kept {
-            Some(kept) => kept,
-            None => *self
-                .attributes_kept
-                .insert(crate::xattr::kept_natively_in(root)?),
-        };
-        if !kept {
-            return Ok(());
-        }
-        self.budget.charge(value.len() as u64)?;
-        let format = self.format;
-        match owner {
-            Owner::File(written) => {
-                let Some(file) = &written.file else {
-                    return Ok(());
-                };
-                if !written.unlocked {
-                    written.locked_permissions = crate::xattr::make_writable(file)?;
-                    written.unlocked = true;
-                }
-                let what = format!("{format} entry {:?}", written.placed);
-                crate::xattr::set_on_file(file, name, &value, &what)
-            }
-            &mut Owner::Folder(placed) => crate::xattr::set_on_path(
-                &root.join(placed),
-                name,
-                &value,
-                &format!("{format} folder {placed:?}"),
-            ),
-            &mut Owner::Link(index) => {
-                self.link_attribute_bytes += LINK_ATTRIBUTE_ENTRY + name.len() + value.len();
-                ensure!(
-                    self.link_attribute_bytes <= MAX_LINK_ATTRIBUTES,
-                    "{format} links hold more than 64 MiB of extended attributes"
-                );
-                self.link_attributes.push((index, name.to_owned(), value));
-                Ok(())
-            }
-        }
-    }
-
     pub(crate) fn writes_to_disk(&self) -> bool {
         self.root.is_some()
     }
@@ -791,18 +723,6 @@ impl<'a> Tree<'a> {
                 self.tracker.report()?;
             }
             crate::create_symlink(format, root, name, target)?;
-        }
-        for (count, (index, name, value)) in self.link_attributes.iter().enumerate() {
-            if count % LINKS_PER_REPORT == 0 {
-                self.tracker.report()?;
-            }
-            let link = &self.symlinks[*index].0;
-            crate::xattr::set_on_path(
-                &root.join(link),
-                name,
-                value,
-                &format!("{format} symlink {link:?}"),
-            )?;
         }
         Ok(())
     }

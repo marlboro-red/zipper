@@ -1,10 +1,12 @@
 # In-process disk image reader
 
-Zipper extracts VHD, VHDX, QCOW, VDI, VMDK and Android sparse disk images with its own Rust reader, in the tree `7zz x` writes. The same reader reads MBR and GPT partition tables and the FAT12, FAT16 and FAT32 file systems on them. The default engine and `--zip-engine native` send a file here when it starts with a container's signature, a GPT, an MBR or a FAT boot sector. The containers are VHDX, VHD, QCOW, VDI, VMDK sparse extents and Android sparse images. A VDI also needs version 1 and a header size of 384 bytes to 4 KiB beside its signature at byte 64, so a gzip whose stored name holds that signature stays a gzip. A file named `.vhd` that ends with a fixed VHD footer comes here too, and so does a file named `.vmdk` that starts with `# Disk DescriptorFile`. The default engine sends a differencing image, and a disk whose file system Zipper does not read, to 7-Zip. `--zip-engine native` refuses both and names the reason. `--zip-engine backend` hands every disk to 7-Zip.
+Zipper extracts VHD, VHDX, QCOW, VDI, VMDK and Android sparse disk images with its own Rust reader, in the tree `7zz x` writes. The same reader reads MBR and GPT partition tables, and hands a lone partition to the SquashFS, CramFS or ext reader. The default engine and `--zip-engine native` send a file here when it starts with a container's signature, a GPT, an MBR or a FAT boot sector. The containers are VHDX, VHD, QCOW, VDI, VMDK sparse extents and Android sparse images. A VDI also needs version 1 and a header size of 384 bytes to 4 KiB beside its signature at byte 64, so a gzip whose stored name holds that signature stays a gzip. A file named `.vhd` that ends with a fixed VHD footer comes here too, and so does a file named `.vmdk` that starts with `# Disk DescriptorFile`. The default engine sends a differencing image, and a disk whose file system Zipper neither reads nor refuses, to 7-Zip. `--zip-engine native` refuses both and names the reason. `--zip-engine backend` hands every other disk to 7-Zip, but refuses the ones the next paragraph names before 7-Zip starts.
+
+A disk whose lone partition or whole volume holds FAT, NTFS, HFS+, HFSX or APFS is refused whole in every engine, with `Zipper does not read FAT volumes` or the file system's name, and nothing is written. Those readers were removed on 12 November 2026 for licence reasons, as the [refused formats page](refused.md) records. A disk with several partitions still extracts each one as a raw file, whatever it holds, so no file system is read in part.
 
 ## Supported images
 
-The reader has three layers, and each partition is a bounded `Read + Seek` view of the disk below it. A file system reader takes one view, so the FAT reader and the [NTFS reader](ntfs-reader.md) plug in at the same place.
+The reader has three layers, and each partition is a bounded `Read + Seek` view of the disk below it. A file system reader takes one view, so the SquashFS, CramFS and ext readers plug in at the same place.
 
 - Containers. Each one maps the disk's bytes to places in its files and hands the next layer the same view a raw disk gives.
   - A fixed VHD, a dynamic VHD with blocks of 512 KiB to 2 GiB, and a VHDX with blocks of 1 MiB to 256 MiB, fixed or dynamic, with 512 or 4096-byte logical sectors.
@@ -14,26 +16,22 @@ The reader has three layers, and each partition is a bounded `Read + Seek` view 
   - Android sparse images with raw, fill, don't-care and CRC-32 chunks.
   - A raw disk, which is its own container.
 - Partition tables. An MBR with primary, extended and logical partitions, with 512 or 4096-byte sectors as 7-Zip detects them, and a GPT with 512 or 4096-byte sectors.
-- File systems. FAT12, FAT16 and FAT32 with VFAT long names, NT lowercase flags, deleted entries, empty files, folders up to 256 deep and fragmented cluster chains. NTFS, through the [NTFS reader](ntfs-reader.md), with its rules. HFS+, through the [DMG reader's HFS+ code](dmg-reader.md), APFS, through the [APFS reader](apfs-reader.md), and ext2, ext3 and ext4, through the [ext reader](ext-reader.md), with their rules.
+- File systems. SquashFS and CramFS, through the [SquashFS and CramFS reader](squashfs-reader.md), and ext2, ext3 and ext4, through the [ext reader](ext-reader.md), with their rules. FAT, NTFS, HFS+, HFSX and APFS are recognized only to be refused.
 
 ## What it writes
 
-The reader follows 7-Zip's rule for the main subfile. A disk whose partition table holds one partition, and every container, is opened again inside, down to the file system. So a QCOW image holding an MBR with one FAT partition writes the files of that FAT volume.
+The reader follows 7-Zip's rule for the main subfile. A disk whose partition table holds one partition, and every container, is opened again inside, down to the file system. So a QCOW image holding an MBR with one ext partition writes the files of that ext volume, and a QCOW image holding one FAT partition is refused.
 
-- An NTFS volume writes the tree the NTFS reader writes for the same raw volume, and an HFS+ volume the tree the DMG reader writes. An APFS container writes the tree the APFS reader writes, and an ext volume the tree the ext reader writes.
-- A FAT volume writes its tree. Names come from the long name when its records and checksum match, as 7-Zip checks them, and otherwise from the short name with its NT lowercase flags. A `/` in a long name becomes `_`. A short name of spaces becomes `[NONAME]-N`, as 7-Zip names it.
-- Files get their modification time, read as local time. A file with the read-only attribute gets mode `0o444`, and every other file `0o644`. Folders get mode `0o755` and their time. The umask limits all of them.
+- A SquashFS or CramFS volume writes the tree its reader writes for the same raw image, and an ext volume the tree the ext reader writes.
 - A disk with several partitions writes each partition as one file, as 7-Zip does. An MBR partition is named `N.fat`, `N.ntfs` or `N.img` by its type, and a gap that an extended partition or the end of the disk leaves is named `N`. A GPT partition is named `N.name.fat` or `N.name.img`. These files get mode `0o644` and no time.
 
-It never restores the hidden, system or archive attributes, short names beside long ones, creation or access times, or the volume label.
 
 ## Images it sends to 7-Zip
 
 The default engine sends the whole image to 7-Zip, and `--zip-engine native` refuses it with the reason, in these cases:
 
-- The lone partition, or the disk inside a container, holds exFAT, UDF or any other file system that is not FAT, NTFS, HFS+, APFS or ext.
+- The lone partition, or the disk inside a container, holds exFAT, UDF or any other file system that Zipper neither reads nor refuses.
 - The lone partition holds an ext volume that the ext reader leaves to 7-Zip.
-- The lone partition holds an APFS container that the APFS reader leaves to 7-Zip.
 - The lone partition holds no partition table or file system Zipper knows, such as one of zeros.
 - A GPT partition name holds `/`, `\`, `:` or a control character, since 7-Zip writes it as a path.
 - The image is a differencing VHD or VHDX, which 7-Zip reads with its parent disk.
@@ -69,21 +67,12 @@ The reader checks the layout before it writes anything, and it publishes nothing
 - A VMDK descriptor starts with `# Disk DescriptorFile`. Every line before the first NUL is blank, a `#` comment at its start, or a setting with `=` and no quote before it. Any other line is an extent of access, decimal sectors, type and quoted file name, as 7-Zip reads them. A flat extent ends inside its file, and a sparse extent's capacity equals the descriptor's size. An extent file must be one plain name in the descriptor's folder, without `/`, `\`, `:`, `.` or `..`, and not a link.
 - An Android sparse header has its magic, major version 1, the header sizes 28 and 12 and a block size that is a multiple of 4. Every chunk has a known type, a zero reserved field, the size its type needs and lies inside the file. A CRC-32 chunk covers no blocks. The chunks cover exactly the blocks the header counts. 7-Zip ignores the CRC-32 values, and Zipper does too.
 - MBR entries have a known status, valid CHS fields, a size and a start that fit 32 bits, and each one starts past the one before. Extended partitions nest at most 128 deep and the table lists at most 128 items. GPT headers and partition tables have their CRC-32, at most 65,536 entries of 128 to 4096 bytes, and partitions that end after they start.
-- A FAT boot sector passes 7-Zip's checks of the jump, sector size, cluster size of at most 256 KiB, FAT count, root folder size and cluster count. The FAT lies inside the volume and its first entry names the media.
-- Every folder cluster is claimed once. So a folder chain that loops, a folder that names its own ancestor and two folders that share a cluster are refused, and the walk cannot loop. A folder is at most 2 MiB, as the FAT specification limits it.
-- A file's chain holds exactly the clusters its size needs and then ends. A chain that ends early, runs past its size, leaves the volume or reaches a free cluster is refused. So is an empty file that names a cluster.
-- Every file cluster is claimed once across the volume, and no file uses a folder's cluster. So a chain that loops and two files that share a cluster are refused.
-- Names pass the same checks as tar names. `.`, `..`, `\`, `:` and NUL are refused, and so is a long name that is not valid UTF-16 and a short name outside ASCII. A folder that holds two entries of one name is refused.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
 ## Limits
 
 | Limit | Value |
 | --- | --- |
-| Entries in one volume | at most 1,000,000, as the shared tree allows |
-| Names of one volume | at most 64 MiB in total |
-| One folder | at most 2 MiB, 65,536 records |
-| Folder depth | at most 256 |
 | MBR items | at most 128, with extended partitions 128 deep |
 | GPT entries | at most 65,536 |
 | Nesting of disks and partitions | at most 32 levels |
@@ -94,16 +83,9 @@ The reader checks the layout before it writes anything, and it publishes nothing
 | VMDK disk | at most 64 TiB, with at most 4,096 extents and a descriptor of at most 1 MiB |
 | Android sparse disk | at most 64 TiB, with blocks of a multiple of 4 bytes up to 256 MiB |
 
-The reader never holds a whole FAT or block table. It reads the FAT in 64 KiB blocks and keeps 4 of them, and it reads VHD, VHDX, QCOW, VDI and VMDK tables in 4 KiB pages and keeps 8. It reads every table once when it opens the image, in batches of 64 KiB, to refuse one that names a place outside the file or twice. A QCOW image keeps one bit for each cluster its tables name, and a VDI one bit for each allocated block. A VMDK keeps one bit for each grain and for each sector of its tables and compressed grains. These bits sit in pages allocated only where they lie. A compressed QCOW cluster or VMDK grain is decoded whole, and the last one stays held. A VMDK descriptor drops the pages and grain of one sparse extent when a read moves to another, so its extents hold the caches of one extent at a time. An Android sparse image keeps 16 bytes for every 256 chunks, and decodes the 256 chunk headers around a read. The reader reads the FAT once when it opens the volume, as 7-Zip does, to refuse a volume that ends inside it. It keeps one node for each entry, with its name, and one bit for each cluster a file uses, in pages it allocates only where files lie. A VHDX keeps one bit for each megabyte its blocks use.
+The reader never holds a whole block table. It reads VHD, VHDX, QCOW, VDI and VMDK tables in 4 KiB pages and keeps 8. It reads every table once when it opens the image, in batches of 64 KiB, to refuse one that names a place outside the file or twice. A QCOW image keeps one bit for each cluster its tables name, and a VDI one bit for each allocated block. A VMDK keeps one bit for each grain and for each sector of its tables and compressed grains. These bits sit in pages allocated only where they lie. A compressed QCOW cluster or VMDK grain is decoded whole, and the last one stays held. A VMDK descriptor drops the pages and grain of one sparse extent when a read moves to another, so its extents hold the caches of one extent at a time. An Android sparse image keeps 16 bytes for every 256 chunks, and decodes the 256 chunk headers around a read. A VHDX keeps one bit for each megabyte its blocks use.
 
-Peak resident memory on images at the limits, written by `write_disks_at_the_documented_limits` in `tests/hostile_disk.rs`, is in this table.
-
-| Image | `zipper list` | `zipper extract` | `7zz l` | `7zz x` |
-| --- | ---: | ---: | ---: | ---: |
-| A 2 TiB VHDX with one FAT32 partition, a 256 MiB FAT and one file | 3 MiB | 3 MiB | 277 MiB | 277 MiB |
-| 993,600 empty files with names of about 60 bytes, in 92 folders | 236 MiB | 261 MiB | 210 MiB | 209 MiB |
-
-Peak resident memory of `zipper test` and `7zz t` on container images at the limits, from the same test, is in this table. Each image holds an MBR with one FAT32 partition and one small file.
+Peak resident memory of `zipper test` and `7zz t` on container images at the limits, written by `write_disks_at_the_documented_limits` in `tests/hostile_disk.rs`, is in this table. It was measured before 12 November 2026, when each image held an MBR with one FAT32 partition and one small file. The images now hold a SquashFS partition, which Zipper still reads, and the table has not been measured again.
 
 | Image | `zipper test` | `7zz t` |
 | --- | ---: | ---: |
@@ -112,15 +94,13 @@ Peak resident memory of `zipper test` and `7zz t` on container images at the lim
 | A 512 GiB VMDK sparse extent with 64 KiB grains | 4 MiB | 100 MiB |
 | A 2 TiB Android sparse image of 4,194,314 chunks | 4 MiB | 323 MiB |
 
-7-Zip holds the whole FAT and the whole block or chunk table, and Zipper holds a few pages of each. `--threads` has no effect on disk images.
+7-Zip holds the whole block or chunk table, and Zipper holds a few pages of it. `--threads` has no effect on disk images.
 
 ## Differences from 7-Zip
 
-`tests/disk_corpus.rs` requires every image in `tests/data/disk-corpus` to extract to the tree 7-Zip extracted when it was written, and to the tree 7-Zip extracts where it is installed. Where `mkfs.fat`, `mtools`, `sgdisk` and `qemu-img` are installed, it also formats and fills seeded volumes and wraps them in every container, and each must extract as 7-Zip extracts it. Where `qemu-img` is installed, it converts the corpus disks to QCOW, VDI and VMDK images of each subformat and option the reader supports. Each must extract as 7-Zip extracts it. Writer images in every container, whole and with flipped bits, must extract as 7-Zip extracts them, or be refused when 7-Zip refuses them or for one of the reasons below. A flip that leaves a disk Zipper sends to 7-Zip counts as a match, since the default engine then writes 7-Zip's tree. The reader differs from 7-Zip 26.05 on purpose in these cases:
+`tests/disk_corpus.rs` requires every image in `tests/data/disk-corpus` to extract to the tree 7-Zip extracted when it was written, and to the tree 7-Zip extracts where it is installed. Images whose lone file system is FAT, NTFS, HFS+ or APFS must be refused by name with nothing written. Where `mkfs.fat`, `mtools`, `sgdisk` and `qemu-img` are installed, it also formats seeded FAT volumes and wraps them in every container. Each two-partition disk must extract as 7-Zip extracts it, and each lone FAT volume must be refused. Where `qemu-img` is installed, it converts the corpus disks to QCOW, VDI and VMDK images of each subformat and option the reader supports. Each must extract as 7-Zip extracts it. Writer images in every container, whole and with flipped bits, must extract as 7-Zip extracts them, or be refused when 7-Zip refuses them or for one of the reasons below. A flip that leaves a disk Zipper sends to 7-Zip counts as a match, since the default engine then writes 7-Zip's tree. The reader differs from 7-Zip 26.05 on purpose in these cases:
 
-- 7-Zip extracts two FAT files that share clusters. Zipper refuses the volume.
-- 7-Zip extracts two entries of one name in a folder, the second over the first. Zipper refuses the folder.
-- 7-Zip writes a name with `\` or `:`, a long name that is not valid UTF-16, and a short name outside ASCII in its OEM code page. Zipper refuses each.
+- 7-Zip extracts FAT, NTFS, HFS+, HFSX and APFS file systems from a lone partition. Zipper refuses the disk.
 - 7-Zip opens a dynamic VHD whose footer copy at the end differs from the one at the start, and looks for the footer elsewhere. Zipper refuses it.
 - 7-Zip opens a VHDX whose two region tables differ, whose blocks overlap, or whose log was never replayed, and reports an error. Zipper refuses each.
 - 7-Zip opens QCOW, VDI and VMDK images whose tables name one place of the file twice, or a table's place for data. Zipper refuses each.
@@ -128,11 +108,8 @@ Peak resident memory of `zipper test` and `7zz t` on container images at the lim
 - 7-Zip opens a VMDK whose grain tables name a grain past the end of the file where the disk is never read, and a compressed grain whose marker names another place. It also opens one whose grain directory offset wraps past 2^64 bytes to a place inside the file. Zipper refuses each.
 - 7-Zip reads VDI blocks with extra data as if the extra data were block data. Zipper refuses them.
 - 7-Zip opens a VMDK descriptor whose flat extent is longer than its file, whose sparse extent file is not a sparse extent, or whose extent sits in a subfolder or is a link. Zipper refuses each.
-- 7-Zip turns a FAT local time into UTC with the offset in force now. Zipper uses the offset in force on that date, as its ZIP, ARJ and LZH readers do, so a time in the other half of a daylight saving year differs by an hour.
 - 7-Zip's choice of format can depend on the file name, for example whether a file with a fixed VHD footer is named `.vhd`. Zipper follows that rule for fixed VHD footers and VMDK descriptors and reads every other signature by content.
-- A FAT volume whose cluster count overflows 32 bits wraps in 7-Zip's arithmetic. Zipper refuses it.
 
-7-Zip reports a headers warning for orphaned long name records, a long name whose checksum does not match and a short name of spaces, and still extracts. Zipper extracts the same names without a warning. 7-Zip writes the extended attributes of HFS+ and APFS files and the named streams of NTFS system files as `file:name` files, which those readers leave out, as their pages say.
 
 ## Extraction options
 
@@ -148,9 +125,6 @@ Kani proves these rules under `[disk-fields]` in `verification/coverage.txt`:
 - Every VHDX block table entry it accepts has a known state and an aligned offset. For every chunk ratio and every block of a disk of at most 64 TiB, the entry it reads lies inside the table and is never a sector bitmap entry.
 - The MBR entry reader never panics on any 16 bytes, and a partition it accepts has blocks and ends within 32 bits.
 - The GPT header and entry readers never panic for either sector size. A table they accept is at most 256 MiB and a partition ends after it starts, within 64 bits.
-- The FAT boot sector reader never panics on any 512 bytes. In a volume it accepts, every valid cluster lies inside the volume's sectors and every FAT entry lies inside the FAT bytes the reader checked.
-- The folder record reader never panics on any 32 bytes. A long name record it accepts has a sequence number of 1 to 20, and a short entry outside FAT32 names a 16-bit cluster.
-- The long name reader never panics on 1 or 2 records, and a name it accepts ends at its terminator with no terminator or padding before it. The short name reader always gives at most 12 ASCII bytes.
 
 Kani proves these rules under `[disk-containers]`:
 
@@ -160,4 +134,4 @@ Kani proves these rules under `[disk-containers]`:
 - The VMDK header reader never panics on any 512 bytes. In an extent it accepts, every sector of the disk has a grain directory and grain table entry, and a compressed extent names Deflate. The grain entry and marker readers never panic.
 - The Android sparse header and chunk readers never panic. A chunk they accept holds exactly the bytes its type needs, and a CRC-32 chunk covers no blocks.
 
-`tests/hostile_disk.rs` builds its images with the test writer in `tests/common/disk_writer.rs`. It holds one case per refusal in the safety checks above, each of which must leave nothing beside the destination, both when extracting and when only verifying. It cuts a FAT12 volume at every sector and each container at hundreds of places, and flips a byte in every structure of a raw, VHD, VHDX, QCOW, VDI, VMDK and Android sparse disk. `every_flip_in_every_container_structure_matches_7zip` in `tests/disk_corpus.rs` flips every byte of every container structure against 7-Zip, and `cargo xtask verify-sync disk-containers` runs it. `tests/data/disk-corpus/NOTICE.txt` names the tools that wrote the corpus.
+`tests/hostile_disk.rs` builds its images with the test writer in `tests/common/disk_writer.rs`. It holds one case per refusal in the safety checks above, each of which must leave nothing beside the destination, both when extracting and when only verifying. Its content oracle is a SquashFS volume from `tests/common/squashfs_writer.rs`, which every container must give back byte for byte. It cuts each container at hundreds of places, and flips a byte in every structure of a raw, VHD, VHDX, QCOW, VDI, VMDK and Android sparse disk. `a_lone_fat_ntfs_hfs_or_apfs_volume_is_refused_by_name_in_every_container` refuses each of those file systems inside MBR, GPT, VHD, VHDX and QCOW images. `every_flip_in_every_container_structure_matches_7zip` in `tests/disk_corpus.rs` flips every byte of every container structure against 7-Zip, and `cargo xtask verify-sync disk-containers` runs it. `tests/data/disk-corpus/NOTICE.txt` names the tools that wrote the corpus.

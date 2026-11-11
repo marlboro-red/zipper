@@ -1,13 +1,11 @@
 //! Every CAB in `tests/data/cab-corpus` extracts to the tree 7-Zip extracted
 //! when the corpus was written, and to the tree 7-Zip extracts now where it
-//! is installed. Generated CABs of every method, Quantum and LZX window,
-//! block mix and E8 setting extract exactly as 7-Zip extracts them, and a
+//! is installed. Generated stored, MSZIP and Quantum CABs of every Quantum
+//! window extract exactly as 7-Zip extracts them, and a
 //! damaged Quantum CAB is refused exactly when 7-Zip refuses it. Without 7-Zip 26.05 or later the
 //! differential test is skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
-#[path = "common/lzx_encoder.rs"]
-mod lzx_encoder;
 #[path = "common/quantum_encoder.rs"]
 mod quantum_encoder;
 #[path = "common/sevenzip.rs"]
@@ -158,13 +156,9 @@ fn sample(random: &mut Random, length: usize) -> Vec<u8> {
 
 fn generated(random: &mut Random, case: usize) -> (Cabinet, String) {
     let window_bits = 15 + (case % 7) as u8;
-    let method = match case % 4 {
+    let method = match case % 2 {
         0 => Method::Stored,
-        1 => Method::Mszip,
-        _ => Method::Lzx(lzx_encoder::Options::random(
-            &mut || random.next(),
-            window_bits,
-        )),
+        _ => Method::Mszip,
     };
     let length = match random.below(4) {
         0 => random.below(100),
@@ -172,8 +166,6 @@ fn generated(random: &mut Random, case: usize) -> (Cabinet, String) {
         2 => cab_writer::BLOCK * (1 + random.below(4)),
         _ => random.below(1 << (window_bits + 1)).min(3 << 20),
     };
-    let tiny_blocks = matches!(&method, Method::Lzx(options) if options.longest_block < 2000);
-    let length = if tiny_blocks { length.min(120) } else { length };
     let mut data = sample(random, length.max(1));
     let mut files = Vec::new();
     let mut start = 0;
@@ -186,13 +178,6 @@ fn generated(random: &mut Random, case: usize) -> (Cabinet, String) {
     }
     if random.below(3) == 0 {
         files.push(("empty.txt".to_owned(), data.len(), 0));
-    }
-    if let Method::Lzx(options) = &method
-        && options.reset_interval.is_some()
-    {
-        let mut options = options.clone();
-        options.reset_interval = None;
-        return generated_with(Method::Lzx(options), &mut data, files);
     }
     generated_with(method, &mut data, files)
 }
@@ -368,82 +353,6 @@ fn damaged_quantum_cabs_are_refused_exactly_when_7zip_refuses_them() {
 }
 
 #[test]
-fn lzx_block_edges_at_chunk_ends_extract_as_7zip_extracts_them() {
-    use lzx_encoder::Kind::{Aligned, Uncompressed, Verbatim};
-    let Some(binary) = sevenzip::sevenzip() else {
-        eprintln!("skipped: no 7-Zip");
-        return;
-    };
-    let mut random = Random(0x0123_4567_89ab_cdef);
-    let data = sample(&mut random, 3 * cab_writer::BLOCK + 777);
-    let chunk = cab_writer::BLOCK;
-    let plans: Vec<Vec<(lzx_encoder::Kind, usize)>> = vec![
-        vec![
-            (Uncompressed, chunk - 1),
-            (Uncompressed, 1),
-            (Verbatim, usize::MAX),
-        ],
-        vec![
-            (Verbatim, chunk - 1),
-            (Uncompressed, 1),
-            (Aligned, usize::MAX),
-        ],
-        vec![
-            (Uncompressed, chunk + 1),
-            (Verbatim, chunk - 1),
-            (Uncompressed, usize::MAX),
-        ],
-        vec![
-            (Uncompressed, 2 * chunk + 3),
-            (Uncompressed, chunk - 3),
-            (Uncompressed, usize::MAX),
-        ],
-        vec![
-            (Aligned, chunk),
-            (Uncompressed, chunk),
-            (Verbatim, 0),
-            (Verbatim, usize::MAX),
-        ],
-        vec![
-            (Uncompressed, 0),
-            (Uncompressed, 5),
-            (Aligned, 0),
-            (Verbatim, usize::MAX),
-        ],
-    ];
-    let root = tempfile::tempdir().unwrap();
-    let mut case = 0;
-    for plan in plans {
-        for padding_in_next_chunk in [false, true] {
-            for translation in [None, Some(12_000_000)] {
-                let mut options = lzx_encoder::Options::plain(15 + (case % 7) as u8);
-                options.plan = plan.clone();
-                options.padding_in_next_chunk = padding_in_next_chunk;
-                options.translation = translation;
-                let cabinet =
-                    cab_writer::one_folder_in_order(&[("a.bin", &data)], &Method::Lzx(options));
-                let archive = root.path().join(format!("edge{case}.cab"));
-                fs::write(&archive, cabinet.build()).unwrap();
-                let theirs =
-                    sevenzip_tree(&binary, &archive, &root.path().join(format!("7zip{case}")))
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "7-Zip refused plan {plan:?}, padding next {padding_in_next_chunk}"
-                            )
-                        });
-                let ours =
-                    zipper_tree(&archive, &root.path().join(format!("zipper{case}"))).unwrap();
-                assert_eq!(
-                    ours, theirs,
-                    "plan {plan:?}, padding next {padding_in_next_chunk}"
-                );
-                case += 1;
-            }
-        }
-    }
-}
-
-#[test]
 #[ignore = "rewrites tests/data/cab-corpus; run with --ignored to regenerate"]
 fn write_the_generated_corpus() {
     let binary = sevenzip::sevenzip().expect("7-Zip records the corpus trees");
@@ -469,21 +378,6 @@ fn write_the_generated_corpus() {
             cab_writer::one_folder_in_order(&files, &Method::Mszip),
         ),
     ];
-    for window_bits in 15..=21u8 {
-        let mut options = lzx_encoder::Options::random(&mut || random.next(), window_bits);
-        options.reset_interval = None;
-        options.longest_block = 20_000;
-        options.kinds = vec![
-            lzx_encoder::Kind::Verbatim,
-            lzx_encoder::Kind::Aligned,
-            lzx_encoder::Kind::Uncompressed,
-        ];
-        options.translation = Some(12_000_000);
-        cabinets.push((
-            format!("lzx-{window_bits}.cab"),
-            cab_writer::one_folder_in_order(&files, &Method::Lzx(options)),
-        ));
-    }
     let mut folders = cab_writer::one_folder_in_order(
         &[
             files[0],
@@ -493,8 +387,10 @@ fn write_the_generated_corpus() {
         &Method::Mszip,
     );
     folders.files[2].attributes = cab_writer::NAME_IS_UTF8;
-    let second =
-        cab_writer::one_folder_in_order(&files[2..], &Method::Lzx(lzx_encoder::Options::plain(16)));
+    let second = cab_writer::one_folder_in_order(
+        &files[2..],
+        &Method::Quantum(quantum_encoder::Options::plain(16)),
+    );
     folders.folders.extend(second.folders);
     folders
         .files

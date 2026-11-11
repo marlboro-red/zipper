@@ -1,0 +1,22 @@
+Samples of formats Zipper refuses, for tests/refused.rs.
+
+lzx.cab is cab-crate-lzx-two-files.cab from tests/data/cab-corpus before
+12 November 2026: the byte string of the read_lzx_cabinet_with_two_files
+test in src/cabinet.rs of the cab crate 0.6.0,
+https://github.com/mdsteele/rust-cab, used under the MIT License that
+tests/data/cab-corpus/NOTICE.txt reproduces, Copyright (c) 2017 Matthew D.
+Steele.
+
+lzx.wim.xz and lzms.wim.xz are lzx-128k.wim and lzms-one-chunk.wim from
+tests/data/wim-corpus before 12 November 2026, compressed with xz. Both
+were written by wimlib-imagex 1.14.5 from trees of seeded pseudo-random
+data that tests/wim_corpus.rs generated. They hold no third-party content.
+
+chm.chm.xz is small.chm from tests/data/chm-corpus before 12 November
+2026, compressed with xz. chmcmd from Free Pascal 3.2.2 wrote it from
+generated data. It holds no third-party content.
+
+compound.doc.xz and installer.msi.xz are generated-v4-storages.doc and
+generated-v3-two-cabs.msi from tests/data/msi-corpus before 12 November
+2026, compressed with xz. Zipper's own compound file test writer wrote
+them. They hold no third-party content.

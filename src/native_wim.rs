@@ -1,10 +1,10 @@
-//! In-process extraction of Windows Imaging files: WIM with XPRESS, LZX and
-//! LZMS resources, and ESD images with LZMS solid resources. See
+//! In-process extraction of Windows Imaging files: WIM with stored and XPRESS
+//! resources and XPRESS solid resources. LZX and LZMS are refused. See
 //! `docs/reference/wim-reader.md` for what it accepts and restores.
 pub use crate::tree::ReadOptions;
 use crate::tree::{self, BACKEND_HINT};
 use crate::volumes::ArchiveFile;
-use crate::{BadField, Entry, Field, field_check, lzms, lzx, xpress};
+use crate::{BadField, Entry, Field, field_check, xpress};
 use anyhow::{Context, Result, bail, ensure};
 use sha1::Digest;
 use std::{
@@ -50,7 +50,6 @@ const METADATA_WINDOW: usize = 1024 * 1024;
 const LONGEST_DENTRY_READ: usize = DENTRY + 2 * (u16::MAX as usize + 2);
 const LONGEST_STREAM_READ: usize =
     (STREAM_ENTRY + u16::MAX as usize + 2).next_multiple_of(DENTRY_ALIGN);
-const LZMS_MAX_CHUNK_BITS: u32 = 26;
 const DENTRY: usize = 102;
 const DENTRY_ALIGN: usize = 8;
 const STREAM_ENTRY: usize = 38;
@@ -73,16 +72,18 @@ const TICKS_PER_SECOND: u64 = 10_000_000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Method {
     Xpress,
-    Lzx,
-    Lzms,
 }
 
 impl Method {
     fn from_solid(code: u32) -> Field<Method> {
         match code {
             1 => Ok(Method::Xpress),
-            2 => Ok(Method::Lzx),
-            3 => Ok(Method::Lzms),
+            2 => Err(BadField(
+                "WIM solid resource is compressed with LZX, which Zipper does not decode",
+            )),
+            3 => Err(BadField(
+                "WIM solid resource is compressed with LZMS, which Zipper does not decode",
+            )),
             _ => Err(BadField(
                 "WIM solid resource uses an unknown compression method",
             )),
@@ -92,8 +93,6 @@ impl Method {
     fn chunk_bits(self) -> Range<u32> {
         match self {
             Method::Xpress => xpress::MIN_CHUNK_BITS..xpress::MAX_CHUNK_BITS + 1,
-            Method::Lzx => u32::from(lzx::MIN_WINDOW_BITS)..u32::from(lzx::MAX_WINDOW_BITS) + 1,
-            Method::Lzms => 15..LZMS_MAX_CHUNK_BITS + 1,
         }
     }
 }
@@ -183,8 +182,16 @@ fn header(bytes: &[u8; HEADER]) -> Field<Header> {
     } else {
         Some(match flags & METHOD_MASK {
             XPRESS_FLAG | XPRESS_OTHER_CHUNK_FLAG => Method::Xpress,
-            LZX_FLAG => Method::Lzx,
-            LZMS_FLAG => Method::Lzms,
+            LZX_FLAG => {
+                return Err(BadField(
+                    "WIM image is compressed with LZX, which Zipper does not decode",
+                ));
+            }
+            LZMS_FLAG => {
+                return Err(BadField(
+                    "WIM image is compressed with LZMS, which Zipper does not decode",
+                ));
+            }
             _ => return Err(BadField("WIM header names an unknown compression method")),
         })
     };
@@ -906,8 +913,6 @@ fn xml_says_encrypted(xml: &[u8]) -> bool {
 #[derive(Default)]
 struct Decoders {
     huffman: Option<Box<xpress::Huffman>>,
-    lzx: Option<(u32, Box<lzx::Lzx>)>,
-    lzms: Option<Box<lzms::Lzms>>,
     packed: Vec<u8>,
     chunk: Vec<u8>,
     cached: Option<(u64, u64)>,
@@ -916,7 +921,7 @@ struct Decoders {
 }
 
 impl Decoders {
-    fn decode(&mut self, method: Method, chunk_bits: u32, size: usize) -> Field<()> {
+    fn decode(&mut self, method: Method, size: usize) -> Field<()> {
         let Decoders { packed, chunk, .. } = self;
         match method {
             Method::Xpress => {
@@ -924,23 +929,6 @@ impl Decoders {
                     .huffman
                     .get_or_insert_with(|| Box::new(xpress::Huffman::new()));
                 xpress::decode(huffman, packed, &mut chunk[..size])
-            }
-            Method::Lzx => {
-                if self
-                    .lzx
-                    .as_ref()
-                    .is_none_or(|(bits, _)| *bits != chunk_bits)
-                {
-                    self.lzx = Some((chunk_bits, Box::new(lzx::Lzx::wim(chunk_bits as u8)?)));
-                }
-                let (_, lzx) = self.lzx.as_mut().expect("set above");
-                let decoded = lzx.chunk(packed, size)?;
-                chunk[..size].copy_from_slice(decoded);
-                Ok(())
-            }
-            Method::Lzms => {
-                let lzms = self.lzms.get_or_insert_with(|| Box::new(lzms::Lzms::new()));
-                lzms.decode(packed, &mut chunk[..size])
             }
         }
     }
@@ -1089,7 +1077,7 @@ impl<'a> BlobReader<'a> {
             chunk.copy_from_slice(packed);
         } else {
             self.decoders
-                .decode(method, chunk_bits, size)
+                .decode(method, size)
                 .map_err(|error| anyhow::anyhow!("damaged WIM {method:?} chunk: {error}"))?;
         }
         self.decoders.cached = Some((key, index));
@@ -1915,9 +1903,9 @@ fn parse(tree: &mut tree::Tree, archive: &Archive, options: ReadOptions) -> Resu
 }
 
 /// Verify and optionally extract a WIM or ESD file into a new directory. It
-/// reads stored, XPRESS, LZX and LZMS resources and LZMS, XPRESS and LZX
-/// solid resources, checks the SHA-1 of every resource it reads, and writes
-/// each image as `7zz x` writes it: one image at the top of the
+/// reads stored and XPRESS resources and XPRESS solid resources, refuses
+/// LZX and LZMS with an error naming the method, checks the SHA-1 of every
+/// resource it reads, and writes each image as `7zz x` writes it: one image at the top of the
 /// destination, several as folders `1`, `2` and so on with the XML data
 /// beside them. Files get their modification time and read-only attribute,
 /// hard links stay linked, and symbolic links and junctions that stay
@@ -2058,7 +2046,7 @@ mod field_tests {
             header: SolidHeader {
                 size,
                 chunk_bits: 15,
-                method: Method::Lzms,
+                method: Method::Xpress,
                 chunks: 1,
             },
             chunk_starts: vec![0, 1],

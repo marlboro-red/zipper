@@ -10,7 +10,7 @@ use zipper::Reader;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM, xar, CAB, MSI, ISO, WIM, CHM and DMG archives, executables, Flash files and NTFS, HFS+, APFS, VHD, VHDX, QCOW, VDI, VMDK and FAT disk images"
+    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM, xar, CAB, ISO and WIM archives, executables, Flash files and VHD, VHDX, QCOW, VDI and VMDK disk images"
 )]
 struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers, and a solid 7z up to 4 writers beside its decoders).
@@ -34,9 +34,9 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Zipper's own reader for every format and variant it reads, and 7-Zip for the other formats whose signature it recognizes.
+    /// Zipper's own reader for every format and variant it reads, and 7-Zip for the other formats whose signature it recognizes. Every engine refuses formats such as CHM, DMG, FAT, NTFS, HFS+, APFS, compound files such as MSI and Base64, and CAB and WIM data compressed with LZX or LZMS, and never hands them to 7-Zip.
     Auto,
-    /// 7-Zip for every archive.
+    /// 7-Zip for every archive except the formats every engine refuses.
     Backend,
     /// Zipper's own reader for every archive, never 7-Zip; a format it does not read fails.
     Native,
@@ -1007,11 +1007,6 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_iso::ReadOptions::default(),
                     )?),
-                    Reader::Dmg => print(zipper::native_dmg::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_dmg::ReadOptions::default(),
-                    )?),
                     Reader::Uefi => print(zipper::native_uefi::read_archive(
                         &archive,
                         None,
@@ -1042,25 +1037,10 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_wim::ReadOptions::default(),
                     )?),
-                    Reader::Chm => print(zipper::native_chm::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_chm::ReadOptions::default(),
-                    )?),
                     Reader::Exe => print(zipper::native_exe::read_archive(
                         &archive,
                         None,
                         zipper::native_exe::ReadOptions::default(),
-                    )?),
-                    Reader::Ntfs => print(zipper::native_ntfs::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_ntfs::ReadOptions::default(),
-                    )?),
-                    Reader::Apfs => print(zipper::native_apfs::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_apfs::ReadOptions::default(),
                     )?),
                     Reader::Squashfs => print(zipper::native_squashfs::read_archive(
                         &archive,
@@ -1082,20 +1062,6 @@ fn run() -> Result<()> {
                         None,
                         zipper::disk::ReadOptions::default(),
                     )?),
-                    Reader::Msi => {
-                        let _catching = catch_ending_signals();
-                        print(zipper::native_msi::read_archive(
-                            &archive,
-                            None,
-                            zipper::native_msi::ReadOptions {
-                                control: zipper::Control {
-                                    cancel: cancel_on_signal(),
-                                    ..zipper::Control::default()
-                                },
-                                ..zipper::native_msi::ReadOptions::default()
-                            },
-                        )?)
-                    }
                     Reader::Backend { format } => {
                         let _catching = catch_ending_signals();
                         zipper::compat::run_until_cancelled(
@@ -1200,11 +1166,6 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_iso::ReadOptions::default(),
                     )?),
-                    Reader::Dmg => report(zipper::native_dmg::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_dmg::ReadOptions::default(),
-                    )?),
                     Reader::Uefi => report(zipper::native_uefi::read_archive(
                         &archive,
                         None,
@@ -1235,25 +1196,10 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_wim::ReadOptions::default(),
                     )?),
-                    Reader::Chm => report(zipper::native_chm::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_chm::ReadOptions::default(),
-                    )?),
                     Reader::Exe => report(zipper::native_exe::read_archive(
                         &archive,
                         None,
                         zipper::native_exe::ReadOptions::default(),
-                    )?),
-                    Reader::Ntfs => report(zipper::native_ntfs::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_ntfs::ReadOptions::default(),
-                    )?),
-                    Reader::Apfs => report(zipper::native_apfs::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_apfs::ReadOptions::default(),
                     )?),
                     Reader::Squashfs => report(zipper::native_squashfs::read_archive(
                         &archive,
@@ -1275,20 +1221,6 @@ fn run() -> Result<()> {
                         None,
                         zipper::disk::ReadOptions::default(),
                     )?),
-                    Reader::Msi => {
-                        let _catching = catch_ending_signals();
-                        report(zipper::native_msi::read_archive(
-                            &archive,
-                            None,
-                            zipper::native_msi::ReadOptions {
-                                control: zipper::Control {
-                                    cancel: cancel_on_signal(),
-                                    ..zipper::Control::default()
-                                },
-                                ..zipper::native_msi::ReadOptions::default()
-                            },
-                        )?)
-                    }
                     Reader::Backend { format } => {
                         let _catching = catch_ending_signals();
                         zipper::compat::run_until_cancelled(

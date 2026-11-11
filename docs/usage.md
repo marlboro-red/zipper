@@ -100,7 +100,6 @@ target/release/zipper extract toolchain.tar.gz --output tools --content-only
 - No modification time is restored, so every file and folder carries the time it was written.
 - On Windows, no read-only, hidden or system attribute is set, and no Mark of the Web is copied from the archive.
 - On Unix, a file gets mode 0o666, or 0o777 when the archive marks it executable, less the umask. Folders get the default mode. A read-only entry therefore stays writable, and scripts still run.
-- On macOS, no extended attribute is restored from an APFS or HFS+ volume.
 - Links are still created, with the same safety checks.
 - Library callers set `metadata: Metadata::ContentOnly` in `ExtractOptions`. `tests/content_only.rs` extracts every archive of the ZIP, tar and 7z corpora this way and checks contents, modes, times and, on Windows, attributes and zone marks.
 - The 7-Zip backend refuses it, because 7-Zip restores times and attributes itself.
@@ -194,21 +193,16 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `rpm` | The RPM reader, and `cpio` and `tar` for its payload | None beyond `tar` |
 | `xar` | The xar and flat macOS package reader | `bzip2`, `md-5`, `quick-xml`, `sha1` |
 | `cab` | The CAB reader | None |
-| `msi` | The compound file reader, and `cab` for the cabinets inside | None beyond `cab` |
 | `lzh` | The LZH reader | None |
 | `arj` | The ARJ reader | None |
 | `rar` | The RAR 5 and RAR 4 reader | `ppmd-rust` |
 | `iso` | The ISO 9660 and UDF reader | None |
-| `wim` | The WIM and ESD reader | `sha1` |
-| `chm` | The CHM and Help 2 reader | None |
+| `wim` | The WIM reader | `sha1` |
 | `exe` | The PE, COFF, TE, ELF and Mach-O reader | None |
-| `ntfs` | The NTFS reader | None |
 | `squashfs` | The SquashFS reader, and zstd images with `zstd` | None |
 | `cramfs` | The CramFS reader | None |
 | `ext` | The ext2, ext3 and ext4 reader | None |
-| `apfs` | The APFS reader | None |
-| `dmg` | The DMG, HFS+ and HFSX reader, and `apfs` | `bzip2` |
-| `disk` | The VHD, VHDX, QCOW, VDI, VMDK, Android sparse and MBR or GPT disk reader with FAT and HFS+, and `apfs`, `cramfs`, `ext`, `ntfs` and `squashfs` for the other partitions | None |
+| `disk` | The VHD, VHDX, QCOW, VDI, VMDK, Android sparse and MBR or GPT disk reader, and `cramfs`, `ext` and `squashfs` for the partitions it reads | None |
 | `swf` | The SWF reader | None |
 | `flv` | The FLV reader | None |
 | `lp` | The Android logical partition (`super.img`) reader | None |
@@ -230,7 +224,7 @@ That build leaves out the 12 packages that only encryption, Deflate64 and PPMd n
 
 The `Reader` enum keeps every variant in every build. A ZIP or tar archive that the build does not read fails with `zipper::NotBuilt`, which names the format, and writes nothing. With `Engine::Native`, so does every other format whose signature Zipper knows, such as `gzip` or `7z`. `Engine::Auto` hands those to 7-Zip instead, as it does any format it recognizes but does not read. Choose `Engine::Native` to never start 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build, so a build without `zip` refuses it as `zip`.
 
-`cargo xtask gate` lints every feature on its own with `unused_crate_dependencies` denied, so no feature builds a crate its readers do not use. It runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build, and `tests/zip_method_features.rs` and `tests/zstd_feature.rs` in a `zip-deflate` build. It also runs `tests/consumer`, a crate that depends on Zipper with only `zip` and `7z`, and checks that it extracts a corpus ZIP and 7z in process to the trees their manifests record. Built without its default features, the same crate depends on Zipper with only `zip-deflate` and extracts a stored and a Deflate corpus ZIP. The gate also fails when a `zip-deflate` build depends on a crate that only encryption, Deflate64 or PPMd needs. `cargo xtask format-tests` runs each format's corpus or hostile tests in a build with only that format's feature, and `cargo xtask release-checks` runs it too. The `apfs`, `ext` and `squashfs` tests also wrap their images in disk images and DMGs, so they run with `disk` and `dmg`.
+`cargo xtask gate` lints every feature on its own with `unused_crate_dependencies` denied, so no feature builds a crate its readers do not use. It runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build, and `tests/zip_method_features.rs` and `tests/zstd_feature.rs` in a `zip-deflate` build. It also runs `tests/consumer`, a crate that depends on Zipper with only `zip` and `7z`, and checks that it extracts a corpus ZIP and 7z in process to the trees their manifests record. Built without its default features, the same crate depends on Zipper with only `zip-deflate` and extracts a stored and a Deflate corpus ZIP. The gate also fails when a `zip-deflate` build depends on a crate that only encryption, Deflate64 or PPMd needs. `cargo xtask format-tests` runs each format's corpus or hostile tests in a build with only that format's feature, and `cargo xtask release-checks` runs it too. The `ext` and `squashfs` tests also wrap their images in disk images, so they run with `disk`.
 
 When `extract_archive` or a reader returns, after success, failure or a cancel, Zipper holds no handle to the destination or the archive, and every thread it started has exited. You can rename, move or delete the destination at once. The shared Rayon pool keeps its idle threads between calls, and they hold nothing from the extraction. The 7-Zip backend is waited for before it returns. `tests/handles.rs` checks this after every reader on Unix by counting open descriptors and threads, and on Windows by renaming and deleting the destination of archives that carry a zone mark.
 
@@ -256,6 +250,7 @@ Archive-level deduplication is not implemented yet.
 `extract`, `list`, and `test` read ZIP, tar and most 7z archives in process and delegate other formats to `7zz` or `7z` on PATH. A 7z archive whose methods the [7z reader](reference/7z-reader.md) does not decode also goes to 7-Zip. Encrypted 7z archives decrypt in process.
 To use another executable, set `ZIPPER_7Z` to its path. To send ZIP archives to 7-Zip as well, pass `--zip-engine backend`.
 The installed backend decides which formats work and which extraction protections apply.
+No engine hands 7-Zip a format that Zipper refuses for licence reasons, such as CHM, DMG, MSI, FAT or NTFS. Each fails with `zipper::Refused` and writes nothing, as the [refused formats page](reference/refused.md) lists.
 This default path is an external compatibility bridge.
 Native `--threads` does not configure the compatibility backend.
 Legacy listing uses the backend's listing operation and does not validate payloads.

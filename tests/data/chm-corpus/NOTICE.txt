@@ -1,5 +1,0 @@
-Every CHM file in this folder was written by chmcmd from Free Pascal 3.2.2
-on macOS through write_the_chmcmd_corpus in tests/chm_corpus.rs, from trees
-of seeded pseudo-random and repeated data that the test generates. No file
-holds third-party content. trees.json records the tree 7zz 26.05 extracted
-from each one.

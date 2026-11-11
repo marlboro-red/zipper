@@ -1,19 +1,21 @@
 # In-process WIM reader
 
-Zipper extracts Windows Imaging files (`.wim`) and ESD images (`.esd`) with its own Rust reader. The default engine and `--zip-engine native` send a file here when it starts with the WIM signature `MSWIM` and three zero bytes. The default engine sends a part of a split WIM, and a header from a WIM version before 1.13, to 7-Zip instead. `--zip-engine native` refuses both. `--zip-engine backend` hands every WIM to 7-Zip.
+Zipper extracts Windows Imaging files (`.wim`) with its own Rust reader. The default engine and `--zip-engine native` send a file here when it starts with the WIM signature `MSWIM` and three zero bytes. The default engine sends a part of a split WIM, and a header from a WIM version before 1.13, to 7-Zip instead. `--zip-engine native` refuses both. `--zip-engine backend` hands every other WIM to 7-Zip, but refuses one whose header names LZX or LZMS before 7-Zip starts.
 
 ## Supported images
 
 A WIM is a header, a blob table, an XML description and the resources the blob table lists. Each image has one metadata resource that holds its security data and its directory tree. Every other resource is the data of one or more files, found by its SHA-1. The reader supports these features:
 
 - The WIM 1.13 header that `wimlib-imagex`, DISM and 7-Zip write, and the ESD header of version 0.14.
-- Stored resources, and chunked resources compressed with XPRESS, LZX or LZMS. A chunk whose packed size equals its size is stored, as the format allows.
-- XPRESS chunks of 4 KiB to 64 KiB, LZX chunks of 32 KiB to 2 MiB and LZMS chunks of 32 KiB to 64 MiB. wimlib writes all of them, and Windows writes the smaller sizes.
-- Solid resources, as ESD files and `wimlib-imagex capture --solid` hold them, with LZMS, XPRESS or LZX chunks. Many files share one solid resource, and each file is a range of its decoded bytes.
+- Stored resources, and chunked resources compressed with XPRESS. A chunk whose packed size equals its size is stored, as the format allows.
+- XPRESS chunks of 4 KiB to 64 KiB.
+- Solid resources with XPRESS chunks, in an image whose header names no other method. Many files share one solid resource, and each file is a range of its decoded bytes.
 - Several images in one file.
 - Hard links, symbolic links, junctions and WSL links, as the next section describes.
 
-The decoders are Zipper's own safe Rust, written from wimlib's and Microsoft's descriptions of the formats and from 7-Zip's decoder behaviour. XPRESS is in `src/xpress.rs`. LZX is the CAB decoder in `src/lzx.rs`, in a WIM mode. There each chunk is its own stream, E8 calls always translate with a size of 12,000,000, and a block size is 32 KiB when its first bit is set. LZMS is in `src/lzms.rs`, with its adaptive Huffman codes rebuilt as wimlib builds them and its x86 filter.
+The XPRESS decoder in `src/xpress.rs` is Zipper's own safe Rust, written from wimlib's and Microsoft's descriptions of the format and from 7-Zip's decoder behaviour.
+
+An image whose header names LZX or LZMS, and a solid resource compressed with either, is refused with `WIM image is compressed with LZX, which Zipper does not decode` or its LZMS and solid forms, and nothing is written. Every ESD file and every solid WIM that wimlib writes compresses its metadata with LZMS, so each is refused. The LZX and LZMS decoders were removed on 12 November 2026 for licence reasons, as the [refused formats page](refused.md) records.
 
 ## What it writes
 
@@ -78,7 +80,7 @@ The reader checks the whole layout before it publishes anything, and it publishe
 | Reparse data of one link | at most 64 KiB |
 | Alternate data streams kept for one image | at most 1,000,000, with at most 64 MiB of names |
 | Chunks in one solid resource | at most 2^20 |
-| Decoder memory | one chunk and its packed bytes, at most 64 MiB each, and one LZX window of up to 2 MiB |
+| Decoder memory | one chunk and its packed bytes, at most 64 KiB each |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
 The reader never holds an image's whole metadata. It reads the metadata once to check its SHA-1, keeping a SHA-1 of each 64 KiB piece, and then parses it through a 1 MiB window that checks each piece it reads again. So metadata that changes on disk between the two reads is refused. The blob table is read in batches of 1,024 entries and kept as one list sorted by hash. Folders, links and empty files reach the shared tree as they are parsed. Only folders and files with data are kept, with their names in one buffer. Files with data are written in the order of their data in the file, so a solid resource is decoded once.
@@ -96,7 +98,7 @@ The last column is `zipper list` on a cpio archive of the same paths, which uses
 
 ## Differences from 7-Zip
 
-`tests/wim_corpus.rs` requires every WIM in `tests/data/wim-corpus` to extract to the tree 7-Zip extracted when it was written, and to the tree 7-Zip extracts where it is installed. Where `wimlib-imagex` is installed, it also captures seeded trees with every method at 12 chunk sizes and layouts, solid and not. Each image must extract byte for byte to its source tree and to the tree 7-Zip extracts. The reader differs from 7-Zip 26.05 on purpose in these cases:
+`tests/wim_corpus.rs` requires every WIM in `tests/data/wim-corpus` to extract to the tree 7-Zip extracted when it was written, and to the tree 7-Zip extracts where it is installed. Where `wimlib-imagex` is installed, it also captures seeded trees stored and with XPRESS at three chunk sizes. Each image must extract byte for byte to its source tree and to the tree 7-Zip extracts. It also captures six LZX, LZMS and solid images, and each must be refused by its method's name with nothing written. The reader differs from 7-Zip 26.05 on purpose in these cases:
 
 - 7-Zip writes an alternate data stream as a file named `file:stream`. Zipper refuses the WIM, and writes the stream as an NTFS stream only on Windows with `--alternate-streams`.
 - 7-Zip writes an empty file `name:_` beside each link that wimlib stores. Zipper does not write it.
@@ -123,11 +125,11 @@ Kani proves these rules under `[wim-fields]` in `verification/coverage.txt`:
 - The directory entry reader never panics on any record of up to 128 bytes and any position and metadata size. An entry it accepts is aligned, fits the metadata and keeps its name and the name's NUL inside itself. The same holds for stream entries of up to 64 bytes, and the security data reader ends aligned inside its metadata.
 - The XPRESS Huffman table, built from any 6 code lengths with a 2-bit lookup table, decodes every 15-bit value to a symbol whose code length it returns. So the decoder's slow path always finds a symbol for a complete code.
 
-Unit tests in `src/xpress.rs` decode 400 encoded token streams of every match length form back to their tokens. They refuse each stream cut by 1 to 3 bytes or decoded to a size one byte off, and decode every flipped byte without a panic. Unit tests in `src/lzms.rs` check that every Huffman code built from 3,000 frequency sets is complete within 15 bits. They check that the x86 filter matches a separate byte-at-a-time version on 20,000 inputs, and that 20,000 random chunks decode or are refused without a panic. The LZX WIM mode is checked under `[lzx]`, and LZMS under `[lzms]`.
+Unit tests in `src/xpress.rs` decode 400 encoded token streams of every match length form back to their tokens. They refuse each stream cut by 1 to 3 bytes or decoded to a size one byte off, and decode every flipped byte without a panic.
 
 `tests/hostile_wim.rs` builds its WIMs with the test writer in `tests/common/wim_writer.rs`, since no tool here writes damaged images. It holds one case per refusal in the safety checks above, each of which must leave nothing beside the destination, both when extracting and when only verifying. It cuts a stored and an XPRESS WIM at every byte, and flips a bit in every byte outside the file data and in every 37th byte of it. A flipped WIM must be refused or extract exactly the files it stores.
 
-`tests/wim_corpus.rs` also flips one bit in every 97th byte of the data of seven corpus WIMs, and every bit of a one-chunk LZMS image. Zipper must refuse each one exactly when 7-Zip refuses it, and must otherwise extract the same tree.
+`tests/wim_corpus.rs` also flips one bit in every 31st byte of the data of three corpus WIMs, `xpress.wim`, `xpress-4k.wim` and `two-images.wim`. `links.wim` is left out, because a flip in its reparse data fails Zipper's SHA-1 check and 7-Zip extracts it. Zipper must refuse each one exactly when 7-Zip refuses it, and must otherwise extract the same tree.
 
 An adversarial review built crafted WIMs in Rust with the test writer and ran them against both native engines and 7-Zip. It found three problems, each fixed with a test that failed first. A chunk table could name a packed size of up to 2^50 bytes in a sparse file, and the reader allocated it before it checked the size, which crashed the process. A second file with the name of a hard link's first file could replace it, so the link carried the other file's bytes. A link group per file kept one path per group in memory. It also found that a folder named `.` was merged into its parent. 38,000 random mutations of wimlib images caused no panic.
 

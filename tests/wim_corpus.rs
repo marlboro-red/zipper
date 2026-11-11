@@ -1,10 +1,11 @@
 //! Every WIM in `tests/data/wim-corpus` extracts to the tree 7-Zip extracted
 //! when the corpus was written, and to the tree 7-Zip extracts now where it
 //! is installed. Where `wimlib-imagex` is installed too, seeded trees are
-//! captured with XPRESS, LZX and LZMS at many chunk sizes, solid and not,
-//! and each image must extract byte for byte to its source tree and to the
-//! tree 7-Zip extracts. WIMs from the test writer cover what wimlib cannot
-//! write on macOS and Linux.
+//! captured stored and with XPRESS at several chunk sizes, and each image
+//! must extract byte for byte to its source tree and to the tree 7-Zip
+//! extracts. LZX, LZMS and solid images, whose metadata wimlib compresses
+//! with LZMS, are refused by the method's name with nothing written. WIMs
+//! from the test writer cover what wimlib cannot write on macOS and Linux.
 #[path = "common/mod.rs"]
 mod common;
 #[path = "common/sevenzip.rs"]
@@ -278,15 +279,15 @@ fn generated_wims_of_every_method_and_chunk_size_extract_byte_for_byte_as_7zip_e
         &["--compress=none"],
         &["--compress=xpress", "--chunk-size=4096"],
         &["--compress=xpress", "--chunk-size=65536"],
-        &["--compress=lzx", "--chunk-size=32768"],
-        &["--compress=lzx", "--chunk-size=65536"],
-        &["--compress=lzx", "--chunk-size=2097152"],
-        &["--compress=lzms", "--chunk-size=32768"],
-        &["--compress=lzms", "--chunk-size=1048576"],
-        &["--solid"],
-        &["--solid", "--solid-chunk-size=32768"],
-        &["--solid", "--solid-compress=xpress"],
-        &["--solid", "--solid-compress=lzx"],
+        &["--compress=xpress", "--chunk-size=16384"],
+    ];
+    let refused: &[(&[&str], &str)] = &[
+        (&["--compress=lzx", "--chunk-size=32768"], "LZX"),
+        (&["--compress=lzx", "--chunk-size=2097152"], "LZX"),
+        (&["--compress=lzms", "--chunk-size=32768"], "LZMS"),
+        (&["--solid"], "LZMS"),
+        (&["--solid", "--solid-compress=xpress"], "LZMS"),
+        (&["--solid", "--solid-compress=lzx"], "LZMS"),
     ];
     let mut random = Random(0x5eed_0f00_0000_0001);
     for round in 0..3 {
@@ -313,6 +314,27 @@ fn generated_wims_of_every_method_and_chunk_size_extract_byte_for_byte_as_7zip_e
             let theirs = sevenzip_tree(&binary, &archive, &root.path().join(format!("s{index}")))
                 .unwrap_or_else(|| panic!("7-Zip refuses round {round} {flags:?}"));
             assert_eq!(ours, theirs, "round {round} {flags:?} differs from 7-Zip");
+        }
+        for (index, (flags, method)) in refused.iter().enumerate() {
+            let archive = root.path().join(format!("{round}-refused-{index}.wim"));
+            let run = Command::new(&wimlib)
+                .arg("capture")
+                .arg(&source)
+                .arg(&archive)
+                .arg("image")
+                .args(*flags)
+                .output()
+                .unwrap();
+            assert!(run.status.success(), "{flags:?}: {run:?}");
+            let into = root.path().join(format!("r{index}"));
+            let error = zipper_tree(&archive, &into).unwrap_err();
+            assert!(
+                format!("{error:#}").contains(&format!(
+                    "compressed with {method}, which Zipper does not decode"
+                )),
+                "round {round} {flags:?}: {error:#}"
+            );
+            assert!(!into.exists(), "round {round} {flags:?} left output");
         }
     }
 }
@@ -423,18 +445,10 @@ fn a_damaged_chunk_is_refused_exactly_when_7zip_refuses_it() {
         return;
     };
     let mut cases = 0;
-    for name in [
-        "xpress.wim",
-        "xpress-4k.wim",
-        "lzx.wim",
-        "lzx-128k.wim",
-        "lzms.wim",
-        "solid.esd",
-        "solid-lzx.wim",
-    ] {
+    for name in ["xpress.wim", "xpress-4k.wim", "two-images.wim"] {
         let wim = fs::read(Path::new(CORPUS).join(name)).unwrap();
         let table = u64::from_le_bytes(wim[56..64].try_into().unwrap()) as usize;
-        for at in (wim_writer::HEADER..table).step_by(97) {
+        for at in (wim_writer::HEADER..table).step_by(31) {
             let mut damaged = wim.clone();
             damaged[at] ^= 1 << (at % 8);
             agrees_with_7zip(&binary, name, &damaged, &format!("byte {at}"));
@@ -464,23 +478,6 @@ fn agrees_with_7zip(binary: &Path, name: &str, damaged: &[u8], what: &str) {
         ),
     }
     common::make_tree_deletable(root.path());
-}
-
-#[test]
-fn every_bit_of_a_one_chunk_lzms_image_is_refused_exactly_when_7zip_refuses_it() {
-    let Some(binary) = sevenzip() else {
-        return;
-    };
-    let name = "lzms-one-chunk.wim";
-    let wim = fs::read(Path::new(CORPUS).join(name)).unwrap();
-    let table = u64::from_le_bytes(wim[56..64].try_into().unwrap()) as usize;
-    for at in wim_writer::HEADER..table {
-        for bit in 0..8 {
-            let mut damaged = wim.clone();
-            damaged[at] ^= 1 << bit;
-            agrees_with_7zip(&binary, name, &damaged, &format!("byte {at} bit {bit}"));
-        }
-    }
 }
 
 #[cfg(unix)]
@@ -514,14 +511,10 @@ fn write_the_corpus() {
     let wimlib = wimlib().expect("wimlib-imagex writes the corpus");
     let binary = sevenzip().expect("7-Zip records the corpus trees");
     let root = tempfile::tempdir().unwrap();
-    let [plain, linked, second, small] =
-        ["plain", "linked", "second", "small"].map(|name| root.path().join(name));
+    let [plain, linked, second] = ["plain", "linked", "second"].map(|name| root.path().join(name));
     write_corpus_tree(&plain, 1, false);
     write_corpus_tree(&linked, 2, true);
     write_corpus_tree(&second, 3, false);
-    fs::create_dir_all(&small).unwrap();
-    let mut random = Random(4);
-    fs::write(small.join("small.bin"), sample(&mut random, 400)).unwrap();
     let shapes: &[(&str, &Path, &[&str])] = &[
         ("stored.wim", &plain, &["--compress=none"]),
         ("xpress.wim", &plain, &["--compress=xpress"]),
@@ -530,28 +523,9 @@ fn write_the_corpus() {
             &plain,
             &["--compress=xpress", "--chunk-size=4096"],
         ),
-        ("lzx.wim", &plain, &["--compress=lzx"]),
-        (
-            "lzx-128k.wim",
-            &plain,
-            &["--compress=lzx", "--chunk-size=131072"],
-        ),
-        ("lzms.wim", &plain, &["--compress=lzms"]),
-        ("solid.esd", &plain, &["--solid"]),
-        (
-            "solid-xpress.wim",
-            &plain,
-            &["--solid", "--solid-compress=xpress"],
-        ),
-        (
-            "solid-lzx.wim",
-            &plain,
-            &["--solid", "--solid-compress=lzx"],
-        ),
-        ("links.wim", &linked, &["--compress=lzx"]),
+        ("links.wim", &linked, &["--compress=xpress"]),
         ("two-images.wim", &plain, &["--compress=xpress"]),
-        ("checked.wim", &plain, &["--compress=lzx", "--check"]),
-        ("lzms-one-chunk.wim", &small, &["--compress=lzms"]),
+        ("checked.wim", &plain, &["--compress=xpress", "--check"]),
     ];
     let run = |arguments: &[&std::ffi::OsStr]| {
         let output = Command::new(&wimlib).args(arguments).output().unwrap();

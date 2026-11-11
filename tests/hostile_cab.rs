@@ -1,10 +1,9 @@
-//! The CAB reader extracts stored, MSZIP, Quantum and LZX folders byte for byte,
+//! The CAB reader extracts stored, MSZIP and Quantum folders byte for byte,
+//! refuses LZX folders by name,
 //! rejects each hostile layout with nothing left behind, and honours the
 //! options the other readers take.
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
-#[path = "common/lzx_encoder.rs"]
-mod lzx_encoder;
 #[path = "common/quantum_encoder.rs"]
 mod quantum_encoder;
 #[path = "common/sevenzip.rs"]
@@ -130,14 +129,6 @@ fn text(lines: usize) -> Vec<u8> {
 }
 
 fn methods() -> Vec<(&'static str, Method)> {
-    let mut lzx = lzx_encoder::Options::plain(16);
-    lzx.kinds = vec![
-        lzx_encoder::Kind::Verbatim,
-        lzx_encoder::Kind::Aligned,
-        lzx_encoder::Kind::Uncompressed,
-    ];
-    lzx.longest_block = 9000;
-    lzx.translation = Some(100_000);
     let mut quantum = quantum_encoder::Options::plain(16);
     quantum.literal_odds = 5;
     quantum.shorten_odds = 20;
@@ -145,7 +136,6 @@ fn methods() -> Vec<(&'static str, Method)> {
         ("stored", Method::Stored),
         ("mszip", Method::Mszip),
         ("quantum", Method::Quantum(quantum)),
-        ("lzx", Method::Lzx(lzx)),
     ]
 }
 
@@ -196,7 +186,7 @@ fn several_folders_reserves_directories_and_trailing_data_extract() {
     );
     let second = cab_writer::one_folder_in_order(
         &[("two/c.txt", &large)],
-        &Method::Lzx(lzx_encoder::Options::plain(21)),
+        &Method::Quantum(quantum_encoder::Options::plain(21)),
     );
     cabinet.folders.extend(second.folders);
     cabinet
@@ -445,12 +435,12 @@ fn layouts_that_lie_are_refused() {
         (
             "LZX window 22",
             build(&|c| c.folders[0].type_compress = 3 | (22 << 8)),
-            "window",
+            "compressed with LZX",
         ),
         (
             "LZX window 14",
             build(&|c| c.folders[0].type_compress = 3 | (14 << 8)),
-            "window",
+            "compressed with LZX",
         ),
         (
             "stored size mismatch",
@@ -563,28 +553,26 @@ fn mszip_blocks_must_be_whole_deflate_streams() {
 }
 
 #[test]
-fn lzx_streams_that_lie_are_refused() {
+fn lzx_folders_are_refused_by_name_with_nothing_written() {
     let large = text(6000);
-    let lzx = Method::Lzx(lzx_encoder::Options::plain(15));
-    let base = cab_writer::one_folder_in_order(&[("a", &large)], &lzx);
-    assert!(base.folders[0].blocks.len() > 1);
-    let mut wrong_window = base.clone();
-    wrong_window.folders[0].type_compress = 3 | (21 << 8);
-    let (_root, destination, result) = extract_with(&wrong_window.build(), ReadOptions::default());
-    if result.is_ok() {
-        assert_eq!(tree(&destination), expected(&[("a", &large)]));
+    for window_bits in [15, 21] {
+        let lone =
+            cab_writer::one_folder_in_order(&[("a", &large)], &Method::LzxLabel { window_bits });
+        assert_rejected_with("one LZX folder", &lone.build(), "compressed with LZX");
     }
-    let mut padded = base.clone();
-    padded.folders[0].blocks[0]
-        .packed
-        .extend_from_slice(&[0, 0]);
-    assert_rejected_with("bytes after a chunk", &padded.build(), "LZX");
-    let mut short = base.clone();
-    short.folders[0].blocks[0].size = 1000;
-    assert_rejected_with("chunk shorter than its data", &short.build(), "");
-    let mut swapped = base.clone();
-    swapped.folders[0].blocks.swap(0, 1);
-    assert_rejected_without_leftovers("chunks out of order", &swapped.build());
+    let mut mixed = small(&Method::Mszip);
+    let second = small(&Method::LzxLabel { window_bits: 16 });
+    mixed.folders.extend(second.folders);
+    mixed.files.extend(second.files.into_iter().map(|mut file| {
+        file.folder = 1;
+        file.name.insert(0, b'z');
+        file
+    }));
+    assert_rejected_with(
+        "an MSZIP folder before an LZX one",
+        &mixed.build(),
+        "compressed with LZX",
+    );
 }
 
 fn quantum_cab(window_bits: u8, chunks: &[Vec<quantum_encoder::Token>]) -> Cabinet {
@@ -838,7 +826,7 @@ fn a_cab_of_many_empty_files_and_folders_stays_within_its_limits() {
     };
     for _ in 0..2000 {
         cabinet.folders.push(cab_writer::Folder {
-            type_compress: 3 | (21 << 8),
+            type_compress: 2 | (4 << 4) | (21 << 8),
             blocks: Vec::new(),
             declared_blocks: None,
         });
@@ -912,23 +900,6 @@ fn assert_matches_7zip(case: &str, bytes: &[u8]) -> Option<BTreeMap<String, Vec<
     ours
 }
 
-fn lzx_cabinet(window_bits: u8, chunk: Vec<u8>, size: usize) -> Vec<u8> {
-    Cabinet {
-        folders: vec![cab_writer::Folder {
-            type_compress: 3 | (u16::from(window_bits) << 8),
-            blocks: vec![Block {
-                packed: chunk,
-                size,
-            }],
-            declared_blocks: None,
-        }],
-        files: vec![cab_writer::file("a.bin", 0, 0, size as u32)],
-        checksums: true,
-        ..Cabinet::default()
-    }
-    .build()
-}
-
 #[test]
 fn folders_that_share_one_block_are_refused_even_when_the_cabinet_has_spare_bytes() {
     let data = text(3000);
@@ -946,48 +917,6 @@ fn folders_that_share_one_block_are_refused_even_when_the_cabinet_has_spare_byte
     let first = bytes[table..table + 8].to_vec();
     bytes[table + 8..table + 16].copy_from_slice(&first);
     assert_rejected_with("one block in two folders", &bytes, "share data blocks");
-}
-
-#[test]
-fn e8_translation_sizes_of_2_to_the_31_and_above_decode_as_7zip_decodes_them() {
-    use lzx_encoder::Token::Literal;
-    let values = [
-        0u32,
-        5,
-        100,
-        0x7FFF_FFF0,
-        0x7FFF_FFFF,
-        0x8000_0000,
-        0x8000_0010,
-        0xFFFF_FFEF,
-        0xFFFF_FFF0,
-        0xFFFF_FFF8,
-        0xFFFF_FFFF,
-        0xFFFF_FF00,
-        0x1234_5678,
-    ];
-    let mut data = Vec::new();
-    for value in values {
-        data.push(0xE8);
-        data.extend_from_slice(&value.to_le_bytes());
-        data.extend_from_slice(b"..");
-    }
-    data.extend_from_slice(&[b'z'; 12]);
-    let tokens: Vec<_> = data.iter().map(|&byte| Literal(byte)).collect();
-    for translation in [12_000_000, 0x8000_0000, 0x8000_0001, 0xFFFF_FFF0, u32::MAX] {
-        let chunk = lzx_encoder::chunk_of_exact_tokens(
-            &lzx_encoder::Crafted {
-                window_bits: 15,
-                block_length: data.len(),
-                translation: Some(translation),
-                ..lzx_encoder::Crafted::default()
-            },
-            &tokens,
-        );
-        let bytes = lzx_cabinet(15, chunk, data.len());
-        let ours = assert_matches_7zip(&format!("translation {translation:#x}"), &bytes);
-        assert!(ours.is_some(), "translation {translation:#x} is refused");
-    }
 }
 
 #[test]
@@ -1022,109 +951,6 @@ fn a_folder_is_decoded_only_as_far_as_its_last_file_and_every_block_read_is_chec
         result.unwrap().is_empty(),
         "a folder no file needs is not decoded"
     );
-}
-
-#[test]
-fn many_folders_of_alternating_lzx_windows_extract_and_reuse_one_decoder() {
-    use lzx_encoder::Token::{Literal, Match};
-    let mut cabinet = Cabinet {
-        checksums: true,
-        ..Cabinet::default()
-    };
-    let mut wanted = BTreeMap::new();
-    for index in 0..600u16 {
-        let window_bits = if index % 2 == 0 { 21 } else { 15 };
-        let byte = b'a' + (index % 26) as u8;
-        let tokens = [
-            Literal(byte),
-            Match {
-                length: 9,
-                distance: 1,
-            },
-        ];
-        let chunk = lzx_encoder::verbatim_chunk_of_exact_tokens(window_bits, 10, &tokens);
-        cabinet.folders.push(cab_writer::Folder {
-            type_compress: 3 | (u16::from(window_bits) << 8),
-            blocks: vec![Block {
-                packed: chunk,
-                size: 10,
-            }],
-            declared_blocks: None,
-        });
-        let name = format!("f{index}");
-        cabinet.files.push(cab_writer::file(&name, index, 0, 10));
-        wanted.insert(name, vec![byte; 10]);
-        cabinet.folders.push(cab_writer::Folder {
-            type_compress: 3 | (u16::from(window_bits) << 8),
-            blocks: Vec::new(),
-            declared_blocks: None,
-        });
-    }
-    for file in &mut cabinet.files {
-        file.folder *= 2;
-    }
-    let (_root, destination, result) = extract_with(&cabinet.build(), ReadOptions::default());
-    result.unwrap();
-    assert_eq!(tree(&destination), wanted);
-    let large = text(9000);
-    let mut mixed = Cabinet {
-        checksums: true,
-        ..Cabinet::default()
-    };
-    for (index, window_bits) in [21u8, 15, 21, 15].into_iter().enumerate() {
-        let part = cab_writer::one_folder_in_order(
-            &[("x", &large)],
-            &Method::Lzx(lzx_encoder::Options::plain(window_bits)),
-        );
-        mixed.folders.extend(part.folders);
-        let name = format!("w{index}");
-        mixed
-            .files
-            .push(cab_writer::file(&name, index as u16, 0, large.len() as u32));
-    }
-    let (_root, destination, result) = extract_with(&mixed.build(), ReadOptions::default());
-    result.unwrap();
-    let names: Vec<String> = (0..4).map(|index| format!("w{index}")).collect();
-    let files: Vec<(&str, &[u8])> = names
-        .iter()
-        .map(|name| (name.as_str(), &large[..]))
-        .collect();
-    assert_eq!(tree(&destination), expected(&files));
-    let mut writer = lzx_encoder::Writer::new();
-    writer.bits(0, 1);
-    writer.bits(3, 3);
-    writer.bits(0, 16);
-    writer.bits(4, 8);
-    let pad = 16 - writer.pending_bits;
-    writer.bits(0, pad);
-    for repeat in [40_000u32, 1, 1] {
-        writer.raw(&repeat.to_le_bytes());
-    }
-    writer.raw(b"abcd");
-    let far_repeat = writer.finish();
-    let mut narrow_after_wide = cab_writer::one_folder_in_order(
-        &[("x", &large)],
-        &Method::Lzx(lzx_encoder::Options::plain(21)),
-    );
-    narrow_after_wide.folders.push(cab_writer::Folder {
-        type_compress: 3 | (15 << 8),
-        blocks: vec![Block {
-            packed: far_repeat,
-            size: 4,
-        }],
-        declared_blocks: None,
-    });
-    narrow_after_wide.files.push(cab_writer::file("y", 1, 0, 4));
-    assert_rejected_with(
-        "a 2^15 folder after a 2^21 one stores a distance past its window",
-        &narrow_after_wide.build(),
-        "outside its window",
-    );
-    narrow_after_wide.folders[1].type_compress = 3 | (16 << 8);
-    let (_root, destination, result) =
-        extract_with(&narrow_after_wide.build(), ReadOptions::default());
-    result.unwrap();
-    assert_eq!(fs::read(destination.join("y")).unwrap(), b"abcd");
 }
 
 #[test]
@@ -1166,39 +992,5 @@ fn cabinet_sets_whose_names_leave_their_folder_are_refused() {
     assert!(
         format!("{error:#}").contains("cannot open cabinet two.cab"),
         "a disk label is not a path: {error:#}"
-    );
-}
-
-#[test]
-fn an_empty_aligned_table_and_a_one_symbol_main_table_are_refused_as_7zip_refuses_them() {
-    use lzx_encoder::Token::Literal;
-    let tokens = [Literal(b'a'), Literal(b'b'), Literal(b'c')];
-    let aligned = lzx_encoder::chunk_of_exact_tokens(
-        &lzx_encoder::Crafted {
-            window_bits: 15,
-            block_length: 3,
-            aligned_lengths: Some([0; 8]),
-            ..lzx_encoder::Crafted::default()
-        },
-        &tokens,
-    );
-    assert_eq!(
-        assert_matches_7zip("empty aligned table", &lzx_cabinet(15, aligned, 3)),
-        None
-    );
-    let mut one = vec![0u8; 256 + 30 * 8];
-    one[usize::from(b'a')] = 1;
-    let single = lzx_encoder::chunk_of_exact_tokens(
-        &lzx_encoder::Crafted {
-            window_bits: 15,
-            block_length: 3,
-            main_lengths: Some(one),
-            ..lzx_encoder::Crafted::default()
-        },
-        &[Literal(b'a'); 3],
-    );
-    assert_eq!(
-        assert_matches_7zip("one symbol main table", &lzx_cabinet(15, single, 3)),
-        None
     );
 }

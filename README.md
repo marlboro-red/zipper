@@ -3,6 +3,7 @@
 Zipper extracts ZIP, tar and 7z archives quickly and safely, in process, from the command line or as a Rust library.
 It refuses archives that try to write outside the destination, checks every byte it decodes, and publishes nothing when an archive is damaged.
 Other formats go to 7-Zip when it is installed.
+Some formats are refused in every engine and never reach 7-Zip, as the [refused formats page](docs/reference/refused.md) lists.
 
 ## Build and try it
 
@@ -30,18 +31,13 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [cpio reader reference](docs/reference/cpio-reader.md) lists the cpio forms, hard link handling and safety checks.
 - [ar reader reference](docs/reference/ar-reader.md) covers static libraries, Debian packages and how they differ from 7-Zip.
 - [RPM reader reference](docs/reference/rpm-reader.md) covers RPM packages, their payload compressors and how they differ from 7-Zip.
-- [CAB reader reference](docs/reference/cab-reader.md) covers Microsoft Cabinet files with stored, MSZIP and LZX folders, and how they differ from 7-Zip.
+- [CAB reader reference](docs/reference/cab-reader.md) covers Microsoft Cabinet files with stored, MSZIP and Quantum folders, and how they differ from 7-Zip.
 - [LZH reader reference](docs/reference/lzh-reader.md) covers LZH archives of every header level, the LZSS methods that ARJ shares, and how they differ from 7-Zip.
 - [ARJ reader reference](docs/reference/arj-reader.md) covers ARJ archives with methods 0 to 4, and how they differ from 7-Zip.
 - [RAR reader reference](docs/reference/rar-reader.md) covers RAR 5 archives, stored, compressed and solid, RAR 4 archives that are not solid, the sources the reader was written from, and how it differs from 7-Zip.
-- [MSI reader reference](docs/reference/msi-reader.md) covers Windows Installer packages and other compound files, and how they differ from 7-Zip.
 - [ISO reader reference](docs/reference/iso-reader.md) covers ISO 9660, Joliet, Rock Ridge, El Torito and UDF disc images, which tree a hybrid disc gives, and how they differ from 7-Zip.
-- [WIM reader reference](docs/reference/wim-reader.md) covers Windows Imaging files and ESD images with XPRESS, LZX and LZMS, and how they differ from 7-Zip.
-- [CHM reader reference](docs/reference/chm-reader.md) covers Compiled HTML Help and Help 2 files with LZX sections, and how they differ from 7-Zip.
-- [NTFS reader reference](docs/reference/ntfs-reader.md) covers raw NTFS volumes with LZNT1, sparse and fragmented files, and how they differ from 7-Zip.
-- [Disk image reader reference](docs/reference/disk-reader.md) covers VHD and VHDX images, MBR and GPT partition tables and FAT file systems, and how they differ from 7-Zip.
-- [DMG reader reference](docs/reference/dmg-reader.md) covers DMG images of every UDIF chunk method, the HFS+ and HFSX volumes and Apple partition maps inside them, and how they differ from 7-Zip.
-- [APFS reader reference](docs/reference/apfs-reader.md) covers APFS containers, raw and inside DMG images and GPT disks, with several volumes, hard links, sparse, cloned and compressed files, and how they differ from 7-Zip.
+- [WIM reader reference](docs/reference/wim-reader.md) covers Windows Imaging files with stored and XPRESS resources, and how they differ from 7-Zip.
+- [Disk image reader reference](docs/reference/disk-reader.md) covers VHD, VHDX, QCOW, VDI, VMDK and Android sparse images and MBR and GPT partition tables, and how they differ from 7-Zip.
 - [ext reader reference](docs/reference/ext-reader.md) covers ext2, ext3 and ext4 volumes, raw and inside disk images, with block maps, extents, inline data and checksums, and how they differ from 7-Zip.
 - [FLV and SWF reader reference](docs/reference/swf-reader.md) covers Flash Video files and SWF files, uncompressed or compressed with zlib or LZMA, and how they differ from 7-Zip.
 - [SquashFS and CramFS reader reference](docs/reference/squashfs-reader.md) covers SquashFS 4.0 images of every compressor and CramFS images of both byte orders, raw and in a lone disk partition, and how they differ from 7-Zip.
@@ -50,6 +46,7 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [Intel HEX reader reference](docs/reference/ihex-reader.md) covers Intel HEX files, which extract to one file for each run of addresses, and how they differ from 7-Zip.
 - [UEFI reader reference](docs/reference/uefi-reader.md) covers UEFI firmware volumes and capsules, how their files and sections are named, and how they differ from 7-Zip.
 - [Single compressed file reference](docs/reference/stream-reader.md) covers gzip, bzip2, xz, zstd and LZMA files that hold no tar.
+- [Refused formats](docs/reference/refused.md) lists the formats and methods every engine refuses for licence reasons, and how each is recognised.
 - [7-Zip parity](docs/reference/parity.md) lists every format, method and switch 7-Zip extracts with, and how Zipper handles each.
 - [Duplicate-checking reference](docs/reference/duplicates.md) describes the `duplicates` command.
 - [Windows release notes](docs/reference/windows.md) cover installing and running the Windows early release.

@@ -39,6 +39,7 @@ STATUSES = {
     "backend": "Zipper hands it to 7-Zip.",
     "missing": "Zipper cannot do it, even through 7-Zip.",
     "dropped": "Zipper leaves it out on purpose, as the note says.",
+    "refused": "Zipper refuses it in every engine for licence reasons, as the note says, and never hands it to 7-Zip.",
 }
 ZIP_METHODS = ["Store", "Shrink", "Implode", "Deflate", "Deflate64", "BZip2", "LZMA",
                "Zstandard", "XZ", "PPMd", "ZipCrypto", "WinZip AES"]
@@ -321,10 +322,11 @@ def proof_problems(status, archives):
             if entry.get("status") in ("native", "partial") and not (
                     entry.get("tests") or any(record["row"] == [group, name] for record in archives["archives"].values())):
                 problems.append(f"{group} {name!r} is {entry['status']} without a proof")
-            for archive in entry.get("native archives", []):
-                if archives["archives"].get(archive, {}).get("row") != [group, name]:
-                    problems.append(f"{group} {name!r} names {archive}, which is not one of its archives")
-            if entry.get("status") in ("partial", "dropped") and not entry.get("note"):
+            for key in ("native archives", "refused archives"):
+                for archive in entry.get(key, []):
+                    if archives["archives"].get(archive, {}).get("row") != [group, name]:
+                        problems.append(f"{group} {name!r} names {archive}, which is not one of its archives")
+            if entry.get("status") in ("partial", "dropped", "refused") and not entry.get("note"):
                 problems.append(f"{group} {name!r} is {entry['status']} without a note")
             for test in entry.get("tests", []):
                 file, _, function = test.partition("::")
@@ -376,7 +378,9 @@ def page(status, archives):
         "A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus archive. "
         "A native row must match the tree 7-Zip extracted when the corpus was built. "
         "A backend row must match a direct 7-Zip extraction on the same machine. "
-        "A missing row must be refused with nothing published.",
+        "A missing row must be refused with nothing published. "
+        "A refused row, and a refused archive of another row, must be refused by every engine "
+        "with an error that says Zipper does not read it, with nothing published.",
         "",
         "| Status | Rows |",
         "| --- | ---: |",

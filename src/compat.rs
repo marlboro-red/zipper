@@ -66,7 +66,8 @@ fn ensure_no_wildcards(path: &Path) -> Result<()> {
 }
 
 /// Run 7-Zip `action` on `archive`. `format` pins the format, as from
-/// [`pinned_format`], so 7-Zip cannot open the file as another one.
+/// [`pinned_format`], so 7-Zip cannot open the file as another one. A file in
+/// a format Zipper refuses fails with [`crate::Refused`] before 7-Zip starts.
 pub fn run(
     action: &str,
     archive: &Path,
@@ -95,6 +96,9 @@ pub fn run_until_cancelled(
         ["x", "l", "t"].contains(&action),
         "unsupported backend action"
     );
+    if let Some(format) = crate::refused::format(archive)? {
+        bail!(crate::Refused(format));
+    }
     let archive = archive.canonicalize()?;
     ensure_no_wildcards(&archive)?;
     let mut command = Command::new(backend()?);

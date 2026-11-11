@@ -95,15 +95,11 @@ pub enum Format {
     Lzma86,
     /// A PPMd var.H or var.I file, `.pmd`.
     Ppmd,
-    /// A Base64 text file named `*.b64`.
-    Base64,
 }
 
 /// The format of a file that holds one compressed stream and no tar, or
 /// `None`. A file with no signature counts as LZMA only when it is named
-/// `*.lzma`, as Base64 only when it is named `*.b64` and its first 4 KiB
-/// pass 7-Zip's check, and as lzma86 only when it starts with a header
-/// 7-Zip accepts.
+/// `*.lzma`, and as lzma86 only when it starts with a header 7-Zip accepts.
 pub fn sniff(path: &Path) -> Result<Option<Format>> {
     if crate::native_tar::sniff(path)?.is_some() {
         return Ok(None);
@@ -117,21 +113,15 @@ pub fn sniff(path: &Path) -> Result<Option<Format>> {
     if compression != Compression::None {
         return Ok(Some(Format::Compressed(compression)));
     }
-    let mut start = Vec::with_capacity(crate::base64::SNIFF_BYTES);
+    let mut start = Vec::with_capacity(crate::lzma86::SNIFF_BYTES);
     crate::volumes::open(path)?
-        .take(crate::base64::SNIFF_BYTES as u64)
+        .take(crate::lzma86::SNIFF_BYTES as u64)
         .read_to_end(&mut start)?;
-    let lzma86_start = &start[..start.len().min(crate::lzma86::SNIFF_BYTES)];
     Ok(if start.starts_with(&crate::mslz::SIGNATURE) {
         Some(Format::Szdd)
     } else if start.starts_with(&crate::pmd::SIGNATURE) {
         Some(Format::Ppmd)
-    } else if has_extension(&named(path), crate::base64::EXTENSION)
-        && !start.is_empty()
-        && crate::base64::looks_like_base64(&start)
-    {
-        Some(Format::Base64)
-    } else if crate::lzma86::looks_like_lzma86(lzma86_start) {
+    } else if crate::lzma86::looks_like_lzma86(&start) {
         Some(Format::Lzma86)
     } else {
         None
@@ -327,7 +317,6 @@ pub fn read_archive(
         Format::Compressed(Compression::Lz4) if starts_with_legacy_lz4(path)? => {
             crate::volumes::ensure_not_split(path, "legacy LZ4")?
         }
-        Format::Base64 => crate::volumes::ensure_not_split(path, "Base64")?,
         _ => {}
     }
     let (name, opened) = match format {
@@ -343,15 +332,6 @@ pub fn read_archive(
             ),
         ),
         Format::Ppmd => opened_pmd(path)?,
-        Format::Base64 => (
-            default_name(&named(path))?,
-            Some(
-                Box::new(crate::base64::Base64Reader::new(BufReader::with_capacity(
-                    COPY_BUFFER,
-                    crate::volumes::open(path)?,
-                ))) as Box<dyn Read + Send>,
-            ),
-        ),
     };
     let archive_name = archive_file_name(path)?;
     let name = match is_the_archive_name(&name, &archive_name) {

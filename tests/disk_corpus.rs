@@ -1,10 +1,12 @@
 //! Every disk image in `tests/data/disk-corpus` extracts to the tree 7-Zip
 //! extracted when the corpus was written, and to the tree 7-Zip extracts now
-//! where it is installed. Where `mkfs.fat`, `mtools`, `sgdisk` and
-//! `qemu-img` are installed, seeded FAT12, FAT16 and FAT32 volumes in raw,
-//! MBR, GPT, VHD and VHDX images must extract exactly as `7zz x` extracts
-//! them. Images from the test writer, whole and damaged, must too, or be
-//! refused for a reason `docs/reference/disk-reader.md` documents. Without
+//! where it is installed, except the images whose lone file system is FAT,
+//! NTFS, HFS+ or APFS, which Zipper refuses by name with nothing written.
+//! Where `mkfs.fat`, `mtools`, `sgdisk` and `qemu-img` are installed, disks
+//! of seeded FAT12, FAT16 and FAT32 partitions in MBR, GPT, VHD and VHDX
+//! images must extract exactly as `7zz x` extracts them, partition by
+//! partition. Images from the test writer, whole and damaged, must too, or
+//! be refused for a reason `docs/reference/disk-reader.md` documents. Without
 //! 7-Zip 26.05 or later the differential tests are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/mod.rs"]
@@ -47,6 +49,32 @@ const STRICTER: &[&str] = &[
     "grain directory lies outside the image",
     "needs features Zipper does not know",
     "is not a VMDK sparse extent",
+    "Zipper does not read FAT volumes",
+    "Zipper does not read NTFS volumes",
+    "Zipper does not read HFS+ and HFSX volumes",
+    "Zipper does not read APFS containers",
+];
+
+const REFUSED_FILE_SYSTEM: &str = "Zipper does not read";
+const REFUSED_CORPUS: &[(&str, &str)] = &[
+    ("apfs-gpt.vdi.xz", "APFS containers"),
+    ("blocks-1m.vhdx.xz", "FAT volumes"),
+    ("dynamic.vhd.xz", "FAT volumes"),
+    ("fat12-static.vdi.xz", "FAT volumes"),
+    ("fat12.img.xz", "FAT volumes"),
+    ("fat12.qcow.xz", "FAT volumes"),
+    ("fat16.img.xz", "FAT volumes"),
+    ("fat32.img.xz", "FAT volumes"),
+    ("fixed.vhd.xz", "FAT volumes"),
+    ("gpt-one-stream.vmdk.xz", "FAT volumes"),
+    ("gpt-one-zlib.qcow2.xz", "FAT volumes"),
+    ("gpt-one.img.xz", "FAT volumes"),
+    ("hfs-gpt.qcow2.xz", "HFS+ and HFSX volumes"),
+    ("mbr-one.img.xz", "FAT volumes"),
+    ("mbr-one.qcow2.xz", "FAT volumes"),
+    ("mbr-one.vmdk.xz", "FAT volumes"),
+    ("ntfs-mbr.vmdk.xz", "NTFS volumes"),
+    ("raw-fat.vhd.xz", "FAT volumes"),
 ];
 
 const SENT_TO_7ZIP: &str = "Zipper does not read it in process";
@@ -247,29 +275,39 @@ fn writer_items(seed: u32) -> Vec<Item> {
     ]
 }
 
+fn writer_volume(seed: u32, bits: u32, sectors: u32, cluster: u32) -> Vec<u8> {
+    let mut volume = Volume::new(bits, sectors);
+    volume.cluster_sectors = cluster;
+    volume.fragment = seed % 2 == 1;
+    volume.deleted = seed.is_multiple_of(3);
+    build(&volume, &writer_items(seed)).bytes
+}
+
+const WRITER_VOLUMES: [(u32, u32, u32); 3] = [(12, 8000, 4), (16, 40_000, 2), (32, 140_000, 1)];
+
 fn writer_images(seed: u32) -> Vec<(String, Vec<u8>, &'static str)> {
     let mut images = Vec::new();
-    for (bits, sectors, cluster) in [(12, 8000, 4), (16, 40_000, 2), (32, 140_000, 1)] {
-        let mut volume = Volume::new(bits, sectors);
-        volume.cluster_sectors = cluster;
-        volume.fragment = seed % 2 == 1;
-        volume.deleted = seed.is_multiple_of(3);
-        let built = build(&volume, &writer_items(seed));
-        let mbr = disk_writer::mbr(&[(0x0C, 2048, &built.bytes)], 0);
+    for (bits, sectors, cluster) in WRITER_VOLUMES {
+        let volume = writer_volume(seed, bits, sectors, cluster);
+        let mbr = disk_writer::mbr(&[(0x0C, 2048, &volume), (0x0B, 2048 + sectors, &volume)], 0);
         let gpt = disk_writer::gpt(
-            &[(
-                disk_writer::BASIC_DATA,
-                "Basic data partition",
-                2048,
-                &built.bytes,
-            )],
+            &[
+                (
+                    disk_writer::BASIC_DATA,
+                    "Basic data partition",
+                    2048,
+                    &volume,
+                ),
+                (
+                    disk_writer::LINUX_DATA,
+                    "Linux",
+                    2048 + u64::from(sectors),
+                    &volume,
+                ),
+            ],
             0,
         );
-        let two = disk_writer::mbr(
-            &[(0x06, 63, &built.bytes), (0x0B, 63 + sectors, &built.bytes)],
-            9,
-        );
-        images.push((format!("fat{bits}"), built.bytes.clone(), "img"));
+        let two = disk_writer::mbr(&[(0x06, 63, &volume), (0x0B, 63 + sectors, &volume)], 9);
         images.push((format!("mbr fat{bits}"), mbr.clone(), "img"));
         images.push((format!("gpt fat{bits}"), gpt.clone(), "img"));
         images.push((format!("two partitions fat{bits}"), two, "img"));
@@ -300,6 +338,40 @@ fn writer_images(seed: u32) -> Vec<(String, Vec<u8>, &'static str)> {
             if (index as u32 + fat_index + seed).is_multiple_of(3) {
                 images.push((format!("{label} fat{bits}"), image, extension));
             }
+        }
+    }
+    images
+}
+
+fn lone_fat_images(seed: u32) -> Vec<(String, Vec<u8>, &'static str)> {
+    let mut images = Vec::new();
+    for (bits, sectors, cluster) in WRITER_VOLUMES {
+        let volume = writer_volume(seed, bits, sectors, cluster);
+        let mbr = disk_writer::mbr(&[(0x0C, 2048, &volume)], 0);
+        let gpt = disk_writer::gpt(
+            &[(
+                disk_writer::BASIC_DATA,
+                "Basic data partition",
+                2048,
+                &volume,
+            )],
+            0,
+        );
+        images.push((format!("fat{bits}"), volume, "img"));
+        images.push((format!("mbr fat{bits}"), mbr.clone(), "img"));
+        images.push((format!("gpt fat{bits}"), gpt.clone(), "img"));
+        images.push((
+            format!("fixed vhd fat{bits}"),
+            disk_writer::vhd_fixed(&mbr),
+            "vhd",
+        ));
+        images.push((
+            format!("vhdx fat{bits}"),
+            disk_writer::vhdx(&gpt, 20),
+            "vhdx",
+        ));
+        for (label, image, extension) in container_images(&mbr, &gpt, seed) {
+            images.push((format!("{label} fat{bits}"), image, extension));
         }
     }
     images
@@ -392,6 +464,30 @@ fn writer_images_extract_as_7zip_extracts_them_in_every_container() {
 }
 
 #[test]
+fn lone_fat_volumes_are_refused_in_every_container_where_7zip_extracts_them() {
+    let binary = sevenzip_binary();
+    for (label, bytes, extension) in lone_fat_images(1) {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join(format!("disk.{extension}"));
+        fs::write(&archive, &bytes).unwrap();
+        let error = zipper_tree(&archive, &work.path().join("zipper"))
+            .map(|_| panic!("{label}: Zipper extracted a lone FAT volume"))
+            .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("Zipper does not read FAT volumes"),
+            "{label}: {error:#}"
+        );
+        assert!(!work.path().join("zipper").exists(), "{label}: left output");
+        if let Some(binary) = &binary {
+            assert!(
+                sevenzip_tree(binary, &archive, &work.path().join("7z")).is_some(),
+                "{label}: 7-Zip refused it, so the image proves nothing"
+            );
+        }
+    }
+}
+
+#[test]
 fn damaged_images_are_refused_exactly_when_7zip_refuses_them() {
     let Some(binary) = sevenzip_binary() else {
         return;
@@ -437,11 +533,11 @@ fn damaged_images_are_refused_exactly_when_7zip_refuses_them() {
 }
 
 fn small_mbr(seed: u32) -> Vec<u8> {
-    let mut volume = Volume::new(12, 8000);
+    let mut volume = Volume::new(12, 4000);
     volume.cluster_sectors = 4;
     volume.fragment = true;
     let built = build(&volume, &writer_items(seed));
-    disk_writer::mbr(&[(0x01, 64, &built.bytes)], 0)
+    disk_writer::mbr(&[(0x01, 64, &built.bytes), (0x01, 4064, &built.bytes)], 0)
 }
 
 fn spread(ranges: &[std::ops::Range<usize>], step: usize) -> Vec<usize> {
@@ -771,8 +867,20 @@ fn every_corpus_image_extracts_the_tree_7zip_extracts() {
         })
         .collect();
     for (index, (name, image)) in unpacked.into_iter().enumerate() {
-        let ours = zipper_tree(&image, &work.path().join(format!("zipper {index}")))
-            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        let into = work.path().join(format!("zipper {index}"));
+        let refused = REFUSED_CORPUS.iter().find(|(file, _)| *file == name);
+        if let Some((_, file_system)) = refused {
+            let error = zipper_tree(&image, &into)
+                .map(|_| panic!("{name}: Zipper extracted it"))
+                .unwrap_err();
+            assert!(
+                format!("{error:#}").contains(&format!("{REFUSED_FILE_SYSTEM} {file_system}")),
+                "{name}: {error:#}"
+            );
+            assert!(!into.exists(), "{name}: left output");
+            continue;
+        }
+        let ours = zipper_tree(&image, &into).unwrap_or_else(|error| panic!("{name}: {error:#}"));
         if let Some(binary) = &binary {
             let theirs = sevenzip_tree(binary, &image, &work.path().join(format!("7z {index}")))
                 .unwrap_or_else(|| panic!("{name}: 7-Zip failed"));
@@ -1172,8 +1280,8 @@ fn qemu_images_extract_as_7zip_extracts_them() {
         return;
     };
     let work = tempfile::tempdir().unwrap();
-    let fat12 = corpus_raw("fat12.img");
-    let mbr_one = corpus_raw("mbr-one.img");
+    let fat12 = corpus_raw("mbr-two.img");
+    let mbr_one = corpus_raw("mbr-two.img");
     let gpt_two = corpus_raw("gpt-two.img");
     let readable: [(&[u8], &str, &[&str]); 16] = [
         (&mbr_one, "mbr-one.qcow2", &["qcow2"]),
@@ -1282,7 +1390,6 @@ fn container_corpus(
         ),
         (raw("apfs-gpt.img"), "apfs-gpt.vdi", &["vdi"]),
         (raw("hfs-gpt.img"), "hfs-gpt.qcow2", &["qcow2"]),
-        (raw("ntfs-mbr.img"), "ntfs-mbr.vmdk", &["vmdk"]),
     ] {
         files.extend(qemu_files(qemu, work, disk, name, arguments));
     }
@@ -1342,16 +1449,6 @@ fn container_sources(work: &Path, raws: &mut BTreeMap<String, Vec<u8>>) {
     raws.insert(
         "hfs-gpt.img".to_owned(),
         hdiutil_disk(work, "HFS+", "hfs-gpt"),
-    );
-    let mut ntfs = Vec::new();
-    liblzma::read::XzDecoder::new(
-        fs::File::open(Path::new(CORPUS).join("../ntfs-corpus/ntfs3g-basic.ntfs.xz")).unwrap(),
-    )
-    .read_to_end(&mut ntfs)
-    .unwrap();
-    raws.insert(
-        "ntfs-mbr.img".to_owned(),
-        disk_writer::mbr(&[(0x07, 2048, &ntfs)], 0),
     );
 }
 

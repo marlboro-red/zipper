@@ -58,7 +58,7 @@ These images are refused with an error that suggests `--zip-engine backend`:
 
 | Limit | Value |
 | --- | --- |
-| Entries | 1,000,000, the limit of the tree the cpio, CAB and MSI readers share |
+| Entries | 1,000,000, the limit of the tree the cpio and CAB readers share |
 | Folder bytes read | 1 GiB in all, counting continuation areas |
 | One UDF folder | 64 MiB |
 | ISO 9660 folder depth | 256 |

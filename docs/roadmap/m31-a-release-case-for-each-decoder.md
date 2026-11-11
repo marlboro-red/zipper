@@ -6,7 +6,7 @@ Zipper's decoders were measured against C libraries, such as libdeflate, libzstd
 
 Scope:
 
-- Compare each decoder with its Rust alternatives. Zstandard goes against `ruzstd` and libzstd, and Deflate and gzip against `zlib-rs`, `miniz_oxide` and libdeflate. LZMA and xz go against `lzma-rs`, `lzma-rust2` and liblzma. BZip2 goes against `libbz2-rs-sys` and libbzip2, and LZX, LZMS, XPRESS, LZFSE and LZVN against any Rust crate that reads them.
+- Compare each decoder with its Rust alternatives. Zstandard goes against `ruzstd` and libzstd, and Deflate and gzip against `zlib-rs`, `miniz_oxide` and libdeflate. LZMA and xz go against `lzma-rs`, `lzma-rust2` and liblzma. BZip2 goes against `libbz2-rs-sys` and libbzip2, and XPRESS against any Rust crate that reads it. The LZX, LZMS, LZFSE and LZVN decoders were removed on 12 November 2026 for licence reasons, as [M32](m32-readers-removed-for-licence-reasons.md) records.
 - Measure decode alone in one process, and end-to-end extraction, on the second machine, an Apple M2 Max, and on an x86-64 Linux CI runner.
 - Record each decoder's case as one of three verdicts. It becomes a crate, stays inside Zipper, or is not ready yet. Name the lead and its spread.
 - M23, the LZMA decoder as its own crate, starts only if LZMA's verdict is a crate.

@@ -6,8 +6,6 @@
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
-#[path = "common/lzx_encoder.rs"]
-mod lzx_encoder;
 #[path = "common/quantum_encoder.rs"]
 mod quantum_encoder;
 #[path = "common/sevenzip.rs"]
@@ -37,14 +35,6 @@ impl Random {
 }
 
 fn methods() -> Vec<(&'static str, Method)> {
-    let mut lzx = lzx_encoder::Options::plain(16);
-    lzx.kinds = vec![
-        lzx_encoder::Kind::Verbatim,
-        lzx_encoder::Kind::Aligned,
-        lzx_encoder::Kind::Uncompressed,
-    ];
-    lzx.longest_block = 9000;
-    lzx.translation = Some(100_000);
     let mut quantum = quantum_encoder::Options::plain(16);
     quantum.literal_odds = 5;
     quantum.shorten_odds = 20;
@@ -52,7 +42,6 @@ fn methods() -> Vec<(&'static str, Method)> {
         ("stored", Method::Stored),
         ("mszip", Method::Mszip),
         ("quantum", Method::Quantum(quantum)),
-        ("lzx", Method::Lzx(lzx)),
     ]
 }
 

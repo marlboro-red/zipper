@@ -1,10 +1,10 @@
 //! The single-stream formats 7-Zip reads that Zipper reads in process:
-//! Microsoft `compress.exe` SZDD files, `lzma86` files, PPMd `.pmd` files and
-//! Base64 `.b64` files.
+//! Microsoft `compress.exe` SZDD files, `lzma86` files and PPMd `.pmd`
+//! files.
 //! Generated files of each extract to the tree `7zz x` extracts, through the
 //! default engine, and damaged files are refused exactly when 7-Zip refuses
-//! them, apart from the checks this reader adds. Every cut, except a Base64
-//! cut after a whole quad, trailing data and an output cap are refused with
+//! them, apart from the checks this reader adds. Every cut, trailing data
+//! and an output cap are refused with
 //! nothing published. Without 7-Zip
 //! 26.05 or later the differential tests are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set.
@@ -524,79 +524,6 @@ fn damaged_pmd_files_are_refused_exactly_when_7zip_refuses_them() {
     assert!(refused > 5, "{extracted} extracted, {refused} refused");
 }
 
-const LINE_ENDS: [&[u8]; 6] = [b"\n", b"\r\n", b" \n", b"\t\n", b"\xa0\n", b""];
-
-fn base64_cases(random: &mut Random) -> Vec<Case> {
-    let mut cases = Vec::new();
-    for case in 0..80 {
-        let data = payload(random, case);
-        let line = [0, 76, 64, 4, 1][case % 5];
-        let end = LINE_ENDS[random.below(LINE_ENDS.len())];
-        let padded = case % 7 != 0;
-        let mut bytes = writers::base64(&data, line, end, padded);
-        if case % 9 == 0 {
-            bytes.extend_from_slice(b"\n\n  \t");
-        }
-        cases.push(Case {
-            name: format!("c{case}{}", [".b64", ".B64"][case % 2]),
-            bytes,
-            description: format!(
-                "{} bytes in lines of {line} ended by {end:?}, padded {padded}",
-                data.len()
-            ),
-        });
-    }
-    cases
-}
-
-#[test]
-fn generated_base64_files_extract_exactly_as_7zip_extracts_them() {
-    let Some(binary) = binary() else {
-        eprintln!("skipped: no 7-Zip 26 or later");
-        return;
-    };
-    let cases = base64_cases(&mut Random(0xb64_0001));
-    let (extracted, refused) = assert_matches_7zip(&binary, &cases, &[]);
-    assert!(
-        extracted > 50 && refused > 3,
-        "{extracted} extracted, {refused} refused"
-    );
-}
-
-const BASE64_TRAILING: &str = "data after its end";
-
-#[test]
-fn damaged_base64_files_are_refused_exactly_when_7zip_refuses_them() {
-    let Some(binary) = binary() else {
-        eprintln!("skipped: no 7-Zip 26 or later");
-        return;
-    };
-    let mut random = Random(0xb64_0002);
-    let mut cases = Vec::new();
-    for case in base64_cases(&mut random) {
-        let mut bytes = case.bytes;
-        if bytes.is_empty() {
-            continue;
-        }
-        let at = random.below(bytes.len());
-        let replacement = b"=A/+ \n\x00!\xa0"[random.below(9)];
-        bytes[at] = replacement;
-        if random.below(4) == 0 {
-            bytes.extend_from_slice(b"=x");
-        }
-        cases.push(Case {
-            name: case.name,
-            bytes,
-            description: format!("byte {at} set to {replacement:#x}, {}", case.description),
-        });
-    }
-    let (extracted, refused) = assert_matches_7zip(&binary, &cases, &[BASE64_TRAILING]);
-    assert!(
-        extracted > 5 && refused > 10,
-        "{extracted} extracted, {refused} refused"
-    );
-}
-
 fn small_files() -> Vec<(&'static str, Vec<u8>)> {
     let text = b"hello hello hello, a small file for every cut\n".repeat(3);
     vec![
@@ -616,31 +543,6 @@ fn small_files() -> Vec<(&'static str, Vec<u8>)> {
             writers::pmd(&text, Variant::I { restore: 0 }, 6, 1, b"i.txt"),
         ),
     ]
-}
-
-#[test]
-fn base64_cut_inside_a_quad_or_with_data_after_its_padding_is_refused() {
-    let text = writers::base64(b"hello, a small file for every cut!", 8, b"\n", true);
-    let ends_inside_a_quad = |length: usize| {
-        let symbols = text[..length].iter().filter(|&&byte| byte != b'\n').count();
-        symbols % 4 != 0 || length == 0
-    };
-    for length in (0..text.len()).filter(|&length| ends_inside_a_quad(length)) {
-        assert_refused(
-            &format!("Base64 cut to {length}"),
-            "cut.b64",
-            &text[..length],
-            ReadOptions::default(),
-        );
-    }
-    let mut trailing = text.clone();
-    trailing.extend_from_slice(b"QUFB");
-    assert_refused(
-        "Base64 with symbols after its padding",
-        "trailing.b64",
-        &trailing,
-        ReadOptions::default(),
-    );
 }
 
 fn assert_refused(case: &str, name: &str, bytes: &[u8], options: ReadOptions) {
@@ -848,10 +750,7 @@ fn no_corpus_file_of_another_format_is_taken_for_one_of_these() {
     for file in files {
         let found = sniff(&file).unwrap_or(None);
         assert!(
-            !matches!(
-                found,
-                Some(Format::Szdd | Format::Lzma86 | Format::Ppmd | Format::Base64)
-            ),
+            !matches!(found, Some(Format::Szdd | Format::Lzma86 | Format::Ppmd)),
             "{} sniffs as {found:?}",
             file.display()
         );
@@ -862,13 +761,6 @@ fn no_corpus_file_of_another_format_is_taken_for_one_of_these() {
         ("ones.bin", vec![1; 4096], None),
         ("text.txt", b"plain text\n".repeat(50), None),
         ("data.txt", b"aGVsbG8gd29ybGQ=\n".to_vec(), None),
-        (
-            "data.b64",
-            b"aGVsbG8gd29ybGQ=\n".to_vec(),
-            Some(Format::Base64),
-        ),
-        ("spaced.b64", b"aGVs bG8gd29ybGQ=\n".to_vec(), None),
-        ("empty.b64", Vec::new(), None),
         (
             "data.hex",
             b":0300300002337A1E\n:00000001FF\n".to_vec(),

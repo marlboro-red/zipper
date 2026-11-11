@@ -1,9 +1,13 @@
-//! The disk reader extracts FAT volumes, MBR and GPT disks and VHD and VHDX
-//! images byte for byte, rejects each hostile layout with nothing left
-//! behind, sends what it does not read to 7-Zip by default, and honours the
-//! options the other readers take.
+//! The disk reader extracts the SquashFS volume of a lone partition and each
+//! partition of an MBR or GPT disk byte for byte, in every container, rejects
+//! each hostile layout with nothing left behind, refuses FAT, NTFS, HFS+ and
+//! APFS volumes by name in every container, sends what it does not read to
+//! 7-Zip by default, and honours the options the other readers take. FAT
+//! volumes from the test writer serve only as partition bytes and refusals.
 #[path = "common/disk_writer.rs"]
 mod disk_writer;
+#[path = "common/squashfs_writer.rs"]
+mod squashfs_writer;
 
 use disk_writer::{Built, Item, SECTOR, Volume, build, file, folder};
 use std::{collections::BTreeMap, fs, path::Path};
@@ -112,20 +116,6 @@ fn extracted(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
     extracted_named(bytes, "case.img", ReadOptions::default()).unwrap()
 }
 
-fn expected(items: &[Item], prefix: &str, into: &mut BTreeMap<String, Vec<u8>>) {
-    for item in items {
-        match item {
-            Item::File { name, data, .. } => {
-                into.insert(format!("{prefix}{}", name.replace('/', "_")), data.clone());
-            }
-            Item::Folder { name, items } => {
-                into.insert(format!("{prefix}{name}"), b"<dir>".to_vec());
-                expected(items, &format!("{prefix}{name}/"), into);
-            }
-        }
-    }
-}
-
 fn pattern(length: usize, seed: u8) -> Vec<u8> {
     (0..length)
         .map(|index| (index as u32).wrapping_mul(2_654_435_761).to_le_bytes()[3] ^ seed)
@@ -158,7 +148,7 @@ fn sample() -> Vec<Item> {
     ]
 }
 
-fn sample_volume(bits: u32) -> Built {
+fn fat_volume(bits: u32) -> Built {
     let sectors = match bits {
         12 => 4000,
         16 => 40_000,
@@ -167,74 +157,194 @@ fn sample_volume(bits: u32) -> Built {
     build(&Volume::new(bits, sectors), &sample())
 }
 
+fn payload_entries() -> Vec<squashfs_writer::Entry> {
+    use squashfs_writer::{ROOT, file, folder};
+    let mut read_only = file(ROOT, "READONLY.TXT", b"keep\n");
+    read_only.mode = 0o444;
+    let mut entries = vec![
+        file(ROOT, "HELLO.TXT", b"hello\n"),
+        file(ROOT, "A long file name with spaces.txt", &pattern(3000, 1)),
+        file(ROOT, "empty", b""),
+        read_only,
+        folder(ROOT, "Folder"),
+        file(4, "inner.bin", &pattern(70_000, 2)),
+        file(4, "\u{dc}n\u{ef}code \u{2713}.txt", b"unicode\n"),
+        folder(4, "EMPTYDIR"),
+    ];
+    let mut parent = ROOT;
+    for level in 0..12 {
+        entries.push(folder(parent, &format!("level {level}")));
+        parent = entries.len() - 1;
+    }
+    entries.push(file(parent, "bottom.txt", b"at the bottom\n"));
+    entries
+}
+
+fn squashfs_volume(entries: &[squashfs_writer::Entry]) -> Vec<u8> {
+    let mut bytes =
+        squashfs_writer::build(entries, squashfs_writer::Options { compress: true }).bytes;
+    bytes.resize(bytes.len().next_multiple_of(4096), 0);
+    bytes
+}
+
+fn payload() -> Vec<u8> {
+    squashfs_volume(&payload_entries())
+}
+
 fn sample_tree() -> BTreeMap<String, Vec<u8>> {
-    let mut wanted = BTreeMap::new();
-    expected(&sample(), "", &mut wanted);
-    wanted
+    let entries = payload_entries();
+    let path = |mut index: usize| {
+        let mut parts = Vec::new();
+        while index != squashfs_writer::ROOT {
+            parts.push(String::from_utf8(entries[index].name.clone()).unwrap());
+            index = entries[index].parent;
+        }
+        parts.reverse();
+        parts.join("/")
+    };
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let data = match &entry.kind {
+                squashfs_writer::Kind::File(data) => data.clone(),
+                _ => b"<dir>".to_vec(),
+            };
+            (path(index), data)
+        })
+        .collect()
 }
 
 #[test]
-fn writer_volumes_extract_byte_for_byte_in_every_container() {
+fn a_lone_squashfs_volume_extracts_byte_for_byte_in_every_container() {
     let wanted = sample_tree();
-    for bits in [12, 16, 32] {
-        for (fragment, deleted) in [(false, false), (true, true)] {
-            let mut volume = Volume::new(
-                bits,
-                if bits == 32 {
-                    140_000
-                } else if bits == 16 {
-                    40_000
-                } else {
-                    4000
-                },
-            );
-            volume.fragment = fragment;
-            volume.deleted = deleted;
-            let built = build(&volume, &sample());
-            if fragment {
-                let chain = &built.chains["Folder/inner.bin"];
-                assert!(
-                    chain.windows(2).any(|pair| pair[1] != pair[0] + 1),
-                    "not fragmented"
-                );
-            }
-            let label = format!("FAT{bits} fragment {fragment}");
-            assert_eq!(extracted(&built.bytes), wanted, "{label} raw");
-            let mbr = disk_writer::mbr(&[(0x0C, 2048, &built.bytes)], 64);
-            assert_eq!(extracted(&mbr), wanted, "{label} MBR");
-            let gpt =
-                disk_writer::gpt(&[(disk_writer::BASIC_DATA, "data", 2048, &built.bytes)], 64);
-            assert_eq!(extracted(&gpt), wanted, "{label} GPT");
-            assert_eq!(
-                extracted_named(
-                    &disk_writer::vhd_fixed(&mbr),
-                    "case.vhd",
-                    ReadOptions::default()
-                )
-                .unwrap(),
-                wanted,
-                "{label} fixed VHD"
-            );
-            assert_eq!(
-                extracted(&disk_writer::vhd_dynamic(&mbr, 19)),
-                wanted,
-                "{label} dynamic VHD"
-            );
-            for block_log in [20, 25] {
-                assert_eq!(
-                    extracted(&disk_writer::vhdx(&gpt, block_log)),
-                    wanted,
-                    "{label} VHDX {block_log}"
-                );
+    let volume = payload();
+    assert_eq!(extracted(&volume), wanted, "raw");
+    let mbr = disk_writer::mbr(&[(0x83, 2048, &volume)], 64);
+    assert_eq!(extracted(&mbr), wanted, "MBR");
+    let gpt = disk_writer::gpt(&[(disk_writer::LINUX_DATA, "data", 2048, &volume)], 64);
+    assert_eq!(extracted(&gpt), wanted, "GPT");
+    assert_eq!(
+        extracted_named(
+            &disk_writer::vhd_fixed(&mbr),
+            "case.vhd",
+            ReadOptions::default()
+        )
+        .unwrap(),
+        wanted,
+        "fixed VHD"
+    );
+    assert_eq!(
+        extracted(&disk_writer::vhd_dynamic(&mbr, 19)),
+        wanted,
+        "dynamic VHD"
+    );
+    for block_log in [20, 25] {
+        assert_eq!(
+            extracted(&disk_writer::vhdx(&gpt, block_log)),
+            wanted,
+            "VHDX {block_log}"
+        );
+    }
+}
+
+fn apfs_volume() -> Vec<u8> {
+    let mut volume = vec![0u8; 64 * SECTOR];
+    volume[24..28].copy_from_slice(&0x8000_0001u32.to_le_bytes());
+    volume[32..36].copy_from_slice(b"NXSB");
+    volume[36..40].copy_from_slice(&4096u32.to_le_bytes());
+    volume
+}
+
+fn hfs_volume() -> Vec<u8> {
+    let mut volume = vec![0u8; 64 * SECTOR];
+    volume[1024..1028].copy_from_slice(b"H+\0\x04");
+    volume
+}
+
+fn refused_volumes() -> Vec<(&'static str, Vec<u8>, &'static str)> {
+    vec![
+        (
+            "FAT12",
+            fat_volume(12).bytes,
+            "Zipper does not read FAT volumes",
+        ),
+        (
+            "FAT32",
+            fat_volume(32).bytes,
+            "Zipper does not read FAT volumes",
+        ),
+        ("NTFS", ntfs_boot(), "Zipper does not read NTFS volumes"),
+        (
+            "HFS+",
+            hfs_volume(),
+            "Zipper does not read HFS+ and HFSX volumes",
+        ),
+        (
+            "APFS",
+            apfs_volume(),
+            "Zipper does not read APFS containers",
+        ),
+    ]
+}
+
+#[test]
+fn a_lone_fat_ntfs_hfs_or_apfs_volume_is_refused_by_name_in_every_container() {
+    for (label, volume, words) in refused_volumes() {
+        let mbr = disk_writer::mbr(&[(0x83, 64, &volume)], 0);
+        let gpt = disk_writer::gpt(&[(disk_writer::LINUX_DATA, "data", 40, &volume)], 0);
+        let qcow = disk_writer::qcow_sparse(
+            qcow_options(3, false),
+            mbr.len() as u64,
+            &pieces(&mbr, 4096),
+        );
+        let images: Vec<(&str, Vec<u8>, &str)> = vec![
+            ("MBR", mbr.clone(), "case.img"),
+            ("GPT", gpt.clone(), "case.img"),
+            ("fixed VHD", disk_writer::vhd_fixed(&mbr), "case.vhd"),
+            (
+                "dynamic VHD",
+                disk_writer::vhd_dynamic(&gpt, 19),
+                "case.vhd",
+            ),
+            ("VHDX", disk_writer::vhdx(&mbr, 20), "case.vhdx"),
+            ("QCOW", qcow.bytes, "case.qcow2"),
+        ];
+        for (container, image, name) in images {
+            let case = format!("{label} in {container}");
+            refused_named(&case, &image, name, words);
+            for engine in [Engine::Auto, Engine::Native] {
+                assert_eq!(reader(&image, name, engine), Reader::Disk, "{case}");
             }
         }
+        let raw = reader_error(&volume, "volume.img", Engine::Native);
+        assert!(raw.contains(words), "raw {label}: {raw}");
     }
+}
+
+fn reader_error(bytes: &[u8], name: &str, engine: Engine) -> String {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join(name);
+    fs::write(&archive, bytes).unwrap();
+    let destination = root.path().join("out");
+    let error = zipper::extract_archive(
+        &archive,
+        &destination,
+        zipper::ExtractOptions {
+            engine,
+            ..zipper::ExtractOptions::default()
+        },
+    )
+    .map(|_| panic!("{name} extracted"))
+    .unwrap_err();
+    assert!(!destination.exists(), "{name} left output behind");
+    format!("{error:#}")
 }
 
 #[test]
 fn several_partitions_extract_as_one_file_each_with_the_gaps_between() {
-    let first = sample_volume(16);
-    let second = sample_volume(12);
+    let first = fat_volume(16);
+    let second = fat_volume(12);
     let disk = disk_writer::mbr(
         &[
             (0x06, 64, &first.bytes),
@@ -266,8 +376,8 @@ fn several_partitions_extract_as_one_file_each_with_the_gaps_between() {
 
 #[test]
 fn extended_partitions_list_their_logical_partitions_as_7zip_does() {
-    let first = sample_volume(12);
-    let logical = sample_volume(12);
+    let first = fat_volume(12);
+    let logical = fat_volume(12);
     let sectors = (first.bytes.len() / SECTOR) as u32;
     let extended = 64 + sectors;
     let ebr2 = extended + 63 + sectors;
@@ -304,229 +414,6 @@ fn extended_partitions_list_their_logical_partitions_as_7zip_does() {
     );
 }
 
-fn first_cluster(built: &Built, path: &str) -> u32 {
-    built.chains[path][0]
-}
-
-fn set_record_cluster(built: &mut Built, path: &str, cluster: u32) {
-    let at = built.record(path);
-    built.bytes[at + 26..at + 28].copy_from_slice(&(cluster as u16).to_le_bytes());
-    built.bytes[at + 20..at + 22].copy_from_slice(&((cluster >> 16) as u16).to_le_bytes());
-}
-
-#[test]
-fn cluster_chains_that_loop_cross_or_end_early_are_refused() {
-    for bits in [12, 16, 32] {
-        let label = |case: &str| format!("FAT{bits} {case}");
-        let mut looping = sample_volume(bits);
-        let chain = looping.chains["Folder/inner.bin"].clone();
-        looping.set_entry(chain[3], chain[1]);
-        refused(&label("file chain loop"), &looping.bytes, "share cluster");
-        let mut crossed = sample_volume(bits);
-        let target = *crossed.chains["Folder/inner.bin"].last().unwrap();
-        set_record_cluster(&mut crossed, "HELLO.TXT", target);
-        refused(
-            &label("cross-linked files"),
-            &crossed.bytes,
-            "share cluster",
-        );
-        let mut into_folder = sample_volume(bits);
-        let folder_cluster = first_cluster(&into_folder, "Folder");
-        set_record_cluster(&mut into_folder, "HELLO.TXT", folder_cluster);
-        refused(
-            &label("file in a folder's cluster"),
-            &into_folder.bytes,
-            "which a folder holds",
-        );
-        let many: Vec<Item> = (0..100)
-            .map(|index| file(&format!("F{index:03}"), b""))
-            .collect();
-        let sectors = match bits {
-            12 => 8000,
-            16 => 40_000,
-            _ => 140_000,
-        };
-        let mut volume = Volume::new(bits, sectors);
-        volume.cluster_sectors = 2;
-        let mut folder_loop = build(&volume, &[folder("MANY", many)]);
-        let chain = folder_loop.chains["MANY"].clone();
-        assert!(chain.len() >= 3, "{chain:?}");
-        folder_loop.set_entry(chain[1], chain[0]);
-        refused(
-            &label("folder chain loop"),
-            &folder_loop.bytes,
-            "claim cluster",
-        );
-        let mut cycle = sample_volume(bits);
-        let parent = first_cluster(&cycle, "level 0");
-        set_record_cluster(&mut cycle, "level 0/level 1/level 2", parent);
-        refused(&label("folder cycle"), &cycle.bytes, "claim cluster");
-        let mut shared = sample_volume(bits);
-        let folder_cluster = first_cluster(&shared, "Folder");
-        let at = shared.record("Folder/EMPTYDIR");
-        shared.bytes[at + 26..at + 28].copy_from_slice(&(folder_cluster as u16).to_le_bytes());
-        refused(
-            &label("folder inside itself"),
-            &shared.bytes,
-            "claim cluster",
-        );
-        let mut short = sample_volume(bits);
-        let chain = short.chains["Folder/inner.bin"].clone();
-        let end = short.end_of_chain();
-        short.set_entry(chain[2], end);
-        refused(
-            &label("chain shorter than its size"),
-            &short.bytes,
-            "ends before its size",
-        );
-        let mut long = sample_volume(bits);
-        let at = long.record("Folder/inner.bin");
-        long.bytes[at + 28..at + 32].copy_from_slice(&1000u32.to_le_bytes());
-        refused(
-            &label("chain longer than its size"),
-            &long.bytes,
-            "does not end where its size does",
-        );
-        let mut empty = sample_volume(bits);
-        set_record_cluster(&mut empty, "empty", 5);
-        refused(
-            &label("empty file with a cluster"),
-            &empty.bytes,
-            "names a cluster",
-        );
-        let mut outside = sample_volume(bits);
-        let clusters = outside.clusters;
-        set_record_cluster(&mut outside, "HELLO.TXT", clusters + 2);
-        refused(
-            &label("cluster past the volume"),
-            &outside.bytes,
-            "outside the volume",
-        );
-        let mut free = sample_volume(bits);
-        let chain = free.chains["Folder/inner.bin"].clone();
-        free.set_entry(chain[1], 0);
-        refused(
-            &label("chain into a free cluster"),
-            &free.bytes,
-            "outside the volume",
-        );
-    }
-}
-
-#[test]
-fn damaged_boot_sectors_and_tables_are_refused() {
-    let built = sample_volume(16);
-    let mut media = built.bytes.clone();
-    media[built.fat_at] = 0x12;
-    refused("media byte", &media, "media");
-    let cut = built.fat_at + built.fat_bytes / 2;
-    refused("image ends inside its FAT", &built.bytes[..cut], "FAT");
-    let mut both = built.bytes.clone();
-    let at = built.record("HELLO.TXT");
-    both[at + 11] = 0x18;
-    refused(
-        "record both folder and label",
-        &both,
-        "both a folder and a volume label",
-    );
-    let mut long = built.bytes.clone();
-    let at = built.record("A long file name with spaces.txt") - 32;
-    long[at + 26] = 1;
-    refused("long name record with a cluster", &long, "long name record");
-    let mut order = built.bytes.clone();
-    let at = built.record("A long file name with spaces.txt") - 32;
-    order[at] = 0x05;
-    refused("long name records out of order", &order, "out of order");
-    let mut volume = Volume::new(16, 40_000);
-    volume.label = None;
-    let plain = build(&volume, &sample());
-    assert_eq!(extracted(&plain.bytes), sample_tree());
-}
-
-#[test]
-fn truncated_images_are_refused_or_extract_the_whole_tree() {
-    let built = sample_volume(12);
-    let whole = extracted(&built.bytes);
-    for cut in (0..built.bytes.len()).step_by(SECTOR).chain([1, 511, 513]) {
-        let root = tempfile::tempdir().unwrap();
-        let archive = root.path().join("case.img");
-        fs::write(&archive, &built.bytes[..cut]).unwrap();
-        let destination = root.path().join("out");
-        match read_archive(&archive, Some(&destination), ReadOptions::default()) {
-            Ok(_) => assert_eq!(tree(&destination), whole, "cut at {cut}"),
-            Err(_) => assert!(!destination.exists(), "cut at {cut} left output"),
-        }
-        common_deletable(root.path());
-    }
-}
-
-fn long_name_record(built: &mut Built, path: &str) -> usize {
-    built.record(path) - 32
-}
-
-#[test]
-fn names_follow_7zip_and_unsafe_ones_are_refused() {
-    let unsafe_names = [
-        ("back\\slash.txt", "not a safe"),
-        ("colon:name.txt", "not a safe"),
-        ("..", "not a safe"),
-    ];
-    for (name, words) in unsafe_names {
-        let built = build(&Volume::new(16, 40_000), &[file(name, b"x")]);
-        refused(name, &built.bytes, words);
-    }
-    let slash = build(&Volume::new(16, 40_000), &[file("a/b.txt", b"slash")]);
-    assert_eq!(
-        extracted(&slash.bytes).keys().collect::<Vec<_>>(),
-        ["a_b.txt"]
-    );
-    let twice = build(
-        &Volume::new(16, 40_000),
-        &[file("SAME.TXT", b"1"), file("same.txt", b"2")],
-    );
-    let mut twice = twice;
-    let at = twice.record("same.txt");
-    let short = twice.bytes[twice.record("SAME.TXT")..][..11].to_vec();
-    twice.bytes[at..at + 11].copy_from_slice(&short);
-    twice.bytes[at - 32] = 0xE5;
-    refused("two entries of one name", &twice.bytes, "two entries named");
-    let mut checksum = sample_volume(16);
-    let at = long_name_record(&mut checksum, "A long file name with spaces.txt");
-    checksum.bytes[at + 13] ^= 0xFF;
-    let found = extracted(&checksum.bytes);
-    assert!(found.contains_key("ALONGF~1.TXT"), "{:?}", found.keys());
-    let mut renamed = sample_volume(16);
-    let at = renamed.record("A long file name with spaces.txt");
-    renamed.bytes[at + 7] = b'9';
-    let found = extracted(&renamed.bytes);
-    assert!(found.contains_key("ALONGF~9.TXT"), "{:?}", found.keys());
-    let mut blank = sample_volume(16);
-    let at = blank.record("HELLO.TXT");
-    blank.bytes[at..at + 11].copy_from_slice(b"           ");
-    assert!(extracted(&blank.bytes).contains_key("[NONAME]-0"));
-    let mut high = sample_volume(16);
-    let at = high.record("HELLO.TXT");
-    high.bytes[at] = 0x05;
-    refused("short name outside ASCII", &high.bytes, "outside ASCII");
-}
-
-#[test]
-fn folders_nested_too_deep_or_too_long_are_refused() {
-    let mut deep = file("leaf", b"x");
-    for level in 0..258 {
-        deep = folder(&format!("D{level}"), vec![deep]);
-    }
-    let built = build(&Volume::new(16, 40_000), &[deep]);
-    refused("folders 258 deep", &built.bytes, "deep");
-    let mut volume = Volume::new(32, 140_000);
-    volume.cluster_sectors = 8;
-    let many: Vec<Item> = (0..65_600)
-        .map(|index| file(&format!("F{index:07}"), b""))
-        .collect();
-    let built = build(&volume, &[folder("BIG", many)]);
-    refused("a folder over 2 MiB", &built.bytes, "longer than 2 MiB");
-}
-
 fn ntfs_boot() -> Vec<u8> {
     let mut volume = vec![0u8; 64 * SECTOR];
     volume[..3].copy_from_slice(&[0xEB, 0x52, 0x90]);
@@ -544,13 +431,14 @@ fn reader(bytes: &[u8], name: &str, engine: Engine) -> Reader {
 }
 
 #[test]
-fn file_systems_zipper_does_not_read_go_to_7zip_and_are_refused_by_name_in_process() {
+fn file_systems_zipper_does_not_read_go_to_7zip_and_refused_ones_stay_in_process() {
     let ntfs = disk_writer::mbr(&[(0x07, 64, &ntfs_boot())], 0);
-    refused("lone NTFS partition", &ntfs, "NTFS");
-    assert_eq!(
-        reader(&ntfs, "disk.img", Engine::Auto),
-        Reader::Backend { format: None }
+    refused(
+        "lone NTFS partition",
+        &ntfs,
+        "Zipper does not read NTFS volumes",
     );
+    assert_eq!(reader(&ntfs, "disk.img", Engine::Auto), Reader::Disk);
     assert_eq!(reader(&ntfs, "disk.img", Engine::Native), Reader::Disk);
     let gpt = disk_writer::gpt(
         &[(
@@ -561,17 +449,15 @@ fn file_systems_zipper_does_not_read_go_to_7zip_and_are_refused_by_name_in_proce
         )],
         0,
     );
-    refused("lone NTFS GPT partition", &gpt, "NTFS");
-    assert_eq!(
-        reader(&gpt, "disk.img", Engine::Auto),
-        Reader::Backend { format: None }
+    refused(
+        "lone NTFS GPT partition",
+        &gpt,
+        "Zipper does not read NTFS volumes",
     );
+    assert_eq!(reader(&gpt, "disk.img", Engine::Auto), Reader::Disk);
     let vhdx = disk_writer::vhdx(&ntfs, 20);
-    assert_eq!(
-        reader(&vhdx, "disk.vhdx", Engine::Auto),
-        Reader::Backend { format: None }
-    );
-    let fat = sample_volume(12);
+    assert_eq!(reader(&vhdx, "disk.vhdx", Engine::Auto), Reader::Disk);
+    let fat = fat_volume(12);
     let both = disk_writer::mbr(&[(0x07, 64, &ntfs_boot()), (0x01, 128, &fat.bytes)], 0);
     let found = extracted(&both);
     assert_eq!(found.keys().collect::<Vec<_>>(), ["0.ntfs", "1.fat"]);
@@ -588,8 +474,9 @@ fn file_systems_zipper_does_not_read_go_to_7zip_and_are_refused_by_name_in_proce
         reader(&named, "disk.img", Engine::Auto),
         Reader::Backend { format: None }
     );
-    let mut table = disk_writer::gpt(&[(disk_writer::BASIC_DATA, "data", 40, &fat.bytes)], 0);
-    assert_eq!(extracted(&table), extracted(&fat.bytes));
+    let volume = payload();
+    let mut table = disk_writer::gpt(&[(disk_writer::BASIC_DATA, "data", 40, &volume)], 0);
+    assert_eq!(extracted(&table), sample_tree());
     table[2 * SECTOR + 60] ^= 1;
     refused(
         "GPT table that fails its checksum",
@@ -597,7 +484,7 @@ fn file_systems_zipper_does_not_read_go_to_7zip_and_are_refused_by_name_in_proce
         "no partition table or file system",
     );
     for header_size in [0u32, 4, 16, 19] {
-        let mut tiny = disk_writer::gpt(&[(disk_writer::BASIC_DATA, "data", 40, &fat.bytes)], 0);
+        let mut tiny = disk_writer::gpt(&[(disk_writer::BASIC_DATA, "data", 40, &volume)], 0);
         tiny[SECTOR + 12..SECTOR + 16].copy_from_slice(&header_size.to_le_bytes());
         refused(
             "GPT header shorter than its checksum",
@@ -611,7 +498,7 @@ fn file_systems_zipper_does_not_read_go_to_7zip_and_are_refused_by_name_in_proce
         sealed[SECTOR + 16..SECTOR + 20].copy_from_slice(&crc.to_le_bytes());
         assert_eq!(
             extracted(&sealed),
-            extracted(&fat.bytes),
+            sample_tree(),
             "a {header_size}-byte GPT header whose checksum covers it"
         );
     }
@@ -626,12 +513,17 @@ fn file_systems_zipper_does_not_read_go_to_7zip_and_are_refused_by_name_in_proce
         Reader::Backend { format: None }
     );
     assert_eq!(reader(&fat.bytes, "disk.img", Engine::Auto), Reader::Disk);
+    refused(
+        "raw FAT volume",
+        &fat.bytes,
+        "Zipper does not read FAT volumes",
+    );
 }
 
 #[test]
 fn vhd_images_are_checked_before_their_disk_is_read() {
-    let built = sample_volume(16);
-    let disk = disk_writer::mbr(&[(0x06, 64, &built.bytes)], 0);
+    let built = fat_volume(16);
+    let disk = disk_writer::mbr(&[(0x83, 64, &payload())], 0);
     let dynamic = disk_writer::vhd_dynamic(&disk, 19);
     let mut differencing = dynamic.clone();
     let mut footer = disk_writer::vhd_footer(disk.len() as u64, 4, 512);
@@ -707,8 +599,7 @@ fn vhd_images_are_checked_before_their_disk_is_read() {
 
 #[test]
 fn vhdx_images_are_checked_before_their_disk_is_read() {
-    let built = sample_volume(16);
-    let disk = disk_writer::mbr(&[(0x06, 64, &built.bytes)], 0);
+    let disk = container_disk();
     let image = disk_writer::vhdx(&disk, 20);
     let mut header = image.clone();
     header[(1 << 16) + 100] ^= 1;
@@ -782,38 +673,25 @@ pub fn large_sparse_disk() -> Vec<u8> {
 fn large_sparse_blocks(size: u64) -> Vec<(u64, Vec<u8>)> {
     let lba: u64 = 2048;
     let sectors = ((size >> 9) - 4096) as u32;
-    let clusters = (sectors - 32) / 64;
-    let fat_sectors = (clusters + 2).div_ceil(128);
-    let mut boot = build(&Volume::new(32, 140_000), &[]).bytes[..SECTOR].to_vec();
-    boot[13] = 64;
-    boot[32..36].copy_from_slice(&sectors.to_le_bytes());
-    boot[36..40].copy_from_slice(&fat_sectors.to_le_bytes());
-    let fat_at = 32 * SECTOR as u64;
-    let data_at = fat_at + 2 * u64::from(fat_sectors) * SECTOR as u64;
-    let mut fat = Vec::new();
-    for value in [0x0FFF_FFF8u32, 0x0FFF_FFFF, 0x0FFF_FFFF, 0x0FFF_FFFF] {
-        fat.extend(value.to_le_bytes());
-    }
-    let mut data = b"tiny\n".to_vec();
-    data.resize(64 * SECTOR, 0);
+    let volume = squashfs_volume(&[squashfs_writer::file(
+        squashfs_writer::ROOT,
+        "SMALL.TXT",
+        b"tiny\n",
+    )]);
     let block_log = 20;
     let mut blocks: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
     let mut put = |absolute: u64, bytes: &[u8]| {
-        let block = blocks
-            .entry(absolute >> block_log)
-            .or_insert_with(|| vec![0u8; 1 << block_log]);
-        let within = (absolute & ((1 << block_log) - 1)) as usize;
-        block[within..within + bytes.len()].copy_from_slice(bytes);
+        for (offset, piece) in bytes.chunks(1 << block_log).enumerate() {
+            let at = absolute + ((offset as u64) << block_log);
+            let block = blocks
+                .entry(at >> block_log)
+                .or_insert_with(|| vec![0u8; 1 << block_log]);
+            let within = (at & ((1 << block_log) - 1)) as usize;
+            block[within..within + piece.len()].copy_from_slice(piece);
+        }
     };
-    put(0, &disk_writer::mbr_sector(&[(0x0C, lba as u32, sectors)]));
-    let partition = lba << 9;
-    put(partition, &boot);
-    put(partition + fat_at, &fat);
-    put(
-        partition + data_at,
-        &disk_writer::short_record(b"SMALL   TXT", 0x20, 3, 5),
-    );
-    put(partition + data_at + 64 * SECTOR as u64, &data);
+    put(0, &disk_writer::mbr_sector(&[(0x83, lba as u32, sectors)]));
+    put(lba << 9, &volume);
     blocks.into_iter().collect()
 }
 
@@ -869,8 +747,8 @@ fn a_large_sparse_disk_reads_only_its_folders() {
 
 #[test]
 fn selection_strip_and_listing_work_on_disks() {
-    let built = sample_volume(16);
-    let disk = disk_writer::mbr(&[(0x06, 64, &built.bytes)], 0);
+    let built = fat_volume(16);
+    let disk = disk_writer::mbr(&[(0x83, 64, &payload())], 0);
     let paths = ["Folder".to_owned()];
     let found = extracted_named(
         &disk,
@@ -925,17 +803,11 @@ fn selection_strip_and_listing_work_on_disks() {
 
 #[test]
 fn flipped_bytes_in_every_structure_never_panic_or_leave_output() {
-    let built = sample_volume(12);
+    let volume = payload();
     let partition = 64 * SECTOR;
-    let disk = disk_writer::mbr(&[(0x01, 64, &built.bytes)], 0);
+    let disk = disk_writer::mbr(&[(0x83, 64, &volume)], 0);
     let mut structures: Vec<usize> = (0..SECTOR).collect();
-    structures.extend((partition..partition + built.data_at).step_by(3));
-    structures.extend(
-        built
-            .records
-            .values()
-            .flat_map(|at| (partition + at - 64..partition + at + 32).step_by(5)),
-    );
+    structures.extend((partition..partition + volume.len()).step_by(7));
     let vhd = disk_writer::vhd_dynamic(&disk, 19);
     let vhdx = disk_writer::vhdx(&disk, 20);
     let cases: [(&str, &[u8], Vec<usize>); 3] = [
@@ -1045,83 +917,6 @@ fn write_disks_at_the_documented_limits() {
         large_android_sparse(size, &blocks, 1 << 22),
     )
     .unwrap();
-    let per_folder = 10_800;
-    let folders: Vec<Item> = (0..92)
-        .map(|index| {
-            let files = (0..per_folder)
-                .map(|entry| {
-                    file(
-                        &format!(
-                            "{index:02}{entry:05} a file name that fills about sixty bytes.txt"
-                        ),
-                        b"",
-                    )
-                })
-                .collect();
-            folder(&format!("folder {index:02}"), files)
-        })
-        .collect();
-    let mut volume = Volume::new(32, 600_000);
-    volume.cluster_sectors = 8;
-    volume.label = None;
-    let built = build(&volume, &folders);
-    fs::write(into.join("names.img"), &built.bytes).unwrap();
-}
-
-fn ntfs_volume() -> Vec<u8> {
-    let mut volume = Vec::new();
-    std::io::Read::read_to_end(
-        &mut liblzma::read::XzDecoder::new(
-            fs::File::open("tests/data/ntfs-corpus/ntfs3g-basic.ntfs.xz").unwrap(),
-        ),
-        &mut volume,
-    )
-    .unwrap();
-    volume
-}
-
-fn ntfs_tree(volume: &[u8]) -> BTreeMap<String, Vec<u8>> {
-    let root = tempfile::tempdir().unwrap();
-    let archive = root.path().join("volume.ntfs");
-    fs::write(&archive, volume).unwrap();
-    let destination = root.path().join("out");
-    zipper::native_ntfs::read_archive(
-        &archive,
-        Some(&destination),
-        zipper::native_ntfs::ReadOptions::default(),
-    )
-    .unwrap();
-    let found = tree(&destination);
-    common_deletable(root.path());
-    found
-}
-
-#[test]
-fn a_lone_ntfs_partition_extracts_in_process_as_the_raw_volume_does() {
-    let volume = ntfs_volume();
-    let sectors = u32::try_from(volume.len() / SECTOR).unwrap();
-    assert!(sectors > 0);
-    let wanted = ntfs_tree(&volume);
-    let mbr = disk_writer::mbr(&[(0x07, 64, &volume)], 0);
-    let gpt = disk_writer::gpt(
-        &[(disk_writer::BASIC_DATA, "Basic data partition", 40, &volume)],
-        0,
-    );
-    for (case, bytes, name) in [
-        ("MBR", mbr.clone(), "disk.img"),
-        ("GPT", gpt, "disk.img"),
-        ("VHDX", disk_writer::vhdx(&mbr, 20), "disk.vhdx"),
-        ("fixed VHD", disk_writer::vhd_fixed(&mbr), "disk.vhd"),
-    ] {
-        assert_eq!(
-            reader(&bytes, name, Engine::Auto),
-            Reader::Disk,
-            "{case} goes to 7-Zip"
-        );
-        let found = extracted_named(&bytes, name, ReadOptions::default())
-            .unwrap_or_else(|error| panic!("{case}: {error:#}"));
-        assert_eq!(found, wanted, "{case}");
-    }
 }
 
 fn refused_files(case: &str, files: &[(&str, &[u8])], words: &str) {
@@ -1202,7 +997,7 @@ fn pieces(disk: &[u8], size: usize) -> Vec<(u64, Vec<u8>)> {
 }
 
 fn container_disk() -> Vec<u8> {
-    disk_writer::mbr(&[(0x06, 64, &sample_volume(16).bytes)], 0)
+    disk_writer::mbr(&[(0x83, 2048, &payload())], 0)
 }
 
 fn qcow_options(version: u32, compressed: bool) -> disk_writer::Qcow {
@@ -1218,15 +1013,7 @@ fn qcow_options(version: u32, compressed: bool) -> disk_writer::Qcow {
 fn writer_volumes_extract_byte_for_byte_in_the_newer_containers() {
     let wanted = sample_tree();
     let disk = container_disk();
-    let gpt = disk_writer::gpt(
-        &[(
-            disk_writer::BASIC_DATA,
-            "data",
-            2048,
-            &sample_volume(32).bytes,
-        )],
-        64,
-    );
+    let gpt = disk_writer::gpt(&[(disk_writer::LINUX_DATA, "data", 2048, &payload())], 64);
     for (version, cluster_bits, compressed) in [
         (1, 9, false),
         (1, 16, false),
@@ -1775,7 +1562,7 @@ fn truncated_containers_are_refused_or_extract_the_whole_tree() {
 
 #[test]
 fn flipped_container_bytes_never_panic_or_leave_output() {
-    let disk = disk_writer::mbr(&[(0x01, 64, &sample_volume(12).bytes)], 0);
+    let disk = disk_writer::mbr(&[(0x83, 64, &payload())], 0);
     let qcow = disk_writer::qcow_sparse(
         qcow_options(2, true),
         disk.len() as u64,
@@ -1888,7 +1675,7 @@ fn peak_bytes_of_zipper_test(image: &Path) -> u64 {
 #[cfg(unix)]
 #[test]
 fn extents_of_one_stream_file_hold_one_decoded_grain_at_a_time() {
-    let base = disk_writer::mbr(&[(0x01, 64, &sample_volume(12).bytes)], 0);
+    let base = disk_writer::mbr(&[(0x01, 64, &fat_volume(12).bytes)], 0);
     let copy_sectors = (base.len() / SECTOR) as u32;
     let copies = 8u32;
     let mut disk = base.clone();

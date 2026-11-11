@@ -15,7 +15,6 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[7z-filters]` | the nine `xz_filters` proofs and `filter_properties_are_read_as_7zip_reads_them` | 245 s |
 | `[7z-aes-properties]` | `aes_properties_never_panic_and_keep_their_salt_iv_and_cycles` | 5 s |
 | `[cab-fields]` | the six CAB header, folder, file record, data block, checksum and DOS time proofs | a few seconds each |
-| `[lzx]` | no Kani proof; `cargo test --release --lib lzx` and the 7-Zip differential in `tests/cab_corpus.rs` | tests only |
 | `[zip-legacy-methods]` | `shrink::proofs::any_short_code_stream_stays_inside_the_table` and `implode::proofs::any_short_tree_description_builds_a_decodable_tree_or_is_refused` | about 3 min each |
 | `[zip-extra-times]` | `time_fields_never_panic_on_any_extra_field` | 128 s |
 | `[zip-dos-times]` | `dos_time_arithmetic_never_overflows` | 0.4 s |
@@ -28,15 +27,12 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[lz4-blocks]` | `decoding_any_short_block_never_panics_or_passes_its_limit` | 136 s |
 | `[zip-directory]` | the ten `zip_directory` proofs | 706 s |
 | `[zip-crypto]`, `[split-volumes]`, `[cpio-fields]`, `[ar-fields]`, `[rpm-fields]` | each module's whole `proofs` | unchanged |
-| `[xar-header]`, `[msi-fields]` | each module's whole `proofs` | a few seconds each |
+| `[xar-header]` | the module's whole `proofs` | a few seconds |
 | `[quantum]` | the `quantum` proofs, with the CAB corpus and hostile tests | a few seconds |
 | `[iso-fields]` | the `native_iso` and `udf` proofs | a few seconds each |
 | `[wim-fields]` | the `native_wim` and `xpress` proofs, with the WIM corpus and hostile tests | a few seconds each |
-| `[lzms]` | no Kani proof; `cargo test --release --lib lzms` and the 7-Zip differential in `tests/wim_corpus.rs` | tests only |
 | `[lzh-arj-fields]` | the `lzh` and `native_arj` proofs | a few seconds each |
-| `[legacy-streams]` | the `mslz`, `lzma86`, `pmd` and `base64` proofs; marked `speed = slow` | 343 s for the SZDD decoder |
-| `[ntfs-fields]` | the `native_ntfs` proofs, with the NTFS corpus and hostile tests | 48 s for the slowest |
-| `[chm-fields]` | the `native_chm` proofs | about 2 minutes in all |
+| `[legacy-streams]` | the `mslz`, `lzma86` and `pmd` proofs; marked `speed = slow` | 343 s for the SZDD decoder |
 | `[swf-fields]` | the `native_swf` and `native_flv` proofs, with the FLV and SWF corpus and hostile tests | under a second each |
 | `[disk-containers]` | the `disk_qcow`, `disk_vdi`, `disk_vmdk` and `disk_sparse` proofs, with the disk corpus and hostile tests and the full container flip sweep against 7-Zip | 13 s for the slowest |
 | `[exe-fields]` | the `native_exe` and `native_exe::resources` proofs, with the executable corpus and hostile tests | a few seconds each |
@@ -51,6 +47,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[deflate-framing]` | `gzip_headers_read_alike_in_any_split_and_end_where_their_fields_end`, with the flate2 differential tests in `cargo test --release --lib framing::` | 115 s |
 | `[zstd-tables]` | the three `zstandard` proofs | 16 s for the slowest |
 | `[zstd]` | no Kani proof; `cargo test --release --lib zstandard`, with libzstd as the oracle | tests only |
+| `[refused-signatures]` | the two `refused` proofs, with `tests/refused.rs` | not yet timed here |
 | `[lzma-...]` | the 18 `lzma` proofs, in the seven groups below | see below |
 
 Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jobs.
@@ -88,6 +85,8 @@ Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jo
 | `inodes_never_panic_and_keep_their_fields_in_range` | the SquashFS inode reader never panics on any base header and body of up to 40 bytes, and an inode it accepts has its type's body length, a listing that starts inside its block and a size and link target within their limits | 1 s |
 | `folder_runs_and_entries_never_panic_and_stay_in_their_block` | the SquashFS folder run holds 1 to 256 entries, and an entry points inside its inode block | 0.2 s |
 | `block_words_and_counts_stay_inside_the_block_size` | a SquashFS data block word gives a length from 1 to the block size, and a file's blocks cover its size, or all but a tail shorter than a block | 0.6 s |
+| `cab_and_wim_headers_never_panic_and_name_lzx_only_from_a_folder` | on any CAB or WIM head of up to 48 bytes, the refusal checks never panic, a CAB counts as LZX only from a folder inside the head, and a WIM only when its header says it is compressed | not yet timed |
+| `volume_and_boot_sector_checks_never_panic_on_any_short_head` | the compound, CHM, FAT, NTFS, APFS and Apple partition map signature checks never panic on any head of up to 520 bytes | not yet timed |
 | `inodes_never_panic_and_fit_their_bit_fields` | the CramFS inode reader unpacks any 12 bytes of either byte order into fields that fit their bits, with names and offsets in whole words | 0.6 s |
 | `superblocks_never_panic_and_keep_a_folder_root` | the CramFS superblock reader never panics on any 76 bytes, accepts only a folder root, and gives a size and CRC exactly for version 2 | 1 s |
 | `decoding_any_short_stream_never_panics_or_passes_its_block` | the LZO1X decoder never panics on any input of up to 6 bytes, and never writes past an output of up to 4 bytes | 153 s |
@@ -125,7 +124,7 @@ Run them with `cargo test --release --lib bcj2`, then `cargo xtask verify-sync 7
 
 `byte_swap_reverses_every_whole_group_under_every_read_split`, under `[7z-byte-swap]`, checks the Swap2 and Swap4 reader on every length up to 13 bytes. The inner reader yields 1 to 6 bytes at a time, the caller reads 1 to 6, and the buffer holds 1, 4, 5, 7 or 64 bytes, 5,040 runs in all. Run it with `cargo test --release --lib byte_swap`, then `cargo xtask verify-sync 7z-byte-swap`.
 
-Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes blocks on several threads in `src/bzip2_streams.rs` sit under `[bzip2-blocks]`. The tar, single file, RPM, 7z, ZIP, xar and DMG readers all use them, and with one thread the reader decodes each block in place. The `bzip2` crate is a test dependency only, and it is the oracle of every test:
+Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes blocks on several threads in `src/bzip2_streams.rs` sit under `[bzip2-blocks]`. The tar, single file, RPM, 7z, ZIP and xar readers all use them, and with one thread the reader decodes each block in place. The `bzip2` crate is a test dependency only, and it is the oracle of every test:
 
 - `every_kind_of_data_at_every_level_decodes_as_the_bzip2_crate_does` covers six kinds of data at levels 1 to 9, from empty to several blocks.
 - `every_cut_and_many_bit_flips_decode_or_fail_as_the_bzip2_crate_does` cuts four streams at every length, or the last 600, and flips every one of the first 2,000 bits and 3,000 random ones. The decoder must give the crate's bytes or refuse when it refuses.
@@ -134,7 +133,7 @@ Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes b
 - `a_magic_inside_a_block_does_not_end_it` plants each magic in spare selectors of each block. `a_magic_planted_inside_any_block_is_passed_over_by_decoding_on` and `a_planted_stream_end_and_header_inside_a_block_start_no_stream` run those streams through the reader at 1 to 4 block threads.
 - `cut_and_flipped_streams_give_the_serial_bytes_or_are_refused_as_it_refuses` compares the reader with the one-thread reader on cuts and flips of one stream of three blocks and of three streams in a row.
 - `a_block_may_fill_the_longest_block_and_one_bit_more_is_refused` pads a block's first code length with steps up and down to exactly 4 MiB and to 4 bits more.
-- `one_stream_alone_refuses_or_leaves_what_follows_it_as_the_bzip2_crate_does` covers the two single-stream modes. ZIP and DMG refuse data after the stream, and xar leaves it.
+- `one_stream_alone_refuses_or_leaves_what_follows_it_as_the_bzip2_crate_does` covers the two single-stream modes. ZIP refuses data after the stream, and xar leaves it.
 - `blocks_in_flight_stay_within_the_workers_and_their_memory` counts queued blocks and their charge after every read.
 - `the_lookup_decodes_every_code_as_the_bit_at_a_time_walk_does`, `moving_to_the_front_matches_a_rotation_at_every_index`, `used_bytes_are_the_set_bits_of_the_two_level_map`, `the_crc_is_the_bitwise_bzip2_crc_on_every_split` and `runs_expand_the_same_into_every_size_of_read` compare each kernel with a plain reference.
 - `tests/bzip2_blocks.rs` extracts every BZip2 fixture of the corpora and generated tar, 7z and ZIP archives at 1, 2, 4 and default threads, and compares the trees.
@@ -221,7 +220,7 @@ Zipper's own raw Deflate decoder in `src/inflate.rs`, under `[inflate]`, decodes
 
 `every_match_copy_equals_a_byte_at_a_time_copy` checks the match copy at 76 distances with every length from 3 to 258, and that it writes at most 32 bytes past the match. `random_whole_alphabets_decode_every_codeword_to_its_symbol` builds 3,000 random codes in the real table sizes. Kani does not cover `build_table`, `lookup`, `symbol`, `fast`, the match copy or `Inflate::decode`. Run `cargo xtask verify-sync inflate`, which runs the proofs and `cargo test --release --lib inflate` itself.
 
-The framing in `src/framing.rs`, under `[deflate-framing]`, wraps that decoder for every other reader. `Reader` reads raw Deflate for 7z, zlib for xar and SWF, and gzip for tar and `.gz` files, with every member in a row as `flate2`'s `MultiGzDecoder` reads them. `inflate_block` and `zlib_block` decode one block into a fixed output for CAB, DMG, HFS+, APFS, SquashFS, CramFS, QCOW and VMDK. Its tests keep `flate2` as the oracle:
+The framing in `src/framing.rs`, under `[deflate-framing]`, wraps that decoder for every other reader. `Reader` reads raw Deflate for 7z, zlib for xar and SWF, and gzip for tar and `.gz` files, with every member in a row as `flate2`'s `MultiGzDecoder` reads them. `inflate_block` and `zlib_block` decode one block into a fixed output for CAB, SquashFS, CramFS, QCOW and VMDK. Its tests keep `flate2` as the oracle:
 
 - `every_zlib_header_is_accepted_exactly_when_zlib_accepts_it` tries all 65,536 header pairs.
 - `every_gzip_header_flag_and_member_count_reads_as_multigzdecoder_reads_it` tries every flag byte with three sets of fields and good and bad header CRCs, alone and as two members, cut and flipped. `gzip_names_and_comments_stop_at_flate2s_limit` checks names and comments of 65,534 to 65,536 bytes.
@@ -230,7 +229,7 @@ The framing in `src/framing.rs`, under `[deflate-framing]`, wraps that decoder f
 - `a_gzip_reader_with_any_window_hands_out_what_flate2_reads_whole_cut_and_flipped` reads through `fill_buf` from windows of 64 KiB to 544 KiB, as the single-file reader does. `a_read_fills_the_callers_buffer_until_the_stream_ends` and `an_error_after_decoded_bytes_reaches_the_next_read_with_its_own_message` cover a read that takes several decode steps. The Adler-32 tests compare every length up to 700 bytes and the block and run edges with a byte-at-a-time sum, and start from the largest sums over the largest bytes.
 - `src/crc32.rs` folds a gzip member's CRC-32 with carry-less multiplies on aarch64 CPUs that have `aes` and `sha3`. Its tests compare every length up to 1,700 bytes at four offsets and three splits with a bit-at-a-time CRC, and long inputs in ten piece sizes with crc32fast. `cargo xtask verify-sync deflate-framing` runs them.
 
-CAB, DMG, HFS+, SquashFS, CramFS, QCOW, VMDK and SWF each have a test that runs their old `flate2` code beside the new one on the same cut and flipped streams. The tar, 7z and xar readers call `Reader` alone. Run `cargo xtask verify-sync deflate-framing`.
+CAB, SquashFS, CramFS, QCOW, VMDK and SWF each have a test that runs their old `flate2` code beside the new one on the same cut and flipped streams. The tar, 7z and xar readers call `Reader` alone. Run `cargo xtask verify-sync deflate-framing`.
 
 Every section that runs Kani has `cargo xtask kani-reach NAME` as its first full check, and the gate's `verify` step fails when one lacks it. The check keeps the section's item list honest. It runs Kani's code generation for the section's proofs, with each `--harness` prefix expanded to the proofs it matches. It lists every source line in each proof's goto program with `goto-instrument --list-eloc`. It fails when a reached line lies outside the section's items, and names the item to add. Kani places the code that `#[derive]` generates on the attribute line or on a field, so such a line needs the type it belongs to. A reached line that lies in no item is reported as a cut span. It honours `CARGO_TARGET_DIR`.
 
@@ -356,7 +355,7 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | The gzip reader with its own window size skips the gzip framing | `a_gzip_reader_with_any_window_hands_out_what_flate2_reads_whole_cut_and_flipped` fails |
 | Adler-32 loses the weight of a block, or a run grows to twice 5,504 bytes | `adler32_matches_a_byte_at_a_time_reference_in_every_split` fails |
 | The CRC-32 fold's constant is one bit off, or the running CRC is left out of the first lane | `every_length_offset_and_split_gives_the_bit_at_a_time_crc` fails |
-| MSZIP drops its history, or DMG, SquashFS, CramFS, VMDK, QCOW or SWF drops a size or end check | that caller's test against its old `flate2` code fails |
+| MSZIP drops its history, or SquashFS, CramFS, VMDK, QCOW or SWF drops a size or end check | that caller's test against its old `flate2` code fails |
 | Length code 285 gets 5 extra bits | the same proof fails |
 | The Deflate `build_table` accepts an over-subscribed code | `every_small_code_is_built_or_refused_and_read_as_a_bit_at_a_time_reference_reads_it` fails |
 | `build_table` accepts any incomplete code | the same test fails |

@@ -1,11 +1,11 @@
-//! In-process reader for VHD and VHDX disk images and MBR and GPT partition
-//! tables, with the FAT file systems on them. A disk is read as a byte range,
+//! In-process reader for VHD, VHDX, QCOW, VDI, VMDK and Android sparse disk
+//! images and MBR and GPT partition tables. A disk is read as a byte range,
 //! each partition is a bounded `Read + Seek` view of it, and a file system
 //! reader takes one view. `docs/reference/disk-reader.md` gives the rules.
 
 pub use crate::tree::ReadOptions;
 use crate::{
-    BadField, Entry, Field, field_check, native_fat,
+    BadField, Entry, Field, Refused, field_check, refused,
     tree::{self, BACKEND_HINT},
     volumes::ArchiveFile,
 };
@@ -180,6 +180,7 @@ const UDF_AT: u64 = 0x8000;
 const UDF_SIGNATURE: &[u8; 8] = b"\0BEA01\x01\0";
 const DMG_SIGNATURE: &[u8; 4] = b"koly";
 const HFS_AT: usize = 1024;
+const HFS_HEAD: usize = HFS_AT + 0x80;
 const EXT_SIGNATURE_AT: usize = 1080;
 const SNIFF_READ: usize = 2 << 12;
 const APFS_HEADER: usize = 1 << 12;
@@ -969,28 +970,6 @@ impl Seek for View<'_> {
     }
 }
 
-struct HfsVolume<'v> {
-    view: View<'v>,
-}
-
-impl crate::image::Volume for HfsVolume<'_> {
-    fn size(&self) -> u64 {
-        self.view.length
-    }
-
-    fn read_exact_at(&mut self, offset: u64, buffer: &mut [u8]) -> Result<()> {
-        ensure!(
-            offset
-                .checked_add(buffer.len() as u64)
-                .is_some_and(|end| end <= self.view.length),
-            "an HFS read lies past the end of its partition"
-        );
-        self.view
-            .read_exact_at(offset, buffer)
-            .context("cannot read the HFS partition")
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 struct Span {
     start: u64,
@@ -1023,13 +1002,10 @@ struct RawItem {
 }
 
 enum Plan {
-    FileSystem(Span),
-    Ntfs(Span),
-    Apfs(Span),
+    Refused(&'static str),
     Squashfs(Span),
     Cramfs(Span),
     Ext(Span),
-    Hfs(Span),
     Files {
         format: &'static str,
         items: Vec<RawItem>,
@@ -1519,7 +1495,7 @@ fn file_system(view: &mut View, start: u64, size: u64) -> Result<Option<&'static
     if signed && sector[..3] == [0xEB, 0x76, 0x90] && &sector[3..11] == EXFAT_SIGNATURE {
         return Ok(Some("exFAT"));
     }
-    if native_fat::is_boot_sector(&sector) {
+    if refused::is_fat_boot_sector(&sector) {
         return Ok(Some("FAT"));
     }
     if size >= UDF_AT + SECTOR as u64 && sector.iter().all(|byte| *byte == 0) {
@@ -1846,18 +1822,18 @@ fn plan_span(disk: &mut Disk, span: Span, depth: u32) -> Result<Plan> {
         });
     }
     let sector = read_sector(&mut span.view(disk))?;
-    if sector.is_some_and(|sector| native_fat::is_boot_sector(&sector)) {
-        return Ok(Plan::FileSystem(span));
+    if sector.is_some_and(|sector| refused::is_fat_boot_sector(&sector)) {
+        return Ok(Plan::Refused(refused::FAT_VOLUMES));
     }
-    if sector.is_some_and(|sector| crate::native_ntfs::is_boot_sector(&sector)) {
-        return Ok(Plan::Ntfs(span));
+    if sector.is_some_and(|sector| refused::is_ntfs_boot_sector(&sector)) {
+        return Ok(Plan::Refused(refused::NTFS_VOLUMES));
     }
     let mut head = vec![0u8; APFS_HEADER];
     if span.length >= APFS_HEADER as u64
         && span.view(disk).read_if_there(0, &mut head)?
-        && crate::native_apfs::is_container(&head)
+        && refused::is_apfs_container(&head)
     {
-        return Ok(Plan::Apfs(span));
+        return Ok(Plan::Refused(refused::APFS_CONTAINERS));
     }
     let mut head = [0u8; crate::native_squashfs::SUPERBLOCK];
     if span.length >= head.len() as u64
@@ -1880,12 +1856,12 @@ fn plan_span(disk: &mut Disk, span: Span, depth: u32) -> Result<Plan> {
     {
         return Ok(Plan::Ext(span));
     }
-    let mut head = vec![0u8; crate::hfs::HEADER_AREA];
-    if span.length >= crate::hfs::HEADER_AREA as u64
+    let mut head = vec![0u8; HFS_HEAD];
+    if span.length >= HFS_HEAD as u64
         && span.view(disk).read_if_there(0, &mut head)?
-        && crate::hfs::starts_with_volume(&head)
+        && refused::is_hfs_volume(&head)
     {
-        return Ok(Plan::Hfs(span));
+        return Ok(Plan::Refused(refused::HFS_VOLUMES));
     }
     let found = mbr(&mut span.view(disk))?;
     if let Some(mbr) = found {
@@ -1942,7 +1918,7 @@ fn raw_disk_is_claimed(head: &[u8], tail: &[u8]) -> bool {
         return false;
     }
     let sector: &[u8; SECTOR] = head[..SECTOR].try_into().unwrap();
-    if native_fat::is_boot_sector(sector) {
+    if refused::is_fat_boot_sector(sector) {
         return true;
     }
     if [SECTOR, 1 << FOUR_KIB_SECTOR_LOG]
@@ -1995,13 +1971,11 @@ pub fn sniff(path: &Path) -> Result<bool> {
 /// Returns whether the default engine should send the image to 7-Zip: a
 /// differencing image or one with a backing file, or a disk whose file
 /// system or partition names Zipper does not read in process, such as
-/// exFAT, or an APFS container the APFS reader leaves to 7-Zip.
+/// exFAT. A disk whose file system Zipper refuses, such as FAT, NTFS, HFS+
+/// or APFS, stays with this reader, which refuses it.
 pub fn needs_backend(path: &Path) -> Result<bool> {
     match plan(path) {
         Ok((_, Plan::Elsewhere(_))) => Ok(true),
-        Ok((Some(mut disk), Plan::Apfs(span))) => {
-            crate::native_apfs::needs_backend_in(span.view(&mut disk))
-        }
         Ok((Some(mut disk), Plan::Squashfs(span))) => {
             crate::native_squashfs::needs_backend_in(span.view(&mut disk))
         }
@@ -2012,11 +1986,20 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
     }
 }
 
+pub(crate) fn refused_file_system(path: &Path) -> Result<Option<&'static str>> {
+    Ok(match plan(path) {
+        Ok((_, Plan::Refused(format))) => Some(format),
+        _ => None,
+    })
+}
+
 /// Verify and optionally extract a disk image into a new directory, in the
 /// tree `7z x` extracts. A disk with one partition, or a VHD, VHDX, QCOW,
-/// VDI, VMDK or Android sparse image holding one, extracts the FAT, NTFS,
-/// HFS+ or APFS file system inside. A disk with several partitions extracts
-/// each partition, and each gap between them, as one file.
+/// VDI, VMDK or Android sparse image holding one, extracts the SquashFS,
+/// CramFS or ext file system inside, and fails with [`crate::Refused`] when
+/// that file system is FAT, NTFS, HFS+, HFSX or APFS. A disk with several
+/// partitions extracts each partition, and each gap between them, as one
+/// file, whatever it holds.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,
@@ -2027,21 +2010,7 @@ pub fn read_archive(
         Plan::Elsewhere(reason) => {
             bail!("{reason}; Zipper does not read it in process, so {BACKEND_HINT}")
         }
-        Plan::FileSystem(span) => {
-            let mut disk = disk.expect("a file system plan comes from an opened disk");
-            let mut volume = native_fat::Volume::open(span.view(&mut disk))?;
-            tree::extract("FAT", path, destination, options, |tree| {
-                volume.extract(tree)
-            })
-        }
-        Plan::Ntfs(span) => {
-            let mut disk = disk.expect("a file system plan comes from an opened disk");
-            crate::native_ntfs::read_volume(span.view(&mut disk), path, destination, options)
-        }
-        Plan::Apfs(span) => {
-            let mut disk = disk.expect("a file system plan comes from an opened disk");
-            crate::native_apfs::read_volume(span.view(&mut disk), path, destination, options)
-        }
+        Plan::Refused(format) => bail!(Refused(format)),
         Plan::Squashfs(span) => {
             let mut disk = disk.expect("a file system plan comes from an opened disk");
             crate::native_squashfs::read_volume(span.view(&mut disk), path, destination, options)
@@ -2053,15 +2022,6 @@ pub fn read_archive(
         Plan::Ext(span) => {
             let mut disk = disk.expect("a file system plan comes from an opened disk");
             crate::native_ext::read_volume(span.view(&mut disk), path, destination, options)
-        }
-        Plan::Hfs(span) => {
-            let mut disk = disk.expect("a file system plan comes from an opened disk");
-            let mut volume = HfsVolume {
-                view: span.view(&mut disk),
-            };
-            tree::extract("HFS", path, destination, options, |tree| {
-                crate::hfs::read(&mut volume, 0, tree, options)
-            })
         }
         Plan::Files { format, items } => {
             let mut disk = disk.expect("a partition plan comes from an opened disk");

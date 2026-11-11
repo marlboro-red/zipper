@@ -1,8 +1,4 @@
 #![cfg_attr(not(feature = "all-formats"), allow(dead_code, unused_imports))]
-#[cfg(feature = "dmg")]
-mod adc;
-#[cfg(feature = "tar")]
-mod base64;
 #[cfg(feature = "7z")]
 mod bcj2;
 #[cfg(feature = "rar")]
@@ -11,7 +7,6 @@ mod blake2sp;
     feature = "7z",
     feature = "tar",
     feature = "zip-bzip2",
-    feature = "dmg",
     feature = "xar"
 ))]
 mod bzip2;
@@ -19,7 +14,6 @@ mod bzip2;
     feature = "7z",
     feature = "tar",
     feature = "zip-bzip2",
-    feature = "dmg",
     feature = "xar"
 ))]
 mod bzip2_streams;
@@ -41,69 +35,44 @@ mod disk_vmdk;
 pub mod duplicates;
 mod extract;
 mod framing;
-#[cfg(any(feature = "apfs", feature = "dmg", feature = "disk"))]
-mod hfs;
 #[cfg_attr(not(feature = "ihex"), allow(dead_code))]
 mod ihex;
-#[cfg(any(
-    feature = "apfs",
-    feature = "cramfs",
-    feature = "ext",
-    feature = "squashfs"
-))]
+#[cfg(any(feature = "cramfs", feature = "ext", feature = "squashfs"))]
 mod image;
 #[cfg(feature = "zip-legacy")]
 mod implode;
 mod inflate;
 #[cfg(any(feature = "tar", feature = "squashfs"))]
 mod lz4;
-#[cfg(feature = "dmg")]
-mod lzfse;
 #[cfg(any(feature = "lzh", feature = "arj"))]
 mod lzh;
 mod lzma;
 #[cfg(feature = "tar")]
 mod lzma86;
-#[cfg(feature = "wim")]
-mod lzms;
-#[cfg(feature = "ntfs")]
-mod lznt1;
 #[cfg(feature = "squashfs")]
 mod lzo;
-#[cfg(any(feature = "apfs", feature = "dmg", feature = "disk"))]
-mod lzvn;
 #[cfg(feature = "tar")]
 mod lzw;
-#[cfg(any(feature = "cab", feature = "chm", feature = "wim"))]
-mod lzx;
 mod memory;
 mod metadata;
 #[cfg(feature = "tar")]
 mod mslz;
 #[cfg(feature = "7z")]
 pub mod native_7z;
-#[cfg(feature = "apfs")]
-pub mod native_apfs;
 #[cfg(feature = "ar")]
 pub mod native_ar;
 #[cfg(feature = "arj")]
 pub mod native_arj;
 #[cfg(feature = "cab")]
 pub mod native_cab;
-#[cfg(feature = "chm")]
-pub mod native_chm;
 #[cfg(feature = "cpio")]
 pub mod native_cpio;
 #[cfg(feature = "cramfs")]
 pub mod native_cramfs;
-#[cfg(feature = "dmg")]
-pub mod native_dmg;
 #[cfg(feature = "exe")]
 pub mod native_exe;
 #[cfg(feature = "ext")]
 pub mod native_ext;
-#[cfg(feature = "disk")]
-mod native_fat;
 #[cfg(feature = "flv")]
 pub mod native_flv;
 #[cfg(feature = "ihex")]
@@ -114,10 +83,6 @@ pub mod native_iso;
 pub mod native_lp;
 #[cfg(feature = "lzh")]
 pub mod native_lzh;
-#[cfg(feature = "msi")]
-pub mod native_msi;
-#[cfg(feature = "ntfs")]
-pub mod native_ntfs;
 #[cfg(feature = "rar")]
 pub mod native_rar;
 #[cfg(feature = "rpm")]
@@ -154,6 +119,7 @@ mod rar4;
 mod rar4_lz;
 #[cfg(feature = "rar")]
 mod rar5_lz;
+mod refused;
 #[cfg(any(feature = "zip-deflate", feature = "7z"))]
 mod scrub;
 #[cfg(feature = "7z")]
@@ -167,7 +133,6 @@ mod udf;
 mod volumes;
 #[cfg(any(feature = "7z", feature = "tar"))]
 mod writer_pool;
-mod xattr;
 #[cfg(feature = "wim")]
 mod xpress;
 mod xz_filters;
@@ -181,7 +146,7 @@ mod zip_reader;
 mod zstandard;
 use anyhow::{Context, Result, ensure};
 pub use extract::{
-    Engine, ExtractOptions, NotBuilt, Reader, choose_reader, extract_archive, read_volumes,
+    Engine, ExtractOptions, NotBuilt, Reader, Refused, choose_reader, extract_archive, read_volumes,
 };
 pub use metadata::Metadata;
 pub use placement::Strip;

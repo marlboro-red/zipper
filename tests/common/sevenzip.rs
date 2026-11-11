@@ -5,6 +5,8 @@ const THE_7ZIP_THE_TESTS_WERE_CHECKED_AGAINST: (u32, u32) = (26, 5);
 
 const REQUIRE_7Z: &str = "ZIPPER_PARITY_REQUIRE_7Z";
 
+pub const NAMES_ON_PATH: [&str; 2] = ["7zz", "7z"];
+
 pub fn sevenzip() -> Option<PathBuf> {
     found_or_skipped(installed(), std::env::var_os(REQUIRE_7Z).is_some())
 }
@@ -20,7 +22,7 @@ fn found_or_skipped(found: Option<PathBuf>, required: bool) -> Option<PathBuf> {
 }
 
 fn installed() -> Option<PathBuf> {
-    ["7zz", "7z"]
+    NAMES_ON_PATH
         .into_iter()
         .find(|binary| {
             std::process::Command::new(binary)

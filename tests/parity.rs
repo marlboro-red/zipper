@@ -3,7 +3,9 @@
 //! 7-Zip gave when the corpus was built. A backend archive must give the same
 //! tree through `--zip-engine backend` as a direct 7-Zip extraction on this
 //! machine, or fail with nothing published where that 7-Zip fails. A missing archive must be refused with nothing published. An
-//! archive on a dropped row is skipped.
+//! archive on a dropped row is skipped. An archive on a refused row, or named
+//! in a row's `refused archives`, must be refused by every engine with an
+//! error saying Zipper does not read it, and nothing published.
 //!
 //! Without 7-Zip 26.05 or later the backend archives are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set, as `cargo xtask gate` sets it outside CI.
@@ -30,6 +32,7 @@ enum Expect {
     Native,
     Backend,
     Refused,
+    Licence,
     Skipped,
 }
 
@@ -39,11 +42,15 @@ fn json(name: &str) -> Value {
 
 fn expectation(status: &Value, archive: &str, row: &[Value]) -> Expect {
     let entry = &status[row[0].as_str().unwrap()][row[1].as_str().unwrap()];
-    let native_here = entry["native archives"]
-        .as_array()
-        .is_some_and(|names| names.iter().any(|name| name == archive));
+    let named = |key: &str| {
+        entry[key]
+            .as_array()
+            .is_some_and(|names| names.iter().any(|name| name == archive))
+    };
     match entry["status"].as_str().unwrap() {
-        _ if native_here => Expect::Native,
+        _ if named("refused archives") => Expect::Licence,
+        _ if named("native archives") => Expect::Native,
+        "refused" => Expect::Licence,
         "native" => Expect::Native,
         "partial" | "backend" => Expect::Backend,
         "missing" => Expect::Refused,
@@ -237,6 +244,18 @@ fn every_parity_archive_extracts_as_its_row_says() {
                 let run = zipper(None, None, &archive, &output);
                 assert!(!run.status.success(), "{name} was extracted");
                 assert_eq!(leftovers(work.path()), Vec::<String>::new(), "{name}");
+            }
+            (Expect::Licence, _) => {
+                for engine in [None, Some("native"), Some("backend")] {
+                    let run = zipper(engine, None, &archive, &output);
+                    let stderr = String::from_utf8_lossy(&run.stderr);
+                    assert!(!run.status.success(), "{name} was extracted by {engine:?}");
+                    assert!(
+                        stderr.contains("Zipper does not read"),
+                        "{name} with {engine:?}: {stderr}"
+                    );
+                    assert_eq!(leftovers(work.path()), Vec::<String>::new(), "{name}");
+                }
             }
         }
         *counts
