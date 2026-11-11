@@ -1300,7 +1300,7 @@ mod tests {
     #[test]
     fn stored_blocks_fill_a_large_read_in_one_call() {
         let data: Vec<u8> = (0..1u32 << 20)
-            .map(|index| (index * 7 >> 3) as u8)
+            .map(|index| ((index * 7) >> 3) as u8)
             .collect();
         for (framing, stream) in framed(&data, 0) {
             let mut reader = match framing {
