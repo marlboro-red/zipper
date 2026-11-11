@@ -1,6 +1,6 @@
 # Stored Deflate blocks copied straight to the caller
 
-Kept, pending the wall-time run. A `.tar.gz` of 256 MiB of random bytes extracts with 26% fewer instructions than before and 13% fewer than the flate2 build at `742ddef`. Silesia as `.tar.gz` and ZIP is unchanged. Cycle counts on this busy machine are too noisy to rank the builds, so the wall time belongs to a quiet run.
+Kept. On a quiet Apple M2 Max, a `.tar.gz` of 256 MiB of random bytes now extracts level with the zlib build at `742ddef`. It takes 1.01 and 1.03 times that build's time with the ranges overlapping. The build before this change took 1.15 times, with the ranges apart. It retires 26% fewer instructions than before and 13% fewer than `742ddef`. Silesia as `.tar.gz` is level, 0.98 times.
 
 ## Question
 
@@ -29,11 +29,22 @@ Medians of the instruction counts, in millions, with the runs:
 
 Cycles ranged widely on the random archive, 238 to 316 million for `before`, 198 to 257 million for `after` and 206 to 263 million for `flate2`. On Silesia the three builds lay within 2% in cycles. Peak resident memory on the random archive was 10.3 to 12.4 MB for `before`, 11.3 to 12.3 MB for `after` and 11.6 to 11.7 MB for `flate2`.
 
+Wall time on a second machine, an Apple M2 Max with nothing else running, with `scripts/compare_zip_readers.py`, 15 runs in turn after one warmup and 2 s apart. `742ddef` is the zlib build, and `after` is `43b7cb2`, which differs from this record's head only in a test. Both outputs matched the source byte for byte on every run. Raw samples are in [`wall-m2/`](wall-m2/).
+
+| Archive | Threads | `742ddef` median [range], ms | `after` median [range], ms | Ratio | CPU ratio |
+| --- | --- | --- | --- | ---: | ---: |
+| random `.tar.gz`, 268,517,706 bytes | 1 | 81.4 [78.5 to 90.7] | 82.1 [78.6 to 88.0] | 1.01 | 1.00 |
+| random `.tar.gz` | default | 81.4 [79.0 to 89.6] | 83.6 [81.0 to 88.5] | 1.03 | 1.01 |
+| Silesia `.tar.gz`, 68,229,934 bytes | 1 | 253.0 [246.9 to 256.5] | 247.5 [243.9 to 251.9] | 0.98 | 0.98 |
+| Silesia `.tar.gz` | default | 252.8 [249.5 to 255.8] | 247.0 [241.2 to 250.3] | 0.98 | 0.98 |
+
+An earlier session on the same machine ran 15 runs in turn on the random archive at default threads. There the build before this change took 92.4 ms [89.1 to 99.8], against 80.7 ms [76.2 to 83.1] for `742ddef`. Peak memory stayed within 1.7 MB of `742ddef` in every row.
+
 In isolation, `crc32fast` 1.5.3 and zlib-rs 0.6.8 took 39 to 40 million cycles each for 256 MiB in 1 MiB pieces. In 32 KiB pieces they took 49 and 44 million. The two CRC-32 implementations differ little, and this change does not replace `crc32fast`.
 
 ## Decision
 
-Kept, pending the coordinator's wall-time run.
+Kept. The wall time is level with `742ddef` on both archives, and the 1.15 times regression on the random archive is gone.
 
 - **Change.** `Inflate::copy_stored` in `src/inflate.rs` copies stored blocks from the input straight into the caller's buffer. It reads the block headers and stored lengths in between, and stops at the first Huffman block. It then keeps the last 32 KiB of what it wrote as the window's history. `framing::Reader::read` calls it whenever no decoded bytes are held, and falls back to the window for Huffman blocks. The block header and stored length readers are now functions that both paths share.
 - **Tests.** The zlib differential tests in `inflate` also run every stream through `copy_stored` with outputs of 1, 300, 32,769 and 1 MiB bytes. A new test builds matches that reach back across stored blocks of 1 to 131,070 bytes after 0, 7 and 40,000 literals, at distances up to 32,768 and one past the start. The framing reader reads the same streams in output pieces from 1 byte to 1 MiB against flate2. A test that a stored stream fills a 1 MiB read in one call failed before the change.
@@ -42,7 +53,8 @@ Kept, pending the coordinator's wall-time run.
 
 ## Limits
 
-- One machine, shared with other work, so no number here is a timing.
+- The instruction and cycle counts come from a machine shared with other work. The wall times come from the quiet M2 Max only.
+- The build before this change was not timed in the same session as `after`, so its 1.15 times comes from the earlier session.
 - The ZIP reader calls `Inflate::decode` itself and does not use the direct copy. A ZIP Deflate entry of incompressible data still copies each byte twice.
 - `BufRead::fill_buf` on the framing reader still decodes through the window.
 
