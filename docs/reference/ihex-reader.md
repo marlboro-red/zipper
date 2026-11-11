@@ -42,7 +42,7 @@ The reader opens a file only when 7-Zip opens it:
 - The end-of-file record (type 01) holds no data, and every record other than data has address 0.
 - An extended address record holds 2 bytes, and a start address record holds 4.
 - Records follow each other with at most 16 CR or LF bytes between them and nothing else. A space, a tab or a NUL byte is refused.
-- The file ends with an end-of-file record. One LF, CR or CRLF after it belongs to it.
+- The file ends with an end-of-file record. One LF, CR or CRLF after it belongs to it. After that the file may hold only padding, at most 64 KiB of it. Padding is any run of CR, LF, space and tab bytes, with at most one DOS end-of-file byte (0x1A) among them. Text editors and DOS tools leave such endings, and 7-Zip extracts these files, so Zipper extracts them too.
 
 ## Safety checks
 
@@ -52,7 +52,7 @@ The reader opens a file only when 7-Zip opens it:
 
 ## Differences from 7-Zip
 
-- Data after the end-of-file record is refused. 7-Zip extracts the file and warns that data follows the end of the archive.
+- Any other data after the end-of-file record is refused, as is padding longer than 64 KiB. 7-Zip extracts such a file and warns that data follows the end of the archive.
 - A file of more than 1,000,000 runs is refused. 7-Zip reads it.
 - A `\` or `:` in the name of a single run's file becomes `_`, as for every name Zipper derives from the archive's name. 7-Zip keeps them on macOS and Linux.
 - A file with no data records publishes an empty destination folder. 7-Zip creates none.
@@ -69,6 +69,6 @@ The reader opens a file only when 7-Zip opens it:
 
 ## Tests
 
-`tests/common/ihex_writer.rs` writes records of every type. `tests/ihex_corpus.rs` checks named files of every rule above, 3,000 random files of every record type, line break and damage, and files from `objcopy -O ihex` or `llvm-objcopy` at several sizes, addresses and start addresses. Each one is refused when 7-Zip refuses it, and otherwise extracts byte for byte as `7zz x` extracts it, or is refused for data after its end-of-file record. Other tests check the names of one and of many runs, that one LF, CR or CRLF after the end-of-file record extracts, and that each file takes the archive's modified time.
+`tests/common/ihex_writer.rs` writes records of every type. `tests/ihex_corpus.rs` checks named files of every rule above, 3,000 random files of every record type, line break and damage, and files from `objcopy -O ihex` or `llvm-objcopy` at several sizes, addresses and start addresses. Each one is refused when 7-Zip refuses it, and otherwise extracts byte for byte as `7zz x` extracts it, or is refused for data after the end-of-file record that is not padding. Other tests check the names of one and of many runs, and that each file takes the archive's modified time. They also check that one LF, CR or CRLF after the end-of-file record extracts, and that blank lines, spaces, tabs and one 0x1A after it extract as 7-Zip extracts them.
 
-`tests/hostile_ihex.rs` cuts a small file of every record type at every byte, sets each byte to ten other values and removes each byte, and judges each result against 7-Zip the same way. A file of three good records and one bad one, followed by a UEFI firmware volume, extracts the volume as 7-Zip does. Other tests refuse 1,000,001 runs before writing a file and accept 1,000,000, refuse output past `--max-extracted-bytes`, and check that nothing is published after a refusal. Kani proofs under `[ihex-fields]` in `verification/coverage.txt` cover the record reader and the step that places each record, and an exhaustive test covers every pair of hex digits.
+`tests/hostile_ihex.rs` cuts a small file of every record type at every byte, sets each byte to ten other values and removes each byte, and judges each result against 7-Zip the same way. A file of three good records and one bad one, followed by a UEFI firmware volume, extracts the volume as 7-Zip does. Other tests refuse padding past 64 KiB, refuse 1,000,001 runs before writing a file and accept 1,000,000, refuse output past `--max-extracted-bytes`, and check that nothing is published after a refusal. Kani proofs under `[ihex-fields]` in `verification/coverage.txt` cover the record reader and the step that places each record, and an exhaustive test covers every pair of hex digits.

@@ -23,7 +23,9 @@ const START_LENGTH: u8 = 4;
 const SEGMENT_SHIFT: u32 = 4;
 const LINEAR_SHIFT: u32 = 16;
 const OPEN_BUFFER: usize = 1 << 16;
-const AFTER_THE_END: &str = "the Intel HEX file has data after its end-of-file record";
+const AFTER_THE_END: &str = "the file has data after the Intel HEX end record";
+const MOST_PADDING: u64 = 64 << 10;
+const DOS_END: u8 = 0x1A;
 
 pub(crate) fn hex_digit(character: u8) -> Option<u8> {
     match character {
@@ -152,6 +154,19 @@ fn is_break(byte: u8) -> bool {
     matches!(byte, b'\r' | b'\n')
 }
 
+fn is_blank(byte: u8) -> bool {
+    matches!(byte, b'\r' | b'\n' | b' ' | b'\t')
+}
+
+// EXTERNAL(7-Zip 26.05): it extracts a file with any data after the end record and warns. Line
+// breaks, spaces, tabs and one DOS end-of-file byte are accepted here, and anything else refused.
+pub(crate) fn is_padding(tail: &[u8]) -> bool {
+    let blanks = tail.iter().take_while(|&&byte| is_blank(byte)).count();
+    let rest = &tail[blanks..];
+    let rest = rest.strip_prefix(&[DOS_END]).unwrap_or(rest);
+    rest.iter().all(|&byte| is_blank(byte))
+}
+
 pub(crate) struct Records<R> {
     input: R,
     digits: [u8; MOST_DIGITS],
@@ -250,7 +265,14 @@ impl<R: BufRead> Records<R> {
     }
 
     pub(crate) fn ensure_nothing_follows(&mut self) -> Result<()> {
-        ensure!(self.input.fill_buf()?.is_empty(), AFTER_THE_END);
+        let mut padding = Vec::new();
+        (&mut self.input)
+            .take(MOST_PADDING + 1)
+            .read_to_end(&mut padding)?;
+        ensure!(
+            padding.len() as u64 <= MOST_PADDING && is_padding(&padding),
+            AFTER_THE_END
+        );
         Ok(())
     }
 }
@@ -294,6 +316,30 @@ pub(crate) fn opens(path: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn reference_padding(tail: &[u8]) -> bool {
+        let blank = |byte: &u8| b"\r\n \t".contains(byte);
+        let ends = tail.iter().filter(|&&byte| byte == DOS_END).count();
+        ends <= 1 && tail.iter().all(|byte| blank(byte) || *byte == DOS_END)
+    }
+
+    #[test]
+    fn every_short_tail_is_padding_exactly_when_a_plain_reference_says_so() {
+        let alphabet = [b'\r', b'\n', b' ', b'\t', DOS_END, b'x', 0, 0x0C, b':'];
+        let mut tails = vec![Vec::new()];
+        let mut checked = 0;
+        for _ in 0..6 {
+            tails = tails
+                .iter()
+                .flat_map(|tail| alphabet.map(|byte| [tail.as_slice(), &[byte]].concat()))
+                .collect();
+            for tail in &tails {
+                assert_eq!(is_padding(tail), reference_padding(tail), "{tail:?}");
+                checked += 1;
+            }
+        }
+        assert!(checked > 500_000);
+    }
 
     #[test]
     fn every_pair_of_characters_reads_as_rust_reads_two_hex_digits() {

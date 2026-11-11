@@ -13,9 +13,9 @@ mod swf_check;
 
 use ihex_writer::*;
 use std::path::{Path, PathBuf};
-use swf_check::{judge, report, sevenzip_binary};
+use swf_check::{judge, report, run_both, sevenzip_binary};
 
-const STRICTER: &[&str] = &["data after its end-of-file record"];
+const STRICTER: &[&str] = &["data after the Intel HEX end record"];
 
 fn judge_all(binary: &Path, cases: Vec<(String, Vec<u8>)>) -> Vec<String> {
     std::thread::scope(|scope| {
@@ -265,7 +265,13 @@ fn named_cases() -> Vec<(String, Vec<u8>)> {
         cases.push((label, file(&with_three_first(std::slice::from_ref(&text)))));
         cases.push((label, file(&[sixteen(0), text])));
     }
-    for tail in ["\n\n", "\r\r", "\n\r", "\0", "garbage\n"] {
+    for tail in [
+        "\0",
+        "garbage\n",
+        "\x1A\x1A",
+        "\x1Ax",
+        " \x1A\n:00000001FF\n",
+    ] {
         let mut bytes = file(&[sixteen(0)]);
         bytes.extend(tail.as_bytes());
         cases.push(("data after the end record", bytes));
@@ -457,4 +463,35 @@ fn each_file_takes_the_archive_files_modified_time_as_7zip_gives_it() {
             .unwrap();
         assert_eq!(modified, time, "{name}");
     }
+}
+
+#[test]
+fn blank_lines_spaces_and_one_dos_end_byte_after_the_end_record_extract_as_7zip_extracts_them() {
+    let Some(binary) = sevenzip_binary() else {
+        return;
+    };
+    let tails: [&[u8]; 9] = [
+        b"\n\n\n\n",
+        b"\r\n\r\n\r\n",
+        b"  \t ",
+        b"\n  \t\n",
+        b"\x1A",
+        b"\x1A\r\n",
+        b"\r\n\x1A",
+        b"\n\r",
+        b"\r\r \x1A \t\n\n",
+    ];
+    let mut problems = Vec::new();
+    for tail in tails {
+        let mut bytes = file(&[sixteen(0), sixteen(64)]);
+        bytes.extend_from_slice(tail);
+        let outcome = run_both(&binary, &bytes, "in.hex");
+        match (&outcome.zipper, &outcome.sevenzip) {
+            (Ok(ours), Some(theirs)) if ours == theirs && !ours.is_empty() => {}
+            (zipper, sevenzip) => {
+                problems.push(format!("{tail:?}: zipper {zipper:?}, 7-Zip {sevenzip:?}"))
+            }
+        }
+    }
+    report(problems, tails.len(), tails.len());
 }

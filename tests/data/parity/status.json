@@ -167,7 +167,7 @@
     },
     "IHex": {
       "status": "native",
-      "note": "Intel HEX files read in process, one file for each run of addresses, found from the content as 7-Zip finds them. Data after the end-of-file record is refused, where 7-Zip warns.",
+      "note": "Intel HEX files read in process, one file for each run of addresses, found from the content as 7-Zip finds them. Blank lines, spaces, tabs and one 0x1A after the end-of-file record are accepted. Other data after it is refused, where 7-Zip warns.",
       "tests": [
         "tests/ihex_corpus.rs::generated_files_of_every_record_type_extract_as_7zip_extracts_them",
         "tests/ihex_corpus.rs::random_files_extract_or_are_refused_as_7zip_extracts_or_refuses_them",

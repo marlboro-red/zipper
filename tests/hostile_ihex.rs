@@ -18,7 +18,7 @@ use ihex_writer::*;
 use std::path::Path;
 use swf_check::{judge, report, sevenzip_binary};
 
-const STRICTER: &[&str] = &["data after its end-of-file record"];
+const STRICTER: &[&str] = &["data after the Intel HEX end record"];
 const MAX_RUNS: usize = 1_000_000;
 
 fn judge_all(binary: &Path, cases: Vec<(String, Vec<u8>)>) -> Vec<String> {
@@ -207,7 +207,7 @@ fn a_failure_after_the_first_run_publishes_nothing() {
 #[test]
 fn data_after_the_end_record_is_refused_and_publishes_nothing() {
     let mut bytes = file(&[record(DATA, 0, &noise(16, 3))]);
-    bytes.extend(b"\n");
+    bytes.extend(b"\n\x1Agarbage\n");
     let (work, result) = extract(&bytes, native());
     let error = result.unwrap_err();
     assert!(format!("{error:#}").contains(STRICTER[0]), "{error:#}");
@@ -262,4 +262,17 @@ fn a_firmware_volume_after_a_broken_intel_hex_start_extracts_as_7zip_extracts_it
         problems.extend(judge(&binary, &bytes, "firmware.fd", &broken, STRICTER));
     }
     report(problems, 3, 3);
+}
+
+#[test]
+fn padding_past_the_scan_limit_is_refused_and_publishes_nothing() {
+    let mut bytes = file(&[record(DATA, 0, &noise(16, 3))]);
+    bytes.extend(vec![b' '; (64 << 10) + 1]);
+    let (work, result) = extract(&bytes, native());
+    let error = result.unwrap_err();
+    assert!(format!("{error:#}").contains(STRICTER[0]), "{error:#}");
+    assert!(!work.path().join("out").exists());
+    let mut bytes = file(&[record(DATA, 0, &noise(16, 3))]);
+    bytes.extend(vec![b' '; (64 << 10) - 1]);
+    extract(&bytes, native()).1.unwrap();
 }
