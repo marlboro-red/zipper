@@ -289,6 +289,25 @@ pub fn generated() -> Vec<(String, Vec<u8>)> {
         ]
         .concat(),
     ));
+    let leaves = |count: usize| -> Vec<Vec<u8>> {
+        (0..count)
+            .map(|index| raw(format!("leaf {index}").as_bytes()))
+            .collect()
+    };
+    let folder = || guided(&unknown, &sections(&[pe(b"MZ"), raw(b"r")]), 0, &[]);
+    cases.push((
+        "folders of more than 10 leaves".to_owned(),
+        volume(vec![
+            driver(1, &leaves(11)),
+            driver(2, &leaves(101)),
+            driver(3, &[leaves(9), vec![folder(), folder()]].concat()),
+            driver(4, &[vec![folder()], leaves(10)].concat()),
+            driver(
+                5,
+                &[leaves(10), vec![ui("Ten"), section(0x13, b"\x06")]].concat(),
+            ),
+        ]),
+    ));
     cases.push(("a capsule".to_owned(), capsule(CAPSULE, &nested_files, 28)));
     cases.push((
         "a capsule with a long header".to_owned(),

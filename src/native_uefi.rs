@@ -62,7 +62,6 @@ const CRC32_NAME: &str = "CRC";
 const LZMA_HEADER: usize = 13;
 const LZMA_DICTIONARY_AT: usize = 1;
 const LZMA_SIZE_AT: usize = 5;
-const LZMA_SMALLEST_WINDOW: u64 = 1 << 12;
 const LZMA: [u8; 16] = guid(
     0xEE4E_5898,
     0x3914,
@@ -413,11 +412,12 @@ fn format_check(holds: bool, message: &'static str) -> Parsed<()> {
 
 fn reserve(decoded: &mut u64, size: u64) -> Parsed<usize> {
     *decoded = decoded.saturating_add(size);
-    format_check(
-        *decoded <= DECODED_BUDGET,
-        "UEFI compressed sections and their windows need more than 256 MiB",
-    )?;
-    Ok(size as usize)
+    match *decoded <= DECODED_BUDGET {
+        true => Ok(size as usize),
+        false => Err(Failure::Refused(
+            "UEFI compressed sections and their decoders need more than 256 MiB",
+        )),
+    }
 }
 
 struct Parser {
@@ -529,7 +529,7 @@ impl Parser {
                 },
                 _ => {
                     let mut ui = None;
-                    let children = self.sections(body, depth + 2, &mut ui, true)?;
+                    let children = self.sections(body, depth + 2, &mut ui)?;
                     Node::Container {
                         file: true,
                         name: ui.unwrap_or(name),
@@ -543,19 +543,9 @@ impl Parser {
         Ok(items)
     }
 
-    fn sections(
-        &mut self,
-        at: Bytes,
-        depth: usize,
-        ui: &mut Option<String>,
-        own_list: bool,
-    ) -> Parsed<Vec<Node>> {
-        let structure = |message: &'static str| match own_list {
-            true => Failure::Headers(message),
-            false => Failure::Format(message),
-        };
+    fn sections(&mut self, at: Bytes, depth: usize, ui: &mut Option<String>) -> Parsed<Vec<Node>> {
         let mut nodes = Vec::new();
-        match self.section_list(at, depth, ui, &mut nodes, structure) {
+        match self.section_list(at, depth, ui, &mut nodes) {
             Err(Failure::Headers(message)) => {
                 self.headers_error.get_or_insert(message);
                 Ok(nodes)
@@ -570,7 +560,6 @@ impl Parser {
         depth: usize,
         ui: &mut Option<String>,
         nodes: &mut Vec<Node>,
-        structure: impl Fn(&'static str) -> Failure,
     ) -> Parsed<()> {
         format_check(
             depth <= NESTING_LIMIT,
@@ -586,9 +575,9 @@ impl Parser {
             )?;
             let (size, kind) =
                 section_header(data[offset..offset + SECTION_HEADER].try_into().unwrap())
-                    .map_err(|error| structure(error.0))?;
+                    .map_err(|error| Failure::Headers(error.0))?;
             if size > length - offset {
-                return Err(structure("a UEFI section runs past its file"));
+                return Err(Failure::Headers("a UEFI section runs past its file"));
             }
             let section = Self::sub(at, offset, offset + size);
             let body = Self::sub(at, offset + SECTION_HEADER, offset + size);
@@ -632,7 +621,7 @@ impl Parser {
                     content[4] == NOT_COMPRESSED,
                     "a UEFI compression section is compressed, which 7-Zip does not decode",
                 )?;
-                nodes.extend(self.sections(inner, depth + 1, ui, false)?);
+                nodes.extend(self.sections(inner, depth + 1, ui)?);
             }
             GUID_DEFINED => {
                 format_check(content.len() >= GUID_HEADER, "a UEFI GUID section is cut")?;
@@ -647,7 +636,7 @@ impl Parser {
                         crc32fast::hash(self.bytes(payload)) == stored,
                         "a UEFI CRC32 section does not match its data",
                     )?;
-                    nodes.extend(self.sections(payload, depth + 1, ui, false)?);
+                    nodes.extend(self.sections(payload, depth + 1, ui)?);
                     return Ok(());
                 }
                 let payload = match header.guid {
@@ -668,7 +657,7 @@ impl Parser {
                     }
                 };
                 let mut inner_ui = None;
-                let children = self.sections(payload, depth + 1, &mut inner_ui, true)?;
+                let children = self.sections(payload, depth + 1, &mut inner_ui)?;
                 nodes.push(Node::Container {
                     file: false,
                     name: inner_ui.unwrap_or_else(|| guid_section_name(&header.guid)),
@@ -718,10 +707,10 @@ impl Parser {
             size != u64::MAX,
             "a UEFI LZMA section does not give its size",
         )?;
-        let window = u64::from(dictionary)
-            .max(LZMA_SMALLEST_WINDOW)
-            .min(size.max(1));
-        reserve(&mut self.decoded, window)?;
+        reserve(
+            &mut self.decoded,
+            crate::lzma::lzma_memory(properties, dictionary, size),
+        )?;
         let size = reserve(&mut self.decoded, size)?;
         let mut decoded = vec![0u8; size];
         let input = &data[LZMA_HEADER..];
@@ -812,12 +801,13 @@ fn render(node: Node) -> Item {
                     content: child.content,
                 };
             }
+            let width = rendered.len().saturating_sub(1).to_string().len();
             let mut index = 0;
             let children = rendered
                 .into_iter()
                 .map(|(extension, mut item)| {
                     if let Some(extension) = extension {
-                        item.name = format!("{index}.{extension}");
+                        item.name = format!("{index:0width$}.{extension}");
                         index += 1;
                     }
                     item

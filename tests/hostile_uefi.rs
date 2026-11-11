@@ -24,6 +24,7 @@ const STRICTER: &[&str] = &[
     "is also a directory",
     "inside a file",
     "nest too deeply",
+    "need more than 256 MiB",
 ];
 
 struct Random(u64);
@@ -288,6 +289,43 @@ fn every_cut_of_a_small_volume_and_capsule_is_refused_when_7zip_refuses_it() {
             volume(vec![ffs(&named(1, 5), 7, &sections(&[pe(b"MZ")])), file]),
         ));
     }
+    let past = [0x40u8, 0, 0, 0x19, b'x', b'y'].to_vec();
+    let extended = [0xFFu8, 0xFF, 0xFF, 0x19, 12, 0, 0, 0, 1, 2, 3, 4].to_vec();
+    let small = [2u8, 0, 0, 0x19].to_vec();
+    let after = volume(vec![ffs(&named(9, 5), 1, b"after")]);
+    for (label, damaged) in [
+        ("past its list", &past),
+        ("of the extended form", &extended),
+        ("shorter than its header", &small),
+    ] {
+        for (holder, section) in [
+            ("a compression section", compression(damaged, 0, None)),
+            (
+                "a CRC32 section",
+                guided(CRC32, damaged, 2, &crc32fast::hash(damaged).to_le_bytes()),
+            ),
+            (
+                "a compression section in a GUID section",
+                guided(&named(0x777, 5), &compression(damaged, 0, None), 0, &[]),
+            ),
+        ] {
+            let image = volume(vec![ffs(&named(2, 5), 7, &sections(&[section]))]);
+            cases.push((
+                format!("a section {label} inside {holder}, then a volume"),
+                [image, after.clone()].concat(),
+            ));
+        }
+    }
+    let mut bad_header = ffs(&named(3, 5), 1, b"bad");
+    bad_header[16] ^= 1;
+    let then_bad = volume(vec![
+        ffs(&named(2, 5), 7, &sections(&[compression(&past, 0, None)])),
+        bad_header,
+    ]);
+    cases.push((
+        "a damaged compression section, then a bad file header, then a volume".to_owned(),
+        [then_bad, after.clone()].concat(),
+    ));
     for at in 0..28 {
         let mut bytes = capsule.clone();
         bytes[at] ^= 0x04;
