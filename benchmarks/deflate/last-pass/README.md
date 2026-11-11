@@ -79,6 +79,17 @@ No experiment was built for these two, because the counts leave nothing to win.
 - A small entry's decode is 1 to 4% of its extraction's CPU time. The probe spends 30% of `grouped`'s 4.3 ms building tables and 13% clearing the 12 KB of table memory an entry allocates. Removing both would save about 2 ms of CPU in an extraction that takes 167.5 ms.
 - At four threads Silesia extracts in 73 to 77 ms. Its largest entry, `mozilla`, extracts alone in 64.1 ms at one thread, and it starts first. Default threads give 74 ms. The archive waits for one entry, not for a worker.
 
+A confirming run on the same quiet M2 Max on 12 November compared `main` at `e2c2843` with this pass rebased onto it, interleaved, every output checked byte for byte. The raw samples are in [`confirm-m2/`](confirm-m2/).
+
+| ZIP | Threads | Runs | `main` median [range], ms | This pass, ms | Ratio | CPU ratio |
+| --- | --- | ---: | --- | --- | ---: | ---: |
+| `large-random` | 1 | 21 | 80.0 [70.3 to 165.8] | 73.7 [68.7 to 140.9] | 0.92 | 0.96 |
+| Silesia | 1 | 11 | 222.4 [215.1 to 240.3] | 223.7 [214.5 to 335.4] | 1.01 | 1.00 |
+| Silesia | 4 | 11 | 79.2 [71.3 to 82.9] | 75.4 [70.7 to 84.8] | 0.95 | 1.00 |
+| Dependencies | default | 11 | 296.0 [280.6 to 305.4] | 289.8 [282.7 to 309.5] | 0.98 | 0.99 |
+
+Every pair of ranges overlaps, and no row is slower beyond the spread.
+
 ## Decision
 
 Kept stages 8 and 16.
