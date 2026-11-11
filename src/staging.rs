@@ -4,6 +4,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 /// What extraction does when the destination already exists.
@@ -24,8 +25,10 @@ pub enum Existing {
     /// that fails, or a new folder's mode that cannot be set, undoes the
     /// renames already made in reverse order, so the destination keeps every
     /// file, link, folder and mode it had, and the error names the path that
-    /// failed. Another program that changes the destination or the staging
-    /// folder during extraction can defeat the undo. If an undo fails, the
+    /// failed. A cancel seen during these renames undoes them the same way, as
+    /// [`crate::Control::cancel`] describes. Another program that changes the
+    /// destination or the staging folder during extraction can defeat the
+    /// undo. If an undo fails, the
     /// error names each path left changed and the staging folder, which is
     /// kept with everything not moved back. Existing directories keep their
     /// mode, and files the archive does not name are left alone.
@@ -206,12 +209,27 @@ impl Staging {
         &self.root
     }
 
-    pub(crate) fn publish(&self, directories: &[Directory]) -> Result<()> {
+    pub(crate) fn publish(
+        &self,
+        directories: &[Directory],
+        cancel: Option<&AtomicBool>,
+    ) -> Result<()> {
+        self.publish_checking(directories, || match cancel {
+            Some(flag) if flag.load(Ordering::Relaxed) => Err(crate::Cancelled.into()),
+            _ => Ok(()),
+        })
+    }
+
+    fn publish_checking(
+        &self,
+        directories: &[Directory],
+        mut check: impl FnMut() -> Result<()>,
+    ) -> Result<()> {
         if let Some(zone) = &self.zone {
             crate::ntfs_streams::mark_extracted_files(&self.root, zone)?;
         }
         if !self.merge {
-            return crate::publish(&self.root, &self.destination, directories);
+            return crate::publish(&self.root, &self.destination, directories, &mut check);
         }
         let mut steps = Vec::new();
         plan(
@@ -238,12 +256,16 @@ impl Staging {
             fs::metadata(&self.root)?.permissions().mode() & 0o777
         };
         let mut done = Vec::new();
-        #[cfg_attr(not(unix), expect(unused_mut))]
-        let mut published = self.carry_out(&steps, &mut done, |_| {});
+        let mut published = self.carry_out(&steps, &mut done, &mut check, |_| {});
         #[cfg(unix)]
         if published.is_ok() {
             published = crate::unix_modes::apply_with_default(&self.destination, &created, default)
+                .and_then(|()| check())
                 .inspect_err(|_| self.unlock_created(&steps));
+        }
+        #[cfg(not(unix))]
+        if published.is_ok() {
+            published = check();
         }
         if let Err(error) = published {
             return Err(self.undo(&done, error));
@@ -257,6 +279,7 @@ impl Staging {
         &self,
         steps: &[Step],
         done: &mut Vec<Done>,
+        check: &mut impl FnMut() -> Result<()>,
         mut after_each: impl FnMut(&Step),
     ) -> Result<()> {
         let staged = |path: &Path| self.root.join(path);
@@ -264,6 +287,7 @@ impl Staging {
         let mut aside = None;
         let mut spellings = Spellings::new();
         for (index, step) in steps.iter().enumerate() {
+            check()?;
             match step {
                 Step::Create(path) => Self::move_into_place(staged(path), placed(path), done)?,
                 Step::Replace(path) => {
@@ -969,7 +993,7 @@ mod tests {
         let mut done = Vec::new();
         let error = merge
             .staging
-            .carry_out(&merge.steps, &mut done, after_each)
+            .carry_out(&merge.steps, &mut done, &mut || Ok(()), after_each)
             .unwrap_err();
         merge.staging.undo(&done, error)
     }
@@ -1151,7 +1175,7 @@ mod tests {
         let mut done = Vec::new();
         let error = merge
             .staging
-            .carry_out(&steps, &mut done, |step| {
+            .carry_out(&steps, &mut done, &mut || Ok(()), |step| {
                 if matches!(step, Step::Create(path) if path == Path::new("e/g")) {
                     fs::rename(
                         merge.destination.join("e"),
@@ -1201,5 +1225,341 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         Staging::ensure_exact_merge(&merge.destination, folder.path()).unwrap();
         assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    mod cancel {
+        use super::*;
+        use rayon::prelude::*;
+        use std::{
+            cell::Cell,
+            collections::BTreeMap,
+            os::unix::fs::{PermissionsExt, symlink},
+        };
+
+        const MERGING: [Existing; 4] = [
+            Existing::Overwrite,
+            Existing::Skip,
+            Existing::RenameNew,
+            Existing::RenameExisting,
+        ];
+
+        #[derive(Debug, PartialEq, Eq)]
+        enum Node {
+            File(u32, Vec<u8>),
+            Directory(u32),
+            Link(PathBuf),
+        }
+
+        type Snapshot = BTreeMap<PathBuf, Node>;
+
+        fn is_staging(name: &std::ffi::OsStr) -> bool {
+            name.to_string_lossy().starts_with(".zipper-")
+        }
+
+        fn snapshot(root: &Path) -> Snapshot {
+            walkdir::WalkDir::new(root)
+                .min_depth(1)
+                .into_iter()
+                .filter_entry(|entry| !is_staging(entry.file_name()))
+                .map(|entry| entry.unwrap())
+                .map(|entry| {
+                    let metadata = entry.path().symlink_metadata().unwrap();
+                    let mode = metadata.permissions().mode() & 0o7777;
+                    let node = if metadata.file_type().is_symlink() {
+                        Node::Link(fs::read_link(entry.path()).unwrap())
+                    } else if metadata.is_dir() {
+                        Node::Directory(mode)
+                    } else {
+                        Node::File(mode, fs::read(entry.path()).unwrap())
+                    };
+                    (entry.path().strip_prefix(root).unwrap().to_owned(), node)
+                })
+                .collect()
+        }
+
+        fn staging_left(root: &Path) -> Vec<PathBuf> {
+            walkdir::WalkDir::new(root)
+                .min_depth(1)
+                .into_iter()
+                .map(|entry| entry.unwrap())
+                .filter(|entry| is_staging(entry.file_name()))
+                .map(|entry| entry.path().to_owned())
+                .collect()
+        }
+
+        fn cancel_from(call: usize, calls: &Cell<usize>) -> impl FnMut() -> Result<()> + '_ {
+            move || {
+                let this = calls.get();
+                calls.set(this + 1);
+                if this >= call {
+                    Err(crate::Cancelled.into())
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        struct Scene {
+            root: tempfile::TempDir,
+            staging: Staging,
+        }
+
+        const NEW_FOLDER_MODES: [(&str, u32); 2] = [("ro", 0o555), ("d", 0o750)];
+
+        fn new_folders() -> Vec<Directory<'static>> {
+            NEW_FOLDER_MODES
+                .iter()
+                .map(|&(name, mode)| Directory {
+                    name,
+                    mode: Some(mode),
+                    modified: None,
+                })
+                .collect()
+        }
+
+        fn scene(existing: Existing) -> Scene {
+            let root = tempfile::tempdir().unwrap();
+            fs::create_dir_all(root.path().join("outside/folder")).unwrap();
+            fs::write(root.path().join("outside/file"), b"outside").unwrap();
+            let destination = root.path().join("out");
+            if existing != Existing::Refuse {
+                fs::create_dir_all(destination.join("e")).unwrap();
+                fs::write(destination.join("e/kept"), b"kept in e").unwrap();
+                fs::write(destination.join("x"), b"old x").unwrap();
+                set_mode(&destination.join("x"), 0o440);
+                symlink("../outside/file", destination.join("l")).unwrap();
+                fs::write(destination.join("kept"), b"kept").unwrap();
+            }
+            let staging = stage(
+                &root.path().join("archive"),
+                &destination,
+                existing,
+                crate::Metadata::Restore,
+            )
+            .unwrap();
+            let staged = staging.path().to_owned();
+            fs::create_dir_all(staged.join("d")).unwrap();
+            fs::write(staged.join("d/f"), b"new f").unwrap();
+            fs::create_dir_all(staged.join("e")).unwrap();
+            fs::write(staged.join("e/g"), b"new g").unwrap();
+            symlink("../x", staged.join("e/up")).unwrap();
+            fs::write(staged.join("x"), b"new x").unwrap();
+            fs::write(staged.join("l"), b"new l").unwrap();
+            fs::create_dir(staged.join("ro")).unwrap();
+            fs::write(staged.join("ro/h"), b"new h").unwrap();
+            symlink("d/f", staged.join("al")).unwrap();
+            Scene { root, staging }
+        }
+
+        fn cancel_points_restoring_the_scene(existing: Existing) -> usize {
+            for call in 0.. {
+                let Scene { root, staging } = scene(existing);
+                let destination = root.path().join("out");
+                let before = snapshot(root.path());
+                let calls = Cell::new(0);
+                let published = staging.publish_checking(&new_folders(), cancel_from(call, &calls));
+                drop(staging);
+                let case = format!("{existing:?} cancelled at check {call}");
+                assert_eq!(staging_left(root.path()), Vec::<PathBuf>::new(), "{case}");
+                let Err(error) = published else {
+                    assert_eq!(calls.get(), call, "{case}");
+                    assert_eq!(fs::read(destination.join("d/f")).unwrap(), b"new f");
+                    set_mode(&destination.join("ro"), 0o755);
+                    return call;
+                };
+                assert!(error.is::<crate::Cancelled>(), "{case}: {error:#}");
+                assert!(
+                    !format!("{error:#}").contains("could not undo"),
+                    "{case}: {error:#}"
+                );
+                assert_eq!(calls.get(), call + 1, "{case}");
+                assert_eq!(snapshot(root.path()), before, "{case}");
+            }
+            unreachable!("publication ends after its last check")
+        }
+
+        #[test]
+        fn a_cancel_at_any_check_of_publication_leaves_the_destination_as_it_was() {
+            for (existing, renames_into_a_merge) in [
+                (Existing::Refuse, 0),
+                (Existing::Overwrite, 7),
+                (Existing::Skip, 5),
+                (Existing::RenameNew, 7),
+                (Existing::RenameExisting, 9),
+            ] {
+                assert_eq!(
+                    cancel_points_restoring_the_scene(existing),
+                    renames_into_a_merge + 1,
+                    "{existing:?} checks before each rename into a merge, then once more \
+                     after the folder modes, which is just before a new destination's one rename"
+                );
+            }
+        }
+
+        #[test]
+        fn a_cancel_whose_undo_fails_stays_cancelled_and_names_what_it_left() {
+            let Scene { root, staging } = scene(Existing::Overwrite);
+            let destination = root.path().join("out");
+            let after_folder_modes = 8;
+            let calls = Cell::new(0);
+            let published = staging.publish_checking(&new_folders(), || {
+                calls.set(calls.get() + 1);
+                if calls.get() < after_folder_modes {
+                    return Ok(());
+                }
+                set_mode(&destination, 0o555);
+                Err(crate::Cancelled.into())
+            });
+            set_mode(&destination, 0o755);
+            let error = published.unwrap_err();
+            let message = format!("{error:#}");
+            assert!(error.is::<crate::Cancelled>(), "{message}");
+            assert!(message.contains("could not undo"), "{message}");
+            assert!(
+                message.contains(&destination.join("x").display().to_string()),
+                "{message}"
+            );
+            let kept = staging.path().to_owned();
+            drop(staging);
+            assert!(kept.is_dir());
+        }
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum Kind {
+            File,
+            Directory,
+            Link,
+        }
+
+        type Tree = BTreeMap<String, Kind>;
+
+        fn forest(prefix: &str, depth: usize) -> Vec<Tree> {
+            let mut trees = vec![Tree::new()];
+            for name in ["a", "b"] {
+                let path = format!("{prefix}{name}");
+                let mut options = vec![
+                    Tree::new(),
+                    Tree::from([(path.clone(), Kind::File)]),
+                    Tree::from([(path.clone(), Kind::Link)]),
+                ];
+                let children = if depth > 1 {
+                    forest(&format!("{path}/"), depth - 1)
+                } else {
+                    vec![Tree::new()]
+                };
+                for mut child in children {
+                    child.insert(path.clone(), Kind::Directory);
+                    options.push(child);
+                }
+                trees = trees
+                    .iter()
+                    .flat_map(|tree| {
+                        options.iter().map(move |option| {
+                            let mut merged = tree.clone();
+                            merged.extend(option.clone());
+                            merged
+                        })
+                    })
+                    .collect();
+            }
+            trees
+        }
+
+        fn build(root: &Path, tree: &Tree, link: fn(&str) -> String, contents: &str) {
+            fs::create_dir_all(root).unwrap();
+            for (name, kind) in tree {
+                let path = root.join(name);
+                match kind {
+                    Kind::Directory => fs::create_dir(&path).unwrap(),
+                    Kind::File => fs::write(&path, format!("{contents} {name}")).unwrap(),
+                    Kind::Link => symlink(link(name), &path).unwrap(),
+                }
+            }
+        }
+
+        fn outside_folder(name: &str) -> String {
+            format!("{}outside", "../".repeat(name.matches('/').count() + 1))
+        }
+
+        fn sibling(name: &str) -> String {
+            if name.ends_with('a') { "b" } else { "a" }.to_owned()
+        }
+
+        fn cancel_points_restoring_the_pair(
+            destination: &Tree,
+            archive: &Tree,
+            existing: Existing,
+        ) -> usize {
+            for call in 0.. {
+                let root = tempfile::tempdir().unwrap();
+                fs::create_dir(root.path().join("outside")).unwrap();
+                fs::write(root.path().join("outside/inner"), b"outside").unwrap();
+                let out = root.path().join("out");
+                build(&out, destination, outside_folder, "old");
+                let staging = stage(
+                    &root.path().join("archive"),
+                    &out,
+                    existing,
+                    crate::Metadata::Restore,
+                )
+                .unwrap();
+                build(staging.path(), archive, sibling, "new");
+                let before = snapshot(root.path());
+                let calls = Cell::new(0);
+                let published = staging.publish_checking(&[], cancel_from(call, &calls));
+                drop(staging);
+                let case = format!("{existing:?} {destination:?} {archive:?} at check {call}");
+                assert_eq!(staging_left(root.path()), Vec::<PathBuf>::new(), "{case}");
+                let Err(error) = published else {
+                    return call;
+                };
+                assert!(
+                    !format!("{error:#}").contains("could not undo"),
+                    "{case}: {error:#}"
+                );
+                assert_eq!(snapshot(root.path()), before, "{case}: {error:#}");
+                if !error.is::<crate::Cancelled>() {
+                    return call;
+                }
+                assert_eq!(calls.get(), call + 1, "{case}");
+            }
+            unreachable!("publication ends after its last check")
+        }
+
+        #[test]
+        fn a_cancel_at_any_check_restores_every_small_tree_pair() {
+            let stride = if std::env::var_os("ZIPPER_OVERWRITE_EXHAUSTIVE").is_some() {
+                std::env::var("ZIPPER_MERGE_STRIDE")
+                    .ok()
+                    .and_then(|stride| stride.parse().ok())
+                    .unwrap_or(37)
+            } else {
+                1009
+            };
+            let trees = forest("", 2);
+            let pairs: Vec<(&Tree, &Tree)> = trees
+                .iter()
+                .flat_map(|destination| trees.iter().map(move |archive| (destination, archive)))
+                .step_by(stride)
+                .collect();
+            let cancelled: usize = pairs
+                .par_iter()
+                .map(|&(destination, archive)| {
+                    MERGING
+                        .iter()
+                        .map(|&existing| {
+                            cancel_points_restoring_the_pair(destination, archive, existing)
+                        })
+                        .sum::<usize>()
+                })
+                .sum();
+            eprintln!(
+                "{} of {} tree pairs in 4 modes: {cancelled} cancelled publications restored",
+                pairs.len(),
+                trees.len() * trees.len()
+            );
+            assert!(cancelled > pairs.len());
+        }
     }
 }

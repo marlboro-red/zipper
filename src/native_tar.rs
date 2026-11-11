@@ -1194,12 +1194,16 @@ pub(crate) fn read_part(
         extraction.tracker.finish();
         extraction.tracker.check()?;
         extraction.ensure_each_selected_path_matches()?;
-        publish(&extraction, &staging)?;
+        publish(&extraction, &staging, options.control.cancel)?;
         Ok(extraction.entries)
     })
 }
 
-fn publish(extraction: &Extraction, staging: &crate::staging::Staging) -> Result<()> {
+fn publish(
+    extraction: &Extraction,
+    staging: &crate::staging::Staging,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<()> {
     extraction.create_links()?;
     let merged = crate::later_spellings_of_same_directory(
         staging.path(),
@@ -1219,7 +1223,7 @@ fn publish(extraction: &Extraction, staging: &crate::staging::Staging) -> Result
             modified: directory.modified.and_then(Time::system_time),
         })
         .collect();
-    staging.publish(&directories)
+    staging.publish(&directories, cancel)
 }
 
 #[cfg(test)]

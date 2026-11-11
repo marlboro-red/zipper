@@ -455,7 +455,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
         )?;
         flatten(&nested, staging.path(), tree.path(), options.existing)?;
         drop(tree);
-        return staging.publish(&[]);
+        return staging.publish(&[], options.control.cancel);
     }
     ensure!(
         options

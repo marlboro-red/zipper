@@ -134,7 +134,7 @@ pub fn run_until_cancelled(
     }
     ensure!(status.success(), "7-Zip backend failed: {status}");
     if let Some(staging) = staging {
-        staging.publish(&[])?;
+        staging.publish(&[], cancel)?;
     }
     Ok(())
 }

@@ -2868,7 +2868,7 @@ pub fn read_archive(
         })
         .collect();
     tracker.check()?;
-    staging.publish(&directories)?;
+    staging.publish(&directories, options.control.cancel)?;
     Ok(entries)
 }
 

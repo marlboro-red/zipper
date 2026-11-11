@@ -350,7 +350,7 @@ fn extract_tags(
     writer.tracker.finish();
     writer.tracker.check()?;
     if let Some(staging) = &writer.staging {
-        staging.publish(&[])?;
+        staging.publish(&[], options.control.cancel)?;
     }
     Ok(writer.entries)
 }

@@ -1848,7 +1848,7 @@ pub fn read_archive_with_options(
                 modified: item.modified.map(system_time),
             })
             .collect();
-        staging.publish(&directories)?;
+        staging.publish(&directories, options.control.cancel)?;
     }
     Ok(items.into_iter().map(|item| item.entry).collect())
 }

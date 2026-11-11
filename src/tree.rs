@@ -226,7 +226,7 @@ pub(crate) fn extract(
     tracker.check()?;
     if let Some(staging) = &staging {
         tree.create_links()?;
-        tree.publish(staging)?;
+        tree.publish(staging, options.control.cancel)?;
     }
     Ok(tree.entries)
 }
@@ -747,7 +747,11 @@ impl<'a> Tree<'a> {
         Ok(())
     }
 
-    fn publish(&self, staging: &crate::staging::Staging) -> Result<()> {
+    fn publish(
+        &self,
+        staging: &crate::staging::Staging,
+        cancel: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<()> {
         let merged = crate::later_spellings_of_same_directory(
             staging.path(),
             self.directories
@@ -765,7 +769,7 @@ impl<'a> Tree<'a> {
                 modified: directory.modified,
             })
             .collect();
-        staging.publish(&directories)
+        staging.publish(&directories, cancel)
     }
 }
 

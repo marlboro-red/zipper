@@ -401,7 +401,7 @@ pub fn read_archive(
     tracker.finish();
     tracker.check()?;
     if let Some(staging) = staging {
-        staging.publish(&[])?;
+        staging.publish(&[], options.control.cancel)?;
     }
     Ok(vec![Entry {
         name,

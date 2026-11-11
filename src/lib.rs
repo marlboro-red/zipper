@@ -593,7 +593,12 @@ pub(crate) struct Directory<'a> {
     pub modified: Option<std::time::SystemTime>,
 }
 
-pub(crate) fn publish(staging: &Path, destination: &Path, directories: &[Directory]) -> Result<()> {
+pub(crate) fn publish(
+    staging: &Path,
+    destination: &Path,
+    directories: &[Directory],
+    check: impl FnOnce() -> Result<()>,
+) -> Result<()> {
     ensure!(
         std::fs::symlink_metadata(destination).is_err(),
         "destination appeared during extraction"
@@ -603,6 +608,7 @@ pub(crate) fn publish(staging: &Path, destination: &Path, directories: &[Directo
         unix_modes::apply(staging, directories)?;
         #[cfg(windows)]
         restore_directory_times(staging, directories);
+        check()?;
         std::fs::rename(staging, destination)?;
         anyhow::Ok(())
     })();
@@ -692,10 +698,14 @@ pub(crate) mod unix_modes {
         Ok(())
     }
     pub(super) fn unlock_tree_for_cleanup(directory: &Path) {
-        if let Ok(metadata) = fs::symlink_metadata(directory) {
-            let mode = metadata.permissions().mode() | 0o700;
-            let _ = fs::set_permissions(directory, Permissions::from_mode(mode));
+        let Ok(metadata) = fs::symlink_metadata(directory) else {
+            return;
+        };
+        if !metadata.is_dir() {
+            return;
         }
+        let mode = metadata.permissions().mode() | 0o700;
+        let _ = fs::set_permissions(directory, Permissions::from_mode(mode));
         for entry in fs::read_dir(directory).into_iter().flatten().flatten() {
             if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                 unlock_tree_for_cleanup(&entry.path());

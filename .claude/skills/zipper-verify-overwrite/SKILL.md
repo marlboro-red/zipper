@@ -17,6 +17,7 @@ The test checks all of them on every pair.
 | A conflict changes nothing | When an archive folder meets a file or link, or an archive file meets a folder, extraction fails and every byte, link and folder stays as it was. | A half-merged folder after an error. |
 | A merge is exact | Otherwise each archive file replaces the file or link at its path, archive folders exist, and everything else stays as it was. | Lost or stale files. |
 | No staging is left | The hidden `.zipper-` folder is gone after success and after a conflict. | Clutter in the user's folder. |
+| A cancel changes nothing | A cancel seen at any check of publication, before a rename or after the folder modes, undoes every rename made, and the call returns `Cancelled`. | A half-merged folder after the user pressed cancel. |
 
 ## What it covers
 
@@ -25,6 +26,7 @@ The test checks all of them on every pair.
 - The code covered is `crate::staging::stage`, `Staging::publish`, `plan`, `same_filesystem` and `crate::publish` in src/lib.rs, through the native ZIP reader. tar, 7z and the 7-Zip backend call the same two functions.
 - `documented_outcome` in the test is the contract written as code. It does not copy `plan`. It states what must be on disk afterwards, and the test compares the whole tree, outside folder included.
 - It runs on Unix, where the test can make symlinks.
+- `staging::tests::cancel` in `src/staging.rs` cancels at every check of publication. `a_cancel_at_any_check_of_publication_leaves_the_destination_as_it_was` uses one tree with a replaced file and link, a merged folder, new folders with modes and archive links, in every `Existing` mode. `a_cancel_at_any_check_restores_every_small_tree_pair` does the same on 130,321 pairs of trees with files, folders and links over `a` and `b` at two levels, in the four merging modes. Each compares the whole tree, modes included, with the tree before. It calls `Staging` directly, because no public hook can stop a real extraction between two renames. The gate runs every 1,009th pair, and the full check every pair.
 - On a filesystem that ignores case, as APFS does on macOS by default, `overwrite_with_names_in_another_case_matches_the_contract` runs every pair again with the archive names in capitals. The outcome must be the same, compared without case. It is skipped where case matters, as on most Linux filesystems.
 - `names_in_another_case_meet_the_same_checks_where_case_is_ignored` in `tests/overwrite.rs` covers ZIP and tar on Windows too, with a junction to a folder outside the destination.
 - It leaves out other processes that change the destination during extraction. `plan` checks the tree before the first rename, so a folder swapped for a symlink in between is followed. The [usage page](../../../docs/usage.md) asks for a private destination for that reason. It also leaves out mount points inside the destination, which need root to set up, names that differ only by Unicode normalization, and rename failures such as a full disk.
@@ -61,3 +63,7 @@ The check is proven able to fail. Each of these changes to the real code fails i
 | `plan` reads the destination with `fs::metadata`, with the archive name `LINKED` against a link named `linked` | `names_in_another_case_meet_the_same_checks_where_case_is_ignored` fails. |
 | `plan` no longer refuses an archive folder over a file | Case 148. The OS refuses a rename with "Not a directory", after earlier renames changed the destination. |
 | `plan` no longer refuses an archive file over a folder | Case 518. The OS refuses a rename with "Is a directory", after earlier renames changed the destination. |
+| `carry_out` no longer checks the cancel flag before each rename | `staging::tests::cancel` fails. |
+| `publish` returns a cancel without undoing the renames | `staging::tests::cancel` fails. |
+| The cancel check after the folder modes runs after the created folders are unlocked | A read-only new folder cannot move back, and `staging::tests::cancel` fails. |
+| `unlock_tree_for_cleanup` follows a created link | The undo changes the mode of a file the link names, and `staging::tests::cancel` fails. |

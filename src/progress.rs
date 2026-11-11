@@ -29,13 +29,18 @@ pub enum Phase {
     /// Every file is written and closed, and the counts are final. Zipper
     /// now restores folder times and modes, writes Windows zone marks, and
     /// moves the result into the destination. Links are created just before
-    /// this phase or during it. The call returns when this ends.
+    /// this phase or during it. The call returns when this ends. A cancel
+    /// still stops it, up to the point of no return that [`Control::cancel`]
+    /// names.
     Finishing,
 }
 
 /// The error an extraction returns after its cancel flag is set. Test for it
 /// with `error.is::<zipper::Cancelled>()`. A cancelled extraction changes
-/// nothing in the destination.
+/// nothing in the destination. When a cancel stops publication and an undo of
+/// a rename fails, as described for [`crate::Existing::Overwrite`], the error
+/// is still `Cancelled`, and its message names each path left changed and the
+/// staging folder kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cancelled;
 
@@ -56,8 +61,15 @@ pub struct Control<'a> {
     /// counts. Keep it fast. If it panics, the panic reaches the caller and
     /// nothing is published.
     pub progress: Option<&'a (dyn Fn(Progress) + Sync)>,
-    /// Set it from any thread to stop the extraction. Once publishing into the
-    /// destination has begun, the flag is ignored.
+    /// Set it from any thread to stop the extraction. Zipper checks it while
+    /// it decodes and while it publishes. When publishing into an existing
+    /// destination, it checks before each rename and once more after the last
+    /// rename and the folder modes. A new destination is checked once, just
+    /// before its one rename. A cancel seen while publishing undoes the renames
+    /// already made, as a failed rename does, and the call returns
+    /// [`Cancelled`]. That last check is the point of no return. A flag set
+    /// after it is ignored, and the call returns success with every file in
+    /// place.
     pub cancel: Option<&'a AtomicBool>,
 }
 
