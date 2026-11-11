@@ -51,12 +51,12 @@ fn members(archive: usize, files: usize) -> Vec<(String, Vec<u8>)> {
 fn write_archive(folder: &Path, archive: usize, members: &[(String, Vec<u8>)]) -> Archive {
     let path = folder.join(format!("part_{archive}.zip"));
     let mut writer = zip::ZipWriter::new(fs::File::create(&path).unwrap());
-    let method = if archive % 2 == 0 {
+    let method = if archive.is_multiple_of(2) {
         zip::CompressionMethod::Stored
     } else {
         zip::CompressionMethod::Deflated
     };
-    if archive % 3 == 0 {
+    if archive.is_multiple_of(3) {
         for folder in ["bin/", "lib/", "lib/python/", "share/"] {
             writer
                 .add_directory(folder, SimpleFileOptions::default().unix_permissions(0o755))
@@ -291,7 +291,7 @@ fn a_file_two_archives_share_ends_whole_from_one_of_them() {
         let actual = files_on_disk(&destination);
         let published = actual[Path::new(shared)].as_ref().unwrap();
         assert!(
-            versions.iter().any(|version| *version == published),
+            versions.contains(&published),
             "round {round} from {start:?}: {shared} mixes archives"
         );
         for (index, (archive, result)) in archives.iter().zip(&results).enumerate() {
