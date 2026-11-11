@@ -5,6 +5,8 @@ mod adc;
 mod base64;
 #[cfg(feature = "7z")]
 mod bcj2;
+#[cfg(feature = "rar")]
+mod blake2sp;
 #[cfg(any(
     feature = "7z",
     feature = "tar",
@@ -112,6 +114,8 @@ pub mod native_lzh;
 pub mod native_msi;
 #[cfg(feature = "ntfs")]
 pub mod native_ntfs;
+#[cfg(feature = "rar")]
+pub mod native_rar;
 #[cfg(feature = "rpm")]
 pub mod native_rpm;
 #[cfg(feature = "squashfs")]
@@ -140,6 +144,8 @@ mod pmd;
 mod progress;
 #[cfg(feature = "cab")]
 mod quantum;
+#[cfg(feature = "rar")]
+mod rar5_lz;
 #[cfg(any(feature = "zip-deflate", feature = "7z"))]
 mod scrub;
 #[cfg(feature = "7z")]

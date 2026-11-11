@@ -997,6 +997,11 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_arj::ReadOptions::default(),
                     )?),
+                    Reader::Rar => print(zipper::native_rar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_rar::ReadOptions::default(),
+                    )?),
                     Reader::Iso => print(zipper::native_iso::read_archive(
                         &archive,
                         None,
@@ -1179,6 +1184,11 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_arj::ReadOptions::default(),
+                    )?),
+                    Reader::Rar => report(zipper::native_rar::read_archive(
+                        &archive,
+                        None,
+                        zipper::native_rar::ReadOptions::default(),
                     )?),
                     Reader::Iso => report(zipper::native_iso::read_archive(
                         &archive,

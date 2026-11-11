@@ -1,0 +1,331 @@
+{
+ "bad": [
+  "test_read_format_rar5_arm_filter_on_window_boundary.rar",
+  "test_read_format_rar5_bad_tables.rar",
+  "test_read_format_rar5_bad_window_sz_in_mltarc_file.rar",
+  "test_read_format_rar5_block_size_is_too_small.rar",
+  "test_read_format_rar5_bytes_remaining_underflow.rar",
+  "test_read_format_rar5_decode_number_out_of_bounds_read.rar",
+  "test_read_format_rar5_different_solid_window_size.rar",
+  "test_read_format_rar5_different_window_size.rar",
+  "test_read_format_rar5_different_winsize_on_merge.rar",
+  "test_read_format_rar5_distance_overflow.rar",
+  "test_read_format_rar5_extra_field_underflow.rar",
+  "test_read_format_rar5_group_name_toolong.rar",
+  "test_read_format_rar5_invalid_dict_reference.rar",
+  "test_read_format_rar5_leftshift1.rar",
+  "test_read_format_rar5_leftshift2.rar",
+  "test_read_format_rar5_loop_bug.rar",
+  "test_read_format_rar5_nonempty_dir_stream.rar",
+  "test_read_format_rar5_owner_name_toolong.rar",
+  "test_read_format_rar5_readtables_overflow.rar",
+  "test_read_format_rar5_redir_overflow.rar",
+  "test_read_format_rar5_redir_varint_2byte.rar",
+  "test_read_format_rar5_skip_block_extra_bytes.rar",
+  "test_read_format_rar5_truncated_huff.rar",
+  "test_read_format_rar5_unpacked_size_exceeds_declared.rar",
+  "test_read_format_rar5_window_buf_and_size_desync.rar"
+ ],
+ "good": {
+  "test_read_format_rar5_arm.rar": {
+   "elf-Linux-ARMv7-ls": {
+    "mode": "0o755",
+    "mtime": 1538206123,
+    "sha256": "e68c62b49184ed764f324fb4722481d60e1bf321b722238d95247f391960605c"
+   }
+  },
+  "test_read_format_rar5_blake2.rar": {
+   "cebula.txt": {
+    "mode": "0o644",
+    "mtime": 1538290392,
+    "sha256": "1e98540238b2b13d1a22f4f4fa8e2eb6c66e24d46115ffdfafd3f3f981b212e7"
+   }
+  },
+  "test_read_format_rar5_compressed.rar": {
+   "test.bin": {
+    "mode": "0o644",
+    "mtime": 1538021259,
+    "sha256": "588870a2dade35c2650fbb7898c9a9c7f21fce7c281198604e8d0c9737f2c375"
+   }
+  },
+  "test_read_format_rar5_extra_field_version.rar": {
+   "[VER]/1/bin/2to3": {
+    "mode": "0o755",
+    "mtime": 1547164311,
+    "sha256": "b2672f8304a45f633267966c282924c955f189463ddc728657924d01832a1c0c"
+   },
+   "bin": {
+    "dir": true
+   },
+   "bin/2to3": {
+    "mode": "0o755",
+    "mtime": 1547164311,
+    "sha256": "b2672f8304a45f633267966c282924c955f189463ddc728657924d01832a1c0c"
+   }
+  },
+  "test_read_format_rar5_fileattr.rar": {
+   "dir_hidden": {
+    "dir": true
+   },
+   "dir_readonly": {
+    "dir": true
+   },
+   "dir_rohidden": {
+    "dir": true
+   },
+   "dir_system": {
+    "dir": true
+   },
+   "hidden.txt": {
+    "mode": "0o644",
+    "mtime": 1557433407,
+    "sha256": "584a84848d6ae5412ff2b65fdf339da7a2f55b7d0fcddf8469a2bca27c030252"
+   },
+   "readonly.txt": {
+    "mode": "0o444",
+    "mtime": 1557433395,
+    "sha256": "6122e0000f6b1f252db8481f26f336503e4e9e6e9206d2449ff703de08465d92"
+   },
+   "ro_hidden.txt": {
+    "mode": "0o444",
+    "mtime": 1557436932,
+    "sha256": "eb03adb08b732ed996e9062acf6ed5b3e4b0177a60f49eddf3c8bd6d45b7ff96"
+   },
+   "system.txt": {
+    "mode": "0o644",
+    "mtime": 1557433413,
+    "sha256": "6291dc33445cfe4b80f5d4903929d264291a82ad14b515ea04108a6d90e61300"
+   }
+  },
+  "test_read_format_rar5_hardlink.rar": {
+   "file.txt": {
+    "mode": "0o644",
+    "mtime": 1555533112,
+    "sha256": "a883dafc480d466ee04e0d6da986bd78eb1fdd2178d04693723da3a8f95d42f4"
+   },
+   "hardlink.txt": {
+    "mode": "0o644",
+    "mtime": 1555533112,
+    "sha256": "a883dafc480d466ee04e0d6da986bd78eb1fdd2178d04693723da3a8f95d42f4"
+   }
+  },
+  "test_read_format_rar5_main_block_extra_bytes.rar": {
+   "helloworld.txt": {
+    "sha256": "fef9ad8cf601b43f76c6320075f62267c6e5c0a526d750a70b80c919a4a0aad8"
+   }
+  },
+  "test_read_format_rar5_multiple_files.rar": {
+   "test1.bin": {
+    "mode": "0o644",
+    "mtime": 1538023271,
+    "sha256": "7d89f86f9f69d744ffff3fc043e15bf89fc3ffc134ffcbb31d164a99bb8b67b0"
+   },
+   "test2.bin": {
+    "mode": "0o644",
+    "mtime": 1538023290,
+    "sha256": "f81e6fceeeab366306b23466bf6bb3aac2875e0906dc20a8652be0696ceb15a2"
+   },
+   "test3.bin": {
+    "mode": "0o644",
+    "mtime": 1538023294,
+    "sha256": "5e621f2b6ce8fed758c3df8221f994eda55d1e432c7cc4349c34a30ec2e1c43d"
+   },
+   "test4.bin": {
+    "mode": "0o644",
+    "mtime": 1538023297,
+    "sha256": "2627f40180217252956edb9a426e8d3e344adaf89019d3bccbe04f6c3416dcdd"
+   }
+  },
+  "test_read_format_rar5_multiple_files_solid.rar": {
+   "test1.bin": {
+    "mode": "0o644",
+    "mtime": 1538023271,
+    "sha256": "7d89f86f9f69d744ffff3fc043e15bf89fc3ffc134ffcbb31d164a99bb8b67b0"
+   },
+   "test2.bin": {
+    "mode": "0o644",
+    "mtime": 1538023290,
+    "sha256": "f81e6fceeeab366306b23466bf6bb3aac2875e0906dc20a8652be0696ceb15a2"
+   },
+   "test3.bin": {
+    "mode": "0o644",
+    "mtime": 1538023294,
+    "sha256": "5e621f2b6ce8fed758c3df8221f994eda55d1e432c7cc4349c34a30ec2e1c43d"
+   },
+   "test4.bin": {
+    "mode": "0o644",
+    "mtime": 1538023297,
+    "sha256": "2627f40180217252956edb9a426e8d3e344adaf89019d3bccbe04f6c3416dcdd"
+   }
+  },
+  "test_read_format_rar5_owner.rar": {
+   "nobody.txt": {
+    "mode": "0o644",
+    "mtime": 1555533166,
+    "sha256": "5b503791b99ba19bba0a35fb9e1ba735a4ce20bd59b9bf3e1b624722d3fb4f9d"
+   },
+   "numeric.txt": {
+    "mode": "0o644",
+    "mtime": 1555534700,
+    "sha256": "c41c64ef407bf222968822b03205813b0d987ae05c06b7c1a765957ed5e02661"
+   },
+   "root.txt": {
+    "mode": "0o644",
+    "mtime": 1555533309,
+    "sha256": "a883dafc480d466ee04e0d6da986bd78eb1fdd2178d04693723da3a8f95d42f4"
+   }
+  },
+  "test_read_format_rar5_solid.rar": {
+   "test.bin": {
+    "mode": "0o644",
+    "mtime": 1538021259,
+    "sha256": "588870a2dade35c2650fbb7898c9a9c7f21fce7c281198604e8d0c9737f2c375"
+   },
+   "test1.bin": {
+    "mode": "0o644",
+    "mtime": 1538023271,
+    "sha256": "7d89f86f9f69d744ffff3fc043e15bf89fc3ffc134ffcbb31d164a99bb8b67b0"
+   },
+   "test2.bin": {
+    "mode": "0o644",
+    "mtime": 1538023290,
+    "sha256": "f81e6fceeeab366306b23466bf6bb3aac2875e0906dc20a8652be0696ceb15a2"
+   },
+   "test3.bin": {
+    "mode": "0o644",
+    "mtime": 1538023294,
+    "sha256": "5e621f2b6ce8fed758c3df8221f994eda55d1e432c7cc4349c34a30ec2e1c43d"
+   },
+   "test4.bin": {
+    "mode": "0o644",
+    "mtime": 1538023297,
+    "sha256": "2627f40180217252956edb9a426e8d3e344adaf89019d3bccbe04f6c3416dcdd"
+   },
+   "test5.bin": {
+    "mode": "0o644",
+    "mtime": 1538025308,
+    "sha256": "b0622b648b174abd9c5f3965155bbcc82c642f997ab8949add0a8632bf94e636"
+   },
+   "test6.bin": {
+    "mode": "0o644",
+    "mtime": 1538025311,
+    "sha256": "0b79ce23670b7c2e5a0d4b62f0de7b0c745522be9ed6a9ec70da6991c2f010f2"
+   }
+  },
+  "test_read_format_rar5_stored.rar": {
+   "helloworld.txt": {
+    "mode": "0o644",
+    "mtime": 1537937022,
+    "sha256": "fef9ad8cf601b43f76c6320075f62267c6e5c0a526d750a70b80c919a4a0aad8"
+   }
+  },
+  "test_read_format_rar5_stored_manyfiles.rar": {
+   "cebula.txt": {
+    "mode": "0o644",
+    "mtime": 1538290392,
+    "sha256": "1e98540238b2b13d1a22f4f4fa8e2eb6c66e24d46115ffdfafd3f3f981b212e7"
+   },
+   "make_uue.tcl": {
+    "mode": "0o755",
+    "mtime": 1538205390,
+    "sha256": "41f7ec23f892c8d4f18f72b01c8748572514475a902d818b92af048c3cb87422"
+   },
+   "test.bin": {
+    "mode": "0o644",
+    "mtime": 1538021259,
+    "sha256": "588870a2dade35c2650fbb7898c9a9c7f21fce7c281198604e8d0c9737f2c375"
+   }
+  },
+  "test_read_format_rar5_symlink.rar": {
+   "dir": {
+    "dir": true
+   },
+   "dirlink": {
+    "link": "dir"
+   },
+   "file.txt": {
+    "mode": "0o644",
+    "mtime": 1555533112,
+    "sha256": "a883dafc480d466ee04e0d6da986bd78eb1fdd2178d04693723da3a8f95d42f4"
+   },
+   "symlink.txt": {
+    "link": "file.txt"
+   }
+  },
+  "test_read_format_rar5_unicode.rar": {
+   "\u24bd\u24d0\u24e1\u24d3 \u24c1\u24d8\u24dd\u24da.txt": {
+    "mode": "0o644",
+    "mtime": 1695235404,
+    "sha256": "315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3"
+   },
+   "\ud835\udcae\ud835\udcce\ud835\udcc2\ud835\udcb7\ud835\udc5c\ud835\udcc1\ud835\udcbe\ud835\udcb8 \ud835\udc3f\ud835\udcbe\ud835\udcc3\ud835\udcc0.txt": {
+    "link": "\ud83d\udc4b\ud83c\udf0e.txt"
+   },
+   "\ud83d\udc4b\ud83c\udf0e.txt": {
+    "mode": "0o644",
+    "mtime": 1695235404,
+    "sha256": "315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3"
+   }
+  },
+  "test_read_format_rar5_win32.rar": {
+   "test.bin": {
+    "mode": "0o644",
+    "mtime": 1538456715,
+    "sha256": "588870a2dade35c2650fbb7898c9a9c7f21fce7c281198604e8d0c9737f2c375"
+   },
+   "test1.bin": {
+    "mode": "0o644",
+    "mtime": 1538456713,
+    "sha256": "7d89f86f9f69d744ffff3fc043e15bf89fc3ffc134ffcbb31d164a99bb8b67b0"
+   },
+   "test2.bin": {
+    "mode": "0o444",
+    "mtime": 1538456714,
+    "sha256": "f81e6fceeeab366306b23466bf6bb3aac2875e0906dc20a8652be0696ceb15a2"
+   },
+   "test3.bin": {
+    "mode": "0o644",
+    "mtime": 1538456714,
+    "sha256": "5e621f2b6ce8fed758c3df8221f994eda55d1e432c7cc4349c34a30ec2e1c43d"
+   },
+   "test4.bin": {
+    "mode": "0o644",
+    "mtime": 1538456714,
+    "sha256": "2627f40180217252956edb9a426e8d3e344adaf89019d3bccbe04f6c3416dcdd"
+   },
+   "test5.bin": {
+    "mode": "0o644",
+    "mtime": 1538456715,
+    "sha256": "b0622b648b174abd9c5f3965155bbcc82c642f997ab8949add0a8632bf94e636"
+   },
+   "test6.bin": {
+    "mode": "0o644",
+    "mtime": 1538456715,
+    "sha256": "0b79ce23670b7c2e5a0d4b62f0de7b0c745522be9ed6a9ec70da6991c2f010f2"
+   },
+   "testdir": {
+    "dir": true
+   }
+  },
+  "test_read_format_rar5_zip_in_rar.rar": {
+   "payload": {
+    "dir": true
+   },
+   "payload/inner.zip": {
+    "mode": "0o644",
+    "mtime": 1787302909,
+    "sha256": "98bc6fa21849be095380e778f92677d81a04dca604ba38ae1d7393dae0fb8b17"
+   },
+   "payload/real_after.txt": {
+    "mode": "0o644",
+    "mtime": 1787302909,
+    "sha256": "c70b2aeb60e6e3759a38ce3f2c8b2fb36e522d040b94967f4aa51cb5d96327b1"
+   }
+  }
+ },
+ "unsupported": [
+  "test_read_format_rar5_encrypted.rar",
+  "test_read_format_rar5_encrypted_filenames.rar",
+  "test_read_format_rar5_multiarchive.part01.rar"
+ ]
+}

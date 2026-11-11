@@ -276,7 +276,15 @@
       "status": "backend"
     },
     "Rar5": {
-      "status": "backend"
+      "status": "native",
+      "note": "RAR 5 archives read in process with Zipper's own decoder, stored, compressed and solid, with the delta, E8, E8E9 and ARM filters. Volumes, encrypted archives, junctions and file copies go to 7-Zip.",
+      "tests": [
+        "tests/rar_corpus.rs::every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
+        "tests/rar_corpus.rs::every_damaged_or_unsupported_corpus_archive_is_refused_and_leaves_nothing",
+        "tests/hostile_rar.rs::every_cut_of_every_corpus_archive_is_refused",
+        "tests/hostile_rar.rs::every_bit_flip_is_refused_or_extracts_the_original_tree",
+        "tests/hostile_rar.rs::each_hostile_layout_is_refused_and_leaves_nothing"
+      ]
     },
     "Rpm": {
       "status": "native"
