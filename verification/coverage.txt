@@ -1119,7 +1119,7 @@ item = src/quantum.rs | pub(crate) fn decoder_memory(
 
 [quantum]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 5ab11cec7ef2ed91
+fingerprint = ae8bd9e405bb82dc
 full-check = cargo xtask kani-reach quantum
 full-check = cargo kani --harness quantum::proofs::
 full-check = cargo test --release --lib quantum
