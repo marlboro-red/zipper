@@ -123,12 +123,26 @@ fn is_device_name(name: &str) -> bool {
         })
 }
 
+// EXTERNAL(NTFS $UpCase): names compare after mapping each UTF-16 unit to one unit, so a
+// letter whose capital is longer, such as `ß`, and units outside the BMP stay as they are.
+pub(crate) fn upcase(name: &str) -> String {
+    name.chars()
+        .map(|letter| {
+            let mut capital = letter.to_uppercase();
+            match (capital.next(), capital.next()) {
+                (Some(one), None) if letter.len_utf16() == 1 && one.len_utf16() == 1 => one,
+                _ => letter,
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn stream_name_problem(name: &str) -> Option<&'static str> {
     let units = name.encode_utf16().count();
     if units == 0 {
         Some("is empty")
     } else if units > MAX_STREAM_NAME {
-        Some("is longer than 255 UTF-16 units")
+        Some("is longer than the 255 UTF-16 units NTFS allows")
     } else if name
         .chars()
         .any(|c| c.is_control() || FORBIDDEN.contains(&c))

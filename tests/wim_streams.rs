@@ -113,7 +113,7 @@ fn without_the_option_a_named_stream_is_refused_and_the_error_names_the_option()
             &write(&sample()),
             ReadOptions::default(),
             destination,
-            "pass --alternate-streams on Windows",
+            "`zipper extract --alternate-streams` writes it",
         );
     }
 }
@@ -183,7 +183,7 @@ fn stream_names_that_windows_would_change_or_refuse_are_refused() {
         ("trailing.", "ends with a dot or a space"),
         ("CON", "reserved Windows device name"),
         ("lpt1.txt", "reserved Windows device name"),
-        (&"x".repeat(256), "longer than 255"),
+        (&"x".repeat(256), "longer than the 255 UTF-16 units"),
     ] {
         let images = vec![vec![with_streams("base", b"data", 0x80, &[(name, b"x")])]];
         refused(&write(&images), WITH_STREAMS, false, because);
@@ -204,6 +204,132 @@ fn two_streams_whose_names_ntfs_compares_equal_are_refused() {
         WITH_STREAMS,
         false,
         "two alternate data streams",
+    );
+}
+
+#[test]
+fn names_that_only_full_case_mapping_makes_equal_are_two_streams() {
+    let images = vec![vec![with_streams(
+        "base",
+        b"data",
+        0x80,
+        &[
+            ("stra\u{df}e", b"1"),
+            ("STRASSE", b"2"),
+            ("\u{fb00}", b"3"),
+            ("FF", b"4"),
+        ],
+    )]];
+    let root = tempfile::tempdir().unwrap();
+    let archive = archive_in(root.path(), &write(&images));
+    read_archive(&archive, None, WITH_STREAMS).unwrap();
+}
+
+fn linked(name: &str, streams: &[(&str, &[u8])]) -> Node {
+    match with_streams(name, b"shared data", 0x80, streams) {
+        Node::File {
+            name,
+            data,
+            attributes,
+            streams,
+            ..
+        } => Node::File {
+            name,
+            data,
+            attributes,
+            link_group: 9,
+            streams,
+        },
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn hard_linked_files_must_store_the_same_streams() {
+    let same = vec![vec![
+        linked("a", &[("s", b"linked stream")]),
+        linked("b", &[("s", b"linked stream")]),
+    ]];
+    let root = tempfile::tempdir().unwrap();
+    let archive = archive_in(root.path(), &write(&same));
+    read_archive(&archive, None, WITH_STREAMS).unwrap();
+    for (first, second) in [
+        (vec![], vec![("t", &b"follower only"[..])]),
+        (vec![("s", &b"one"[..])], vec![("s", &b"two"[..])]),
+        (vec![("s", &b"one"[..])], vec![("t", &b"one"[..])]),
+        (vec![("s", &b"one"[..])], vec![]),
+    ] {
+        let images = vec![vec![linked("a", &first), linked("b", &second)]];
+        refused(
+            &write(&images),
+            WITH_STREAMS,
+            false,
+            "other alternate data streams",
+        );
+    }
+}
+
+#[test]
+fn a_file_left_out_still_has_its_stream_data_checked() {
+    let images = vec![vec![
+        with_streams("kept", b"kept data", 0x80, &[]),
+        dir(
+            "out",
+            vec![with_streams(
+                "left",
+                b"left data",
+                0x80,
+                &[("s", b"left stream")],
+            )],
+        ),
+    ]];
+    let wim = wim_writer::write(
+        &images,
+        &Options {
+            file_hook: Some(Box::new(|wim, _| {
+                let at = find(wim, b"left stream");
+                wim[at] ^= 1;
+            })),
+            ..Options::default()
+        },
+    );
+    let paths = ["kept".to_owned()];
+    refused(
+        &wim,
+        ReadOptions {
+            paths: &paths,
+            ..WITH_STREAMS
+        },
+        false,
+        "SHA-1",
+    );
+    refused(
+        &wim,
+        ReadOptions {
+            strip: zipper::Strip::Prefix("out"),
+            ..WITH_STREAMS
+        },
+        false,
+        "SHA-1",
+    );
+}
+
+#[test]
+fn stream_data_counts_against_the_output_cap_without_a_destination() {
+    let images = vec![vec![with_streams(
+        "base",
+        b"x",
+        0x80,
+        &[("big", &[7u8; 100_000])],
+    )]];
+    refused(
+        &write(&images),
+        ReadOptions {
+            max_output_bytes: Some(1000),
+            ..WITH_STREAMS
+        },
+        false,
+        "--max-extracted-bytes",
     );
 }
 

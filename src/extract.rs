@@ -379,12 +379,15 @@ pub struct ExtractOptions<'a> {
     /// encrypted. The tar and single-file readers and the 7-Zip backend
     /// refuse it.
     pub password: Option<&'a [u8]>,
-    /// Write each NTFS alternate data stream a WIM stores as a named stream
-    /// `file:name` of its file, after the file's data and before the file is
-    /// published. Only the WIM reader on Windows writes them, onto a
-    /// destination whose file system keeps named streams. Elsewhere a WIM
-    /// with a named stream is refused, as it is without this option, and
-    /// every other reader refuses the option.
+    /// Write the NTFS alternate data streams of a WIM's files as named
+    /// streams `file:name`, after each file's data and before the file is
+    /// published. Only the WIM reader on Windows writes them. A destination
+    /// whose file system keeps no named streams is refused, and so is a
+    /// stream on a folder or link, a name Windows would change or refuse and
+    /// two names NTFS compares equal. With `Metadata::ContentOnly` a stored
+    /// `Zone.Identifier` stream is not written. Off Windows a WIM with a
+    /// named stream is refused, as it is without this option. Every other
+    /// reader refuses the option.
     pub alternate_streams: bool,
 }
 

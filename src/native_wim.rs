@@ -1181,6 +1181,18 @@ struct Streams<'i> {
     kept: &'i [KeptStream],
 }
 
+impl<'i> Streams<'i> {
+    fn listed(&self) -> impl Iterator<Item = (&'i str, u32)> + 'i {
+        let names = self.names;
+        self.kept.iter().map(move |stream| {
+            (
+                &names[stream.name.start as usize..stream.name.end as usize],
+                stream.blob,
+            )
+        })
+    }
+}
+
 struct NamedStream {
     name: String,
     hash: [u8; HASH],
@@ -1209,7 +1221,7 @@ impl NamedStreams {
             "WIM image has more than {MAX_STREAMS} alternate data streams or 64 MiB of their names"
         );
         ensure!(
-            self.folded.insert(name.to_uppercase()),
+            self.folded.insert(crate::ntfs_streams::upcase(&name)),
             "WIM entry {:?} has two alternate data streams named {name:?}, as NTFS compares names",
             path()
         );
@@ -1403,34 +1415,29 @@ impl<'a> Metadata<'a> {
 
 // EXTERNAL(7-Zip WimIn): an unnamed extra stream of a file or link is its data when the
 // entry itself has no hash; any other extra stream is an alternate data stream.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the stream list reads into the walk's own state"
-)]
 fn read_streams(
     meta: &mut Metadata,
     at: &mut usize,
-    count: u16,
-    directory: bool,
-    hash: &mut Option<[u8; HASH]>,
+    fields: &DentryFields,
     used: &mut Used,
-    named: Option<&mut NamedStreams>,
+    mut named: Option<&mut NamedStreams>,
     path: impl Fn() -> String,
-) -> Result<()> {
+) -> Result<Option<[u8; HASH]>> {
     let meta_len = meta.len();
-    let mut named = named;
-    for _ in 0..count {
+    let directory = fields.attributes & (DIRECTORY | REPARSE_POINT) == DIRECTORY;
+    let mut hash = (fields.hash != [0; HASH]).then_some(fields.hash);
+    for _ in 0..fields.streams {
         let record = meta.read(*at, LONGEST_STREAM_READ)?;
         let stream = stream_entry(record, *at, meta_len)?;
         let name = utf16(&record[stream.name.clone()]);
         used.claim(*at, stream.length)?;
         let has_data = stream.hash != [0; HASH];
         if stream.name.is_empty() && !directory && hash.is_none() {
-            *hash = has_data.then_some(stream.hash);
+            hash = has_data.then_some(stream.hash);
         } else if !stream.name.is_empty() {
             let Some(named) = named.as_deref_mut() else {
                 bail!(
-                    "WIM entry {:?} has the alternate data stream {:?}; pass --alternate-streams on Windows to write it as an NTFS stream, or {BACKEND_HINT}",
+                    "WIM entry {:?} has the alternate data stream {:?}; on Windows, `zipper extract --alternate-streams` writes it as an NTFS stream, or {BACKEND_HINT}",
                     path(),
                     name.unwrap_or_default()
                 );
@@ -1451,7 +1458,7 @@ fn read_streams(
         }
         *at += stream.length;
     }
-    Ok(())
+    Ok(hash)
 }
 
 fn ensure_only_files_have_streams(named: &NamedStreams, path: &str, kind: &str) -> Result<()> {
@@ -1564,10 +1571,15 @@ fn file_mode(attributes: u32) -> u32 {
     }
 }
 
+struct Leader {
+    path: String,
+    streams: Vec<(String, u32)>,
+}
+
 struct Writer<'o> {
     selection: crate::Selection<'o>,
     placement: crate::placement::Placement<'o>,
-    leaders: HashMap<(u32, u64), String>,
+    leaders: HashMap<(u32, u64), Leader>,
     decoders: Decoders,
     name_keys: std::hash::RandomState,
     alternate_streams: bool,
@@ -1613,7 +1625,15 @@ impl Writer<'_> {
         if let Some(leader) = group.and_then(|group| self.leaders.get(&group))
             && self.writes(&path)
         {
-            let leader = leader.clone();
+            let shared = leader.streams.iter();
+            ensure!(
+                streams
+                    .listed()
+                    .eq(shared.map(|(name, blob)| (name.as_str(), *blob))),
+                "WIM hard link {path:?} has other alternate data streams than {:?}, whose file it shares",
+                leader.path
+            );
+            let leader = leader.path.clone();
             return tree.hard_link(&path, &leader);
         }
         let time = modified(node.modified);
@@ -1625,9 +1645,8 @@ impl Writer<'_> {
             }
             None => tree.write_file(&path, 0, mode, time, &mut std::io::empty())?,
         };
-        for stream in streams.kept {
-            let name = &streams.names[stream.name.start as usize..stream.name.end as usize];
-            match archive.blobs.get(stream.blob as usize) {
+        for (name, blob) in streams.listed() {
+            match archive.blobs.get(blob as usize) {
                 Some(blob) => {
                     let mut reader = BlobReader::new(archive, &mut self.decoders, blob, true)?;
                     tree.stream(written.as_mut(), name, blob.size, &mut reader)?;
@@ -1639,7 +1658,11 @@ impl Writer<'_> {
         if let Some(group) = group
             && self.writes(&path)
         {
-            self.leaders.insert(group, path);
+            let streams = streams
+                .listed()
+                .map(|(name, blob)| (name.to_owned(), blob))
+                .collect();
+            self.leaders.insert(group, Leader { path, streams });
         }
         Ok(())
     }
@@ -1665,9 +1688,7 @@ impl Writer<'_> {
         read_streams(
             meta,
             &mut at,
-            root.streams,
-            true,
-            &mut None,
+            &root,
             &mut used,
             self.alternate_streams.then_some(&mut named),
             String::new,
@@ -1738,16 +1759,13 @@ impl Writer<'_> {
                 );
                 let directory = fields.attributes & DIRECTORY != 0;
                 let reparse = fields.attributes & REPARSE_POINT != 0;
-                let mut hash = (fields.hash != [0; HASH]).then_some(fields.hash);
                 at += fields.length;
                 let path = || image.path_to(parent, &name);
                 named.start_entry();
-                read_streams(
+                let hash = read_streams(
                     meta,
                     &mut at,
-                    fields.streams,
-                    directory && !reparse,
-                    &mut hash,
+                    &fields,
                     &mut used,
                     self.alternate_streams.then_some(&mut named),
                     path,
@@ -1905,8 +1923,10 @@ fn parse(tree: &mut tree::Tree, archive: &Archive, options: ReadOptions) -> Resu
 /// hard links stay linked, and symbolic links and junctions that stay
 /// inside the image are created. A split WIM and an encrypted ESD are
 /// refused. Alternate data streams are refused unless
-/// `options.alternate_streams` is set, and then written as NTFS streams on
-/// Windows and refused for extraction elsewhere.
+/// `options.alternate_streams` is set. Then their names and data are
+/// checked, and on Windows they are written as NTFS streams of their files,
+/// as [`crate::ExtractOptions::alternate_streams`] describes. Extraction of
+/// a named stream off Windows is refused.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,

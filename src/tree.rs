@@ -33,8 +33,10 @@ pub struct ReadOptions<'a> {
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation.
     pub control: crate::Control<'a>,
-    /// Write the NTFS alternate data streams a WIM stores, as
-    /// [`crate::ExtractOptions::alternate_streams`] describes. Other readers
+    /// Accept the NTFS alternate data streams a WIM stores. With a
+    /// destination they are written as
+    /// [`crate::ExtractOptions::alternate_streams`] describes. Without one,
+    /// their names and data are checked on every platform. Other readers
     /// ignore it.
     pub alternate_streams: bool,
 }
@@ -662,14 +664,15 @@ impl<'a> Tree<'a> {
         size: u64,
         data: &mut dyn Read,
     ) -> Result<()> {
-        let Some(written) = written else {
-            return Ok(());
-        };
-        let format = self.format;
         let skipped = !self.metadata.restores()
             && name.eq_ignore_ascii_case(crate::ntfs_streams::MARK_OF_THE_WEB);
-        let (Some(root), Some(file), false) = (self.root, &written.file, skipped) else {
+        let Some(written) = written.filter(|_| !skipped) else {
             return self.copy(&mut NoHoles(data), size, false, None);
+        };
+        self.budget.charge(size)?;
+        let format = self.format;
+        let (Some(root), Some(file)) = (self.root, &written.file) else {
+            return self.copy(&mut NoHoles(data), size, true, None);
         };
         let kept = match self.streams_kept {
             Some(kept) => kept,
@@ -683,7 +686,6 @@ impl<'a> Tree<'a> {
             written.placed,
             root.display()
         );
-        self.budget.charge(size)?;
         if !written.unlocked {
             written.locked_permissions = crate::ntfs_streams::make_writable(file)?;
             written.unlocked = true;
