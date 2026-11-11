@@ -65,3 +65,8 @@ The [ZIP](docs/reference/zip-reader.md), [tar](docs/reference/tar-reader.md) and
 Run `cargo xtask gate fast` before pushing, or run `cargo xtask install-hooks` once so pre-push runs it.
 CI runs `cargo xtask gate full`.
 [AGENTS.md](AGENTS.md) lists the rules for working in this repository.
+
+## Licence
+
+Zipper is licensed under either of [the Apache License, Version 2.0](LICENSE-APACHE) or [the MIT licence](LICENSE-MIT), at your option.
+Unless you state otherwise, any contribution you submit for inclusion in Zipper is licensed the same way, with no added terms.
