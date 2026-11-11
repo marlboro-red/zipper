@@ -3227,7 +3227,7 @@ item = src/bzip2_streams.rs | impl<R: BufRead> Read for ParallelBzip2<R> {
 
 [deflate-framing]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 3e8e051ea2e96489
+fingerprint = 6196c098ecc05279
 full-check = cargo xtask kani-reach deflate-framing
 full-check = cargo kani --exact --harness framing::proofs::gzip_headers_read_alike_in_any_split_and_end_where_their_fields_end
 full-check = cargo test --release --lib framing::
