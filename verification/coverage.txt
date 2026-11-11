@@ -38,7 +38,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = 6db83f47114f3f51
+fingerprint = 2d0df57055c450b0
 full-check = python3 scripts/check_model.py verification/7z-folder-workers MCWorkers.tla:workers.cfg
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
@@ -3020,7 +3020,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [7z-writer-pool]
-fingerprint = 4ae9fafe6f84b28e
+fingerprint = b02dbc1e96a8d13f
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
 full-check = python3 scripts/check_model.py verification/7z-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/native_7z.rs | const FILE_WRITERS:
@@ -3133,7 +3133,7 @@ item = src/inflate.rs | mod proofs {
 [bzip2-fields]
 speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0000000000000000
+fingerprint = 27775f2ebf949d36
 full-check = cargo xtask kani-reach bzip2-fields
 full-check = cargo kani --harness bzip2::proofs::
 item = src/bzip2.rs | pub(crate) const BLOCK_MAGIC:
@@ -3156,11 +3156,12 @@ item = src/bzip2.rs | fn block_start(
 item = src/bzip2.rs | fn used_bytes(
 item = src/bzip2.rs | fn selectors(
 item = src/bzip2.rs | fn code_lengths(
+item = src/bzip2.rs | pub(crate) struct Block {
 item = src/bzip2.rs | mod proofs {
 
 [bzip2-blocks]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0000000000000000
+fingerprint = 89330cf8c0bbf0c8
 full-check = python3 scripts/check_model.py verification/bzip2-blocks MCBlocks.tla:blocks.cfg MCBlocks.tla:no-budget.cfg
 full-check = cargo test --release --lib bzip2
 full-check = cargo test --release --test bzip2_blocks
