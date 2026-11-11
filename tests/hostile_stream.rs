@@ -375,3 +375,108 @@ fn an_lzma_dictionary_past_the_decoder_memory_limit_is_refused_by_its_size() {
         "{error}"
     );
 }
+
+fn gzip_member(data: &[u8], level: u32) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::new(level));
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn several_decode_windows_of_text() -> Vec<u8> {
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+    let mut data = Vec::with_capacity(3_000_000);
+    while data.len() < 3_000_000 {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let word = (state % 4096) as usize;
+        data.extend_from_slice(format!("entry {word} of {} ", state % 7).as_bytes());
+        if word < 40 {
+            data.extend((0..word * 50).map(|index| (state >> (index % 57)) as u8));
+        }
+    }
+    data
+}
+
+#[test]
+fn a_gzip_file_of_several_decode_windows_extracts_whole_or_leaves_nothing() {
+    let data = several_decode_windows_of_text();
+    let (first, second) = data.split_at(2_200_000);
+    for level in [0, 1, 6] {
+        let members = [gzip_member(first, level), gzip_member(second, level)].concat();
+        let (root, result) = extract("big.bin.gz", &members, ReadOptions::default());
+        result.unwrap_or_else(|error| panic!("level {level}: {error:#}"));
+        assert!(
+            fs::read(root.path().join("out/big.bin")).unwrap() == data,
+            "level {level} extracted other bytes"
+        );
+        let exact_cap = ReadOptions {
+            max_output_bytes: Some(data.len() as u64),
+            ..Default::default()
+        };
+        extract("big.bin.gz", &members, exact_cap).1.unwrap();
+        let one_short = ReadOptions {
+            max_output_bytes: Some(data.len() as u64 - 1),
+            ..Default::default()
+        };
+        assert_refused("a cap one byte short", "big.bin.gz", &members, one_short);
+        for cut in [members.len() / 3, members.len() - 9, members.len() - 1] {
+            assert_refused(
+                &format!("level {level} cut to {cut}"),
+                "big.bin.gz",
+                &members[..cut],
+                ReadOptions::default(),
+            );
+        }
+        for flipped in [members.len() / 2, members.len() - 8, members.len() - 1] {
+            let mut damaged = members.clone();
+            damaged[flipped] ^= 0x10;
+            assert_refused(
+                &format!("level {level} with byte {flipped} flipped"),
+                "big.bin.gz",
+                &damaged,
+                ReadOptions::default(),
+            );
+        }
+    }
+}
+
+#[test]
+fn a_gzip_file_cancelled_between_decode_windows_leaves_nothing_and_reports_growing_counts() {
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    let data = several_decode_windows_of_text();
+    let members = gzip_member(&data, 6);
+    let largest = AtomicU64::new(0);
+    let reports = AtomicU64::new(0);
+    let watch = |progress: zipper::Progress| {
+        let before = largest.swap(progress.bytes_done, Ordering::SeqCst);
+        assert!(before <= progress.bytes_done, "the byte count shrank");
+        reports.fetch_add(1, Ordering::SeqCst);
+    };
+    let followed = ReadOptions {
+        control: zipper::Control {
+            progress: Some(&watch),
+            cancel: None,
+        },
+        ..Default::default()
+    };
+    extract("big.bin.gz", &members, followed).1.unwrap();
+    assert_eq!(largest.load(Ordering::SeqCst), data.len() as u64);
+    assert!(reports.load(Ordering::SeqCst) >= 4, "one report a window");
+
+    let cancel = AtomicBool::new(false);
+    let stop_after_a_window = |progress: zipper::Progress| {
+        if progress.bytes_done > 0 {
+            cancel.store(true, Ordering::SeqCst);
+        }
+    };
+    let stopped = ReadOptions {
+        control: zipper::Control {
+            progress: Some(&stop_after_a_window),
+            cancel: Some(&cancel),
+        },
+        ..Default::default()
+    };
+    assert_refused("a cancelled extraction", "big.bin.gz", &members, stopped);
+}

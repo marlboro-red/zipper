@@ -4,7 +4,7 @@
 use crate::{Entry, Existing, native_tar::Compression, progress::Tracker, safe_path};
 use anyhow::{Context, Result, ensure};
 use std::{
-    io::{BufReader, BufWriter, Read, Write},
+    io::{BufRead, BufReader, BufWriter, Read, Write},
     path::Path,
 };
 
@@ -16,6 +16,44 @@ const TAR_EXTENSIONS: [&str; 10] = [
 ];
 const LZMA_PROPERTIES_LIMIT: u8 = 9 * 5 * 5;
 const COPY_BUFFER: usize = 1024 * 1024;
+const GZIP_WINDOW: usize = 512 * 1024 + crate::inflate::HISTORY;
+
+enum Decoded<'a> {
+    Copied {
+        input: Box<dyn Read + Send + 'a>,
+        buffer: Vec<u8>,
+    },
+    Held(Box<dyn BufRead + Send + 'a>),
+}
+
+impl<'a> Decoded<'a> {
+    fn copied(input: Box<dyn Read + Send + 'a>) -> Self {
+        Self::Copied {
+            input,
+            buffer: vec![0; COPY_BUFFER],
+        }
+    }
+
+    fn next(&mut self) -> std::io::Result<&[u8]> {
+        match self {
+            Self::Copied { input, buffer } => {
+                let read = input.read(buffer)?;
+                Ok(&buffer[..read])
+            }
+            Self::Held(input) => input.fill_buf(),
+        }
+    }
+
+    fn written(&mut self, count: usize) {
+        if let Self::Held(input) = self {
+            input.consume(count);
+        }
+    }
+
+    fn hands_out_large_pieces(&self) -> bool {
+        matches!(self, Self::Held(_))
+    }
+}
 
 /// Options for [`read_archive`].
 #[derive(Clone, Copy, Default)]
@@ -339,37 +377,48 @@ pub fn read_archive(
         })?,
         (None, None) => u64::MAX,
     };
-    let mut output = match (&staging, placed) {
+    let mut lzma = None;
+    let mut input = match (format, opened) {
+        (_, Some(opened)) => Decoded::copied(opened),
+        (Format::Compressed(Compression::Lzma), None) => {
+            let decoder =
+                crate::native_tar::lzma_decoder(BufReader::new(crate::volumes::open(path)?))?;
+            Decoded::copied(Box::new(crate::dictionary::DecoderMemory(
+                lzma.insert(decoder),
+            )))
+        }
+        (Format::Compressed(Compression::Gzip), None) => {
+            Decoded::Held(Box::new(crate::framing::Reader::gzip_with_window(
+                BufReader::with_capacity(COPY_BUFFER, crate::volumes::open(path)?),
+                GZIP_WINDOW,
+            )))
+        }
+        (Format::Compressed(compression), None) => {
+            Decoded::copied(crate::native_tar::decoder(path, compression)?)
+        }
+        (_, None) => anyhow::bail!("{} has no decoder", path.display()),
+    };
+    let mut output: Option<Box<dyn Write>> = match (&staging, placed) {
         (Some(staging), Some(placed)) if selection.selects(&name) => {
             let target = staging.path().join(placed);
             if let Some(folder) = target.parent() {
                 std::fs::create_dir_all(folder)?;
             }
-            Some(BufWriter::with_capacity(
-                COPY_BUFFER,
-                crate::create_new_file(&target, 0o666, 0)?,
-            ))
+            let file = crate::create_new_file(&target, 0o666, 0)?;
+            Some(match input.hands_out_large_pieces() {
+                true => Box::new(file),
+                false => Box::new(BufWriter::with_capacity(COPY_BUFFER, file)),
+            })
         }
         _ => None,
     };
-    let mut lzma = None;
-    let mut input: Box<dyn Read + Send> = match (format, opened) {
-        (_, Some(opened)) => opened,
-        (Format::Compressed(Compression::Lzma), None) => {
-            let decoder =
-                crate::native_tar::lzma_decoder(BufReader::new(crate::volumes::open(path)?))?;
-            Box::new(crate::dictionary::DecoderMemory(lzma.insert(decoder)))
-        }
-        (Format::Compressed(compression), None) => crate::native_tar::decoder(path, compression)?,
-        (_, None) => anyhow::bail!("{} has no decoder", path.display()),
-    };
-    let mut buffer = vec![0u8; COPY_BUFFER];
     let mut size = 0u64;
     let mut held = 0u64;
     loop {
-        let read = input
-            .read(&mut buffer)
+        let piece = input
+            .next()
             .with_context(|| format!("cannot decode {}", path.display()))?;
+        let read = piece.len();
         if read == 0 {
             break;
         }
@@ -381,8 +430,9 @@ pub fn read_archive(
             ))
         );
         if let Some(output) = &mut output {
-            output.write_all(&buffer[..read])?;
+            output.write_all(piece)?;
         }
+        input.written(read);
         tracker.add_bytes(std::mem::replace(&mut held, read as u64))?;
     }
     drop(input);
@@ -393,8 +443,8 @@ pub fn read_archive(
             path.display()
         );
     }
-    if let Some(output) = output {
-        drop(output.into_inner().map_err(|error| error.into_error())?);
+    if let Some(mut output) = output {
+        output.flush()?;
     }
     tracker.add_bytes(held)?;
     tracker.file_done()?;

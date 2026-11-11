@@ -394,9 +394,13 @@ fn truncated(framing: Framing) -> io::Error {
 
 impl<R: BufRead> Reader<R> {
     fn new(input: R, framing: Framing) -> Self {
+        Self::with_window(input, framing, SMALLEST_WINDOW)
+    }
+
+    fn with_window(input: R, framing: Framing, window: usize) -> Self {
         Self {
             input,
-            inflate: Inflate::new(vec![0; SMALLEST_WINDOW].into_boxed_slice()),
+            inflate: Inflate::new(vec![0; window].into_boxed_slice()),
             held: 0,
             framing,
             stage: match framing {
@@ -420,6 +424,10 @@ impl<R: BufRead> Reader<R> {
 
     pub(crate) fn gzip(input: R) -> Self {
         Self::new(input, Framing::Gzip)
+    }
+
+    pub(crate) fn gzip_with_window(input: R, window: usize) -> Self {
+        Self::with_window(input, Framing::Gzip, window)
     }
 
     pub(crate) fn get_mut(&mut self) -> &mut R {
@@ -858,6 +866,61 @@ mod tests {
         let input = reader.get_mut();
         let left = input.buffer().len() + input.get_ref().len();
         Outcome::Decoded { bytes, left }
+    }
+
+    fn ours_held_in_a_window(stream: &[u8], input_piece: usize, window: usize) -> Outcome {
+        let mut reader =
+            Reader::gzip_with_window(BufReader::with_capacity(input_piece, stream), window);
+        let mut bytes = Vec::new();
+        loop {
+            match reader.fill_buf() {
+                Ok([]) => break,
+                Ok(held) => {
+                    assert!(held.len() <= window);
+                    bytes.extend_from_slice(held);
+                    let count = held.len();
+                    reader.consume(count);
+                }
+                Err(_) => {
+                    assert!(reader.fill_buf().is_err(), "a refused stream read again");
+                    return Outcome::Refused;
+                }
+            }
+        }
+        let input = reader.get_mut();
+        let left = input.buffer().len() + input.get_ref().len();
+        Outcome::Decoded { bytes, left }
+    }
+
+    #[test]
+    fn a_gzip_reader_with_any_window_hands_out_what_flate2_reads_whole_cut_and_flipped() {
+        let windows = [SMALLEST_WINDOW, SMALLEST_WINDOW + 1, 100_000, 544 * 1024];
+        for (seed, size) in [(31, 0), (32, 900), (33, 70_000), (34, 1_300_000)] {
+            let data = sample(seed, size);
+            for level in [0, 1, 6] {
+                let one = gzip(&data, level);
+                let two = [one.clone(), gzip(&sample(seed + 50, 40_000), level)].concat();
+                let mut streams = vec![two];
+                if size <= 900 {
+                    streams.extend(damaged(&one, seed));
+                }
+                for (index, stream) in streams.iter().enumerate() {
+                    let expected = flate2_reader(stream, "gzip");
+                    for window in windows {
+                        for input_piece in [5, 1 << 12, 1 << 20] {
+                            if stream.len() > 20_000 && input_piece < 64 {
+                                continue;
+                            }
+                            assert_eq!(
+                                ours_held_in_a_window(stream, input_piece, window),
+                                expected,
+                                "seed {seed} level {level} stream {index}: a {window}-byte window and {input_piece}-byte input pieces"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     const PIECES: [(usize, usize); 4] = [(1, 1), (3, 7), (64, 4096), (1 << 16, 1 << 20)];
