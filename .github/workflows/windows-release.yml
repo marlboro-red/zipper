@@ -9,7 +9,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 60
     env:
       RUSTFLAGS: -C target-feature=+crt-static
     steps:
