@@ -19,7 +19,7 @@ mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | check-minimums | install-hooks | ci-wait | warm-cache | format-tests | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | check-minimums | install-hooks | ci-wait | warm-cache | format-tests | consumer-crate | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -48,6 +48,7 @@ fn main() -> ExitCode {
         ["warm-cache"] => warm_cache(),
         ["release-checks"] => release_checks(),
         ["format-tests"] => format_tests(),
+        ["consumer-crate"] => consumer_crate(),
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
         ["lint-commits"] => commits::lint_unpushed(&root()),
         ["verify-sync", name] => verify::record_checked_fingerprint(&root(), name),
@@ -382,6 +383,13 @@ const EXTRA_FEATURE_SUBSETS: &[&str] = &["zip,7z", ""];
 const FEATURES_WITHOUT_LIBRARY_CODE: &[&str] = &["cli"];
 const FORMAT_TESTS: &[(&str, &[&str])] = &[
     ("zip", &["zip_corpus"]),
+    ("zip-deflate", &["zip_method_features", "zstd_feature"]),
+    ("zip-encryption", &["zip_method_features"]),
+    ("zip-legacy", &["zip_method_features"]),
+    ("zip-deflate64", &["zip_method_features"]),
+    ("zip-bzip2", &["zip_method_features"]),
+    ("zip-lzma", &["zip_method_features"]),
+    ("zip-ppmd", &["zip_method_features"]),
     ("7z", &["sevenz_corpus"]),
     ("tar,zstd", &["tar_corpus"]),
     ("cpio", &["hostile_cpio"]),
@@ -412,6 +420,37 @@ const CONSUMER_ARCHIVES: &[&str] = &[
     "tests/data/7z-corpus/7zip-bzip2-long.7z",
     "tests/data/7z-corpus/manifest.tsv",
 ];
+const DEFLATE_CONSUMER_ARCHIVES: &[&str] = &[
+    "tests/data/zip-corpus/7zip-deflate.zip",
+    "tests/data/zip-corpus/manifest.tsv",
+    "tests/data/zip-corpus/python-stored.zip",
+    "tests/data/zip-corpus/manifest.tsv",
+];
+const OPTIONAL_ZIP_CRATES: &[&str] = &[
+    "aes",
+    "ctr",
+    "deflate64",
+    "hmac",
+    "pbkdf2",
+    "ppmd-rust",
+    "sha1",
+];
+const DEFLATE_SUBSET_TESTS: &[&str] = &[
+    "nextest",
+    "run",
+    "--package",
+    "zipper",
+    "--locked",
+    "--cargo-profile",
+    "ci",
+    "--no-default-features",
+    "--features",
+    "zip-deflate",
+    "--test",
+    "zip_method_features",
+    "--test",
+    "zstd_feature",
+];
 const SUBSET_TESTS: &[&str] = &[
     "nextest",
     "run",
@@ -431,6 +470,8 @@ const SUBSET_TESTS: &[&str] = &[
     "sevenz_corpus",
     "--test",
     "zstd_feature",
+    "--test",
+    "zip_method_features",
 ];
 const RELEASE_BUILD: &[&str] = &["build", "--release", "--locked", "--package", "zipper"];
 const COUNTERS_CLIPPY: &[&str] = &[
@@ -505,6 +546,12 @@ fn lint_feature_subsets() -> Result<()> {
 }
 
 fn consumer_crate() -> Result<()> {
+    run_consumer(&[], CONSUMER_ARCHIVES)?;
+    run_consumer(&["--no-default-features"], DEFLATE_CONSUMER_ARCHIVES)?;
+    ensure_deflate_build_leaves_out_optional_zip_crates()
+}
+
+fn run_consumer(features: &[&str], archives: &[&str]) -> Result<()> {
     let work = tempfile::tempdir()?;
     let destination = work
         .path()
@@ -512,19 +559,52 @@ fn consumer_crate() -> Result<()> {
         .context("temporary path is not UTF-8")?;
     cargo(
         &[
-            &[
-                "run",
-                "--locked",
-                "--quiet",
-                "--package",
-                "zipper-consumer",
-                "--",
-                destination,
-            ],
-            CONSUMER_ARCHIVES,
+            &["run", "--locked", "--quiet", "--package", "zipper-consumer"],
+            features,
+            &["--", destination],
+            archives,
         ]
         .concat(),
     )
+}
+
+fn ensure_deflate_build_leaves_out_optional_zip_crates() -> Result<()> {
+    let tree = output(
+        "cargo",
+        &[
+            "tree",
+            "--package",
+            "zipper",
+            "--edges",
+            "normal",
+            "--target",
+            "all",
+            "--locked",
+            "--prefix",
+            "none",
+            "--no-default-features",
+            "--features",
+            "zip-deflate",
+        ],
+    )?;
+    let optional = crates_named_in(&tree, OPTIONAL_ZIP_CRATES);
+    ensure!(
+        optional.is_empty(),
+        "a zip-deflate build depends on {optional:?}, which only optional ZIP methods and encryption need"
+    );
+    Ok(())
+}
+
+fn crates_named_in(tree: &str, names: &[&str]) -> Vec<String> {
+    let mut found: Vec<String> = tree
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|name| names.contains(name))
+        .map(str::to_owned)
+        .collect();
+    found.sort();
+    found.dedup();
+    found
 }
 
 fn format_tests() -> Result<()> {
@@ -564,7 +644,15 @@ fn warm_cache() -> Result<()> {
     ensure_nextest()?;
     cargo(&[CI_TESTS, &["--no-run"]].concat())?;
     cargo(&[SUBSET_TESTS, &["--no-run"]].concat())?;
+    cargo(&[DEFLATE_SUBSET_TESTS, &["--no-run"]].concat())?;
     cargo(&["build", "--locked", "--package", "zipper-consumer"])?;
+    cargo(&[
+        "build",
+        "--locked",
+        "--package",
+        "zipper-consumer",
+        "--no-default-features",
+    ])?;
     cargo(RELEASE_BUILD)?;
     cargo(COUNTERS_CLIPPY)?;
     cargo(&[COUNTERS_TEST, &["--no-run"]].concat())
@@ -590,7 +678,8 @@ fn gate(full: bool) -> Result<()> {
         ("feature subsets", || {
             lint_feature_subsets()?;
             ensure_nextest()?;
-            cargo(SUBSET_TESTS)
+            cargo(SUBSET_TESTS)?;
+            cargo(DEFLATE_SUBSET_TESTS)
         }),
         ("consumer crate", consumer_crate),
         ("windows clippy", windows_clippy),

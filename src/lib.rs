@@ -8,7 +8,7 @@ mod bcj2;
 #[cfg(any(
     feature = "7z",
     feature = "tar",
-    feature = "zip",
+    feature = "zip-bzip2",
     feature = "dmg",
     feature = "xar"
 ))]
@@ -16,7 +16,7 @@ mod bzip2;
 #[cfg(any(
     feature = "7z",
     feature = "tar",
-    feature = "zip",
+    feature = "zip-bzip2",
     feature = "dmg",
     feature = "xar"
 ))]
@@ -47,7 +47,7 @@ mod hfs;
     feature = "squashfs"
 ))]
 mod image;
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-legacy")]
 mod implode;
 mod inflate;
 #[cfg(any(feature = "tar", feature = "squashfs"))]
@@ -123,7 +123,7 @@ pub mod native_tar;
 pub mod native_wim;
 #[cfg(feature = "xar")]
 pub mod native_xar;
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 pub mod native_zip;
 mod ntfs_streams;
 #[cfg(any(feature = "flv", feature = "swf"))]
@@ -135,11 +135,11 @@ mod pmd;
 mod progress;
 #[cfg(feature = "cab")]
 mod quantum;
-#[cfg(any(feature = "zip", feature = "7z"))]
+#[cfg(any(feature = "zip-deflate", feature = "7z"))]
 mod scrub;
 #[cfg(feature = "7z")]
 mod sevenz_crypto;
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-legacy")]
 mod shrink;
 mod staging;
 mod tree;
@@ -152,11 +152,11 @@ mod xattr;
 #[cfg(feature = "wim")]
 mod xpress;
 mod xz_filters;
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 mod zip_crypto;
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 mod zip_directory;
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 mod zip_reader;
 #[cfg(feature = "zstd")]
 mod zstandard;

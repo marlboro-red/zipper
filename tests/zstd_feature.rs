@@ -5,11 +5,11 @@
 use std::path::{Path, PathBuf};
 use zipper::{Engine, ExtractOptions, NotBuilt, extract_archive};
 
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 const TEXT: &[u8] = b"hello\n";
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 const ZSTANDARD_METHOD: u16 = 93;
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 const VERSION_NEEDED_6_3: u16 = 63;
 
 #[cfg(any(feature = "tar", feature = "squashfs"))]
@@ -40,7 +40,7 @@ fn assert_refused(archive: &Path) {
     assert_eq!(std::fs::read_dir(work.path()).unwrap().count(), 0);
 }
 
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 // SPEC(RFC 8878 3.1.1): one raw block in a single-segment frame with a one-byte content size.
 fn zstd_frame(content: &[u8]) -> Vec<u8> {
     let length = u8::try_from(content.len()).unwrap();
@@ -51,7 +51,7 @@ fn zstd_frame(content: &[u8]) -> Vec<u8> {
     frame
 }
 
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 // SPEC(APPNOTE 4.3.7, 4.3.12 and 4.3.16): one local header, its central header and the end record.
 fn zstandard_zip(name: &str, content: &[u8]) -> Vec<u8> {
     let packed = zstd_frame(content);
@@ -90,7 +90,7 @@ fn zstandard_zip(name: &str, content: &[u8]) -> Vec<u8> {
     zip
 }
 
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 #[test]
 fn a_zstandard_zip_entry_reads_only_with_zstd() {
     let work = tempfile::tempdir().unwrap();

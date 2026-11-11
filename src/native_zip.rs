@@ -487,25 +487,7 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
                 "unsupported ZIP file type"
             );
         }
-        ensure!(
-            matches!(
-                method,
-                STORED
-                    | SHRINK
-                    | IMPLODE
-                    | DEFLATE
-                    | DEFLATE64
-                    | BZIP2
-                    | LZMA
-                    | ZSTANDARD
-                    | XZ
-                    | PPMD
-            ),
-            "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
-        );
-        if method == ZSTANDARD && cfg!(not(feature = "zstd")) {
-            anyhow::bail!(crate::NotBuilt("zstd".to_owned()));
-        }
+        ensure_built(method, encryption)?;
         let name = file.name().into_owned();
         let name = if directory {
             name.strip_suffix('/').unwrap_or(&name).to_owned()
@@ -558,6 +540,81 @@ fn scan(directory: &Directory, restore_times: bool) -> Result<Vec<Item>> {
     }
     assign_record_limits(&mut items, directory.archive_start, directory.start)?;
     Ok(items)
+}
+
+struct MethodFeature {
+    method: u16,
+    feature: &'static str,
+    built: bool,
+}
+
+const METHOD_FEATURES: [MethodFeature; 10] = [
+    MethodFeature {
+        method: STORED,
+        feature: "zip-deflate",
+        built: true,
+    },
+    MethodFeature {
+        method: DEFLATE,
+        feature: "zip-deflate",
+        built: true,
+    },
+    MethodFeature {
+        method: SHRINK,
+        feature: "zip-legacy",
+        built: cfg!(feature = "zip-legacy"),
+    },
+    MethodFeature {
+        method: IMPLODE,
+        feature: "zip-legacy",
+        built: cfg!(feature = "zip-legacy"),
+    },
+    MethodFeature {
+        method: DEFLATE64,
+        feature: "zip-deflate64",
+        built: cfg!(feature = "zip-deflate64"),
+    },
+    MethodFeature {
+        method: BZIP2,
+        feature: "zip-bzip2",
+        built: cfg!(feature = "zip-bzip2"),
+    },
+    MethodFeature {
+        method: LZMA,
+        feature: "zip-lzma",
+        built: cfg!(feature = "zip-lzma"),
+    },
+    MethodFeature {
+        method: XZ,
+        feature: "zip-lzma",
+        built: cfg!(feature = "zip-lzma"),
+    },
+    MethodFeature {
+        method: ZSTANDARD,
+        feature: "zstd",
+        built: cfg!(feature = "zstd"),
+    },
+    MethodFeature {
+        method: PPMD,
+        feature: "zip-ppmd",
+        built: cfg!(feature = "zip-ppmd"),
+    },
+];
+const ENCRYPTION_FEATURE: &str = "zip-encryption";
+
+fn ensure_built(method: u16, encryption: Option<Encryption>) -> Result<()> {
+    let Some(decoder) = METHOD_FEATURES.iter().find(|known| known.method == method) else {
+        anyhow::bail!(
+            "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
+        );
+    };
+    if !decoder.built {
+        anyhow::bail!(crate::NotBuilt(decoder.feature.to_owned()));
+    }
+    if encryption.is_some() && cfg!(not(feature = "zip-encryption")) {
+        anyhow::bail!(crate::NotBuilt(ENCRYPTION_FEATURE.to_owned()));
+    }
+    Ok(())
 }
 
 const STRONG_ENCRYPTION: u16 = 0x0040;
@@ -992,10 +1049,12 @@ fn decoder_need(item: &Item) -> Option<u64> {
     method_need(item.method, item.entry.size, rayon::current_num_threads())
 }
 
+#[cfg_attr(not(feature = "zip-bzip2"), allow(unused_variables))]
 fn method_need(method: u16, size: u64, decoders_at_once: usize) -> Option<u64> {
     match method {
         XZ | LZMA => Some(size),
         PPMD => Some(PPMD_LARGEST_MODEL),
+        #[cfg(feature = "zip-bzip2")]
         BZIP2 => Some(crate::bzip2_streams::memory_in_place(decoders_at_once)),
         _ => None,
     }
@@ -1005,6 +1064,7 @@ const DEFLATE64_INPUT: usize = 512 * 1024;
 const LZMA_SMALLEST_DICTIONARY: u64 = 4096;
 const ZIP_DECODER_MEMORY: u64 = 2 * 1024 * 1024 * 1024;
 
+#[cfg(feature = "zip-deflate64")]
 #[inline(never)]
 fn inflate64(
     input: &mut impl Read,
@@ -1040,6 +1100,7 @@ fn inflate64(
     Ok(())
 }
 
+#[cfg(feature = "zip-deflate64")]
 fn inflate64_chunk(
     inflater: &mut deflate64::InflaterManaged,
     mut bytes: &[u8],
@@ -1059,6 +1120,17 @@ fn inflate64_chunk(
     }
 }
 
+#[cfg(not(feature = "zip-deflate64"))]
+fn inflate64(
+    _: &mut impl Read,
+    _: u64,
+    _: &mut [u8],
+    _: impl FnMut(&[u8]) -> Result<()>,
+) -> Result<()> {
+    anyhow::bail!(crate::NotBuilt("zip-deflate64".to_owned()))
+}
+
+#[cfg(feature = "zip-lzma")]
 fn lzma_alone_header(prefix: [u8; 9], size: u64) -> Field<[u8; 13]> {
     // SPEC(APPNOTE 5.8.8): two version bytes, a two-byte properties size of 5, then the properties.
     field_check(
@@ -1074,6 +1146,7 @@ fn lzma_alone_header(prefix: [u8; 9], size: u64) -> Field<[u8; 13]> {
     Ok(header)
 }
 
+#[cfg(feature = "zip-lzma")]
 fn lzma_entry<'a>(prefix: [u8; 9], size: u64, input: impl Read + 'a) -> Result<Box<dyn Read + 'a>> {
     let header = lzma_alone_header(prefix, size)?;
     Ok(Box::new(
@@ -1082,6 +1155,7 @@ fn lzma_entry<'a>(prefix: [u8; 9], size: u64, input: impl Read + 'a) -> Result<B
     ))
 }
 
+#[cfg(feature = "zip-ppmd")]
 fn ppmd8_fields(fields: u16) -> Field<(u32, u32, u16)> {
     // SPEC(APPNOTE 5.10): order - 1 in bits 0-3, model MiB - 1 in bits 4-11, then the restore method.
     let order = u32::from(fields & 0x0f) + 1;
@@ -1095,11 +1169,13 @@ fn ppmd8_fields(fields: u16) -> Field<(u32, u32, u16)> {
     Ok((order, memory, restore))
 }
 
+#[cfg(feature = "zip-ppmd")]
 struct EndMarked<R: Read> {
     decoder: ppmd_rust::Ppmd8Decoder<crate::EndWatched<R>>,
     remaining: u64,
 }
 
+#[cfg(feature = "zip-ppmd")]
 impl<R: Read> Read for EndMarked<R> {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         if self.remaining == 0 {
@@ -1125,17 +1201,42 @@ impl<R: Read> Read for EndMarked<R> {
     }
 }
 
+#[cfg(not(any(
+    feature = "zip-legacy",
+    feature = "zip-bzip2",
+    feature = "zip-lzma",
+    feature = "zip-ppmd",
+    feature = "zstd"
+)))]
+fn method_decoder<'a>(
+    item: &Item,
+    _: &'a mut std::io::BufReader<&mut dyn Read>,
+) -> Result<Box<dyn Read + 'a>> {
+    ensure_built(item.method, None)?;
+    anyhow::bail!("ZIP compression method {} is not supported", item.method)
+}
+
+#[cfg(any(
+    feature = "zip-legacy",
+    feature = "zip-bzip2",
+    feature = "zip-lzma",
+    feature = "zip-ppmd",
+    feature = "zstd"
+))]
 fn method_decoder<'a>(
     item: &Item,
     input: &'a mut std::io::BufReader<&mut dyn Read>,
 ) -> Result<Box<dyn Read + 'a>> {
     Ok(match item.method {
+        #[cfg(feature = "zip-legacy")]
         SHRINK => Box::new(crate::shrink::Unshrink::new(input, item.entry.size)),
+        #[cfg(feature = "zip-legacy")]
         IMPLODE => Box::new(crate::implode::Explode::new(
             input,
             item.flags,
             item.entry.size,
         )),
+        #[cfg(feature = "zip-bzip2")]
         BZIP2 => Box::new(crate::bzip2_streams::ParallelBzip2::new(
             input,
             0,
@@ -1144,7 +1245,9 @@ fn method_decoder<'a>(
         )),
         #[cfg(feature = "zstd")]
         ZSTANDARD => Box::new(crate::zstandard::ZstdReader::new(input).single_frame()),
+        #[cfg(feature = "zip-lzma")]
         XZ => Box::new(crate::lzma::XzReader::new(input).single_stream()),
+        #[cfg(feature = "zip-lzma")]
         LZMA => {
             let mut prefix = [0u8; 9];
             input
@@ -1152,6 +1255,7 @@ fn method_decoder<'a>(
                 .context("truncated ZIP LZMA header")?;
             lzma_entry(prefix, item.entry.size, input)?
         }
+        #[cfg(feature = "zip-ppmd")]
         PPMD => {
             let mut header = [0u8; 2];
             input
@@ -1170,7 +1274,10 @@ fn method_decoder<'a>(
                 remaining: item.entry.size,
             })
         }
-        other => anyhow::bail!("ZIP compression method {other} is not supported"),
+        other => {
+            ensure_built(other, None)?;
+            anyhow::bail!("ZIP compression method {other} is not supported")
+        }
     })
 }
 

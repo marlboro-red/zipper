@@ -1,6 +1,9 @@
 use crate::{BadField, Field, field_check};
+#[cfg(feature = "zip-encryption")]
 use ctr::cipher::{KeyIvInit, StreamCipher};
+#[cfg(feature = "zip-encryption")]
 use hmac::{KeyInit, Mac};
+#[cfg(feature = "zip-encryption")]
 use zeroize::{Zeroize, Zeroizing};
 
 pub(crate) const AES_METHOD: u16 = 99;
@@ -126,26 +129,63 @@ impl Encryption {
 
 pub(crate) struct WrongPassword;
 
+#[cfg(not(feature = "zip-encryption"))]
+pub(crate) use without_decryption::Decryptor;
+
+#[cfg(not(feature = "zip-encryption"))]
+mod without_decryption {
+    use super::{AES_CODE, Encryption, WrongPassword};
+
+    enum Never {}
+
+    pub(crate) struct Decryptor(Never);
+
+    impl Decryptor {
+        pub(crate) fn start(
+            _: Encryption,
+            _: &[u8],
+            _: &[u8],
+            _: u8,
+        ) -> Result<Self, WrongPassword> {
+            Err(WrongPassword)
+        }
+
+        pub(crate) fn decrypt(&mut self, _: &mut [u8]) {
+            match self.0 {}
+        }
+
+        pub(crate) fn authenticates(&self, _: &[u8; AES_CODE]) -> bool {
+            match self.0 {}
+        }
+    }
+}
+
+#[cfg(feature = "zip-encryption")]
 pub(crate) struct Decryptor(Cipher);
 
+#[cfg(feature = "zip-encryption")]
 enum Cipher {
     ZipCrypto(Box<Keys>),
     Aes(Box<AesCipher>),
 }
 
+#[cfg(feature = "zip-encryption")]
 struct AesCipher {
     stream: AesStream,
     code: Code,
 }
 
+#[cfg(feature = "zip-encryption")]
 type Code = hmac::Hmac<sha1::Sha1>;
 
+#[cfg(feature = "zip-encryption")]
 enum AesStream {
     Aes128(ctr::Ctr128LE<aes::Aes128>),
     Aes192(ctr::Ctr128LE<aes::Aes192>),
     Aes256(ctr::Ctr128LE<aes::Aes256>),
 }
 
+#[cfg(feature = "zip-encryption")]
 impl AesStream {
     fn new(strength: Strength, key: &[u8]) -> Self {
         let counter = 1u128.to_le_bytes();
@@ -167,6 +207,7 @@ impl AesStream {
     }
 }
 
+#[cfg(feature = "zip-encryption")]
 impl Decryptor {
     #[inline(never)]
     pub(crate) fn start(
@@ -233,9 +274,11 @@ type KeyState = [u32; 3];
 const ZIP_CRYPTO_KEYS: KeyState = [0x1234_5678, 0x2345_6789, 0x3456_7890];
 const ZIP_CRYPTO_MULTIPLIER: u32 = 134_775_813;
 
+#[cfg(feature = "zip-encryption")]
 struct Keys(KeyState);
 
 // SPEC(APPNOTE 6.1.4): the keys start fixed and take in the password, then each plain byte.
+#[cfg(feature = "zip-encryption")]
 impl Keys {
     fn new(password: &[u8]) -> Box<Self> {
         let mut keys = Box::new(Self(ZIP_CRYPTO_KEYS));
@@ -269,6 +312,7 @@ impl Keys {
     }
 }
 
+#[cfg(feature = "zip-encryption")]
 impl Drop for Keys {
     fn drop(&mut self) {
         self.0.zeroize();
@@ -298,7 +342,7 @@ const CRC32_TABLE: Crc32Table = {
     table
 };
 
-#[cfg(test)]
+#[cfg(all(test, feature = "zip-encryption"))]
 mod tests {
     use super::*;
 

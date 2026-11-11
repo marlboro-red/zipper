@@ -23,6 +23,8 @@ The reader supports these features:
 - Names stored as UTF-8, and other names decoded as code page 437. A name that is valid UTF-8 is read as UTF-8 even without the UTF-8 flag, because Info-ZIP and `ditto` store UTF-8 names without it. A name with the UTF-8 flag that is not valid UTF-8 is rejected, because Python and 7-Zip do not decode it as CP437.
 - Entries encrypted with ZipCrypto or WinZip AES, with the password. See [Encrypted entries](#encrypted-entries).
 
+The `zip` feature builds every method and both encryption schemes. A library build can name `zip-deflate` and only the method features it needs, as [Build only the formats you read](../usage.md#build-only-the-formats-you-read) lists. The reader then refuses an archive with an entry whose method or encryption the build leaves out. The error is `zipper::NotBuilt` naming the feature to enable, such as `zip-bzip2`, `zip-encryption` or `zstd`. The check runs on every central-directory entry before anything is written, so the refusal holds even when that entry is not selected, and nothing is published. `tests/zip_method_features.rs` checks each method and both schemes with and without their feature.
+
 The reader does not support these features:
 
 - PKWARE strong encryption and encrypted central directories.

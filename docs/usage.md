@@ -164,7 +164,14 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 
 | Feature | What it builds | Crates it adds |
 | --- | --- | --- |
-| `zip` | The ZIP reader with every method it decodes, including ZipCrypto and WinZip AES, and Zstandard entries with `zstd` | `aes`, `bzip2`, `ctr`, `deflate64`, `hmac`, `pbkdf2`, `ppmd-rust`, `sha1`, `zeroize` |
+| `zip` | The ZIP reader with every method it decodes, including ZipCrypto and WinZip AES, and Zstandard entries with `zstd`. It is `zip-deflate` with every `zip-` feature below | The union of theirs |
+| `zip-deflate` | The ZIP reader for stored and Deflate entries only | None |
+| `zip-encryption` | ZipCrypto and WinZip AES entries, with `zip-deflate` | `aes`, `ctr`, `hmac`, `pbkdf2`, `sha1` |
+| `zip-legacy` | Shrink and Implode entries, with `zip-deflate` | None |
+| `zip-deflate64` | Deflate64 entries, with `zip-deflate` | `deflate64` |
+| `zip-bzip2` | BZip2 entries, with `zip-deflate` | None |
+| `zip-lzma` | LZMA and XZ entries, with `zip-deflate` | None |
+| `zip-ppmd` | PPMd entries, with `zip-deflate` | `ppmd-rust` |
 | `7z` | The 7z reader with every method it decodes, including AES-256 | `aes`, `bzip2`, `deflate64`, `ppmd-rust`, `zeroize` |
 | `tar` | The tar reader and single compressed files such as `.gz`, `.xz` and `.bz2`, and `.zst` with `zstd` | `bzip2`, `ppmd-rust` |
 | `zstd` | Zipper's own Zstandard decoder for ZIP entries, `.zst` files, tar and RPM payloads and SquashFS images | None |
@@ -193,11 +200,19 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `all-formats` | `zip`, `7z`, `tar`, `zstd` and `more-formats` | The union of theirs |
 | `cli` | The `zipper` binary, with `all-formats` | `clap` |
 
-Every build also compiles `anyhow`, `crc32fast`, `rayon`, `sha2`, `tempfile` and `walkdir`, with `libc` and `rustix` on Unix or `windows-sys` on Windows. A feature that names another, such as `rpm` naming `tar`, also builds that reader. A `zip` and `7z` build compiles 42 crates, against 62 for the default, and compiles no C. Every reader decodes Deflate, zlib and gzip with Zipper's own decoder in `src/inflate.rs`, so no build links a zlib. A build without `zstd` refuses a ZIP Zstandard entry, a `.zst` file or tar, an RPM with a zstd payload and a zstd SquashFS image with `zipper::NotBuilt` naming `zstd`, and writes nothing. `tests/zstd_feature.rs` checks the ZIP, tar and SquashFS cases.
+Every build also compiles `anyhow`, `crc32fast`, `rayon`, `sha2`, `tempfile` and `walkdir`, with `libc` and `rustix` on Unix or `windows-sys` on Windows. A feature that names another, such as `rpm` naming `tar`, also builds that reader. Counted with `cargo tree -e normal` on macOS, each package once and Zipper included, a `zip-deflate` build has 28 packages, a `zip` build and a `zip` and `7z` build 40, and the default 60. No feature compiles C. Every reader decodes Deflate, zlib and gzip with Zipper's own decoder in `src/inflate.rs`, so no build links a zlib. A build without `zstd` refuses a ZIP Zstandard entry, a `.zst` file or tar, an RPM with a zstd payload and a zstd SquashFS image with `zipper::NotBuilt` naming `zstd`, and writes nothing. `tests/zstd_feature.rs` checks the ZIP, tar and SquashFS cases.
+
+A program that reads only plain ZIP archives can build the stored and Deflate reader alone:
+
+```toml
+zipper = { git = "https://github.com/marlboro-red/zipper", default-features = false, features = ["zip-deflate"] }
+```
+
+That build leaves out the 12 packages that only encryption, Deflate64 and PPMd need. It refuses an archive with an entry it cannot decode, such as a BZip2 or an encrypted entry, with `zipper::NotBuilt` naming the feature to add, and writes nothing. Add only the method features your archives use, such as `features = ["zip-deflate", "zip-lzma"]`. The [ZIP feature size record](../benchmarks/cargo-features/zip-deflate/README.md) measures a small program at 1.42 MB with `zip-deflate` against 1.68 MB with `zip`.
 
 The `Reader` enum keeps every variant in every build. A ZIP or tar archive that the build does not read fails with `zipper::NotBuilt`, which names the format, and writes nothing. With `Engine::Native`, so does every other format whose signature Zipper knows, such as `gzip` or `7z`. `Engine::Auto` hands those to 7-Zip instead, as it does any format it recognizes but does not read. Choose `Engine::Native` to never start 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build, so a build without `zip` refuses it as `zip`.
 
-`cargo xtask gate` lints every feature on its own with `unused_crate_dependencies` denied, so no feature builds a crate its readers do not use. It runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build. It also runs `tests/consumer`, a crate that depends on Zipper with only `zip` and `7z`, and checks that it extracts a corpus ZIP and 7z in process to the trees their manifests record. `cargo xtask format-tests` runs each format's corpus or hostile tests in a build with only that format's feature, and `cargo xtask release-checks` runs it too. The `apfs`, `ext` and `squashfs` tests also wrap their images in disk images and DMGs, so they run with `disk` and `dmg`.
+`cargo xtask gate` lints every feature on its own with `unused_crate_dependencies` denied, so no feature builds a crate its readers do not use. It runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build, and `tests/zip_method_features.rs` and `tests/zstd_feature.rs` in a `zip-deflate` build. It also runs `tests/consumer`, a crate that depends on Zipper with only `zip` and `7z`, and checks that it extracts a corpus ZIP and 7z in process to the trees their manifests record. Built without its default features, the same crate depends on Zipper with only `zip-deflate` and extracts a stored and a Deflate corpus ZIP. The gate also fails when a `zip-deflate` build depends on a crate that only encryption, Deflate64 or PPMd needs. `cargo xtask format-tests` runs each format's corpus or hostile tests in a build with only that format's feature, and `cargo xtask release-checks` runs it too. The `apfs`, `ext` and `squashfs` tests also wrap their images in disk images and DMGs, so they run with `disk` and `dmg`.
 
 When `extract_archive` or a reader returns, after success, failure or a cancel, Zipper holds no handle to the destination or the archive, and every thread it started has exited. You can rename, move or delete the destination at once. The shared Rayon pool keeps its idle threads between calls, and they hold nothing from the extraction. The 7-Zip backend is waited for before it returns. `tests/handles.rs` checks this after every reader on Unix by counting open descriptors and threads, and on Windows by renaming and deleting the destination of archives that carry a zone mark.
 

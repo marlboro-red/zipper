@@ -1,7 +1,8 @@
-//! A program that depends on Zipper with only the `zip` and `7z` features.
-//! `cargo xtask gate` runs it on corpus archives and their manifests, so a
-//! subset build must compile for an outside crate and extract each archive
-//! to the tree its manifest records.
+//! A program that depends on Zipper with only the `zip` and `7z` features,
+//! or with only `zip-deflate` when built without its default features.
+//! `cargo xtask gate` runs each build on corpus archives and their manifests,
+//! so a subset build must compile for an outside crate and extract each
+//! archive to the tree its manifest records.
 
 use anyhow::{Context, Result, bail, ensure};
 use std::{

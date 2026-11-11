@@ -1,0 +1,7 @@
+build	profile	bytes	stripped_bytes
+no zipper	release	434704	342736
+zip-deflate	release	1417872	1065792
+zip	release	1684976	1283584
+no zipper	release, thin LTO, 1 codegen unit	427584	339728
+zip-deflate	release, thin LTO, 1 codegen unit	1271248	990984
+zip	release, thin LTO, 1 codegen unit	1526304	1208240

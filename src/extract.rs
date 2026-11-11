@@ -44,7 +44,7 @@ use crate::native_tar;
 use crate::native_wim;
 #[cfg(feature = "xar")]
 use crate::native_xar;
-#[cfg(feature = "zip")]
+#[cfg(feature = "zip-deflate")]
 use crate::native_zip;
 use crate::{Control, Existing, compat};
 use anyhow::{Result, bail, ensure};
@@ -541,7 +541,10 @@ pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Resu
 /// format, such as `"zip"`, `"tar"` or `"cpio"`. `Engine::Native` returns
 /// it, and writes nothing, for every format Zipper recognizes whose feature
 /// this build leaves out. `Engine::Auto` returns it for a ZIP or tar archive
-/// it cannot read, and hands every other such format to 7-Zip.
+/// it cannot read, and hands every other such format to 7-Zip. For a ZIP
+/// entry whose method or encryption this build leaves out, it names the
+/// feature to enable, such as `"zip-bzip2"`, `"zip-encryption"` or
+/// `"zstd"`, and nothing in the archive is written.
 #[derive(Debug)]
 pub struct NotBuilt(pub String);
 
@@ -619,7 +622,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
         archive.display()
     );
     match reader {
-        #[cfg(feature = "zip")]
+        #[cfg(feature = "zip-deflate")]
         Reader::Zip => {
             native_zip::read_archive_with_options(
                 archive,
