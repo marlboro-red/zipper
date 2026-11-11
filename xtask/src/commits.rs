@@ -131,6 +131,8 @@ mod tests {
                 .env("GIT_AUTHOR_EMAIL", "t@t")
                 .env("GIT_COMMITTER_NAME", "t")
                 .env("GIT_COMMITTER_EMAIL", "t@t")
+                .env("GIT_AUTHOR_DATE", "2026-11-11T00:00:00Z")
+                .env("GIT_COMMITTER_DATE", "2026-11-11T00:00:00Z")
                 .output()
                 .unwrap();
             assert!(output.status.success(), "{args:?}");
@@ -143,6 +145,10 @@ mod tests {
         let side = git(&["rev-parse", "--short=7", "HEAD"]);
         git(&["reset", "-q", "--hard", &base]);
         git(&["commit", "-q", "--allow-empty", "-m", "main"]);
+        assert!(
+            looks_like_hash(&base) && looks_like_hash(&side),
+            "{base} {side}"
+        );
         let message = format!("cite {base} and {side}\n");
         assert_eq!(unknown_hashes(&message, work.path(), "HEAD"), [side]);
     }
