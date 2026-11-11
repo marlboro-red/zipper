@@ -17,6 +17,7 @@ const TAR_EXTENSIONS: [&str; 10] = [
 const LZMA_PROPERTIES_LIMIT: u8 = 9 * 5 * 5;
 const COPY_BUFFER: usize = 1024 * 1024;
 const GZIP_WINDOW: usize = 512 * 1024 + crate::inflate::HISTORY;
+const SMALLEST_WRITE_FROM_THE_WINDOW: usize = 64 * 1024;
 
 enum Decoded<'a> {
     Copied {
@@ -50,8 +51,12 @@ impl<'a> Decoded<'a> {
         }
     }
 
-    fn hands_out_large_pieces(&self) -> bool {
-        matches!(self, Self::Held(_))
+    fn merged_into<W: Write>(&self, file: W) -> BufWriter<W> {
+        let smallest_direct_write = match self {
+            Self::Copied { .. } => COPY_BUFFER,
+            Self::Held(_) => SMALLEST_WRITE_FROM_THE_WINDOW,
+        };
+        BufWriter::with_capacity(smallest_direct_write, file)
     }
 }
 
@@ -398,17 +403,13 @@ pub fn read_archive(
         }
         (_, None) => anyhow::bail!("{} has no decoder", path.display()),
     };
-    let mut output: Option<Box<dyn Write>> = match (&staging, placed) {
+    let mut output = match (&staging, placed) {
         (Some(staging), Some(placed)) if selection.selects(&name) => {
             let target = staging.path().join(placed);
             if let Some(folder) = target.parent() {
                 std::fs::create_dir_all(folder)?;
             }
-            let file = crate::create_new_file(&target, 0o666, 0)?;
-            Some(match input.hands_out_large_pieces() {
-                true => Box::new(file),
-                false => Box::new(BufWriter::with_capacity(COPY_BUFFER, file)),
-            })
+            Some(input.merged_into(crate::create_new_file(&target, 0o666, 0)?))
         }
         _ => None,
     };
@@ -443,8 +444,8 @@ pub fn read_archive(
             path.display()
         );
     }
-    if let Some(mut output) = output {
-        output.flush()?;
+    if let Some(output) = output {
+        drop(output.into_inner().map_err(|error| error.into_error())?);
     }
     tracker.add_bytes(held)?;
     tracker.file_done()?;
@@ -463,6 +464,63 @@ pub fn read_archive(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framing::oracle::{gzip, sample};
+
+    #[derive(Default)]
+    struct CountsWrites {
+        writes: Vec<usize>,
+        bytes: Vec<u8>,
+    }
+
+    impl Write for CountsWrites {
+        fn write(&mut self, piece: &[u8]) -> std::io::Result<usize> {
+            self.writes.push(piece.len());
+            self.bytes.extend_from_slice(piece);
+            Ok(piece.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn written_from_the_gzip_window(members: &[u8]) -> CountsWrites {
+        let reader = crate::framing::Reader::gzip_with_window(members, GZIP_WINDOW);
+        let mut input = Decoded::Held(Box::new(reader));
+        let mut output = input.merged_into(CountsWrites::default());
+        loop {
+            let piece = input.next().unwrap();
+            let count = piece.len();
+            if count == 0 {
+                break;
+            }
+            output.write_all(piece).unwrap();
+            input.written(count);
+        }
+        output
+            .into_inner()
+            .map_err(|error| error.into_error())
+            .unwrap()
+    }
+
+    #[test]
+    fn many_small_gzip_members_reach_the_file_in_one_write_and_large_pieces_with_no_copy() {
+        let small: Vec<u8> = (0..20_000u32).map(|index| index as u8).collect();
+        let members: Vec<u8> = small.iter().flat_map(|&byte| gzip(&[byte], 6)).collect();
+        let written = written_from_the_gzip_window(&members);
+        assert!(written.bytes == small);
+        assert_eq!(written.writes, [small.len()]);
+
+        let large = sample(51, 3_000_000);
+        let written = written_from_the_gzip_window(&gzip(&large, 6));
+        assert!(written.bytes == large);
+        let window_room = GZIP_WINDOW - crate::inflate::HISTORY;
+        assert!(
+            written.writes.len() <= large.len() / window_room + 2,
+            "{:?}",
+            written.writes
+        );
+    }
 
     #[test]
     fn output_names_are_safe_and_never_the_archive_name_on_every_short_name() {
