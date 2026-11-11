@@ -366,6 +366,7 @@ pub(crate) struct Reader<R> {
     gathered: [u8; 8],
     have: usize,
     checks: Checks,
+    failed_after_output: Option<io::Error>,
 }
 
 #[derive(Default)]
@@ -422,6 +423,7 @@ impl<R: BufRead> Reader<R> {
             gathered: [0; 8],
             have: 0,
             checks: Checks::default(),
+            failed_after_output: None,
         }
     }
 
@@ -577,25 +579,10 @@ impl<R: BufRead> Reader<R> {
         }
         Ok(())
     }
-}
 
-impl<R: BufRead> BufRead for Reader<R> {
-    fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        while self.held == 0 && self.stage != Stage::End {
-            self.step()?;
-        }
-        Ok(self.inflate.latest(self.held))
-    }
-
-    fn consume(&mut self, amount: usize) {
-        self.held -= amount.min(self.held);
-    }
-}
-
-impl<R: BufRead> Read for Reader<R> {
-    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
-        if output.is_empty() {
-            return Ok(0);
+    fn read_one_step(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        if let Some(error) = self.failed_after_output.take() {
+            return Err(error);
         }
         while self.held == 0 && matches!(self.stage, Stage::Header | Stage::Trailer) {
             self.step()?;
@@ -613,6 +600,40 @@ impl<R: BufRead> Read for Reader<R> {
         output[..count].copy_from_slice(&held[..count]);
         self.consume(count);
         Ok(count)
+    }
+}
+
+impl<R: BufRead> BufRead for Reader<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if let Some(error) = self.failed_after_output.take() {
+            return Err(error);
+        }
+        while self.held == 0 && self.stage != Stage::End {
+            self.step()?;
+        }
+        Ok(self.inflate.latest(self.held))
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.held -= amount.min(self.held);
+    }
+}
+
+impl<R: BufRead> Read for Reader<R> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        let mut filled = 0;
+        while filled < output.len() {
+            match self.read_one_step(&mut output[filled..]) {
+                Ok(0) => break,
+                Ok(count) => filled += count,
+                Err(error) if filled == 0 => return Err(error),
+                Err(error) => {
+                    self.failed_after_output = Some(error);
+                    break;
+                }
+            }
+        }
+        Ok(filled)
     }
 }
 
@@ -1273,6 +1294,73 @@ mod tests {
 
         fn consume(&mut self, amount: usize) {
             self.at += amount;
+        }
+    }
+
+    #[test]
+    fn a_read_fills_the_callers_buffer_until_the_stream_ends() {
+        let data = sample(41, 300_000);
+        for level in [0, 6] {
+            for (framing, stream) in framed(&data, level) {
+                for (input_piece, room) in [(4096, 100_000), (1 << 20, 7), (333, 299_999)] {
+                    let input = BufReader::with_capacity(input_piece, &stream[..]);
+                    let mut reader = match framing {
+                        "raw" => Reader::raw(input),
+                        "zlib" => Reader::zlib(input),
+                        _ => Reader::gzip(input),
+                    };
+                    let mut bytes = Vec::new();
+                    let mut piece = vec![0u8; room];
+                    loop {
+                        let count = reader.read(&mut piece).unwrap();
+                        bytes.extend_from_slice(&piece[..count]);
+                        if count < room {
+                            break;
+                        }
+                    }
+                    assert_eq!(
+                        bytes.len(),
+                        data.len(),
+                        "{framing} level {level} room {room}"
+                    );
+                    assert!(bytes == data, "{framing} level {level} room {room}");
+                    assert_eq!(reader.read(&mut piece).unwrap(), 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_error_after_decoded_bytes_reaches_the_next_read_with_its_own_message() {
+        let data = sample(42, 200_000);
+        let whole = gzip(&data, 6);
+        let mut bad_crc = whole.clone();
+        let crc = bad_crc.len() - 8;
+        bad_crc[crc] ^= 1;
+        let cut = &whole[..whole.len() / 2];
+        for (stream, kind, message) in [
+            (
+                &bad_crc[..],
+                io::ErrorKind::InvalidData,
+                "gzip member fails its CRC-32 or size check",
+            ),
+            (
+                cut,
+                io::ErrorKind::UnexpectedEof,
+                "gzip stream is truncated",
+            ),
+        ] {
+            let mut reader = Reader::gzip(BufReader::with_capacity(4096, stream));
+            let mut piece = vec![0u8; 1 << 20];
+            let count = reader.read(&mut piece).unwrap();
+            assert!(count > 0 && piece[..count] == data[..count], "{message}");
+            let error = reader.read(&mut piece).unwrap_err();
+            assert_eq!((error.kind(), error.to_string().as_str()), (kind, message));
+            assert_eq!(
+                reader.read(&mut piece).unwrap_err().to_string(),
+                FAILED_BEFORE.to_string()
+            );
+            assert!(reader.fill_buf().is_err());
         }
     }
 
