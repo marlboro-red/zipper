@@ -1036,6 +1036,16 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(head[..16] == CAPSULE || is_volume_at(&head, 0))
 }
 
+pub(crate) fn backend_type(path: &Path) -> Result<&'static str> {
+    let mut head = [0u8; 16];
+    let read = crate::volumes::open(path)?.read_at(&mut head, 0)?;
+    Ok(if read == head.len() && head == CAPSULE {
+        "-tuefic"
+    } else {
+        "-tuefif"
+    })
+}
+
 /// Returns whether a firmware volume header lies in the first MiB of the
 /// file, as in firmware images that start with code before their volume.
 pub fn sniff_later_volume(path: &Path) -> Result<bool> {

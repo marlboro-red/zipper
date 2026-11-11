@@ -1,8 +1,8 @@
 //! In-process extraction of Windows Imaging files: WIM with stored and XPRESS
 //! resources and XPRESS solid resources. LZX and LZMS are refused. See
 //! `docs/reference/wim-reader.md` for what it accepts and restores.
+use crate::tree;
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check, xpress};
 use anyhow::{Context, Result, bail, ensure};
@@ -15,6 +15,7 @@ use std::{
     time::SystemTime,
 };
 
+const NOT_READ: &str = "Zipper does not read it, and it hands no WIM to 7-Zip";
 const SIGNATURE: &[u8; 8] = b"MSWIM\0\0\0";
 const HEADER: usize = 0xD0;
 const VERSION: u32 = 0x10D00;
@@ -169,12 +170,12 @@ fn header(bytes: &[u8; HEADER]) -> Field<Header> {
     field_check(&bytes[..8] == SIGNATURE, "not a WIM file")?;
     field_check(
         u32_at(bytes, 8) == HEADER as u32,
-        "WIM header is not 208 bytes, as WIM 1.13 and ESD write it; pass --zip-engine backend to read it with 7-Zip",
+        "WIM header is not 208 bytes, as WIM 1.13 and ESD write it; Zipper does not read it, and it hands no WIM to 7-Zip",
     )?;
     let version = u32_at(bytes, 12);
     field_check(
         version == VERSION || version == SOLID_VERSION,
-        "WIM version is neither 1.13 nor the ESD version 0.14; pass --zip-engine backend to read it with 7-Zip",
+        "WIM version is neither 1.13 nor the ESD version 0.14; Zipper does not read it, and it hands no WIM to 7-Zip",
     )?;
     let flags = u32_at(bytes, 16);
     let method = if flags & COMPRESSED == 0 {
@@ -296,7 +297,7 @@ fn solid_header(bytes: &[u8; SOLID_HEADER], packed: u64) -> Field<SolidHeader> {
     let chunks = size.div_ceil(1 << chunk_bits);
     field_check(
         chunks <= MAX_SOLID_CHUNKS,
-        "WIM solid resource has more than 2^20 chunks; pass --zip-engine backend to read it with 7-Zip",
+        "WIM solid resource has more than 2^20 chunks, more than Zipper reads",
     )?;
     field_check(
         SOLID_HEADER as u64 + 4 * chunks <= packed,
@@ -509,23 +510,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(magic == SIGNATURE)
 }
 
-/// Returns whether the default engine sends this WIM to 7-Zip: a part of a
-/// split WIM, or a header from a WIM version before 1.13.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    let file = crate::volumes::open(path)?;
-    let mut bytes = [0u8; HEADER];
-    if read_exact_at(&file, &mut bytes, 0).is_err() {
-        return Ok(false);
-    }
-    Ok(match header(&bytes) {
-        Ok(header) => header.parts != 1,
-        Err(_) => {
-            let version = u32_at(&bytes, 12);
-            u32_at(&bytes, 8) != HEADER as u32 || version < VERSION && version != SOLID_VERSION
-        }
-    })
-}
-
 fn read_exact_at(
     file: &ArchiveFile,
     mut buffer: &mut [u8],
@@ -637,7 +621,7 @@ impl Archive {
         let header = header(&bytes)?;
         ensure!(
             header.parts == 1,
-            "WIM file is part {} of a split WIM of {} parts, which Zipper does not join; {BACKEND_HINT}",
+            "WIM file is part {} of a split WIM of {} parts, which Zipper does not join",
             header.part,
             header.parts
         );
@@ -665,7 +649,7 @@ impl Archive {
         archive.xml = archive.read_header_resource(&header.xml, MAX_XML, "XML data")?;
         ensure!(
             !xml_says_encrypted(&archive.xml),
-            "WIM file is an encrypted ESD; {BACKEND_HINT}"
+            "WIM file is an encrypted ESD; {NOT_READ}"
         );
         Ok(archive)
     }
@@ -738,7 +722,7 @@ impl Archive {
             let resource = entry.resource;
             ensure!(
                 entry.part == 1,
-                "WIM blob {index} lies in part {} of a split WIM; {BACKEND_HINT}",
+                "WIM blob {index} lies in part {} of a split WIM, which Zipper does not join",
                 entry.part
             );
             if resource.flags & RESOURCE_SOLID == 0 {
@@ -1060,7 +1044,7 @@ impl<'a> BlobReader<'a> {
         let (at, packed, method, chunk_bits, size) = self.chunk_span(index)?;
         ensure!(
             method.chunk_bits().contains(&chunk_bits),
-            "WIM {method:?} chunks of 2^{chunk_bits} bytes are outside what Zipper decodes; {BACKEND_HINT}"
+            "WIM {method:?} chunks of 2^{chunk_bits} bytes are outside what Zipper decodes; {NOT_READ}"
         );
         let stored = packed == size;
         ensure!(
@@ -1425,7 +1409,7 @@ fn read_streams(
         } else if !stream.name.is_empty() {
             let Some(named) = named.as_deref_mut() else {
                 bail!(
-                    "WIM entry {:?} has the alternate data stream {:?}; on Windows, `zipper extract --alternate-streams` writes it as an NTFS stream, or {BACKEND_HINT}",
+                    "WIM entry {:?} has the alternate data stream {:?}; on Windows, `zipper extract --alternate-streams` writes it as an NTFS stream, and otherwise {NOT_READ}",
                     path(),
                     name.unwrap_or_default()
                 );
@@ -1440,7 +1424,7 @@ fn read_streams(
         } else {
             ensure!(
                 !has_data,
-                "WIM entry {:?} has a second unnamed stream with data; {BACKEND_HINT}",
+                "WIM entry {:?} has a second unnamed stream with data; {NOT_READ}",
                 path()
             );
         }
@@ -1453,7 +1437,7 @@ fn ensure_only_files_have_streams(named: &NamedStreams, path: &str, kind: &str) 
     match named.of_entry.first() {
         None => Ok(()),
         Some(stream) => bail!(
-            "WIM {kind} {path:?} has the alternate data stream {:?}, and Zipper writes them only on files; {BACKEND_HINT}",
+            "WIM {kind} {path:?} has the alternate data stream {:?}, and Zipper writes them only on files; {NOT_READ}",
             stream.name
         ),
     }
@@ -1484,7 +1468,7 @@ fn directory_start(meta: &mut Metadata) -> Result<usize> {
 fn symlink_target(tag: u32, data: &[u8], path: &str, depth: usize) -> Result<String> {
     let unsupported = || {
         anyhow::anyhow!(
-            "WIM entry {path:?} is a reparse point of tag {tag:#010x}, which Zipper does not restore; {BACKEND_HINT}"
+            "WIM entry {path:?} is a reparse point of tag {tag:#010x}, which Zipper does not restore; {NOT_READ}"
         )
     };
     let damaged = || anyhow::anyhow!("WIM link {path:?} has damaged reparse data");
@@ -1668,7 +1652,7 @@ impl Writer<'_> {
         let (root, _) = read_dentry(meta, start)?.context("WIM image has no root directory")?;
         ensure!(
             root.name.is_empty() && root.attributes & (DIRECTORY | REPARSE_POINT) == DIRECTORY,
-            "WIM image root is not one folder with an empty name; {BACKEND_HINT}"
+            "WIM image root is not one folder with an empty name; {NOT_READ}"
         );
         used.claim(start, root.length)?;
         let mut at = start + root.length;
@@ -1684,7 +1668,7 @@ impl Writer<'_> {
         ensure_only_files_have_streams(&named, "", "folder")?;
         ensure!(
             read_dentry(meta, at)?.is_none(),
-            "WIM image root list holds more than the root folder; {BACKEND_HINT}"
+            "WIM image root list holds more than the root folder; {NOT_READ}"
         );
         used.claim(at, TERMINATOR)?;
         if let Some(folder) = prefix.strip_suffix('/') {
@@ -1717,7 +1701,7 @@ impl Writer<'_> {
                     tree::MAX_ENTRIES
                 );
                 let name = name
-                    .with_context(|| format!("WIM name is not valid UTF-16; {BACKEND_HINT}"))?
+                    .with_context(|| format!("WIM name is not valid UTF-16; {NOT_READ}"))?
                     .replace('/', "_");
                 ensure!(
                     !name.is_empty(),
@@ -1764,7 +1748,7 @@ impl Writer<'_> {
                 } else if !named.of_entry.is_empty() {
                     ensure!(
                         crate::ntfs_streams::WRITES_STREAMS || !tree.writes_to_disk(),
-                        "WIM entry {:?} has alternate data streams, and Zipper writes NTFS streams only on Windows; {BACKEND_HINT}",
+                        "WIM entry {:?} has alternate data streams, and Zipper writes NTFS streams only on Windows; {NOT_READ}",
                         path()
                     );
                 }

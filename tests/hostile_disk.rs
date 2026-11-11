@@ -431,7 +431,7 @@ fn reader(bytes: &[u8], name: &str, engine: Engine) -> Reader {
 }
 
 #[test]
-fn file_systems_zipper_does_not_read_go_to_7zip_and_refused_ones_stay_in_process() {
+fn file_systems_zipper_does_not_read_are_refused_in_process_and_kept_from_7zip() {
     let ntfs = disk_writer::mbr(&[(0x07, 64, &ntfs_boot())], 0);
     refused(
         "lone NTFS partition",
@@ -470,10 +470,7 @@ fn file_systems_zipper_does_not_read_go_to_7zip_and_refused_ones_stay_in_process
         0,
     );
     refused("partition name with a slash", &named, "plain file name");
-    assert_eq!(
-        reader(&named, "disk.img", Engine::Auto),
-        Reader::Backend { format: None }
-    );
+    assert_eq!(reader(&named, "disk.img", Engine::Auto), Reader::Disk);
     let volume = payload();
     let mut table = disk_writer::gpt(&[(disk_writer::BASIC_DATA, "data", 40, &volume)], 0);
     assert_eq!(extracted(&table), sample_tree());
@@ -508,10 +505,7 @@ fn file_systems_zipper_does_not_read_go_to_7zip_and_refused_ones_stay_in_process
         &zeros,
         "no partition table or file system",
     );
-    assert_eq!(
-        reader(&zeros, "disk.img", Engine::Auto),
-        Reader::Backend { format: None }
-    );
+    assert_eq!(reader(&zeros, "disk.img", Engine::Auto), Reader::Disk);
     assert_eq!(reader(&fat.bytes, "disk.img", Engine::Auto), Reader::Disk);
     refused(
         "raw FAT volume",
@@ -533,7 +527,7 @@ fn vhd_images_are_checked_before_their_disk_is_read() {
     refused("differencing VHD", &differencing, "differencing VHD");
     assert_eq!(
         reader(&differencing, "disk.vhd", Engine::Auto),
-        Reader::Backend { format: None }
+        Reader::Disk
     );
     assert_eq!(
         reader(&differencing, "disk.vhd", Engine::Native),
@@ -645,7 +639,7 @@ fn vhdx_images_are_checked_before_their_disk_is_read() {
     );
     assert_eq!(
         reader(&differencing.bytes, "disk.vhdx", Engine::Auto),
-        Reader::Backend { format: None }
+        Reader::Disk
     );
     let mut unknown = sparse.bytes.clone();
     let entry = sparse.metadata_at + 32 * 4;
@@ -958,11 +952,17 @@ fn extracted_files(files: &[(&str, &[u8])]) -> BTreeMap<String, Vec<u8>> {
     found
 }
 
-fn sent_to_7zip(case: &str, bytes: &[u8], name: &str, words: &str) {
+fn kept_from_7zip(case: &str, bytes: &[u8], name: &str, words: &str) {
     refused_named(case, bytes, name, words);
-    assert_eq!(
-        reader(bytes, name, Engine::Auto),
-        Reader::Backend { format: None },
+    assert_eq!(reader(bytes, name, Engine::Auto), Reader::Disk, "{case}");
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join(name);
+    fs::write(&archive, bytes).unwrap();
+    assert!(
+        zipper::choose_reader(Engine::Backend, &archive)
+            .unwrap_err()
+            .downcast_ref::<zipper::Refused>()
+            .is_some(),
         "{case}"
     );
     assert_eq!(reader(bytes, name, Engine::Native), Reader::Disk, "{case}");
@@ -1089,7 +1089,7 @@ fn qcow_images_are_checked_before_their_disk_is_read() {
     let first_l2 = image.l2_at[0];
     let mut backing = image.bytes.clone();
     put_be64(&mut backing, 8, 4096);
-    sent_to_7zip("backing file", &backing, "case.qcow2", "backing file");
+    kept_from_7zip("backing file", &backing, "case.qcow2", "backing file");
     let mut encrypted = image.bytes.clone();
     encrypted[35] = 2;
     refused("encrypted", &encrypted, "encrypted");
@@ -1239,7 +1239,7 @@ fn vdi_images_are_checked_before_their_disk_is_read() {
     assert_eq!(extracted(&image.bytes), sample_tree());
     let mut differencing = image.bytes.clone();
     put_le32(&mut differencing, 0x4C, 4);
-    sent_to_7zip(
+    kept_from_7zip(
         "differencing VDI",
         &differencing,
         "case.vdi",
@@ -1247,7 +1247,7 @@ fn vdi_images_are_checked_before_their_disk_is_read() {
     );
     let mut parent = image.bytes.clone();
     parent[0x1A8] = 1;
-    sent_to_7zip("VDI with a parent", &parent, "case.vdi", "differencing VDI");
+    kept_from_7zip("VDI with a parent", &parent, "case.vdi", "differencing VDI");
     let mut blocks = image.bytes.clone();
     put_le32(&mut blocks, 0x178, 1 << 16);
     refused("64 KiB blocks", &blocks, "not 1 MiB");
@@ -1321,7 +1321,7 @@ fn vmdk_images_are_checked_before_their_disk_is_read() {
     let text = String::from_utf8_lossy(&parent[SECTOR..2 * SECTOR]).into_owned();
     let at = SECTOR + text.find("parentCID=ffffffff").unwrap() + "parentCID=".len();
     parent[at..at + 8].copy_from_slice(b"12345678");
-    sent_to_7zip(
+    kept_from_7zip(
         "VMDK with a parent",
         &parent,
         "case.vmdk",
@@ -1435,7 +1435,7 @@ fn vmdk_descriptors_open_only_plain_extents_beside_them() {
     fs::write(root.path().join("case-flat.vmdk"), &flat).unwrap();
     assert_eq!(
         zipper::choose_reader(Engine::Auto, &root.path().join("case.vmdk")).unwrap(),
-        Reader::Backend { format: None }
+        Reader::Disk
     );
     let error =
         read_archive(&root.path().join("case.vmdk"), None, ReadOptions::default()).unwrap_err();

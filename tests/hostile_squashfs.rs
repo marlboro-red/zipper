@@ -682,7 +682,12 @@ fn other_squashfs_versions_and_byte_orders_go_to_7zip_by_name() {
     let mut big_endian = corpus("gzip.sqfs");
     big_endian[..4].copy_from_slice(b"sqsh");
     for bytes in [&version_3, &big_endian] {
-        assert_eq!(reader_for(bytes), Reader::Backend { format: None });
+        assert_eq!(
+            reader_for(bytes),
+            Reader::Backend {
+                format: Some("-tsquashfs".to_owned())
+            }
+        );
         refused(bytes, "--zip-engine backend");
     }
     assert_eq!(reader_for(&corpus("gzip.sqfs")), Reader::Squashfs);

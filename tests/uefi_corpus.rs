@@ -393,7 +393,9 @@ fn names_that_leave_the_folder_go_to_7zip_and_the_native_engine_refuses_them() {
     fs::write(&archive, &image).unwrap();
     assert_eq!(
         zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
-        zipper::Reader::Backend { format: None }
+        zipper::Reader::Backend {
+            format: Some("-tuefif".to_owned())
+        }
     );
     let native = work.path().join("native");
     let options = zipper::ExtractOptions {

@@ -34,9 +34,9 @@ struct Cli {
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ZipEngine {
-    /// Zipper's own reader for every format and variant it reads, and 7-Zip for the other formats whose signature it recognizes. Every engine refuses formats such as CHM, DMG, FAT, NTFS, HFS+, APFS, compound files such as MSI and Base64, and CAB and WIM data compressed with LZX or LZMS, and never hands them to 7-Zip.
+    /// Zipper's own reader for every format and variant it reads, and 7-Zip for the other formats whose signature it recognizes. Every engine refuses formats such as CHM, DMG, FAT, NTFS, HFS+, APFS, compound files such as MSI and Base64, and CAB and WIM data compressed with LZX or LZMS, and never hands them to 7-Zip, which always starts with its format named.
     Auto,
-    /// 7-Zip for every archive except the formats every engine refuses.
+    /// 7-Zip for every archive whose format Zipper names by its signature, such as 7z, RAR, ZIP, gzip, tar or ISO; any other file, and every CAB, WIM, DMG or disk image, is refused.
     Backend,
     /// Zipper's own reader for every archive, never 7-Zip; a format it does not read fails.
     Native,

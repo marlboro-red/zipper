@@ -108,7 +108,7 @@ fn max_extracted_bytes_caps_archives_before_writing() -> anyhow::Result<()> {
         .success()
     );
     assert_eq!(fs::read(t.path().join("fits/data/file"))?, vec![7u8; 4096]);
-    fs::write(t.path().join("legacy.zip"), b"PK fake")?;
+    fs::write(t.path().join("legacy.zip"), b"PK\x03\x04 fake")?;
     let backend = run(&[
         "extract",
         "legacy.zip",

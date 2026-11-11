@@ -2172,14 +2172,6 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
     }))
 }
 
-pub(crate) fn needs_backend_in<V: Read + Seek>(mut volume: V) -> Result<bool> {
-    let length = volume.seek(SeekFrom::End(0))?;
-    Ok(opens_elsewhere(&mut SeekVolume {
-        inner: volume,
-        length,
-    }))
-}
-
 /// Verify and optionally extract an ext2, ext3 or ext4 volume held in a
 /// bounded view, such as one partition, into a new directory, in the tree
 /// `7zz x` writes, with `[SYS]` and `[UNKNOWN]` folders for the inodes no

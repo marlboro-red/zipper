@@ -3,6 +3,10 @@
 //! nothing written. A fake 7-Zip, named by `ZIPPER_7Z` or found on `PATH`,
 //! is never started for any of them.
 #![cfg(unix)]
+#[path = "common/cab_writer.rs"]
+mod cab_writer;
+#[path = "common/quantum_encoder.rs"]
+mod quantum_encoder;
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
 
@@ -87,7 +91,7 @@ fn cases() -> Vec<Case> {
     let compound_magic = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
     vec![
         case("help.chm", stored("refused/chm.chm.xz"), chm),
-        case("help.hxs", padded(b"ITOLITLS", 0, 4096), chm),
+        case("help.hxs", padded(b"ITOLITLS\x01\0\0\0", 0, 4096), chm),
         case("storages.doc", stored("refused/compound.doc.xz"), compound),
         case(
             "installer.msi",
@@ -330,5 +334,183 @@ fn no_refused_format_reaches_a_fake_7zip_on_path() {
     assert!(
         fake.started().is_some(),
         "the fake 7-Zip on PATH is the one Zipper starts for other formats: {stderr}"
+    );
+}
+
+fn prefixed(prefix: &[u8], sample: &[u8]) -> Vec<u8> {
+    [prefix, sample].concat()
+}
+
+fn with_byte(mut bytes: Vec<u8>, at: usize, value: u8) -> Vec<u8> {
+    bytes[at] = value;
+    bytes
+}
+
+fn with_disc_descriptor(mut bytes: Vec<u8>) -> Vec<u8> {
+    bytes[0x8000..0x8007].copy_from_slice(b"\x01CD001\x01");
+    bytes
+}
+
+fn crafted() -> Vec<(&'static str, Vec<u8>)> {
+    let installer = stored("refused/installer.msi.xz");
+    let mut mub_prefix = vec![0xB9, 0xFA, 0xF1, 0x0E];
+    mub_prefix.resize(16, 0);
+    let fat = stored("parity/archives/fat.img.stored.xz");
+    vec![
+        ("one-byte-prefix.bin", prefixed(&[0], &installer)),
+        (
+            "far.bin",
+            prefixed(&vec![0; 70_000], &stored("refused/lzx.cab")),
+        ),
+        (
+            "mub-chm.bin",
+            prefixed(&mub_prefix, &stored("refused/chm.chm.xz")),
+        ),
+        (
+            "mub-lzx.bin",
+            prefixed(&mub_prefix, &stored("refused/lzx.wim.xz")),
+        ),
+        ("media0.img", with_byte(fat.clone(), 21, 0)),
+        (
+            "mbr-media0.img",
+            with_byte(stored("parity/archives/mbr.img.stored.xz"), 533, 0),
+        ),
+        ("cd001.img", with_disc_descriptor(fat)),
+        ("x.b64.001", b"aGVsbG8sIGEgc21h".to_vec()),
+    ]
+}
+
+fn unnamed_start(fake: &FakeSevenZip) -> Option<String> {
+    fake.started()?
+        .lines()
+        .find(|line| !line.split(' ').any(|word| word.starts_with("-t")))
+        .map(str::to_owned)
+}
+
+#[test]
+fn every_7zip_start_names_the_format_and_crafted_refused_files_never_open_in_process() {
+    for (name, bytes) in crafted() {
+        let fake = FakeSevenZip::new();
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join(name);
+        fs::write(&archive, &bytes).unwrap();
+        if name.ends_with(".001") {
+            fs::write(work.path().join("x.b64.002"), b"bGwgZmlsZQo=\n").unwrap();
+        }
+        let output = work.path().join("out");
+        for engine in CLI_ENGINES {
+            for action in ["extract", "list", "test"] {
+                let mut args: Vec<&std::ffi::OsStr> = Vec::new();
+                if let Some(engine) = engine {
+                    args.extend([std::ffi::OsStr::new("--zip-engine"), engine.as_ref()]);
+                }
+                args.extend([action.as_ref(), archive.as_os_str()]);
+                if action == "extract" {
+                    args.extend(["-o".as_ref(), output.as_os_str()]);
+                }
+                let (success, stderr) = run_cli(&fake, true, &args);
+                let label = format!("{name} {action} with {engine:?}");
+                if let Some(line) = unnamed_start(&fake) {
+                    panic!("{label} started 7-Zip without naming a format: {line}");
+                }
+                if fake.started().is_none() {
+                    assert!(!success, "{label} was read in process: {stderr}");
+                }
+                if output.exists() {
+                    fs::remove_dir_all(&output).unwrap();
+                }
+            }
+        }
+    }
+}
+
+fn tar_with(name: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut header = [0u8; 512];
+    header[..name.len()].copy_from_slice(name);
+    header[100..107].copy_from_slice(b"0000644");
+    header[108..115].copy_from_slice(b"0000000");
+    header[116..123].copy_from_slice(b"0000000");
+    header[124..135].copy_from_slice(format!("{:011o}", data.len()).as_bytes());
+    header[136..147].copy_from_slice(b"00000000000");
+    header[156] = b'0';
+    header[257..263].copy_from_slice(b"ustar\0");
+    header[263..265].copy_from_slice(b"00");
+    header[148..156].fill(b' ');
+    let sum: u32 = header.iter().map(|byte| u32::from(*byte)).sum();
+    header[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
+    let mut tar = header.to_vec();
+    tar.extend(data);
+    tar.resize(tar.len().next_multiple_of(512) + 1024, 0);
+    tar
+}
+
+#[test]
+fn archives_that_hold_a_refused_signature_still_extract() {
+    let dmg = stored("parity/archives/dmg-zlib.dmg");
+    let cab = cab_writer::one_folder_in_order(
+        &[("a.txt", b"hello\n"), ("disk.dmg", &dmg)],
+        &cab_writer::Method::Stored,
+    )
+    .build();
+    let cases: [(&str, Vec<u8>, &str); 3] = [
+        ("holds-a-dmg.cab", cab, "disk.dmg"),
+        (
+            "koly.tar",
+            tar_with(b"koly\0", b"koly\0\0\0\x04\0\0\x02\0"),
+            "koly",
+        ),
+        ("itsf.tar", tar_with(b"ITSF-notes.txt", b"notes\n"), "ITSF"),
+    ];
+    for (name, bytes, wanted) in cases {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join(name);
+        fs::write(&archive, &bytes).unwrap();
+        let output = work.path().join("out");
+        zipper::extract_archive(&archive, &output, zipper::ExtractOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        let found: Vec<String> = fs::read_dir(&output)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            found.iter().any(|file| file.starts_with(wanted)),
+            "{name}: {found:?}"
+        );
+    }
+}
+
+#[test]
+fn compat_starts_7zip_only_for_a_format_it_names_and_hands_to_7zip() {
+    let fake = FakeSevenZip::new();
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("plain.gz");
+    fs::write(&archive, b"\x1F\x8B\x08\0\0\0\0\0\0\x03").unwrap();
+    for format in [
+        None,
+        Some("-tcab"),
+        Some("-twim"),
+        Some("-tchm"),
+        Some("-t"),
+    ] {
+        let error =
+            zipper::compat::run("l", &archive, None, format, zipper::Existing::Refuse).unwrap_err();
+        assert!(
+            error.downcast_ref::<zipper::Refused>().is_some(),
+            "{format:?}: {error:#}"
+        );
+    }
+    let (_, stderr) = run_cli(
+        &fake,
+        true,
+        &[
+            std::ffi::OsStr::new("--zip-engine"),
+            "backend".as_ref(),
+            "list".as_ref(),
+            archive.as_os_str(),
+        ],
+    );
+    assert!(
+        fake.started().is_some_and(|log| log.contains("-tgzip")),
+        "{stderr}"
     );
 }

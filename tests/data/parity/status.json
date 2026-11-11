@@ -51,7 +51,7 @@
     },
     "Cab": {
       "status": "native",
-      "note": "Stored, MSZIP and Quantum folders and cabinet sets read in process. A cabinet with an LZX folder is refused by the default and native engines, since the LZX decoder was removed on 12 November 2026 for licence reasons. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set.",
+      "note": "Stored, MSZIP and Quantum folders and cabinet sets read in process. A cabinet with an LZX folder is refused, and `--zip-engine backend` hands no CAB to 7-Zip, since the LZX decoder was removed on 12 November 2026 for licence reasons. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set.",
       "tests": [
         "tests/cab_corpus.rs::every_corpus_cab_extracts_the_tree_7zip_extracts",
         "tests/cab_corpus.rs::generated_cabs_extract_exactly_as_7zip_extracts_them",
@@ -134,7 +134,7 @@
     },
     "GPT": {
       "status": "native",
-      "note": "Read in process, each partition of a disk with several as one raw file. A lone SquashFS, CramFS or ext partition extracts. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A lone partition of another file system, or a partition name 7-Zip writes as a path, goes to 7-Zip. The corpus disk holds one FAT partition, so it is refused.",
+      "note": "Read in process, each partition of a disk with several as one raw file. A lone SquashFS, CramFS or ext partition extracts. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A lone partition of another file system, or a partition name 7-Zip writes as a path, is refused, since Zipper hands no disk image to 7-Zip. The corpus disk holds one FAT partition, so it is refused.",
       "tests": [
         "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
         "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
@@ -199,7 +199,7 @@
     },
     "MBR": {
       "status": "native",
-      "note": "Primary, extended and logical partitions read in process, each as one raw file when there are several. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A lone partition of another file system goes to 7-Zip. The corpus disk holds one FAT partition, so it is refused.",
+      "note": "Primary, extended and logical partitions read in process, each as one raw file when there are several. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A lone partition of another file system is refused, since Zipper hands no disk image to 7-Zip. The corpus disk holds one FAT partition, so it is refused.",
       "tests": [
         "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
         "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
@@ -266,7 +266,7 @@
     },
     "QCOW": {
       "status": "native",
-      "note": "QCOW versions 1, 2 and 3 read in process, with zlib clusters. An image with a backing file, or a disk whose file system Zipper neither reads nor refuses, goes to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. Encrypted, external-data, extended-L2 and zstd images are refused, as 7-Zip refuses them.",
+      "note": "QCOW versions 1, 2 and 3 read in process, with zlib clusters. An image with a backing file, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. Encrypted, external-data, extended-L2 and zstd images are refused, as 7-Zip refuses them.",
       "tests": [
         "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
         "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
@@ -322,7 +322,7 @@
     },
     "Sparse": {
       "status": "native",
-      "note": "Android sparse images read in process. A disk whose file system Zipper neither reads nor refuses goes to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons.",
+      "note": "Android sparse images read in process. A disk whose file system Zipper neither reads nor refuses is refused, since Zipper hands no disk image to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons.",
       "tests": [
         "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
         "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
@@ -382,7 +382,7 @@
     },
     "VDI": {
       "status": "native",
-      "note": "Dynamic, static and undo VDI images with 1 MiB blocks read in process. A differencing VDI, or a disk whose file system Zipper neither reads nor refuses, goes to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons.",
+      "note": "Dynamic, static and undo VDI images with 1 MiB blocks read in process. A differencing VDI, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons.",
       "tests": [
         "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
         "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
@@ -393,7 +393,7 @@
     },
     "VHD": {
       "status": "native",
-      "note": "Fixed and dynamic VHD read in process. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A differencing VHD, or a disk whose file system Zipper neither reads nor refuses, goes to 7-Zip.",
+      "note": "Fixed and dynamic VHD read in process. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A differencing VHD, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip.",
       "tests": [
         "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
         "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
@@ -403,7 +403,7 @@
     },
     "VHDX": {
       "status": "native",
-      "note": "Fixed and dynamic VHDX read in process. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A differencing VHDX, or a disk whose file system Zipper neither reads nor refuses, goes to 7-Zip.",
+      "note": "Fixed and dynamic VHDX read in process. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A differencing VHDX, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip.",
       "tests": [
         "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
         "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
@@ -413,7 +413,7 @@
     },
     "VMDK": {
       "status": "native",
-      "note": "Monolithic sparse and stream-optimized extents and descriptors with flat and sparse extents read in process. A differencing VMDK, or a disk whose file system Zipper neither reads nor refuses, goes to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. 7-Zip and Zipper both refuse the stream-optimized layout qemu-img writes.",
+      "note": "Monolithic sparse and stream-optimized extents and descriptors with flat and sparse extents read in process. A differencing VMDK, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. 7-Zip and Zipper both refuse the stream-optimized layout qemu-img writes.",
       "tests": [
         "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
         "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
@@ -452,7 +452,7 @@
     },
     "wim": {
       "status": "native",
-      "note": "WIM with stored and XPRESS resources read in process. An image or solid resource compressed with LZX or LZMS, which includes every ESD, is refused by the method's name, since those decoders were removed on 12 November 2026 for licence reasons. A split or pre-1.13 WIM goes to 7-Zip. Alternate data streams are refused, and written as NTFS streams on Windows with `--alternate-streams`.",
+      "note": "WIM with stored and XPRESS resources read in process. An image or solid resource compressed with LZX or LZMS, which includes every ESD, is refused by the method's name, since those decoders were removed on 12 November 2026 for licence reasons. A split or pre-1.13 WIM is refused, and `--zip-engine backend` hands no WIM to 7-Zip. Alternate data streams are refused, and written as NTFS streams on Windows with `--alternate-streams`.",
       "tests": [
         "tests/wim_corpus.rs::every_corpus_wim_extracts_the_tree_7zip_extracts",
         "tests/wim_corpus.rs::generated_wims_of_every_method_and_chunk_size_extract_byte_for_byte_as_7zip_extracts_them",

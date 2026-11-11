@@ -2,7 +2,7 @@
 //! stored, MSZIP and Quantum folders. See `docs/reference/cab-reader.md`
 //! for what it accepts and restores.
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT, MAX_NAME};
+use crate::tree::{self, MAX_NAME};
 use crate::volumes::{ArchiveFile, Unchanged};
 use crate::{BadField, Entry, Field, field_check, quantum};
 use anyhow::{Context, Result, bail, ensure};
@@ -645,7 +645,7 @@ impl Cabinet {
             let name = String::from_utf8(raw).map_err(|_| {
                 let flagged = record.attributes & NAME_IS_UTF8 != 0;
                 anyhow::anyhow!(
-                    "CAB file {index} has a name that is not {}; {BACKEND_HINT}",
+                    "CAB file {index} has a name that is not {}",
                     if flagged {
                         "valid UTF-8"
                     } else {

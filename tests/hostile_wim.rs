@@ -436,7 +436,7 @@ fn junctions_and_wsl_links_inside_the_image_are_created_and_other_reparse_points
     }]];
     refused(
         &wim_writer::write(&other, &options()),
-        "--zip-engine backend",
+        "hands no WIM to 7-Zip",
     );
     let damaged = vec![vec![Node::Reparse {
         name: "short".into(),
@@ -622,7 +622,7 @@ fn chunk_tables_that_go_backward_or_past_their_resource_are_refused() {
 }
 
 #[test]
-fn split_wims_are_refused_in_process_and_go_to_7zip_by_default() {
+fn split_wims_are_refused_in_every_engine() {
     let mut wim = wim_writer::write(&sample_images(), &options());
     wim[42] = 2;
     refused(&wim, "split WIM");
@@ -631,7 +631,13 @@ fn split_wims_are_refused_in_process_and_go_to_7zip_by_default() {
     fs::write(&archive, &wim).unwrap();
     assert_eq!(
         zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
-        zipper::Reader::Backend { format: None }
+        zipper::Reader::Wim
+    );
+    assert!(
+        zipper::choose_reader(zipper::Engine::Backend, &archive)
+            .unwrap_err()
+            .downcast_ref::<zipper::Refused>()
+            .is_some()
     );
     assert_eq!(
         zipper::choose_reader(zipper::Engine::Native, &archive).unwrap(),
@@ -666,10 +672,10 @@ fn headers_of_other_versions_sizes_and_methods_are_refused() {
     let wim = wim_writer::write(&sample_images(), &options());
     let mut old = wim.clone();
     old[12..16].copy_from_slice(&0x10C00u32.to_le_bytes());
-    refused(&old, "--zip-engine backend");
+    refused(&old, "hands no WIM to 7-Zip");
     let mut short = wim.clone();
     short[8] = 0x74;
-    refused(&short, "--zip-engine backend");
+    refused(&short, "hands no WIM to 7-Zip");
     let mut method = wim.clone();
     method[16..20].copy_from_slice(&(0x2u32 | 1 << 20).to_le_bytes());
     refused(&method, "unknown compression method");

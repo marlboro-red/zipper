@@ -5,9 +5,9 @@ const HEAD: usize = 1 << 12;
 const SECTOR: usize = 512;
 const BOOT_SIGNATURE: [u8; 2] = [0x55, 0xAA];
 const COMPOUND: &[u8; 8] = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
-const CHM: &[u8; 4] = b"ITSF";
-const HELP2: &[u8; 8] = b"ITOLITLS";
-const KOLY: &[u8; 4] = b"koly";
+const CHM: &[u8; 8] = b"ITSF\x03\0\0\0";
+const HELP2: &[u8; 12] = b"ITOLITLS\x01\0\0\0";
+const KOLY: &[u8; 12] = b"koly\0\0\0\x04\0\0\x02\0";
 const HFS_AT: usize = 1024;
 const HFS_EMBEDDED_AT: usize = HFS_AT + 0x7C;
 const APM_MAP_AT: usize = SECTOR;
@@ -51,6 +51,8 @@ pub(crate) const BASE64_FILES: &str = "Base64 files";
 pub(crate) const CAB_LZX_FOLDERS: &str = "CAB folders compressed with LZX";
 pub(crate) const WIM_LZX_IMAGES: &str = "WIM images compressed with LZX";
 pub(crate) const WIM_LZMS_IMAGES: &str = "WIM and ESD images compressed with LZMS";
+pub(crate) const UNNAMED_FOR_7ZIP: &str =
+    "a file through 7-Zip without naming its format as one Zipper hands to 7-Zip";
 
 fn le16(bytes: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([bytes[at], bytes[at + 1]])
@@ -249,7 +251,7 @@ impl Start {
         let length = self.file.len()?;
         Ok(self.head.starts_with(KOLY)
             || length >= SECTOR as u64
-                && self.bytes_at::<4>(length - SECTOR as u64)?.as_ref() == Some(KOLY))
+                && self.bytes_at::<12>(length - SECTOR as u64)?.as_ref() == Some(KOLY))
     }
 
     fn is_disc(&self) -> Result<bool> {

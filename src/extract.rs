@@ -57,19 +57,21 @@ pub enum Engine {
     /// disks, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files, SquashFS
     /// 4.0 and CramFS images, raw or in a disk's lone partition, Android
     /// logical partition images, UEFI firmware volumes and capsules, Intel HEX
-    /// files, and 7z whose methods it decodes. 7-Zip for a RAR volume, a RAR 4
-    /// solid archive or a RAR archive with encrypted headers, other 7z, other
-    /// SquashFS versions and byte orders, a split or pre-1.13 WIM, a
-    /// differencing disk image, a disk holding a file system Zipper neither
-    /// reads nor refuses, such as exFAT, an ext volume that needs journal
-    /// recovery or uses a feature Zipper does not read, a Mach-O universal file
-    /// with the `B9 FA F1 0E` signature, a logical partition image or UEFI
-    /// firmware whose names are not plain relative paths, and the other
-    /// formats whose signature Zipper recognizes. Every engine fails with
-    /// [`Refused`] on the formats that type names, so none reaches 7-Zip.
+    /// files, and 7z whose methods it decodes. 7-Zip, with `-t` naming the
+    /// format, for other 7z, a RAR volume, a RAR 4 solid archive or a RAR
+    /// archive with encrypted headers, other SquashFS versions and byte orders,
+    /// an ext volume that needs journal recovery or uses a feature Zipper does
+    /// not read, a Mach-O universal file with the `B9 FA F1 0E` signature, and
+    /// a logical partition image or UEFI firmware whose names are not plain
+    /// relative paths. A split or pre-1.13 WIM and a disk image whose file
+    /// system Zipper does not read fail. Every engine fails with [`Refused`] on
+    /// the formats that type names, so none reaches 7-Zip.
     #[default]
     Auto,
-    /// 7-Zip for every archive, except the formats [`Refused`] names.
+    /// 7-Zip for every archive whose format Zipper names by its signature, such
+    /// as 7z, RAR, ZIP, gzip, tar or ISO, with `-t` naming it, and for Intel
+    /// HEX, named by its content. Any other file, and every CAB, WIM, DMG or
+    /// disk image, fails with [`Refused`].
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, RAR, disc
     /// images, WIM, disk images, ext, SquashFS 4.0, CramFS, FLV, SWF,
@@ -154,12 +156,19 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             if let Some(format) = refused::format(archive)? {
                 bail!(Refused(format));
             }
-            Reader::Backend { format: None }
+            match compat::identified_format(archive)? {
+                Some(format) => Reader::Backend {
+                    format: Some(format),
+                },
+                None if crate::ihex::sniff(archive)? => Reader::Backend {
+                    format: Some("-tihex".to_owned()),
+                },
+                None => bail!(Refused(refused::UNNAMED_FOR_7ZIP)),
+            }
         }
         _ if crate::volumes::has_zip_volumes(archive)? || starts_with_zip_signature(archive)? => {
             Reader::Zip
         }
-        _ if let Some(format) = refused::dmg(archive)? => bail!(Refused(format)),
         #[cfg(feature = "exe")]
         _ if native_exe::sniff(archive)? => Reader::Exe,
         #[cfg(feature = "tar")]
@@ -188,10 +197,6 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_rar::sniff(archive)? => Reader::Rar,
         _ if let Some(format) = refused::leading_signature(archive)? => bail!(Refused(format)),
         #[cfg(feature = "wim")]
-        Engine::Auto if native_wim::sniff(archive)? && native_wim::needs_backend(archive)? => {
-            Reader::Backend { format: None }
-        }
-        #[cfg(feature = "wim")]
         _ if native_wim::sniff(archive)? => Reader::Wim,
         #[cfg(feature = "7z")]
         Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
@@ -202,18 +207,24 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         #[cfg(feature = "7z")]
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
         #[cfg(feature = "exe")]
-        Engine::Auto if native_exe::needs_backend(archive)? => Reader::Backend { format: None },
+        Engine::Auto if native_exe::needs_backend(archive)? => Reader::Backend {
+            format: Some("-tmub".to_owned()),
+        },
         #[cfg(feature = "exe")]
         _ if native_exe::sniff_damaged(archive)? => Reader::Exe,
         #[cfg(feature = "lp")]
         Engine::Auto if native_lp::sniff(archive)? && native_lp::needs_backend(archive)? => {
-            Reader::Backend { format: None }
+            Reader::Backend {
+                format: Some("-tlp".to_owned()),
+            }
         }
         #[cfg(feature = "lp")]
         _ if native_lp::sniff(archive)? => Reader::Lp,
         #[cfg(feature = "uefi")]
         Engine::Auto if native_uefi::sniff(archive)? && native_uefi::needs_backend(archive)? => {
-            Reader::Backend { format: None }
+            Reader::Backend {
+                format: Some(native_uefi::backend_type(archive)?.to_owned()),
+            }
         }
         #[cfg(feature = "uefi")]
         _ if native_uefi::sniff(archive)? => Reader::Uefi,
@@ -227,7 +238,9 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         Engine::Auto
             if native_squashfs::sniff(archive)? && native_squashfs::needs_backend(archive)? =>
         {
-            Reader::Backend { format: None }
+            Reader::Backend {
+                format: Some("-tsquashfs".to_owned()),
+            }
         }
         #[cfg(feature = "squashfs")]
         _ if native_squashfs::sniff(archive)? => Reader::Squashfs,
@@ -235,14 +248,12 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_cramfs::sniff(archive)? => Reader::Cramfs,
         #[cfg(feature = "ext")]
         Engine::Auto if native_ext::sniff(archive)? && native_ext::needs_backend(archive)? => {
-            Reader::Backend { format: None }
+            Reader::Backend {
+                format: Some("-text".to_owned()),
+            }
         }
         #[cfg(feature = "ext")]
         _ if native_ext::sniff(archive)? => Reader::Ext,
-        #[cfg(feature = "disk")]
-        Engine::Auto if disk::sniff(archive)? && disk::needs_backend(archive)? => {
-            Reader::Backend { format: None }
-        }
         #[cfg(feature = "disk")]
         _ if disk::sniff(archive)? => Reader::Disk,
         #[cfg(feature = "flv")]
@@ -255,6 +266,7 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             }
         }
         _ if crate::ihex::opens(archive)? => Reader::Ihex,
+        _ if let Some(format) = refused::dmg(archive)? => bail!(Refused(format)),
         _ if let Some(format) = refused::base64(archive)? => bail!(Refused(format)),
         #[cfg(feature = "tar")]
         _ if crate::native_stream::sniff(archive)?.is_some() => Reader::Stream,
@@ -265,7 +277,9 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
             if native_uefi::sniff_later_volume(archive)?
                 && native_uefi::needs_backend(archive)? =>
         {
-            Reader::Backend { format: None }
+            Reader::Backend {
+                format: Some("-tuefif".to_owned()),
+            }
         }
         #[cfg(feature = "uefi")]
         _ if native_uefi::sniff_later_volume(archive)? => Reader::Uefi,

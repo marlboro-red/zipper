@@ -4,11 +4,7 @@
 //! reader takes one view. `docs/reference/disk-reader.md` gives the rules.
 
 pub use crate::tree::ReadOptions;
-use crate::{
-    BadField, Entry, Field, Refused, field_check, refused,
-    tree::{self, BACKEND_HINT},
-    volumes::ArchiveFile,
-};
+use crate::{BadField, Entry, Field, Refused, field_check, refused, tree, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::HashMap,
@@ -1968,24 +1964,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(raw_disk_is_claimed(&head, &tail))
 }
 
-/// Returns whether the default engine should send the image to 7-Zip: a
-/// differencing image or one with a backing file, or a disk whose file
-/// system or partition names Zipper does not read in process, such as
-/// exFAT. A disk whose file system Zipper refuses, such as FAT, NTFS, HFS+
-/// or APFS, stays with this reader, which refuses it.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    match plan(path) {
-        Ok((_, Plan::Elsewhere(_))) => Ok(true),
-        Ok((Some(mut disk), Plan::Squashfs(span))) => {
-            crate::native_squashfs::needs_backend_in(span.view(&mut disk))
-        }
-        Ok((Some(mut disk), Plan::Ext(span))) => {
-            crate::native_ext::needs_backend_in(span.view(&mut disk))
-        }
-        _ => Ok(false),
-    }
-}
-
 pub(crate) fn refused_file_system(path: &Path) -> Result<Option<&'static str>> {
     Ok(match plan(path) {
         Ok((_, Plan::Refused(format))) => Some(format),
@@ -2008,7 +1986,9 @@ pub fn read_archive(
     let (disk, plan) = plan(path)?;
     match plan {
         Plan::Elsewhere(reason) => {
-            bail!("{reason}; Zipper does not read it in process, so {BACKEND_HINT}")
+            bail!(
+                "{reason}; Zipper does not read it in process, and it hands no disk image to 7-Zip"
+            )
         }
         Plan::Refused(format) => bail!(Refused(format)),
         Plan::Squashfs(span) => {

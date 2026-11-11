@@ -1422,12 +1422,6 @@ pub fn needs_backend(path: &Path) -> Result<bool> {
     Ok(volume.read_exact_at(0, &mut start).is_ok() && is_image(&start) && !native_version(&start))
 }
 
-pub(crate) fn needs_backend_in<V: Read + Seek>(mut volume: V) -> Result<bool> {
-    let mut start = [0u8; SUPERBLOCK];
-    volume.seek(SeekFrom::Start(0))?;
-    Ok(volume.read_exact(&mut start).is_ok() && is_image(&start) && !native_version(&start))
-}
-
 /// Verify and optionally extract a SquashFS 4.0 image held in a bounded
 /// view, such as one GPT partition, into a new directory, in the tree
 /// `7zz x` writes. Every check of `docs/reference/squashfs-reader.md` holds

@@ -44,7 +44,7 @@ The reader refuses these cabinets:
 - A cabinet whose previous or next cabinet name is empty, `.` or `..`, or holds `/`, `\`, `:` or NUL. A name that Windows reads as a device is refused on every system, so a set reads the same everywhere. Those names are `CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, and `COM` or `LPT` followed by one digit or by `¹`, `²` or `³`. Case does not matter, and an extension or trailing dots and spaces do not change the result, so `con.cab` and `COM1.txt.` are refused. So the reader opens no cabinet by a path outside the folder of the first. A symbolic link in that folder is followed, as 7-Zip follows it, and its target must still pass the set checks. A next cabinet name must also be UTF-8.
 - A Quantum folder whose window level is above 21, a folder compressed with LZX, or a folder with a method above 3.
 - Two files that share bytes of their folder.
-- A name that is neither flagged UTF-8 nor ASCII or UTF-8. The error suggests `--zip-engine backend`.
+- A name that is neither flagged UTF-8 nor ASCII or UTF-8.
 
 ## Metadata
 

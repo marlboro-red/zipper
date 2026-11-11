@@ -686,7 +686,9 @@ fn features_zipper_does_not_read_are_refused_by_name_and_go_to_7zip() {
         fs::write(&path, &bytes).unwrap();
         assert_eq!(
             zipper::choose_reader(Engine::Auto, &path).unwrap(),
-            Reader::Backend { format: None },
+            Reader::Backend {
+                format: Some("-text".to_owned())
+            },
             "{wanted}"
         );
         assert_eq!(

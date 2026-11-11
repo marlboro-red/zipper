@@ -107,7 +107,7 @@ The last column is `zipper list` on a cpio archive of the same paths, which uses
 - 7-Zip links files of one hard link group across images. Zipper links them only within one image, and writes each image's own copy.
 - 7-Zip extracts a folder named `.` into its parent, and a second entry of one name over the first. Zipper refuses both.
 - 7-Zip writes a file whose data the blob table lacks as an empty file, and lists unreferenced data under `[DELETED]`. Zipper refuses a file without its data, and ignores data that no file names.
-- 7-Zip extracts a root list with more than one entry, an older WIM version and a split WIM. Zipper refuses each, and the default engine sends the last two to 7-Zip.
+- 7-Zip extracts a root list with more than one entry, an older WIM version and a split WIM. Zipper refuses each in every engine, since it hands no WIM to 7-Zip.
 - 7-Zip fixes a name without its terminating NUL and extracts it with a warning. Zipper refuses it.
 
 ## Extraction options
