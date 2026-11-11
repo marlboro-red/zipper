@@ -30,6 +30,8 @@ Done so far, by 11 November 2026:
 
 - [ZIP workers read the archive without a lock](../../benchmarks/native-zip/lock-free-reads/README.md). 512 MiB of stored entries extract 1.18 times faster at 64 threads.
 
+- [BZip2 blocks decoded in parallel](../../benchmarks/bzip2/block-parallel/README.md). Silesia BZip2 extracts 5.0 times faster as 7z and 7.9 times faster as tar at default threads, and 4.2 times faster than 7-Zip on 7z.
+
 [Before and after the research report's changes](../../benchmarks/research-report/before-after/README.md) times main before and after all of them on one machine, with 7-Zip in every row.
 
 Still to try, from the report and the read of pzip and fastzip:
