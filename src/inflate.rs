@@ -694,6 +694,13 @@ impl Step<'_> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Copied {
+    pub(crate) consumed: usize,
+    pub(crate) written: usize,
+    pub(crate) finished: bool,
+}
+
 struct Dynamic {
     litlen_codes: usize,
     distance_codes: usize,
@@ -891,43 +898,130 @@ impl<W: std::ops::DerefMut<Target = [u8]>> Inflate<W> {
         }
     }
 
+    fn block_header(&mut self, input: &[u8], position: &mut usize) -> Result<bool, Invalid> {
+        if !self.bits.need(3, input, position) {
+            return Ok(false);
+        }
+        self.last_block = self.bits.take(1) == 1;
+        self.state = match self.bits.take(2) {
+            0 => {
+                debug_assert!(self.bits.count < 8);
+                self.bits = Bits::default();
+                State::StoredLength
+            }
+            1 => {
+                self.uses_dynamic = false;
+                State::Symbols
+            }
+            2 => {
+                self.uses_dynamic = true;
+                State::CodeCounts
+            }
+            _ => return Err(Invalid("Deflate block type 3 is reserved")),
+        };
+        Ok(true)
+    }
+
+    fn stored_length(&mut self, input: &[u8], position: &mut usize) -> Result<bool, Invalid> {
+        if !self.bits.need(32, input, position) {
+            return Ok(false);
+        }
+        let length = self.bits.take(16);
+        // SPEC(RFC 1951 3.2.4): NLEN is the one's complement of LEN.
+        if length ^ self.bits.take(16) != 0xffff {
+            return Err(Invalid("Deflate stored block lengths disagree"));
+        }
+        self.state = State::Stored {
+            remaining: length as usize,
+        };
+        Ok(true)
+    }
+
+    pub(crate) fn copy_stored(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<Copied, Invalid> {
+        let (mut position, mut written) = (0, 0);
+        let finished = self
+            .copy_stored_blocks(input, &mut position, output, &mut written)
+            .inspect_err(|&invalid| self.state = State::Failed(invalid))?;
+        self.keep_as_history(&output[..written]);
+        self.total_in += position as u64;
+        Ok(Copied {
+            consumed: position,
+            written,
+            finished,
+        })
+    }
+
+    fn copy_stored_blocks(
+        &mut self,
+        input: &[u8],
+        position: &mut usize,
+        output: &mut [u8],
+        written: &mut usize,
+    ) -> Result<bool, Invalid> {
+        loop {
+            let progressed = match self.state {
+                State::BlockHeader => self.block_header(input, position)?,
+                State::StoredLength => self.stored_length(input, position)?,
+                State::Stored { remaining: 0 } => {
+                    self.state = self.after_block();
+                    true
+                }
+                State::Stored { remaining } => {
+                    let length = remaining
+                        .min(input.len() - *position)
+                        .min(output.len() - *written);
+                    output[*written..*written + length]
+                        .copy_from_slice(&input[*position..*position + length]);
+                    *position += length;
+                    *written += length;
+                    self.state = State::Stored {
+                        remaining: remaining - length,
+                    };
+                    length > 0
+                }
+                State::Finished => return Ok(true),
+                State::Failed(invalid) => return Err(invalid),
+                State::CodeCounts | State::PrecodeLengths | State::CodeLengths | State::Symbols => {
+                    false
+                }
+            };
+            if !progressed {
+                return Ok(false);
+            }
+        }
+    }
+
+    fn keep_as_history(&mut self, written: &[u8]) {
+        if let Some(older) = written.len().checked_sub(HISTORY) {
+            self.window[..HISTORY].copy_from_slice(&written[older..]);
+            self.filled = HISTORY;
+            return;
+        }
+        if self.window.len() - self.filled < written.len() {
+            self.window
+                .copy_within(self.filled - HISTORY..self.filled, 0);
+            self.filled = HISTORY;
+        }
+        self.window[self.filled..self.filled + written.len()].copy_from_slice(written);
+        self.filled += written.len();
+    }
+
     fn run(&mut self, input: &[u8], position: &mut usize) -> Result<bool, Invalid> {
         loop {
             match self.state {
                 State::BlockHeader => {
-                    if !self.bits.need(3, input, position) {
+                    if !self.block_header(input, position)? {
                         return Ok(false);
                     }
-                    self.last_block = self.bits.take(1) == 1;
-                    self.state = match self.bits.take(2) {
-                        0 => {
-                            debug_assert!(self.bits.count < 8);
-                            self.bits = Bits::default();
-                            State::StoredLength
-                        }
-                        1 => {
-                            self.uses_dynamic = false;
-                            State::Symbols
-                        }
-                        2 => {
-                            self.uses_dynamic = true;
-                            State::CodeCounts
-                        }
-                        _ => return Err(Invalid("Deflate block type 3 is reserved")),
-                    };
                 }
                 State::StoredLength => {
-                    if !self.bits.need(32, input, position) {
+                    if !self.stored_length(input, position)? {
                         return Ok(false);
                     }
-                    let length = self.bits.take(16);
-                    // SPEC(RFC 1951 3.2.4): NLEN is the one's complement of LEN.
-                    if length ^ self.bits.take(16) != 0xffff {
-                        return Err(Invalid("Deflate stored block lengths disagree"));
-                    }
-                    self.state = State::Stored {
-                        remaining: length as usize,
-                    };
                 }
                 State::Stored { remaining: 0 } => self.state = self.after_block(),
                 State::Stored { remaining } => {
@@ -1026,7 +1120,7 @@ impl<W: std::ops::DerefMut<Target = [u8]>> Inflate<W> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::Write;
 
@@ -1059,12 +1153,31 @@ mod tests {
         }
     }
 
-    fn ours(stream: &[u8], piece: usize, window: usize) -> Outcome {
+    fn ours(stream: &[u8], piece: usize, window: usize, stored_output: Option<usize>) -> Outcome {
         let mut window = vec![0xa5u8; window];
         let mut inflate = Inflate::new(&mut window[..]);
         let mut bytes = Vec::new();
+        let mut output = vec![0x5au8; stored_output.unwrap_or(0)];
         let mut at = 0usize;
         loop {
+            let end = at.saturating_add(piece).min(stream.len());
+            if stored_output.is_some() {
+                let Ok(copied) = inflate.copy_stored(&stream[at..end], &mut output) else {
+                    return Outcome::Refused;
+                };
+                at += copied.consumed;
+                bytes.extend_from_slice(&output[..copied.written]);
+                assert_eq!(inflate.total_in(), at as u64);
+                if copied.finished {
+                    return Outcome::Decoded {
+                        bytes,
+                        consumed: at as u64,
+                    };
+                }
+                if copied.written > 0 {
+                    continue;
+                }
+            }
             let end = at.saturating_add(piece).min(stream.len());
             let Ok(step) = inflate.decode(&stream[at..end]) else {
                 return Outcome::Refused;
@@ -1090,14 +1203,27 @@ mod tests {
 
     const PIECES: [usize; 9] = [1, 2, 7, 31, 32, 33, 100, 4096, usize::MAX];
     const WINDOWS: [usize; 3] = [SMALLEST_WINDOW, SMALLEST_WINDOW + 4321, 3 * HISTORY];
+    const STORED_OUTPUTS: [(usize, usize); 4] = [
+        (1, 1),
+        (33, 300),
+        (4096, HISTORY + 1),
+        (usize::MAX, 1 << 20),
+    ];
 
     fn agrees_with_zlib(stream: &[u8], label: &str) -> Outcome {
         let expected = zlib(stream);
         for (index, piece) in PIECES.into_iter().enumerate() {
             let window = WINDOWS[index % WINDOWS.len()];
             assert!(
-                ours(stream, piece, window) == expected,
+                ours(stream, piece, window, None) == expected,
                 "{label}: pieces of {piece} bytes in a window of {window} differ from zlib"
+            );
+        }
+        for (index, (piece, output)) in STORED_OUTPUTS.into_iter().enumerate() {
+            let window = WINDOWS[index % WINDOWS.len()];
+            assert!(
+                ours(stream, piece, window, Some(output)) == expected,
+                "{label}: pieces of {piece} bytes with stored blocks copied into {output} bytes differ from zlib"
             );
         }
         expected
@@ -1981,6 +2107,151 @@ mod tests {
                     consumed: 4
                 }
         );
+    }
+
+    fn match_of(length: usize, back: usize) -> Token {
+        let length_code = (0..29)
+            .rev()
+            .find(|&code| usize::from(LENGTH_BASE[code]) <= length)
+            .unwrap();
+        let distance_code = (0..30)
+            .rev()
+            .find(|&code| usize::from(DISTANCE_BASE[code]) <= back)
+            .unwrap();
+        Token::Match {
+            length_code,
+            length_extra: (length - usize::from(LENGTH_BASE[length_code])) as u32,
+            distance_code,
+            distance_extra: (back - usize::from(DISTANCE_BASE[distance_code])) as u32,
+        }
+    }
+
+    pub(crate) struct ReachingBack {
+        pub(crate) stream: Vec<u8>,
+        pub(crate) decoded: Option<Vec<u8>>,
+        pub(crate) label: String,
+    }
+
+    pub(crate) fn matches_reaching_back_across_stored_blocks() -> Vec<ReachingBack> {
+        const STORED: [&[usize]; 13] = [
+            &[1],
+            &[2],
+            &[258],
+            &[HISTORY - 1],
+            &[HISTORY],
+            &[HISTORY + 1],
+            &[65_535],
+            &[65_535, 65_535],
+            &[100, HISTORY - 100],
+            &[HISTORY, 1],
+            &[1, HISTORY],
+            &[0, 300, 0],
+            &[40_000, 0, 7],
+        ];
+        let (litlen, distance) = fixed_lengths();
+        let mut random = Random(0x5eed);
+        let mut cases = Vec::new();
+        for literals_before in [0, 7, 40_000] {
+            for stored in STORED {
+                let mut writer = BitWriter::default();
+                let mut produced = Vec::new();
+                if literals_before > 0 {
+                    writer.put(0b010, 3);
+                    let literals: Vec<Token> = (0..literals_before)
+                        .map(|_| Token::Literal(random.next() as u8))
+                        .collect();
+                    for token in &literals {
+                        if let Token::Literal(byte) = token {
+                            produced.push(*byte);
+                        }
+                    }
+                    put_tokens(&mut writer, &literals, &litlen, &distance);
+                }
+                for &length in stored {
+                    writer.put(0b000, 3);
+                    writer.align();
+                    writer.put(length as u32, 16);
+                    writer.put(length as u32 ^ 0xffff, 16);
+                    for _ in 0..length {
+                        let byte = random.next() as u8;
+                        writer.put(u32::from(byte), 8);
+                        produced.push(byte);
+                    }
+                }
+                let stored_total: usize = stored.iter().sum();
+                let reachable = 1..=HISTORY.min(produced.len());
+                let backs: Vec<usize> = [1, 2, 3, 258, HISTORY - 1, HISTORY]
+                    .into_iter()
+                    .chain([
+                        stored_total.saturating_sub(1),
+                        stored_total,
+                        stored_total + 1,
+                    ])
+                    .chain([stored_total + 258, stored_total + 300])
+                    .filter(|back| reachable.contains(back))
+                    .collect();
+                let mut tokens = Vec::new();
+                for back in backs {
+                    for length in [3, 258] {
+                        tokens.push(match_of(length, back));
+                        for _ in 0..length {
+                            produced.push(produced[produced.len() - back]);
+                        }
+                    }
+                }
+                let label = format!("{literals_before} literals then stored blocks of {stored:?}");
+                let mut tail = writer.bytes.clone();
+                let mut whole = BitWriter {
+                    bytes: std::mem::take(&mut writer.bytes),
+                    ..writer
+                };
+                whole.put(0b011, 3);
+                put_tokens(&mut whole, &tokens, &litlen, &distance);
+                cases.push(ReachingBack {
+                    stream: whole.finish(),
+                    decoded: Some(produced.clone()),
+                    label: label.clone(),
+                });
+                let too_far = literals_before + stored_total + 1;
+                if too_far <= HISTORY {
+                    let mut refused = BitWriter {
+                        bytes: std::mem::take(&mut tail),
+                        ..writer
+                    };
+                    refused.put(0b011, 3);
+                    put_tokens(&mut refused, &[match_of(3, too_far)], &litlen, &distance);
+                    cases.push(ReachingBack {
+                        stream: refused.finish(),
+                        decoded: None,
+                        label: format!("{label} and a match from before the start"),
+                    });
+                }
+            }
+        }
+        cases
+    }
+
+    #[test]
+    fn matches_reach_back_across_stored_blocks_of_every_length() {
+        let cases = matches_reaching_back_across_stored_blocks();
+        assert_eq!(
+            cases.iter().filter(|case| case.decoded.is_none()).count(),
+            9
+        );
+        for case in cases {
+            let expected = match case.decoded {
+                Some(bytes) => Outcome::Decoded {
+                    bytes,
+                    consumed: case.stream.len() as u64,
+                },
+                None => Outcome::Refused,
+            };
+            assert!(
+                agrees_with_zlib(&case.stream, &case.label) == expected,
+                "{} decodes to other bytes than it was built from",
+                case.label
+            );
+        }
     }
 
     #[test]

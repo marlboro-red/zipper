@@ -354,9 +354,27 @@ pub(crate) struct Reader<R> {
     gzip_header: GzipHeader,
     gathered: [u8; 8],
     have: usize,
+    checks: Checks,
+}
+
+#[derive(Default)]
+struct Checks {
     adler: Adler32,
     crc: crc32fast::Hasher,
     size: u32,
+}
+
+impl Checks {
+    fn update(&mut self, framing: Framing, output: &[u8]) {
+        match framing {
+            Framing::Raw => {}
+            Framing::Zlib => self.adler.update(output),
+            Framing::Gzip => {
+                self.crc.update(output);
+                self.size = self.size.wrapping_add(output.len() as u32);
+            }
+        }
+    }
 }
 
 fn invalid_data(invalid: Invalid) -> io::Error {
@@ -388,9 +406,7 @@ impl<R: BufRead> Reader<R> {
             gzip_header: GzipHeader::new(),
             gathered: [0; 8],
             have: 0,
-            adler: Adler32::default(),
-            crc: crc32fast::Hasher::new(),
-            size: 0,
+            checks: Checks::default(),
         }
     }
 
@@ -451,23 +467,13 @@ impl<R: BufRead> Reader<R> {
         let input = self.input.fill_buf()?;
         let at_end = input.is_empty();
         let step = self.inflate.decode(input).map_err(invalid_data)?;
-        match self.framing {
-            Framing::Raw => {}
-            Framing::Zlib => self.adler.update(step.output),
-            Framing::Gzip => {
-                self.crc.update(step.output);
-                self.size = self.size.wrapping_add(step.output.len() as u32);
-            }
-        }
+        self.checks.update(self.framing, step.output);
         let (consumed, produced) = (step.consumed, step.output.len());
         let (finished, stalled) = (step.finished, step.needs_input());
         self.input.consume(consumed);
         self.held = produced;
         if finished {
-            self.stage = match self.framing {
-                Framing::Raw => Stage::End,
-                Framing::Zlib | Framing::Gzip => Stage::Trailer,
-            };
+            self.stage = self.after_body();
         } else if stalled {
             return Err(match at_end {
                 true => truncated(self.framing),
@@ -475,6 +481,48 @@ impl<R: BufRead> Reader<R> {
             });
         }
         Ok(())
+    }
+
+    fn stored_body(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        let input = self.input.fill_buf()?;
+        let copied = self
+            .inflate
+            .copy_stored(input, output)
+            .map_err(invalid_data)?;
+        self.checks.update(self.framing, &output[..copied.written]);
+        self.input.consume(copied.consumed);
+        if copied.finished {
+            self.stage = self.after_body();
+        }
+        Ok(copied.written)
+    }
+
+    fn after_body(&self) -> Stage {
+        match self.framing {
+            Framing::Raw => Stage::End,
+            Framing::Zlib | Framing::Gzip => Stage::Trailer,
+        }
+    }
+
+    fn step(&mut self) -> io::Result<()> {
+        let stepped = match self.stage {
+            Stage::Header => self.header(),
+            Stage::Body => self.body(),
+            Stage::Trailer => self.trailer(),
+            Stage::End => Ok(()),
+            Stage::Failed => return Err(invalid_data(FAILED_BEFORE)),
+        };
+        stepped.map_err(|error| self.failed_on(error))
+    }
+
+    fn failed_on(&mut self, error: io::Error) -> io::Error {
+        if matches!(
+            error.kind(),
+            io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof
+        ) {
+            self.stage = Stage::Failed;
+        }
+        error
     }
 
     fn trailer(&mut self) -> io::Result<()> {
@@ -485,7 +533,7 @@ impl<R: BufRead> Reader<R> {
         self.have = 0;
         let word = |at: usize| self.gathered[at..at + 4].try_into().expect("four bytes");
         if self.framing == Framing::Zlib {
-            if u32::from_be_bytes(word(0)) != self.adler.sum() {
+            if u32::from_be_bytes(word(0)) != self.checks.adler.sum() {
                 return Err(invalid_data(Invalid(
                     "zlib stream fails its Adler-32 check",
                 )));
@@ -494,7 +542,8 @@ impl<R: BufRead> Reader<R> {
             return Ok(());
         }
         let (crc, size) = (u32::from_le_bytes(word(0)), u32::from_le_bytes(word(4)));
-        if crc != std::mem::take(&mut self.crc).finalize() || size != self.size {
+        let checks = std::mem::take(&mut self.checks);
+        if crc != checks.crc.finalize() || size != checks.size {
             return Err(invalid_data(Invalid(
                 "gzip member fails its CRC-32 or size check",
             )));
@@ -505,7 +554,6 @@ impl<R: BufRead> Reader<R> {
         } else {
             self.inflate.restart();
             self.gzip_header = GzipHeader::new();
-            self.size = 0;
             self.stage = Stage::Header;
         }
         Ok(())
@@ -514,23 +562,8 @@ impl<R: BufRead> Reader<R> {
 
 impl<R: BufRead> BufRead for Reader<R> {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        while self.held == 0 {
-            let stepped = match self.stage {
-                Stage::Header => self.header(),
-                Stage::Body => self.body(),
-                Stage::Trailer => self.trailer(),
-                Stage::End => break,
-                Stage::Failed => return Err(invalid_data(FAILED_BEFORE)),
-            };
-            if let Err(error) = stepped {
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof
-                ) {
-                    self.stage = Stage::Failed;
-                }
-                return Err(error);
-            }
+        while self.held == 0 && self.stage != Stage::End {
+            self.step()?;
         }
         Ok(self.inflate.latest(self.held))
     }
@@ -544,6 +577,17 @@ impl<R: BufRead> Read for Reader<R> {
     fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
         if output.is_empty() {
             return Ok(0);
+        }
+        while self.held == 0 && matches!(self.stage, Stage::Header | Stage::Trailer) {
+            self.step()?;
+        }
+        if self.held == 0 && self.stage == Stage::Body {
+            let written = self
+                .stored_body(output)
+                .map_err(|error| self.failed_on(error))?;
+            if written > 0 {
+                return Ok(written);
+            }
         }
         let held = self.fill_buf()?;
         let count = held.len().min(output.len());
@@ -1188,5 +1232,42 @@ mod tests {
             .iter()
             .fold(u32::MAX, |register, &byte| crc32_byte(register, byte));
         assert_eq!(!register, crc32fast::hash(&bytes));
+    }
+
+    #[test]
+    fn stored_blocks_fill_a_large_read_in_one_call() {
+        let data: Vec<u8> = (0..1u32 << 20)
+            .map(|index| (index * 7 >> 3) as u8)
+            .collect();
+        for (framing, stream) in framed(&data, 0) {
+            let mut reader = match framing {
+                "raw" => Reader::raw(BufReader::with_capacity(1 << 21, &stream[..])),
+                "zlib" => Reader::zlib(BufReader::with_capacity(1 << 21, &stream[..])),
+                _ => Reader::gzip(BufReader::with_capacity(1 << 21, &stream[..])),
+            };
+            let mut output = vec![0u8; 1 << 20];
+            let first = reader.read(&mut output).unwrap();
+            assert!(first > SMALLEST_WINDOW, "{framing}: {first} bytes");
+            assert_eq!(output[..first], data[..first], "{framing}");
+        }
+    }
+
+    #[test]
+    fn matches_reaching_back_across_stored_blocks_read_as_flate2_reads_them() {
+        for case in crate::inflate::tests::matches_reaching_back_across_stored_blocks() {
+            let expected = match case.decoded {
+                Some(bytes) => Outcome::Decoded { bytes, left: 0 },
+                None => Outcome::Refused,
+            };
+            assert_eq!(agrees(&case.stream, "raw", &case.label), expected);
+            for (input_piece, output_piece) in [(1 << 20, 1), (1 << 20, 299), (7, 1 << 20)] {
+                assert_eq!(
+                    ours(&case.stream, "raw", input_piece, output_piece),
+                    expected,
+                    "{}: {input_piece}-byte input and {output_piece}-byte output pieces",
+                    case.label
+                );
+            }
+        }
     }
 }

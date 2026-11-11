@@ -53,6 +53,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-11 | [Stored Deflate blocks copied straight to the caller](deflate/stored-direct-copy/README.md) | Kept, pending a wall-time run. A `.tar.gz` of random bytes extracts with 26% fewer instructions than before and 13% fewer than the flate2 build. Silesia `.tar.gz` and ZIP are unchanged. Counted on a busy machine, so no timing. |
 | 2026-11-11 | [Zipper's own BZip2 decoder at one thread and in ZIP](bzip2/own-decoder-one-thread/README.md) | Kept. Silesia BZip2 extracts 1.66 times faster at one thread, faster than 7-Zip 26.06, and ZIP BZip2 1.47 times faster at default threads. Peak memory rises, and ZIP charges it to the decoder budget. |
 | 2026-11-11 | [Every Deflate decode on Zipper's own decoder, with no zlib](deflate/no-zlib/README.md) | Kept. flate2, zlib-rs and the macOS system zlib leave the build. 7z Deflate extracts 1.07 times and `.tar.gz` at level 1 1.05 times faster on an M2 Max, and no row got slower. |
 | 2026-11-11 | [BZip2 blocks decoded in parallel](bzip2/block-parallel/README.md) | Kept. Silesia `.tar.bz2` extracts 7.9 times faster and the BZip2 7z 5.0 times faster at default threads, 4.2 times faster than 7-Zip 26.06. One thread is unchanged, and peak memory rises to about 100 MiB. |
