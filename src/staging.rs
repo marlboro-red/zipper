@@ -32,6 +32,14 @@ pub enum Existing {
     /// staging folder, which is kept with everything not moved back. Existing
     /// directories keep their mode, and files the archive does not name are
     /// left alone.
+    ///
+    /// On Linux and macOS, several `Overwrite` extractions may run at once
+    /// into one destination when their archives hold only regular files and
+    /// folders. A folder another extraction creates first is merged into. An
+    /// undo moves back only this extraction's files and removes only the
+    /// folders it created that are then empty. Where two archives share a
+    /// file path, the path ends with one archive's whole file, or the
+    /// extraction that finds it newly created fails and undoes its renames.
     Overwrite,
     /// Extract into an existing directory, leaving out every archive file
     /// whose path already exists there, as 7-Zip's `-aos` does. An archive
@@ -48,6 +56,7 @@ pub enum Existing {
     RenameExisting,
 }
 
+#[derive(Clone, Debug)]
 enum Step {
     Create(PathBuf),
     Replace(PathBuf),
@@ -88,6 +97,13 @@ enum Done {
         staged: PathBuf,
         placed: PathBuf,
         new: Identity,
+    },
+    #[cfg(unix)]
+    Folder {
+        from: PathBuf,
+        to: PathBuf,
+        moved: Identity,
+        ours: HashSet<u64>,
     },
 }
 
@@ -229,7 +245,16 @@ impl Staging {
             crate::ntfs_streams::mark_extracted_files(&self.root, zone)?;
         }
         if !self.merge {
-            return crate::publish(&self.root, &self.destination, directories, &mut check);
+            let published = crate::publish(&self.root, &self.destination, directories, &mut check);
+            let cancelled = published
+                .as_ref()
+                .is_err_and(|error| error.downcast_ref::<crate::Cancelled>().is_some());
+            let appeared_folder = self.existing != Existing::Refuse
+                && fs::metadata(&self.destination).is_ok_and(|metadata| metadata.is_dir());
+            if published.is_ok() || cancelled || !appeared_folder {
+                return published;
+            }
+            Self::ensure_exact_merge(&self.destination, &self.root)?;
         }
         let mut steps = Vec::new();
         plan(
@@ -241,6 +266,16 @@ impl Staging {
             &mut steps,
         )?;
         ensure_links_stay_in_archive_paths(&self.root, &self.destination, &steps)?;
+        #[cfg(unix)]
+        let default = {
+            use std::os::unix::fs::PermissionsExt;
+            fs::metadata(&self.root)?.permissions().mode() & 0o777
+        };
+        let mut done = Vec::new();
+        let (steps, mut published) = match self.carry_out(steps, &mut done, &mut check, |_| {}) {
+            Ok(steps) => (steps, Ok(())),
+            Err(error) => (Vec::new(), Err(error)),
+        };
         let created: Vec<Directory> = directories
             .iter()
             .filter(|directory| {
@@ -250,13 +285,6 @@ impl Staging {
             })
             .copied()
             .collect();
-        #[cfg(unix)]
-        let default = {
-            use std::os::unix::fs::PermissionsExt;
-            fs::metadata(&self.root)?.permissions().mode() & 0o777
-        };
-        let mut done = Vec::new();
-        let mut published = self.carry_out(&steps, &mut done, &mut check, |_| {});
         #[cfg(unix)]
         if published.is_ok() {
             published = crate::unix_modes::apply_with_default(&self.destination, &created, default)
@@ -277,19 +305,28 @@ impl Staging {
 
     fn carry_out(
         &self,
-        steps: &[Step],
+        mut steps: Vec<Step>,
         done: &mut Vec<Done>,
         check: &mut impl FnMut() -> Result<()>,
         mut after_each: impl FnMut(&Step),
-    ) -> Result<()> {
+    ) -> Result<Vec<Step>> {
         let staged = |path: &Path| self.root.join(path);
         let placed = |path: &Path| self.destination.join(path);
         let mut aside = None;
         let mut spellings = Spellings::new();
-        for (index, step) in steps.iter().enumerate() {
+        let mut index = 0;
+        while let Some(step) = steps.get(index) {
             check()?;
             match step {
-                Step::Create(path) => Self::move_into_place(staged(path), placed(path), done)?,
+                Step::Create(path) => {
+                    if let Err(error) = Self::create(staged(path), placed(path), done) {
+                        let Some(merged) = self.plan_merge_into_appeared_folder(path) else {
+                            return Err(error);
+                        };
+                        steps.splice(index..=index, merged?);
+                        continue;
+                    }
+                }
                 Step::Replace(path) => {
                     let (aside, swaps) = self.aside(&mut aside, index)?;
                     let placed = placed(path);
@@ -309,8 +346,57 @@ impl Staging {
                 }
             }
             after_each(step);
+            index += 1;
         }
+        Ok(steps)
+    }
+
+    fn plan_merge_into_appeared_folder(&self, path: &Path) -> Option<Result<Vec<Step>>> {
+        let staged = fs::symlink_metadata(self.root.join(path)).ok()?;
+        let placed = fs::symlink_metadata(self.destination.join(path)).ok()?;
+        let links = walkdir::WalkDir::new(self.root.join(path))
+            .into_iter()
+            .any(|entry| entry.is_ok_and(|entry| entry.path_is_symlink()));
+        if !staged.is_dir() || !placed.is_dir() || !same_filesystem(&staged, &placed) || links {
+            return None;
+        }
+        let mut steps = Vec::new();
+        let planned = plan(
+            &self.root,
+            &self.destination,
+            self.existing,
+            path,
+            &mut HashSet::new(),
+            &mut steps,
+        );
+        Some(planned.map(|()| steps))
+    }
+
+    #[cfg(unix)]
+    fn create(staged: PathBuf, placed: PathBuf, done: &mut Vec<Done>) -> Result<()> {
+        use walkdir::DirEntryExt;
+        if !fs::symlink_metadata(&staged).is_ok_and(|metadata| metadata.is_dir()) {
+            return Self::move_into_place(staged, placed, done);
+        }
+        let ours = walkdir::WalkDir::new(&staged)
+            .min_depth(1)
+            .into_iter()
+            .map(|entry| entry.map(|entry| entry.ino()))
+            .collect::<Result<HashSet<u64>, _>>()?;
+        rename_without_replacing(&staged, &placed)?;
+        let moved = identity(&placed);
+        done.push(Done::Folder {
+            from: staged,
+            to: placed,
+            moved,
+            ours,
+        });
         Ok(())
+    }
+
+    #[cfg(not(unix))]
+    fn create(staged: PathBuf, placed: PathBuf, done: &mut Vec<Done>) -> Result<()> {
+        Self::move_into_place(staged, placed, done)
     }
 
     fn move_into_place(from: PathBuf, to: PathBuf, done: &mut Vec<Done>) -> Result<()> {
@@ -423,9 +509,30 @@ impl Staging {
                         swap(staged, placed)
                             .with_context(|| format!("cannot swap {} back", placed.display()))
                     }),
+                    #[cfg(unix)]
+                    Done::Folder {
+                        from,
+                        to,
+                        moved,
+                        ours,
+                    } => ensure_unchanged(to, *moved).and_then(|()| {
+                        move_back_only_ours(from, to, ours).map_err(|error| {
+                            anyhow::anyhow!(
+                                "cannot move {} back to {}: {}",
+                                to.display(),
+                                from.display(),
+                                error.root_cause()
+                            )
+                        })
+                    }),
                 };
+
                 let describe = || match step {
                     Done::Moved { from, to, .. } => {
+                        format!("{} moved from {}", to.display(), from.display())
+                    }
+                    #[cfg(unix)]
+                    Done::Folder { from, to, .. } => {
                         format!("{} moved from {}", to.display(), from.display())
                     }
                     Done::Swapped { staged, placed, .. } => {
@@ -449,6 +556,34 @@ impl Staging {
             self.root.display()
         ))
     }
+}
+
+#[cfg(unix)]
+fn move_back_only_ours(from: &Path, to: &Path, ours: &HashSet<u64>) -> Result<()> {
+    use walkdir::DirEntryExt;
+    let walk = |contents_first| {
+        walkdir::WalkDir::new(to)
+            .contents_first(contents_first)
+            .into_iter()
+            .filter_entry(|entry| entry.depth() == 0 || ours.contains(&entry.ino()))
+    };
+    for entry in walk(false) {
+        let entry = entry?;
+        let back = join_rest(from, entry.path().strip_prefix(to)?);
+        if entry.file_type().is_dir() {
+            fs::create_dir(&back)?;
+        } else {
+            rename_without_replacing(entry.path(), &back)?;
+        }
+    }
+    for entry in walk(true) {
+        let entry = entry?;
+        match fs::remove_dir(entry.path()) {
+            Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
+            removed => removed?,
+        }
+    }
+    Ok(())
 }
 
 #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
@@ -993,7 +1128,7 @@ mod tests {
         let mut done = Vec::new();
         let error = merge
             .staging
-            .carry_out(&merge.steps, &mut done, &mut || Ok(()), after_each)
+            .carry_out(merge.steps.clone(), &mut done, &mut || Ok(()), after_each)
             .unwrap_err();
         merge.staging.undo(&done, error)
     }
@@ -1028,6 +1163,104 @@ mod tests {
         let mut staged_after = tree(merge.staging.path(), Path::new(""));
         staged_after.retain(|path, _| !path.to_string_lossy().starts_with(".zipper-"));
         assert_eq!(staged_after, staged);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_another_extraction_creates_first_is_merged_into() {
+        let merge = merge();
+        let steps = vec![Step::Replace("x".into()), Step::Create("d".into())];
+        let mut done = Vec::new();
+        let carried = merge
+            .staging
+            .carry_out(steps, &mut done, &mut || Ok(()), |step| {
+                if matches!(step, Step::Replace(_)) {
+                    fs::create_dir(merge.destination.join("d")).unwrap();
+                    fs::write(merge.destination.join("d/other"), b"another extraction").unwrap();
+                }
+            });
+        let carried = carried.unwrap_or_else(|error| panic!("{error:#}"));
+        assert!(
+            !carried
+                .iter()
+                .any(|step| matches!(step, Step::Create(path) if path == Path::new("d")))
+        );
+        assert_eq!(fs::read(merge.destination.join("d/f")).unwrap(), b"new f");
+        assert_eq!(
+            fs::read(merge.destination.join("d/other")).unwrap(),
+            b"another extraction"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_cancel_before_a_merged_step_stops_there_and_keeps_the_other_extraction_files() {
+        let merge = merge();
+        let before = tree(&merge.destination, merge.staging.path());
+        let steps = vec![
+            Step::Replace("x".into()),
+            Step::Create("d".into()),
+            Step::Create("e/g".into()),
+        ];
+        let checks = std::cell::Cell::new(0);
+        let mut check = || {
+            checks.set(checks.get() + 1);
+            ensure!(checks.get() < 3, crate::Cancelled);
+            Ok(())
+        };
+        let mut done = Vec::new();
+        let error = merge
+            .staging
+            .carry_out(steps, &mut done, &mut check, |step| {
+                if matches!(step, Step::Replace(_)) {
+                    fs::create_dir(merge.destination.join("d")).unwrap();
+                    fs::write(merge.destination.join("d/other"), b"another extraction").unwrap();
+                }
+            })
+            .unwrap_err();
+        assert_eq!(checks.get(), 3);
+        let error = merge.staging.undo(&done, error);
+        assert!(error.downcast_ref::<crate::Cancelled>().is_some(), "{error:#}");
+        let mut after = tree(&merge.destination, merge.staging.path());
+        assert_eq!(
+            after.remove(Path::new("d/other")).unwrap().1.unwrap(),
+            b"another extraction"
+        );
+        assert!(after.remove(Path::new("d")).unwrap().1.is_none());
+        assert_eq!(after, before);
+        assert_eq!(fs::read(merge.staging.path().join("d/f")).unwrap(), b"new f");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_undo_keeps_what_another_extraction_put_in_a_folder_it_created() {
+        let merge = merge();
+        fs::create_dir(merge.staging.path().join("d/h")).unwrap();
+        fs::write(merge.staging.path().join("d/h/i"), b"new i").unwrap();
+        let before = tree(&merge.destination, merge.staging.path());
+        let error = run(&merge, |step| match step {
+            Step::Create(path) if path == Path::new("d") => {
+                fs::write(merge.destination.join("d/h/other"), b"another extraction").unwrap();
+            }
+            Step::Replace(_) => {
+                fs::remove_dir(merge.destination.join("e")).unwrap();
+                fs::write(merge.destination.join("e"), b"another program").unwrap();
+            }
+            _ => {}
+        });
+        let message = format!("{error:#}");
+        assert!(!message.contains("could not undo"), "{message}");
+        let mut after = tree(&merge.destination, merge.staging.path());
+        assert_eq!(
+            after.remove(Path::new("d/h/other")).unwrap().1.unwrap(),
+            b"another extraction"
+        );
+        assert!(after.remove(Path::new("d/h")).unwrap().1.is_none());
+        assert!(after.remove(Path::new("d")).unwrap().1.is_none());
+        after.remove(Path::new("e"));
+        let mut expected = before;
+        expected.remove(Path::new("e"));
+        assert_eq!(after, expected);
     }
 
     #[cfg(unix)]
@@ -1175,7 +1408,7 @@ mod tests {
         let mut done = Vec::new();
         let error = merge
             .staging
-            .carry_out(&steps, &mut done, &mut || Ok(()), |step| {
+            .carry_out(steps, &mut done, &mut || Ok(()), |step| {
                 if matches!(step, Step::Create(path) if path == Path::new("e/g")) {
                     fs::rename(
                         merge.destination.join("e"),

@@ -1,0 +1,32 @@
+# Concurrent extractions into one folder
+
+Several `--overwrite` extractions can run at once into one destination folder on Linux and macOS. This page states what holds then and the conditions it needs.
+
+## Conditions
+
+- Every run uses `Existing::Overwrite`, which is `--overwrite` or `--existing overwrite`.
+- The archives hold regular files and folders only. The guarantee covers no symlinks and no hard links. An archive with links keeps the contract that [usage](../usage.md#extract-into-an-existing-folder) gives for one extraction.
+- The runs are on Linux or macOS. Windows is not tested here.
+- Only Zipper runs change the destination during the extractions. The [usage page](../usage.md) asks for a private destination parent, and that still applies.
+- The destination may exist before the runs start, or one of the runs may create it.
+
+## What holds when no file path is shared
+
+The archives may share folder names, such as `bin/` and `lib/`, but no file path.
+
+- No run fails because another run created a shared folder first. A run that finds a folder another run created after its plan merges into that folder.
+- Every run that succeeds has published every one of its files with the archive's bytes.
+- No hidden `.zipper-` folder is left after a run that succeeds or fails, unless an undo fails as the usage page describes.
+- A run that fails before publication, such as one with a damaged archive, changes nothing in the destination. The other runs are not affected.
+- A run that fails or is cancelled during publication undoes only its own work. It moves back the files it placed and removes only the folders it created that are empty afterwards. A folder it created that another run has since put files into stays, with those files.
+
+## What happens when a file path is shared
+
+When two runs write the same file path, the path ends with the whole file from one archive. It never holds a mix of the bytes of both.
+
+- If the path existed when both runs planned, each run replaces it by rename, and the last rename wins.
+- If neither run saw the path, the first rename creates it. The other run stops with an error that the path appeared in the destination during extraction, and undoes its other files.
+
+## How it is tested
+
+`tests/concurrent_overwrite.rs` runs 8 ZIP archives at once into one folder for 6 rounds by default. Each archive has 121 files in shared folders. The rounds start from an empty folder, a folder that already holds the shared folders, and a missing folder. Every round compares every file on disk with its source and checks that no `.zipper-` folder is left. One test damages one archive so that it fails before publication. Another gives 4 archives a shared 1 MiB file. `ZIPPER_CONCURRENT_ROUNDS` and `ZIPPER_CONCURRENT_ARCHIVES` raise the counts for a longer run. The undo in a folder that another run has used is tested in `src/staging.rs`, because a failure during publication cannot be caused from outside.
