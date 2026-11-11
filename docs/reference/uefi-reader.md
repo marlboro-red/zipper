@@ -42,7 +42,7 @@ Zipper refuses a file that 7-Zip refuses:
 
 - The output goes to a hidden staging folder and is published only when the whole file reads, as with every reader.
 - Every check holds before a byte is written. Each output file is charged against free space, or `--max-extracted-bytes`, before it is written.
-- The image is read into memory once, at most 512 MiB. Decoded LZMA sections are held in memory too, at most 256 MiB in all. A section that declares more is refused before it is decoded, as one more failed volume. Output files are written from those buffers.
+- The reader passes over the file in 1 MiB pieces to find volume headers, then reads the volume it tries into memory, at most 512 MiB. Decoded LZMA sections are held in memory too, at most 256 MiB in all. A section that declares more is refused before it is decoded, as one more failed volume. Output files are written from those buffers.
 - Section lists nest at most 64 deep, as in 7-Zip. A file's sections sit two levels below its volume, and each GUID-defined, CRC32, compression and volume section adds one level.
 - `--path`, `--include`, `--exclude`, `--strip-components` and `--strip-prefix` work as with every reader.
 
@@ -50,8 +50,8 @@ Zipper refuses a file that 7-Zip refuses:
 
 - A name that is not a plain relative path goes to 7-Zip under the default engine, and `--zip-engine native` refuses it. That covers a user interface name that holds `/..`, `\` or `:`, and an empty name.
 - 7-Zip writes some of a file that fails a check after it finds the failure, and reports an error. Zipper writes nothing.
-- An image larger than 512 MiB and decoded sections larger than 256 MiB in all are refused. 7-Zip reads them.
-- 7-Zip searches the whole file for a volume and tries every one it finds. Zipper sniffs the first MiB of a file no other reader claims, and tries the first 16 volume headers.
+- A volume or capsule payload larger than 512 MiB and decoded sections larger than 256 MiB in all are refused. 7-Zip reads them.
+- 7-Zip searches the whole file for a volume and tries every one it finds. Zipper sniffs the first MiB of a file no other reader claims, and tries the first 16 volume headers. The QEMU AArch64 image of 64 MiB, a volume of 2 MiB after 4 KiB of code, peaks at 24 MB under `zipper test`, where `7zz t` peaks at 18 MB.
 - When a damaged section list lies inside an uncompressed compression or CRC32 section, 7-Zip sometimes reports a header error where Zipper searches on and reads a volume further in. The random sweeps found this in about 1 in 300 flipped volumes.
 - A RISC-V QEMU firmware image starts with a jump that 7-Zip takes for an LZMA header, so 7-Zip opens it as an LZMA file and fails. Zipper reads its firmware volume.
 
@@ -59,7 +59,7 @@ Zipper refuses a file that 7-Zip refuses:
 
 | Limit | Value |
 | --- | --- |
-| Image | at most 512 MiB |
+| Volume or capsule payload | at most 512 MiB |
 | Decoded sections | at most 256 MiB in all |
 | Nesting | at most 64 levels, as in 7-Zip |
 | Volume headers tried | at most 16 |

@@ -4,6 +4,7 @@
 //! `docs/reference/uefi-reader.md`.
 pub use crate::tree::ReadOptions;
 use crate::tree::{self, BACKEND_HINT};
+use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
 use std::{io::Read, path::Path};
@@ -71,7 +72,8 @@ const DEPEX_PUSH_OPERAND: usize = 16;
 const DEPEX_LAST_OPCODE: u8 = 0x09;
 const DEPEX_OPCODES_WITH_GUID: std::ops::RangeInclusive<u8> = 0..=2;
 const NESTING_LIMIT: usize = 64;
-const LARGEST_IMAGE: u64 = 512 << 20;
+const LARGEST_VOLUME: u64 = 512 << 20;
+const SCAN_CHUNK: usize = 1 << 20;
 const DECODED_BUDGET: u64 = 256 << 20;
 const CANDIDATE_LIMIT: usize = 16;
 const SNIFF_WINDOW: u64 = 1 << 20;
@@ -785,11 +787,6 @@ struct Image {
     items: Vec<Item>,
 }
 
-fn capsule_payload(data: &[u8]) -> Option<std::ops::Range<usize>> {
-    let header: &[u8; CAPSULE_HEADER] = data.get(..CAPSULE_HEADER)?.try_into().ok()?;
-    capsule_header(header, data.len() as u64)
-}
-
 // SPEC(UEFI 2.10, 8.5.3 EFI_CAPSULE_HEADER): the capsule GUID, the header size, flags and the
 // image size, which counts the header.
 pub(crate) fn capsule_header(
@@ -839,55 +836,114 @@ fn is_volume_at(data: &[u8], start: usize) -> bool {
         .is_some_and(|kind| matches!(kind, VolumeKind::Volume { .. }))
 }
 
-fn open(data: Vec<u8>) -> Result<Image> {
-    let mut parser = Parser {
-        buffers: vec![data],
-        decoded: 0,
-    };
+fn read_range(file: &ArchiveFile, start: u64, length: u64) -> Result<Vec<u8>> {
+    ensure!(
+        length <= LARGEST_VOLUME,
+        crate::OverLimit(format!(
+            "a UEFI volume is larger than {} MiB; {BACKEND_HINT}",
+            LARGEST_VOLUME >> 20
+        ))
+    );
+    let mut data = vec![0u8; length as usize];
+    let mut done = 0;
+    while done < data.len() {
+        let read = file
+            .read_at(&mut data[done..], start + done as u64)
+            .context("cannot read the UEFI image")?;
+        ensure!(read > 0, "the UEFI image is truncated");
+        done += read;
+    }
+    Ok(data)
+}
+
+fn volume_starts(file: &ArchiveFile, length: u64) -> Result<Vec<u64>> {
+    let mut starts = Vec::new();
+    let mut chunk = vec![0u8; SCAN_CHUNK];
+    let mut offset = 0u64;
+    while offset < length && starts.len() < CANDIDATE_LIMIT {
+        let want = (length - offset).min(SCAN_CHUNK as u64) as usize;
+        let piece = &mut chunk[..want];
+        let mut done = 0;
+        while done < want {
+            let read = file
+                .read_at(&mut piece[done..], offset + done as u64)
+                .context("cannot read the UEFI image")?;
+            ensure!(read > 0, "the UEFI image is truncated");
+            done += read;
+        }
+        for at in candidates(piece) {
+            let start = offset + at as u64;
+            if at + VOLUME_HEADER > want && start + VOLUME_HEADER as u64 <= length {
+                let head = read_range(file, start, VOLUME_HEADER as u64)?;
+                if is_volume_at(&head, 0) && !starts.contains(&start) {
+                    starts.push(start);
+                }
+            } else if is_volume_at(piece, at) && !starts.contains(&start) {
+                starts.push(start);
+            }
+        }
+        if want < SCAN_CHUNK {
+            break;
+        }
+        offset += (SCAN_CHUNK - VOLUME_HEADER) as u64;
+    }
+    starts.truncate(CANDIDATE_LIMIT);
+    Ok(starts)
+}
+
+fn parser_of(data: Vec<u8>) -> (Parser, Bytes) {
     let whole = Bytes {
         buffer: 0,
         start: 0,
-        end: parser.buffers[0].len(),
+        end: data.len(),
     };
+    (
+        Parser {
+            buffers: vec![data],
+            decoded: 0,
+        },
+        whole,
+    )
+}
+
+fn open(path: &Path) -> Result<Image> {
+    let file = crate::volumes::open(path)?;
+    let length = file.len()?;
     let mut refusal = "the file holds no UEFI volume";
-    if let Some(payload) = capsule_payload(parser.bytes(whole)) {
-        match open_capsule(&mut parser, whole, payload) {
+    let capsule = (length >= CAPSULE_HEADER as u64)
+        .then(|| read_range(&file, 0, CAPSULE_HEADER as u64))
+        .transpose()?
+        .and_then(|head| capsule_header(head[..].try_into().unwrap(), length));
+    if let Some(payload) = capsule {
+        let data = read_range(
+            &file,
+            payload.start as u64,
+            (payload.end - payload.start) as u64,
+        )?;
+        let (mut parser, whole) = parser_of(data);
+        match open_capsule(&mut parser, whole, 0..whole.end) {
             Ok(items) => return Ok(Image { parser, items }),
             Err(Failure::Headers(message)) => bail!("{message}"),
             Err(Failure::Format(message)) => refusal = message,
         }
     }
-    let starts: Vec<usize> = candidates(parser.bytes(whole))
-        .filter(|&start| is_volume_at(parser.bytes(whole), start))
-        .take(CANDIDATE_LIMIT)
-        .collect();
-    for start in starts {
-        parser.decoded = 0;
-        parser.buffers.truncate(1);
-        let at = Parser::sub(whole, start, whole.end);
-        match parser.volume(at, 0) {
+    for start in volume_starts(&file, length)? {
+        let head = read_range(&file, start, VOLUME_HEADER as u64)?;
+        let Ok(VolumeKind::Volume {
+            length: declared, ..
+        }) = volume_header(head[..].try_into().unwrap())
+        else {
+            continue;
+        };
+        let data = read_range(&file, start, declared.min(length - start))?;
+        let (mut parser, whole) = parser_of(data);
+        match parser.volume(whole, 0) {
             Ok(items) => return Ok(Image { parser, items }),
             Err(Failure::Headers(message)) => bail!("{message}"),
             Err(Failure::Format(message)) => refusal = message,
         }
     }
     bail!("{refusal}")
-}
-
-fn read_image(path: &Path) -> Result<Vec<u8>> {
-    let mut file = crate::volumes::open(path)?;
-    let length = file.len()?;
-    ensure!(
-        length <= LARGEST_IMAGE,
-        crate::OverLimit(format!(
-            "the UEFI image is larger than {} MiB; {BACKEND_HINT}",
-            LARGEST_IMAGE >> 20
-        ))
-    );
-    let mut data = Vec::with_capacity(length as usize);
-    file.read_to_end(&mut data)
-        .context("cannot read the UEFI image")?;
-    Ok(data)
 }
 
 fn paths(items: &[Item], prefix: &str, out: &mut Vec<String>) {
@@ -949,7 +1005,7 @@ pub fn sniff_later_volume(path: &Path) -> Result<bool> {
 /// that writes a name that is not a plain relative path, which 7-Zip
 /// writes as it is.
 pub fn needs_backend(path: &Path) -> Result<bool> {
-    let Ok(image) = read_image(path).and_then(open) else {
+    let Ok(image) = open(path) else {
         return Ok(false);
     };
     let mut names = Vec::new();
@@ -965,7 +1021,7 @@ pub fn read_archive(
     destination: Option<&Path>,
     options: ReadOptions,
 ) -> Result<Vec<Entry>> {
-    let image = open(read_image(path)?)?;
+    let image = open(path)?;
     tree::extract("UEFI", path, destination, options, |tree| {
         emit(tree, &image.parser, &image.items, "")
     })
