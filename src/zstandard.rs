@@ -2121,6 +2121,7 @@ pub(crate) struct ZstdReader<R> {
     earlier: usize,
     frame: Frame,
     finished_a_frame: bool,
+    failure: Option<io::Error>,
 }
 
 fn cut_short() -> io::Error {
@@ -2164,6 +2165,7 @@ impl<R: BufRead> ZstdReader<R> {
                 hash: Xxh64::new(),
             },
             finished_a_frame: false,
+            failure: None,
         }
     }
 
@@ -2347,32 +2349,38 @@ impl<R: BufRead> ZstdReader<R> {
 
 impl<R: BufRead> Read for ZstdReader<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        if buffer.is_empty() {
-            return Ok(0);
-        }
-        loop {
+        let mut filled = 0;
+        while filled < buffer.len() {
             if self.flushed < self.at {
-                let count = buffer.len().min(self.at - self.flushed);
-                buffer[..count].copy_from_slice(&self.ring[self.flushed..self.flushed + count]);
+                let count = (buffer.len() - filled).min(self.at - self.flushed);
+                buffer[filled..filled + count]
+                    .copy_from_slice(&self.ring[self.flushed..self.flushed + count]);
                 self.flushed += count;
-                return Ok(count);
+                filled += count;
+                continue;
             }
-            let step = match self.stage {
-                Stage::Done => return Ok(0),
-                Stage::Failed => {
-                    return Err(io::Error::other("Zstandard decoding already failed"));
-                }
-                Stage::Header => self.start_frame(),
-                Stage::Blocks => self.next_block(),
+            if filled > 0 && self.failure.is_some() {
+                break;
+            }
+            let step = match (self.failure.take(), &self.stage) {
+                (Some(error), _) => Err(error),
+                (None, Stage::Done) => break,
+                (None, Stage::Failed) => Err(io::Error::other("Zstandard decoding already failed")),
+                (None, Stage::Header) => self.start_frame(),
+                (None, Stage::Blocks) => self.next_block(),
             };
             if let Err(error) = step {
                 if error.kind() != io::ErrorKind::Interrupted {
                     self.stage = Stage::Failed;
                     self.at = self.flushed;
                 }
-                return Err(error);
+                if filled == 0 {
+                    return Err(error);
+                }
+                self.failure = Some(error);
             }
         }
+        Ok(filled)
     }
 }
 

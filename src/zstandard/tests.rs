@@ -1765,3 +1765,33 @@ fn a_second_decoder_on_a_thread_reuses_the_buffers_of_the_first() {
         "a frame of raw blocks took decoder buffers"
     );
 }
+
+#[test]
+fn one_read_fills_the_callers_buffer_across_blocks_and_keeps_a_later_error() {
+    let text = sources();
+    let frame = encode(&text[..600_000], 3, |_| {});
+    let mut buffer = vec![0u8; 1 << 20];
+    let mut reader = ZstdReader::new(&frame[..]);
+    assert_eq!(reader.read(&mut buffer).unwrap(), 600_000);
+    assert!(buffer[..600_000] == text[..600_000]);
+    assert_eq!(reader.read(&mut buffer).unwrap(), 0);
+    let mut reader = ZstdReader::new(&frame[..]);
+    let mut total = 0;
+    for _ in 0..3 {
+        let read = reader.read(&mut buffer[total..total + 200_000]).unwrap();
+        assert_eq!(read, 200_000);
+        total += read;
+    }
+    assert!(buffer[..600_000] == text[..600_000]);
+    let cut = &frame[..frame.len() - 40];
+    let mut reader = ZstdReader::new(cut);
+    let before = reader.read(&mut buffer).unwrap();
+    assert!(
+        (BLOCK_MAX..600_000).contains(&before),
+        "{before} bytes before the cut"
+    );
+    assert!(buffer[..before] == text[..before]);
+    let error = reader.read(&mut buffer).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+    assert!(reader.read(&mut buffer).is_err());
+}
