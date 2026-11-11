@@ -56,7 +56,7 @@ The reader opens a file only when 7-Zip opens it:
 - A file of more than 1,000,000 runs is refused. 7-Zip reads it.
 - A `\` or `:` in the name of a single run's file becomes `_`, as for every name Zipper derives from the archive's name. 7-Zip keeps them on macOS and Linux.
 - A file with no data records publishes an empty destination folder. 7-Zip creates none.
-- 7-Zip holds every run in memory. Zipper holds no data, so a run of 64 MiB peaks at about 4 MB, where 7-Zip peaks at 137 MB. A file of 1,000,000 one-byte runs peaks at about 175 MB in Zipper, from the tree writer's record of each name, and at 141 MB in 7-Zip.
+- 7-Zip holds every run in memory. Zipper holds no data, so a run of 64 MiB peaks at about 4 MB, where 7-Zip peaks at 137 MB. A file of 1,000,000 one-byte runs peaks at about 175 MB when Zipper extracts it and 216 MB when it lists or tests it, where 7-Zip peaks at 143 MB. Most of that is likely the tree writer's record of each entry and name, which every tree reader keeps, but it has not been profiled.
 
 ## Limits
 
