@@ -2647,7 +2647,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [squashfs-fields]
-fingerprint = c2c4bb3c39753c92
+fingerprint = caeaec8faef99c1a
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach squashfs-fields
 full-check = cargo kani --harness native_squashfs::field_proofs::
@@ -3216,7 +3216,7 @@ item = src/bzip2_streams.rs | impl<R: BufRead> Read for ParallelBzip2<R> {
 
 [deflate-framing]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 39730f405f120b6f
+fingerprint = 885d609c91674a7a
 full-check = cargo xtask kani-reach deflate-framing
 full-check = cargo kani --exact --harness framing::proofs::gzip_headers_read_alike_in_any_split_and_end_where_their_fields_end
 full-check = cargo test --release --lib framing::
@@ -3233,6 +3233,8 @@ item = src/framing.rs | impl Adler32 {
 item = src/framing.rs | pub(crate) fn adler32(
 item = src/framing.rs | pub(crate) struct Decoded {
 item = src/framing.rs | pub(crate) fn inflate_block(
+item = src/framing.rs | pub(crate) fn inflate_until_full(
+item = src/framing.rs | fn fill(
 item = src/framing.rs | pub(crate) fn zlib_block(
 item = src/framing.rs | const GZIP_HEADER_CRC:
 item = src/framing.rs | const GZIP_EXTRA:
