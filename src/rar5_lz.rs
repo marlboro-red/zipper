@@ -22,6 +22,7 @@ const LARGEST_FILTER: u64 = 0x40_0000;
 const SMALLEST_FILTER: u64 = 4;
 const MOST_FILTERS: usize = 8192;
 const BLOCK_CHECK: u8 = 0x5A;
+const LONGEST_BLOCK_SIZE: usize = 3;
 const LAST_BLOCK: u8 = 0x40;
 const HAS_TABLES: u8 = 0x80;
 const E8_FILE_SIZE: u32 = 0x100_0000;
@@ -238,7 +239,7 @@ pub(crate) struct BlockHeader {
 pub(crate) fn block_header(bytes: &[u8]) -> Result<BlockHeader, &'static str> {
     let flags = *bytes.first().ok_or("truncated RAR 5 block header")?;
     let size_bytes = usize::from((flags >> 3) & 3) + 1;
-    if size_bytes > 3 {
+    if size_bytes > LONGEST_BLOCK_SIZE {
         return Err("RAR 5 block size has more than 3 bytes");
     }
     let header_bytes = 2 + size_bytes;
@@ -630,6 +631,9 @@ impl Stream {
             .read_exact(&mut head[..first])
             .map_err(|_| invalid("truncated RAR 5 block header"))?;
         let size_bytes = usize::from((head[0] >> 3) & 3) + 1;
+        if size_bytes > LONGEST_BLOCK_SIZE {
+            return Err(invalid("RAR 5 block size has more than 3 bytes"));
+        }
         let header_bytes = 2 + size_bytes;
         if header_bytes as u64 > *remaining {
             return Err(invalid("truncated RAR 5 block header"));
@@ -1191,6 +1195,14 @@ mod stream_tests {
             kind: 4,
         };
         assert!(decode(&block_with_fixed_width_tables(&tokens), 8).is_err());
+    }
+
+    #[test]
+    fn a_block_header_that_asks_for_a_four_byte_size_is_refused() {
+        let mut packed = block_with_fixed_width_tables(&[Token::Literal(1)]);
+        packed[0] |= 3 << 3;
+        packed.extend([0; 8]);
+        assert!(decode(&packed, 1).is_err());
     }
 
     #[test]
