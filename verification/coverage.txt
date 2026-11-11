@@ -1526,7 +1526,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [disk-fields]
-fingerprint = 707d531cc6c3379a
+fingerprint = 331f190b678b14d0
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach disk-fields
 full-check = cargo kani --harness disk::proofs::
