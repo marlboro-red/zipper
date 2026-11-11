@@ -373,6 +373,23 @@ fn compressed_sections_that_declare_more_than_the_budget_are_refused_before_they
 }
 
 #[test]
+fn the_literal_tables_count_toward_the_budget_and_passing_it_stops_the_search() {
+    let mut wide = lzma_alone(b"tiny");
+    wide[0] = 224;
+    wide[1..5].copy_from_slice(&(200u32 << 20).to_le_bytes());
+    wide[5..13].copy_from_slice(&(126u64 << 20).to_le_bytes());
+    let budgeted = volume(vec![ffs(
+        &named(1, 1),
+        7,
+        &sections(&[guided(LZMA, &wide, 1, &[])]),
+    )]);
+    let after = volume(vec![ffs(&named(2, 1), 1, b"after")]);
+    let (result, _work) = extract(&[budgeted, after].concat());
+    let error = format!("{:#}", result.unwrap_err());
+    assert!(error.contains("need more than 256 MiB"), "{error}");
+}
+
+#[test]
 fn more_files_and_sections_than_the_entry_limit_are_refused_before_they_are_kept() {
     let empty = section(0x19, b"");
     let body = empty.repeat(1_100_000);
