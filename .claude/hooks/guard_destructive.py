@@ -117,9 +117,21 @@ def check_piped_checks(command):
              "exit status, or add `set -o pipefail`.")
 
 
+POLLING_LOOP = re.compile(r"\b(until|while)\b.*?\bdo\b(?P<body>.*?)\bdone\b", re.S)
+
+
+def check_polling_loops(command):
+    if any(re.search(r"\bsleep\b", loop.group("body")) for loop in POLLING_LOOP.finditer(command)):
+        deny("a loop that sleeps until a log line or process appears waits for work the harness already "
+             "watches. On 11 November builders left 66 such loops behind, one more each time they waited. "
+             "Run the work itself with `run_in_background: true` and wait for its completion notice, and never "
+             "start a second waiter for the same work. A retry loop that waits on load belongs in a script file.")
+
+
 def check(command, cwd, depth=0):
     if depth == 0:
         check_piped_checks(command)
+        check_polling_loops(command)
     try:
         words = tokens(command)
     except ValueError:

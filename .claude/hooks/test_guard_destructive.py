@@ -54,6 +54,26 @@ class Guard(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(denied(command), "&&" in command.split("|", 1)[1].split(";")[0], command)
 
+    def test_blocks_a_loop_that_sleeps_until_work_finishes(self):
+        for command in [
+            "until grep -q '^rc=' /tmp/x/sync.out; do sleep 20; done; cat /tmp/x/sync.out",
+            'while ! grep -q "^exit" /tmp/x/verify.log; do sleep 10; done',
+            'while pgrep -f "plants.sh" >/dev/null; do sleep 15; done; tail -5 log',
+            "zsh -c 'until test -f done.txt; do\n  sleep 5\ndone'",
+        ]:
+            with self.subTest(command=command):
+                self.assertTrue(denied(command))
+
+    def test_allows_loops_that_do_not_sleep(self):
+        for command in [
+            "for try in 1 2 3; do cargo xtask ship > log 2>&1 && break; done",
+            "while read -r p; do kill $p; done < pids.txt",
+            "for f in *.json; do python3 -c 'import json' $f; done",
+            "zsh scripts/wait_for_quiet.sh; sleep 1",
+        ]:
+            with self.subTest(command=command):
+                self.assertFalse(denied(command))
+
     def test_allows_checks_whose_status_survives(self):
         for command in [
             "cargo xtask gate fast > log 2>&1; tail -3 log",
