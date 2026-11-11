@@ -456,40 +456,50 @@ fn first_column_starts(counts: &[u32; 256]) -> [u32; 256] {
     starts
 }
 
-fn text_before_runs(column: &[u8], counts: &[u32; 256], origin: u32) -> Vec<u8> {
+fn text_before_runs(
+    mut column: Vec<u8>,
+    counts: &[u32; 256],
+    origin: u32,
+    scratch: &mut Scratch,
+) -> Vec<u8> {
     let mut starts = first_column_starts(counts);
-    let mut onward = vec![0u32; column.len()];
+    let onward = &mut scratch.onward;
+    onward.clear();
+    onward.resize(column.len(), 0);
     for (row, &byte) in column.iter().enumerate() {
         let start = &mut starts[usize::from(byte)];
         onward[*start as usize] = (row as u32) << 8 | u32::from(byte);
         *start += 1;
     }
-    let mut text = vec![0u8; column.len()];
     let mut row = origin;
-    for byte in &mut text {
+    for byte in &mut column {
         let link = onward[row as usize];
         *byte = link as u8;
         row = link >> 8;
     }
-    text
+    column
 }
 
 fn text_before_runs_walked_from_both_ends(
-    column: &[u8],
+    mut column: Vec<u8>,
     counts: &[u32; 256],
     origin: u32,
+    scratch: &mut Scratch,
 ) -> Vec<u8> {
     let mut starts = first_column_starts(counts);
-    let mut onward = vec![0u32; column.len()];
-    let mut back = vec![0u32; column.len()];
-    for ((row, &byte), back) in column.iter().enumerate().zip(&mut back) {
+    let (onward, back) = (&mut scratch.onward, &mut scratch.back);
+    onward.clear();
+    onward.resize(column.len(), 0);
+    back.clear();
+    back.resize(column.len(), 0);
+    for ((row, &byte), back) in column.iter().enumerate().zip(back.iter_mut()) {
         let start = &mut starts[usize::from(byte)];
         onward[*start as usize] = (row as u32) << 8 | u32::from(byte);
         *back = *start << 8 | u32::from(byte);
         *start += 1;
     }
-    let mut text = vec![0u8; column.len()];
-    let (first_half, second_half) = text.split_at_mut(column.len().div_ceil(2));
+    let text = &mut column[..];
+    let (first_half, second_half) = text.split_at_mut(text.len().div_ceil(2));
     let (mut row, mut back_row) = (origin, origin);
     for (byte, mirrored) in first_half.iter_mut().zip(second_half.iter_mut().rev()) {
         let (link, back_link) = (onward[row as usize], back[back_row as usize]);
@@ -508,7 +518,13 @@ fn text_before_runs_walked_from_both_ends(
             row = link >> 8;
         }
     }
-    text
+    column
+}
+
+#[derive(Default)]
+pub(crate) struct Scratch {
+    onward: Vec<u32>,
+    back: Vec<u32>,
 }
 
 fn undo_randomising(text: &mut [u8]) {
@@ -541,11 +557,12 @@ pub(crate) fn decode_block(
     limit: u64,
     level: u8,
     walk: Walk,
+    scratch: &mut Scratch,
 ) -> Result<Block, Refusal> {
     let mut bits = Bits::at(bytes, start);
-    let mut column = vec![0u8; BYTES_PER_LEVEL * usize::from(level)];
+    let mut column_bytes = vec![0u8; BYTES_PER_LEVEL * usize::from(level)];
     let mut column = Column {
-        bytes: &mut column,
+        bytes: &mut column_bytes,
         filled: 0,
         counts: [0; 256],
     };
@@ -557,11 +574,12 @@ pub(crate) fn decode_block(
     if start.origin as usize >= column.filled {
         return Err(Refusal::Damaged("bzip2 block starts past its end"));
     }
-    let column_read = &column.bytes[..column.filled];
+    let (filled, counts) = (column.filled, column.counts);
+    column_bytes.truncate(filled);
     let mut text = match walk {
-        Walk::Onward => text_before_runs(column_read, &column.counts, start.origin),
+        Walk::Onward => text_before_runs(column_bytes, &counts, start.origin, scratch),
         Walk::FromBothEnds => {
-            text_before_runs_walked_from_both_ends(column_read, &column.counts, start.origin)
+            text_before_runs_walked_from_both_ends(column_bytes, &counts, start.origin, scratch)
         }
     };
     if start.randomised {
@@ -945,10 +963,17 @@ pub(crate) mod tests {
         let limit = stream.len() as u64 * 8;
         let mut at = 32;
         for _ in 0..block {
-            at = decode_block(stream, at, limit, level, Walk::Onward)
-                .ok()
-                .unwrap()
-                .end;
+            at = decode_block(
+                stream,
+                at,
+                limit,
+                level,
+                Walk::Onward,
+                &mut Scratch::default(),
+            )
+            .ok()
+            .unwrap()
+            .end;
         }
         let mut bits = Bits::at(stream, at);
         block_start(&mut bits, level).ok().unwrap();
@@ -960,10 +985,17 @@ pub(crate) mod tests {
         let selectors_end = bits.position() as usize;
         let mut end = at;
         while magic_at(stream, end) == Some(Magic::Block) {
-            end = decode_block(stream, end, limit, level, Walk::Onward)
-                .ok()
-                .unwrap()
-                .end;
+            end = decode_block(
+                stream,
+                end,
+                limit,
+                level,
+                Walk::Onward,
+                &mut Scratch::default(),
+            )
+            .ok()
+            .unwrap()
+            .end;
         }
         let old = to_bits(stream);
         let mut new = old[..count_at].to_vec();
@@ -1001,10 +1033,17 @@ pub(crate) mod tests {
         let (level, limit) = (stream[3] - b'0', stream.len() as u64 * 8);
         let mut end = 32;
         for _ in 0..=block {
-            end = decode_block(stream, end, limit, level, Walk::Onward)
-                .ok()
-                .unwrap()
-                .end;
+            end = decode_block(
+                stream,
+                end,
+                limit,
+                level,
+                Walk::Onward,
+                &mut Scratch::default(),
+            )
+            .ok()
+            .unwrap()
+            .end;
         }
         let mut bits = to_bits(stream);
         bits.splice(end as usize..end as usize, extra.iter().copied());
@@ -1022,8 +1061,22 @@ pub(crate) mod tests {
         loop {
             match magic_at(stream, at) {
                 Some(Magic::Block) => {
-                    let block = decode_block(stream, at, limit, level, Walk::Onward)?;
-                    let both = decode_block(stream, at, limit, level, Walk::FromBothEnds)?;
+                    let block = decode_block(
+                        stream,
+                        at,
+                        limit,
+                        level,
+                        Walk::Onward,
+                        &mut Scratch::default(),
+                    )?;
+                    let both = decode_block(
+                        stream,
+                        at,
+                        limit,
+                        level,
+                        Walk::FromBothEnds,
+                        &mut Scratch::default(),
+                    )?;
                     assert!(both.text == block.text && both.end == block.end);
                     let (mut runs, mut crc) = (Runs::new(block.text), MsbFirstCrc32::new());
                     let mut piece = [0u8; 1000];
@@ -1259,10 +1312,17 @@ pub(crate) mod tests {
             }
             theirs_before_the_crc.truncate(raw.total_out() as usize);
             let crc = bitwise_crc(&theirs_before_the_crc);
-            let end = decode_block(&randomised, 32, bits.len() as u64, 1, Walk::Onward)
-                .ok()
-                .unwrap()
-                .end;
+            let end = decode_block(
+                &randomised,
+                32,
+                bits.len() as u64,
+                1,
+                Walk::Onward,
+                &mut Scratch::default(),
+            )
+            .ok()
+            .unwrap()
+            .end;
             for field in [80, end as usize + 48] {
                 for bit in 0..32 {
                     bits[field + bit] = crc >> (31 - bit) & 1 == 1;

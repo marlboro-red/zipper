@@ -59,6 +59,7 @@ item = src/native_zip.rs | pub fn read_archive_with_options(
 item = src/native_zip.rs | impl EntryOnThisThread {
 item = src/native_zip.rs | const DECODER_MEMORY_PATIENCE:
 item = src/native_zip.rs | fn decoder_need(
+item = src/native_zip.rs | fn method_need(
 item = src/memory.rs | impl Memory {
 
 [overwrite]
@@ -90,6 +91,7 @@ item = src/native_zip.rs | fn stream_entry(
 item = src/native_zip.rs | pub fn read_archive_with_options(
 item = src/native_zip.rs | const DECODER_MEMORY_PATIENCE:
 item = src/native_zip.rs | fn decoder_need(
+item = src/native_zip.rs | fn method_need(
 item = src/memory.rs | impl Memory {
 item = src/memory.rs | impl Drop for Reservation<'_> {
 
@@ -3182,6 +3184,7 @@ item = src/bzip2.rs | fn first_column_starts(
 item = src/bzip2.rs | fn text_before_runs(
 item = src/bzip2.rs | fn text_before_runs_walked_from_both_ends(
 item = src/bzip2.rs | pub(crate) enum Walk {
+item = src/bzip2.rs | pub(crate) struct Scratch {
 item = src/bzip2.rs | fn undo_randomising(
 item = src/bzip2.rs | pub(crate) struct Block {
 item = src/bzip2.rs | pub(crate) fn decode_block(
@@ -3208,6 +3211,8 @@ item = src/bzip2_streams.rs | const FREED_WORK_KEPT_RESIDENT:
 item = src/bzip2_streams.rs | const MOST_WORKERS:
 item = src/bzip2_streams.rs | pub(crate) fn block_workers(
 item = src/bzip2_streams.rs | pub(crate) fn memory(
+item = src/bzip2_streams.rs | fn walk_in_place(
+item = src/bzip2_streams.rs | pub(crate) fn memory_in_place(
 item = src/bzip2_streams.rs | pub(crate) fn many_streams<
 item = src/bzip2_streams.rs | enum Step {
 item = src/bzip2_streams.rs | struct Queued {

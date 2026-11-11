@@ -989,9 +989,14 @@ const PPMD_LARGEST_MODEL: u64 = 256 << 20;
 const DECODER_MEMORY_PATIENCE: std::time::Duration = std::time::Duration::from_millis(1000);
 
 fn decoder_need(item: &Item) -> Option<u64> {
-    match item.method {
-        XZ | LZMA => Some(item.entry.size),
+    method_need(item.method, item.entry.size, rayon::current_num_threads())
+}
+
+fn method_need(method: u16, size: u64, decoders_at_once: usize) -> Option<u64> {
+    match method {
+        XZ | LZMA => Some(size),
         PPMD => Some(PPMD_LARGEST_MODEL),
+        BZIP2 => Some(crate::bzip2_streams::memory_in_place(decoders_at_once)),
         _ => None,
     }
 }
@@ -1856,6 +1861,18 @@ mod lzma_entry_tests {
 mod budget_tests {
     use super::*;
     use std::sync::Barrier;
+
+    #[test]
+    fn a_bzip2_entry_reserves_what_one_decoder_in_place_can_hold() {
+        let few = method_need(BZIP2, 1, 1).unwrap();
+        let many = method_need(BZIP2, 1, 64).unwrap();
+        assert_eq!(few, crate::bzip2_streams::memory_in_place(1));
+        assert_eq!(many, crate::bzip2_streams::memory_in_place(64));
+        assert!(many >= 12 << 20 && few > many);
+        assert_eq!(ZIP_DECODER_MEMORY / many, 150, "entries decoding at once");
+        assert_eq!(method_need(STORED, 1 << 30, 64), None);
+        assert_eq!(method_need(XZ, 77, 64), Some(77));
+    }
 
     #[test]
     fn concurrent_reservations_never_exceed_budget_and_release_on_unwind() {

@@ -13,7 +13,7 @@ A UDIF image is a data fork of chunks, a list of partitions and a 512-byte `koly
 - Inside that partition, an HFS+, HFSX or APFS volume, or an Apple partition map, a GPT or an MBR with one such volume, as 7-Zip opens them. The same holds for a raw disk with an Apple partition map.
 - HFS+ inside an HFS wrapper, as old images store it.
 
-ADC, LZFSE and LZVN are Zipper's own decoders in safe Rust, in `src/adc.rs`, `src/lzfse.rs` and `src/lzvn.rs`. They follow 7-Zip's end rules, which are stricter than Apple's. A stream must fill its declared size exactly and end exactly at the end of its input. LZFSE version 1 blocks, which no encoder writes and 7-Zip refuses, are refused. zlib and bzip2 use the `flate2` and `bzip2` crates, and xz uses Zipper's own decoder in `src/lzma.rs`.
+ADC, LZFSE and LZVN are Zipper's own decoders in safe Rust, in `src/adc.rs`, `src/lzfse.rs` and `src/lzvn.rs`. They follow 7-Zip's end rules, which are stricter than Apple's. A stream must fill its declared size exactly and end exactly at the end of its input. LZFSE version 1 blocks, which no encoder writes and 7-Zip refuses, are refused. zlib uses the `flate2` crate. bzip2 uses Zipper's own decoder in `src/bzip2.rs`, and xz the one in `src/lzma.rs`.
 
 ## What it writes
 

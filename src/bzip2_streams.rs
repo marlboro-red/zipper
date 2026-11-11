@@ -1,6 +1,6 @@
 use crate::bzip2::{
-    BYTES_PER_LEVEL, Block, END_BITS, MAGIC_BITS, Magic, MsbFirstCrc32, Refusal, Runs, Walk,
-    bits48, decode_block, magic_at, next_magic,
+    BYTES_PER_LEVEL, Block, END_BITS, MAGIC_BITS, Magic, MsbFirstCrc32, Refusal, Runs, Scratch,
+    Walk, bits48, decode_block, magic_at, next_magic,
 };
 use std::collections::VecDeque;
 use std::io::{BufRead, Read};
@@ -77,6 +77,25 @@ pub(crate) fn memory(threads: usize) -> u64 {
     block_workers(threads) as u64 * (PER_WORKER + FREED_WORK_KEPT_RESIDENT) + BESIDE_THE_WORKERS
 }
 
+fn walk_in_place(decoders_at_once: usize) -> Walk {
+    if decoders_at_once <= MOST_DECODERS_WALKING_FROM_BOTH_ENDS {
+        Walk::FromBothEnds
+    } else {
+        Walk::Onward
+    }
+}
+
+pub(crate) fn memory_in_place(decoders_at_once: usize) -> u64 {
+    let largest_block = 9 * BYTES_PER_LEVEL as u64;
+    let held_input = 2 * (LONGEST_BLOCK + READ_STEP) as u64;
+    let block_and_emitted_text = 2 * largest_block;
+    let walks = match walk_in_place(decoders_at_once) {
+        Walk::Onward => 4 * largest_block,
+        Walk::FromBothEnds => 4 * largest_block + SECOND_WALK,
+    };
+    held_input + block_and_emitted_text + walks
+}
+
 pub(crate) fn many_streams<'a, R: BufRead + Send + 'a>(
     input: R,
     threads: usize,
@@ -149,6 +168,7 @@ pub(crate) struct ParallelBzip2<R: BufRead> {
     after_a_stream: AfterAStream,
     on_threads: bool,
     walk_in_place: Walk,
+    scratch: Scratch,
     workers: usize,
     budget: u64,
     charged: u64,
@@ -208,13 +228,13 @@ impl<R: BufRead> ParallelBzip2<R> {
         after_a_stream: AfterAStream,
         decoders_at_once: usize,
     ) -> Self {
-        let few = workers == 0 && decoders_at_once <= MOST_DECODERS_WALKING_FROM_BOTH_ENDS;
         ParallelBzip2 {
             input,
             after_a_stream,
             on_threads: workers > 0,
-            walk_in_place: if few {
-                Walk::FromBothEnds
+            scratch: Scratch::default(),
+            walk_in_place: if workers == 0 {
+                walk_in_place(decoders_at_once)
             } else {
                 Walk::Onward
             },
@@ -334,7 +354,8 @@ impl<R: BufRead> ParallelBzip2<R> {
             return Ok(false);
         };
         let first_byte = self.cursor / 8;
-        let bytes = self.held_bytes(first_byte, cut.div_ceil(8));
+        let held = (first_byte - self.held_at) as usize..(cut.div_ceil(8) - self.held_at) as usize;
+        let bytes = &self.held[held];
         let charge = 2 * bytes.len() as u64
             + WORK_PER_BLOCK_BYTE * u64::from(self.level) * BYTES_PER_LEVEL as u64;
         if self.blocks_queued > 0 && self.charged + charge > self.budget {
@@ -347,19 +368,49 @@ impl<R: BufRead> ParallelBzip2<R> {
         );
         let (sender, decoded) = sync_channel(1);
         let thread = if !self.on_threads {
-            let _ = sender.send(decode_block(bytes, start, limit, level, self.walk_in_place));
+            let walk = self.walk_in_place;
+            let _ = sender.send(decode_block(
+                bytes,
+                start,
+                limit,
+                level,
+                walk,
+                &mut self.scratch,
+            ));
             None
         } else if bytes.len() < DECODED_IN_PLACE_BELOW {
-            let _ = sender.send(decode_block(bytes, start, limit, level, Walk::Onward));
+            let _ = sender.send(decode_block(
+                bytes,
+                start,
+                limit,
+                level,
+                Walk::Onward,
+                &mut self.scratch,
+            ));
             None
         } else {
             let (theirs, sent) = (Arc::new(bytes.to_vec()), sender.clone());
             let ours = Arc::clone(&theirs);
             let spawned = std::thread::Builder::new().spawn(move || {
-                let _ = sent.send(decode_block(&theirs, start, limit, level, Walk::Onward));
+                let decoded = decode_block(
+                    &theirs,
+                    start,
+                    limit,
+                    level,
+                    Walk::Onward,
+                    &mut Scratch::default(),
+                );
+                let _ = sent.send(decoded);
             });
             if spawned.is_err() {
-                let _ = sender.send(decode_block(&ours, start, limit, level, Walk::Onward));
+                let _ = sender.send(decode_block(
+                    &ours,
+                    start,
+                    limit,
+                    level,
+                    Walk::Onward,
+                    &mut self.scratch,
+                ));
             }
             spawned.ok()
         };
@@ -496,7 +547,15 @@ impl<R: BufRead> ParallelBzip2<R> {
             let start = self.held_bit(self.cursor);
             let longest = start + LONGEST_BLOCK as u64 * 8;
             let limit = longest.min(held as u64 * 8);
-            match decode_block(&self.held, start, limit, self.level, self.walk_in_place) {
+            let walk = self.walk_in_place;
+            match decode_block(
+                &self.held,
+                start,
+                limit,
+                self.level,
+                walk,
+                &mut self.scratch,
+            ) {
                 Ok(block) => {
                     self.cursor = block.end + self.held_at * 8;
                     self.searched = self.cursor;
@@ -883,11 +942,12 @@ mod tests {
                 stream.clone()
             };
             let limit = stream.len() as u64 * 8;
-            let block_bits = decode_block(&stream, 32, limit, 1, Walk::Onward)
-                .ok()
-                .unwrap()
-                .end
-                - 32;
+            let block_bits =
+                decode_block(&stream, 32, limit, 1, Walk::Onward, &mut Scratch::default())
+                    .ok()
+                    .unwrap()
+                    .end
+                    - 32;
             let room = LONGEST_BLOCK as u64 * 8 - block_bits;
             let steps = |bits: u64| {
                 std::iter::repeat_n([true, false, true, true], (bits / 4) as usize)
