@@ -232,6 +232,62 @@ fn every_cut_of_a_small_volume_and_capsule_is_refused_when_7zip_refuses_it() {
             bytes,
         ));
     }
+    for (label, map) in [
+        (
+            "a block map with an entry after its terminator",
+            [[1u8, 0, 0, 0, 0, 16, 0, 0], [0; 8], [0; 8]],
+        ),
+        (
+            "a block map in two runs",
+            [[1, 0, 0, 0, 0, 8, 0, 0], [1, 0, 0, 0, 0, 8, 0, 0], [0; 8]],
+        ),
+        (
+            "a block map without a terminator",
+            [[1, 0, 0, 0, 0, 16, 0, 0], [0, 0, 0, 0, 5, 0, 0, 0], [3; 8]],
+        ),
+    ] {
+        let mut bytes = image[..56].to_vec();
+        bytes.extend(map.concat());
+        bytes.extend_from_slice(&image[72..image.len() - 8]);
+        bytes[48..50].copy_from_slice(&80u16.to_le_bytes());
+        fix_volume_checksum(&mut bytes);
+        cases.push((label.to_owned(), bytes));
+    }
+    let mut short_lzma = lzma_section(&sections(&[pe(b"MZ inner")]));
+    let size_at = 4 + 20 + 5;
+    short_lzma[size_at..size_at + 8].copy_from_slice(&3u64.to_le_bytes());
+    let mut empty_lzma = lzma_section(&sections(&[pe(b"MZ")]));
+    empty_lzma[size_at..size_at + 8].copy_from_slice(&0u64.to_le_bytes());
+    let mut bad_sum = ffs_with(&named(7, 5), 7, &sections(&[pe(b"MZ")]), 0x40, 0x07);
+    bad_sum[17] ^= 1;
+    for (label, file) in [
+        (
+            "an LZMA section that goes on past its size",
+            ffs(&named(3, 5), 7, &sections(&[short_lzma])),
+        ),
+        (
+            "an LZMA section of size 0 with data",
+            ffs(&named(4, 5), 7, &sections(&[empty_lzma])),
+        ),
+        (
+            "a section whose padding runs past its file",
+            ffs(&named(5, 5), 7, &[&pe(b"MZ")[..], &[0]].concat()),
+        ),
+        (
+            "a section list that ends with 1 byte",
+            ffs(&named(6, 5), 7, &[&pe(b"MZ")[..], &[0, 0, 0]].concat()),
+        ),
+        ("a file whose data checksum does not match", bad_sum),
+        (
+            "two files of one name",
+            ffs(&named(1, 5), 7, &sections(&[pe(b"MZ second")])),
+        ),
+    ] {
+        cases.push((
+            label.to_owned(),
+            volume(vec![ffs(&named(1, 5), 7, &sections(&[pe(b"MZ")])), file]),
+        ));
+    }
     for at in 0..28 {
         let mut bytes = capsule.clone();
         bytes[at] ^= 0x04;
