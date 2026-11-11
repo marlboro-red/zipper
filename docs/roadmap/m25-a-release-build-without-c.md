@@ -20,4 +20,5 @@ Done so far, by 11 November 2026:
 
 - `native-fast` is retired, and with it libdeflate, its `unsafe` calls, the shared entry-buffer budget and the 8 MiB archive cache. An adversarial review found no check weakened on the remaining engine, and both ZIP models held every rule after the change.
 - Zipper's own Deflate decoder in `src/inflate.rs` reads every Deflate, zlib and gzip stream, in ZIP, 7z, tar and single `.gz` files, CAB, DMG, HFS+, APFS, SquashFS, CramFS, xar, SWF, QCOW and VMDK. `flate2`, zlib-rs and the system zlib left the normal dependencies. The release build step of the gate fails if a zlib crate or library comes back.
-- One C library remains in `cargo tree -e normal`. zstd builds on every platform.
+- [Every Deflate decode on Zipper's own decoder](../../benchmarks/deflate/no-zlib/README.md) times as fast or faster than the system zlib on an M2 Max.
+- One C library remains in `cargo tree -e normal`. zstd builds on every platform. Zipper's own Zstandard decoder ties libzstd on an Apple M5 and takes 12 to 13% more cycles on an M2 Max, so it is not wired in yet.

@@ -47,6 +47,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-11 | [Every Deflate decode on Zipper's own decoder, with no zlib](deflate/no-zlib/README.md) | Kept. flate2, zlib-rs and the macOS system zlib leave the build. 7z Deflate extracts 1.07 times and `.tar.gz` at level 1 1.05 times faster on an M2 Max, and no row got slower. |
 | 2026-11-11 | [BZip2 blocks decoded in parallel](bzip2/block-parallel/README.md) | Kept. Silesia `.tar.bz2` extracts 7.9 times faster and the BZip2 7z 5.0 times faster at default threads, 4.2 times faster than 7-Zip 26.06. One thread is unchanged, and peak memory rises to about 100 MiB. |
 | 2026-11-08 | [lzip, `.lzma` and ZIP LZMA on Zipper's own decoder](xz/lzip-lzma-zip/README.md) | Kept. Silesia `.tar.lz` extracts 15 to 16% faster than with liblzma, `.lzma` 12% and ZIP LZMA 8 to 11%. The release build no longer links liblzma. |
 | 2026-11-07 | [xz on Zipper's own decoder](xz/own-decoder/README.md) | Kept. Silesia `.tar.xz` extracts 11 to 15% faster than with liblzma, and dependency sources 5 to 11% faster. 7z LZMA2 extraction, which shares the changed reader, is unchanged. |
