@@ -3045,7 +3045,7 @@ item = src/writer_pool.rs | impl Drop for ClosesOnDrop<
 
 [inflate]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 5cb95ff5279dccdb
+fingerprint = b9d63629a4ef97fc
 full-check = cargo xtask kani-reach inflate
 full-check = cargo kani --harness inflate::proofs::
 full-check = cargo test --release --lib inflate
@@ -3226,7 +3226,7 @@ item = src/bzip2_streams.rs | impl<R: BufRead> Read for ParallelBzip2<R> {
 
 [deflate-framing]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = d8b9a6a018d298ca
+fingerprint = 3e8e051ea2e96489
 full-check = cargo xtask kani-reach deflate-framing
 full-check = cargo kani --exact --harness framing::proofs::gzip_headers_read_alike_in_any_split_and_end_where_their_fields_end
 full-check = cargo test --release --lib framing::

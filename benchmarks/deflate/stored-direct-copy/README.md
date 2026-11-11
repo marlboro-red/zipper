@@ -37,7 +37,8 @@ Kept, pending the coordinator's wall-time run.
 
 - **Change.** `Inflate::copy_stored` in `src/inflate.rs` copies stored blocks from the input straight into the caller's buffer. It reads the block headers and stored lengths in between, and stops at the first Huffman block. It then keeps the last 32 KiB of what it wrote as the window's history. `framing::Reader::read` calls it whenever no decoded bytes are held, and falls back to the window for Huffman blocks. The block header and stored length readers are now functions that both paths share.
 - **Tests.** The zlib differential tests in `inflate` also run every stream through `copy_stored` with outputs of 1, 300, 32,769 and 1 MiB bytes. A new test builds matches that reach back across stored blocks of 1 to 131,070 bytes after 0, 7 and 40,000 literals, at distances up to 32,768 and one past the start. The framing reader reads the same streams in output pieces from 1 byte to 1 MiB against flate2. A test that a stored stream fills a 1 MiB read in one call failed before the change.
-- **Plants.** Six planted breaks were each caught. The list is in the branch report.
+- **Plants.** Seven planted breaks were each caught. Four broke the history. They kept the oldest 32 KiB, left it one byte short, skipped a short copy into the window and compacted from the window start. The other three copied past the stored length, skipped the gzip CRC and dropped the state check below.
+- **Review.** An adversarial review compared 680 reach-back streams, every cut, header edges at the input buffer's ends, multi-member gzip and 60 random `.tar.gz` files with Python zlib, and confirmed one regression. A read inside a Huffman block asked the source for input twice, so a source that returned `Interrupted` on every second `fill_buf` stalled forever. `Read` now tries the direct copy only at a block boundary or inside a stored block, and a test with such a source failed before that fix.
 
 ## Limits
 
