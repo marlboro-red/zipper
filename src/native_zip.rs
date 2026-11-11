@@ -2518,38 +2518,85 @@ mod creation_bound_tests {
 mod deflate_entry_tests {
     use super::*;
 
-    #[test]
-    fn stored_blocks_take_one_decode_step_per_read() {
-        let mut seed = 7u32;
-        let data: Vec<u8> = (0..4 * WORKER_BUFFER)
+    fn random_bytes(seed: &mut u32, length: usize) -> Vec<u8> {
+        (0..length)
             .map(|_| {
-                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
-                (seed >> 16) as u8
+                *seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                (*seed >> 16) as u8
             })
-            .collect();
-        let mut encoder =
-            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::none());
-        encoder.write_all(&data).unwrap();
-        let stream = encoder.finish().unwrap();
+            .collect()
+    }
 
+    fn deflated(data: &[u8], level: flate2::Compression) -> Vec<u8> {
+        let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), level);
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    struct Decoded {
+        bytes: Vec<u8>,
+        reads: usize,
+        steps: usize,
+    }
+
+    fn decoded_as_the_reader_does(stream: &[u8], read_size: usize) -> Decoded {
         let mut window = vec![0u8; WORKER_BUFFER - DEFLATE_INPUT];
         let mut inflate = crate::inflate::Inflate::new(&mut window[..]);
-        let mut decoded = Vec::new();
-        let (mut reads, mut steps) = (0, 0);
-        'reads: for read in stream.chunks(DEFLATE_INPUT) {
-            reads += 1;
+        let mut decoded = Decoded {
+            bytes: Vec::new(),
+            reads: 0,
+            steps: 0,
+        };
+        for read in stream.chunks(read_size) {
+            decoded.reads += 1;
             let mut start = 0;
             while start < read.len() {
                 let step = inflate.decode(&read[start..]).unwrap();
                 start += step.consumed;
-                steps += usize::from(!step.output.is_empty());
-                decoded.extend_from_slice(step.output);
+                decoded.steps += usize::from(!step.output.is_empty());
+                decoded.bytes.extend_from_slice(step.output);
                 if step.finished {
-                    break 'reads;
+                    return decoded;
                 }
             }
         }
-        assert!(decoded == data);
-        assert!(steps <= reads + 1, "{steps} steps for {reads} reads");
+        decoded
+    }
+
+    #[test]
+    fn stored_blocks_take_one_decode_step_per_read() {
+        let data = random_bytes(&mut 7, 4 * WORKER_BUFFER);
+        let stream = deflated(&data, flate2::Compression::none());
+        let decoded = decoded_as_the_reader_does(&stream, DEFLATE_INPUT);
+        assert!(decoded.bytes == data);
+        assert!(
+            decoded.steps <= decoded.reads + 1,
+            "{} steps for {} reads",
+            decoded.steps,
+            decoded.reads
+        );
+    }
+
+    #[test]
+    fn matches_copy_the_history_moved_before_a_stored_read() {
+        const LONGEST_MATCH: usize = 258;
+        const SHORTEST_MATCH: usize = 3;
+        const ZLIB_MIN_LOOKAHEAD: usize = LONGEST_MATCH + SHORTEST_MATCH + 1;
+        const FARTHEST_ZLIB_MATCH: usize = crate::inflate::HISTORY - ZLIB_MIN_LOOKAHEAD;
+        let mut seed = 11;
+        let mut data = Vec::new();
+        for round in 0..12 {
+            data.extend(random_bytes(&mut seed, 150_000 + round * 7919));
+            data.extend_from_within(data.len() - FARTHEST_ZLIB_MATCH..);
+        }
+        let stream = deflated(&data, flate2::Compression::new(6));
+        for shorter_by in (0..8).map(|step| step * 40_000) {
+            let decoded = decoded_as_the_reader_does(&stream, DEFLATE_INPUT - shorter_by);
+            assert!(
+                decoded.bytes == data,
+                "reads of {} bytes",
+                DEFLATE_INPUT - shorter_by
+            );
+        }
     }
 }
