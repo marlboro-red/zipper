@@ -28,10 +28,10 @@ pub enum Existing {
     /// failed. A cancel seen during these renames undoes them the same way, as
     /// [`crate::Control::cancel`] describes. Another program that changes the
     /// destination or the staging folder during extraction can defeat the
-    /// undo. If an undo fails, the
-    /// error names each path left changed and the staging folder, which is
-    /// kept with everything not moved back. Existing directories keep their
-    /// mode, and files the archive does not name are left alone.
+    /// undo. If an undo fails, the error names each path left changed and the
+    /// staging folder, which is kept with everything not moved back. Existing
+    /// directories keep their mode, and files the archive does not name are
+    /// left alone.
     Overwrite,
     /// Extract into an existing directory, leaving out every archive file
     /// whose path already exists there, as 7-Zip's `-aos` does. An archive
@@ -1381,7 +1381,7 @@ mod tests {
 
         #[test]
         fn a_cancel_at_any_check_of_publication_leaves_the_destination_as_it_was() {
-            for (existing, renames_into_a_merge) in [
+            for (existing, moves_into_a_merge) in [
                 (Existing::Refuse, 0),
                 (Existing::Overwrite, 7),
                 (Existing::Skip, 5),
@@ -1390,8 +1390,8 @@ mod tests {
             ] {
                 assert_eq!(
                     cancel_points_restoring_the_scene(existing),
-                    renames_into_a_merge + 1,
-                    "{existing:?} checks before each rename into a merge, then once more \
+                    moves_into_a_merge + 1,
+                    "{existing:?} checks before each move into a merge, then once more \
                      after the folder modes, which is just before a new destination's one rename"
                 );
             }

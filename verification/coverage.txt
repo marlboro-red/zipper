@@ -7,7 +7,7 @@
 
 [tar-writer-pool]
 skill = .claude/skills/zipper-verify-tar-pool/SKILL.md
-fingerprint = d7e00a79799c79de
+fingerprint = 587729ab698c7253
 full-check = python3 scripts/check_model.py verification/tar-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/writer_pool.rs | pub(crate) const CHUNK:
 item = src/writer_pool.rs | const QUEUED_FILES:
@@ -38,7 +38,7 @@ item = src/native_zip.rs | fn write_behind(
 
 [7z-folder-workers]
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
-fingerprint = c89567ee1c23a7e4
+fingerprint = 9ee6f6f576e6c8d5
 full-check = python3 scripts/check_model.py verification/7z-folder-workers MCWorkers.tla:workers.cfg
 item = src/native_7z.rs | const DECODER_MEMORY:
 item = src/native_7z.rs | fn decoder_memory(
@@ -3023,7 +3023,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [7z-writer-pool]
-fingerprint = b02dbc1e96a8d13f
+fingerprint = 85e4ebb1427f8410
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
 full-check = python3 scripts/check_model.py verification/7z-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/native_7z.rs | const FILE_WRITERS:

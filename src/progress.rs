@@ -37,10 +37,10 @@ pub enum Phase {
 
 /// The error an extraction returns after its cancel flag is set. Test for it
 /// with `error.is::<zipper::Cancelled>()`. A cancelled extraction changes
-/// nothing in the destination. When a cancel stops publication and an undo of
-/// a rename fails, as described for [`crate::Existing::Overwrite`], the error
-/// is still `Cancelled`, and its message names each path left changed and the
-/// staging folder kept.
+/// nothing in the destination, unless a cancel stops publication and the undo
+/// of a rename fails, as described for [`crate::Existing::Overwrite`]. The
+/// error is then still `Cancelled`, and its message names each path left
+/// changed and the staging folder kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cancelled;
 
@@ -63,13 +63,15 @@ pub struct Control<'a> {
     pub progress: Option<&'a (dyn Fn(Progress) + Sync)>,
     /// Set it from any thread to stop the extraction. Zipper checks it while
     /// it decodes and while it publishes. When publishing into an existing
-    /// destination, it checks before each rename and once more after the last
-    /// rename and the folder modes. A new destination is checked once, just
-    /// before its one rename. A cancel seen while publishing undoes the renames
-    /// already made, as a failed rename does, and the call returns
+    /// destination, in any [`crate::Existing`] mode, it checks before it moves
+    /// each archive path into place, and once more after the last move and,
+    /// on Unix, the folder modes. A replaced file that cannot swap names
+    /// moves in two renames after one check. A new destination is checked
+    /// once, just before its one rename. A cancel seen while publishing undoes
+    /// the renames already made, as a failed rename does, and the call returns
     /// [`Cancelled`]. That last check is the point of no return. A flag set
-    /// after it is ignored, and the call returns success with every file in
-    /// place.
+    /// after it is ignored. Only Windows folder times, and for a new
+    /// destination its one rename, follow it.
     pub cancel: Option<&'a AtomicBool>,
 }
 
