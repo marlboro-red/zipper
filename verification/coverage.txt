@@ -3634,6 +3634,7 @@ item = src/lib.rs | pub(crate) fn field_check(
 item = src/lib.rs | pub(crate) struct BadField(
 
 [rar5-lz]
+fingerprint = df31822632090179
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo test --release --lib rar5_lz
 full-check = cargo test --release --lib blake2sp
