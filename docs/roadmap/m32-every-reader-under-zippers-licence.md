@@ -19,3 +19,16 @@ Exit checks:
 2. The parity matrix marks each removed row as refused for licence reasons.
 3. A second audit, by an auditor who did not write the change, finds no module derived from GPL or LGPL code outside M33's list.
 4. A new tag is cut only after the second audit.
+
+Done so far, by 12 November 2026:
+
+- The FAT reader is gone. So are the MSI and compound file reader, the DMG reader with its ADC, LZFSE and LZVN decoders, XML property list and resource fork code, and the HFS+, HFSX and Apple partition map reader.
+- The APFS reader, the NTFS reader with its LZNT1 decoder, the CHM and Help 2 reader, the LZX and LZMS decoders and the Base64 reader are gone too. So is the macOS extended attribute restore that only APFS and HFS+ used.
+- The Cargo features `apfs`, `chm`, `dmg`, `msi` and `ntfs` are gone, with their tests, corpora, coverage sections, reader references and the test writers only they used.
+- Every engine refuses each format and method that the [refused formats page](../reference/refused.md) lists, with an error that names it and nothing written, as `tests/refused.rs` checks. There, `no_refused_format_reaches_a_fake_7zip_on_path` checks that no refused file starts 7-Zip, whether `ZIPPER_7Z` names it or `PATH` finds it.
+- 7-Zip now starts only with a `-t` switch that names a format Zipper hands to it on purpose. `--zip-engine backend` names the format from a signature at a fixed place, and refuses any other file and every CAB, WIM, DMG or disk image. A split or pre-1.13 WIM and a disk image Zipper cannot read now fail instead of going to 7-Zip. RAR volumes, RAR 4 solid archives and RAR archives with encrypted headers still go to 7-Zip, named `-trar` or `-trar5`.
+- CAB still reads stored, MSZIP and Quantum folders, and WIM still reads stored and XPRESS resources. Each refuses LZX and LZMS by the method's name.
+- A disk image whose lone partition holds FAT, NTFS, HFS+, HFSX or APFS is refused in every container, as `tests/hostile_disk.rs` checks. SquashFS, CramFS and ext partitions still extract. A disk with several partitions still gives each partition as a raw file, since that reads no file system.
+- The parity matrix marks each removed row `refused` with a note, and `tests/parity.rs` refuses its corpus archives in every engine.
+
+Exit checks 1 and 2 pass. The NSIS reader, the second audit and the tag remain.

@@ -14,7 +14,7 @@ Exit checks:
 1. The M10 rows for these formats read native or are recorded as decided against, with the reason.
 2. Each image reader bounds memory by the image's directory size, not its data size.
 
-On 12 November 2026 the NTFS, FAT, DMG, HFS+, APFS, LZX and LZMS code was removed for licence reasons, as [M32](m32-readers-removed-for-licence-reasons.md) records. Zipper now refuses those file systems and images, and WIM images compressed with LZX or LZMS. The history below stays as it was.
+On 12 November 2026 the NTFS, FAT, DMG, HFS+, APFS, LZX and LZMS code was removed for licence reasons, as [M32](m32-every-reader-under-zippers-licence.md) records. Zipper now refuses those file systems and images, and WIM images compressed with LZX or LZMS. The history below stays as it was.
 
 Decided, on 8 November 2026:
 

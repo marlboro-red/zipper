@@ -12,7 +12,7 @@ Exit checks:
 
 1. No row in the M10 matrix reads backend.
 
-On 12 November 2026 the CHM and Base64 readers were removed for licence reasons, as [M32](m32-readers-removed-for-licence-reasons.md) records. Zipper now refuses CHM, Help 2 and Base64 files. The history below stays as it was.
+On 12 November 2026 the CHM and Base64 readers were removed for licence reasons, as [M32](m32-every-reader-under-zippers-licence.md) records. Zipper now refuses CHM, Help 2 and Base64 files. The history below stays as it was.
 
 Decided, on 8 November 2026, and reversed on 12 November 2026:
 

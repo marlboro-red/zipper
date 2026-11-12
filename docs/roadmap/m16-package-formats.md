@@ -14,7 +14,7 @@ Exit checks:
 1. The M10 rows for these formats read native, with corpus archives from each format's own tools.
 2. Each format has hostile tests for traversal, links, duplicate names and truncation.
 
-On 12 November 2026 the LZX decoder and the MSI and compound file reader were removed for licence reasons, as [M32](m32-readers-removed-for-licence-reasons.md) records. Zipper now refuses compound files and CAB folders compressed with LZX. The history below stays as it was.
+On 12 November 2026 the LZX decoder and the MSI and compound file reader were removed for licence reasons, as [M32](m32-every-reader-under-zippers-licence.md) records. Zipper now refuses compound files and CAB folders compressed with LZX. The history below stays as it was.
 
 Done so far, by 8 November 2026:
 

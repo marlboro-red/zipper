@@ -14,4 +14,4 @@ Exit checks:
 1. The release checks run the full M10 corpus on all three operating systems, on machines with no 7-Zip installed.
 2. The scoreboard compares every format with 7-Zip, with CPU time and memory.
 
-On 12 November 2026 the user decided that 7-Zip parity is no longer a goal until the user sets it again. The rows [M32](m32-readers-removed-for-licence-reasons.md) refuses for licence reasons need no reader here, and they never reach 7-Zip.
+On 12 November 2026 the user decided that 7-Zip parity is no longer a goal until the user sets it again. The rows [M32](m32-every-reader-under-zippers-licence.md) refuses for licence reasons need no reader here, and they never reach 7-Zip.

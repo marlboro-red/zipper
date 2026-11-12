@@ -1,6 +1,6 @@
 # Formats Zipper refuses
 
-Since 12 November 2026 Zipper refuses the formats and methods on this page in every engine. A licence audit found their readers derived, or likely derived, from 7-Zip's LGPL source, so the readers were removed, as [M32](../roadmap/m32-readers-removed-for-licence-reasons.md) records. Zipper recognizes each one by its signature only and never decodes it. No engine hands such a file to 7-Zip.
+Since 12 November 2026 Zipper refuses the formats and methods on this page in every engine. A licence audit found their readers derived, or likely derived, from 7-Zip's LGPL source, so the readers were removed, as [M32](../roadmap/m32-every-reader-under-zippers-licence.md) records. Zipper recognizes each one by its signature only and never decodes it. No engine hands such a file to 7-Zip.
 
 ## How a refusal behaves
 
