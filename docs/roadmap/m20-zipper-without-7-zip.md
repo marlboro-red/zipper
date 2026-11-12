@@ -9,6 +9,19 @@ Scope:
 - Send every file that has a reader to it, including the archives the reader refuses for a feature it lacks.
 - Refuse through `src/refused.rs` every file that has no reader, with `Zipper does not read`, followed by the format's name.
 - Remove the backend. That is `--zip-engine`, `zipper::Engine`, `Reader::Backend`, `zipper::compat` and every 7-Zip lookup outside the tests. Zipper is alpha, so the library loses them with no deprecation.
+
+## Public items removed
+
+Zipper is alpha, so each of these went with no deprecation.
+
+- The CLI option `--zip-engine`.
+- `zipper::Engine` and its variants `Auto`, `Backend` and `Native`.
+- The variant `Reader::Backend`.
+- The module `zipper::compat`, with `run`, `run_until_cancelled`, `pinned_format` and `identified_format`.
+- The first argument of `zipper::choose_reader`, which now takes only the archive path.
+- The field `ExtractOptions::engine`.
+- `needs_backend` in `zipper::native_7z`, `native_rar`, `native_exe`, `native_ext`, `native_lp` and `native_uefi`.
+- `zipper::native_squashfs::needs_backend`, which is now the crate-private `other_version`.
 - Ship the Windows package without 7-Zip.
 - Describe the result in `docs/usage.md`, the reader references and the Windows notes.
 
