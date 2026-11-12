@@ -2,7 +2,7 @@
 
 A Rust program that depends on Zipper builds only the readers it names.
 
-The `zip`, `7z`, `tar`, `more-formats`, `all-formats` and `cli` features shipped on 10 November 2026. A `zip` and `7z` build compiles 49 crates against 69 for the default. A build without a reader refuses that format with `zipper::NotBuilt`, and the gate lints each feature alone and runs the ZIP and 7z corpus tests in a `zip` and `7z` build.
+The `zip`, `7z`, `tar`, `more-formats`, `all-formats` and `cli` features shipped on 10 November 2026. A `zip` and `7z` build then compiled 49 crates against 69 for the default. A build without a reader refuses that format with `zipper::NotBuilt`, and the gate lints each feature alone and runs the ZIP and 7z corpus tests in a `zip` and `7z` build.
 
 Scope:
 
@@ -21,4 +21,10 @@ Done so far, by 11 November 2026:
 - Every reader has its own feature, with `more-formats` as their umbrella and `zstd` behind its own feature. The shared tree writer, the volume trait, the dictionary limit and the output-name helpers moved to their own modules, so no feature pulls in another reader's code.
 - The gate lints each feature alone with unused crate dependencies denied, and runs `tests/consumer`, a crate with only `zip` and `7z` that extracts a corpus ZIP and 7z in process. `cargo xtask format-tests` passes each format's tests in a build with only its feature, and `cargo xtask release-checks` runs it.
 - `zip-deflate` builds the ZIP reader for stored and Deflate entries only, and `zip-encryption`, `zip-legacy`, `zip-deflate64`, `zip-bzip2`, `zip-lzma` and `zip-ppmd` each add one group on top. `zip` builds them all. A build refuses an entry it cannot decode with `NotBuilt` naming the feature, writing nothing. A `zip-deflate` build has 28 packages against 40 for `zip`, as the [ZIP feature size record](../../benchmarks/cargo-features/zip-deflate/README.md) measures. The gate runs `tests/zip_method_features.rs` and the consumer crate in a `zip-deflate` build.
-- `zip`, `tar` and `squashfs` build without the C `zstd` library and refuse Zstandard data with `NotBuilt("zstd")`, writing nothing. A `zip` and `7z` build has 54 crates against 79 for the default, and compiles no C on Linux or Windows.
+- `zip`, `tar` and `squashfs` build without the C `zstd` library and refuse Zstandard data with `NotBuilt("zstd")`, writing nothing. A `zip` and `7z` build had 54 crates against 79 for the default, and compiled no C on Linux or Windows.
+
+Checked on 13 November 2026:
+
+1. Exit check 1 is met. The gate's `feature subsets` step runs `lint_feature_subsets` in `xtask/src/main.rs`, and its `consumer crate` step builds and runs `tests/consumer`, since `2c5a1bc` and `5a73fe6`.
+2. Exit check 2 is not met for RAR. `FORMAT_TESTS` in `xtask/src/main.rs` names every reader in `more-formats` except `rar`, so `tests/rar_corpus.rs` and `tests/hostile_rar.rs` never run in a `rar`-only build.
+3. Exit check 3 holds, though no gate step checks it. `cargo tree --edges normal --target all` lists 45 crates for a `zip` and `7z` build, exactly the crates of `zip` alone and `7z` alone, against 67 for the default.

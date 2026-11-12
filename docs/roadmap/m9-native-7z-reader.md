@@ -14,3 +14,5 @@ Exit checks:
 1. The default engine extracts every corpus 7z archive in process on all three operating systems, with the same tree as 7-Zip and bsdtar.
 2. Every hostile 7z layout has a test that failed before its fix, and the adversarial review finds no escape.
 3. `docs/reference/` documents the 7z reader.
+
+Since M9 closed, M21 replaced liblzma with Zipper's own LZMA, LZMA2 and xz decoder. M13 added BZip2, PPMd and BCJ2, M14 encrypted archives and M15 split ones, so the default engine no longer sends any of them to 7-Zip. Their rows in the [parity matrix](../reference/parity.md) read native.

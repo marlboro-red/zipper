@@ -16,3 +16,5 @@ Exit checks:
 1. The default engine extracts every corpus tar format in process on all three operating systems, with the same tree as the reference readers.
 2. Every hostile tar layout has a test that failed before its fix, and the adversarial review finds no escape.
 3. `docs/reference/` documents the tar reader, and the scoreboard shows its tar rows.
+
+The Linux and Windows rows timed the zlib-rs decoder, which lost the large gzip entries to bsdtar. [M25](m25-a-release-build-without-c.md) replaced it with Zipper's own Deflate decoder, as the [no-zlib record](../../benchmarks/deflate/no-zlib/README.md) shows on one Mac. No record since compares those rows with bsdtar on Linux or Windows.

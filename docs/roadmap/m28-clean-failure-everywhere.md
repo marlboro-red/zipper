@@ -16,3 +16,7 @@ Exit checks:
 2. A test on the Windows CI job sends Ctrl-C to the CLI during publication and shows the destination unchanged, and the Windows workflow passes.
 3. A test sets the cancel flag during a failing rename and checks that the error is `Cancelled`.
 4. A planted break with `scripts/plant.py` shows each new check can fail.
+
+Done so far, by 13 November 2026:
+
+- Since `7b55134`, the publish rename, every move of a merge and the flat-mode renames check the cancel flag after a failed rename and return `Cancelled`. On Windows they also stop waiting for a held file as soon as the cancel is set. Its one test, `a_cancel_stops_the_wait_for_a_held_folder_and_publishes_nothing` in `src/lib.rs`, runs only on Windows, so exit check 3 is not met yet.

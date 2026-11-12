@@ -12,7 +12,7 @@ Exit checks:
 
 1. No row in the M10 matrix reads backend.
 
-On 12 November 2026 the CHM and Base64 readers were removed for licence reasons, as [M32](m32-every-reader-under-zippers-licence.md) records. Zipper now refuses CHM, Help 2 and Base64 files. The history below stays as it was.
+On 12 November 2026 the CHM and Base64 readers were removed for licence reasons, as [M32](m32-every-reader-under-zippers-licence.md) records. Zipper now refuses CHM, Help 2 and Base64 files. The disk image reader was removed the same day, so the ext, SquashFS and CramFS readers no longer read a lone disk partition, only raw volumes. The history below stays as it was.
 
 Decided, on 8 November 2026, and reversed on 12 November 2026:
 
@@ -33,3 +33,7 @@ Done so far, by 12 November 2026:
 - Android logical partition images, the `super.img` of dynamic partitions, read in process, as the [LP reader reference](../reference/lp-reader.md) describes. Each partition extracts as one file with its linear and zero extents. No AOSP `lpmake` runs here, so a test writer builds every image from the liblp format. Generated images of every metadata version and slot count extract as `7zz x` extracts them, and damaged images are refused exactly when 7-Zip refuses them, or for a stricter reason the reference lists. A partition name that is not a plain relative path goes to 7-Zip.
 - UEFI firmware volumes and UEFI capsules read in process, as the [UEFI reader reference](../reference/uefi-reader.md) describes. Files, sections, LZMA sections and nested volumes extract under the names 7-Zip gives them. QEMU's firmware images and generated volumes of every file and section kind extract as `7zz x` extracts them. 10,200 randomly flipped and cut volumes are refused exactly when 7-Zip refuses them, or for a stricter reason the reference lists. 7-Zip 26.05 decodes neither EFI nor Tiano compression, and neither does Zipper. It reads a Tiano section as plain sections and refuses a compressed EFI section, as 7-Zip does.
 - Intel HEX files read in process, as the [Intel HEX reader reference](../reference/ihex-reader.md) describes. Each run of data records whose addresses follow on extracts as one file, named as 7-Zip names it. 7-Zip 26.05 was run as a black box to learn how it finds the format, splits runs and names files. Files from `llvm-objcopy -O ihex`, named files of every rule and 3,000 random files extract as `7zz x` extracts them. Cut and changed files are refused exactly when 7-Zip refuses them, or for data after the end-of-file record, which 7-Zip only warns about.
+
+Left, on 13 November 2026:
+
+- Exit check 1 is not met by one row. `Nsis` still reads backend in the [parity matrix](../reference/parity.md). [M32](m32-every-reader-under-zippers-licence.md) drops the unshipped NSIS reader, so the row is to be marked dropped with that reason.

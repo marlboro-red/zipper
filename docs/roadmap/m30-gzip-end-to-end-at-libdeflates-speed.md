@@ -16,3 +16,9 @@ Exit checks:
 1. A record times `zipper extract` against `libdeflate-gunzip` and `gzip -d` on that file on the second machine, with Zipper's median at or below libdeflate's, or the verdict naming the cost left and why it is kept.
 2. `.tar.gz`, ZIP and small-file rows of the scoreboard show no workload slower beyond the spread.
 3. The `[inflate]` and `[deflate-framing]` checks, and `[overwrite]` if staging changes, pass on the final code, and a planted break shows each new check can fail.
+
+Met on 13 November 2026:
+
+1. The [gzip file record](../../benchmarks/deflate/gzip-file/README.md), from `87c7dbe` and `1053226`, times one 212 MB gzip file on the second machine over 15 rounds. Zipper takes 209.5 ms against 218.7 ms for `libdeflate-gunzip` and 255.3 ms for `gzip`, with the ranges apart. The kept changes are `e87a20a`, `eaf5775`, `18926c8`, `48a913c` and `f98475b`. One machine and one corpus.
+2. The record's rows that must not get slower show no Silesia, random or dependency-source `.tar.gz` row slower beyond its range. The ZIP rows do not pass through the changed code and did not move.
+3. `dc7304b` synced `[deflate-framing]` on the final code, and `f247c9e` again after the disk image removal. `[inflate]` is in step, and staging did not change. The record lists eleven planted breaks, each caught by its test, and an adversarial review.
