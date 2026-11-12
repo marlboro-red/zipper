@@ -15,7 +15,7 @@ use std::{
     time::SystemTime,
 };
 
-const NOT_READ: &str = "Zipper does not read it, and it hands no WIM to 7-Zip";
+const NOT_READ: &str = "Zipper does not read it";
 const SIGNATURE: &[u8; 8] = b"MSWIM\0\0\0";
 const HEADER: usize = 0xD0;
 const VERSION: u32 = 0x10D00;
@@ -170,12 +170,12 @@ fn header(bytes: &[u8; HEADER]) -> Field<Header> {
     field_check(&bytes[..8] == SIGNATURE, "not a WIM file")?;
     field_check(
         u32_at(bytes, 8) == HEADER as u32,
-        "WIM header is not 208 bytes, as WIM 1.13 and ESD write it; Zipper does not read it, and it hands no WIM to 7-Zip",
+        "WIM header is not 208 bytes, as WIM 1.13 and ESD write it; Zipper does not read it",
     )?;
     let version = u32_at(bytes, 12);
     field_check(
         version == VERSION || version == SOLID_VERSION,
-        "WIM version is neither 1.13 nor the ESD version 0.14; Zipper does not read it, and it hands no WIM to 7-Zip",
+        "WIM version is neither 1.13 nor the ESD version 0.14; Zipper does not read it",
     )?;
     let flags = u32_at(bytes, 16);
     let method = if flags & COMPRESSED == 0 {

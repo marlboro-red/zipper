@@ -902,12 +902,12 @@ impl IsoReader {
         let found = rock_ridge(area)?;
         ensure!(
             found.names <= 1 && found.modes <= 1 && found.links <= 1 && found.continuations <= 1,
-            "Rock Ridge record {:?} repeats an entry, which 7-Zip reads only once",
+            "Rock Ridge record {:?} repeats an entry, which Zipper does not read",
             node.name
         );
         ensure!(
             !found.relocated,
-            "Rock Ridge record {:?} relocates a folder, which 7-Zip does not follow",
+            "Rock Ridge record {:?} relocates a folder, which Zipper does not follow",
             node.name
         );
         self.ensure_continuations_hold_no_fields(image, found.continuation, &node.name)?;
@@ -992,7 +992,7 @@ impl IsoReader {
             let found = rock_ridge(&bytes)?;
             ensure!(
                 found.names == 0 && found.modes == 0 && found.links == 0 && !found.relocated,
-                "Rock Ridge entry {name:?} keeps a name, mode or link in a continuation area, which 7-Zip does not read"
+                "Rock Ridge entry {name:?} keeps a name, mode or link in a continuation area, which Zipper does not read"
             );
             ensure!(
                 found.continuations <= 1,

@@ -84,6 +84,7 @@ fn refused(wim: &[u8], because: &str) {
         error.contains(because),
         "{error:?} does not say {because:?}"
     );
+    assert!(!error.contains("to 7-Zip"), "{error:?} names 7-Zip");
 }
 
 fn with_metadata(images: &[Vec<Node>], hook: impl Fn(&mut Vec<u8>) + 'static) -> Vec<u8> {
@@ -440,7 +441,7 @@ fn junctions_and_wsl_links_inside_the_image_are_created_and_other_reparse_points
     }]];
     refused(
         &wim_writer::write(&other, &options()),
-        "hands no WIM to 7-Zip",
+        "Zipper does not read it",
     );
     let damaged = vec![vec![Node::Reparse {
         name: "short".into(),
@@ -666,10 +667,10 @@ fn headers_of_other_versions_sizes_and_methods_are_refused() {
     let wim = wim_writer::write(&sample_images(), &options());
     let mut old = wim.clone();
     old[12..16].copy_from_slice(&0x10C00u32.to_le_bytes());
-    refused(&old, "hands no WIM to 7-Zip");
+    refused(&old, "Zipper does not read it");
     let mut short = wim.clone();
     short[8] = 0x74;
-    refused(&short, "hands no WIM to 7-Zip");
+    refused(&short, "Zipper does not read it");
     let mut method = wim.clone();
     method[16..20].copy_from_slice(&(0x2u32 | 1 << 20).to_le_bytes());
     refused(&method, "unknown compression method");
