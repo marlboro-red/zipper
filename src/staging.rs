@@ -487,6 +487,16 @@ pub(crate) fn stage(
     })
 }
 
+impl Drop for Staging {
+    fn drop(&mut self) {
+        let Some(temp) = self.temp.get_mut().ok().and_then(Option::take) else {
+            return;
+        };
+        let folder = temp.keep();
+        let _ = crate::retried_while_windows_holds_it(|| fs::remove_dir_all(&folder), || false);
+    }
+}
+
 impl Staging {
     fn ensure_exact_merge(destination: &Path, staging: &Path) -> Result<()> {
         let refused = |filesystem: &str| {
@@ -1053,79 +1063,14 @@ impl Staging {
     }
 
     fn undo(&self, done: &[Done], error: anyhow::Error) -> anyhow::Error {
-        let left: Vec<String> =
-            done.iter()
-                .rev()
-                .filter_map(|step| {
-                    let undone = match step {
-                        Done::Moved { from, to, moved } => {
-                            ensure_unchanged(to, *moved).and_then(|()| {
-                                rename_without_replacing(to, from, &mut || false).map_err(|error| {
-                                    anyhow::anyhow!(
-                                        "cannot move {} back to {}: {}",
-                                        to.display(),
-                                        from.display(),
-                                        error.root_cause()
-                                    )
-                                })
-                            })
-                        }
-                        Done::Swapped {
-                            staged,
-                            placed,
-                            new,
-                        } => ensure_unchanged(placed, *new).and_then(|()| {
-                            swap(staged, placed)
-                                .with_context(|| format!("cannot swap {} back", placed.display()))
-                        }),
-                        #[cfg(unix)]
-                        Done::FolderReplaced {
-                            staged,
-                            placed,
-                            new,
-                            ours,
-                        } => ensure_unchanged(placed, *new).and_then(|()| {
-                            swap(staged, placed).with_context(|| {
-                                format!("cannot swap {} back", placed.display())
-                            })?;
-                            crate::unix_modes::unlock_tree_for_cleanup(staged);
-                            move_entries_of_others_out_of_new_folder(staged, placed, ours)
-                        }),
-                        Done::SetAside { to, .. } if is_gone(to) => Ok(()),
-                        Done::SetAside { from, to, moved } => ensure_unchanged(to, *moved)
-                            .and_then(|()| {
-                                match rename_without_replacing(to, from, &mut || false) {
-                                    Err(_) if fs::symlink_metadata(from).is_ok() => Ok(()),
-                                    Err(error) => Err(anyhow::anyhow!(
-                                        "cannot move {} back to {}: {}",
-                                        to.display(),
-                                        from.display(),
-                                        error.root_cause()
-                                    )),
-                                    Ok(()) => Ok(()),
-                                }
-                            }),
-                        Done::MadeAgain(folder) => match fs::remove_dir(folder) {
-                            Err(error)
-                                if [
-                                    std::io::ErrorKind::DirectoryNotEmpty,
-                                    std::io::ErrorKind::NotFound,
-                                ]
-                                .contains(&error.kind()) =>
-                            {
-                                Ok(())
-                            }
-                            removed => removed
-                                .with_context(|| format!("cannot remove {}", folder.display())),
-                        },
-                        Done::Folder {
-                            from,
-                            to,
-                            moved,
-                            ours,
-                            inode_of,
-                        } => ensure_unchanged(to, *moved).and_then(|()| {
-                            move_back_only_ours(from, to, ours, *inode_of).map_err(|error| {
+        let left: Vec<String> = done
+            .iter()
+            .rev()
+            .filter_map(|step| {
+                let undone = match step {
+                    Done::Moved { from, to, moved } => {
+                        ensure_unchanged(to, *moved).and_then(|()| {
+                            rename_without_replacing(to, from, &mut || false).map_err(|error| {
                                 anyhow::anyhow!(
                                     "cannot move {} back to {}: {}",
                                     to.display(),
@@ -1133,33 +1078,87 @@ impl Staging {
                                     error.root_cause()
                                 )
                             })
-                        }),
-                    };
+                        })
+                    }
+                    Done::Swapped {
+                        staged,
+                        placed,
+                        new,
+                    } => ensure_unchanged(placed, *new).and_then(|()| {
+                        swap(staged, placed)
+                            .with_context(|| format!("cannot swap {} back", placed.display()))
+                    }),
+                    #[cfg(unix)]
+                    Done::FolderReplaced {
+                        staged,
+                        placed,
+                        new,
+                        ours,
+                    } => ensure_unchanged(placed, *new).and_then(|()| {
+                        swap(staged, placed)
+                            .with_context(|| format!("cannot swap {} back", placed.display()))?;
+                        crate::unix_modes::unlock_tree_for_cleanup(staged);
+                        move_entries_of_others_out_of_new_folder(staged, placed, ours)
+                    }),
+                    Done::SetAside { to, .. } if is_gone(to) => Ok(()),
+                    Done::SetAside { from, to, moved } => {
+                        ensure_unchanged(to, *moved).and_then(|()| {
+                            match rename_without_replacing(to, from, &mut || false) {
+                                Err(_) if fs::symlink_metadata(from).is_ok() => Ok(()),
+                                Err(error) => Err(anyhow::anyhow!(
+                                    "cannot move {} back to {}: {}",
+                                    to.display(),
+                                    from.display(),
+                                    error.root_cause()
+                                )),
+                                Ok(()) => Ok(()),
+                            }
+                        })
+                    }
+                    Done::MadeAgain(folder) => remove_folder_if_empty(folder)
+                        .with_context(|| format!("cannot remove {}", folder.display())),
+                    Done::Folder {
+                        from,
+                        to,
+                        moved,
+                        ours,
+                        inode_of,
+                    } => ensure_unchanged(to, *moved).and_then(|()| {
+                        move_back_only_ours(from, to, ours, *inode_of).map_err(|error| {
+                            anyhow::anyhow!(
+                                "cannot move {} back to {}: {}",
+                                to.display(),
+                                from.display(),
+                                error.root_cause()
+                            )
+                        })
+                    }),
+                };
 
-                    let describe = || match step {
-                        Done::Moved { from, to, .. } => {
-                            format!("{} moved from {}", to.display(), from.display())
-                        }
-                        Done::Folder { from, to, .. } => {
-                            format!("{} moved from {}", to.display(), from.display())
-                        }
-                        Done::SetAside { from, to, .. } => {
-                            format!("{} moved from {}", to.display(), from.display())
-                        }
-                        Done::MadeAgain(folder) => format!("{} made again", folder.display()),
-                        Done::Swapped { staged, placed, .. } => {
-                            format!("{} swapped with {}", placed.display(), staged.display())
-                        }
-                        #[cfg(unix)]
-                        Done::FolderReplaced { staged, placed, .. } => {
-                            format!("{} swapped with {}", placed.display(), staged.display())
-                        }
-                    };
-                    undone
-                        .err()
-                        .map(|undo| format!("{} ({undo:#})", describe()))
-                })
-                .collect();
+                let describe = || match step {
+                    Done::Moved { from, to, .. } => {
+                        format!("{} moved from {}", to.display(), from.display())
+                    }
+                    Done::Folder { from, to, .. } => {
+                        format!("{} moved from {}", to.display(), from.display())
+                    }
+                    Done::SetAside { from, to, .. } => {
+                        format!("{} moved from {}", to.display(), from.display())
+                    }
+                    Done::MadeAgain(folder) => format!("{} made again", folder.display()),
+                    Done::Swapped { staged, placed, .. } => {
+                        format!("{} swapped with {}", placed.display(), staged.display())
+                    }
+                    #[cfg(unix)]
+                    Done::FolderReplaced { staged, placed, .. } => {
+                        format!("{} swapped with {}", placed.display(), staged.display())
+                    }
+                };
+                undone
+                    .err()
+                    .map(|undo| format!("{} ({undo:#})", describe()))
+            })
+            .collect();
         if left.is_empty() {
             return error;
         }
@@ -1252,13 +1251,34 @@ fn move_back_only_ours(
         }
     }
     for entry in walk(true) {
-        let entry = entry?;
-        match fs::remove_dir(entry.path()) {
-            Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
-            removed => removed?,
+        match entry {
+            Ok(entry) => remove_folder_if_empty(entry.path())?,
+            Err(error) if removed_meanwhile(&error) => {}
+            Err(error) => return Err(error.into()),
         }
     }
     Ok(())
+}
+
+fn removed_meanwhile(error: &walkdir::Error) -> bool {
+    error
+        .io_error()
+        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+}
+
+fn remove_folder_if_empty(folder: &Path) -> std::io::Result<()> {
+    match crate::retried_while_windows_holds_it(|| fs::remove_dir(folder), || false) {
+        Err(error)
+            if [
+                std::io::ErrorKind::DirectoryNotEmpty,
+                std::io::ErrorKind::NotFound,
+            ]
+            .contains(&error.kind()) =>
+        {
+            Ok(())
+        }
+        removed => removed,
+    }
 }
 
 #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
@@ -2552,6 +2572,66 @@ mod tests {
         assert!(
             !placed.exists(),
             "a folder nobody else used goes back whole"
+        );
+    }
+
+    #[test]
+    fn a_folder_is_removed_only_when_it_is_empty_and_one_already_gone_counts_as_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let (empty, full, gone) = (
+            root.path().join("empty"),
+            root.path().join("full"),
+            root.path().join("removed by another extraction's undo"),
+        );
+        fs::create_dir(&empty).unwrap();
+        fs::create_dir(&full).unwrap();
+        fs::write(full.join("of another extraction"), b"kept").unwrap();
+        remove_folder_if_empty(&empty).unwrap();
+        remove_folder_if_empty(&full).unwrap();
+        remove_folder_if_empty(&gone).unwrap();
+        assert!(!empty.exists());
+        assert_eq!(
+            fs::read(full.join("of another extraction")).unwrap(),
+            b"kept"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_staging_folder_another_program_holds_for_a_moment_is_still_removed() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let out = root.path().join("out");
+        fs::create_dir(&out).unwrap();
+        let staging = stage(
+            &root.path().join("archive"),
+            &out,
+            Existing::Overwrite,
+            crate::Metadata::Restore,
+        )
+        .unwrap();
+        let folder = staging.path().to_owned();
+        fs::write(folder.join("held"), b"new").unwrap();
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(folder.join("held"))
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            drop(held);
+        });
+        drop(staging);
+        release.join().unwrap();
+        let left: Vec<PathBuf> = walkdir::WalkDir::new(&folder)
+            .into_iter()
+            .flatten()
+            .map(walkdir::DirEntry::into_path)
+            .collect();
+        assert_eq!(
+            left,
+            Vec::<PathBuf>::new(),
+            "the staging folder was left behind"
         );
     }
 

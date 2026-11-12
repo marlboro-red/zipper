@@ -124,6 +124,33 @@ fn leftovers(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+fn assert_no_staging_left<T>(root: &Path, round: usize, results: &[anyhow::Result<T>]) {
+    let left = leftovers(root);
+    if left.is_empty() {
+        return;
+    }
+    let holds: Vec<String> = left
+        .iter()
+        .flat_map(|folder| walkdir::WalkDir::new(folder).min_depth(1))
+        .map(|entry| match entry {
+            Ok(entry) => entry.path().display().to_string(),
+            Err(error) => format!("unreadable: {error}"),
+        })
+        .collect();
+    let errors: Vec<String> = results
+        .iter()
+        .enumerate()
+        .filter_map(|(index, result)| {
+            Some(format!("archive {index}: {:#}", result.as_ref().err()?))
+        })
+        .collect();
+    panic!(
+        "round {round}: staging left behind: {left:#?}\nit holds {} entries: {holds:#?}\n\
+         the runs that failed or were cancelled said: {errors:#?}",
+        holds.len()
+    );
+}
+
 #[derive(Clone, Copy, Debug)]
 enum Start {
     Empty,
@@ -264,11 +291,7 @@ fn disjoint_files_in_shared_folders_extract_together_byte_exact() {
                 panic!("round {round} from {start:?}: archive {index} failed: {error:#}");
             }
         }
-        assert_eq!(
-            leftovers(root.path()),
-            Vec::<PathBuf>::new(),
-            "round {round}"
-        );
+        assert_no_staging_left(root.path(), round, &results);
         let actual = files_on_disk(&destination);
         assert_eq!(
             actual.keys().collect::<Vec<_>>(),
@@ -314,11 +337,7 @@ fn a_damaged_archive_fails_alone_and_the_others_publish() {
                 _ => {}
             }
         }
-        assert_eq!(
-            leftovers(root.path()),
-            Vec::<PathBuf>::new(),
-            "round {round}"
-        );
+        assert_no_staging_left(root.path(), round, &results);
         assert!(
             files_on_disk(&destination) == expected,
             "round {round} from {start:?}: the published files differ"
@@ -382,11 +401,7 @@ fn a_file_two_archives_share_ends_whole_from_one_of_them() {
                 }
             }
         }
-        assert_eq!(
-            leftovers(root.path()),
-            Vec::<PathBuf>::new(),
-            "round {round}"
-        );
+        assert_no_staging_left(root.path(), round, &results);
     }
 }
 
@@ -426,11 +441,7 @@ fn runs_cancelled_while_they_publish_undo_only_their_own_files() {
                 }
             }
         }
-        assert_eq!(
-            leftovers(root.path()),
-            Vec::<PathBuf>::new(),
-            "round {round}"
-        );
+        assert_no_staging_left(root.path(), round, &results);
         let actual = if destination.exists() {
             files_on_disk(&destination)
         } else {
