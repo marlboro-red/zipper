@@ -89,7 +89,13 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
                 .to_string_lossy()
                 .replace('\\', "/");
             let kind = if entry.file_type().is_symlink() {
-                format!("link:{}", fs::read_link(entry.path()).unwrap().display())
+                format!(
+                    "link:{}",
+                    fs::read_link(entry.path())
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/")
+                )
             } else if entry.file_type().is_dir() {
                 "dir".to_owned()
             } else {
@@ -419,22 +425,30 @@ fn a_destination_that_cannot_be_used_fails_before_the_password_is_asked_for() {
     assert!(!stderr.contains("encrypted"), "{stderr}");
 }
 
+fn ustar_of_one_file(name: &str, data: &[u8]) -> Vec<u8> {
+    let mut header = [0u8; 512];
+    header[..name.len()].copy_from_slice(name.as_bytes());
+    header[100..108].copy_from_slice(b"0000644\0");
+    header[108..116].copy_from_slice(b"0000000\0");
+    header[116..124].copy_from_slice(b"0000000\0");
+    header[124..136].copy_from_slice(format!("{:011o}\0", data.len()).as_bytes());
+    header[136..148].copy_from_slice(b"00000000000\0");
+    header[148..156].copy_from_slice(b"        ");
+    header[156] = b'0';
+    header[257..265].copy_from_slice(b"ustar\x0000");
+    let sum: u32 = header.iter().map(|&byte| u32::from(byte)).sum();
+    header[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+    let mut tar = header.to_vec();
+    tar.extend_from_slice(data);
+    tar.resize(tar.len().div_ceil(512) * 512 + 1024, 0);
+    tar
+}
+
 #[test]
 fn a_password_for_an_archive_zipper_does_not_decrypt_is_refused() {
     let work = tempfile::tempdir().unwrap();
-    let source = work.path().join("source");
-    fs::create_dir(&source).unwrap();
-    fs::write(source.join("a.txt"), b"a").unwrap();
     let tar = work.path().join("plain.tar");
-    let made = Command::new("tar")
-        .arg("-cf")
-        .arg(&tar)
-        .arg("-C")
-        .arg(&source)
-        .arg("a.txt")
-        .status()
-        .unwrap();
-    assert!(made.success());
+    fs::write(&tar, ustar_of_one_file("a.txt", b"a")).unwrap();
     let output = work.path().join("out");
     let error = zipper::extract_archive(
         &tar,

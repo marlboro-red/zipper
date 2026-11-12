@@ -17,7 +17,7 @@ jobs:
       - run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
       - run: cargo +1.99.1 fmt --check
       - run: cargo +1.99.1 clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings
-      - run: cargo +1.99.1 test --locked --release --target x86_64-pc-windows-msvc
+      - run: cargo +1.99.1 test --locked --release --no-fail-fast --target x86_64-pc-windows-msvc
       - run: cargo +1.99.1 build --locked --release --target x86_64-pc-windows-msvc
       - name: Verify distributable binary and package
         run: python scripts/package_windows.py target/x86_64-pc-windows-msvc/release/zipper.exe

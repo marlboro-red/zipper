@@ -79,7 +79,13 @@ pub fn tree(root: &Path, times: bool) -> Tree {
             .replace('\\', "/");
         let kept = &metadata[entry.path()];
         let kind = if entry.file_type().is_symlink() {
-            format!("link:{}", fs::read_link(entry.path()).unwrap().display())
+            format!(
+                "link:{}",
+                fs::read_link(entry.path())
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/")
+            )
         } else if entry.file_type().is_dir() {
             format!("dir{}", mode_and_time(kept, times))
         } else if !entry.file_type().is_file() {

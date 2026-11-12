@@ -39,9 +39,13 @@ fn tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
                 .strip_prefix(root)
                 .unwrap()
                 .to_string_lossy()
-                .into_owned();
+                .replace(std::path::MAIN_SEPARATOR, "/");
             let kind = if entry.file_type().is_symlink() {
-                format!("link:{}", fs::read_link(entry.path()).unwrap().display()).into_bytes()
+                let target = fs::read_link(entry.path()).unwrap();
+                let target = target
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/");
+                format!("link:{target}").into_bytes()
             } else if entry.file_type().is_dir() {
                 b"dir".to_vec()
             } else {

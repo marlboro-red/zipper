@@ -145,7 +145,13 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
                 .to_string_lossy()
                 .replace('\\', "/");
             let kind = if entry.file_type().is_symlink() {
-                format!("link:{}", fs::read_link(entry.path()).unwrap().display())
+                format!(
+                    "link:{}",
+                    fs::read_link(entry.path())
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/")
+                )
             } else if entry.file_type().is_dir() {
                 "dir".to_owned()
             } else {

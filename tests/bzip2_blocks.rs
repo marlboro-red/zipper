@@ -11,18 +11,17 @@ use std::process::Command;
 
 const THREADS: [Option<usize>; 4] = [Some(1), Some(2), Some(4), None];
 
-fn extracted(
+fn run_extract(
     archive: &Path,
+    destination: &Path,
     threads: Option<usize>,
     password: Option<&str>,
-) -> BTreeMap<String, Vec<u8>> {
-    let scratch = tempfile::tempdir().unwrap();
-    let destination = scratch.path().join("out");
+) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_zipper"));
     command
         .arg("extract")
         .arg("-o")
-        .arg(&destination)
+        .arg(destination)
         .arg(archive);
     if let Some(threads) = threads {
         command.args(["--threads", &threads.to_string()]);
@@ -30,7 +29,17 @@ fn extracted(
     if let Some(password) = password {
         command.args(["--password", password]);
     }
-    let output = command.output().unwrap();
+    command.output().unwrap()
+}
+
+fn extracted(
+    archive: &Path,
+    threads: Option<usize>,
+    password: Option<&str>,
+) -> BTreeMap<String, Vec<u8>> {
+    let scratch = tempfile::tempdir().unwrap();
+    let destination = scratch.path().join("out");
+    let output = run_extract(archive, &destination, threads, password);
     assert!(
         output.status.success(),
         "{} at {threads:?} threads: {}",
@@ -41,7 +50,9 @@ fn extracted(
     for entry in walkdir::WalkDir::new(&destination) {
         let entry = entry.unwrap();
         let name = entry.path().strip_prefix(&destination).unwrap();
-        let name = name.to_string_lossy().into_owned();
+        let name = name
+            .to_string_lossy()
+            .replace(std::path::MAIN_SEPARATOR, "/");
         if entry.path_is_symlink() {
             let target = std::fs::read_link(entry.path()).unwrap();
             files.insert(name, target.to_string_lossy().into_owned().into_bytes());
@@ -83,7 +94,34 @@ fn every_bzip2_fixture_extracts_the_same_at_one_two_four_and_default_threads() {
         ("parity/archives/zip-bzip2.zip", None),
         ("xar-corpus/bzip2.xar", None),
     ] {
-        same_at_every_thread_count(&data.join(fixture), password);
+        if cfg!(windows) && fixture == XAR_WITH_A_NAME_WINDOWS_REFUSES {
+            refused_at_every_thread_count(&data.join(fixture), "odd & <name>");
+        } else {
+            same_at_every_thread_count(&data.join(fixture), password);
+        }
+    }
+}
+
+const XAR_WITH_A_NAME_WINDOWS_REFUSES: &str = "xar-corpus/bzip2.xar";
+
+fn refused_at_every_thread_count(archive: &Path, name: &str) {
+    for threads in THREADS {
+        let scratch = tempfile::tempdir().unwrap();
+        let destination = scratch.path().join("out");
+        let output = run_extract(archive, &destination, threads, None);
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success()
+                && error.contains("cannot create xar entry")
+                && error.contains(name),
+            "{} at {threads:?} threads did not refuse {name:?} by name: {error}",
+            archive.display()
+        );
+        assert!(
+            !destination.exists(),
+            "{} at {threads:?} threads left output after the refusal",
+            archive.display()
+        );
     }
 }
 
