@@ -33,6 +33,12 @@ pub enum Existing {
     /// directories keep their mode, and files the archive does not name are
     /// left alone.
     ///
+    /// On Linux and macOS, an existing directory whose every entry the archive
+    /// names is replaced in one step by a new directory with the same mode,
+    /// when both have the same owner, group, flags and extended attributes
+    /// and the old one has no access control list. It then has a new inode
+    /// number. A directory that holds anything else is merged file by file.
+    ///
     /// On Linux and macOS, several `Overwrite` extractions may run at once
     /// into one destination when their archives hold only regular files and
     /// folders. A folder another extraction creates first is merged into. An
@@ -40,6 +46,9 @@ pub enum Existing {
     /// folders it created that are then empty. Where two archives share a
     /// file path, the path ends with one archive's whole file, or the
     /// extraction that finds it newly created fails and undoes its renames.
+    /// An extraction replaces a directory in one step only while it holds an
+    /// exclusive `flock` on the destination. The others hold a shared one,
+    /// and wait, checking the cancel flag, while one is exclusive.
     Overwrite,
     /// Extract into an existing directory, leaving out every archive file
     /// whose path already exists there, as 7-Zip's `-aos` does. An archive
@@ -740,7 +749,7 @@ impl Staging {
             Ok(existing) => bail!(
                 "{} is a {} in the destination and a directory in the archive",
                 path.display(),
-                kind(&existing)
+                kind(existing.file_type())
             ),
         }
         Ok(steps)
@@ -1467,13 +1476,14 @@ fn plan_folder(
     for entry in
         fs::read_dir(&folder).with_context(|| format!("cannot read {}", folder.display()))?
     {
-        let name = entry?.file_name();
+        let entry = entry?;
+        let name = entry.file_name();
         ensure!(
             Some(name.as_os_str()) != staging.file_name(),
             "archive entry has the staging folder's name"
         );
         let path = relative.join(&name);
-        let staged = fs::symlink_metadata(staging.join(&path))?;
+        let staged = entry.file_type()?;
         match fs::symlink_metadata(destination.join(&path)) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 steps.push(Step::Create(path))
@@ -1484,7 +1494,7 @@ fn plan_folder(
             }
             Ok(existing) if staged.is_dir() && existing.is_dir() => {
                 ensure!(
-                    same_filesystem(&staged, &existing),
+                    same_filesystem(&entry.metadata()?, &existing),
                     "{} is on another filesystem than the destination",
                     path.display()
                 );
@@ -1521,8 +1531,8 @@ fn plan_folder(
                 _ if staged.is_dir() || existing.is_dir() => bail!(
                     "{} is a {} in the destination and a {} in the archive",
                     path.display(),
-                    kind(&existing),
-                    kind(&staged)
+                    kind(existing.file_type()),
+                    kind(staged)
                 ),
                 _ => {
                     match &mut cover {
@@ -1681,10 +1691,10 @@ fn same_filesystem(_: &fs::Metadata, _: &fs::Metadata) -> bool {
     true
 }
 
-fn kind(metadata: &fs::Metadata) -> &'static str {
-    if metadata.file_type().is_symlink() {
+fn kind(kind: fs::FileType) -> &'static str {
+    if kind.is_symlink() {
         "link"
-    } else if metadata.is_dir() {
+    } else if kind.is_dir() {
         "directory"
     } else {
         "file"
