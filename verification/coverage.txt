@@ -1465,7 +1465,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 [legacy-streams]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 speed = slow
-fingerprint = 399e46ae1fd77197
+fingerprint = fab9003ab55dcc92
 full-check = cargo xtask kani-reach legacy-streams
 full-check = cargo kani --harness mslz::proofs:: --harness lzma86::proofs:: --harness pmd::proofs::
 full-check = cargo test --release --lib mslz
