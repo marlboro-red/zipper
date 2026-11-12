@@ -71,3 +71,10 @@ CI runs `cargo xtask gate full`.
 
 Zipper is licensed under either of [the Apache License, Version 2.0](LICENSE-APACHE) or [the MIT licence](LICENSE-MIT), at your option.
 Unless you state otherwise, any contribution you submit for inclusion in Zipper is licensed the same way, with no added terms.
+
+Parts of Zipper follow other projects closely and keep their notices.
+
+- The Zstandard decoder follows libzstd. [LICENSE-zstd](LICENSE-zstd) gives its BSD licence.
+- The Deflate decoder follows libdeflate. [LICENSE-libdeflate](LICENSE-libdeflate) gives its MIT licence.
+- The BZip2 decoder's Huffman table follows libbzip2. [LICENSE-bzip2](LICENSE-bzip2) gives its licence.
+- The RAR reader follows libarchive. [LICENSE-libarchive](LICENSE-libarchive) gives its BSD licence.

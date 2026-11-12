@@ -17,7 +17,7 @@ Exit checks:
 
 1. A test refuses each removed format and method in every engine, writes nothing, and reaches no 7-Zip.
 2. The parity matrix marks each removed row as refused for licence reasons.
-3. A second audit, by an auditor who did not write the change, finds no module derived from GPL or LGPL code outside M33's list.
+3. A second audit, by an auditor who did not write the change, finds no module derived from GPL or LGPL code outside M33's list. The second audit on 12 November 2026 confirmed the removal and found the disk-image reader derived, which is removed in turn. Its smaller findings joined M33.
 4. A new tag is cut only after the second audit.
 
 Done so far, by 12 November 2026:
