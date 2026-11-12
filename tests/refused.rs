@@ -5,17 +5,16 @@
 #![cfg(unix)]
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
+#[path = "common/fake_7zip.rs"]
+mod fake_7zip;
 #[path = "common/quantum_encoder.rs"]
 mod quantum_encoder;
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
 
-use std::{
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
-};
+use fake_7zip::Fake7Zip;
+
+use std::{fs, io::Read, path::Path};
 
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data");
 const SECTOR: usize = 512;
@@ -217,45 +216,6 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-struct FakeSevenZip {
-    folder: tempfile::TempDir,
-}
-
-impl FakeSevenZip {
-    fn new() -> FakeSevenZip {
-        use std::os::unix::fs::PermissionsExt;
-        let folder = tempfile::tempdir().unwrap();
-        let marker = folder.path().join("started");
-        for name in sevenzip::NAMES_ON_PATH {
-            let script = folder.path().join(name);
-            fs::write(
-                &script,
-                format!("#!/bin/sh\necho \"$@\" >> '{}'\nexit 0\n", marker.display()),
-            )
-            .unwrap();
-            fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        FakeSevenZip { folder }
-    }
-
-    fn binary(&self) -> PathBuf {
-        self.folder.path().join(sevenzip::NAMES_ON_PATH[0])
-    }
-
-    fn path(&self) -> std::ffi::OsString {
-        let mut path = self.folder.path().as_os_str().to_owned();
-        if let Some(rest) = std::env::var_os("PATH") {
-            path.push(":");
-            path.push(rest);
-        }
-        path
-    }
-
-    fn started(&self) -> Option<String> {
-        fs::read_to_string(self.folder.path().join("started")).ok()
-    }
-}
-
 fn leftovers(folder: &Path, archive: &str) -> Vec<String> {
     fs::read_dir(folder)
         .unwrap()
@@ -264,25 +224,16 @@ fn leftovers(folder: &Path, archive: &str) -> Vec<String> {
         .collect()
 }
 
-fn run_cli(fake: &FakeSevenZip, by_variable: bool, args: &[&std::ffi::OsStr]) -> (bool, String) {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_zipper"));
-    command
-        .args(args)
-        .env("PATH", fake.path())
-        .stdin(Stdio::null());
-    if by_variable {
-        command.env("ZIPPER_7Z", fake.binary());
+fn run_cli(fake: &Fake7Zip, by_variable: bool, args: &[&std::ffi::OsStr]) -> (bool, String) {
+    let run = if by_variable {
+        fake.zipper(args)
     } else {
-        command.env_remove("ZIPPER_7Z");
-    }
-    let output = command.output().unwrap();
-    (
-        output.status.success(),
-        String::from_utf8_lossy(&output.stderr).into_owned(),
-    )
+        fake.zipper_finding_it_on_path(args)
+    };
+    (run.success, run.stderr)
 }
 
-fn assert_refused_by_the_cli(fake: &FakeSevenZip, by_variable: bool) {
+fn assert_refused_by_the_cli(fake: &Fake7Zip, by_variable: bool) {
     for case in cases() {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join(case.name);
@@ -309,7 +260,7 @@ fn assert_refused_by_the_cli(fake: &FakeSevenZip, by_variable: bool) {
 
 #[test]
 fn every_refused_format_is_refused_with_nothing_written() {
-    let fake = FakeSevenZip::new();
+    let fake = Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
     assert_refused_by_the_cli(&fake, true);
     for case in cases() {
         let work = tempfile::tempdir().unwrap();
@@ -341,7 +292,7 @@ fn every_refused_format_is_refused_with_nothing_written() {
 
 #[test]
 fn no_refused_format_reaches_a_fake_7zip_on_path() {
-    let fake = FakeSevenZip::new();
+    let fake = Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
     assert_refused_by_the_cli(&fake, false);
 }
 
@@ -401,7 +352,7 @@ fn crafted() -> Vec<(&'static str, Vec<u8>)> {
 #[test]
 fn crafted_refused_files_never_open_in_process_or_start_7zip() {
     for (name, bytes) in crafted() {
-        let fake = FakeSevenZip::new();
+        let fake = Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join(name);
         fs::write(&archive, &bytes).unwrap();
@@ -488,7 +439,7 @@ fn archives_that_hold_a_refused_signature_still_extract() {
 
 #[test]
 fn a_disk_image_split_into_numbered_volumes_is_refused() {
-    let fake = FakeSevenZip::new();
+    let fake = Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
     let image = fixed_vhd(&[0x5A; 8 * SECTOR]);
     let work = tempfile::tempdir().unwrap();
     let first = work.path().join("disk.vhd.001");
@@ -545,7 +496,7 @@ fn disks_with_a_planted_disc_descriptor_are_refused() {
 
 #[test]
 fn a_first_volume_read_alone_never_reaches_7zip() {
-    let fake = FakeSevenZip::new();
+    let fake = Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
     let image = fixed_vhd(&stored("ext-corpus/ext4.img.xz"));
     let work = tempfile::tempdir().unwrap();
     let first = work.path().join("disk.img.001");

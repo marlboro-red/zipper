@@ -53,13 +53,25 @@ impl Fake7Zip {
     }
 
     pub fn zipper<S: AsRef<OsStr>>(&self, args: &[S]) -> Run {
-        let output = Command::new(env!("CARGO_BIN_EXE_zipper"))
+        self.run(args, true)
+    }
+
+    pub fn zipper_finding_it_on_path<S: AsRef<OsStr>>(&self, args: &[S]) -> Run {
+        self.run(args, false)
+    }
+
+    fn run<S: AsRef<OsStr>>(&self, args: &[S], named_by_variable: bool) -> Run {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_zipper"));
+        command
             .args(args)
             .env("PATH", self.path())
-            .env("ZIPPER_7Z", self.folder.path().join(&self.first_name))
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
+            .stdin(Stdio::null());
+        if named_by_variable {
+            command.env("ZIPPER_7Z", self.folder.path().join(&self.first_name));
+        } else {
+            command.env_remove("ZIPPER_7Z");
+        }
+        let output = command.output().unwrap();
         Run {
             success: output.status.success(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
