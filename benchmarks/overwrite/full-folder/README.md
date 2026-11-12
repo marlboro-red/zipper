@@ -13,7 +13,7 @@
 - [`time_overwrite.py`](time_overwrite.py) runs each binary once as a warmup and then interleaves them, reversing the order every round. Mode `full` leaves the destination holding every file from the run before. Mode `empty` empties the destination before each run. It compares the last tree of each binary with the source byte for byte. [`session.sh`](session.sh) holds the lock that keeps a remote gate off the machine, and runs both modes.
 - The profiles used `samply record -r 4000` on one full-folder run per binary, outside every timed run. [`split.py`](split.py) splits the samples by stage from the function names on the stack. Times are samples at 0.25 ms, so they add up to a thread's busy time.
 - [`operations.py`](operations.py) and [`removal_threads.py`](removal_threads.py) time single filesystem operations from Python on 28,000 files of 1.5 kB in 280 folders. They explore, and no verdict rests on them alone.
-- The binaries, with their SHA-256 prefixes. The first six are consecutive commits of the branch `m29-fable`. The last two are on the branch `m29-overwrite`, with `3255a0a`, the commit they were timed against.
+- The binaries, with their SHA-256 prefixes. The first six were built from consecutive commits of the branch `m29-fable-on-6d15ca2`, before the work was rebased onto main. On main the same changes are `61038e0`, `5f5f266`, `9a1c336`, `4537885`, `e946e05` and `86066d1`, with the same `src/staging.rs` at each. The last two are on the branch `m29-overwrite`, with `3255a0a`, the commit they were timed against.
   - `6d15ca2`, the base, `7e4368d7093e2c97`;
   - `4c9496d`, the folder set, `27d650e39c4819d9`;
   - `8adc362`, the folder replaced whole, `6c72b42d7866918a`;
@@ -142,7 +142,7 @@ M29's exit check asks for 1.5 times, or a verdict that names what keeps the gap 
 ## Reproduce
 
 1. Write the fixture with `python3 benchmarks/overwrite/full-folder/make_archive.py . OUT`. It gives `OUT/tree` and `OUT/small-files.zip`.
-2. Build a release binary at each commit and name each `bins/zipper-COMMIT`.
+2. Build a release binary at each commit and name each `bins/zipper-COMMIT`. From main, use `61038e0`, `5f5f266`, `9a1c336`, `4537885`, `e946e05` and `86066d1`, and pass those names to the commands below.
 3. Put the scripts of this folder, `small-files.zip`, `source/tree` and `bins/` in `target/timing/NAME/` of a checkout, and run `zsh session.sh session 11 6d15ca2 4c9496d 8adc362 cfc63dd 01c52d0 244114f` there. It prints the summary and writes `session-full.json` and `session-empty.json`.
 4. Profile with `SAMPLY=/path/to/samply zsh profile.sh 244114f`.
 5. Time the single operations with `python3 -I operations.py WORK` and `python3 -I removal_threads.py WORK`, where `WORK` is a scratch folder the scripts create and delete.
