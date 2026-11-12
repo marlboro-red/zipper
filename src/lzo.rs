@@ -85,7 +85,7 @@ enum After {
     ShortRun,
 }
 
-// SPEC(LZO1X format, as lzo1x_d.ch of LZO 2.10 decodes it): an instruction's top bits pick a run
+// SPEC(LZO1X format, Linux Documentation/staging/lzo.rst): an instruction's top bits pick a run
 // or a match and its low bits up to 3 literals after it; a far match of distance 0x4000 ends it.
 pub(crate) fn decode(input: &[u8], output: &mut [u8]) -> Field<usize> {
     let mut stream = Stream {
