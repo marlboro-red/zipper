@@ -59,7 +59,10 @@ fn tree(root: &Path) -> BTreeMap<String, Node> {
         let metadata = fs::symlink_metadata(entry.path()).unwrap();
         if metadata.file_type().is_symlink() {
             let target = fs::read_link(entry.path()).unwrap();
-            found.insert(name, Node::Link(target.to_string_lossy().into_owned()));
+            let target = target
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            found.insert(name, Node::Link(target));
         } else if metadata.is_file() {
             let mtime = metadata
                 .modified()

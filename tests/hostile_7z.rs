@@ -1928,7 +1928,11 @@ fn assert_tree(out: &Path, members: &[Member], selected: impl Fn(&str) -> bool, 
         let data = member.data.as_deref().unwrap();
         if member.attribute == UNIX_LINK {
             assert_eq!(
-                fs::read_link(&path).unwrap().as_os_str().as_encoded_bytes(),
+                fs::read_link(&path)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/")
+                    .as_bytes(),
                 data,
                 "{case}: {}",
                 member.name

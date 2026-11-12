@@ -42,7 +42,13 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
                 .to_string_lossy()
                 .replace('\\', "/");
             let kind = if entry.file_type().is_symlink() {
-                format!("link:{}", fs::read_link(entry.path()).unwrap().display())
+                format!(
+                    "link:{}",
+                    fs::read_link(entry.path())
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/")
+                )
             } else if entry.file_type().is_dir() {
                 "dir".to_owned()
             } else {
@@ -130,8 +136,18 @@ fn tree_by_7zip(binary: &Path, archive: &Path) -> BTreeMap<String, String> {
     tree(out.path())
 }
 
+fn python() -> Option<&'static str> {
+    ["python3", "python"].into_iter().find(|name| {
+        Command::new(name)
+            .args(["-I", "-c", "import zipfile"])
+            .stdin(Stdio::null())
+            .output()
+            .is_ok_and(|output| output.status.success())
+    })
+}
+
 fn names_by_python(archive: &Path) -> Option<Vec<String>> {
-    let output = Command::new("python3")
+    let output = Command::new(python()?)
         .args([
             "-I",
             "-c",

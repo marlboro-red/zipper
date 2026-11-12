@@ -20,6 +20,11 @@ use zipper::{
 };
 
 const TOC_FILE: &str = "[TOC].xml";
+const ODD_NAME: &str = if cfg!(windows) {
+    "odd & [strange]"
+} else {
+    "odd & <strange>"
+};
 
 fn leftovers(root: &Path) -> Vec<String> {
     let mut found: Vec<String> = walkdir::WalkDir::new(root)
@@ -95,7 +100,13 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
                 .to_string_lossy()
                 .replace('\\', "/");
             let kind = if entry.path_is_symlink() {
-                format!("link:{}", fs::read_link(entry.path()).unwrap().display())
+                format!(
+                    "link:{}",
+                    fs::read_link(entry.path())
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/")
+                )
             } else if entry.file_type().is_dir() {
                 "dir".to_owned()
             } else {
@@ -120,7 +131,7 @@ fn sample(encoding: Encoding, toc_sum: Sum, file_sum: Sum) -> Vec<u8> {
             "folder",
             &(file(2, "a.txt", "0644", &alpha) + &file(3, "big", "0644", &large)),
         );
-        files += &file(4, "odd & <strange>", "0755", &odd);
+        files += &file(4, ODD_NAME, "0755", &odd);
         files += &file(5, "empty", "0644", "");
         files += &directory(6, "empty folder", "");
         if cfg!(unix) {
@@ -135,7 +146,7 @@ fn sample_tree(with_toc: bool) -> BTreeMap<String, String> {
         ("folder", "dir".to_owned()),
         ("folder/a.txt", format!("{:?}", b"alpha\n".to_vec())),
         ("folder/big", format!("{:?}", big())),
-        ("odd & <strange>", format!("{:?}", b"x".to_vec())),
+        (ODD_NAME, format!("{:?}", b"x".to_vec())),
         ("empty", "[]".to_owned()),
         ("empty folder", "dir".to_owned()),
     ]
@@ -183,7 +194,7 @@ fn every_encoding_and_checksum_extracts_byte_for_byte() {
                         .mode()
                         & 0o111
                 };
-                assert_ne!(mode("odd & <strange>"), 0, "{case}: lost the execute bit");
+                assert_ne!(mode(ODD_NAME), 0, "{case}: lost the execute bit");
                 assert_eq!(mode("empty"), 0, "{case}");
                 let modified = fs::metadata(destination.join("folder/big"))
                     .unwrap()

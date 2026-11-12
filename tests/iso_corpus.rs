@@ -68,7 +68,13 @@ fn tree(root: &Path) -> BTreeMap<String, String> {
                 .replace('\\', "/");
             let metadata = fs::symlink_metadata(entry.path()).unwrap();
             let kind = if entry.file_type().is_symlink() {
-                format!("link:{}", fs::read_link(entry.path()).unwrap().display())
+                format!(
+                    "link:{}",
+                    fs::read_link(entry.path())
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/")
+                )
             } else if entry.file_type().is_dir() {
                 format!("dir{}", mode(&metadata))
             } else {

@@ -78,7 +78,14 @@ fn tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
                 .to_string_lossy()
                 .replace('\\', "/");
             let kind = if entry.file_type().is_symlink() {
-                format!("-> {}", fs::read_link(entry.path()).unwrap().display()).into_bytes()
+                format!(
+                    "-> {}",
+                    fs::read_link(entry.path())
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/")
+                )
+                .into_bytes()
             } else if entry.file_type().is_dir() {
                 b"/".to_vec()
             } else {

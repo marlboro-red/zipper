@@ -67,12 +67,13 @@ fn listing(root: &Path) -> Vec<(String, Vec<u8>)> {
                 .strip_prefix(root)
                 .unwrap()
                 .to_string_lossy()
-                .into_owned();
+                .replace(std::path::MAIN_SEPARATOR, "/");
             let metadata = fs::symlink_metadata(entry.path()).unwrap();
             let bytes = if metadata.file_type().is_symlink() {
                 fs::read_link(entry.path())
                     .unwrap()
                     .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/")
                     .as_bytes()
                     .to_vec()
             } else if metadata.is_file() {
