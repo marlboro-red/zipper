@@ -2,7 +2,7 @@
 
 The first phase ended with M9. Zipper's in-process readers replaced 7-Zip as the default for ZIP, tar and 7z. They are correct on hostile input, restore the metadata users expect, and extract faster with bounded memory. Speed work starts on macOS. CI runs every correctness check on Linux for each push. The Windows workflow runs them on Windows when invoked, before a release.
 
-The second phase, M10 to M21, ends when Zipper extracts everything 7-Zip extracts without 7-Zip installed, with LZMA decoded by its own code. Each new reader keeps the first phase's contract. It refuses unsafe paths and links, publishes nothing on failure, bounds its memory and passes the `zipper-review` skill. A faster reader never drops one of these checks.
+The second phase, from M10, set out to extract everything 7-Zip extracts without 7-Zip installed, with LZMA decoded by its own code. On 12 November 2026 the user decided that parity with 7-Zip is no longer a goal, and Zipper now refuses the formats whose readers it removed for licence reasons, as [M32](roadmap/m32-every-reader-under-zippers-licence.md) records. Each new reader keeps the first phase's contract. It refuses unsafe paths and links, publishes nothing on failure, bounds its memory and passes the `zipper-review` skill. A faster reader never drops one of these checks.
 
 Every milestone from M10 to M21 has one more exit check, beside its own. New parsing code has a Kani proof, or an exhaustive test where Kani does not finish. New concurrency has a TLA+ model with its own `zipper-verify-*` skill. Each proof, test and model is listed in `verification/coverage.txt`, so the `verify` gate step catches drift. A planted break, made with `scripts/plant.py`, shows each one can fail.
 
@@ -31,18 +31,18 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M15. Split, spanned and self-extracting archives](roadmap/m15-split-spanned-and-self-extracting-archives.md) | Done | M13 |
 | [M16. Package formats](roadmap/m16-package-formats.md) | Done | M13 |
 | [M17. Disc and disk images](roadmap/m17-disc-and-disk-images.md) | In progress | M16 |
-| [M18. RAR](roadmap/m18-rar.md) | Planned | M14, M15 |
+| [M18. RAR](roadmap/m18-rar.md) | In progress | M14, M15 |
 | [M19. Legacy formats](roadmap/m19-legacy-formats.md) | In progress | M13 |
 | [M20. Zipper without 7-Zip](roadmap/m20-zipper-without-7-zip.md) | Planned | M11 to M19, M21 |
 | [M22. Zipper's own ZIP directory reader](roadmap/m22-zippers-own-zip-directory-reader.md) | Done | M21 |
-| [M23. The LZMA decoder as its own crate](roadmap/m23-the-lzma-decoder-as-its-own-crate.md) | Planned | M21 |
+| [M23. The LZMA decoder as its own crate](roadmap/m23-the-lzma-decoder-as-its-own-crate.md) | Planned | M21, M31 |
 | [M24. ZIP and 7z throughput from the research report](roadmap/m24-zip-and-7z-throughput-from-the-research-report.md) | In progress | M22 |
 | [M25. A release build without C](roadmap/m25-a-release-build-without-c.md) | Done | M22 |
 | [M26. Cargo features for each format](roadmap/m26-cargo-features-for-each-format.md) | In progress | M25 |
 | [M27. LZ4 and `compress` at the reference speed](roadmap/m27-lz4-and-compress-at-the-reference-speed.md) | Planned | M25 |
-| [M28. Clean failure everywhere](roadmap/m28-clean-failure-everywhere.md) | Planned | M8 |
-| [M29. Overwrite at the speed of a fresh extraction](roadmap/m29-overwrite-at-the-speed-of-a-fresh-extraction.md) | Planned | M8 |
-| [M30. gzip end to end at libdeflate's speed](roadmap/m30-gzip-end-to-end-at-libdeflates-speed.md) | In progress | M25 |
+| [M28. Clean failure everywhere](roadmap/m28-clean-failure-everywhere.md) | In progress | M8 |
+| [M29. Overwrite at the speed of a fresh extraction](roadmap/m29-overwrite-at-the-speed-of-a-fresh-extraction.md) | In progress | M8 |
+| [M30. gzip end to end at libdeflate's speed](roadmap/m30-gzip-end-to-end-at-libdeflates-speed.md) | Done | M25 |
 | [M31. A release case for each decoder](roadmap/m31-a-release-case-for-each-decoder.md) | Planned | M25 |
 | [M32. Every reader under Zipper's licence](roadmap/m32-every-reader-under-zippers-licence.md) | In progress | M25 |
 | [M33. Clean rewrites of the copied checks](roadmap/m33-clean-rewrites-of-the-copied-checks.md) | Planned | M32 |
