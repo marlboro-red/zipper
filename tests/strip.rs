@@ -9,7 +9,7 @@ mod common;
 mod corpus;
 
 use std::path::{Path, PathBuf};
-use zipper::{Engine, ExtractOptions, Strip, extract_archive};
+use zipper::{ExtractOptions, Strip, extract_archive};
 
 fn data(folder: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -67,20 +67,13 @@ fn stripped(tree: &corpus::Tree, keep: impl Fn(&[&str]) -> Option<usize>) -> Opt
     Some(placed)
 }
 
-fn check(
-    archive: &Path,
-    engine: Engine,
-    strip: Strip,
-    expected: Option<corpus::Tree>,
-    label: &str,
-) {
+fn check(archive: &Path, strip: Strip, expected: Option<corpus::Tree>, label: &str) {
     let work = tempfile::tempdir().unwrap();
     let destination = work.path().join("out");
     let result = extract_archive(
         archive,
         &destination,
         ExtractOptions {
-            engine,
             strip,
             ..Default::default()
         },
@@ -113,13 +106,7 @@ fn every_corpus_archive_strips_to_its_manifest_without_the_leading_folders() {
             for count in 1..=3 {
                 let expected = stripped(&tree, |_| Some(count)).filter(|tree| !tree.is_empty());
                 let label = format!("{name} less {count}");
-                check(
-                    &archive,
-                    Engine::Native,
-                    Strip::Components(count),
-                    expected,
-                    &label,
-                );
+                check(&archive, Strip::Components(count), expected, &label);
                 checked += 1;
             }
             for prefix in &folders {
@@ -130,13 +117,7 @@ fn every_corpus_archive_strips_to_its_manifest_without_the_leading_folders() {
                         .then_some(prefix_parts.len())
                 });
                 let label = format!("{name} under {prefix}");
-                check(
-                    &archive,
-                    Engine::Native,
-                    Strip::Prefix(prefix),
-                    expected,
-                    &label,
-                );
+                check(&archive, Strip::Prefix(prefix), expected, &label);
                 checked += 1;
             }
         }

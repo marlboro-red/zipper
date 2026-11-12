@@ -11,7 +11,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use zipper::{Engine, ExtractOptions, extract_archive};
+use zipper::{ExtractOptions, extract_archive};
 
 fn data(path: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -159,14 +159,13 @@ fn damaged(source: &Path, work: &Path) -> PathBuf {
     path
 }
 
-fn extract(archive: &Path, engine: Engine, threads: Option<usize>) -> (tempfile::TempDir, bool) {
+fn extract(archive: &Path, threads: Option<usize>) -> (tempfile::TempDir, bool) {
     let root = tempfile::tempdir().unwrap();
     let destination = root.path().join("out");
     let result = extract_archive(
         archive,
         &destination,
         ExtractOptions {
-            engine,
             threads,
             ..Default::default()
         },
@@ -178,35 +177,27 @@ fn extract(archive: &Path, engine: Engine, threads: Option<usize>) -> (tempfile:
 fn nothing_stays_open_after_any_extraction_returns() {
     let work = tempfile::tempdir().unwrap();
     let mut cases = vec![
-        ("zip", data("zip-corpus/7zip-deflate.zip"), Engine::Native),
-        ("tar", data("parity/archives/tar.tar"), Engine::Native),
-        ("tar.gz", data("parity/archives/tar.tar.gz"), Engine::Native),
-        ("7z", data("parity/archives/7z.7z"), Engine::Native),
-        ("gz", data("parity/archives/hello.txt.gz"), Engine::Native),
-        (
-            "cpio",
-            data("parity/archives/cpio-newc.cpio"),
-            Engine::Native,
-        ),
-        ("ar", data("parity/archives/ar.a"), Engine::Native),
-        ("deb", debian_package(work.path()), Engine::Native),
+        ("zip", data("zip-corpus/7zip-deflate.zip")),
+        ("tar", data("parity/archives/tar.tar")),
+        ("tar.gz", data("parity/archives/tar.tar.gz")),
+        ("7z", data("parity/archives/7z.7z")),
+        ("gz", data("parity/archives/hello.txt.gz")),
+        ("cpio", data("parity/archives/cpio-newc.cpio")),
+        ("ar", data("parity/archives/ar.a")),
+        ("deb", debian_package(work.path())),
     ];
     if let Some(segments) = segmented_7z(work.path()) {
-        cases.push((
-            "7z segment volumes",
-            volumes(&segments, work.path()),
-            Engine::Native,
-        ));
-        cases.push(("7z segments", segments, Engine::Native));
+        cases.push(("7z segment volumes", volumes(&segments, work.path())));
+        cases.push(("7z segments", segments));
     }
     for (label, name) in [
         ("zip volumes", "zip-corpus/7zip-deflate.zip"),
         ("tar.gz volumes", "parity/archives/tar.tar.gz"),
         ("7z volumes", "parity/archives/7z.7z"),
     ] {
-        cases.push((label, volumes(&data(name), work.path()), Engine::Native));
+        cases.push((label, volumes(&data(name), work.path())));
     }
-    for (_, archive, _) in &mut cases {
+    for (_, archive) in &mut cases {
         let copy = work.path().join(archive.file_name().unwrap());
         if !copy.exists() {
             fs::copy(&*archive, &copy).unwrap();
@@ -219,13 +210,13 @@ fn nothing_stays_open_after_any_extraction_returns() {
         }
         *archive = copy;
     }
-    for (_, archive, engine) in &cases {
-        extract(archive, *engine, Some(8));
-        extract(archive, *engine, Some(1));
+    for (_, archive) in &cases {
+        extract(archive, Some(8));
+        extract(archive, Some(1));
     }
     let (handles, threads_before) = (open_handles(), threads());
     let mut checked = 0;
-    for (label, archive, engine) in &cases {
+    for (label, archive) in &cases {
         let damaged = damaged(archive, work.path());
         for (archive, succeeds, workers) in [
             (archive.clone(), true, 8),
@@ -234,7 +225,7 @@ fn nothing_stays_open_after_any_extraction_returns() {
             (damaged, false, 1),
         ] {
             let label = format!("{label} at {workers} threads");
-            let (root, ok) = extract(&archive, *engine, Some(workers));
+            let (root, ok) = extract(&archive, Some(workers));
             assert!(ok || !succeeds, "{label} failed");
             assert_eq!(open_handles(), handles, "{label}: a handle stayed open");
             let threads_after = settled_threads(threads_before);

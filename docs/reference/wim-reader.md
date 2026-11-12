@@ -1,6 +1,6 @@
 # In-process WIM reader
 
-Zipper extracts Windows Imaging files (`.wim`) with its own Rust reader. The default engine and `--zip-engine native` send a file here when it starts with the WIM signature `MSWIM` and three zero bytes. The default engine sends a part of a split WIM, and a header from a WIM version before 1.13, to 7-Zip instead. `--zip-engine native` refuses both. `--zip-engine backend` hands every other WIM to 7-Zip, but refuses one whose header names LZX or LZMS before 7-Zip starts.
+Zipper extracts Windows Imaging files (`.wim`) with its own Rust reader. Zipper sends a file here when it starts with the WIM signature `MSWIM` and three zero bytes. The reader refuses a part of a split WIM and a header from a WIM version before 1.13.
 
 ## Supported images
 
@@ -31,7 +31,7 @@ It never restores security descriptors, short names, the hidden, system or archi
 
 ## Alternate data streams
 
-A WIM can store NTFS alternate data streams beside a file's data. 7-Zip 26.05 on macOS writes each one as a file named `file:stream`, both by default and with `-sns`. With `-sns-` it skips them. Zipper's shared name check refuses a `:` in every reader, so by default Zipper refuses a WIM with a named stream. The error names `--alternate-streams` and `--zip-engine backend`.
+A WIM can store NTFS alternate data streams beside a file's data. 7-Zip 26.05 on macOS writes each one as a file named `file:stream`, both by default and with `-sns`. With `-sns-` it skips them. Zipper's shared name check refuses a `:` in every reader, so by default Zipper refuses a WIM with a named stream. The error names `--alternate-streams`.
 
 `zipper extract --alternate-streams`, or `alternate_streams: true` in `ExtractOptions`, writes them on Windows:
 
@@ -107,7 +107,7 @@ The last column is `zipper list` on a cpio archive of the same paths, which uses
 - 7-Zip links files of one hard link group across images. Zipper links them only within one image, and writes each image's own copy.
 - 7-Zip extracts a folder named `.` into its parent, and a second entry of one name over the first. Zipper refuses both.
 - 7-Zip writes a file whose data the blob table lacks as an empty file, and lists unreferenced data under `[DELETED]`. Zipper refuses a file without its data, and ignores data that no file names.
-- 7-Zip extracts a root list with more than one entry, an older WIM version and a split WIM. Zipper refuses each in every engine, since it hands no WIM to 7-Zip.
+- 7-Zip extracts a root list with more than one entry, an older WIM version and a split WIM. Zipper refuses each.
 - 7-Zip fixes a name without its terminating NUL and extracts it with a warning. Zipper refuses it.
 
 ## Extraction options
@@ -131,6 +131,6 @@ Unit tests in `src/xpress.rs` decode 400 encoded token streams of every match le
 
 `tests/wim_corpus.rs` also flips one bit in every 31st byte of the data of three corpus WIMs, `xpress.wim`, `xpress-4k.wim` and `two-images.wim`. `links.wim` is left out, because a flip in its reparse data fails Zipper's SHA-1 check and 7-Zip extracts it. Zipper must refuse each one exactly when 7-Zip refuses it, and must otherwise extract the same tree.
 
-An adversarial review built crafted WIMs in Rust with the test writer and ran them against both native engines and 7-Zip. It found three problems, each fixed with a test that failed first. A chunk table could name a packed size of up to 2^50 bytes in a sparse file, and the reader allocated it before it checked the size, which crashed the process. A second file with the name of a hard link's first file could replace it, so the link carried the other file's bytes. A link group per file kept one path per group in memory. It also found that a folder named `.` was merged into its parent. 38,000 random mutations of wimlib images caused no panic.
+An adversarial review built crafted WIMs in Rust with the test writer and ran them against Zipper and 7-Zip. It found three problems, each fixed with a test that failed first. A chunk table could name a packed size of up to 2^50 bytes in a sparse file, and the reader allocated it before it checked the size, which crashed the process. A second file with the name of a hard link's first file could replace it, so the link carried the other file's bytes. A link group per file kept one path per group in memory. It also found that a folder named `.` was merged into its parent. 38,000 random mutations of wimlib images caused no panic.
 
 `tests/data/wim-corpus/NOTICE.txt` names the source of the corpus. Every WIM there was written by `wimlib-imagex` 1.14.5 on macOS from seeded trees, through `write_the_corpus` in `tests/wim_corpus.rs`. No sample there comes from Microsoft's own tools.

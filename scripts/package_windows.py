@@ -48,11 +48,9 @@ with tempfile.TemporaryDirectory() as tmp:
     run("test", archive)
     run("extract", archive, "--output", root / "default-zip")
     verify(root / "default-zip")
-    run("--zip-engine", "native", "test", archive)
-    destination = root / "native" / "zip"
+    destination = root / "threads" / "zip"
     destination.parent.mkdir(exist_ok=True)
-    run("--zip-engine", "native", "--threads", "4", "extract", archive,
-        "--output", destination)
+    run("--threads", "4", "extract", archive, "--output", destination)
     verify(destination)
 
 dist = Path("dist")
@@ -68,7 +66,8 @@ with tempfile.TemporaryDirectory() as tmp:
         "target": "x86_64-pc-windows-msvc",
         "rust": "1.96.0",
         "static_crt": True,
-        "verification": "release tests and direct byte comparison of native/ZIP CLI round trips",
+        "verification": "release tests and direct byte comparison of ZIP CLI round trips",
+        "bundles_7zip": False,
     }, indent=2) + "\n")
     registry = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")) / "registry" / "src"
     lock = tomllib.loads(Path("Cargo.lock").read_text())

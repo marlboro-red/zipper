@@ -10,7 +10,7 @@
 mod sevenzip;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use zipper::{Engine, ExtractOptions, NotBuilt, extract_archive};
+use zipper::{ExtractOptions, NotBuilt, extract_archive};
 
 const TEXT_LINE: &[u8] = b"hello from every ZIP method\n";
 const TEXT_LINES: usize = 20;
@@ -170,12 +170,11 @@ impl Case {
             .join(self.archive)
     }
 
-    fn extract(&self, archive: &Path, engine: Engine, destination: &Path) -> anyhow::Result<()> {
+    fn extract(&self, archive: &Path, destination: &Path) -> anyhow::Result<()> {
         extract_archive(
             archive,
             destination,
             ExtractOptions {
-                engine,
                 password: self.encrypted().then_some(PASSWORD),
                 ..ExtractOptions::default()
             },
@@ -214,14 +213,10 @@ fn an_entry_reads_when_its_method_and_encryption_are_built_and_is_refused_otherw
     for case in CASES {
         let whole = case.path();
         let split = split_in_two_volumes(&whole, volumes.path());
-        for (archive, engine) in [
-            (&whole, Engine::Native),
-            (&whole, Engine::Auto),
-            (&split, Engine::Native),
-        ] {
+        for archive in [&whole, &split] {
             let work = tempfile::tempdir().unwrap();
             let destination = work.path().join("out");
-            let extracted = case.extract(archive, engine, &destination);
+            let extracted = case.extract(archive, &destination);
             match case.missing_feature() {
                 Some(feature) => {
                     let error = extracted.expect_err(case.archive);
@@ -258,10 +253,7 @@ fn stored_and_deflate_entries_read_in_every_zip_build() {
                 .join("tests/data")
                 .join(archive),
             &destination,
-            ExtractOptions {
-                engine: Engine::Native,
-                ..ExtractOptions::default()
-            },
+            ExtractOptions::default(),
         )
         .unwrap_or_else(|error| panic!("{archive}: {error:#}"));
         assert!(std::fs::read_dir(&destination).unwrap().count() > 0);

@@ -1,8 +1,8 @@
 # In-process Intel HEX reader
 
-Zipper reads Intel HEX files with its own Rust reader, in the tree `7zz x` writes. Intel HEX has no signature, so the reader finds it from the content alone, as 7-Zip does. The default engine sends a file here when no reader with a signature claims it and its first records pass the check below. `--zip-engine native` also reads these files in process, and `--zip-engine backend` hands them to 7-Zip. 7-Zip 26.05 was run as a black box to learn every rule on this page.
+Zipper reads Intel HEX files with its own Rust reader, in the tree `7zz x` writes. Intel HEX has no signature, so the reader finds it from the content alone, as 7-Zip does. Zipper sends a file here when no reader with a signature claims it and its first records pass the check below. 7-Zip 26.05 was run as a black box to learn every rule on this page.
 
-The reader is the `ihex` feature, part of `more-formats`. A library built without it still finds Intel HEX files. The native engine refuses one with `zipper::NotBuilt` naming `ihex` and writes nothing, and the default engine hands it to 7-Zip. `tests/feature_subset.rs` checks the refusal.
+The reader is the `ihex` feature, part of `more-formats`. A library built without it still finds Intel HEX files. Such a build refuses one with `zipper::NotBuilt` naming `ihex` and writes nothing. `tests/feature_subset.rs` checks the refusal.
 
 ## How a file is found
 

@@ -33,7 +33,6 @@ const UNCOMPRESSED_LIMIT: u32 = 1 << 29;
 const ALLOCATION_UNIT: u64 = 4096;
 const COPY_BUFFER: usize = 1024 * 1024;
 const UNCOMPRESSED_SUFFIX: &str = "~.swf";
-const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Compression {
@@ -488,7 +487,7 @@ fn opened_body(
     ensure!(
         window <= LARGEST_WINDOW,
         crate::OverLimit(format!(
-            "the SWF LZMA stream needs a {window}-byte window, more than the {} MiB Zipper accepts; {BACKEND_HINT}",
+            "the SWF LZMA stream needs a {window}-byte window, more than the {} MiB Zipper accepts",
             LARGEST_WINDOW >> 20
         ))
     );

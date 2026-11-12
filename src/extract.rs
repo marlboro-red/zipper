@@ -40,42 +40,9 @@ use crate::native_wim;
 use crate::native_xar;
 #[cfg(feature = "zip-deflate")]
 use crate::native_zip;
-use crate::{Control, Existing, compat, refused};
+use crate::{Control, Existing, refused};
 use anyhow::{Result, bail, ensure};
 use std::{io::Read, path::Path};
-
-/// The reader for an archive.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Engine {
-    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, ISO and UDF disc images,
-    /// single compressed files, unrecognized files, CAB files and cabinet
-    /// sets, LZH, ARJ, RAR, WIM and ESD images, raw ext2, ext3 and ext4
-    /// volumes, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files, raw
-    /// SquashFS 4.0 and CramFS images, Android logical partition images, UEFI
-    /// firmware volumes and capsules, Intel HEX files, and 7z whose methods it
-    /// decodes. 7-Zip, with `-t` naming the
-    /// format, for other 7z, a RAR volume, a RAR 4 solid archive or a RAR
-    /// archive with encrypted headers, other SquashFS versions and byte orders,
-    /// an ext volume that needs journal recovery or uses a feature Zipper does
-    /// not read, a Mach-O universal file with the `B9 FA F1 0E` signature, and
-    /// a logical partition image or UEFI firmware whose names are not plain
-    /// relative paths. A split or pre-1.13 WIM fails. Every engine fails with
-    /// [`Refused`] on the formats that type names, disk images among them, so
-    /// none reaches 7-Zip.
-    #[default]
-    Auto,
-    /// 7-Zip for every archive whose format Zipper names by its signature, such
-    /// as 7z, RAR, ZIP, gzip, tar or ISO, with `-t` naming it, and for Intel
-    /// HEX, named by its content. Any other file, and every CAB, WIM, DMG or
-    /// disk image, fails with [`Refused`].
-    Backend,
-    /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, RAR, disc
-    /// images, WIM, ext, SquashFS 4.0, CramFS, FLV, SWF,
-    /// executables, logical partition images, UEFI firmware, Intel HEX, 7z and
-    /// single compressed files, and native ZIP for unrecognized files.
-    Native,
-}
 
 /// The reader an archive goes to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -130,8 +97,6 @@ pub enum Reader {
     /// The native reader for one compressed stream that holds no tar, in a
     /// format [`crate::native_stream::Format`] names.
     Stream,
-    /// 7-Zip, with the format pinned when Zipper recognized its signature.
-    Backend { format: Option<String> },
 }
 
 fn starts_with_zip_signature(archive: &Path) -> Result<bool> {
@@ -143,23 +108,11 @@ fn starts_with_zip_signature(archive: &Path) -> Result<bool> {
 /// Pick the reader for `archive` from its first bytes. When a file named
 /// `.001` is read with its later volumes as one archive, these are the
 /// joined archive's first bytes. `docs/reference/zip-reader.md` gives the
-/// rules for numbered volumes.
-pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
-    Ok(match engine {
-        Engine::Backend => {
-            if let Some(format) = refused::format(archive)? {
-                bail!(Refused(format));
-            }
-            match compat::identified_format(archive)? {
-                Some(format) => Reader::Backend {
-                    format: Some(format),
-                },
-                None if crate::ihex::sniff(archive)? => Reader::Backend {
-                    format: Some("-tihex".to_owned()),
-                },
-                None => bail!(Refused(refused::UNNAMED_FOR_7ZIP)),
-            }
-        }
+/// rules for numbered volumes. Every reader runs in process, and none starts
+/// 7-Zip. A format `docs/reference/refused.md` lists fails with [`Refused`].
+/// A file no reader recognizes goes to the ZIP reader.
+pub fn choose_reader(archive: &Path) -> Result<Reader> {
+    Ok(match () {
         _ if crate::volumes::has_zip_volumes(archive)? || starts_with_zip_signature(archive)? => {
             Reader::Zip
         }
@@ -182,45 +135,18 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         #[cfg(feature = "arj")]
         _ if native_arj::sniff(archive)? => Reader::Arj,
         #[cfg(feature = "rar")]
-        Engine::Auto if native_rar::sniff(archive)? && native_rar::needs_backend(archive)? => {
-            Reader::Backend {
-                format: compat::pinned_format(archive)?,
-            }
-        }
-        #[cfg(feature = "rar")]
         _ if native_rar::sniff(archive)? => Reader::Rar,
         _ if let Some(format) = refused::leading_signature(archive)? => bail!(Refused(format)),
         _ if let Some(format) = refused::disk_container(archive)? => bail!(Refused(format)),
         #[cfg(feature = "wim")]
         _ if native_wim::sniff(archive)? => Reader::Wim,
         #[cfg(feature = "7z")]
-        Engine::Auto if native_7z::sniff(archive)? && native_7z::needs_backend(archive)? => {
-            Reader::Backend {
-                format: Some(compat::pinned_format(archive)?.unwrap_or_else(|| "-t7z".to_owned())),
-            }
-        }
-        #[cfg(feature = "7z")]
         _ if native_7z::sniff(archive)? => Reader::SevenZip,
-        #[cfg(feature = "exe")]
-        Engine::Auto if native_exe::needs_backend(archive)? => Reader::Backend {
-            format: Some("-tmub".to_owned()),
-        },
+        _ if let Some(format) = refused::other_universal(archive)? => bail!(Refused(format)),
         #[cfg(feature = "exe")]
         _ if native_exe::sniff_damaged(archive)? => Reader::Exe,
         #[cfg(feature = "lp")]
-        Engine::Auto if native_lp::sniff(archive)? && native_lp::needs_backend(archive)? => {
-            Reader::Backend {
-                format: Some("-tlp".to_owned()),
-            }
-        }
-        #[cfg(feature = "lp")]
         _ if native_lp::sniff(archive)? => Reader::Lp,
-        #[cfg(feature = "uefi")]
-        Engine::Auto if native_uefi::sniff(archive)? && native_uefi::needs_backend(archive)? => {
-            Reader::Backend {
-                format: Some(native_uefi::backend_type(archive)?.to_owned()),
-            }
-        }
         #[cfg(feature = "uefi")]
         _ if native_uefi::sniff(archive)? => Reader::Uefi,
         _ if refused::raw_volume(archive)? == Some(refused::NTFS_VOLUMES) => {
@@ -230,23 +156,13 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_iso::sniff(archive)? => Reader::Iso,
         _ if let Some(format) = refused::raw_volume(archive)? => bail!(Refused(format)),
         #[cfg(feature = "squashfs")]
-        Engine::Auto
-            if native_squashfs::sniff(archive)? && native_squashfs::needs_backend(archive)? =>
-        {
-            Reader::Backend {
-                format: Some("-tsquashfs".to_owned()),
-            }
+        _ if native_squashfs::other_version(archive)? => {
+            bail!(Refused(refused::OTHER_SQUASHFS_VERSIONS))
         }
         #[cfg(feature = "squashfs")]
         _ if native_squashfs::sniff(archive)? => Reader::Squashfs,
         #[cfg(feature = "cramfs")]
         _ if native_cramfs::sniff(archive)? => Reader::Cramfs,
-        #[cfg(feature = "ext")]
-        Engine::Auto if native_ext::sniff(archive)? && native_ext::needs_backend(archive)? => {
-            Reader::Backend {
-                format: Some("-text".to_owned()),
-            }
-        }
         #[cfg(feature = "ext")]
         _ if native_ext::sniff(archive)? => Reader::Ext,
         _ if let Some(format) = refused::disk(archive)? => bail!(Refused(format)),
@@ -254,11 +170,6 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         _ if native_flv::sniff(archive)? => Reader::Flv,
         #[cfg(feature = "swf")]
         _ if native_swf::sniff(archive)? => Reader::Swf,
-        Engine::Auto if !cfg!(feature = "ihex") && crate::ihex::opens(archive)? => {
-            Reader::Backend {
-                format: Some("-tihex".to_owned()),
-            }
-        }
         _ if crate::ihex::opens(archive)? => Reader::Ihex,
         _ if let Some(format) = refused::dmg(archive)? => bail!(Refused(format)),
         _ if let Some(format) = refused::base64(archive)? => bail!(Refused(format)),
@@ -267,48 +178,77 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         #[cfg(feature = "exe")]
         _ if native_exe::sniff_object(archive)? => Reader::Exe,
         #[cfg(feature = "uefi")]
-        Engine::Auto
-            if native_uefi::sniff_later_volume(archive)?
-                && native_uefi::needs_backend(archive)? =>
-        {
-            Reader::Backend {
-                format: Some("-tuefif".to_owned()),
-            }
-        }
-        #[cfg(feature = "uefi")]
         _ if native_uefi::sniff_later_volume(archive)? => Reader::Uefi,
-        Engine::Auto if !cfg!(feature = "ihex") && crate::ihex::sniff(archive)? => {
-            Reader::Backend {
-                format: Some("-tihex".to_owned()),
-            }
-        }
         _ if crate::ihex::sniff(archive)? => Reader::Ihex,
-        Engine::Native => native_fallback(archive)?,
-        Engine::Auto => match compat::pinned_format(archive)? {
-            Some(format) => Reader::Backend {
-                format: Some(format),
-            },
-            None => native_fallback(archive)?,
-        },
+        _ => by_signature(archive)?,
     })
 }
 
-fn native_fallback(archive: &Path) -> Result<Reader> {
-    if cfg!(feature = "all-formats") {
-        return Ok(Reader::Zip);
+struct LeadingSignature {
+    signature: &'static [u8],
+    format: &'static str,
+}
+
+const READERS_BY_LEADING_SIGNATURE: &[LeadingSignature] = &[
+    LeadingSignature {
+        signature: b"7z\xBC\xAF\x27\x1C",
+        format: "7z",
+    },
+    LeadingSignature {
+        signature: b"Rar!\x1A\x07",
+        format: "rar",
+    },
+    LeadingSignature {
+        signature: b"\x1F\x8B",
+        format: "gzip",
+    },
+    LeadingSignature {
+        signature: b"BZh",
+        format: "bzip2",
+    },
+    LeadingSignature {
+        signature: b"\xFD7zXZ\x00",
+        format: "xz",
+    },
+    LeadingSignature {
+        signature: b"MSCF",
+        format: "cab",
+    },
+];
+const SIGNATURE_WINDOW: usize = 8;
+
+fn signature_reader(name: &str) -> Option<Reader> {
+    match name {
+        #[cfg(feature = "7z")]
+        "7z" => Some(Reader::SevenZip),
+        #[cfg(feature = "rar")]
+        "rar" => Some(Reader::Rar),
+        #[cfg(feature = "tar")]
+        "gzip" | "bzip2" | "xz" => Some(Reader::Stream),
+        #[cfg(feature = "cab")]
+        "cab" => Some(Reader::Cab),
+        _ => None,
     }
+}
+
+fn by_signature(archive: &Path) -> Result<Reader> {
     const USTAR: (&[u8], usize) = (b"ustar", 257);
     let mut head = Vec::new();
     crate::volumes::open(archive)?
-        .take((USTAR.1 + USTAR.0.len()) as u64)
+        .take((USTAR.1 + USTAR.0.len()).max(SIGNATURE_WINDOW) as u64)
         .read_to_end(&mut head)?;
     if cfg!(not(feature = "tar")) && head.get(USTAR.1..) == Some(USTAR.0) {
         bail!(NotBuilt("tar".to_owned()));
     }
-    if let Some(format) = compat::pinned_format(archive)? {
-        bail!(NotBuilt(format.trim_start_matches("-t").to_owned()));
+    match READERS_BY_LEADING_SIGNATURE
+        .iter()
+        .find(|known| head.starts_with(known.signature))
+    {
+        Some(known) => {
+            signature_reader(known.format).ok_or_else(|| NotBuilt(known.format.to_owned()).into())
+        }
+        None => Ok(Reader::Zip),
     }
-    Ok(Reader::Zip)
 }
 
 fn format_name(reader: &Reader) -> String {
@@ -337,24 +277,21 @@ pub struct ExtractOptions<'a> {
     /// Leading path segments to drop before writing: `Strip::Prefix("a")`
     /// writes `a/b/c.txt` as `<dest>/b/c.txt`, and `Strip::Components(1)`
     /// does the same for every top folder. `paths`, `include` and `exclude`
-    /// still match the full archive paths. The 7-Zip backend refuses it.
+    /// still match the full archive paths.
     pub strip: crate::Strip<'a>,
     /// Which metadata to restore beside contents. `Metadata::ContentOnly`
     /// writes contents and the execute bit only, with no times, Windows
-    /// attributes or Mark of the Web. The 7-Zip backend refuses it.
+    /// attributes or Mark of the Web.
     pub metadata: crate::Metadata,
     /// Progress reports and cancellation. Every reader checks the cancel flag
-    /// before it starts. The in-process readers report progress and check it
-    /// while they write, and the 7-Zip backend stops 7-Zip when it is set.
+    /// before it starts, and reports progress and checks it while it writes.
     pub control: Control<'a>,
-    /// Cap on declared output bytes. Without it, the output of every reader
-    /// in process, including single compressed files, must fit in free
-    /// space. The 7-Zip backend refuses a cap and checks no free space.
+    /// Cap on declared output bytes. Without it, the output of every reader,
+    /// including single compressed files, must fit in free space.
     pub max_output_bytes: Option<u64>,
     /// Maximum ZIP workers, tar writer threads or 7z folders decoded at
     /// once, 1–64.
     pub threads: Option<usize>,
-    pub engine: Engine,
     /// Extract every file into the destination itself, without its folders,
     /// as `7z e` does. Files that share a name follow `existing` in path
     /// order: `Refuse` fails, `Overwrite` keeps the last, `Skip` keeps the
@@ -362,11 +299,10 @@ pub struct ExtractOptions<'a> {
     /// An archive with links is refused.
     pub flat: bool,
     /// Password for ZipCrypto and WinZip AES entries in a ZIP, and for 7z
-    /// AES-256, read in process. A selected encrypted entry without it fails
+    /// AES-256. A selected encrypted entry without it fails
     /// with [`crate::native_zip::PasswordNeeded`] or
     /// [`crate::native_7z::PasswordNeeded`], as does a 7z whose header is
-    /// encrypted. The tar and single-file readers and the 7-Zip backend
-    /// refuse it.
+    /// encrypted. The other readers refuse it.
     pub password: Option<&'a [u8]>,
     /// Write the NTFS alternate data streams of a WIM's files as named
     /// streams `file:name`, after each file's data and before the file is
@@ -514,23 +450,6 @@ fn says_nothing_about_the_volumes(error: &anyhow::Error) -> bool {
     })
 }
 
-const BACKEND_ADVICE: &str =
-    "; if the file is another format or a split volume, pass --zip-engine backend";
-
-fn without_backend_advice(error: anyhow::Error) -> anyhow::Error {
-    if let Some(&crate::BadField(message)) = error.downcast_ref::<crate::BadField>() {
-        return match message.split_once(BACKEND_ADVICE) {
-            Some((kept, _)) => crate::BadField(kept).into(),
-            None => error,
-        };
-    }
-    let message = error.to_string();
-    match message.split_once(BACKEND_ADVICE) {
-        Some((kept, _)) if error.source().is_none() => anyhow::anyhow!("{kept}"),
-        _ => error,
-    }
-}
-
 fn lone_zip_is_another_format(archive: &Path) -> Option<&'static str> {
     if !crate::volumes::has_zip_volumes(archive).unwrap_or(false) {
         return None;
@@ -565,16 +484,12 @@ fn with_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Result<T
                 "{} by itself is a {format} archive, so the .z01 volumes beside it may not belong to it; move them aside to read it alone",
                 archive.display()
             ),
-            note: format!("{}\n{note}", without_backend_advice(error)),
+            note: format!("{error}\n{note}"),
         }
         .into());
     }
     match volumes.note() {
-        Some(note) => Err(VolumeNote {
-            error: without_backend_advice(error),
-            note,
-        }
-        .into()),
+        Some(note) => Err(VolumeNote { error, note }.into()),
         None => Err(error),
     }
 }
@@ -591,10 +506,10 @@ pub fn read_volumes<T>(archive: &Path, read: impl FnOnce() -> Result<T>) -> Resu
 }
 
 /// The error for an archive whose reader this build leaves out, naming its
-/// format, such as `"zip"`, `"tar"` or `"cpio"`. `Engine::Native` returns
-/// it, and writes nothing, for every format Zipper recognizes whose feature
-/// this build leaves out. `Engine::Auto` returns it for a ZIP or tar archive
-/// it cannot read, and hands every other such format to 7-Zip. For a ZIP
+/// format, such as `"zip"`, `"tar"`, `"gzip"`, `"7z"` or `"ihex"`. It is
+/// returned, and nothing is written, for a ZIP, a tar, an Intel HEX file, or
+/// a file that starts with the signature of 7z, RAR, gzip, bzip2, xz or CAB,
+/// when this build leaves out its reader. For a ZIP
 /// entry whose method or encryption this build leaves out, it names the
 /// feature to enable, such as `"zip-bzip2"`, `"zip-encryption"` or
 /// `"zstd"`, and nothing in the archive is written.
@@ -613,10 +528,10 @@ impl std::fmt::Display for NotBuilt {
 
 impl std::error::Error for NotBuilt {}
 
-/// The error for a format Zipper refuses in every engine, such as CHM, DMG,
-/// FAT, NTFS, HFS+, APFS, compound files and Base64. No engine hands such a
-/// file to 7-Zip. The field names the format, and nothing is written. `docs/reference/refused.md`
-/// lists the formats and their signatures.
+/// The error for a format Zipper does not read, such as CHM, DMG, FAT, NTFS,
+/// HFS+, APFS, compound files, Base64 and disk images. The field names the
+/// format, and nothing is written. `docs/reference/refused.md` lists the
+/// formats and their signatures.
 #[derive(Debug)]
 pub struct Refused(pub &'static str);
 
@@ -675,13 +590,9 @@ fn tree_reader(reader: &Reader) -> Option<TreeReader> {
 }
 
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
-    let reader = choose_reader(options.engine, archive)?;
+    let reader = choose_reader(archive)?;
     ensure!(
-        options.password.is_none()
-            || matches!(
-                reader,
-                Reader::Zip | Reader::SevenZip | Reader::Backend { .. }
-            ),
+        options.password.is_none() || matches!(reader, Reader::Zip | Reader::SevenZip),
         "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
         archive.display()
     );
@@ -746,20 +657,6 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                 },
             )?;
         }
-        Reader::Backend { .. } if options.password.is_some() => {
-            bail!("--password needs a ZIP or 7z archive read in process")
-        }
-        Reader::Backend { .. }
-            if !(options.paths.is_empty()
-                && options.include.is_empty()
-                && options.exclude.is_empty()
-                && options.strip == crate::Strip::None
-                && options.metadata.restores()) =>
-        {
-            bail!(
-                "--path, --include, --exclude, --strip-prefix, --strip-components and --content-only need an archive read in process"
-            )
-        }
         #[cfg(feature = "tar")]
         Reader::Tar => {
             native_tar::read_archive(
@@ -776,20 +673,6 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                     metadata: options.metadata,
                     control: options.control,
                 },
-            )?;
-        }
-        Reader::Backend { format } => {
-            ensure!(
-                options.max_output_bytes.is_none(),
-                "--max-extracted-bytes needs an archive read in process"
-            );
-            compat::run_until_cancelled(
-                "x",
-                archive,
-                Some(destination),
-                format.as_deref(),
-                options.existing,
-                options.control.cancel,
             )?;
         }
         _ => {

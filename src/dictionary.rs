@@ -1,7 +1,5 @@
 use std::io::Read;
 
-const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
-
 pub(crate) const LARGEST_DICTIONARY: u64 = 256 * 1024 * 1024;
 
 pub(crate) fn largest_dictionary() -> String {
@@ -18,7 +16,7 @@ pub(crate) fn ensure_dictionary_fits(format: &str, dictionary: u64) -> std::io::
     Err(std::io::Error::new(
         std::io::ErrorKind::OutOfMemory,
         format!(
-            "{format} stream declares a {dictionary}-byte dictionary, more than {}; {BACKEND_HINT}",
+            "{format} stream declares a {dictionary}-byte dictionary, more than {}",
             largest_dictionary()
         ),
     ))
@@ -36,7 +34,7 @@ impl<R: Read> Read for DecoderMemory<R> {
                 std::io::Error::new(
                     std::io::ErrorKind::OutOfMemory,
                     format!(
-                        "the stream needs a dictionary larger than {}; {BACKEND_HINT}",
+                        "the stream needs a dictionary larger than {}",
                         largest_dictionary()
                     ),
                 )

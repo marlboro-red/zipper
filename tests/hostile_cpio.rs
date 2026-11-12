@@ -863,13 +863,13 @@ fn progress_counts_every_file_and_cancel_publishes_nothing() {
 }
 
 #[test]
-fn the_default_engine_routes_cpio_to_this_reader() {
+fn cpio_goes_to_this_reader() {
     let root = tempfile::tempdir().unwrap();
     for form in FORMS {
         let archive = root.path().join(format!("{form:?}.cpio"));
         fs::write(&archive, cpio(form, &sample())).unwrap();
         assert_eq!(
-            zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
+            zipper::choose_reader(&archive).unwrap(),
             zipper::Reader::Cpio,
             "{form:?}"
         );

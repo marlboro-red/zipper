@@ -90,7 +90,6 @@ const MACHO_ZEROFILL: u32 = 0x1;
 const MACHO_NAME: usize = 16;
 
 const FAT_MAGIC: u32 = 0xCAFE_BABE;
-const MUB_OTHER_SIGNATURE: [u8; 4] = [0xB9, 0xFA, 0xF1, 0x0E];
 const FAT_HEADER: usize = 8;
 const FAT_ARCH: usize = 20;
 const FAT_LARGEST_COUNT: u32 = 8;
@@ -1456,15 +1455,6 @@ pub fn sniff_damaged(path: &Path) -> Result<bool> {
 pub fn sniff_object(path: &Path) -> Result<bool> {
     let file = crate::volumes::open(path)?;
     Ok(detect(&file)? == Some(Form::Coff) && parse(&file, path, Form::Coff).is_ok())
-}
-
-/// Returns whether the default engine sends this file to 7-Zip: a Mach-O
-/// universal file with the `B9 FA F1 0E` signature, which Zipper does not
-/// read.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    let mut head = [0u8; 4];
-    let read = read_up_to(&crate::volumes::open(path)?, &mut head, 0)?;
-    Ok(read == 4 && head == MUB_OTHER_SIGNATURE)
 }
 
 fn write_item(tree: &mut tree::Tree, file: &ArchiveFile, item: &Item) -> Result<()> {

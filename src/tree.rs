@@ -46,7 +46,6 @@ pub(crate) const MAX_NAME: u64 = 8192;
 const MAX_METADATA: usize = 64 * 1024 * 1024;
 const COPY_BUFFER: usize = 1024 * 1024;
 const LINKS_PER_REPORT: usize = 1024;
-pub(crate) const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
 pub(crate) trait Holes: Read {
     fn skip_hole(&mut self, most: u64) -> std::io::Result<u64>;

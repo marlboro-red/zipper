@@ -403,10 +403,7 @@ fn one_run_takes_the_archive_name_and_several_take_their_numbers() {
         let path = work.path().join(archive);
         std::fs::write(&path, &bytes).unwrap();
         let out = work.path().join(format!("{archive}.out"));
-        let options = zipper::ExtractOptions {
-            engine: zipper::Engine::Native,
-            ..Default::default()
-        };
+        let options = zipper::ExtractOptions::default();
         zipper::extract_archive(&path, &out, options).unwrap();
         let mut found: Vec<String> = std::fs::read_dir(&out)
             .unwrap()
@@ -428,10 +425,7 @@ fn one_line_break_of_any_kind_after_the_end_record_belongs_to_it() {
         let archive = work.path().join(format!("{label}.hex"));
         std::fs::write(&archive, &bytes).unwrap();
         let out = work.path().join(format!("{label}.out"));
-        let options = zipper::ExtractOptions {
-            engine: zipper::Engine::Native,
-            ..Default::default()
-        };
+        let options = zipper::ExtractOptions::default();
         zipper::extract_archive(&archive, &out, options)
             .unwrap_or_else(|error| panic!("{label}: {error:#}"));
         assert!(out.join(label).is_file(), "{label}");
@@ -451,10 +445,7 @@ fn each_file_takes_the_archive_files_modified_time_as_7zip_gives_it() {
         .set_modified(time)
         .unwrap();
     let out = work.path().join("out");
-    let options = zipper::ExtractOptions {
-        engine: zipper::Engine::Native,
-        ..Default::default()
-    };
+    let options = zipper::ExtractOptions::default();
     zipper::extract_archive(&archive, &out, options).unwrap();
     for name in ["0", "1"] {
         let modified = std::fs::metadata(out.join(name))

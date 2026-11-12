@@ -13,14 +13,13 @@ fn zip_of(path: &Path, entries: &[(&str, &[u8])]) -> anyhow::Result<()> {
 }
 
 #[test]
-fn cli_reads_zip_and_reports_a_missing_backend() -> anyhow::Result<()> {
+fn cli_reads_zip_and_reads_a_damaged_rar_in_process() -> anyhow::Result<()> {
     let t = tempfile::tempdir()?;
     fs::write(t.path().join("data"), b"zipper")?;
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_zipper"))
             .current_dir(t.path())
             .args(args)
-            .env("ZIPPER_7Z", t.path().join("missing-backend"))
             .output()
     };
     zip_of(&t.path().join("a.zip"), &[("data", b"zipper")])?;
@@ -37,13 +36,15 @@ fn cli_reads_zip_and_reports_a_missing_backend() -> anyhow::Result<()> {
     fs::write(t.path().join("legacy.rar"), b"Rar!\x1A\x07\x01\x00 fake")?;
     let result = run(&["test", "legacy.rar"])?;
     assert!(!result.status.success());
-    assert!(String::from_utf8_lossy(&result.stderr).contains("failed to launch 7-Zip"));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("RAR"), "{stderr}");
+    assert!(!stderr.contains("7-Zip"), "{stderr}");
     Ok(())
 }
 
 #[cfg(unix)]
 #[test]
-fn compatibility_backend_failure_does_not_publish() -> anyhow::Result<()> {
+fn a_damaged_rar_does_not_publish_or_start_7zip() -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let t = tempfile::tempdir()?;
     let backend = t.path().join("backend");
@@ -57,6 +58,7 @@ fn compatibility_backend_failure_does_not_publish() -> anyhow::Result<()> {
         .output()?;
     assert!(!status.status.success());
     assert!(!t.path().join("out").exists());
+    assert!(!String::from_utf8_lossy(&status.stderr).contains("7-Zip"));
     Ok(())
 }
 
@@ -69,7 +71,6 @@ fn max_extracted_bytes_caps_archives_before_writing() -> anyhow::Result<()> {
         Command::new(env!("CARGO_BIN_EXE_zipper"))
             .current_dir(t.path())
             .args(args)
-            .env("ZIPPER_7Z", t.path().join("missing-backend"))
             .output()
     };
     zip_of(&t.path().join("a.zip"), &[("data/file", &[7u8; 4096])])?;
@@ -119,20 +120,6 @@ fn max_extracted_bytes_caps_archives_before_writing() -> anyhow::Result<()> {
     ])?;
     assert!(!backend.status.success());
     assert!(!t.path().join("zip").exists());
-    let explicit = run(&[
-        "--zip-engine",
-        "backend",
-        "extract",
-        "legacy.zip",
-        "-o",
-        "zip",
-        "--max-extracted-bytes",
-        "1",
-    ])?;
-    assert!(
-        String::from_utf8_lossy(&explicit.stderr)
-            .contains("--max-extracted-bytes needs an archive read in process")
-    );
     Ok(())
 }
 
@@ -164,7 +151,7 @@ fn dos_times_are_read_in_the_local_time_zone() -> anyhow::Result<()> {
     for zone in ["UTC", "Asia/Tokyo"] {
         let output = t.path().join(zone.replace('/', "-"));
         let status = Command::new(env!("CARGO_BIN_EXE_zipper"))
-            .args(["--zip-engine", "native", "extract"])
+            .arg("extract")
             .arg(&archive)
             .arg("-o")
             .arg(&output)
@@ -212,7 +199,7 @@ fn restored_dos_time(dos: u32, zone: &str) -> anyhow::Result<i64> {
     fs::write(t.path().join("a.zip"), dos_only_zip(dos))?;
     let status = Command::new(env!("CARGO_BIN_EXE_zipper"))
         .current_dir(t.path())
-        .args(["--zip-engine", "native", "extract", "a.zip", "-o", "out"])
+        .args(["extract", "a.zip", "-o", "out"])
         .env("TZ", zone)
         .status()?;
     assert!(status.success());
@@ -265,13 +252,12 @@ fn stored_zip(entries: &[(&str, u16)]) -> anyhow::Result<Vec<u8>> {
 }
 
 #[test]
-fn default_engine_reads_zip_in_process_and_never_hands_it_to_7zip() -> anyhow::Result<()> {
+fn zip_reads_in_process_and_never_reaches_7zip() -> anyhow::Result<()> {
     let t = tempfile::tempdir()?;
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_zipper"))
             .current_dir(t.path())
             .args(args)
-            .env("ZIPPER_7Z", t.path().join("missing-backend"))
             .output()
     };
     fs::write(t.path().join("plain.zip"), stored_zip(&[("f", 0)])?)?;
@@ -293,12 +279,12 @@ fn default_engine_reads_zip_in_process_and_never_hands_it_to_7zip() -> anyhow::R
         (
             "wavpack.zip",
             stored_zip(&[("f", 97)])?,
-            "--zip-engine backend",
+            "ZIP compression method is not supported",
         ),
         (
             "wavpack-then-escape.zip",
             stored_zip(&[("f", 97), ("../escape", 0)])?,
-            "--zip-engine backend",
+            "ZIP compression method is not supported",
         ),
         (
             "escape.zip",
@@ -334,41 +320,7 @@ fn default_engine_reads_zip_in_process_and_never_hands_it_to_7zip() -> anyhow::R
 
 #[cfg(unix)]
 #[test]
-fn backend_engine_publishes_what_7zip_extracts() -> anyhow::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let t = tempfile::tempdir()?;
-    let backend = t.path().join("backend");
-    fs::write(
-        &backend,
-        "#!/bin/sh\nfor a; do case $a in -o*) d=${a#-o};; esac; done\necho backend > \"$d/marker\"\n",
-    )?;
-    fs::set_permissions(&backend, fs::Permissions::from_mode(0o700))?;
-    fs::write(t.path().join("bzip2.zip"), stored_zip(&[("f", 12)])?)?;
-    let result = Command::new(env!("CARGO_BIN_EXE_zipper"))
-        .current_dir(t.path())
-        .args([
-            "--zip-engine",
-            "backend",
-            "extract",
-            "bzip2.zip",
-            "-o",
-            "out",
-        ])
-        .env("ZIPPER_7Z", &backend)
-        .output()?;
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
-    assert_eq!(fs::read(t.path().join("out/marker"))?, b"backend\n");
-    Ok(())
-}
-
-#[cfg(unix)]
-#[test]
-fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_process()
--> anyhow::Result<()> {
+fn no_known_format_reaches_7zip_and_a_zip_after_a_script_reads_in_process() -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let t = tempfile::tempdir()?;
     let backend = t.path().join("backend");
@@ -388,12 +340,12 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
     sevenzip_with_zip.extend(&zip);
     let mut shebang_with_zip = b"#!/bin/sh\nexit 0\n".to_vec();
     shebang_with_zip.extend(&zip);
-    for (name, bytes, switch) in [
-        ("a.tar", tar_with_zip, None),
-        ("b.bin", rar_with_zip.clone(), Some("-trar5 ")),
-        ("c.rar.001", rar_with_zip, Some("-trar5.split ")),
-        ("f.7z", sevenzip_with_zip, None),
-        ("e.bin", b"Type = zip\n".to_vec(), None),
+    for (name, bytes) in [
+        ("a.tar", tar_with_zip),
+        ("b.bin", rar_with_zip.clone()),
+        ("c.rar.001", rar_with_zip),
+        ("f.7z", sevenzip_with_zip),
+        ("e.bin", b"Type = zip\n".to_vec()),
     ] {
         fs::write(t.path().join(name), bytes)?;
         let _ = fs::remove_file(t.path().join("backend.log"));
@@ -406,23 +358,15 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
             .output()?;
         let log = fs::read_to_string(t.path().join("backend.log")).unwrap_or_default();
         let stderr = String::from_utf8_lossy(&result.stderr);
-        match switch {
-            Some(switch) => {
-                assert!(result.status.success(), "{name}: {stderr}");
-                assert!(log.contains(switch), "{name}: {log}");
-            }
-            None => {
-                assert!(!result.status.success(), "{name}");
-                assert!(log.is_empty(), "{name} reached 7-Zip: {log}");
-                assert!(
-                    stderr.contains("--zip-engine backend")
-                        || stderr.contains("ZIP")
-                        || stderr.contains("tar")
-                        || stderr.contains("7z"),
-                    "{name}: {stderr}"
-                );
-            }
-        }
+        assert!(!result.status.success(), "{name}");
+        assert!(log.is_empty(), "{name} reached 7-Zip: {log}");
+        assert!(
+            stderr.contains("ZIP")
+                || stderr.contains("tar")
+                || stderr.contains("7z")
+                || stderr.contains("RAR"),
+            "{name}: {stderr}"
+        );
     }
     fs::write(t.path().join("d.bin"), shebang_with_zip)?;
     let _ = fs::remove_file(t.path().join("backend.log"));
@@ -443,7 +387,7 @@ fn default_engine_pins_known_formats_for_7zip_and_reads_everything_else_in_proce
 }
 
 #[test]
-fn real_7zip_routes_split_prefixed_and_wrapped_zips_correctly() -> anyhow::Result<()> {
+fn split_prefixed_and_wrapped_zips_never_reach_a_real_7zip() -> anyhow::Result<()> {
     let Some(sevenzip) = sevenzip::sevenzip() else {
         return Ok(());
     };
@@ -525,37 +469,7 @@ fn real_7zip_routes_split_prefixed_and_wrapped_zips_correctly() -> anyhow::Resul
 
 #[cfg(unix)]
 #[test]
-fn wildcards_in_7zip_paths_are_refused_before_7zip_runs() -> anyhow::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let t = tempfile::tempdir()?;
-    let backend = t.path().join("backend");
-    fs::write(&backend, "#!/bin/sh\necho called >> \"$0.log\"\n")?;
-    fs::set_permissions(&backend, fs::Permissions::from_mode(0o700))?;
-    let rar = b"Rar!\x1A\x07\x01\x00 fake";
-    fs::write(t.path().join("a?.rar"), rar)?;
-    fs::write(t.path().join("plain.rar"), rar)?;
-    fs::create_dir(t.path().join("p*"))?;
-    for (archive, output) in [("a?.rar", "out"), ("plain.rar", "p*/out")] {
-        let result = Command::new(env!("CARGO_BIN_EXE_zipper"))
-            .current_dir(t.path())
-            .args(["extract", archive, "-o", output])
-            .env("ZIPPER_7Z", &backend)
-            .output()?;
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        assert!(!result.status.success(), "{archive} -> {output}");
-        assert!(stderr.contains("wildcards"), "{stderr}");
-        assert!(
-            !t.path().join("backend.log").exists(),
-            "{archive} reached 7-Zip"
-        );
-        assert!(!t.path().join(output).exists());
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-#[test]
-fn default_engine_reads_tar_family_in_process_and_never_hands_it_to_7zip() -> anyhow::Result<()> {
+fn tar_family_reads_in_process_and_never_reaches_7zip() -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let t = tempfile::tempdir()?;
     let backend = t.path().join("backend");
@@ -803,7 +717,6 @@ fn content_only_writes_no_times_and_no_read_only_bits() -> anyhow::Result<()> {
         Command::new(env!("CARGO_BIN_EXE_zipper"))
             .current_dir(t.path())
             .args(args)
-            .env("ZIPPER_7Z", t.path().join("missing-backend"))
             .output()
     };
     let mut writer = zip::ZipWriter::new(fs::File::create(t.path().join("a.zip"))?);
@@ -841,10 +754,9 @@ fn content_only_writes_no_times_and_no_read_only_bits() -> anyhow::Result<()> {
     fs::write(t.path().join("legacy.rar"), b"Rar!\x1A\x07\x01\x00 fake")?;
     let refused = run(&["extract", "legacy.rar", "-o", "rar", "--content-only"])?;
     assert!(!refused.status.success());
-    assert!(
-        String::from_utf8_lossy(&refused.stderr)
-            .contains("--content-only need an archive read in process")
-    );
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains("RAR"), "{stderr}");
+    assert!(!t.path().join("rar").exists());
     Ok(())
 }
 

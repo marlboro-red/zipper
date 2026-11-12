@@ -19,25 +19,7 @@ const APFS_SMALLEST_BLOCK: u32 = 1 << 12;
 const APFS_LARGEST_BLOCK: u32 = 1 << 16;
 const MOST_FAT_COPIES: u8 = 4;
 const NTFS_OEM: &[u8; 8] = b"NTFS    ";
-const ISO_DESCRIPTOR_AT: usize = 0x8001;
-const ISO_IDENTIFIERS: [&[u8; 5]; 4] = [b"CD001", b"BEA01", b"NSR02", b"NSR03"];
 const BASE64_EXTENSION: &str = "b64";
-const CAB: &[u8; 4] = b"MSCF";
-const CAB_HEADER: usize = 36;
-const CAB_FOLDERS_AT: usize = 26;
-const CAB_FLAGS_AT: usize = 30;
-const CAB_LINKS_PREVIOUS: u16 = 1;
-const CAB_LINKS_NEXT: u16 = 2;
-const CAB_HAS_RESERVE: u16 = 4;
-const CAB_FOLDER: usize = 8;
-const CAB_TYPE_AT: usize = 6;
-const CAB_METHOD_MASK: u8 = 0x0F;
-const CAB_LZX: u8 = 3;
-const WIM: &[u8; 8] = b"MSWIM\0\0\0";
-const WIM_FLAGS_AT: usize = 16;
-const WIM_COMPRESSED: u32 = 0x2;
-const WIM_LZX: u32 = 1 << 18;
-const WIM_LZMS: u32 = 1 << 19;
 const VHD_COOKIE: &[u8; 8] = b"conectix";
 const VHD_CHECKSUM_AT: usize = 64;
 const VHDX_SIGNATURE: &[u8; 8] = b"vhdxfile";
@@ -67,9 +49,6 @@ pub(crate) const APFS_CONTAINERS: &str = "APFS containers";
 pub(crate) const NTFS_VOLUMES: &str = "NTFS volumes";
 pub(crate) const FAT_VOLUMES: &str = "FAT volumes";
 pub(crate) const BASE64_FILES: &str = "Base64 files";
-pub(crate) const CAB_LZX_FOLDERS: &str = "CAB folders compressed with LZX";
-pub(crate) const WIM_LZX_IMAGES: &str = "WIM images compressed with LZX";
-pub(crate) const WIM_LZMS_IMAGES: &str = "WIM and ESD images compressed with LZMS";
 pub(crate) const VHD_IMAGES: &str = "VHD images";
 pub(crate) const VHDX_IMAGES: &str = "VHDX images";
 pub(crate) const QCOW_IMAGES: &str = "QCOW images";
@@ -78,8 +57,11 @@ pub(crate) const VMDK_IMAGES: &str = "VMDK images";
 pub(crate) const ANDROID_SPARSE_IMAGES: &str = "Android sparse images";
 pub(crate) const GPT_DISKS: &str = "GPT disk images";
 pub(crate) const MBR_DISKS: &str = "MBR disk images";
-pub(crate) const UNNAMED_FOR_7ZIP: &str =
-    "a file through 7-Zip without naming its format as one Zipper hands to 7-Zip";
+pub(crate) const OTHER_UNIVERSAL_FILES: &str =
+    "Mach-O universal files with the B9 FA F1 0E signature";
+pub(crate) const OTHER_SQUASHFS_VERSIONS: &str =
+    "SquashFS images other than version 4.0 in little-endian order";
+const OTHER_UNIVERSAL_SIGNATURE: [u8; 4] = [0xB9, 0xFA, 0xF1, 0x0E];
 
 fn le16(bytes: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([bytes[at], bytes[at + 1]])
@@ -139,16 +121,6 @@ fn is_ext_volume(head: &[u8]) -> bool {
 #[cfg(not(feature = "ext"))]
 fn is_ext_volume(_: &[u8]) -> bool {
     false
-}
-
-#[cfg(feature = "iso")]
-fn holds_a_disc(path: &Path) -> Result<bool> {
-    crate::native_iso::holds_a_disc(path)
-}
-
-#[cfg(not(feature = "iso"))]
-fn holds_a_disc(_: &Path) -> Result<bool> {
-    Ok(false)
 }
 
 // SPEC(UEFI 2.10, 5.2.1 Legacy MBR): four 16-byte partition records at 446, then the signature
@@ -232,63 +204,6 @@ fn is_base64_text(head: &[u8]) -> bool {
         && head.iter().any(u8::is_ascii_alphanumeric)
 }
 
-fn skip_name(head: &[u8], at: usize) -> Option<usize> {
-    let length = head.get(at..)?.iter().position(|byte| *byte == 0)?;
-    Some(at + length + 1)
-}
-
-// SPEC(MS-CAB CFHEADER, CFFOLDER): optional reserve sizes and the
-// previous and next cabinet names come before the folders, whose typeCompress is at 6.
-fn cab_has_lzx_folder(head: &[u8]) -> bool {
-    if !head.starts_with(CAB) || head.len() < CAB_HEADER {
-        return false;
-    }
-    let flags = le16(head, CAB_FLAGS_AT);
-    let folders = usize::from(le16(head, CAB_FOLDERS_AT));
-    let mut at = CAB_HEADER;
-    let mut folder_reserve = 0;
-    if flags & CAB_HAS_RESERVE != 0 {
-        let Some(sizes) = head.get(at..at + 4) else {
-            return false;
-        };
-        folder_reserve = usize::from(sizes[2]);
-        at += 4 + usize::from(le16(sizes, 0));
-    }
-    for link in [CAB_LINKS_PREVIOUS, CAB_LINKS_NEXT] {
-        if flags & link != 0 {
-            let Some(after) = skip_name(head, at).and_then(|at| skip_name(head, at)) else {
-                return false;
-            };
-            at = after;
-        }
-    }
-    head.get(at..)
-        .unwrap_or_default()
-        .chunks(CAB_FOLDER + folder_reserve)
-        .take(folders)
-        .any(|folder| {
-            folder
-                .get(CAB_TYPE_AT)
-                .is_some_and(|method| method & CAB_METHOD_MASK == CAB_LZX)
-        })
-}
-
-fn wim_method(head: &[u8]) -> Option<&'static str> {
-    if !head.starts_with(WIM) || head.len() < WIM_FLAGS_AT + 4 {
-        return None;
-    }
-    let flags = le32(head, WIM_FLAGS_AT);
-    if flags & WIM_COMPRESSED == 0 {
-        None
-    } else if flags & WIM_LZX != 0 {
-        Some(WIM_LZX_IMAGES)
-    } else if flags & WIM_LZMS != 0 {
-        Some(WIM_LZMS_IMAGES)
-    } else {
-        None
-    }
-}
-
 fn leading(head: &[u8]) -> Option<&'static str> {
     if head.starts_with(COMPOUND) {
         Some(COMPOUND_FILES)
@@ -354,12 +269,6 @@ impl Start {
         Ok(self.head.starts_with(KOLY)
             || length >= SECTOR as u64
                 && self.bytes_at::<12>(length - SECTOR as u64)?.as_ref() == Some(KOLY))
-    }
-
-    fn is_disc(&self) -> Result<bool> {
-        Ok(self
-            .bytes_at::<5>(ISO_DESCRIPTOR_AT as u64)?
-            .is_some_and(|identifier| ISO_IDENTIFIERS.contains(&&identifier)))
     }
 
     fn disk_container(&self) -> Option<&'static str> {
@@ -434,40 +343,11 @@ pub(crate) fn base64(path: &Path) -> Result<Option<&'static str>> {
     Ok((named_base64(path) && is_base64_text(&Start::read(path)?.head)).then_some(BASE64_FILES))
 }
 
-pub(crate) fn format(path: &Path) -> Result<Option<&'static str>> {
-    let start = Start::read(path)?;
-    let head = &start.head;
-    if let Some(format) = leading(head) {
-        return Ok(Some(format));
-    }
-    if start.is_dmg()? {
-        return Ok(Some(DMG_IMAGES));
-    }
-    if named_base64(path) && is_base64_text(head) {
-        return Ok(Some(BASE64_FILES));
-    }
-    if cab_has_lzx_folder(head) {
-        return Ok(Some(CAB_LZX_FOLDERS));
-    }
-    if let Some(format) = wim_method(head) {
-        return Ok(Some(format));
-    }
-    if let Some(format) = start.disk_container() {
-        return Ok(Some(format));
-    }
-    // EXTERNAL(hdiutil makehybrid, xorriso): hybrid discs carry an Apple partition map or an
-    // HFS+ volume beside ISO 9660 or UDF.
-    if start.is_disc()? {
-        return if holds_a_disc(path)? {
-            Ok(None)
-        } else {
-            start.disk()
-        };
-    }
-    if let Some(format) = volume(head) {
-        return Ok(Some(format));
-    }
-    start.disk()
+pub(crate) fn other_universal(path: &Path) -> Result<Option<&'static str>> {
+    Ok(Start::read(path)?
+        .head
+        .starts_with(&OTHER_UNIVERSAL_SIGNATURE)
+        .then_some(OTHER_UNIVERSAL_FILES))
 }
 
 #[cfg(test)]
@@ -528,74 +408,6 @@ mod tests {
         assert!(!is_ntfs_boot_sector(&sector));
     }
 
-    fn cab(flags: u16, reserve: Option<(u16, u8)>, names: &[&[u8]], methods: &[u8]) -> Vec<u8> {
-        let mut bytes = vec![0u8; CAB_HEADER];
-        bytes[..4].copy_from_slice(CAB);
-        bytes[CAB_FOLDERS_AT..CAB_FOLDERS_AT + 2]
-            .copy_from_slice(&(methods.len() as u16).to_le_bytes());
-        bytes[CAB_FLAGS_AT..CAB_FLAGS_AT + 2].copy_from_slice(&flags.to_le_bytes());
-        let mut folder_reserve = 0;
-        if let Some((header, folder)) = reserve {
-            bytes.extend(header.to_le_bytes());
-            bytes.extend([folder, 0]);
-            bytes.extend(vec![0xEE; usize::from(header)]);
-            folder_reserve = usize::from(folder);
-        }
-        for name in names {
-            bytes.extend(*name);
-            bytes.push(0);
-        }
-        for method in methods {
-            let mut folder = vec![0x33; CAB_FOLDER + folder_reserve];
-            folder[CAB_TYPE_AT] = *method;
-            folder[CAB_TYPE_AT + 1] = 16;
-            bytes.extend(folder);
-        }
-        bytes
-    }
-
-    #[test]
-    fn an_lzx_folder_is_found_after_every_optional_header_field() {
-        let links: [&[u8]; 4] = [b"prev.cab", b"disk 1", b"next.cab", b"disk 2"];
-        for flags in 0..8u16 {
-            let names = match flags & 3 {
-                0 => &links[..0],
-                1 => &links[..2],
-                2 => &links[2..],
-                _ => &links[..],
-            };
-            let reserve = (flags & CAB_HAS_RESERVE != 0).then_some((20, 5));
-            for methods in [&[0u8, 1, 2][..], &[1, 3], &[3], &[0x13, 0], &[]] {
-                let bytes = cab(flags, reserve, names, methods);
-                let wanted = methods
-                    .iter()
-                    .any(|method| method & CAB_METHOD_MASK == CAB_LZX);
-                assert_eq!(cab_has_lzx_folder(&bytes), wanted, "{flags} {methods:?}");
-                for cut in 0..bytes.len() {
-                    let found = cab_has_lzx_folder(&bytes[..cut]);
-                    assert!(!found || wanted, "{flags} {methods:?} cut to {cut}");
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn wim_headers_name_lzx_and_lzms_only_when_compressed() {
-        let mut header = [0u8; 208];
-        header[..8].copy_from_slice(WIM);
-        for (flags, wanted) in [
-            (0, None),
-            (WIM_LZX, None),
-            (WIM_COMPRESSED | (1 << 17), None),
-            (WIM_COMPRESSED | WIM_LZX, Some(WIM_LZX_IMAGES)),
-            (WIM_COMPRESSED | WIM_LZMS, Some(WIM_LZMS_IMAGES)),
-        ] {
-            header[WIM_FLAGS_AT..WIM_FLAGS_AT + 4].copy_from_slice(&flags.to_le_bytes());
-            assert_eq!(wim_method(&header), wanted, "{flags:#x}");
-            assert_eq!(wim_method(&header[..WIM_FLAGS_AT + 3]), None);
-        }
-    }
-
     #[test]
     fn no_check_panics_on_any_cut_or_flip_of_pseudo_random_heads() {
         let mut state = 0x5eed_u64;
@@ -609,15 +421,11 @@ mod tests {
             let length = (next() % 1600) as usize;
             let mut head: Vec<u8> = (0..length).map(|_| next() as u8).collect();
             if let Some(first) = head.get_mut(..4) {
-                let signatures: [&[u8]; 5] = [CAB, &WIM[..4], b"ER\0\0", b"NXSB", COMPOUND];
-                first.copy_from_slice(&signatures[(next() % 5) as usize][..4]);
+                let signatures: [&[u8]; 3] = [b"ER\0\0", b"NXSB", COMPOUND];
+                first.copy_from_slice(&signatures[(next() % 3) as usize][..4]);
             }
-            let _ = (leading(&head), volume(&head), wim_method(&head));
-            let _ = (
-                cab_has_lzx_folder(&head),
-                is_fat_boot_sector(&head),
-                is_base64_text(&head),
-            );
+            let _ = (leading(&head), volume(&head));
+            let _ = (is_fat_boot_sector(&head), is_base64_text(&head));
             let _ = (container(&head), has_partition_table(&head));
             let _ = is_vhd_footer(&head);
         }
@@ -715,21 +523,6 @@ mod tests {
 #[cfg(kani)]
 mod proofs {
     use super::*;
-
-    #[kani::proof]
-    #[kani::unwind(50)]
-    fn cab_and_wim_headers_never_panic_and_name_lzx_only_from_a_folder() {
-        let bytes: [u8; 48] = kani::any();
-        let length: usize = kani::any();
-        kani::assume(length <= bytes.len());
-        let head = &bytes[..length];
-        if cab_has_lzx_folder(head) {
-            assert!(head.starts_with(CAB) && head.len() > CAB_HEADER + CAB_TYPE_AT);
-        }
-        if wim_method(head).is_some() {
-            assert!(le32(head, WIM_FLAGS_AT) & WIM_COMPRESSED != 0);
-        }
-    }
 
     #[kani::proof]
     #[kani::unwind(14)]

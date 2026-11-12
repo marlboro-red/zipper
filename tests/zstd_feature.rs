@@ -3,7 +3,7 @@
 //! `NotBuilt("zstd")` and writes nothing.
 
 use std::path::{Path, PathBuf};
-use zipper::{Engine, ExtractOptions, NotBuilt, extract_archive};
+use zipper::{ExtractOptions, NotBuilt, extract_archive};
 
 #[cfg(feature = "zip-deflate")]
 const TEXT: &[u8] = b"hello\n";
@@ -20,14 +20,7 @@ fn data(name: &str) -> PathBuf {
 }
 
 fn extract(archive: &Path, work: &Path) -> anyhow::Result<()> {
-    extract_archive(
-        archive,
-        &work.join("out"),
-        ExtractOptions {
-            engine: Engine::Native,
-            ..ExtractOptions::default()
-        },
-    )
+    extract_archive(archive, &work.join("out"), ExtractOptions::default())
 }
 
 fn assert_refused(archive: &Path) {

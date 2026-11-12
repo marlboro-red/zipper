@@ -1,6 +1,6 @@
 # In-process xar reader
 
-Zipper reads xar archives and flat macOS installer packages (`.pkg`) with its own Rust reader. The default engine sends a file here when it starts with `xar!`. A file that starts with a ZIP, tar, cpio, `ar` or RPM signature goes to that reader first. `--zip-engine native` also reads xar in process, and `--zip-engine backend` hands it to 7-Zip.
+Zipper reads xar archives and flat macOS installer packages (`.pkg`) with its own Rust reader. Zipper sends a file here when it starts with `xar!`. A file that starts with a ZIP, tar, cpio, `ar` or RPM signature goes to that reader first.
 
 A flat package is a xar archive. A product package holds a `Distribution` file and one folder per component, and a component holds `Bom`, `PackageInfo`, `Payload` and sometimes `Scripts`. The reader writes these files as they are stored, as `xar -x`, `pkgutil --expand` and `7zz x -txar` write them. It does not unpack the gzip or pbzx cpio inside a `Payload`.
 

@@ -1,6 +1,6 @@
 # In-process FLV and SWF reader
 
-Zipper reads Flash Video (FLV) files and SWF files with its own Rust reader, in the tree `7zz x` writes. The default engine sends a file here when it starts with `FLV` and the version byte 1, or with `FWS`, `CWS` or `ZWS` and a version byte below 64. A file that a ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound file, WIM, CHM, 7z, NTFS, disc or disk reader claims goes there first. `--zip-engine native` also reads these files in process, and `--zip-engine backend` hands them to 7-Zip.
+Zipper reads Flash Video (FLV) files and SWF files with its own Rust reader, in the tree `7zz x` writes. Zipper sends a file here when it starts with `FLV` and the version byte 1, or with `FWS`, `CWS` or `ZWS` and a version byte below 64. A file that a ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound file, WIM, CHM, 7z, NTFS, disc or disk reader claims goes there first.
 
 ## FLV files
 
@@ -61,7 +61,7 @@ A file split into [volumes](zip-reader.md#split-volumes) is named from its first
 - The output goes to a hidden staging folder and is published only when the whole file reads, as with every reader.
 - Each output file is charged against free space, or `--max-extracted-bytes`, before it is written. A compressed SWF is charged its declared length before a byte is decoded.
 - A zlib or LZMA stream is decoded within its declared length. A stream that would write one byte past it is refused at that byte, so a small file that declares a short length cannot expand without bound.
-- An LZMA window, the dictionary or the declared length if smaller, larger than 256 MiB is refused with a hint to use `--zip-engine backend`.
+- An LZMA window, the dictionary or the declared length if smaller, larger than 256 MiB is refused.
 - The FLV reader passes over the file once to check every tag and count the streams, then once for each output file. It holds one tag header at a time, so a long file costs no more memory than a short one. 7-Zip reads every tag into memory.
 - The SWF reader first passes over the tag headers, so a file it refuses writes nothing. It then writes each tag as it reads it, and keeps only the list of files it wrote. With `--path` or `--include`, it also keeps every tag's name, about 13 bytes each, to report a selected path that matches no tag. A SWF of 1,000,000 tags peaks at 62 MB under `zipper test`, where 7-Zip peaks at 75 MB.
 - `--path`, `--include` and `--exclude` select output files by name. An FLV or a compressed SWF takes `--strip-components` and `--strip-prefix` as every reader does. The tags of an uncompressed SWF sit in no folder, so any strip leaves nothing and is refused.

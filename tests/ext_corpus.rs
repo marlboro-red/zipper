@@ -23,7 +23,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use zipper::{Engine, ExtractOptions, Reader};
+use zipper::{ExtractOptions, Reader};
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/ext-corpus");
 
@@ -93,7 +93,7 @@ fn every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts() {
         let image = work.path().join(&name);
         fs::write(&image, unpacked(&format!("{name}.xz"))).unwrap();
         assert_eq!(
-            zipper::choose_reader(Engine::Auto, &image).unwrap(),
+            zipper::choose_reader(&image).unwrap(),
             Reader::Ext,
             "{name}"
         );
@@ -129,7 +129,7 @@ fn list_and_test_read_the_volume_in_process() {
     fs::write(&image, unpacked("ext4.img.xz")).unwrap();
     for (command, wanted) in [("list", "hello.txt"), ("test", "")] {
         let run = Command::new(env!("CARGO_BIN_EXE_zipper"))
-            .args(["--zip-engine", "native", command])
+            .arg(command)
             .arg(&image)
             .output()
             .unwrap();

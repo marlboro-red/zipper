@@ -29,7 +29,6 @@ const MAX_METADATA: usize = 64 * 1024 * 1024;
 const DEFAULT_WRITERS: usize = 4;
 const LINKS_PER_REPORT: usize = 1024;
 const READ_ERROR: &str = "cannot read the tar stream";
-const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 
 /// The compression around a tar stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -327,7 +326,7 @@ fn text(field: &[u8]) -> &[u8] {
 }
 
 fn utf8<'a>(bytes: &'a [u8], what: &str) -> Result<&'a str> {
-    std::str::from_utf8(bytes).with_context(|| format!("tar {what} is not UTF-8; {BACKEND_HINT}"))
+    std::str::from_utf8(bytes).with_context(|| format!("tar {what} is not UTF-8"))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -434,7 +433,7 @@ fn pax_records(data: &[u8]) -> Result<Vec<(&str, &[u8])>> {
 fn ignored_pax_key(key: &str) -> Result<bool> {
     ensure!(
         !key.starts_with("GNU.sparse."),
-        "tar sparse files are not supported; {BACKEND_HINT}"
+        "tar sparse files are not supported"
     );
     Ok(matches!(
         key,
@@ -462,11 +461,11 @@ fn apply_pax(extensions: &mut Extensions, data: &[u8]) -> Result<()> {
             "mtime" => extensions.mtime = Some(pax_time(utf8(value, "pax mtime")?)?),
             "hdrcharset" => ensure!(
                 value == b"ISO-IR 10646 2000 UTF-8",
-                "tar pax header declares binary names; {BACKEND_HINT}"
+                "tar pax header declares binary names"
             ),
             _ => ensure!(
                 ignored_pax_key(key)?,
-                "tar pax key {key:?} is not supported; {BACKEND_HINT}"
+                "tar pax key {key:?} is not supported"
             ),
         }
     }
@@ -477,7 +476,7 @@ fn check_global_pax(data: &[u8]) -> Result<()> {
     for (key, _) in pax_records(data)? {
         ensure!(
             ignored_pax_key(key)?,
-            "tar global pax key {key:?} is not supported; {BACKEND_HINT}"
+            "tar global pax key {key:?} is not supported"
         );
     }
     Ok(())
@@ -1022,10 +1021,7 @@ impl<'a, 'f> Extraction<'a, 'f> {
             b'3' | b'4' | b'6' => {
                 bail!("tar entry {name:?} is a device or FIFO, which is not extracted")
             }
-            other => bail!(
-                "tar entry type {:?} is not supported; {BACKEND_HINT}",
-                char::from(other)
-            ),
+            other => bail!("tar entry type {:?} is not supported", char::from(other)),
         }
         self.entries.push(Entry {
             name,
@@ -1700,7 +1696,7 @@ mod xz_tests {
                 match result {
                     Err(error) if over => assert!(
                         error.to_string().contains(&format!(
-                            "the stream needs a dictionary larger than {}; {BACKEND_HINT}",
+                            "the stream needs a dictionary larger than {}",
                             largest_dictionary()
                         )),
                         "{chain:?}, byte {byte}: {error}"

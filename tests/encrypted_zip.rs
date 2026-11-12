@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use zipper::{Engine, Existing, ExtractOptions, native_zip::PasswordNeeded};
+use zipper::{Existing, ExtractOptions, native_zip::PasswordNeeded};
 
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/encrypted-zip");
 const PASSWORD: &[u8] = b"zipper";
@@ -139,7 +139,6 @@ fn seven_zip_tree(binary: &Path, archive: &Path) -> BTreeMap<String, String> {
 fn extract(
     archive: &Path,
     destination: &Path,
-    engine: Engine,
     password: Option<&[u8]>,
     existing: Existing,
     paths: &[String],
@@ -148,7 +147,6 @@ fn extract(
         archive,
         destination,
         ExtractOptions {
-            engine,
             password,
             existing,
             paths,
@@ -266,15 +264,8 @@ fn assert_fails_cleanly(zip: &[u8], password: Option<&[u8]>, case: &str) -> Vec<
         (kept.clone(), Existing::Overwrite),
         (work.path().join("fresh"), Existing::Refuse),
     ] {
-        let error = extract(
-            &archive,
-            &destination,
-            Engine::Native,
-            password,
-            existing,
-            &[],
-        )
-        .expect_err(&format!("{case}: native extracted into {existing:?}"));
+        let error = extract(&archive, &destination, password, existing, &[])
+            .expect_err(&format!("{case}: native extracted into {existing:?}"));
         errors.push(format!("{error:?}"));
         assert_eq!(
             tree(&kept),
@@ -317,15 +308,8 @@ fn every_fixture_extracts_to_the_tree_7zip_gave() {
         }
         let work = tempfile::tempdir().unwrap();
         let output = work.path().join("out");
-        extract(
-            &archive,
-            &output,
-            Engine::Native,
-            Some(PASSWORD),
-            Existing::Refuse,
-            &[],
-        )
-        .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        extract(&archive, &output, Some(PASSWORD), Existing::Refuse, &[])
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
         assert_eq!(&tree(&output), expected, "{name}");
     }
 }
@@ -344,7 +328,6 @@ fn selected_paths_extract_only_their_entries() {
         extract(
             &fixture(name),
             &output,
-            Engine::Native,
             Some(PASSWORD),
             Existing::Refuse,
             &paths,
@@ -406,7 +389,6 @@ fn a_destination_that_cannot_be_used_fails_before_the_password_is_asked_for() {
     let error = extract(
         &fixture("tiny-aes128.zip"),
         &taken,
-        Engine::Native,
         None,
         Existing::Refuse,
         &[],
@@ -493,7 +475,6 @@ fn no_password_fails_before_anything_is_written_and_asks_for_one() {
         let error = extract(
             &fixture(name),
             &work.path().join("out"),
-            Engine::Auto,
             None,
             Existing::Refuse,
             &[],
@@ -565,7 +546,6 @@ fn a_wrong_zip_crypto_password_that_passes_the_check_byte_is_stopped_by_the_crc(
         let error = extract(
             &fixture(name),
             &work.path().join("out"),
-            Engine::Native,
             Some(&lucky),
             Existing::Refuse,
             &only_that_entry,
@@ -645,14 +625,7 @@ fn ae2_entries_ignore_the_crc_field_and_ae1_entries_check_it() {
         let archive = work.path().join("case.zip");
         fs::write(&archive, &patched).unwrap();
         let output = work.path().join("native");
-        let result = extract(
-            &archive,
-            &output,
-            Engine::Native,
-            Some(PASSWORD),
-            Existing::Refuse,
-            &[],
-        );
+        let result = extract(&archive, &output, Some(PASSWORD), Existing::Refuse, &[]);
         assert_eq!(result.is_ok(), expect_ok, "{name}: {result:?}");
     }
 }
@@ -748,15 +721,7 @@ fn the_entry_builder_reproduces_a_working_encrypted_entry() {
         let archive = work.path().join("case.zip");
         fs::write(&archive, build(&[tiny_entry(name)])).unwrap();
         let output = work.path().join("native");
-        extract(
-            &archive,
-            &output,
-            Engine::Native,
-            Some(PASSWORD),
-            Existing::Refuse,
-            &[],
-        )
-        .unwrap();
+        extract(&archive, &output, Some(PASSWORD), Existing::Refuse, &[]).unwrap();
         assert_eq!(
             fs::read(output.join(TINY_NAME)).unwrap(),
             TINY_TEXT,
@@ -945,7 +910,6 @@ fn selections_that_leave_out_every_encrypted_entry_need_no_password() {
     extract(
         &archive,
         &output,
-        Engine::Native,
         None,
         Existing::Refuse,
         &["plain.txt".to_owned()],
@@ -961,7 +925,6 @@ fn selections_that_leave_out_every_encrypted_entry_need_no_password() {
         &archive,
         &all,
         ExtractOptions {
-            engine: Engine::Native,
             threads: Some(1),
             control: zipper::Control {
                 progress: Some(&count),
@@ -1537,20 +1500,6 @@ fn the_command_line_takes_a_password_and_refuses_to_ask_without_a_terminal() {
         );
     }
     assert!(!Path::new(missing).exists());
-    let run = zipper_command(&[
-        "--zip-engine",
-        "backend",
-        "--password",
-        "zipper",
-        "extract",
-        archive,
-        "-o",
-        missing,
-    ]);
-    assert!(
-        !run.status.success(),
-        "the 7-Zip backend must refuse --password"
-    );
 }
 
 fn write_source(root: &Path) {
@@ -2164,9 +2113,6 @@ const SIGNALLED_ENTRY: usize = 64 << 20;
 #[cfg(unix)]
 const ZEROS_GZIP_OUTLASTING_THE_SIGNAL: usize = 512 << 20;
 #[cfg(unix)]
-const STORED_ZIP_OUTLASTING_7ZIP: usize = 512 << 20;
-
-#[cfg(unix)]
 fn decrypted_bytes_on_disk(folder: &Path) -> u64 {
     walkdir::WalkDir::new(folder)
         .into_iter()
@@ -2357,52 +2303,6 @@ fn signal_once_output_grows(
 
 #[cfg(unix)]
 #[test]
-fn a_signal_during_a_7zip_extraction_stops_the_child_and_removes_staging() {
-    use std::os::unix::process::ExitStatusExt;
-    if seven_zip().is_none() {
-        return;
-    }
-    let work = tempfile::tempdir().unwrap();
-    let archive = work.path().join("large.zip");
-    large_stored_zip(&archive, STORED_ZIP_OUTLASTING_7ZIP);
-    let output = work.path().join("out");
-    for (signal, number) in [("TERM", 15), ("INT", 2)] {
-        let run = signal_once_output_grows(
-            work.path(),
-            "large.zip",
-            &[
-                "--zip-engine".as_ref(),
-                "backend".as_ref(),
-                "extract".as_ref(),
-                archive.as_os_str(),
-                "-o".as_ref(),
-                output.as_os_str(),
-            ],
-            signal,
-        );
-        let status = run.status;
-        assert_eq!(status.signal(), Some(number), "SIG{signal}: {status:?}");
-        let children = Command::new("pgrep")
-            .args(["-f", "--"])
-            .arg(work.path())
-            .output()
-            .unwrap();
-        assert!(
-            children.stdout.is_empty(),
-            "SIG{signal}: 7-Zip still runs: {}",
-            String::from_utf8_lossy(&children.stdout)
-        );
-        assert_eq!(listing(work.path()), ["large.zip"], "SIG{signal}");
-        let said = String::from_utf8_lossy(&run.stdout);
-        assert!(
-            !said.contains("Everything is Ok"),
-            "SIG{signal}: 7-Zip ran to the end instead of being stopped: {said}"
-        );
-    }
-}
-
-#[cfg(unix)]
-#[test]
 fn a_signal_during_a_single_stream_extraction_removes_staging() {
     use std::io::Write;
     use std::os::unix::process::ExitStatusExt;
@@ -2532,53 +2432,6 @@ fn a_signal_stops_a_copy_to_standard_output() {
         );
         assert_eq!(listing(&temporary), Vec::<String>::new(), "{case}");
         drop(unread);
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn a_signal_stops_7zip_listing_and_testing() {
-    use std::os::unix::process::ExitStatusExt;
-    let work = tempfile::tempdir().unwrap();
-    let archive = work.path().join("plain.zip");
-    large_stored_zip(&archive, 1 << 20);
-    for (command, pause) in [("list", "61.25"), ("test", "61.5")] {
-        let fake = work.path().join(format!("fake-7z-{command}"));
-        fs::write(&fake, format!("#!/bin/sh\nexec sleep {pause}\n")).unwrap();
-        let mut permissions = fs::metadata(&fake).unwrap().permissions();
-        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
-        fs::set_permissions(&fake, permissions).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_zipper"))
-            .env("ZIPPER_7Z", &fake)
-            .args(["--zip-engine", "backend", command])
-            .arg(&archive)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let marker = format!("sleep {pause}");
-        let running = || {
-            !Command::new("pgrep")
-                .args(["-f", &marker])
-                .output()
-                .unwrap()
-                .stdout
-                .is_empty()
-        };
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while !running() && std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert!(running(), "{command}: the stand-in for 7-Zip never started");
-        terminate(&child);
-        let status = wait_at_most(&mut child, 10);
-        assert_eq!(
-            status.and_then(|status| status.signal()),
-            Some(15),
-            "{command}"
-        );
-        assert!(!running(), "{command}: 7-Zip was left running");
     }
 }
 

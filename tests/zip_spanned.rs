@@ -13,7 +13,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use zipper::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};
+use zipper::{ExtractOptions, Reader, choose_reader, extract_archive};
 
 const SET: &str = "infozip-split";
 const ONE_PIECE: &str = "infozip-split-one-piece";
@@ -180,11 +180,7 @@ fn info_zip_sets_extract_as_7zip_extracts_them() {
         let folder = tempfile::tempdir().unwrap();
         let volumes = copy_set(stem, folder.path());
         let last = volumes.last().unwrap();
-        assert_eq!(
-            choose_reader(Engine::Auto, last).unwrap(),
-            Reader::Zip,
-            "{stem}"
-        );
+        assert_eq!(choose_reader(last).unwrap(), Reader::Zip, "{stem}");
         let ours = extracted_tree(last, 1);
         assert_eq!(extracted_tree(last, 4), ours, "{stem}");
         if let Some(binary) = &seven {
@@ -545,11 +541,7 @@ fn a_volume_beside_a_whole_zip_is_never_joined_for_another_reader() {
             .unwrap();
         }
         let last = folder.path().join("x.zip");
-        assert_eq!(
-            choose_reader(Engine::Auto, &last).unwrap(),
-            Reader::Zip,
-            "{stem}"
-        );
+        assert_eq!(choose_reader(&last).unwrap(), Reader::Zip, "{stem}");
         let error = assert_refused(&last, &["x.z01"], stem);
         assert!(!error.contains(other), "{stem}: {error}");
         for action in ["list", "test"] {
@@ -587,7 +579,7 @@ fn other_readers_open_a_zip_with_volumes_alone_and_the_set_goes_to_the_zip_reade
     let mut bytes = fs::read(last).unwrap();
     bytes[..6].copy_from_slice(b"7z\xBC\xAF\x27\x1C");
     fs::write(last, bytes).unwrap();
-    assert_eq!(choose_reader(Engine::Auto, last).unwrap(), Reader::Zip);
+    assert_eq!(choose_reader(last).unwrap(), Reader::Zip);
 }
 
 #[test]

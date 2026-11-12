@@ -5,7 +5,7 @@
 pub use crate::tree::ReadOptions;
 use crate::{
     Entry, Field, field_check,
-    tree::{self, BACKEND_HINT, Tree},
+    tree::{self, Tree},
     volumes::ArchiveFile,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -721,7 +721,7 @@ fn read_volumes(image: &mut Image) -> Result<Option<Volume>> {
         .unwrap_or(first);
     ensure!(
         u64::from(main.block_size) == SECTOR,
-        "ISO 9660 blocks of {} bytes are not supported; {BACKEND_HINT}",
+        "ISO 9660 blocks of {} bytes are not supported",
         main.block_size
     );
     Ok(Some(Volume {
@@ -902,12 +902,12 @@ impl IsoReader {
         let found = rock_ridge(area)?;
         ensure!(
             found.names <= 1 && found.modes <= 1 && found.links <= 1 && found.continuations <= 1,
-            "Rock Ridge record {:?} repeats an entry, which 7-Zip reads only once; {BACKEND_HINT}",
+            "Rock Ridge record {:?} repeats an entry, which 7-Zip reads only once",
             node.name
         );
         ensure!(
             !found.relocated,
-            "Rock Ridge record {:?} relocates a folder, which 7-Zip does not follow; {BACKEND_HINT}",
+            "Rock Ridge record {:?} relocates a folder, which 7-Zip does not follow",
             node.name
         );
         self.ensure_continuations_hold_no_fields(image, found.continuation, &node.name)?;
@@ -992,7 +992,7 @@ impl IsoReader {
             let found = rock_ridge(&bytes)?;
             ensure!(
                 found.names == 0 && found.modes == 0 && found.links == 0 && !found.relocated,
-                "Rock Ridge entry {name:?} keeps a name, mode or link in a continuation area, which 7-Zip does not read; {BACKEND_HINT}"
+                "Rock Ridge entry {name:?} keeps a name, mode or link in a continuation area, which 7-Zip does not read"
             );
             ensure!(
                 found.continuations <= 1,
@@ -1349,20 +1349,12 @@ pub fn sniff(path: &Path) -> Result<bool> {
     crate::udf::has_anchor(&mut image)
 }
 
-pub(crate) fn holds_a_disc(path: &Path) -> Result<bool> {
-    let mut image = Image::open(path)?;
-    Ok(
-        read_volumes(&mut image).is_ok_and(|volume| volume.is_some())
-            || crate::udf::has_anchor(&mut image)?,
-    )
-}
-
 /// Verify and optionally extract an ISO 9660 or UDF disc image into a new
 /// directory, in the tree `7z x` extracts. A UDF file system that 7-Zip
 /// opens wins over ISO 9660, and a Joliet volume wins over the primary one,
 /// whose names may come from Rock Ridge. El Torito boot images extract
 /// under `[BOOT]` beside an ISO 9660 tree. It refuses a disc 7-Zip would
-/// read differently than it does, and suggests the 7-Zip backend.
+/// read differently than it does.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,

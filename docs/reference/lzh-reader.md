@@ -1,6 +1,6 @@
 # In-process LZH reader
 
-Zipper extracts LZH archives, also called LHA archives, with its own Rust reader. The default engine and `--zip-engine native` send a file here when its first header names a method such as `-lh5-` at offset 2 and a header level of 0 to 3. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar or CAB signature goes to that reader first. `--zip-engine backend` hands every LZH to 7-Zip.
+Zipper extracts LZH archives, also called LHA archives, with its own Rust reader. Zipper sends a file here when its first header names a method such as `-lh5-` at offset 2 and a header level of 0 to 3. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar or CAB signature goes to that reader first.
 
 ## Supported archives
 

@@ -3,7 +3,7 @@
 #![cfg(all(feature = "zip", feature = "7z", not(feature = "tar")))]
 
 use std::path::Path;
-use zipper::{Engine, ExtractOptions, NotBuilt, extract_archive};
+use zipper::{ExtractOptions, NotBuilt, extract_archive};
 
 fn data(name: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -11,44 +11,30 @@ fn data(name: &str) -> std::path::PathBuf {
         .join(name)
 }
 
-fn refused_as(archive: &str, format: &str, engines: &[Engine]) {
-    for &engine in engines {
-        let work = tempfile::tempdir().unwrap();
-        let destination = work.path().join("out");
-        let error = extract_archive(
-            &data(archive),
-            &destination,
-            ExtractOptions {
-                engine,
-                ..ExtractOptions::default()
-            },
-        )
+fn refused_as(archive: &str, format: &str) {
+    let work = tempfile::tempdir().unwrap();
+    let destination = work.path().join("out");
+    let error = extract_archive(&data(archive), &destination, ExtractOptions::default())
         .expect_err(archive);
-        let not_built = error
-            .downcast_ref::<NotBuilt>()
-            .unwrap_or_else(|| panic!("{archive}: {error:#}"));
-        assert_eq!(not_built.0, format, "{archive}");
-        assert_eq!(
-            std::fs::read_dir(work.path()).unwrap().count(),
-            0,
-            "{archive}"
-        );
-    }
-}
-
-#[test]
-fn tar_and_gzip_are_refused_as_not_built() {
-    let every = [Engine::Auto, Engine::Native];
-    refused_as("tar-corpus/gnutar-gnu-links.tar", "tar", &every);
-    refused_as(
-        "tar-corpus/gnutar-gnu-gzip.tar.gz",
-        "gzip",
-        &[Engine::Native],
+    let not_built = error
+        .downcast_ref::<NotBuilt>()
+        .unwrap_or_else(|| panic!("{archive}: {error:#}"));
+    assert_eq!(not_built.0, format, "{archive}");
+    assert_eq!(
+        std::fs::read_dir(work.path()).unwrap().count(),
+        0,
+        "{archive}"
     );
 }
 
 #[test]
-fn intel_hex_is_refused_as_not_built_by_the_native_engine() {
+fn tar_and_gzip_are_refused_as_not_built() {
+    refused_as("tar-corpus/gnutar-gnu-links.tar", "tar");
+    refused_as("tar-corpus/gnutar-gnu-gzip.tar.gz", "gzip");
+}
+
+#[test]
+fn intel_hex_is_refused_as_not_built() {
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("firmware.hex");
     std::fs::write(
@@ -57,15 +43,7 @@ fn intel_hex_is_refused_as_not_built_by_the_native_engine() {
     )
     .unwrap();
     let destination = work.path().join("out");
-    let error = extract_archive(
-        &archive,
-        &destination,
-        ExtractOptions {
-            engine: Engine::Native,
-            ..ExtractOptions::default()
-        },
-    )
-    .unwrap_err();
+    let error = extract_archive(&archive, &destination, ExtractOptions::default()).unwrap_err();
     let not_built = error
         .downcast_ref::<NotBuilt>()
         .unwrap_or_else(|| panic!("{error:#}"));

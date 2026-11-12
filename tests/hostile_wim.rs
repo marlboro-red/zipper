@@ -626,7 +626,7 @@ fn chunk_tables_that_go_backward_or_past_their_resource_are_refused() {
 }
 
 #[test]
-fn split_wims_are_refused_in_every_engine() {
+fn split_wims_are_refused_by_this_reader() {
     let mut wim = wim_writer::write(&sample_images(), &options());
     wim[42] = 2;
     refused(&wim, "split WIM");
@@ -634,23 +634,13 @@ fn split_wims_are_refused_in_every_engine() {
     let archive = root.path().join("part.swm");
     fs::write(&archive, &wim).unwrap();
     assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
-        zipper::Reader::Wim
-    );
-    assert!(
-        zipper::choose_reader(zipper::Engine::Backend, &archive)
-            .unwrap_err()
-            .downcast_ref::<zipper::Refused>()
-            .is_some()
-    );
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Native, &archive).unwrap(),
+        zipper::choose_reader(&archive).unwrap(),
         zipper::Reader::Wim
     );
     wim[42] = 1;
     fs::write(&archive, &wim).unwrap();
     assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
+        zipper::choose_reader(&archive).unwrap(),
         zipper::Reader::Wim
     );
     wim[40] = 2;
@@ -665,7 +655,7 @@ fn split_wims_are_refused_in_every_engine() {
     esd[16..20].copy_from_slice(&(0x2u32 | 1 << 20).to_le_bytes());
     fs::write(&archive, &esd).unwrap();
     assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
+        zipper::choose_reader(&archive).unwrap(),
         zipper::Reader::Wim,
         "a damaged ESD header stays with the WIM reader"
     );

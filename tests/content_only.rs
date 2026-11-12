@@ -13,7 +13,7 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
-use zipper::{Engine, ExtractOptions, Metadata, extract_archive};
+use zipper::{ExtractOptions, Metadata, extract_archive};
 
 fn data(folder: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -101,7 +101,6 @@ fn content_only_extraction_writes_contents_and_the_execute_bit_alone() {
                 &archive,
                 &destination,
                 ExtractOptions {
-                    engine: Engine::Native,
                     metadata: Metadata::ContentOnly,
                     ..Default::default()
                 },

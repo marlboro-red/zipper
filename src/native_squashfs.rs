@@ -2,8 +2,8 @@
 //! whole image reads cleanly. See `docs/reference/squashfs-reader.md` for
 //! what it accepts and restores.
 use crate::image::Volume;
+use crate::tree;
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
@@ -691,7 +691,7 @@ impl<'v> Image<'v> {
         volume.read_exact_at(0, &mut bytes)?;
         if !native_version(&bytes) {
             bail!(
-                "SquashFS image is not version 4.0 in little-endian order, which Zipper does not read in process; {BACKEND_HINT}"
+                "SquashFS image is not version 4.0 in little-endian order, which Zipper does not read"
             );
         }
         let superblock = superblock(&bytes).map_err(|error| anyhow::anyhow!("{error}"))?;
@@ -1410,9 +1410,7 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(volume.read_exact_at(0, &mut start).is_ok() && is_image(&start))
 }
 
-/// Returns whether the default engine sends this image to 7-Zip: one that
-/// is not SquashFS 4.0 in little-endian order.
-pub fn needs_backend(path: &Path) -> Result<bool> {
+pub(crate) fn other_version(path: &Path) -> Result<bool> {
     let file = crate::volumes::open(path)?;
     let mut start = [0u8; SUPERBLOCK];
     let mut volume = FileVolume {

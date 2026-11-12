@@ -36,10 +36,9 @@ STORED_SUFFIX = ".stored.xz"
 STATUSES = {
     "native": "Zipper reads it in process.",
     "partial": "Zipper reads some of it in process, as the note says.",
-    "backend": "Zipper hands it to 7-Zip.",
-    "missing": "Zipper cannot do it, even through 7-Zip.",
+    "missing": "Zipper does not do it. No row goes to 7-Zip, since Zipper never runs 7-Zip.",
     "dropped": "Zipper leaves it out on purpose, as the note says.",
-    "refused": "Zipper refuses it in every engine for licence reasons, as the note says, and never hands it to 7-Zip.",
+    "refused": "Zipper refuses it for licence reasons, as the note says.",
 }
 ZIP_METHODS = ["Store", "Shrink", "Implode", "Deflate", "Deflate64", "BZip2", "LZMA",
                "Zstandard", "XZ", "PPMd", "ZipCrypto", "WinZip AES"]
@@ -377,9 +376,8 @@ def page(status, archives):
         "",
         "A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus archive. "
         "A native row must match the tree 7-Zip extracted when the corpus was built. "
-        "A backend row must match a direct 7-Zip extraction on the same machine. "
         "A missing row must be refused with nothing published. "
-        "A refused row, and a refused archive of another row, must be refused by every engine "
+        "A refused row, and a refused archive of another row, must be refused "
         "with an error that says Zipper does not read it, with nothing published.",
         "",
         "| Status | Rows |",

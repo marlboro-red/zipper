@@ -23,7 +23,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use zipper::{Engine, Reader};
+use zipper::Reader;
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/squashfs-corpus");
 
@@ -675,23 +675,26 @@ fn entries_are_listed_folder_by_folder_in_the_order_7zip_lists_them() {
 
 fn reader_for(bytes: &[u8]) -> Reader {
     let (_work, image) = write(bytes, false);
-    zipper::choose_reader(Engine::Auto, &image).unwrap()
+    zipper::choose_reader(&image).unwrap()
 }
 
 #[test]
-fn other_squashfs_versions_and_byte_orders_go_to_7zip_by_name() {
+fn other_squashfs_versions_and_byte_orders_are_refused_by_name() {
     let mut version_3 = corpus("gzip.sqfs");
     version_3[28] = 3;
     let mut big_endian = corpus("gzip.sqfs");
     big_endian[..4].copy_from_slice(b"sqsh");
     for bytes in [&version_3, &big_endian] {
+        let (_work, image) = write(bytes, false);
+        let error = zipper::choose_reader(&image).unwrap_err();
         assert_eq!(
-            reader_for(bytes),
-            Reader::Backend {
-                format: Some("-tsquashfs".to_owned())
-            }
+            error
+                .downcast_ref::<zipper::Refused>()
+                .map(|refused| refused.0),
+            Some("SquashFS images other than version 4.0 in little-endian order"),
+            "{error:#}"
         );
-        refused(bytes, "--zip-engine backend");
+        refused(bytes, "not version 4.0 in little-endian order");
     }
     assert_eq!(reader_for(&corpus("gzip.sqfs")), Reader::Squashfs);
 }

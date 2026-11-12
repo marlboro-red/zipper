@@ -3,7 +3,7 @@
 //! check out. See `docs/reference/xar-reader.md` for what it accepts and
 //! restores.
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT, Tree};
+use crate::tree::{self, Tree};
 use crate::{BadField, Entry, Field, field_check, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
 use quick_xml::events::{BytesStart, Event};
@@ -273,7 +273,7 @@ impl Encoding {
             "application/x-bzip2" => Encoding::Bzip2,
             "application/x-xz" => Encoding::Xz,
             "application/x-lzma" => Encoding::Lzma,
-            _ => bail!("xar data encoding {style:?} is not one Zipper reads; {BACKEND_HINT}"),
+            _ => bail!("xar data encoding {style:?} is not one Zipper reads"),
         })
     }
 }
@@ -451,7 +451,7 @@ fn attribute(element: &BytesStart, name: &str) -> Result<Option<String>> {
 fn checksum_style(element: &BytesStart) -> Result<Algorithm> {
     let style = attribute(element, "style")?.context("xar checksum has no style")?;
     Algorithm::named(style.as_bytes())
-        .with_context(|| format!("xar checksum {style:?} is not one Zipper knows; {BACKEND_HINT}"))
+        .with_context(|| format!("xar checksum {style:?} is not one Zipper knows"))
 }
 
 fn hard_link_attribute(element: &BytesStart) -> Result<HardLinkAttribute> {
@@ -539,7 +539,7 @@ impl Toc {
             (Frame::File(index), "name") => {
                 ensure!(
                     attribute(element, "enctype")?.is_none(),
-                    "xar name is encoded; {BACKEND_HINT}"
+                    "xar name is encoded"
                 );
                 Frame::Field(Target::Name(index))
             }
@@ -1045,7 +1045,7 @@ fn decoder<'a>(
             let memory = crate::lzma::lzma_memory(properties, dictionary, size);
             ensure!(
                 memory <= LARGEST_DICTIONARY + DECODER_OVERHEAD,
-                "xar LZMA data needs {memory} bytes of decoder memory, more than {} MiB; {BACKEND_HINT}",
+                "xar LZMA data needs {memory} bytes of decoder memory, more than {} MiB",
                 (LARGEST_DICTIONARY + DECODER_OVERHEAD) >> 20
             );
             Box::new(crate::lzma::RawLzmaReader::new(

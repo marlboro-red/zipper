@@ -1,6 +1,6 @@
 # In-process RPM reader
 
-Zipper extracts the files an RPM package installs with its own Rust reader. The default engine sends a file here when it starts with the RPM lead signature `ED AB EE DB`. A file that starts with a ZIP, tar, cpio or `ar` signature goes to that reader first. `--zip-engine native` also reads RPM in process, and `--zip-engine backend` hands it to 7-Zip.
+Zipper extracts the files an RPM package installs with its own Rust reader. Zipper sends a file here when it starts with the RPM lead signature `ED AB EE DB`. A file that starts with a ZIP, tar, cpio or `ar` signature goes to that reader first.
 
 ## Supported packages
 
@@ -55,7 +55,7 @@ The reader keeps no header in memory. It reads the index one entry at a time, ke
 `tests/parity.rs` requires the trees of the RPM packages in the [parity corpus](parity.md), which `rpmbuild` wrote with each compressor, to match 7-Zip's. `tests/hostile_rpm.rs` compares packages with each compressor against 7-Zip where it is installed. The reader differs from 7-Zip 26.05 in these cases:
 
 - 7-Zip writes the decompressed payload as one `.cpio` file, named from the package name, version, release and architecture. Zipper extracts the files that cpio holds, as `rpm2cpio` and `cpio -id` do. The parity corpus compares Zipper's tree with what 7-Zip extracts from the `.cpio` it wrote.
-- 7-Zip writes the stripped `07070X` cpio of a version 6 package as a `.cpio` file it cannot open. Zipper refuses the package. `--zip-engine backend` writes that `.cpio`.
+- 7-Zip writes the stripped `07070X` cpio of a version 6 package as a `.cpio` file it cannot open. Zipper refuses the package.
 - Inside the payload, the [cpio differences from 7-Zip](cpio-reader.md#differences-from-7-zip) apply. A symlink whose target starts with `..` but stays inside is one 7-Zip skips and Zipper creates.
 
 ## Extraction options

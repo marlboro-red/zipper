@@ -3,7 +3,7 @@
 //! `docs/reference/lzh-reader.md` for what it accepts and restores.
 use crate::lzh::{self, Lzss, crc16};
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT, MAX_NAME};
+use crate::tree::{self, MAX_NAME};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
@@ -342,8 +342,7 @@ impl Names {
         if name.last() == Some(&b'/') {
             name.pop();
         }
-        String::from_utf8(name)
-            .map_err(|_| anyhow::anyhow!("LZH name is not UTF-8; {BACKEND_HINT}"))
+        String::from_utf8(name).map_err(|_| anyhow::anyhow!("LZH name is not UTF-8"))
     }
 }
 

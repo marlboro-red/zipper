@@ -5,17 +5,17 @@
     },
     "APFS": {
       "status": "refused",
-      "note": "Refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "APM": {
       "status": "refused",
-      "note": "Refused in every engine. The reader was removed on 12 November 2026 for licence reasons. A disc that is also ISO 9660 or UDF still reads as a disc.",
+      "note": "Refused. The reader was removed on 12 November 2026 for licence reasons. A disc that is also ISO 9660 or UDF still reads as a disc.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -34,9 +34,9 @@
     },
     "Base64": {
       "status": "refused",
-      "note": "Files named `*.b64` that hold only Base64 text are refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Files named `*.b64` that hold only Base64 text are refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -51,7 +51,7 @@
     },
     "Cab": {
       "status": "native",
-      "note": "Stored, MSZIP and Quantum folders and cabinet sets read in process. A cabinet with an LZX folder is refused, and `--zip-engine backend` hands no CAB to 7-Zip, since the LZX decoder was removed on 12 November 2026 for licence reasons. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set.",
+      "note": "Stored, MSZIP and Quantum folders and cabinet sets read in process. A cabinet with an LZX folder is refused, since the LZX decoder was removed on 12 November 2026 for licence reasons. The corpus cabinet comes from gcab and the set from Zipper's own test writer, since no tool here writes a set.",
       "tests": [
         "tests/cab_corpus.rs::every_corpus_cab_extracts_the_tree_7zip_extracts",
         "tests/cab_corpus.rs::generated_cabs_extract_exactly_as_7zip_extracts_them",
@@ -62,17 +62,17 @@
     },
     "Chm": {
       "status": "refused",
-      "note": "CHM and Help 2 files are refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "CHM and Help 2 files are refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "Compound": {
       "status": "refused",
-      "note": "MSI, MSP, DOC, XLS and other compound files are refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "MSI, MSP, DOC, XLS and other compound files are refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -90,9 +90,9 @@
     },
     "Dmg": {
       "status": "refused",
-      "note": "Refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -116,9 +116,9 @@
     },
     "FAT": {
       "status": "refused",
-      "note": "Refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -133,25 +133,25 @@
     },
     "GPT": {
       "status": "refused",
-      "note": "Raw GPT disks are refused in every engine, whatever their partitions hold. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
+      "note": "Raw GPT disks are refused, whatever their partitions hold. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "HFS": {
       "status": "refused",
-      "note": "HFS+ and HFSX are refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "HFS+ and HFSX are refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "Hxs": {
       "status": "refused",
-      "note": "Help 2 files are refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Help 2 files are refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -194,9 +194,9 @@
     },
     "MBR": {
       "status": "refused",
-      "note": "Raw MBR disks are refused in every engine, whatever their partitions hold. An ISO 9660 or UDF disc with a hybrid MBR, and an ext volume whose boot block holds an MBR, still read. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
+      "note": "Raw MBR disks are refused, whatever their partitions hold. An ISO 9660 or UDF disc with a hybrid MBR, and an ext volume whose boot block holds an MBR, still read. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -229,14 +229,15 @@
     },
     "NTFS": {
       "status": "refused",
-      "note": "Refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Refused. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "Nsis": {
-      "status": "backend"
+      "status": "missing",
+      "note": "An NSIS installer reads as the PE file it is. Zipper does not unpack the files the installer holds."
     },
     "PE": {
       "status": "native",
@@ -257,9 +258,9 @@
     },
     "QCOW": {
       "status": "refused",
-      "note": "QCOW images of every version are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
+      "note": "QCOW images of every version are refused. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -310,9 +311,9 @@
     },
     "Sparse": {
       "status": "refused",
-      "note": "Android sparse images are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
+      "note": "Android sparse images are refused. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -368,33 +369,33 @@
     },
     "VDI": {
       "status": "refused",
-      "note": "VDI images are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
+      "note": "VDI images are refused. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "VHD": {
       "status": "refused",
-      "note": "Fixed, dynamic and differencing VHD images are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
+      "note": "Fixed, dynamic and differencing VHD images are refused. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "VHDX": {
       "status": "refused",
-      "note": "VHDX images are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
+      "note": "VHDX images are refused. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "VMDK": {
       "status": "refused",
-      "note": "VMDK sparse extents and descriptors are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
+      "note": "VMDK sparse extents and descriptors are refused. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::every_refused_format_is_refused_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
@@ -427,7 +428,7 @@
     },
     "wim": {
       "status": "native",
-      "note": "WIM with stored and XPRESS resources read in process. An image or solid resource compressed with LZX or LZMS, which includes every ESD, is refused by the method's name, since those decoders were removed on 12 November 2026 for licence reasons. A split or pre-1.13 WIM is refused, and `--zip-engine backend` hands no WIM to 7-Zip. Alternate data streams are refused, and written as NTFS streams on Windows with `--alternate-streams`.",
+      "note": "WIM with stored and XPRESS resources read in process. An image or solid resource compressed with LZX or LZMS, which includes every ESD, is refused by the method's name, since those decoders were removed on 12 November 2026 for licence reasons. A split or pre-1.13 WIM is refused. Alternate data streams are refused, and written as NTFS streams on Windows with `--alternate-streams`.",
       "tests": [
         "tests/wim_corpus.rs::every_corpus_wim_extracts_the_tree_7zip_extracts",
         "tests/wim_corpus.rs::generated_wims_of_every_method_and_chunk_size_extract_byte_for_byte_as_7zip_extracts_them",

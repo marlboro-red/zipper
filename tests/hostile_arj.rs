@@ -519,16 +519,11 @@ fn modes_times_and_options_apply() {
 }
 
 #[test]
-fn the_default_engine_reads_arj_in_process() {
+fn arj_reads_in_process() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("case.arj");
     fs::write(&path, arj_writer::archive(&every_method())).unwrap();
-    for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
-        assert_eq!(
-            zipper::choose_reader(engine, &path).unwrap(),
-            zipper::Reader::Arj
-        );
-    }
+    assert_eq!(zipper::choose_reader(&path).unwrap(), zipper::Reader::Arj);
     let destination = root.path().join("out");
     zipper::extract_archive(&path, &destination, zipper::ExtractOptions::default()).unwrap();
     assert_eq!(
@@ -538,8 +533,5 @@ fn the_default_engine_reads_arj_in_process() {
     let mut damaged = arj_writer::archive(&every_method());
     damaged[10] ^= 1;
     fs::write(&path, &damaged).unwrap();
-    assert_ne!(
-        zipper::choose_reader(zipper::Engine::Native, &path).unwrap(),
-        zipper::Reader::Arj
-    );
+    assert_ne!(zipper::choose_reader(&path).unwrap(), zipper::Reader::Arj);
 }

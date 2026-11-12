@@ -37,7 +37,6 @@ const SEGMENT_WINDOW_MAX: usize = 64;
 const SEGMENT_DECODE_STEP: usize = 8 * 1024 * 1024;
 // RECORD(benchmarks/native-7z/solid-writer-pool/README.md): four writers make solid small-file folders 1.6 times faster.
 const FILE_WRITERS: usize = 4;
-const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 const WRONG_PASSWORD: &str = "the password is wrong or the 7z data is damaged";
 
 const END: u8 = 0;
@@ -551,65 +550,63 @@ fn read_streams(bytes: &mut Bytes) -> Result<Streams> {
                     .context("7z packed streams overflow")?;
             }
             let mut bcj2_branches = Vec::new();
-            let (output_to_packed, unsupported, encryption) = match (
-                bcj2_plan(&shape)?,
-                &shape.several_streams,
-            ) {
-                (Some(plan), _) => {
-                    let mut offsets = Vec::with_capacity(packed_sizes.len());
-                    let mut offset = pack_offset;
-                    for size in &packed_sizes {
-                        offsets.push(offset);
-                        offset += size;
+            let (output_to_packed, unsupported, encryption) =
+                match (bcj2_plan(&shape)?, &shape.several_streams) {
+                    (Some(plan), _) => {
+                        let mut offsets = Vec::with_capacity(packed_sizes.len());
+                        let mut offset = pack_offset;
+                        for size in &packed_sizes {
+                            offsets.push(offset);
+                            offset += size;
+                        }
+                        for branch in plan {
+                            let mut coders: Vec<Coder> = branch
+                                .coders
+                                .iter()
+                                .map(|&index| shape.coders[index].clone())
+                                .collect();
+                            let decrypted = branch
+                                .coders
+                                .last()
+                                .map_or(0, |&last| sizes[shape.output_starts[last] as usize]);
+                            let encryption = split_encryption(&mut coders, decrypted);
+                            bcj2_branches.push(Folder {
+                                output_to_packed: coders,
+                                bcj2_branches: Vec::new(),
+                                unsupported: None,
+                                encryption,
+                                size: branch
+                                    .output
+                                    .map_or(packed_sizes[branch.packed], |output| sizes[output]),
+                                crc: None,
+                                pack_offset: offsets[branch.packed],
+                                pack_size: packed_sizes[branch.packed],
+                            });
+                        }
+                        (
+                            vec![Coder {
+                                id: BCJ2.to_vec(),
+                                properties: Vec::new(),
+                            }],
+                            None,
+                            None,
+                        )
                     }
-                    for branch in plan {
-                        let mut coders: Vec<Coder> = branch
-                            .coders
-                            .iter()
-                            .map(|&index| shape.coders[index].clone())
-                            .collect();
-                        let decrypted = branch
-                            .coders
-                            .last()
-                            .map_or(0, |&last| sizes[shape.output_starts[last] as usize]);
-                        let encryption = split_encryption(&mut coders, decrypted);
-                        bcj2_branches.push(Folder {
-                            output_to_packed: coders,
-                            bcj2_branches: Vec::new(),
-                            unsupported: None,
-                            encryption,
-                            size: branch
-                                .output
-                                .map_or(packed_sizes[branch.packed], |output| sizes[output]),
-                            crc: None,
-                            pack_offset: offsets[branch.packed],
-                            pack_size: packed_sizes[branch.packed],
-                        });
+                    (None, Some(id)) => (
+                        Vec::new(),
+                        Some(format!(
+                            "7z coder {} has several streams in a layout that is not supported",
+                            hex(id)
+                        )),
+                        None,
+                    ),
+                    (None, None) => {
+                        let packed = shape.packed_inputs[0];
+                        let mut coders = chain(shape.coders, &shape.bind_pairs, packed)?;
+                        let encryption = split_encryption(&mut coders, sizes[packed as usize]);
+                        (coders, None, encryption)
                     }
-                    (
-                        vec![Coder {
-                            id: BCJ2.to_vec(),
-                            properties: Vec::new(),
-                        }],
-                        None,
-                        None,
-                    )
-                }
-                (None, Some(id)) => (
-                    Vec::new(),
-                    Some(format!(
-                        "7z coder {} has several streams in a layout that is not supported; {BACKEND_HINT}",
-                        hex(id)
-                    )),
-                    None,
-                ),
-                (None, None) => {
-                    let packed = shape.packed_inputs[0];
-                    let mut coders = chain(shape.coders, &shape.bind_pairs, packed)?;
-                    let encryption = split_encryption(&mut coders, sizes[packed as usize]);
-                    (coders, None, encryption)
-                }
-            };
+                };
             streams.folders.push(Folder {
                 output_to_packed,
                 bcj2_branches,
@@ -1354,13 +1351,11 @@ fn method(coder: &Coder) -> Result<Method> {
         [0x0A] => Method::Filter(FilterMethod::BranchWithStart(xz_filters::Branch::Arm64)),
         [0x0B] => Method::Filter(FilterMethod::BranchWithStart(xz_filters::Branch::RiscV)),
         [0x06, 0xF1, 0x07, 0x01] => {
-            return Err(unsupported(format!(
-                "7z AES is not the coder next to the packed stream, a layout this reader does not decode; {BACKEND_HINT}"
-            )));
+            return Err(unsupported("7z AES is not the coder next to the packed stream, a layout this reader does not decode".to_string()));
         }
         id => {
             return Err(unsupported(format!(
-                "7z method {} is not supported; {BACKEND_HINT}",
+                "7z method {} is not supported",
                 hex(id)
             )));
         }
@@ -1384,24 +1379,6 @@ fn unsupported(message: String) -> anyhow::Error {
     Unsupported(message).into()
 }
 
-/// Whether a 7z archive should go to 7-Zip because it uses a method this
-/// reader does not decode. A damaged or unsafe archive returns false, so the
-/// reader refuses it rather than 7-Zip extracting it.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    let error = match open(path, &mut Keys::new(None)) {
-        Ok((_, archive)) => match archive
-            .folders
-            .iter()
-            .try_for_each(|folder| check_methods(folder).map(drop))
-        {
-            Ok(()) => return Ok(false),
-            Err(error) => error,
-        },
-        Err(error) => error,
-    };
-    Ok(error.is::<Unsupported>())
-}
-
 fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
     if let Some(reason) = &folder.unsupported {
         return Err(unsupported(reason.clone()));
@@ -1414,7 +1391,7 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
         let memory = decoder_memory(folder, 1);
         if memory > DECODER_MEMORY {
             return Err(unsupported(format!(
-                "7z BCJ2 decoders need {memory} bytes, more than the {DECODER_MEMORY}-byte decoder budget; {BACKEND_HINT}"
+                "7z BCJ2 decoders need {memory} bytes, more than the {DECODER_MEMORY}-byte decoder budget"
             )));
         }
         return Ok(Vec::new());
@@ -1442,9 +1419,9 @@ fn check_methods(folder: &Folder) -> Result<Vec<Method>> {
             lzma_coder(&last[0], folder.size)?;
         }
         _ => {
-            return Err(unsupported(format!(
-                "7z folder combines methods in a way that is not supported; {BACKEND_HINT}"
-            )));
+            return Err(unsupported(
+                "7z folder combines methods in a way that is not supported".to_string(),
+            ));
         }
     }
     Ok(methods)
@@ -1455,13 +1432,13 @@ fn filter_settings(coders: &[Coder]) -> Result<Vec<FilterSetting>> {
         .iter()
         .map(|coder| {
             let Method::Filter(filter) = method(coder)? else {
-                return Err(unsupported(format!(
-                    "7z folder combines methods in a way that is not supported; {BACKEND_HINT}"
-                )));
+                return Err(unsupported(
+                    "7z folder combines methods in a way that is not supported".to_string(),
+                ));
             };
             filter_setting(filter, &coder.properties).ok_or_else(|| {
                 unsupported(format!(
-                    "7z method {} has properties 7-Zip does not accept; {BACKEND_HINT}",
+                    "7z method {} has properties 7-Zip does not accept",
                     hex(&coder.id)
                 ))
             })
@@ -1519,7 +1496,7 @@ fn lzma_coder(coder: &Coder, output: u64) -> Result<LzmaCoder> {
             let properties =
                 crate::lzma::Properties::from_byte(properties_byte).ok_or_else(|| {
                     unsupported(format!(
-                        "7z LZMA properties byte {properties_byte} is out of range; {BACKEND_HINT}"
+                        "7z LZMA properties byte {properties_byte} is out of range"
                     ))
                 })?;
             Ok(LzmaCoder::Lzma {
@@ -1536,9 +1513,9 @@ fn lzma_coder(coder: &Coder, output: u64) -> Result<LzmaCoder> {
                 dictionary: lzma2_dictionary_within(property, output),
             })
         }
-        _ => Err(unsupported(format!(
-            "7z folder combines methods in a way that is not supported; {BACKEND_HINT}"
-        ))),
+        _ => Err(unsupported(
+            "7z folder combines methods in a way that is not supported".to_string(),
+        )),
     }
 }
 
@@ -1565,9 +1542,9 @@ impl<R: Read> Read for Decoding<R> {
 fn ppmd_parameters(properties: &[u8]) -> Result<(u32, u32)> {
     // SPEC(7-Zip PpmdDecoder.cpp): one order byte, then the model size as a little-endian u32.
     let Some((order, memory)) = ppmd7_fields(properties) else {
-        return Err(unsupported(format!(
-            "7z PPMd properties are not 5 bytes; {BACKEND_HINT}"
-        )));
+        return Err(unsupported(
+            "7z PPMd properties are not 5 bytes".to_string(),
+        ));
     };
     check(
         (ppmd_rust::PPMD7_MIN_ORDER..=ppmd_rust::PPMD7_MAX_ORDER).contains(&order)
@@ -1577,7 +1554,7 @@ fn ppmd_parameters(properties: &[u8]) -> Result<(u32, u32)> {
     )?;
     if u64::from(memory) > DECODER_MEMORY {
         return Err(unsupported(format!(
-            "7z PPMd model of {memory} bytes exceeds the {DECODER_MEMORY}-byte decoder budget; {BACKEND_HINT}"
+            "7z PPMd model of {memory} bytes exceeds the {DECODER_MEMORY}-byte decoder budget"
         )));
     }
     Ok((order, memory))
@@ -1691,7 +1668,7 @@ fn byte_swapped(folder: &Folder) -> Result<Option<(usize, Folder)>> {
     };
     if !first.properties.is_empty() {
         return Err(unsupported(format!(
-            "7z method {} has properties, which 7-Zip does not accept; {BACKEND_HINT}",
+            "7z method {} has properties, which 7-Zip does not accept",
             hex(&first.id)
         )));
     }

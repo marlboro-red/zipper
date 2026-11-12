@@ -10,7 +10,7 @@ mod swf_check;
 mod uefi_writer;
 
 use std::{fs, path::Path};
-use swf_check::{judge, report, sevenzip_binary, sevenzip_tree, tree};
+use swf_check::{judge, report, sevenzip_binary};
 use uefi_writer::*;
 
 const QEMU_FIRMWARE: &str = "/opt/homebrew/share/qemu";
@@ -382,7 +382,7 @@ fn qemu_firmware_images_extract_as_7zip_extracts_them() {
 }
 
 #[test]
-fn names_that_leave_the_folder_go_to_7zip_and_the_native_engine_refuses_them() {
+fn names_that_leave_the_folder_are_refused_by_this_reader() {
     let image = volume(vec![
         ffs(&name(1), 7, &sections(&[pe(b"MZ"), ui("a/../../x")])),
         ffs(&name(2), 7, &sections(&[pe(b"MZ"), raw(b"r"), ui("..")])),
@@ -392,29 +392,17 @@ fn names_that_leave_the_folder_go_to_7zip_and_the_native_engine_refuses_them() {
     let archive = work.path().join("firmware.fd");
     fs::write(&archive, &image).unwrap();
     assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
-        zipper::Reader::Backend {
-            format: Some("-tuefif".to_owned())
-        }
+        zipper::choose_reader(&archive).unwrap(),
+        zipper::Reader::Uefi
     );
     let native = work.path().join("native");
-    let options = zipper::ExtractOptions {
-        engine: zipper::Engine::Native,
-        ..Default::default()
-    };
-    let error = zipper::extract_archive(&archive, &native, options).unwrap_err();
+    let error =
+        zipper::extract_archive(&archive, &native, zipper::ExtractOptions::default()).unwrap_err();
     assert!(
         format!("{error:#}").contains("unsafe archive path"),
         "{error:#}"
     );
     assert!(!native.exists());
-    let Some(binary) = sevenzip_binary() else {
-        return;
-    };
-    let auto = work.path().join("auto");
-    zipper::extract_archive(&archive, &auto, zipper::ExtractOptions::default()).unwrap();
-    let theirs = sevenzip_tree(&binary, &archive, &work.path().join("7z")).unwrap();
-    assert_eq!(tree(&auto), theirs);
 }
 
 #[test]

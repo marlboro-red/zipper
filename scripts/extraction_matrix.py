@@ -119,11 +119,11 @@ def main():
             result['archives'][path.name] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
         output = work / 'out'
         commands = {}
-        commands['native-auto'] = [str(zipper), '--zip-engine', 'native', 'extract', str(archive), '-o', str(output)]
+        commands['native-auto'] = [str(zipper), 'extract', str(archive), '-o', str(output)]
         commands['tar-native'] = [str(zipper), 'extract', str(plain), '-o', str(output)]
         commands['tar-gz-native'] = [str(zipper), 'extract', str(compressed), '-o', str(output)]
         for threads in sorted(set(args.threads)):
-            commands[f'native-{threads}'] = [str(zipper), '--zip-engine', 'native',
+            commands[f'native-{threads}'] = [str(zipper),
                 '--threads', str(threads), 'extract', str(archive), '-o', str(output)]
         for label, executable, version_args in [('7zip', args.sevenzip, ['i']), ('bsdtar', args.tar, ['--version'])]:
             if executable:

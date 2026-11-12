@@ -682,17 +682,12 @@ fn selection_strip_and_existing_options_apply() {
 }
 
 #[test]
-fn the_default_engine_reads_lzh_in_process() {
+fn lzh_reads_in_process() {
     let root = tempfile::tempdir().unwrap();
     for level in 0..=3 {
         let path = root.path().join(format!("level{level}.lzh"));
         fs::write(&path, lzh_writer::archive(&every_kind(level))).unwrap();
-        for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
-            assert_eq!(
-                zipper::choose_reader(engine, &path).unwrap(),
-                zipper::Reader::Lzh
-            );
-        }
+        assert_eq!(zipper::choose_reader(&path).unwrap(), zipper::Reader::Lzh);
         let destination = root.path().join(format!("out{level}"));
         zipper::extract_archive(&path, &destination, zipper::ExtractOptions::default()).unwrap();
         assert_eq!(
@@ -702,10 +697,7 @@ fn the_default_engine_reads_lzh_in_process() {
     }
     let broken = root.path().join("broken.lzh");
     fs::write(&broken, b"\x20\x00-lh5-garbage that \x01ends early").unwrap();
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &broken).unwrap(),
-        zipper::Reader::Lzh
-    );
+    assert_eq!(zipper::choose_reader(&broken).unwrap(), zipper::Reader::Lzh);
 }
 
 #[test]

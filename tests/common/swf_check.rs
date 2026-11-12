@@ -46,10 +46,7 @@ pub fn tree(root: &Path) -> Tree {
 }
 
 pub fn zipper_tree(archive: &Path, into: &Path) -> Result<Tree, String> {
-    let options = zipper::ExtractOptions {
-        engine: zipper::Engine::Native,
-        ..Default::default()
-    };
+    let options = zipper::ExtractOptions::default();
     match zipper::extract_archive(archive, into, options) {
         Ok(()) => Ok(tree(into)),
         Err(error) => {

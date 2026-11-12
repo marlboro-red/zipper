@@ -754,7 +754,7 @@ fn volume_descriptors_that_lie_are_refused() {
             Box::new(move |b| {
                 b[joliet + 128..joliet + 132].copy_from_slice(&[0, 2, 2, 0]);
             }),
-            "zip-engine backend",
+            "blocks of 512 bytes are not supported",
         ),
         (
             "primary not first",
@@ -968,13 +968,17 @@ fn udf_names_that_are_unsafe_or_unclear_are_refused() {
 }
 
 #[test]
-fn udf_the_reader_does_not_open_goes_to_the_backend_by_name() {
+fn udf_the_reader_does_not_open_is_refused_by_name() {
     let built = udf(false).build();
     let lvd = built.layout.logical_volume.unwrap();
     let mut small = vec![0u8; 257 * 512 + 512];
     small[256 * 512..256 * 512 + 512]
         .copy_from_slice(&built.bytes[256 * SECTOR..256 * SECTOR + 512]);
-    assert_rejected_with("512-byte sectors", &small, "zip-engine backend");
+    assert_rejected_with(
+        "512-byte sectors",
+        &small,
+        "UDF with 512-byte sectors is not supported",
+    );
     let mut two = built.bytes.clone();
     let terminator = lvd + SECTOR;
     two.copy_within(lvd..lvd + SECTOR, terminator);

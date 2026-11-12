@@ -23,7 +23,7 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
-use zipper::{Engine, Reader};
+use zipper::Reader;
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/ext-corpus");
 
@@ -654,7 +654,7 @@ fn with_feature(name: &str, at: usize, bit: u32) -> Vec<u8> {
 }
 
 #[test]
-fn features_zipper_does_not_read_are_refused_by_name_and_go_to_7zip() {
+fn features_zipper_does_not_read_are_refused_by_name_by_the_ext_reader() {
     for (image, at, bit, wanted) in [
         ("ext4.img", 0x60, 0x4, "a journal that needs recovery"),
         ("ext3-2k.img", 0x60, 0x4, "a journal that needs recovery"),
@@ -680,19 +680,12 @@ fn features_zipper_does_not_read_are_refused_by_name_and_go_to_7zip() {
     ] {
         let bytes = with_feature(image, at, bit);
         refused(&bytes, wanted);
-        refused(&bytes, "--zip-engine backend");
+        refused(&bytes, "which Zipper does not read");
         let work = tempfile::tempdir().unwrap();
         let path = work.path().join("feature.img");
         fs::write(&path, &bytes).unwrap();
         assert_eq!(
-            zipper::choose_reader(Engine::Auto, &path).unwrap(),
-            Reader::Backend {
-                format: Some("-text".to_owned())
-            },
-            "{wanted}"
-        );
-        assert_eq!(
-            zipper::choose_reader(Engine::Native, &path).unwrap(),
+            zipper::choose_reader(&path).unwrap(),
             Reader::Ext,
             "{wanted}"
         );

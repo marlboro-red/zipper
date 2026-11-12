@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use zipper::{Engine, ExtractOptions, Reader, choose_reader, extract_archive};
+use zipper::{ExtractOptions, choose_reader, extract_archive};
 
 fn parity(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -123,7 +123,7 @@ const NATIVE: &[&str] = &[
 fn every_native_format_reads_through_volumes_of_every_awkward_size() {
     for name in NATIVE {
         let bytes = fs::read(parity(name)).unwrap();
-        let whole_reader = choose_reader(Engine::Auto, &parity(name)).unwrap();
+        let whole_reader = choose_reader(&parity(name)).unwrap();
         let whole = extracted_tree(&parity(name), 4, name);
         let length = bytes.len();
         for volume in [
@@ -147,11 +147,7 @@ fn every_native_format_reads_through_volumes_of_every_awkward_size() {
                 assert_refused(&first, &[&volume_name(name, 1)], &label);
                 continue;
             }
-            assert_eq!(
-                choose_reader(Engine::Auto, &first).unwrap(),
-                whole_reader,
-                "{label}"
-            );
+            assert_eq!(choose_reader(&first).unwrap(), whole_reader, "{label}");
             for threads in [1, 4] {
                 assert_eq!(extracted_tree(&first, threads, &label), whole, "{label}");
             }
@@ -244,13 +240,7 @@ fn volumes_7zip_writes_extract_as_7zip_extracts_them() {
         for (name, compressed_tar) in sets {
             let first = folder.join(volume_name(name, 1));
             let label = format!("{name} in {volume} volumes");
-            assert!(
-                !matches!(
-                    choose_reader(Engine::Auto, &first).unwrap(),
-                    Reader::Backend { .. }
-                ),
-                "{label}: sent to 7-Zip"
-            );
+            choose_reader(&first).unwrap_or_else(|error| panic!("{label}: {error:#}"));
             let direct = folder.join(format!("{name}-7zip"));
             run_7zip(
                 &binary,
@@ -695,7 +685,7 @@ fn a_set_replaced_while_another_call_holds_it_extracts_as_the_new_set() {
         let first = first.clone();
         std::thread::spawn(move || {
             zipper::read_volumes(&first, || {
-                zipper::choose_reader(Engine::Auto, &first)?;
+                zipper::choose_reader(&first)?;
                 holding.send(()).unwrap();
                 held.recv().unwrap();
                 Ok(())
@@ -1040,7 +1030,7 @@ fn every_decoder_error_on_a_damaged_set_names_its_volumes() {
 }
 
 #[test]
-fn a_volume_opened_by_name_gets_no_backend_advice() {
+fn a_volume_opened_by_name_names_the_first_volume() {
     for archive in ["7z.7z", "tar.tar.gz", "tar.tar"] {
         let set = Set::new(archive, 300);
         let error = format!("{:#}", refused_with(&set.path(2), false));

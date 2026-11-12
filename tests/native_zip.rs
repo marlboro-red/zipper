@@ -47,7 +47,7 @@ fn stored_deflated_zip64_and_cli_recover_exact_bytes() -> anyhow::Result<()> {
         assert_eq!(entries.len(), 4);
         let out = temp.path().join(label);
         let result = Command::new(env!("CARGO_BIN_EXE_zipper"))
-            .args(["--threads", "3", "--zip-engine", "native", "extract"])
+            .args(["--threads", "3", "extract"])
             .arg(&input)
             .arg("-o")
             .arg(&out)

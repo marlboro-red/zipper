@@ -1,7 +1,7 @@
-//! Every refused format and method is refused by every engine, through the
-//! CLI and the library, with an error that names the format or method and
-//! nothing written. A fake 7-Zip, named by `ZIPPER_7Z` or found on `PATH`,
-//! is never started for any of them.
+//! Every refused format and method is refused, through the CLI and the
+//! library, with an error that names the format or method and nothing
+//! written. A fake 7-Zip, named by `ZIPPER_7Z` or found on `PATH`, is never
+//! started for any of them.
 #![cfg(unix)]
 #[path = "common/cab_writer.rs"]
 mod cab_writer;
@@ -19,13 +19,11 @@ use std::{
 
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data");
 const SECTOR: usize = 512;
-const CLI_ENGINES: [Option<&str>; 3] = [None, Some("native"), Some("backend")];
 
 struct Case {
     name: &'static str,
     bytes: Vec<u8>,
     words: &'static str,
-    backend_words: &'static str,
 }
 
 fn stored(path: &str) -> Vec<u8> {
@@ -89,12 +87,7 @@ fn fixed_vhd(disk: &[u8]) -> Vec<u8> {
 }
 
 fn case(name: &'static str, bytes: Vec<u8>, words: &'static str) -> Case {
-    Case {
-        name,
-        bytes,
-        words,
-        backend_words: words,
-    }
+    Case { name, bytes, words }
 }
 
 fn cases() -> Vec<Case> {
@@ -206,24 +199,21 @@ fn cases() -> Vec<Case> {
             b"aGVsbG8sIGEgc21hbGwgZmlsZQo=\n".to_vec(),
             "Zipper does not read Base64 files",
         ),
-        Case {
-            name: "lzx.cab",
-            bytes: stored("refused/lzx.cab"),
-            words: "CAB folder is compressed with LZX, which Zipper does not decode",
-            backend_words: "Zipper does not read CAB folders compressed with LZX",
-        },
-        Case {
-            name: "lzx.wim",
-            bytes: stored("refused/lzx.wim.xz"),
-            words: "WIM image is compressed with LZX, which Zipper does not decode",
-            backend_words: "Zipper does not read WIM images compressed with LZX",
-        },
-        Case {
-            name: "lzms.wim",
-            bytes: stored("refused/lzms.wim.xz"),
-            words: "WIM image is compressed with LZMS, which Zipper does not decode",
-            backend_words: "Zipper does not read WIM and ESD images compressed with LZMS",
-        },
+        case(
+            "lzx.cab",
+            stored("refused/lzx.cab"),
+            "CAB folder is compressed with LZX, which Zipper does not decode",
+        ),
+        case(
+            "lzx.wim",
+            stored("refused/lzx.wim.xz"),
+            "WIM image is compressed with LZX, which Zipper does not decode",
+        ),
+        case(
+            "lzms.wim",
+            stored("refused/lzms.wim.xz"),
+            "WIM image is compressed with LZMS, which Zipper does not decode",
+        ),
     ]
 }
 
@@ -292,87 +282,59 @@ fn run_cli(fake: &FakeSevenZip, by_variable: bool, args: &[&std::ffi::OsStr]) ->
     )
 }
 
-fn assert_refused_by_every_cli_engine(fake: &FakeSevenZip, by_variable: bool) {
+fn assert_refused_by_the_cli(fake: &FakeSevenZip, by_variable: bool) {
     for case in cases() {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join(case.name);
         fs::write(&archive, &case.bytes).unwrap();
         let output = work.path().join("out");
-        for engine in CLI_ENGINES {
-            let words = if engine == Some("backend") {
-                case.backend_words
-            } else {
-                case.words
-            };
-            for action in ["extract", "list", "test"] {
-                let mut args: Vec<&std::ffi::OsStr> = Vec::new();
-                if let Some(engine) = engine {
-                    args.extend([std::ffi::OsStr::new("--zip-engine"), engine.as_ref()]);
-                }
-                args.extend([action.as_ref(), archive.as_os_str()]);
-                if action == "extract" {
-                    args.extend(["-o".as_ref(), output.as_os_str()]);
-                }
-                let (success, stderr) = run_cli(fake, by_variable, &args);
-                let label = format!("{} {action} with {engine:?}", case.name);
-                assert!(!success, "{label} succeeded");
-                assert!(stderr.contains(words), "{label}: {stderr}");
-                assert_eq!(
-                    leftovers(work.path(), case.name),
-                    Vec::<String>::new(),
-                    "{label} wrote output"
-                );
+        for action in ["extract", "list", "test"] {
+            let mut args: Vec<&std::ffi::OsStr> = vec![action.as_ref(), archive.as_os_str()];
+            if action == "extract" {
+                args.extend(["-o".as_ref(), output.as_os_str()]);
             }
+            let (success, stderr) = run_cli(fake, by_variable, &args);
+            let label = format!("{} {action}", case.name);
+            assert!(!success, "{label} succeeded");
+            assert!(stderr.contains(case.words), "{label}: {stderr}");
+            assert_eq!(
+                leftovers(work.path(), case.name),
+                Vec::<String>::new(),
+                "{label} wrote output"
+            );
         }
         assert_eq!(fake.started(), None, "{} reached 7-Zip", case.name);
     }
 }
 
 #[test]
-fn every_refused_format_is_refused_in_every_engine_with_nothing_written() {
+fn every_refused_format_is_refused_with_nothing_written() {
     let fake = FakeSevenZip::new();
-    assert_refused_by_every_cli_engine(&fake, true);
+    assert_refused_by_the_cli(&fake, true);
     for case in cases() {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join(case.name);
         fs::write(&archive, &case.bytes).unwrap();
-        for engine in [zipper::Engine::Native, zipper::Engine::Auto] {
-            let error = zipper::extract_archive(
-                &archive,
-                &work.path().join("out"),
-                zipper::ExtractOptions {
-                    engine,
-                    ..zipper::ExtractOptions::default()
-                },
-            )
-            .unwrap_err();
-            assert!(
-                format!("{error:#}").contains(case.words),
-                "{} with {engine:?}: {error:#}",
-                case.name
-            );
-            assert_eq!(leftovers(work.path(), case.name), Vec::<String>::new());
-        }
-        let error = zipper::choose_reader(zipper::Engine::Backend, &archive).unwrap_err();
-        assert!(
-            error.downcast_ref::<zipper::Refused>().is_some(),
-            "{}: {error:#}",
-            case.name
-        );
-        let error = zipper::compat::run(
-            "x",
+        let error = zipper::extract_archive(
             &archive,
-            Some(&work.path().join("out")),
-            None,
-            zipper::Existing::Refuse,
+            &work.path().join("out"),
+            zipper::ExtractOptions::default(),
         )
         .unwrap_err();
         assert!(
-            format!("{error:#}").contains(case.backend_words),
-            "{} through compat::run: {error:#}",
+            format!("{error:#}").contains(case.words),
+            "{}: {error:#}",
             case.name
         );
         assert_eq!(leftovers(work.path(), case.name), Vec::<String>::new());
+        if case.words.starts_with("Zipper does not read") {
+            let error = zipper::choose_reader(&archive).unwrap_err();
+            assert!(
+                error.downcast_ref::<zipper::Refused>().is_some(),
+                "{}: {error:#}",
+                case.name
+            );
+        }
     }
     assert_eq!(fake.started(), None);
 }
@@ -380,24 +342,7 @@ fn every_refused_format_is_refused_in_every_engine_with_nothing_written() {
 #[test]
 fn no_refused_format_reaches_a_fake_7zip_on_path() {
     let fake = FakeSevenZip::new();
-    assert_refused_by_every_cli_engine(&fake, false);
-    let work = tempfile::tempdir().unwrap();
-    let rar = work.path().join("probe.rar");
-    fs::write(&rar, b"Rar!\x1A\x07\x01\x00 not a real archive").unwrap();
-    let (_, stderr) = run_cli(
-        &fake,
-        false,
-        &[
-            "extract".as_ref(),
-            rar.as_os_str(),
-            "-o".as_ref(),
-            work.path().join("out").as_os_str(),
-        ],
-    );
-    assert!(
-        fake.started().is_some(),
-        "the fake 7-Zip on PATH is the one Zipper starts for other formats: {stderr}"
-    );
+    assert_refused_by_the_cli(&fake, false);
 }
 
 fn prefixed(prefix: &[u8], sample: &[u8]) -> Vec<u8> {
@@ -453,15 +398,8 @@ fn crafted() -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
-fn unnamed_start(fake: &FakeSevenZip) -> Option<String> {
-    fake.started()?
-        .lines()
-        .find(|line| !line.split(' ').any(|word| word.starts_with("-t")))
-        .map(str::to_owned)
-}
-
 #[test]
-fn every_7zip_start_names_the_format_and_crafted_refused_files_never_open_in_process() {
+fn crafted_refused_files_never_open_in_process_or_start_7zip() {
     for (name, bytes) in crafted() {
         let fake = FakeSevenZip::new();
         let work = tempfile::tempdir().unwrap();
@@ -471,28 +409,16 @@ fn every_7zip_start_names_the_format_and_crafted_refused_files_never_open_in_pro
             fs::write(work.path().join("x.b64.002"), b"bGwgZmlsZQo=\n").unwrap();
         }
         let output = work.path().join("out");
-        for engine in CLI_ENGINES {
-            for action in ["extract", "list", "test"] {
-                let mut args: Vec<&std::ffi::OsStr> = Vec::new();
-                if let Some(engine) = engine {
-                    args.extend([std::ffi::OsStr::new("--zip-engine"), engine.as_ref()]);
-                }
-                args.extend([action.as_ref(), archive.as_os_str()]);
-                if action == "extract" {
-                    args.extend(["-o".as_ref(), output.as_os_str()]);
-                }
-                let (success, stderr) = run_cli(&fake, true, &args);
-                let label = format!("{name} {action} with {engine:?}");
-                if let Some(line) = unnamed_start(&fake) {
-                    panic!("{label} started 7-Zip without naming a format: {line}");
-                }
-                if fake.started().is_none() {
-                    assert!(!success, "{label} was read in process: {stderr}");
-                }
-                if output.exists() {
-                    fs::remove_dir_all(&output).unwrap();
-                }
+        for action in ["extract", "list", "test"] {
+            let mut args: Vec<&std::ffi::OsStr> = vec![action.as_ref(), archive.as_os_str()];
+            if action == "extract" {
+                args.extend(["-o".as_ref(), output.as_os_str()]);
             }
+            let (success, stderr) = run_cli(&fake, true, &args);
+            let label = format!("{name} {action}");
+            assert_eq!(fake.started(), None, "{label} started 7-Zip");
+            assert!(!success, "{label} was read in process: {stderr}");
+            assert!(!output.exists(), "{label} wrote output");
         }
     }
 }
@@ -561,7 +487,7 @@ fn archives_that_hold_a_refused_signature_still_extract() {
 }
 
 #[test]
-fn a_disk_image_split_into_numbered_volumes_is_refused_in_every_engine() {
+fn a_disk_image_split_into_numbered_volumes_is_refused() {
     let fake = FakeSevenZip::new();
     let image = fixed_vhd(&[0x5A; 8 * SECTOR]);
     let work = tempfile::tempdir().unwrap();
@@ -570,25 +496,18 @@ fn a_disk_image_split_into_numbered_volumes_is_refused_in_every_engine() {
     fs::write(&first, front).unwrap();
     fs::write(work.path().join("disk.vhd.002"), back).unwrap();
     let output = work.path().join("out");
-    for engine in CLI_ENGINES {
-        for action in ["extract", "list", "test"] {
-            let mut args: Vec<&std::ffi::OsStr> = Vec::new();
-            if let Some(engine) = engine {
-                args.extend([std::ffi::OsStr::new("--zip-engine"), engine.as_ref()]);
-            }
-            args.extend([action.as_ref(), first.as_os_str()]);
-            if action == "extract" {
-                args.extend(["-o".as_ref(), output.as_os_str()]);
-            }
-            let (success, stderr) = run_cli(&fake, true, &args);
-            let label = format!("{action} with {engine:?}");
-            assert!(!success, "{label} succeeded");
-            assert!(
-                stderr.contains("Zipper does not read VHD images"),
-                "{label}: {stderr}"
-            );
-            assert!(!output.exists(), "{label} wrote output");
+    for action in ["extract", "list", "test"] {
+        let mut args: Vec<&std::ffi::OsStr> = vec![action.as_ref(), first.as_os_str()];
+        if action == "extract" {
+            args.extend(["-o".as_ref(), output.as_os_str()]);
         }
+        let (success, stderr) = run_cli(&fake, true, &args);
+        assert!(!success, "{action} succeeded");
+        assert!(
+            stderr.contains("Zipper does not read VHD images"),
+            "{action}: {stderr}"
+        );
+        assert!(!output.exists(), "{action} wrote output");
     }
     assert_eq!(fake.started(), None);
 }
@@ -599,7 +518,7 @@ fn with_ext_magic(mut bytes: Vec<u8>) -> Vec<u8> {
 }
 
 #[test]
-fn disks_with_a_planted_disc_descriptor_are_refused_before_7zip() {
+fn disks_with_a_planted_disc_descriptor_are_refused() {
     let cases = [
         ("cd001-gpt.img", stored("refused/gpt-two.img.xz")),
         ("cd001-mbr.img", stored("refused/mbr-two.img.xz")),
@@ -609,23 +528,23 @@ fn disks_with_a_planted_disc_descriptor_are_refused_before_7zip() {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join(name);
         fs::write(&archive, with_disc_descriptor(bytes)).unwrap();
-        let error = zipper::choose_reader(zipper::Engine::Backend, &archive).unwrap_err();
+        let error = zipper::extract_archive(
+            &archive,
+            &work.path().join("out"),
+            zipper::ExtractOptions::default(),
+        )
+        .unwrap_err();
+        assert!(!work.path().join("out").exists(), "{name}");
         assert!(
-            error.downcast_ref::<zipper::Refused>().is_some(),
+            format!("{error:#}").contains("Zipper does not read")
+                || format!("{error:#}").contains("ISO"),
             "{name}: {error:#}"
-        );
-        let error =
-            zipper::compat::run("l", &archive, None, Some("-tiso"), zipper::Existing::Refuse)
-                .unwrap_err();
-        assert!(
-            error.downcast_ref::<zipper::Refused>().is_some(),
-            "{name} through compat::run: {error:#}"
         );
     }
 }
 
 #[test]
-fn a_first_volume_read_alone_never_reaches_7zip_as_a_split_set() {
+fn a_first_volume_read_alone_never_reaches_7zip() {
     let fake = FakeSevenZip::new();
     let image = fixed_vhd(&stored("ext-corpus/ext4.img.xz"));
     let work = tempfile::tempdir().unwrap();
@@ -635,19 +554,13 @@ fn a_first_volume_read_alone_never_reaches_7zip_as_a_split_set() {
     fs::write(work.path().join("disk.img.002"), back).unwrap();
     let output = work.path().join("out");
     for action in ["extract", "list", "test"] {
-        let mut args: Vec<&std::ffi::OsStr> = vec![
-            "--zip-engine".as_ref(),
-            "backend".as_ref(),
-            action.as_ref(),
-            first.as_os_str(),
-        ];
+        let mut args: Vec<&std::ffi::OsStr> = vec![action.as_ref(), first.as_os_str()];
         if action == "extract" {
             args.extend(["-o".as_ref(), output.as_os_str()]);
         }
         let _ = run_cli(&fake, true, &args);
     }
-    let log = fake.started().unwrap_or_default();
-    assert!(!log.contains(".split"), "{log}");
+    assert_eq!(fake.started(), None);
 }
 
 fn with_partition_table(mut bytes: Vec<u8>) -> Vec<u8> {
@@ -662,79 +575,25 @@ fn discs_and_ext_volumes_that_start_with_a_partition_table_still_read() {
         (
             "hybrid.iso",
             with_partition_table(stored("parity/archives/iso.iso.stored.xz")),
-            "-tiso",
         ),
         (
             "booted.ext4",
             with_partition_table(stored("ext-corpus/ext4.img.xz")),
-            "-text",
         ),
     ];
-    for (name, bytes, switch) in cases {
+    for (name, bytes) in cases {
         let work = tempfile::tempdir().unwrap();
         let archive = work.path().join(name);
         fs::write(&archive, &bytes).unwrap();
-        for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
-            let output = work.path().join(format!("{engine:?}"));
-            zipper::extract_archive(
-                &archive,
-                &output,
-                zipper::ExtractOptions {
-                    engine,
-                    ..zipper::ExtractOptions::default()
-                },
-            )
-            .unwrap_or_else(|error| panic!("{name} with {engine:?}: {error:#}"));
-            assert!(fs::read_dir(&output).unwrap().next().is_some(), "{name}");
-        }
-        assert_eq!(
-            zipper::choose_reader(zipper::Engine::Backend, &archive).unwrap(),
-            zipper::Reader::Backend {
-                format: Some(switch.to_owned())
-            },
-            "{name}"
-        );
+        let output = work.path().join("out");
+        zipper::extract_archive(&archive, &output, zipper::ExtractOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+        assert!(fs::read_dir(&output).unwrap().next().is_some(), "{name}");
     }
 }
 
 #[test]
-fn compat_starts_7zip_only_for_a_format_it_names_and_hands_to_7zip() {
-    let fake = FakeSevenZip::new();
-    let work = tempfile::tempdir().unwrap();
-    let archive = work.path().join("plain.gz");
-    fs::write(&archive, b"\x1F\x8B\x08\0\0\0\0\0\0\x03").unwrap();
-    for format in [
-        None,
-        Some("-tcab"),
-        Some("-twim"),
-        Some("-tchm"),
-        Some("-t"),
-    ] {
-        let error =
-            zipper::compat::run("l", &archive, None, format, zipper::Existing::Refuse).unwrap_err();
-        assert!(
-            error.downcast_ref::<zipper::Refused>().is_some(),
-            "{format:?}: {error:#}"
-        );
-    }
-    let (_, stderr) = run_cli(
-        &fake,
-        true,
-        &[
-            std::ffi::OsStr::new("--zip-engine"),
-            "backend".as_ref(),
-            "list".as_ref(),
-            archive.as_os_str(),
-        ],
-    );
-    assert!(
-        fake.started().is_some_and(|log| log.contains("-tgzip")),
-        "{stderr}"
-    );
-}
-
-#[test]
-fn intel_hex_is_read_in_process_and_named_ihex_for_7zip_in_backend() {
+fn intel_hex_is_read_in_process() {
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("firmware.hex");
     fs::write(
@@ -742,36 +601,12 @@ fn intel_hex_is_read_in_process_and_named_ihex_for_7zip_in_backend() {
         ":10000000000102030405060708090A0B0C0D0E0F78\n:00000001FF\n",
     )
     .unwrap();
-    for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
-        let output = work.path().join(format!("{engine:?}"));
-        zipper::extract_archive(
-            &archive,
-            &output,
-            zipper::ExtractOptions {
-                engine,
-                ..zipper::ExtractOptions::default()
-            },
-        )
-        .unwrap_or_else(|error| panic!("{engine:?}: {error:#}"));
-        let bytes: Vec<Vec<u8>> = fs::read_dir(&output)
-            .unwrap()
-            .map(|entry| fs::read(entry.unwrap().path()).unwrap())
-            .collect();
-        assert_eq!(bytes, [(0..16).collect::<Vec<u8>>()], "{engine:?}");
-    }
-    let fake = FakeSevenZip::new();
-    let (_, stderr) = run_cli(
-        &fake,
-        true,
-        &[
-            std::ffi::OsStr::new("--zip-engine"),
-            "backend".as_ref(),
-            "list".as_ref(),
-            archive.as_os_str(),
-        ],
-    );
-    assert!(
-        fake.started().is_some_and(|log| log.contains("-tihex")),
-        "{stderr}"
-    );
+    let output = work.path().join("out");
+    zipper::extract_archive(&archive, &output, zipper::ExtractOptions::default())
+        .unwrap_or_else(|error| panic!("{error:#}"));
+    let bytes: Vec<Vec<u8>> = fs::read_dir(&output)
+        .unwrap()
+        .map(|entry| fs::read(entry.unwrap().path()).unwrap())
+        .collect();
+    assert_eq!(bytes, [(0..16).collect::<Vec<u8>>()]);
 }

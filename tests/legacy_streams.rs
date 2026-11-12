@@ -1,8 +1,8 @@
 //! The single-stream formats 7-Zip reads that Zipper reads in process:
 //! Microsoft `compress.exe` SZDD files, `lzma86` files and PPMd `.pmd`
 //! files.
-//! Generated files of each extract to the tree `7zz x` extracts, through the
-//! default engine, and damaged files are refused exactly when 7-Zip refuses
+//! Generated files of each extract to the tree `7zz x` extracts, through
+//! `zipper::extract_archive`, and damaged files are refused exactly when 7-Zip refuses
 //! them, apart from the checks this reader adds. Every cut, trailing data
 //! and an output cap are refused with
 //! nothing published. Without 7-Zip

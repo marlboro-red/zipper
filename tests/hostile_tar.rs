@@ -687,8 +687,7 @@ fn xz_dictionaries_past_the_largest_accepted_are_refused() {
         assert_rejected_without_leftovers(&format!("property {property}"), &bytes);
         let error = format!("{:#}", extract(&bytes).1.unwrap_err());
         assert!(
-            error.contains("the largest dictionary Zipper accepts, 256 MiB")
-                && error.contains("--zip-engine backend"),
+            error.contains("the largest dictionary Zipper accepts, 256 MiB"),
             "property {property}: {error}"
         );
     }
@@ -766,8 +765,7 @@ fn lzip_dictionaries_past_the_largest_accepted_are_refused_by_size() {
     let error = format!("{:#}", extract(&bomb).1.unwrap_err());
     assert!(
         error.contains("536870912-byte dictionary")
-            && error.contains("the largest dictionary Zipper accepts, 256 MiB")
-            && error.contains("--zip-engine backend"),
+            && error.contains("the largest dictionary Zipper accepts, 256 MiB"),
         "{error}"
     );
 }

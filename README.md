@@ -2,8 +2,8 @@
 
 Zipper extracts ZIP, tar and 7z archives quickly and safely, in process, from the command line or as a Rust library.
 It refuses archives that try to write outside the destination, checks every byte it decodes, and publishes nothing when an archive is damaged.
-Other formats go to 7-Zip when it is installed.
-Some formats are refused in every engine and never reach 7-Zip, as the [refused formats page](docs/reference/refused.md) lists.
+It reads every other format it supports with its own readers too, and it never runs 7-Zip.
+A format it does not read is refused, as the [refused formats page](docs/reference/refused.md) lists.
 
 ## Build and try it
 
@@ -45,7 +45,7 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [Intel HEX reader reference](docs/reference/ihex-reader.md) covers Intel HEX files, which extract to one file for each run of addresses, and how they differ from 7-Zip.
 - [UEFI reader reference](docs/reference/uefi-reader.md) covers UEFI firmware volumes and capsules, how their files and sections are named, and how they differ from 7-Zip.
 - [Single compressed file reference](docs/reference/stream-reader.md) covers gzip, bzip2, xz, zstd and LZMA files that hold no tar.
-- [Refused formats](docs/reference/refused.md) lists the formats and methods every engine refuses for licence reasons, and how each is recognised.
+- [Refused formats](docs/reference/refused.md) lists the formats and methods Zipper refuses, and how each is recognised.
 - [7-Zip parity](docs/reference/parity.md) lists every format, method and switch 7-Zip extracts with, and how Zipper handles each.
 - [Duplicate-checking reference](docs/reference/duplicates.md) describes the `duplicates` command.
 - [Windows release notes](docs/reference/windows.md) cover installing and running the Windows early release.
@@ -55,8 +55,8 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 
 Zipper reads archives; it does not create them.
 The native ZIP, tar and 7z readers restore files, folders, Unix permissions, modification times and symlinks that stay inside the destination. They do not restore owners, extended attributes or ACLs.
-Encrypted ZIP and 7z archives decrypt in process with `--password`. The few methods the readers do not decode go to 7-Zip.
-Extraction refuses archives that cannot fit in free space, or that exceed `--max-extracted-bytes`. The 7-Zip backend is not checked.
+Encrypted ZIP and 7z archives decrypt in process with `--password`. An archive that uses a method the readers do not decode is refused by the method's name.
+Extraction refuses archives that cannot fit in free space, or that exceed `--max-extracted-bytes`.
 Use private destination parents, because publication does not defend against concurrent filesystem changes by other users.
 The [ZIP](docs/reference/zip-reader.md), [tar](docs/reference/tar-reader.md) and [7z](docs/reference/7z-reader.md) reader references give the details.
 

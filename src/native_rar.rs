@@ -4,7 +4,7 @@
 use crate::blake2sp::Blake2sp;
 use crate::rar5_lz::{self, Stream};
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT, MAX_NAME};
+use crate::tree::{self, MAX_NAME};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
@@ -611,7 +611,7 @@ impl Reader {
         let first = blocks.next()?;
         ensure!(
             first.base.kind != ENCRYPTION_HEADER,
-            "RAR 5 archive has encrypted headers, which Zipper does not decrypt; {BACKEND_HINT}"
+            "RAR 5 archive has encrypted headers, which Zipper does not decrypt"
         );
         ensure!(
             first.base.kind == MAIN_HEADER,
@@ -619,7 +619,7 @@ impl Reader {
         );
         ensure!(
             !is_volume(&first.body[first.base.fields.clone()])?,
-            "RAR 5 volumes are not read in process; {BACKEND_HINT}"
+            "Zipper does not read RAR 5 volumes"
         );
         Ok(Reader {
             blocks,
@@ -647,7 +647,7 @@ impl Reader {
             Method::Compressed { dictionary, solid } => {
                 ensure!(
                     dictionary <= rar5_lz::DECODER_MEMORY,
-                    "RAR 5 entry {name:?} needs a {dictionary}-byte window, more than the {}-byte decoder budget; {BACKEND_HINT}",
+                    "RAR 5 entry {name:?} needs a {dictionary}-byte window, more than the {}-byte decoder budget",
                     rar5_lz::DECODER_MEMORY
                 );
                 let started = if solid {
@@ -694,11 +694,11 @@ impl Reader {
         let name = entry_name(&block.body, &header)?;
         ensure!(
             block.base.flags & (SPLIT_BEFORE | SPLIT_AFTER) == 0,
-            "RAR 5 entry {name:?} spans volumes; {BACKEND_HINT}"
+            "RAR 5 entry {name:?} spans volumes"
         );
         ensure!(
             !header.extras.encrypted,
-            "RAR 5 entry {name:?} is encrypted, which Zipper does not decrypt; {BACKEND_HINT}"
+            "RAR 5 entry {name:?} is encrypted, which Zipper does not decrypt"
         );
         ensure!(
             matches!(header.host, HOST_WINDOWS | HOST_UNIX),
@@ -722,9 +722,7 @@ impl Reader {
                 Redirect::UnixSymlink => tree.symlink(&name, target),
                 Redirect::WindowsSymlink => tree.symlink(&name, target.replace('\\', "/")),
                 Redirect::HardLink => tree.hard_link(&name, &target),
-                other => bail!(
-                    "RAR 5 entry {name:?} is a {other:?}, which Zipper does not create; {BACKEND_HINT}"
-                ),
+                other => bail!("RAR 5 entry {name:?} is a {other:?}, which Zipper does not create"),
             };
         }
         ensure!(
@@ -754,7 +752,7 @@ impl Reader {
                     let flags = Fields::new(&block.body[block.base.fields.clone()]).vint()?;
                     ensure!(
                         flags & NOT_LAST_VOLUME == 0,
-                        "RAR 5 volumes are not read in process; {BACKEND_HINT}"
+                        "Zipper does not read RAR 5 volumes"
                     );
                     return Ok(());
                 }
@@ -777,17 +775,6 @@ fn starts_with(path: &Path, signature: &[u8]) -> Result<bool> {
 /// Returns whether the file starts with the RAR 5 or RAR 4 signature.
 pub fn sniff(path: &Path) -> Result<bool> {
     Ok(starts_with(path, &RAR5_SIGNATURE)? || starts_with(path, &crate::rar4::SIGNATURE)?)
-}
-
-/// Returns whether 7-Zip should read the archive under `Engine::Auto`: a
-/// RAR archive whose first headers Zipper does not read, such as a volume
-/// of a set, a RAR 4 solid archive or one whose headers are encrypted.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    Ok(if starts_with(path, &RAR5_SIGNATURE)? {
-        Reader::open(path).is_err()
-    } else {
-        crate::rar4::Reader::open(path).is_err()
-    })
 }
 
 /// Verify and optionally extract a RAR 5 archive, or a RAR 4 archive that

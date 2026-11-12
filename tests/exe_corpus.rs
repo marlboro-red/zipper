@@ -4,7 +4,7 @@
 //! sections, COFF objects, TE images, ELF files of both classes and byte
 //! orders, Mach-O files and Mach-O universal files from the test writer must
 //! do the same, and every section, segment and slice must hold the bytes the
-//! writer put there. The default engine must send each corpus file here.
+//! writer put there. `zipper::choose_reader` must send each corpus file here.
 #[path = "common/mod.rs"]
 mod common;
 #[path = "common/exe_compare.rs"]
@@ -67,7 +67,7 @@ fn every_corpus_executable_extracts_the_tree_7zip_extracts() {
             "{name} lists every file it writes"
         );
         assert_eq!(
-            zipper::choose_reader(zipper::Engine::Auto, archive).unwrap(),
+            zipper::choose_reader(archive).unwrap(),
             zipper::Reader::Exe,
             "{name} goes to the executable reader"
         );
@@ -455,10 +455,7 @@ fn routing_leaves_self_extracting_archives_to_their_readers() {
     .unwrap();
     let path = work.path().join("sfx.exe");
     fs::write(&path, [&stub[..], &zip].concat()).unwrap();
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
-        zipper::Reader::Zip
-    );
+    assert_eq!(zipper::choose_reader(&path).unwrap(), zipper::Reader::Zip);
     let seven = fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/data/parity/archives/7z.7z"
@@ -466,14 +463,11 @@ fn routing_leaves_self_extracting_archives_to_their_readers() {
     .unwrap();
     fs::write(&path, [&stub[..], &seven].concat()).unwrap();
     assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
+        zipper::choose_reader(&path).unwrap(),
         zipper::Reader::SevenZip
     );
     fs::write(&path, [&stub[..], b"tail"].concat()).unwrap();
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
-        zipper::Reader::Exe
-    );
+    assert_eq!(zipper::choose_reader(&path).unwrap(), zipper::Reader::Exe);
 }
 
 #[test]

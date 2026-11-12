@@ -1,6 +1,6 @@
 # In-process LP reader
 
-Zipper reads Android logical partition images, the `super.img` of dynamic partitions, with its own Rust reader, in the tree `7zz x` writes. The default engine sends a file here when its LP geometry magic sits at byte 4096. A file that a ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound file, WIM, CHM or 7z reader claims goes there first. `--zip-engine native` also reads these images in process, and `--zip-engine backend` hands them to 7-Zip. An Android sparse image of a `super.img` goes to the disk reader, which hands it to 7-Zip.
+Zipper reads Android logical partition images, the `super.img` of dynamic partitions, with its own Rust reader, in the tree `7zz x` writes. Zipper sends a file here when its LP geometry magic sits at byte 4096. A file that a ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound file, WIM, CHM or 7z reader claims goes there first. An Android sparse image of a `super.img` is refused, as the [refused formats page](refused.md#disk-images) describes.
 
 ## What it writes
 
@@ -35,7 +35,7 @@ The reader opens an image only when 7-Zip opens it:
 
 ## Differences from 7-Zip
 
-- A partition name that is not a plain relative path, such as one that starts with `/`, holds a `..` part, a `\` or a `:`, goes to 7-Zip under the default engine. 7-Zip rewrites such names. `--zip-engine native` refuses them.
+- A partition name that is not a plain relative path, such as one that starts with `/`, holds a `..` part, a `\` or a `:`, is refused. 7-Zip rewrites such names.
 - Metadata tables larger than 64 MiB are refused. 7-Zip reads them.
 - Two partitions whose names differ only in case, on a file system that ignores case, are refused. 7-Zip writes the last one.
 - An image whose geometry gives a logical block size that is not a multiple of 512 bytes extracts as in 7-Zip, without its warning.
@@ -51,6 +51,6 @@ The reader opens an image only when 7-Zip opens it:
 
 ## Tests
 
-No AOSP `lpmake` runs on this machine, so `tests/common/lp_writer.rs` writes every image from the liblp metadata format. `tests/lp_corpus.rs` writes A/B layouts, versions 10.0, 10.1 and 10.2, one and three slots, and a 3 MiB partition in many extents. It also writes shared and backward extents, extents inside the metadata, and the names 7-Zip writes as they are. Each extracts byte for byte as `7zz x` extracts it. Other tests check a partition's bytes directly, send names that leave the folder to 7-Zip, select one partition, and charge a zero extent of 512 TiB against the cap.
+No AOSP `lpmake` runs on this machine, so `tests/common/lp_writer.rs` writes every image from the liblp metadata format. `tests/lp_corpus.rs` writes A/B layouts, versions 10.0, 10.1 and 10.2, one and three slots, and a 3 MiB partition in many extents. It also writes shared and backward extents, extents inside the metadata, and the names 7-Zip writes as they are. Each extracts byte for byte as `7zz x` extracts it. Other tests check a partition's bytes directly, refuse names that leave the folder, select one partition, and charge a zero extent of 512 TiB against the cap.
 
 `tests/hostile_lp.rs` cuts a small image at every sector and around every boundary. It changes every geometry, header and table byte three ways and repairs the checksums, so each change reaches its field, and flips a byte in every 97 unrepaired. Each result is refused when 7-Zip refuses it, and otherwise extracts as 7-Zip extracts it or is refused for a reason listed above. A change that would make 7-Zip write more than 64 MiB of zeros is left out. Other tests give the tables, the slot size, the slot count and the partition count their largest values. Kani proofs under `[lp-fields]` in `verification/coverage.txt` cover the geometry, header, partition and extent readers.

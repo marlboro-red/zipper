@@ -1,6 +1,6 @@
 use crate::image::Volume;
+use crate::tree;
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT};
 use crate::volumes::ArchiveFile;
 use crate::{Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
@@ -1013,7 +1013,7 @@ impl<'v> FileSystem<'v> {
             fields.checksum_seed = crc32c(u32::MAX, &fields.uuid);
         }
         if let Some(feature) = refused_feature(&fields) {
-            bail!("the ext volume uses {feature}, which Zipper does not read; {BACKEND_HINT}");
+            bail!("the ext volume uses {feature}, which Zipper does not read");
         }
         if fields.metadata_checksums() {
             ensure!(
@@ -2138,12 +2138,6 @@ impl<V: Read + Seek> Volume for SeekVolume<V> {
     }
 }
 
-fn opens_elsewhere(volume: &mut dyn Volume) -> bool {
-    FileSystem::open(volume)
-        .err()
-        .is_some_and(|error| format!("{error:#}").contains(BACKEND_HINT))
-}
-
 /// Returns whether the file is a raw ext2, ext3 or ext4 volume whose
 /// superblock at byte 1024 passes Zipper's layout checks.
 pub fn sniff(path: &Path) -> Result<bool> {
@@ -2158,18 +2152,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
         length: wanted,
     };
     Ok(volume.read_exact_at(0, &mut start).is_ok() && is_volume(&start))
-}
-
-/// Returns whether the default engine sends this raw volume to 7-Zip: one
-/// whose superblock names a feature Zipper does not read, such as encryption
-/// or a journal that needs recovery.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    let file = crate::volumes::open(path)?;
-    let length = file.len()?;
-    Ok(opens_elsewhere(&mut FileVolume {
-        file: &file,
-        length,
-    }))
 }
 
 /// Verify and optionally extract an ext2, ext3 or ext4 volume held in a

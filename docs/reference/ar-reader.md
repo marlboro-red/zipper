@@ -1,6 +1,6 @@
 # In-process ar reader
 
-Zipper reads `ar` archives, such as static libraries and Debian packages, with its own Rust reader. The default engine sends a file here when it starts with `!<arch>` and a newline. A file that starts with a ZIP, tar, cpio or 7z signature goes to that reader first. `--zip-engine native` also reads `ar` in process, and `--zip-engine backend` hands it to 7-Zip.
+Zipper reads `ar` archives, such as static libraries and Debian packages, with its own Rust reader. Zipper sends a file here when it starts with `!<arch>` and a newline. A file that starts with a ZIP, tar, cpio or 7z signature goes to that reader first.
 
 ## Supported archives
 
@@ -18,7 +18,7 @@ The reader leaves out the symbol tables a linker reads, which are the GNU `/` an
 A Debian package is an `ar` archive whose first member is named `debian-binary`, written without GNU's trailing `/`. 7-Zip treats such an archive as a package, hides `debian-binary`, and opens its one member whose name starts with `data.tar.`. Zipper follows the same rule, and also takes a plain `data.tar` member, as `dpkg` does:
 
 - When the package has exactly one member named `data.tar` or `data.tar.*`, the reader extracts the tar inside it with the [tar reader](tar-reader.md). Every option applies to the tar's paths, and every tar check applies. `control.tar.*` and the other members are not extracted.
-- The member must hold a tar the tar reader finds. That is a plain tar or a tar inside gzip, xz, zstd, bzip2, lzip, LZ4 or `compress`. A `data.tar.lzma` member is refused with a hint to use `--zip-engine backend`, because raw LZMA has no signature.
+- The member must hold a tar the tar reader finds. That is a plain tar or a tar inside gzip, xz, zstd, bzip2, lzip, LZ4 or `compress`. A `data.tar.lzma` member is refused, because raw LZMA has no signature.
 - When the package has no such member, or more than one, the reader extracts the members other than `debian-binary` as files.
 
 The tar reader reads the data member in place, at its offset inside the package, so no copy is written. Its staging folder, output limits, cancel checks and the Windows Mark of the Web all come from the package itself.
@@ -39,7 +39,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 - Every member lies inside the file. The reader checks each size against the file's length before it reads a byte of the member, so a declared size never sets an allocation.
 - A GNU long name table appears once and before any name that uses it. It is at most 16 MiB. Each long name lies inside it, ends with a newline or NUL, and is at most 8,192 bytes. The reader checks the length before it copies the name, so many members that name one long entry cost no more than one name each.
 - A BSD name length is at most 8,192 bytes and fits inside its member. Trailing NUL bytes of the name are removed.
-- Names pass the same checks as tar names after a leading `./` is removed. Absolute names, `..`, drive letters, backslashes, NUL bytes and empty names are rejected. Names that are not UTF-8 are refused with a hint to use `--zip-engine backend`.
+- Names pass the same checks as tar names after a leading `./` is removed. Absolute names, `..`, drive letters, backslashes, NUL bytes and empty names are rejected. Names that are not UTF-8 are refused.
 - No member sits inside another member's name. A repeated name follows the last member, as `ar x` and 7-Zip do. Static libraries often repeat an object name.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each member is charged before its data is written.
 

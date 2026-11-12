@@ -42,7 +42,7 @@ fn native_reader_matches_the_reference_readers() {
 }
 
 #[test]
-fn refused_archives_fail_by_name_and_only_encrypted_ones_stay_in_process() {
+fn refused_archives_fail_by_name_in_this_reader_and_encrypted_ones_read_with_the_password() {
     let refused = std::fs::read_to_string(corpus().join("refused.tsv")).unwrap();
     assert!(refused.lines().count() >= 1);
     for line in refused.lines() {
@@ -55,9 +55,9 @@ fn refused_archives_fail_by_name_and_only_encrypted_ones_stay_in_process() {
             .to_string();
         assert!(failure.contains(error), "{name}: {failure}");
         assert_eq!(std::fs::read_dir(work.path()).unwrap().count(), 0, "{name}");
-        let reader = zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap();
+        let reader = zipper::choose_reader(&archive).unwrap();
+        assert!(matches!(reader, zipper::Reader::SevenZip), "{name}");
         if error == "encrypted" {
-            assert!(matches!(reader, zipper::Reader::SevenZip), "{name}");
             read_archive(
                 &archive,
                 Some(&destination),
@@ -67,11 +67,6 @@ fn refused_archives_fail_by_name_and_only_encrypted_ones_stay_in_process() {
                 },
             )
             .unwrap_or_else(|error| panic!("{name}: {error:#}"));
-        } else {
-            assert!(
-                matches!(reader, zipper::Reader::Backend { format: Some(_) }),
-                "{name}"
-            );
         }
     }
 }
@@ -81,7 +76,7 @@ fn an_lzma_setting_liblzma_refuses_reads_natively_as_7zip_reads_it() {
     let archives = corpus::expected(&corpus());
     let archive = corpus().join("7zip-lzma-lc8-short.7z");
     assert!(matches!(
-        zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
+        zipper::choose_reader(&archive).unwrap(),
         zipper::Reader::SevenZip
     ));
     let work = tempfile::tempdir().unwrap();

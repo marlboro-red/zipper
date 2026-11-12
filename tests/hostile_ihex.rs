@@ -112,10 +112,7 @@ fn extract(
 }
 
 fn native() -> zipper::ExtractOptions<'static> {
-    zipper::ExtractOptions {
-        engine: zipper::Engine::Native,
-        ..Default::default()
-    }
+    zipper::ExtractOptions::default()
 }
 
 fn separate_runs(count: usize) -> Vec<u8> {

@@ -1,6 +1,6 @@
 # In-process ext reader
 
-Zipper extracts ext2, ext3 and ext4 volumes with its own Rust reader, in `src/native_ext.rs`. It reads raw volumes only. Until 12 November 2026 it also read the lone partition of a disk image, which the disk image reader opened for it. That reader was removed for licence reasons, so every engine now refuses a disk image that holds an ext volume, as the [refused formats page](refused.md#disk-images) describes. The default engine sends a file here when its superblock at byte 1024 passes the layout checks below. A volume that uses a feature Zipper does not read is refused by name, and the error suggests `--zip-engine backend`. The default engine sends such a volume to 7-Zip. `--zip-engine backend` hands every volume to 7-Zip.
+Zipper extracts ext2, ext3 and ext4 volumes with its own Rust reader, in `src/native_ext.rs`. It reads raw volumes only. Until 12 November 2026 it also read the lone partition of a disk image, which the disk image reader opened for it. That reader was removed for licence reasons, so Zipper now refuses a disk image that holds an ext volume, as the [refused formats page](refused.md#disk-images) describes. Zipper sends a file here when its superblock at byte 1024 passes the layout checks below. A volume that uses a feature Zipper does not read is refused by the feature's name.
 
 ## Supported volumes
 
@@ -28,9 +28,9 @@ The reader writes the tree `7zz x` writes on macOS and Linux:
 
 It never restores owners, flags, access, change or creation times, or extended attributes, and 7-Zip does not write them either.
 
-## Volumes it sends to 7-Zip
+## Volumes it refuses by feature
 
-The default engine sends the whole volume to 7-Zip, and `--zip-engine native` refuses it with the feature's name, when the superblock names:
+The reader refuses the whole volume with the feature's name when the superblock names:
 
 - a journal that needs recovery, the `recover` feature, or orphan inodes that need recovery, either the `orphan_present` feature or an orphan list in the superblock;
 - encryption, compression, a separate journal device, extended attributes in their own inodes, or data in folder records;
@@ -84,7 +84,7 @@ The reader never holds the volume's bitmaps or inode tables. It reads one group 
 - 7-Zip reads a superblock of any revision. Zipper refuses a revision other than 0 or 1, whose layout it does not know.
 - 7-Zip writes a link whose target holds a NUL, cut at the NUL. Zipper refuses it.
 - 7-Zip writes an in-use inode no folder names whatever its type, and writes the entries of a folder no folder names at the top. Zipper writes only a regular file with one link this way, and refuses the rest.
-- 7-Zip ignores feature flags. Zipper sends the features above to 7-Zip.
+- 7-Zip ignores feature flags. Zipper refuses the features above.
 - 7-Zip sets a link's time. Zipper creates links without one, as its other readers do.
 
 ## Extraction options

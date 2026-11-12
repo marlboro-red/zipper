@@ -1,5 +1,5 @@
 use crate::rar4_lz;
-use crate::tree::{self, BACKEND_HINT, MAX_NAME};
+use crate::tree::{self, MAX_NAME};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
@@ -247,9 +247,7 @@ fn entry_name(raw: &[u8], flags: u16) -> Result<String> {
         unicode_name(raw)?
     } else {
         String::from_utf8(raw.to_vec()).map_err(|_| {
-            anyhow::anyhow!(
-                "RAR 4 name is in a code page, which Zipper does not read; {BACKEND_HINT}"
-            )
+            anyhow::anyhow!("RAR 4 name is in a code page, which Zipper does not read")
         })?
     };
     // EXTERNAL(WinRAR): RAR 3 and RAR 4 write `\` between folders on every host.
@@ -355,15 +353,15 @@ impl Reader {
         );
         ensure!(
             main.base.flags & MAIN_ENCRYPTED == 0,
-            "RAR 4 archive has encrypted headers, which Zipper does not decrypt; {BACKEND_HINT}"
+            "RAR 4 archive has encrypted headers, which Zipper does not decrypt"
         );
         ensure!(
             main.base.flags & MAIN_VOLUME == 0,
-            "RAR 4 volumes are not read in process; {BACKEND_HINT}"
+            "Zipper does not read RAR 4 volumes"
         );
         ensure!(
             main.base.flags & MAIN_SOLID == 0,
-            "RAR 4 solid archives are not read in process; {BACKEND_HINT}"
+            "Zipper does not read RAR 4 solid archives"
         );
         Ok(reader)
     }
@@ -428,15 +426,15 @@ impl Reader {
         let name = entry_name(&block.header[header.name.clone()], header.flags)?;
         ensure!(
             header.flags & (SPLIT_BEFORE | SPLIT_AFTER) == 0,
-            "RAR 4 entry {name:?} spans volumes; {BACKEND_HINT}"
+            "RAR 4 entry {name:?} spans volumes"
         );
         ensure!(
             header.flags & ENCRYPTED == 0,
-            "RAR 4 entry {name:?} is encrypted, which Zipper does not decrypt; {BACKEND_HINT}"
+            "RAR 4 entry {name:?} is encrypted, which Zipper does not decrypt"
         );
         ensure!(
             header.flags & SOLID == 0,
-            "RAR 4 entry {name:?} is solid, which Zipper does not read; {BACKEND_HINT}"
+            "RAR 4 entry {name:?} is solid, which Zipper does not read"
         );
         let directory = header.flags & DIRECTORY_BITS == DIRECTORY_BITS
             || header.host == Host::Windows && header.attributes & WINDOWS_DIRECTORY != 0;
@@ -455,7 +453,7 @@ impl Reader {
         );
         ensure!(
             header.method == STORED || header.version == RAR_2_9_ALGORITHM,
-            "RAR 4 entry {name:?} uses the RAR {}.{} compression, which Zipper does not read; {BACKEND_HINT}",
+            "RAR 4 entry {name:?} uses the RAR {}.{} compression, which Zipper does not read",
             header.version / 10,
             header.version % 10
         );

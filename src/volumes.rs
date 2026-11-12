@@ -672,13 +672,6 @@ pub(crate) fn open_zip(path: &Path) -> io::Result<ArchiveFile> {
     open_found(path, discovered(path)?.for_zip())
 }
 
-pub(crate) fn read_alone_beside_its_next_volume(path: &Path) -> io::Result<bool> {
-    let next_exists = Numbered::parse(path).is_some_and(|numbered| {
-        numbered.number == FIRST_VOLUME && numbered.path(FIRST_VOLUME + 1).exists()
-    });
-    Ok(next_exists && matches!(discovered(path)?.found, Found::Alone { .. }))
-}
-
 pub(crate) fn has_zip_volumes(path: &Path) -> io::Result<bool> {
     Ok(discovered(path)?.zip.is_some())
 }

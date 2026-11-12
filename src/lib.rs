@@ -17,7 +17,6 @@ mod bzip2;
     feature = "xar"
 ))]
 mod bzip2_streams;
-pub mod compat;
 pub mod counters;
 mod crc32;
 #[cfg(any(feature = "tar", feature = "xar"))]
@@ -136,7 +135,7 @@ mod zip_reader;
 mod zstandard;
 use anyhow::{Context, Result, ensure};
 pub use extract::{
-    Engine, ExtractOptions, NotBuilt, Reader, Refused, choose_reader, extract_archive, read_volumes,
+    ExtractOptions, NotBuilt, Reader, Refused, choose_reader, extract_archive, read_volumes,
 };
 pub use metadata::Metadata;
 pub use placement::Strip;
@@ -433,7 +432,7 @@ fn create_symlink(format: &str, root: &Path, name: &str, target: &str) -> Result
         ),
         #[cfg(windows)]
         Some(ERROR_PRIVILEGE_NOT_HELD) => anyhow::anyhow!(
-            "{format} symlink {name:?} needs Windows Developer Mode or administrator rights; pass --zip-engine backend to read it with 7-Zip"
+            "{format} symlink {name:?} needs Windows Developer Mode or administrator rights"
         ),
         _ => anyhow::Error::from(error).context(format!("cannot create {format} symlink {name:?}")),
     })?;

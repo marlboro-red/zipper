@@ -1,6 +1,6 @@
 # In-process cpio reader
 
-Zipper reads cpio archives with its own Rust reader. The default engine sends a file here when it starts with a cpio header. That is `070701` or `070702` for newc, `070707` for odc, or the binary magic in either byte order. A file that starts with a ZIP, tar or 7z signature goes to that reader first. A cpio inside gzip or another compressor goes to the [single compressed file reader](stream-reader.md), which writes the `.cpio` file, as 7-Zip does. `--zip-engine native` also reads cpio in process, and `--zip-engine backend` hands it to 7-Zip.
+Zipper reads cpio archives with its own Rust reader. Zipper sends a file here when it starts with a cpio header. That is `070701` or `070702` for newc, `070707` for odc, or the binary magic in either byte order. A file that starts with a ZIP, tar or 7z signature goes to that reader first. A cpio inside gzip or another compressor goes to the [single compressed file reader](stream-reader.md), which writes the `.cpio` file, as 7-Zip does.
 
 ## Supported archives
 

@@ -1,6 +1,6 @@
 # In-process UEFI reader
 
-Zipper reads UEFI firmware volumes and UEFI capsules with its own Rust reader, in the tree `7zz x` writes. The default engine sends a file here when it starts with a firmware volume header or with a capsule header of the GUID `539182B9-ABB5-4391-B69A-E3A943F72FCC`. A file that no other reader claims also comes here when a volume header lies in its first MiB, as in firmware images that start with code. `--zip-engine native` also reads these files in process, and `--zip-engine backend` hands them to 7-Zip.
+Zipper reads UEFI firmware volumes and UEFI capsules with its own Rust reader, in the tree `7zz x` writes. Zipper sends a file here when it starts with a firmware volume header or with a capsule header of the GUID `539182B9-ABB5-4391-B69A-E3A943F72FCC`. A file that no other reader claims also comes here when a volume header lies in its first MiB, as in firmware images that start with code.
 
 ## Where the volume is
 
@@ -49,7 +49,7 @@ Zipper refuses a file that 7-Zip refuses:
 
 ## Differences from 7-Zip
 
-- A name that is not a plain relative path goes to 7-Zip under the default engine, and `--zip-engine native` refuses it. That covers a user interface name that holds `/..`, `\` or `:`, and an empty name.
+- A name that is not a plain relative path is refused. That covers a user interface name that holds `/..`, `\` or `:`, and an empty name.
 - 7-Zip writes some of a file that fails a check after it finds the failure, and reports an error. Zipper writes nothing.
 - Two names that differ only in case, on a file system that ignores case, are refused. 7-Zip writes them into one folder.
 - A volume or capsule payload larger than 512 MiB and decoded sections larger than 256 MiB in all are refused. 7-Zip reads them.

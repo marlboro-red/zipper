@@ -2,8 +2,8 @@
 //! extracts them: the files of a volume, their sections, and the volumes
 //! and compressed sections inside them, named as 7-Zip names them. See
 //! `docs/reference/uefi-reader.md`.
+use crate::tree;
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
@@ -87,7 +87,6 @@ const DEPEX_OPCODES_WITH_GUID: std::ops::RangeInclusive<u8> = 0..=2;
 const NESTING_LIMIT: usize = 64;
 const LARGEST_VOLUME: u64 = 512 << 20;
 const SCAN_CHUNK: usize = 1 << 20;
-const MAX_PATH: usize = 4096;
 const DECODED_BUDGET: u64 = 256 << 20;
 const CANDIDATE_LIMIT: usize = 16;
 const SNIFF_WINDOW: u64 = 1 << 20;
@@ -879,7 +878,7 @@ fn read_range(file: &ArchiveFile, start: u64, length: u64) -> Result<Vec<u8>> {
     ensure!(
         length <= LARGEST_VOLUME,
         crate::OverLimit(format!(
-            "a UEFI volume is larger than {} MiB; {BACKEND_HINT}",
+            "a UEFI volume is larger than {} MiB",
             LARGEST_VOLUME >> 20
         ))
     );
@@ -989,18 +988,6 @@ fn open(path: &Path) -> Result<Image> {
     bail!("{refusal}")
 }
 
-fn names_are_plain(items: &[Item], prefix: usize) -> bool {
-    items.iter().all(|item| {
-        let length = prefix + item.name.len();
-        let plain = length <= MAX_PATH && crate::safe_path(&item.name).is_ok();
-        plain
-            && match &item.content {
-                Content::Folder(children) => names_are_plain(children, length + 1),
-                Content::Data(_) => true,
-            }
-    })
-}
-
 fn emit(tree: &mut tree::Tree, parser: &Parser, items: &[Item], prefix: &str) -> Result<()> {
     for item in items {
         tree.check()?;
@@ -1036,16 +1023,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(head[..16] == CAPSULE || is_volume_at(&head, 0))
 }
 
-pub(crate) fn backend_type(path: &Path) -> Result<&'static str> {
-    let mut head = [0u8; 16];
-    let read = crate::volumes::open(path)?.read_at(&mut head, 0)?;
-    Ok(if read == head.len() && head == CAPSULE {
-        "-tuefic"
-    } else {
-        "-tuefif"
-    })
-}
-
 /// Returns whether a firmware volume header lies in the first MiB of the
 /// file, as in firmware images that start with code before their volume.
 pub fn sniff_later_volume(path: &Path) -> Result<bool> {
@@ -1054,15 +1031,6 @@ pub fn sniff_later_volume(path: &Path) -> Result<bool> {
         .take(SNIFF_WINDOW)
         .read_to_end(&mut head)?;
     Ok(candidates(&head).any(|start| is_volume_at(&head, start)))
-}
-
-/// Returns whether a name in the image is not a plain relative path, so the
-/// default engine sends it to 7-Zip.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    let Ok(image) = open(path) else {
-        return Ok(false);
-    };
-    Ok(!names_are_plain(&image.items, 0))
 }
 
 /// Verify and optionally extract a UEFI firmware volume or capsule into a

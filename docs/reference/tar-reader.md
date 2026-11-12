@@ -1,8 +1,8 @@
 # In-process tar reader
 
-Zipper reads tar archives with its own Rust reader by default. The default engine, `--zip-engine auto`, decodes any gzip, zstd, xz, bzip2, lzip, LZ4 or `compress` around a file. It sends the file to the tar reader when the first 512 bytes are then a tar header with a valid checksum or the `ustar` marker. A header with the marker and a wrong checksum goes to the reader, which rejects it, so a damaged `.tar.gz` is never handed to 7-Zip. A file that starts with a ZIP record signature goes to the [ZIP reader](zip-reader.md) first. A compressed file that does not hold a tar goes to the [single compressed file reader](stream-reader.md), which writes the decompressed file.
+Zipper reads tar archives with its own Rust reader. It decodes any gzip, zstd, xz, bzip2, lzip, LZ4 or `compress` around a file. It sends the file to the tar reader when the first 512 bytes are then a tar header with a valid checksum or the `ustar` marker. A header with the marker and a wrong checksum goes to the reader, which rejects it, so a damaged `.tar.gz` gets the reader's refusal. A file that starts with a ZIP record signature goes to the [ZIP reader](zip-reader.md) first. A compressed file that does not hold a tar goes to the [single compressed file reader](stream-reader.md), which writes the decompressed file.
 
-A tar the reader rejects is never handed to 7-Zip. A compressed empty tar holds only zero blocks, so it goes to 7-Zip, which writes the inner `.tar`. When the reader lacks a feature, such as sparse files or names that are not UTF-8, the error names `--zip-engine backend`, and passing it is the user's decision. `--zip-engine native` also reads tar archives in process.
+A tar the reader rejects is refused, and no other reader tries it. A compressed empty tar holds only zero blocks, so it goes to the single compressed file reader, which writes the inner `.tar`. When the reader lacks a feature, such as sparse files or names that are not UTF-8, the error names the feature.
 
 ## Supported archives
 
@@ -61,7 +61,7 @@ The reader checks the whole archive before it publishes anything, and it publish
 | Largest zstd window | 128 MiB, the window of `zstd --long=27` and the default limit of libzstd |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-An LZMA or lzip stream whose header declares a larger dictionary is refused before decoding, with its size in the error. An xz stream is refused when one of its block headers declares a larger dictionary, before that block's dictionary is allocated. The xz limit falls between the same two dictionary sizes as liblzma's 272 MiB memory limit did, so the same streams pass. Each error names the largest dictionary accepted and points at `--zip-engine backend`.
+An LZMA or lzip stream whose header declares a larger dictionary is refused before decoding, with its size in the error. An xz stream is refused when one of its block headers declares a larger dictionary, before that block's dictionary is allocated. The xz limit falls between the same two dictionary sizes as liblzma's 272 MiB memory limit did, so the same streams pass. Each error names the largest dictionary accepted.
 
 zstd decodes with Zipper's own decoder in `src/zstandard.rs`. It accepts and refuses what libzstd 1.5.7 does, with these differences. A frame whose header declares a window larger than 128 MiB is refused before its window is allocated, with the size in the error. A match that copies from further back than the frame's window is refused, where libzstd copies whatever its buffer holds. A frame that ends short of the content size in its header is refused, where libzstd's stream decoder skips that check after an empty last block. A frame in a format older than zstd 1.0 is refused. A frame that needs a dictionary is refused, as before.
 

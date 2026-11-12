@@ -1,6 +1,6 @@
 # In-process ARJ reader
 
-Zipper extracts ARJ archives with its own Rust reader. The default engine and `--zip-engine native` send a file here when it starts with the ARJ signature `0x60 0xEA` and a main header whose CRC-32 matches. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB or LZH signature goes to that reader first. `--zip-engine backend` hands every ARJ to 7-Zip.
+Zipper extracts ARJ archives with its own Rust reader. Zipper sends a file here when it starts with the ARJ signature `0x60 0xEA` and a main header whose CRC-32 matches. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB or LZH signature goes to that reader first.
 
 ## Supported archives
 
@@ -15,7 +15,7 @@ An ARJ archive is a main header, then a header and packed data for each entry, t
 The reader refuses these archives, and publishes nothing:
 
 - An entry with the garbled flag, which ARJ sets on an encrypted entry. Neither Zipper nor 7-Zip reads them.
-- A multi-volume archive, whose main header has the volume flag, and an entry that continues into or from another volume. The error suggests `--zip-engine backend`.
+- A multi-volume archive, whose main header has the volume flag, and an entry that continues into or from another volume.
 - An entry of a file type other than binary, text or folder, such as a volume label or a chapter label.
 
 ## Names

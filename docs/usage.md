@@ -25,7 +25,7 @@ Before writing anything, `extract` adds up the declared size of every entry. By 
 target/release/zipper extract bundle.zip --output restored --max-extracted-bytes 10000000000
 ```
 
-The limit applies to ZIP, tar and 7z archives read in process, which is the default. The 7-Zip backend applies its own rules and refuses the option. On a compressed filesystem the free-space estimate can be too strict, so pass a cap to override it.
+The limit applies to every reader. On a compressed filesystem the free-space estimate can be too strict, so pass a cap to override it.
 
 ### Extract into an existing folder
 
@@ -68,8 +68,6 @@ To select by wildcard, pass `--include` and `--exclude`, each repeatable. `*` an
 target/release/zipper extract bundle.zip --output selected --include '*.txt' --exclude 'drafts'
 ```
 
-The 7-Zip backend refuses `--path`, `--include` and `--exclude`.
-
 ## Extract a folder at the output root
 
 To extract one folder of an archive with its contents at the output root, pass `--strip-prefix` with the folder. Its structure below stays as it is:
@@ -89,7 +87,6 @@ An entry `assets/icons/small/a.png` lands at `icons/small/a.png`, and nothing ou
 - `--flat` with a strip extracts only the stripped entries, without their folders.
 - A single compressed file has no folders, so any strip leaves nothing and fails.
 - Library callers set `strip` in `ExtractOptions` to `Strip::Prefix` or `Strip::Components`. `tests/strip.rs` strips every archive of the ZIP, tar and 7z corpora by each of their folders and by 1 to 3 segments.
-- The 7-Zip backend refuses both options.
 
 ## Extract contents only
 
@@ -104,7 +101,6 @@ target/release/zipper extract toolchain.tar.gz --output tools --content-only
 - On Unix, a file gets mode 0o666, or 0o777 when the archive marks it executable, less the umask. Folders get the default mode. A read-only entry therefore stays writable, and scripts still run.
 - Links are still created, with the same safety checks.
 - Library callers set `metadata: Metadata::ContentOnly` in `ExtractOptions`. `tests/content_only.rs` extracts every archive of the ZIP, tar and 7z corpora this way and checks contents, modes, times and, on Windows, attributes and zone marks.
-- The 7-Zip backend refuses it, because 7-Zip restores times and attributes itself.
 
 ## Extract the alternate data streams of a WIM
 
@@ -223,11 +219,11 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 
 That build leaves out the 12 packages that only encryption, Deflate64 and PPMd need. It refuses an archive with an entry it cannot decode, such as a BZip2 or an encrypted entry, with `zipper::NotBuilt` naming the feature to add, and writes nothing. Add only the method features your archives use, such as `features = ["zip-deflate", "zip-lzma"]`. The [ZIP feature size record](../benchmarks/cargo-features/zip-deflate/README.md) measures a small program at 1.42 MB with `zip-deflate` against 1.68 MB with `zip`.
 
-The `Reader` enum keeps every variant in every build. A ZIP or tar archive that the build does not read fails with `zipper::NotBuilt`, which names the format, and writes nothing. With `Engine::Native`, so does every other format whose signature Zipper knows, such as `gzip` or `7z`. `Engine::Auto` hands those to 7-Zip instead, as it does any format it recognizes but does not read. Choose `Engine::Native` to never start 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build, so a build without `zip` refuses it as `zip`.
+The `Reader` enum keeps every variant in every build. An archive in a format that the build does not read fails with `zipper::NotBuilt`, which names the format, such as `tar`, `gzip` or `7z`, and writes nothing. No build starts 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build, so a build without `zip` refuses it as `zip`.
 
 `cargo xtask gate` lints every feature on its own with `unused_crate_dependencies` denied, so no feature builds a crate its readers do not use. It runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build, and `tests/zip_method_features.rs` and `tests/zstd_feature.rs` in a `zip-deflate` build. It also runs `tests/consumer`, a crate that depends on Zipper with only `zip` and `7z`, and checks that it extracts a corpus ZIP and 7z in process to the trees their manifests record. Built without its default features, the same crate depends on Zipper with only `zip-deflate` and extracts a stored and a Deflate corpus ZIP. The gate also fails when a `zip-deflate` build depends on a crate that only encryption, Deflate64 or PPMd needs. `cargo xtask format-tests` runs each format's corpus or hostile tests in a build with only that format's feature, and `cargo xtask release-checks` runs it too. The `ext` and `squashfs` tests also wrap their images in disk images, so they run with `disk`.
 
-When `extract_archive` or a reader returns, after success, failure or a cancel, Zipper holds no handle to the destination or the archive, and every thread it started has exited. You can rename, move or delete the destination at once. The shared Rayon pool keeps its idle threads between calls, and they hold nothing from the extraction. The 7-Zip backend is waited for before it returns. `tests/handles.rs` checks this after every reader on Unix by counting open descriptors and threads, and on Windows by renaming and deleting the destination of archives that carry a zone mark.
+When `extract_archive` or a reader returns, after success, failure or a cancel, Zipper holds no handle to the destination or the archive, and every thread it started has exited. You can rename, move or delete the destination at once. The shared Rayon pool keeps its idle threads between calls, and they hold nothing from the extraction. `tests/handles.rs` checks this after every reader on Unix by counting open descriptors and threads, and on Windows by renaming and deleting the destination of archives that carry a zone mark.
 
 ## Find duplicate files
 
@@ -248,13 +244,10 @@ Archive-level deduplication is not implemented yet.
 
 ## Read ZIP, 7z, and other existing formats
 
-`extract`, `list`, and `test` read ZIP, tar and most 7z archives in process and delegate other formats to `7zz` or `7z` on PATH. A 7z archive whose methods the [7z reader](reference/7z-reader.md) does not decode also goes to 7-Zip. Encrypted 7z archives decrypt in process.
-To use another executable, set `ZIPPER_7Z` to its path. To send ZIP archives to 7-Zip as well, pass `--zip-engine backend`.
-The installed backend decides which formats work and which extraction protections apply.
-No engine hands 7-Zip a format that Zipper refuses for licence reasons, such as CHM, DMG, MSI, FAT, NTFS or a disk image such as VHD, VMDK or QCOW. Each fails with `zipper::Refused` and writes nothing, as the [refused formats page](reference/refused.md) lists. 7-Zip always starts with `-t` naming one format. `--zip-engine backend` names it from the file's signature and refuses a file it cannot name, and every CAB, WIM, DMG and disk image.
-This default path is an external compatibility bridge.
-Native `--threads` does not configure the compatibility backend.
-Legacy listing uses the backend's listing operation and does not validate payloads.
+`extract`, `list`, and `test` read every format with Zipper's own readers, in process. Zipper never runs 7-Zip, and it needs no 7-Zip installed. Each reader has a page under [the reader references](reference/zip-reader.md), such as the [7z reader](reference/7z-reader.md). Encrypted ZIP and 7z archives decrypt in process.
+A format Zipper does not read fails with `zipper::Refused` and writes nothing. That covers the formats removed for licence reasons, such as CHM, DMG, MSI, FAT, NTFS and disk images such as VHD, VMDK or QCOW. It also covers a Mach-O universal file with the `B9 FA F1 0E` signature and SquashFS other than version 4.0 in little-endian order. The [refused formats page](reference/refused.md) lists each one.
+A reader that meets a feature it does not decode, such as a RAR volume or a 7z method, refuses the archive with an error that names the feature.
+Before 13 November 2026 Zipper handed some of these files to 7-Zip. The `--zip-engine` option, `zipper::Engine` and `zipper::compat` were removed then, as [M20](roadmap/m20-zipper-without-7-zip.md) records. Passing `--zip-engine` now fails with the standard error for an unknown option.
 
 ## Read ZIP archives in process
 
@@ -265,7 +258,7 @@ zipper --threads 4 extract files.zip -o restored
 zipper test files.zip
 ```
 
-If the archive uses another compression method, PKWARE strong encryption or more than one disk, the error says so. To read it with 7-Zip, pass `--zip-engine backend`. Zipper never makes that switch itself, because 7-Zip accepts some archives the in-process reader rejects as unsafe.
+If the archive uses another compression method, PKWARE strong encryption or more than one disk, the error says so.
 
 The `native` reader streams every entry, so its memory stays bounded by the worker count, not by file sizes. The [scoreboard](results.md) records its peak memory on each workload.
 The [ZIP reader reference](reference/zip-reader.md) lists supported features, limits and budgets.
@@ -293,7 +286,7 @@ Every other byte, such as Tab, Escape, Ctrl-S or Ctrl-Q, is part of the password
 
 During the prompt Zipper catches SIGALRM, SIGCONT, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM, SIGTSTP, SIGTTIN and SIGTTOU, unless they are ignored. SIGCONT, which follows any resume, including one after an uncatchable SIGSTOP, restores the terminal and shows a new hidden prompt, so it does not matter whether the shell put the hidden settings back. Rust programs ignore SIGPIPE, so it stays ignored. A caught signal restores the terminal first. A stop then stops Zipper, and when the job resumes Zipper hides the terminal again and shows a new prompt. A stray SIGTTIN or SIGTTOU that arrives while Zipper is already in the foreground only brings a new prompt. So does a stop that the system discards, as it does for a process group with no job-control parent. Any other caught signal ends Zipper by that signal, after it removes the temporary folder of `--stdout`. With the archive read from `-`, standard input is not a terminal, so Zipper never prompts. Zipper reads the terminal settings to restore only while its job is in the foreground. A job started in the background stops first, and reads them after `fg`, so it never takes a line editor's raw settings as the ones to restore. A signal the shell ignores, as `nohup` and `trap ''` arrange, stays ignored. That includes SIGINT and SIGQUIT, which `readpassphrase` takes over even when they are ignored. SIGKILL and SIGSTOP cannot be caught. SIGKILL leaves the terminal hidden, and `stty sane` recovers it.
 
-While `extract` runs, and while the 7-Zip backend runs `list` or `test`, Zipper also catches SIGINT, SIGTERM, SIGHUP and SIGQUIT, unless they are ignored. The signal stops the extraction through its cancel check, and the staging folder and any decrypted bytes in it are removed. With the 7-Zip backend, for `extract`, `list` and `test` alike, Zipper sends SIGTERM to 7-Zip, waits for it to exit, and sends SIGKILL if it still runs after 2 seconds. Only that one process is stopped, so a program that `ZIPPER_7Z` names and that starts helpers of its own must stop them itself. With `--stdout`, the signal also stops the copy to standard output, even while a full pipe blocks it, and the temporary folder is removed. A signal after the last byte was copied leaves the output whole, and Zipper exits with success. While Zipper copies an archive read from `-` into its spool file, the signal stops the copy and the spool is removed. Zipper then ends by the same signal. A signal while files move into the destination undoes the moves made so far, as a cancel does [from Rust](#extract-from-rust). If that undo fails, Zipper prints the error, which names each path left changed, before it ends by the signal. A signal that arrives after the last move does not undo it, and Zipper exits with success.
+While `extract` runs, Zipper also catches SIGINT, SIGTERM, SIGHUP and SIGQUIT, unless they are ignored. The signal stops the extraction through its cancel check, and the staging folder and any decrypted bytes in it are removed. With `--stdout`, the signal also stops the copy to standard output, even while a full pipe blocks it, and the temporary folder is removed. A signal after the last byte was copied leaves the output whole, and Zipper exits with success. While Zipper copies an archive read from `-` into its spool file, the signal stops the copy and the spool is removed. Zipper then ends by the same signal. A signal while files move into the destination undoes the moves made so far, as a cancel does [from Rust](#extract-from-rust). If that undo fails, Zipper prints the error, which names each path left changed, before it ends by the signal. A signal that arrives after the last move does not undo it, and Zipper exits with success.
 
 To give the password without a prompt, as a script must, pass `--password`. It takes any bytes on Unix, including ones that are not UTF-8. Other users on the machine can read it in the process list:
 
@@ -301,7 +294,7 @@ To give the password without a prompt, as a script must, pass `--password`. It t
 zipper --password 'correct horse' extract secret.zip -o restored
 ```
 
-When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so `extract` and `test` fail there when a selected entry is encrypted and no `--password` was given. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper decrypts ZIP and 7z archives. It refuses `--password` for archives it does not decrypt, such as tar, and the 7-Zip backend refuses it too. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
+When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so `extract` and `test` fail there when a selected entry is encrypted and no `--password` was given. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper decrypts ZIP and 7z archives. It refuses `--password` for archives it does not decrypt, such as tar. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
 
 ## Read tar archives in process
 
@@ -312,7 +305,7 @@ zipper extract source.tar.gz -o restored
 zipper test source.tar.zst
 ```
 
-The reader recognizes a tar by its first header, not by its file name. A compressed file that holds no tar goes to the [single compressed file reader](reference/stream-reader.md), which writes the one decompressed file. If the archive uses sparse files or names that are not UTF-8, the error says so, and `--zip-engine backend` reads it with 7-Zip. The [tar reader reference](reference/tar-reader.md) lists supported formats and checks.
+The reader recognizes a tar by its first header, not by its file name. A compressed file that holds no tar goes to the [single compressed file reader](reference/stream-reader.md), which writes the one decompressed file. If the archive uses sparse files or names that are not UTF-8, the error says so. The [tar reader reference](reference/tar-reader.md) lists supported formats and checks.
 
 ## Choose the thread count
 

@@ -1,6 +1,6 @@
 # In-process CAB reader
 
-Zipper extracts Microsoft Cabinet files and cabinet sets with its own Rust reader. The default engine and `--zip-engine native` send a file here when it starts with the CAB signature `MSCF` and four zero bytes. A file that starts with a ZIP, tar, cpio, `ar` or RPM signature goes to that reader first. `--zip-engine backend` hands every other CAB to 7-Zip, but refuses one whose first cabinet has an LZX folder before 7-Zip starts.
+Zipper extracts Microsoft Cabinet files and cabinet sets with its own Rust reader. Zipper sends a file here when it starts with the CAB signature `MSCF` and four zero bytes. A file that starts with a ZIP, tar, cpio, `ar` or RPM signature goes to that reader first.
 
 ## Supported cabinets
 

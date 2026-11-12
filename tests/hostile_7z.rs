@@ -1,6 +1,9 @@
 //! Crafted 7z archives that real writers never produce. Each must be refused
 //! with nothing left behind, or extract only inside the destination, and a
 //! well-formed one must extract the same bytes at every thread count.
+#[cfg(unix)]
+#[path = "common/fake_7zip.rs"]
+mod fake_7zip;
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
 use std::{fs, path::Path};
@@ -402,7 +405,7 @@ fn truncation_at_every_length_is_refused() {
 }
 
 #[test]
-fn unsafe_archives_stay_with_the_native_reader_under_auto() {
+fn unsafe_archives_go_to_the_7z_reader() {
     let root = tempfile::tempdir().unwrap();
     for (case, members) in [
         ("duplicate", vec![file("x", b"1"), file("x", b"2")]),
@@ -415,7 +418,7 @@ fn unsafe_archives_stay_with_the_native_reader_under_auto() {
         )
         .unwrap();
         assert_eq!(
-            zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
+            zipper::choose_reader(&archive).unwrap(),
             zipper::Reader::SevenZip,
             "{case}"
         );
@@ -601,8 +604,9 @@ fn a_damaged_lzma2_segment_fails_on_every_thread_count() {
     }
 }
 
+#[cfg(unix)]
 #[test]
-fn a_ppmd_model_beyond_the_decoder_budget_goes_to_7zip() {
+fn a_ppmd_model_beyond_the_decoder_budget_never_reaches_7zip() {
     let mut properties = vec![6];
     properties.extend_from_slice(&0xffff_ff00u32.to_le_bytes());
     let bytes = copy_folder_archive(
@@ -616,7 +620,10 @@ fn a_ppmd_model_beyond_the_decoder_budget_goes_to_7zip() {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("big-model.7z");
     fs::write(&archive, &bytes).unwrap();
-    assert!(zipper::native_7z::needs_backend(&archive).unwrap());
+    let fake = fake_7zip::Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
+    fake.assert_refused_by(&["extract", "test"], &archive, "decoder budget");
+    fake.zipper(&["list".as_ref(), archive.as_os_str()]);
+    assert_eq!(fake.started(), None);
 }
 
 #[test]

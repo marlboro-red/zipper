@@ -353,8 +353,7 @@ fn an_lzma_dictionary_past_the_decoder_memory_limit_is_refused_by_its_size() {
     );
     assert!(
         error.contains("4294967295-byte dictionary")
-            && error.contains("the largest dictionary Zipper accepts, 256 MiB")
-            && error.contains("--zip-engine backend"),
+            && error.contains("the largest dictionary Zipper accepts, 256 MiB"),
         "{error}"
     );
     let (_root, result) = extract(

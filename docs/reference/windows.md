@@ -24,28 +24,22 @@ Get-FileHash .\zipper-0.1.0-alpha.1-windows-x86_64.zip -Algorithm SHA256
 .\zipper.exe test files.zip
 .\zipper.exe extract files.zip --output .\unzipped
 .\zipper.exe extract source.tar.gz --output .\source
-.\zipper.exe --zip-engine native --threads 4 extract files.zip --output .\unzipped
+.\zipper.exe --threads 4 extract files.zip --output .\unzipped
 ```
 
 Extraction needs a new destination folder whose parent already exists, or
 `--overwrite` to merge into an existing one.
 
-The native ZIP, tar and 7z readers work without Rust or 7-Zip.
+Every reader works without Rust or 7-Zip.
 The build statically links the MSVC runtime.
 
-## Use 7-Zip for other formats
+## No 7-Zip needed
 
-Other formats, and the default ZIP compatibility reader, need 7-Zip. If 7-Zip is
-not on PATH, set `ZIPPER_7Z` to its location:
-
-```powershell
-$env:ZIPPER_7Z = 'C:\Program Files\7-Zip\7z.exe'
-.\zipper.exe extract archive.7z --output .\restored7z
-```
+The package holds `zipper.exe` and no 7-Zip. The current source tree never runs 7-Zip, so it needs none installed, and it ignores `ZIPPER_7Z`. A format it does not read is refused, as the [refused formats page](refused.md) lists. `scripts/package_windows.py` records `bundles_7zip` as false in `BUILD.json`.
 
 ## What this release supports
 
-This list describes the published early release. The current source tree no longer creates or reads `.zipper` archives or has the `native-fast` engine, and it reads tar and 7z in process.
+This list describes the published early release. The current source tree no longer creates or reads `.zipper` archives or has the `native-fast` engine. It reads tar and 7z in process, and it has no `--zip-engine` option.
 
 
 - Native archives preserve regular-file bytes and directories with UTF-8 paths.
@@ -61,7 +55,7 @@ and no Windows ARM64 build.
 
 ## Mark of the Web
 
-Windows marks a downloaded file with a `Zone.Identifier` stream, and warns before such a file runs. The current source tree copies the archive's stream onto every file it extracts, with every reader and the 7-Zip backend, as 7-Zip's `-snz` does. The mark is written in the hidden staging folder before anything is published, and each file keeps its modification time. Folders get no mark. A destination on a volume without named streams, such as FAT, gets no mark, as Windows itself drops it there. `tests/zone.rs` checks ZIP, tar, gzip tar and 7z. `--content-only` writes no mark, as [usage](../usage.md#extract-contents-only) describes.
+Windows marks a downloaded file with a `Zone.Identifier` stream, and warns before such a file runs. The current source tree copies the archive's stream onto every file it extracts, with every reader, as 7-Zip's `-snz` does. The mark is written in the hidden staging folder before anything is published, and each file keeps its modification time. Folders get no mark. A destination on a volume without named streams, such as FAT, gets no mark, as Windows itself drops it there. `tests/zone.rs` checks ZIP, tar, gzip tar and 7z. `--content-only` writes no mark, as [usage](../usage.md#extract-contents-only) describes.
 
 ## File attributes
 

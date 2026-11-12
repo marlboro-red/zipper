@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, sync_channel};
 
 pub(crate) const OUTPUT_PER_EXTRA_STREAM: u64 = 4096;
-const BACKEND_HINT: &str = "pass --zip-engine backend to read it with 7-Zip";
 pub(crate) const LONGEST_BLOCK: usize = 4 * 1024 * 1024;
 const USUAL_BLOCK_INPUT: u64 = 1024 * 1024;
 const READ_STEP: usize = 256 * 1024;
@@ -31,7 +30,7 @@ pub(crate) struct Bzip2Streams<R: BufRead> {
 
 fn too_many_streams() -> std::io::Error {
     std::io::Error::other(format!(
-        "bzip2 has more streams than {OUTPUT_PER_EXTRA_STREAM} decoded bytes each; {BACKEND_HINT}"
+        "bzip2 has more streams than {OUTPUT_PER_EXTRA_STREAM} decoded bytes each"
     ))
 }
 
@@ -207,7 +206,7 @@ fn refused(refusal: Refusal) -> std::io::Error {
 
 fn block_too_long() -> std::io::Error {
     std::io::Error::other(format!(
-        "bzip2 block does not end within {LONGEST_BLOCK} compressed bytes, so it is damaged or longer than any writer makes; {BACKEND_HINT}"
+        "bzip2 block does not end within {LONGEST_BLOCK} compressed bytes, so it is damaged or longer than any writer makes"
     ))
 }
 

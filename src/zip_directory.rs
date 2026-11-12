@@ -132,10 +132,7 @@ pub(crate) fn read_directory<R: Read + Seek>(
     disks: Option<&ZipDisks>,
 ) -> Result<Directory> {
     let length = file.seek(SeekFrom::End(0))?;
-    ensure!(
-        length >= END_RECORD as u64,
-        "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend"
-    );
+    ensure!(length >= END_RECORD as u64, "truncated ZIP");
     let tail_size = length.min((END_RECORD + LONGEST_COMMENT) as u64);
     file.seek(SeekFrom::Start(length - tail_size))?;
     let mut tail = vec![0; tail_size as usize];
@@ -522,9 +519,7 @@ fn end_record(tail: &[u8]) -> Field<usize> {
                 && tail[at..at + 4] == *END_SIGNATURE
                 && at + END_RECORD + comment(at) == tail.len()
         })
-        .ok_or(BadField(
-            "ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend",
-        ))?;
+        .ok_or(BadField("ZIP end record not found"))?;
     // EXTERNAL(zip crate): it accepts trailing data and may pick an end record inside a comment.
     field_check(
         !tail[end + 4..]
@@ -1275,8 +1270,8 @@ mod tests {
     }
 
     const REFUSALS_BEFORE_THE_ZIP_CRATE: [&str; 22] = [
-        "truncated ZIP; if the file is another format or a split volume, pass --zip-engine backend",
-        "ZIP end record not found; if the file is another format or a split volume, pass --zip-engine backend",
+        "truncated ZIP",
+        "ZIP end record not found",
         "ZIP has ambiguous end records",
         MULTI_DISK,
         "missing ZIP64 locator",

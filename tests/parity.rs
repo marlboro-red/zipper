@@ -1,16 +1,10 @@
 //! Every archive in `tests/data/parity`, extracted the way its row in
 //! `status.json` says Zipper handles it. A native archive must give the tree
-//! 7-Zip gave when the corpus was built. A backend archive must give the same
-//! tree through `--zip-engine backend` as a direct 7-Zip extraction on this
-//! machine, or fail with nothing published where that 7-Zip fails. A missing archive must be refused with nothing published. An
-//! archive on a dropped row is skipped. An archive on a refused row, or named
-//! in a row's `refused archives`, must be refused by every engine with an
-//! error saying Zipper does not read it, and nothing published.
-//!
-//! Without 7-Zip 26.05 or later the backend archives are skipped, unless
-//! `ZIPPER_PARITY_REQUIRE_7Z` is set, as `cargo xtask gate` sets it outside CI.
-#[path = "common/sevenzip.rs"]
-mod sevenzip;
+//! 7-Zip gave when the corpus was built. A missing archive must be refused
+//! with nothing published. An archive on a dropped row is skipped. An
+//! archive on a refused row, or named in a row's `refused archives`, must be
+//! refused with an error saying Zipper does not read it, and nothing
+//! published.
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -30,7 +24,6 @@ const STORED_SUFFIX: &str = ".stored.xz";
 #[derive(Debug, PartialEq)]
 enum Expect {
     Native,
-    Backend,
     Refused,
     Licence,
     Skipped,
@@ -52,7 +45,7 @@ fn expectation(status: &Value, archive: &str, row: &[Value]) -> Expect {
         _ if named("native archives") => Expect::Native,
         "refused" => Expect::Licence,
         "native" => Expect::Native,
-        "partial" | "backend" => Expect::Backend,
+        "partial" => Expect::Native,
         "missing" => Expect::Refused,
         _ => Expect::Skipped,
     }
@@ -144,22 +137,8 @@ fn unpack(record: &Value, into: &Path) -> PathBuf {
     into.join(files[0].strip_suffix(STORED_SUFFIX).unwrap_or(files[0]))
 }
 
-fn sevenzip() -> Option<PathBuf> {
-    std::env::var_os("ZIPPER_7Z")
-        .map(PathBuf::from)
-        .or_else(sevenzip::sevenzip)
-}
-
-fn zipper(
-    engine: Option<&str>,
-    password: Option<&str>,
-    archive: &Path,
-    output: &Path,
-) -> std::process::Output {
+fn zipper(password: Option<&str>, archive: &Path, output: &Path) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_zipper"));
-    if let Some(engine) = engine {
-        command.args(["--zip-engine", engine]);
-    }
     if let Some(password) = password {
         command.args(["--password", password]);
     }
@@ -185,7 +164,6 @@ fn leftovers(folder: &Path) -> Vec<String> {
 fn every_parity_archive_extracts_as_its_row_says() {
     let status = json("status.json");
     let corpus = json("archives.json");
-    let backend = sevenzip();
     let mut counts = BTreeMap::new();
     for (name, record) in corpus["archives"].as_object().unwrap() {
         let expect = expectation(&status, name, record["row"].as_array().unwrap());
@@ -194,10 +172,9 @@ fn every_parity_archive_extracts_as_its_row_says() {
         fs::create_dir(&inputs).unwrap();
         let archive = unpack(record, &inputs);
         let output = work.path().join("out");
-        match (&expect, &backend) {
-            (Expect::Native, _) => {
+        match expect {
+            Expect::Native => {
                 let run = zipper(
-                    Some("native"),
                     corpus["password"]
                         .as_str()
                         .filter(|_| name.ends_with(".zip") || name.ends_with(".7z")),
@@ -215,53 +192,21 @@ fn every_parity_archive_extracts_as_its_row_says() {
                     .collect();
                 assert_eq!(tree(&output), reference, "{name}");
             }
-            (Expect::Backend, Some(binary)) => {
-                let run = zipper(Some("backend"), None, &archive, &output);
-                let direct = work.path().join("direct");
-                let mut flag = std::ffi::OsString::from("-o");
-                flag.push(&direct);
-                let direct_run = Command::new(binary)
-                    .args(["x", "-y"])
-                    .arg(flag)
-                    .arg(&archive)
-                    .stdin(Stdio::null())
-                    .output()
-                    .unwrap();
-                if direct_run.status.success() {
-                    assert!(
-                        run.status.success(),
-                        "{name}: {}",
-                        String::from_utf8_lossy(&run.stderr)
-                    );
-                    assert_eq!(tree(&output), tree(&direct), "{name}");
-                } else {
-                    assert!(
-                        !run.status.success(),
-                        "{name}: 7-Zip failed and Zipper did not"
-                    );
-                    assert!(!output.exists(), "{name}: published after 7-Zip failed");
-                }
-            }
-            (Expect::Backend, None) | (Expect::Skipped, _) => {
+            Expect::Skipped => {
                 *counts.entry("skipped").or_insert(0) += 1;
                 continue;
             }
-            (Expect::Refused, _) => {
-                let run = zipper(None, None, &archive, &output);
+            Expect::Refused => {
+                let run = zipper(None, &archive, &output);
                 assert!(!run.status.success(), "{name} was extracted");
                 assert_eq!(leftovers(work.path()), Vec::<String>::new(), "{name}");
             }
-            (Expect::Licence, _) => {
-                for engine in [None, Some("native"), Some("backend")] {
-                    let run = zipper(engine, None, &archive, &output);
-                    let stderr = String::from_utf8_lossy(&run.stderr);
-                    assert!(!run.status.success(), "{name} was extracted by {engine:?}");
-                    assert!(
-                        stderr.contains("Zipper does not read"),
-                        "{name} with {engine:?}: {stderr}"
-                    );
-                    assert_eq!(leftovers(work.path()), Vec::<String>::new(), "{name}");
-                }
+            Expect::Licence => {
+                let run = zipper(None, &archive, &output);
+                let stderr = String::from_utf8_lossy(&run.stderr);
+                assert!(!run.status.success(), "{name} was extracted");
+                assert!(stderr.contains("Zipper does not read"), "{name}: {stderr}");
+                assert_eq!(leftovers(work.path()), Vec::<String>::new(), "{name}");
             }
         }
         *counts

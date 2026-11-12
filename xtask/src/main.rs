@@ -876,7 +876,6 @@ fn round_trip() -> Result<()> {
         Command::new(&binary)
             .current_dir(dir)
             .args(args)
-            .env("ZIPPER_7Z", dir.join("no-backend"))
             .output()
             .with_context(|| format!("launch zipper {}", args.join(" ")))
     };
@@ -912,32 +911,16 @@ fn round_trip() -> Result<()> {
             "selected extraction wrote files outside tree/many"
         );
     }
-    succeed(&["--zip-engine", "native", "test", "a.zip"])?;
+    succeed(&["test", "a.zip"])?;
     for threads in ["1", "4"] {
         let out = format!("native-zip-t{threads}");
-        succeed(&[
-            "--zip-engine",
-            "native",
-            "--threads",
-            threads,
-            "extract",
-            "a.zip",
-            "-o",
-            &out,
-        ])?;
+        succeed(&["--threads", threads, "extract", "a.zip", "-o", &out])?;
         same_tree(&tree, &dir.join(&out).join("tree"))?;
     }
 
     let bytes = fs::read(dir.join("a.zip"))?;
     fs::write(dir.join("truncated.zip"), &bytes[..bytes.len() / 2])?;
-    let output = run(&[
-        "--zip-engine",
-        "native",
-        "extract",
-        "truncated.zip",
-        "-o",
-        "truncated-out",
-    ])?;
+    let output = run(&["extract", "truncated.zip", "-o", "truncated-out"])?;
     ensure!(!output.status.success(), "truncated a.zip extracted");
     ensure!(
         !dir.join("truncated-out").exists(),

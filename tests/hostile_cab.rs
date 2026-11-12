@@ -783,7 +783,7 @@ fn read_only_attributes_times_and_options_apply() {
 }
 
 #[test]
-fn the_default_engine_reads_cabs_and_cabinet_sets_in_process() {
+fn cabs_and_cabinet_sets_read_in_process() {
     let root = tempfile::tempdir().unwrap();
     let write = |name: &str, bytes: Vec<u8>| {
         let path = root.path().join(name);
@@ -792,30 +792,19 @@ fn the_default_engine_reads_cabs_and_cabinet_sets_in_process() {
     };
     for (label, method) in methods() {
         let path = write(&format!("{label}.cab"), small(&method).build());
-        for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
-            assert_eq!(
-                zipper::choose_reader(engine, &path).unwrap(),
-                zipper::Reader::Cab,
-                "{label}"
-            );
-        }
+        assert_eq!(
+            zipper::choose_reader(&path).unwrap(),
+            zipper::Reader::Cab,
+            "{label}"
+        );
     }
     let mut set = small(&Method::Stored);
     set.next = Some(("two.cab".into(), "disk 2".into()));
     let path = write("set.cab", set.build());
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
-        zipper::Reader::Cab
-    );
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Native, &path).unwrap(),
-        zipper::Reader::Cab
-    );
+    assert_eq!(zipper::choose_reader(&path).unwrap(), zipper::Reader::Cab);
+    assert_eq!(zipper::choose_reader(&path).unwrap(), zipper::Reader::Cab);
     let broken = write("broken.cab", b"MSCF\0\0\0\0garbage".to_vec());
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &broken).unwrap(),
-        zipper::Reader::Cab
-    );
+    assert_eq!(zipper::choose_reader(&broken).unwrap(), zipper::Reader::Cab);
 }
 
 #[test]
@@ -976,7 +965,7 @@ fn cabinet_sets_whose_names_leave_their_folder_are_refused() {
             let path = root.path().join("set.cab");
             fs::write(&path, &bytes).unwrap();
             assert_eq!(
-                zipper::choose_reader(zipper::Engine::Auto, &path).unwrap(),
+                zipper::choose_reader(&path).unwrap(),
                 zipper::Reader::Cab,
                 "{name:?} stays with the native reader"
             );

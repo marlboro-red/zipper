@@ -40,10 +40,7 @@ fn each_format_goes_to_its_reader_and_merges() {
     ] {
         let archive = root.path().join(name);
         write(&archive);
-        assert_eq!(
-            zipper::choose_reader(Default::default(), &archive).unwrap(),
-            reader
-        );
+        assert_eq!(zipper::choose_reader(&archive).unwrap(), reader);
         let destination = root.path().join(format!("{name}.out"));
         fs::create_dir_all(destination.join("keep")).unwrap();
         fs::write(destination.join("keep/a"), "old").unwrap();
@@ -123,10 +120,7 @@ fn the_name_does_not_pick_the_reader() {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("really-a-zip.tar.gz");
     zip(&archive);
-    assert_eq!(
-        zipper::choose_reader(Default::default(), &archive).unwrap(),
-        Reader::Zip
-    );
+    assert_eq!(zipper::choose_reader(&archive).unwrap(), Reader::Zip);
     let destination = root.path().join("out");
     extract_archive(&archive, &destination, ExtractOptions::default()).unwrap();
     assert!(destination.join("keep/a").exists());
@@ -136,10 +130,7 @@ fn the_name_does_not_pick_the_reader() {
 fn seven_zip_goes_to_the_native_reader_with_every_option() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/7z-corpus");
     let archive = corpus.join("7zip-nonsolid-short.7z");
-    assert_eq!(
-        zipper::choose_reader(Default::default(), &archive).unwrap(),
-        Reader::SevenZip
-    );
+    assert_eq!(zipper::choose_reader(&archive).unwrap(), Reader::SevenZip);
     let root = tempfile::tempdir().unwrap();
     let destination = root.path().join("out");
     fs::create_dir_all(destination.join("src/text")).unwrap();

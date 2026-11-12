@@ -313,13 +313,11 @@ fn a_set_spanning_every_method_extracts_and_a_selected_spanning_file_extracts_al
             source.tree,
             "{label}"
         );
-        for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
-            assert_eq!(
-                zipper::choose_reader(engine, &first).unwrap(),
-                zipper::Reader::Cab,
-                "{label}"
-            );
-        }
+        assert_eq!(
+            zipper::choose_reader(&first).unwrap(),
+            zipper::Reader::Cab,
+            "{label}"
+        );
         let selected = ["folder1/file1.bin".to_owned()];
         let out = root.path().join("selected");
         read_archive(

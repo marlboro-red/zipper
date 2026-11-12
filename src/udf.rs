@@ -4,7 +4,7 @@ use crate::{
         Catalog, Child, DIRECTORY_MODE, Extent, Extents, FILE_MODE, Folder, Image, Kind, NO_PARENT,
         Node, SECTOR, SECTOR_BYTES, Walk, civil_time, walk_folders,
     },
-    tree::{BACKEND_HINT, MAX_ENTRIES},
+    tree::MAX_ENTRIES,
 };
 use anyhow::anyhow;
 use std::time::SystemTime;
@@ -685,9 +685,7 @@ fn open(image: &mut Image) -> Opening<Catalog> {
     };
     let Some((length, location)) = at_sector(image, SECTOR)? else {
         if at_sector(image, SMALL_SECTOR)?.is_some() {
-            return refuse(format!(
-                "UDF with 512-byte sectors is not supported; {BACKEND_HINT}"
-            ));
+            return refuse("UDF with 512-byte sectors is not supported".to_string());
         }
         return Err(Failure::NotUdf);
     };
@@ -701,9 +699,7 @@ fn open(image: &mut Image) -> Opening<Catalog> {
         }
         [lvd] => lvd,
         _ => {
-            return refuse(format!(
-                "UDF image has several logical volumes; {BACKEND_HINT}"
-            ));
+            return refuse("UDF image has several logical volumes".to_string());
         }
     };
     if u64::from(u32_at(lvd, 212)) != SECTOR {

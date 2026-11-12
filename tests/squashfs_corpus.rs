@@ -23,7 +23,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use zipper::{Engine, ExtractOptions, Reader};
+use zipper::{ExtractOptions, Reader};
 
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/squashfs-corpus");
 const COMPRESSORS: [&str; 6] = ["gzip", "lzma", "lzo", "xz", "lz4", "zstd"];
@@ -161,7 +161,7 @@ fn every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts() {
 }
 
 #[test]
-fn the_default_engine_reads_squashfs_4_and_cramfs_in_process() {
+fn squashfs_4_and_cramfs_read_in_process() {
     for image in corpus_images() {
         let expected = if shape(&image).times {
             Reader::Squashfs
@@ -169,7 +169,7 @@ fn the_default_engine_reads_squashfs_4_and_cramfs_in_process() {
             Reader::Cramfs
         };
         assert_eq!(
-            zipper::choose_reader(Engine::Auto, &image).unwrap(),
+            zipper::choose_reader(&image).unwrap(),
             expected,
             "{}",
             image.display()

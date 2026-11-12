@@ -484,16 +484,14 @@ fn every_compressor_extracts_the_tree_7zip_extracts_from_its_cpio() {
 }
 
 #[test]
-fn the_default_engine_routes_packages_to_this_reader() {
+fn packages_go_to_this_reader() {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("package.rpm");
     fs::write(&archive, rpm("xz", &sample())).unwrap();
-    for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
-        assert_eq!(
-            zipper::choose_reader(engine, &archive).unwrap(),
-            zipper::Reader::Rpm
-        );
-    }
+    assert_eq!(
+        zipper::choose_reader(&archive).unwrap(),
+        zipper::Reader::Rpm
+    );
     let destination = root.path().join("out");
     zipper::extract_archive(&archive, &destination, zipper::ExtractOptions::default()).unwrap();
     assert_eq!(tree(&destination), sample_tree());

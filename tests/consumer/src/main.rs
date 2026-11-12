@@ -77,10 +77,7 @@ fn check(archive: &Path, manifest_path: &Path, destination: &Path) -> Result<()>
         .context("archive has no name")?;
     let wanted = manifest(manifest_path, name)?;
     let into = destination.join(name);
-    let in_process = zipper::ExtractOptions {
-        engine: zipper::Engine::Native,
-        ..zipper::ExtractOptions::default()
-    };
+    let in_process = zipper::ExtractOptions::default();
     zipper::extract_archive(archive, &into, in_process)
         .with_context(|| archive.display().to_string())?;
     let mut found = BTreeMap::new();

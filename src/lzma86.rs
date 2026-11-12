@@ -162,7 +162,7 @@ pub(crate) fn ensure_window_fits(header: &Header) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::OutOfMemory,
         format!(
-            "the lzma86 stream needs a {}-byte window, more than the {} MiB Zipper accepts; pass --zip-engine backend to read it with 7-Zip",
+            "the lzma86 stream needs a {}-byte window, more than the {} MiB Zipper accepts",
             window(header),
             LARGEST_WINDOW >> 20
         ),
@@ -228,7 +228,7 @@ impl<R: Read> Lzma86Streams<R> {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
-                    "lzma86 stream {} brings fewer than {SMALLEST_LATER_STREAM} bytes; pass --zip-engine backend to read a file of many tiny streams",
+                    "lzma86 stream {} brings fewer than {SMALLEST_LATER_STREAM} bytes",
                     self.streams
                 ),
             ));

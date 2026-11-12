@@ -16,9 +16,6 @@ struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers, and a solid 7z up to 4 writers beside its decoders).
     #[arg(long, global = true)]
     threads: Option<usize>,
-    /// Reader for ZIP, tar and other foreign archives. Native readers restore files, directories, modes, times and safe links.
-    #[arg(long, global = true, value_enum, default_value_t = ZipEngine::Auto)]
-    zip_engine: ZipEngine,
     /// Password for encrypted ZIP entries and 7z archives in extract and test, and for a 7z header in list.
     /// Other users can see it in the process list. Without it, Zipper asks on Unix when a selected
     /// entry or a 7z header is encrypted and standard input is a terminal, and fails otherwise.
@@ -31,15 +28,6 @@ struct Cli {
     password: Option<std::ffi::OsString>,
     #[command(subcommand)]
     command: Command,
-}
-#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum ZipEngine {
-    /// Zipper's own reader for every format and variant it reads, and 7-Zip for the other formats whose signature it recognizes. Every engine refuses formats such as CHM, DMG, FAT, NTFS, HFS+, APFS, compound files such as MSI, Base64, and disk images such as VHD, VHDX, QCOW, VDI, VMDK and MBR or GPT disks, and CAB and WIM data compressed with LZX or LZMS, and never hands them to 7-Zip, which always starts with its format named.
-    Auto,
-    /// 7-Zip for every archive whose format Zipper names by its signature, such as 7z, RAR, ZIP, gzip, tar or ISO; any other file, and every CAB, WIM, DMG or disk image, is refused.
-    Backend,
-    /// Zipper's own reader for every archive, never 7-Zip; a format it does not read fails.
-    Native,
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ExistingArg {
@@ -116,8 +104,8 @@ enum Command {
         #[arg(long)]
         alternate_streams: bool,
         /// Refuse archives whose declared output exceeds this many bytes. By
-        /// default, the output of every archive read in process, including a
-        /// single compressed file, must fit in free space.
+        /// default, the output of every archive, including a single
+        /// compressed file, must fit in free space.
         #[arg(long)]
         max_extracted_bytes: Option<u64>,
     },
@@ -134,16 +122,6 @@ enum Command {
         summary: bool,
     },
 }
-impl From<ZipEngine> for zipper::Engine {
-    fn from(engine: ZipEngine) -> Self {
-        match engine {
-            ZipEngine::Auto => zipper::Engine::Auto,
-            ZipEngine::Backend => zipper::Engine::Backend,
-            ZipEngine::Native => zipper::Engine::Native,
-        }
-    }
-}
-
 fn with_password<T>(
     given: Option<&[u8]>,
     mut run: impl FnMut(Option<&[u8]>) -> Result<T>,
@@ -906,7 +884,6 @@ fn run() -> Result<()> {
                         max_output_bytes: max_extracted_bytes,
                         alternate_streams,
                         threads: cli.threads,
-                        engine: cli.zip_engine.into(),
                         control: zipper::Control {
                             progress: None,
                             cancel: cancel_on_signal(),
@@ -944,7 +921,7 @@ fn run() -> Result<()> {
                 }
             };
             zipper::read_volumes(&archive, || {
-                match zipper::choose_reader(cli.zip_engine.into(), &archive)? {
+                match zipper::choose_reader(&archive)? {
                     Reader::SevenZip => print(with_password(password, |password| {
                         zipper::native_7z::list_with_password(&archive, password)
                     })?),
@@ -1057,17 +1034,6 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_ext::ReadOptions::default(),
                     )?),
-                    Reader::Backend { format } => {
-                        let _catching = catch_ending_signals();
-                        zipper::compat::run_until_cancelled(
-                            "l",
-                            &archive,
-                            None,
-                            format.as_deref(),
-                            zipper::Existing::Refuse,
-                            cancel_on_signal(),
-                        )?
-                    }
                 }
                 Ok::<_, anyhow::Error>(())
             })?;
@@ -1076,7 +1042,7 @@ fn run() -> Result<()> {
             let report =
                 |entries: Vec<zipper::Entry>| println!("Verified {} entries", entries.len());
             zipper::read_volumes(&archive, || {
-                let reader = zipper::choose_reader(cli.zip_engine.into(), &archive)?;
+                let reader = zipper::choose_reader(&archive)?;
                 anyhow::ensure!(
                     password.is_none() || matches!(reader, Reader::Zip | Reader::SevenZip),
                     "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
@@ -1211,17 +1177,6 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_ext::ReadOptions::default(),
                     )?),
-                    Reader::Backend { format } => {
-                        let _catching = catch_ending_signals();
-                        zipper::compat::run_until_cancelled(
-                            "t",
-                            &archive,
-                            None,
-                            format.as_deref(),
-                            zipper::Existing::Refuse,
-                            cancel_on_signal(),
-                        )?
-                    }
                 }
                 Ok::<_, anyhow::Error>(())
             })?;

@@ -494,7 +494,7 @@ fn a_debian_package_extracts_its_data_tar_with_every_option() {
     let (_root, destination, result) =
         extract_with(&deb("data.tar.lzma", &lzma), ReadOptions::default());
     let error = format!("{:#}", result.unwrap_err());
-    assert!(error.contains("--zip-engine backend"), "{error}");
+    assert!(error.contains("holds no tar Zipper reads"), "{error}");
     assert!(!destination.exists());
 }
 
@@ -808,7 +808,7 @@ fn selection_strip_metadata_existing_and_progress_options_apply() {
 }
 
 #[test]
-fn the_default_engine_routes_ar_and_packages_to_this_reader() {
+fn ar_and_packages_go_to_this_reader() {
     let root = tempfile::tempdir().unwrap();
     for (name, bytes) in [
         ("lib.a", gnu_library()),
@@ -818,7 +818,7 @@ fn the_default_engine_routes_ar_and_packages_to_this_reader() {
         let archive = root.path().join(name);
         fs::write(&archive, bytes).unwrap();
         assert_eq!(
-            zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
+            zipper::choose_reader(&archive).unwrap(),
             zipper::Reader::Ar,
             "{name}"
         );

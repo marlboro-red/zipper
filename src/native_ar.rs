@@ -2,7 +2,7 @@
 //! forms, and of the files a Debian package installs. See
 //! `docs/reference/ar-reader.md` for what it accepts and restores.
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT, MAX_ENTRIES, MAX_NAME};
+use crate::tree::{self, MAX_ENTRIES, MAX_NAME};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check, progress::Tracker};
 use anyhow::{Context, Result, ensure};
@@ -237,7 +237,7 @@ impl Members {
                 ShortName::Plain(name) | ShortName::Slashed(name) => name.to_vec(),
             };
             let name = String::from_utf8(name)
-                .map_err(|_| anyhow::anyhow!("ar member name is not UTF-8; {BACKEND_HINT}"))?;
+                .map_err(|_| anyhow::anyhow!("ar member name is not UTF-8"))?;
             if BSD_SYMBOL_TABLES.contains(&name.as_str()) {
                 continue;
             }
@@ -302,7 +302,7 @@ fn extract_debian_data(
     let data = crate::native_tar::Part::new(path, member.data, member.size);
     ensure!(
         crate::native_tar::sniff_part(&data)?.is_some(),
-        "Debian package member {:?} holds no tar Zipper reads; {BACKEND_HINT}",
+        "Debian package member {:?} holds no tar Zipper reads",
         member.name
     );
     crate::native_tar::read_part(

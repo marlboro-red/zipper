@@ -14,7 +14,7 @@ use std::{
     process::{Command, Stdio},
 };
 use zipper::{
-    Engine, Existing, ExtractOptions,
+    Existing, ExtractOptions,
     native_7z::{PasswordNeeded, ReadOptions},
 };
 
@@ -231,7 +231,6 @@ fn extract(
         archive,
         destination,
         ExtractOptions {
-            engine: Engine::Auto,
             password: password.map(str::as_bytes),
             existing,
             paths,
@@ -313,7 +312,7 @@ fn every_fixture_extracts_to_the_tree_7zip_gave_in_process() {
         }
         assert!(
             matches!(
-                zipper::choose_reader(Engine::Auto, &archive).unwrap(),
+                zipper::choose_reader(&archive).unwrap(),
                 zipper::Reader::SevenZip
             ),
             "{} goes to 7-Zip",

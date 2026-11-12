@@ -442,10 +442,6 @@ impl Read for Extents<'_> {
     }
 }
 
-fn plain(name: &str) -> bool {
-    crate::safe_path(name).is_ok()
-}
-
 /// Returns whether the file holds an LP geometry, the record a logical
 /// partition image starts with after its 4 KiB of reserved bytes.
 pub fn sniff(path: &Path) -> Result<bool> {
@@ -454,13 +450,6 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(file.len()? >= GEOMETRY_AT + GEOMETRY as u64
         && read_exact_at(&file, GEOMETRY_AT + 4, &mut magic, GEOMETRY_AT).is_ok()
         && u32::from_le_bytes(magic) == GEOMETRY_MAGIC)
-}
-
-/// Returns whether the default engine should send the image to 7-Zip: one
-/// whose partition names are not plain relative paths, which 7-Zip rewrites.
-pub fn needs_backend(path: &Path) -> Result<bool> {
-    let file = crate::volumes::open(path)?;
-    Ok(open(&file).is_ok_and(|image| image.partitions.iter().any(|(name, _)| !plain(name))))
 }
 
 /// Verify and optionally extract an LP image into a new directory, in the

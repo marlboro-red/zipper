@@ -604,9 +604,7 @@ const ENCRYPTION_FEATURE: &str = "zip-encryption";
 
 fn ensure_built(method: u16, encryption: Option<Encryption>) -> Result<()> {
     let Some(decoder) = METHOD_FEATURES.iter().find(|known| known.method == method) else {
-        anyhow::bail!(
-            "ZIP compression method is not supported; pass --zip-engine backend to read it with 7-Zip"
-        );
+        anyhow::bail!("ZIP compression method is not supported");
     };
     if !decoder.built {
         anyhow::bail!(crate::NotBuilt(decoder.feature.to_owned()));
@@ -629,7 +627,7 @@ fn encryption(file: &CentralEntry, aes: AesExtra) -> Result<(Option<Encryption>,
     }
     ensure!(
         file.flags & STRONG_ENCRYPTION == 0,
-        "PKWARE strong encryption is not supported; pass --zip-engine backend to read it with 7-Zip"
+        "PKWARE strong encryption is not supported"
     );
     let (encryption, method) = if file.method == crate::zip_crypto::AES_METHOD {
         match aes {

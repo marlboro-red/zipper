@@ -1,6 +1,6 @@
 # In-process ISO and UDF reader
 
-Zipper extracts disc images with its own Rust reader, in the tree `7zz x` writes. It reads ISO 9660 with Joliet, Rock Ridge and El Torito boot images, and UDF 1.02 to 2.60 with metadata partitions. The default engine sends a file here when sector 16 holds a well-formed volume descriptor, or a UDF anchor at sector 256 of 2048 or 512 bytes. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB, compound file or 7z signature goes to that reader first. `--zip-engine backend` hands every image to 7-Zip, without `-tiso`, because that switch makes 7-Zip skip a disc's UDF tree.
+Zipper extracts disc images with its own Rust reader, in the tree `7zz x` writes. It reads ISO 9660 with Joliet, Rock Ridge and El Torito boot images, and UDF 1.02 to 2.60 with metadata partitions. Zipper sends a file here when sector 16 holds a well-formed volume descriptor, or a UDF anchor at sector 256 of 2048 or 512 bytes. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB, compound file or 7z signature goes to that reader first.
 
 ## Which tree a disc gives
 
@@ -41,7 +41,7 @@ The reader reads the whole directory tree before it writes anything, and publish
 - An extent, a folder, a continuation area or a boot image that lies past the end of the image, or a UDF extent outside its partition.
 - A record or descriptor whose fields disagree, such as a both-endian field whose halves differ. A record that crosses its sector or runs past its folder, nonzero bytes after a sector's last record, and a multi-extent file without its last extent are refused too.
 - Interleaved files and records with extended attribute records. 7-Zip reads an interleaved file as if it were contiguous.
-- Rock Ridge fields 7-Zip reads differently than they mean. That is a name or link that continues into a second entry, a repeated `NM`, `PX`, `SL` or `CE`, a relocated folder, or an `NM`, `PX` or `SL` entry kept in a continuation area. The error suggests `--zip-engine backend`. Continuation areas are followed to check them, at most 32 deep, and a loop among them is refused.
+- Rock Ridge fields 7-Zip reads differently than they mean. That is a name or link that continues into a second entry, a repeated `NM`, `PX`, `SL` or `CE`, a relocated folder, or an `NM`, `PX` or `SL` entry kept in a continuation area. Continuation areas are followed to check them, at most 32 deep, and a loop among them is refused.
 - A `PX` mode of another file type than its record, such as a device, or a link target longer than 4,096 bytes.
 - A damaged El Torito catalog, entry or extension chain. 7-Zip reports such a catalog and extracts no boot image from it.
 - A UDF file whose extents do not hold its size or are not recorded, which 7-Zip fails to extract. A reserved allocation descriptor type.
@@ -49,7 +49,7 @@ The reader reads the whole directory tree before it writes anything, and publish
 - Names with `/`, `\`, `:` or NUL, and names that are empty, `.` or `..` once a version and dot are dropped. Invalid UTF-8 outside Joliet and UDF, an unpaired surrogate, and a UDF name of unknown compression. Two entries of one name in one folder are refused, after the rules above, including a root folder named `[BOOT]` beside boot images.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
-These images are refused with an error that suggests `--zip-engine backend`:
+These images are refused with an error that names the reason.
 
 - UDF with 512-byte sectors, and UDF with several logical volumes, which 7-Zip names by volume.
 - ISO 9660 with blocks other than 2,048 bytes.
@@ -76,7 +76,7 @@ The reader keeps one node for each entry, with its name, mode, time and extents,
 - 7-Zip extracts what it can from a damaged or truncated image and reports an error. Zipper refuses the image.
 - 7-Zip refuses to create a link whose target holds `..`, even one that stays inside, and writes an empty file. Zipper creates the link.
 - 7-Zip extracts a UDF file reached from two folders under both. Zipper does too, but refuses a folder reached from two folders.
-- 7-Zip extracts a disc whose Rock Ridge fields it misreads, under names and modes that differ from what the fields say. Zipper refuses it and suggests the backend.
+- 7-Zip extracts a disc whose Rock Ridge fields it misreads, under names and modes that differ from what the fields say. Zipper refuses it.
 - Zipper refuses names with `\` or `:`, and two entries of one name in one folder.
 
 ## Extraction options

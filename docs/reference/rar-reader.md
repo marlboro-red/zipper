@@ -1,6 +1,6 @@
 # In-process RAR reader
 
-Zipper extracts RAR 5 archives and RAR 4 archives that are not solid with its own Rust reader and decoders. The default engine and `--zip-engine native` send a file here when it starts with the RAR 5 signature `Rar!\x1A\x07\x01\x00` or the RAR 4 signature `Rar!\x1A\x07\x00`. Under the default engine, an archive whose first headers Zipper does not read goes to 7-Zip. That covers a volume of a set, an archive with encrypted headers, a RAR 4 solid archive and a damaged first header. `--zip-engine backend` hands every RAR to 7-Zip.
+Zipper extracts RAR 5 archives and RAR 4 archives that are not solid with its own Rust reader and decoders. Zipper sends a file here when it starts with the RAR 5 signature `Rar!\x1A\x07\x01\x00` or the RAR 4 signature `Rar!\x1A\x07\x00`. Every RAR goes to the reader. A volume of a set, an archive with encrypted headers, a RAR 4 solid archive and a damaged first header are refused by the reader, with the reason in the error.
 
 ## Sources
 
@@ -27,10 +27,10 @@ A RAR 5 archive is the signature, a main header, a header for each file or servi
 
 The reader refuses these archives, and publishes nothing:
 
-- An archive whose headers are encrypted, and an entry with an encryption record. The error suggests `--zip-engine backend`.
-- A volume of a set, and an entry that continues into or from another volume. The error suggests `--zip-engine backend`.
+- An archive whose headers are encrypted, and an entry with an encryption record.
+- A volume of a set, and an entry that continues into or from another volume.
 - A self-extracting archive. The executable reader sees the PE file and refuses the data after it, as it does for every archive after an executable.
-- Junctions and file copies. The error suggests `--zip-engine backend`.
+- Junctions and file copies.
 - RAR 7 compression, a file of unknown size, and a compression method or host OS RAR 5 does not define.
 
 ## RAR 4 archives
@@ -45,13 +45,13 @@ A RAR 4 archive is the signature, a main header, then blocks for files, service 
 
 The reader refuses these RAR 4 archives, and publishes nothing:
 
-- A solid archive, or a solid entry. libarchive does not read them either, so nothing here could check the result. The error suggests `--zip-engine backend`.
-- An encrypted archive or entry, and a volume of a set. The error suggests `--zip-engine backend`.
-- An entry compressed with the RAR 1.5 or RAR 2.0 algorithms. The error suggests `--zip-engine backend`.
+- A solid archive, or a solid entry. libarchive does not read them either, so nothing here could check the result.
+- An encrypted archive or entry, and a volume of a set.
+- An entry compressed with the RAR 1.5 or RAR 2.0 algorithms.
 - A PPMd block that continues the model before it, and a PPMd block that holds a filter. The `ppmd-rust` decoder has no way to restart its range coder on a kept model, so `test_read_format_rar_ppmd_lzss_conversion.rar` is refused. A debugging run that let it continue matched bsdtar's output on its first PPMd block of 32 KiB and the 40 MB of LZ data after it, by CRC-32.
 - A filter program that is not one of the standard filters, since Zipper runs no RAR virtual machine.
 
-A RAR 4 name is UTF-8, or RAR's Unicode encoding when its flag is set and the name holds a zero byte. A name that is not UTF-8, in a code page, is refused, with a hint to use `--zip-engine backend`. RAR 4 writes `\` between folders on every host, so the reader reads it as a separator.
+A RAR 4 name is UTF-8, or RAR's Unicode encoding when its flag is set and the name holds a zero byte. A name that is not UTF-8, in a code page, is refused. RAR 4 writes `\` between folders on every host, so the reader reads it as a separator.
 
 ## Names
 
@@ -92,7 +92,7 @@ The reader checks every entry before it publishes anything, and it publishes not
 | PPMd models in one file | 1 GiB of models, plus 64 bytes of model for each byte decoded, since each new model is filled with zeros |
 | Decoder memory | the window, grown as the stream writes it up to the dictionary, one block of up to 16 MiB and one filter of up to 4 MiB. A RAR 4 window and its largest PPMd model fit the same 2 GiB budget |
 
-Each RAR 5 file's dictionary is charged against a 2 GiB decoder budget, the one the 7z reader uses, before any window is allocated. A file that declares more is refused, with a hint to use `--zip-engine backend`. An adversarial review built a 768 KiB archive with a 4 GiB dictionary and 1 GiB of zeros, which raised `zipper test` to 1.08 GB of resident memory before the budget. `tests/hostile_rar.rs` builds a 90 KB file that declares a 4 GiB dictionary and decodes to 328 MB. Before the budget `zipper test` extracted it at 541 MB of resident memory, and now the test requires a refusal that raises peak memory by less than 64 MiB. The window grows only as data arrives, so a small file with a large dictionary allocates no more than about twice its size. Growth uses a fallible allocation, so a window the machine cannot hold is an error, not an abort. The reader keeps only the tree that the cpio reader also uses, with each name. On a RAR 5 archive of 300,000 empty stored files whose names total 60 MB, `zipper test` peaked at 189 MB of resident memory, and `7zz t`, which read every RAR before this reader, at 133 MB. On the same files in RAR 4 they peaked at 173 MB and 133 MB. `--threads` has no effect on RAR.
+Each RAR 5 file's dictionary is charged against a 2 GiB decoder budget, the one the 7z reader uses, before any window is allocated. A file that declares more is refused. An adversarial review built a 768 KiB archive with a 4 GiB dictionary and 1 GiB of zeros, which raised `zipper test` to 1.08 GB of resident memory before the budget. `tests/hostile_rar.rs` builds a 90 KB file that declares a 4 GiB dictionary and decodes to 328 MB. Before the budget `zipper test` extracted it at 541 MB of resident memory, and now the test requires a refusal that raises peak memory by less than 64 MiB. The window grows only as data arrives, so a small file with a large dictionary allocates no more than about twice its size. Growth uses a fallible allocation, so a window the machine cannot hold is an error, not an abort. The reader keeps only the tree that the cpio reader also uses, with each name. On a RAR 5 archive of 300,000 empty stored files whose names total 60 MB, `zipper test` peaked at 189 MB of resident memory, and `7zz t`, which read every RAR before this reader, at 133 MB. On the same files in RAR 4 they peaked at 173 MB and 133 MB. `--threads` has no effect on RAR.
 
 ## Differences from 7-Zip
 

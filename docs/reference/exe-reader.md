@@ -1,10 +1,10 @@
 # In-process executable reader
 
-Zipper extracts executables and object files with its own Rust reader, in the tree `7zz x` writes. It reads PE images, COFF objects, UEFI TE images, ELF files of both classes and byte orders, Mach-O files and Mach-O universal (`Mub`) files. The default engine and `--zip-engine native` send a file here when it starts with `MZ`, `VZ`, `\x7FELF`, a Mach-O magic or `CA FE BA BE 00 00 00` and parses whole with no data after it. A COFF object has no signature, so it is tried last, after every other format. `--zip-engine backend` hands every file to 7-Zip.
+Zipper extracts executables and object files with its own Rust reader, in the tree `7zz x` writes. It reads PE images, COFF objects, UEFI TE images, ELF files of both classes and byte orders, Mach-O files and Mach-O universal (`Mub`) files. Zipper sends a file here when it starts with `MZ`, `VZ`, `\x7FELF`, a Mach-O magic or `CA FE BA BE 00 00 00` and parses whole with no data after it. A COFF object has no signature, so it is tried last, after every other format.
 
 ## Routing
 
-An executable is often the stub of a self-extracting archive. A file that parses whole goes to this reader before tar and the others. A file that starts as an executable but does not parse whole goes first to the 7z reader, which finds a 7z after a stub. A file that ends in a ZIP end record goes to the ZIP reader, as the [self-extracting rules](zip-reader.md) describe. Any other file that starts as an executable comes back here, so a damaged executable gets this reader's refusal. The default engine sends a Mach-O universal file with the `B9 FA F1 0E` signature to 7-Zip.
+An executable is often the stub of a self-extracting archive. A file that parses whole goes to this reader before tar and the others. A file that starts as an executable but does not parse whole goes first to the 7z reader, which finds a 7z after a stub. A file that ends in a ZIP end record goes to the ZIP reader, as the [self-extracting rules](zip-reader.md) describe. Any other file that starts as an executable comes back here, so a damaged executable gets this reader's refusal. A Mach-O universal file with the `B9 FA F1 0E` signature is refused with `Zipper does not read Mach-O universal files with the B9 FA F1 0E signature`.
 
 ## What it writes
 

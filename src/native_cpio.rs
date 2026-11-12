@@ -483,8 +483,7 @@ impl HardLinks {
 }
 
 fn utf8(bytes: Vec<u8>, what: &str) -> Result<String> {
-    String::from_utf8(bytes)
-        .map_err(|_| anyhow::anyhow!("cpio {what} is not UTF-8; {}", tree::BACKEND_HINT))
+    String::from_utf8(bytes).map_err(|_| anyhow::anyhow!("cpio {what} is not UTF-8"))
 }
 
 fn entry(

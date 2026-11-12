@@ -834,8 +834,7 @@ fn with_an_unknown_method(archive: &[u8]) -> Vec<u8> {
 
 #[cfg(unix)]
 #[test]
-fn a_7z_zipper_does_not_decode_after_a_stub_reaches_7zip_pinned_as_7z_and_only_after_its_stub_passes()
- {
+fn a_7z_zipper_does_not_decode_after_a_stub_is_refused_and_never_reaches_7zip() {
     use std::os::unix::fs::PermissionsExt;
     let folder = tempfile::tempdir().unwrap();
     let backend = folder.path().join("backend");
@@ -848,7 +847,7 @@ fn a_7z_zipper_does_not_decode_after_a_stub_reaches_7zip_pinned_as_7z_and_only_a
     let undecoded =
         with_an_unknown_method(&fs::read(data("7z-corpus/7zip-plain-header-short.7z")).unwrap());
     let cab = [&stub(1000)[..], b"MSCF\0\0\0\0", &noise(600)[2..]].concat();
-    for (name, prefix, reaches) in [("clean.exe", stub(1000), true), ("cab.exe", cab, false)] {
+    for (name, prefix) in [("clean.exe", stub(1000)), ("cab.exe", cab)] {
         let path = written(folder.path(), name, &[&prefix[..], &undecoded].concat());
         let log = folder.path().join("backend.log");
         let _ = fs::remove_file(&log);
@@ -861,12 +860,8 @@ fn a_7z_zipper_does_not_decode_after_a_stub_reaches_7zip_pinned_as_7z_and_only_a
             .output()
             .unwrap();
         let logged = fs::read_to_string(&log).unwrap_or_default();
-        if reaches {
-            assert!(logged.contains("-t7z "), "{name}: {logged}");
-        } else {
-            assert!(logged.is_empty(), "{name} reached 7-Zip: {logged}");
-            assert!(!output.status.success(), "{name}");
-        }
+        assert!(logged.is_empty(), "{name} reached 7-Zip: {logged}");
+        assert!(!output.status.success(), "{name}");
     }
 }
 

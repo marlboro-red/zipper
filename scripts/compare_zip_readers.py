@@ -87,8 +87,6 @@ def main():
                 reader = readers[label]
                 output = Path(work) / "out"
                 prefix = [reader["binary"]]
-                if args.archive_format == "zip" and reader["mode"].startswith("native"):
-                    prefix += ["--zip-engine", "native"]
                 if reader["threads"] is not None:
                     prefix += ["--threads", str(reader["threads"])]
                 extract = prefix + ["extract", str(archive), "-o", str(output)]

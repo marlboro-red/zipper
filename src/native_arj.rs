@@ -2,7 +2,7 @@
 //! `docs/reference/arj-reader.md` for what it accepts and restores.
 use crate::lzh::{self, Bits, Lzss, Window};
 pub use crate::tree::ReadOptions;
-use crate::tree::{self, BACKEND_HINT, MAX_NAME};
+use crate::tree::{self, MAX_NAME};
 use crate::volumes::ArchiveFile;
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, ensure};
@@ -275,7 +275,7 @@ impl Entries {
         );
         ensure!(
             main.flags & CONTINUES_IN_NEXT_VOLUME == 0,
-            "multi-volume ARJ archives are not supported; {BACKEND_HINT}"
+            "multi-volume ARJ archives are not supported"
         );
         entries.skip_extended()?;
         entries.next = entries.reader.stream_position()?;
@@ -352,14 +352,14 @@ impl Entries {
         );
         ensure!(
             found.flags & (CONTINUES_IN_NEXT_VOLUME | CONTINUES_FROM_PREVIOUS_VOLUME) == 0,
-            "ARJ entry spans volumes, which Zipper does not read; {BACKEND_HINT}"
+            "ARJ entry spans volumes, which Zipper does not read"
         );
         ensure!(
             name.len() as u64 <= MAX_NAME,
             "ARJ name is longer than {MAX_NAME} bytes"
         );
-        let mut name = String::from_utf8(name)
-            .map_err(|_| anyhow::anyhow!("ARJ name is not UTF-8; {BACKEND_HINT}"))?;
+        let mut name =
+            String::from_utf8(name).map_err(|_| anyhow::anyhow!("ARJ name is not UTF-8"))?;
         // SPEC(ARJ technical notes, PATHSYM_FLAG): an untranslated name keeps MS-DOS's `\`.
         name = name.replace('\\', "/");
         let data = self.reader.stream_position()?;

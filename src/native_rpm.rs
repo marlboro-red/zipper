@@ -2,7 +2,7 @@
 //! newc cpio in its compressed payload. See `docs/reference/rpm-reader.md`
 //! for what it accepts and restores.
 use crate::native_tar::Compression;
-use crate::tree::BACKEND_HINT;
+
 pub use crate::tree::ReadOptions;
 use crate::{BadField, Entry, Field, field_check, volumes::ArchiveFile};
 use anyhow::{Context, Result, bail, ensure};
@@ -322,7 +322,7 @@ impl Package {
         if let Some(format) = format {
             ensure!(
                 format == b"cpio",
-                "RPM payload format {:?} is not cpio; {BACKEND_HINT}",
+                "RPM payload format {:?} is not cpio",
                 String::from_utf8_lossy(&format)
             );
         }
@@ -330,7 +330,7 @@ impl Package {
             None => Compressor::Gzip,
             Some(name) => Compressor::named(&name).with_context(|| {
                 format!(
-                    "RPM payload compressor {:?} is not one Zipper reads; {BACKEND_HINT}",
+                    "RPM payload compressor {:?} is not one Zipper reads",
                     String::from_utf8_lossy(&name)
                 )
             })?,
@@ -392,7 +392,7 @@ pub fn read_archive(
     }
     if &magic == STRIPPED_CPIO {
         bail!(
-            "RPM payload is the stripped cpio 07070X that rpm writes for files of 4 GiB or more and for version 6 packages, which Zipper and 7-Zip do not unpack; pass --zip-engine backend to write the payload's cpio"
+            "RPM payload is the stripped cpio 07070X that rpm writes for files of 4 GiB or more and for version 6 packages, which Zipper does not unpack"
         );
     }
     crate::native_cpio::read_newc_stream("rpm", path, magic, payload, destination, options)

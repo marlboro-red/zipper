@@ -12,7 +12,7 @@ mod swf_check;
 
 use lp_writer::{Data, Extent, Layout, Partition, at, build, linear, partition, zero};
 use std::fs;
-use swf_check::{judge, report, sevenzip_binary, sevenzip_tree, sha256, tree};
+use swf_check::{judge, report, sevenzip_binary, sha256, tree};
 
 fn noise(length: usize, seed: u32) -> Vec<u8> {
     let mut state = seed | 1;
@@ -167,7 +167,7 @@ fn each_partition_holds_its_extents_in_order_with_zeros_for_zero_extents() {
 }
 
 #[test]
-fn names_that_leave_the_folder_go_to_7zip_and_the_native_engine_refuses_them() {
+fn names_that_leave_the_folder_are_refused_by_this_reader() {
     let layout = Layout {
         partitions: vec![
             partition("/abs", vec![linear(1, b"x")]),
@@ -179,30 +179,15 @@ fn names_that_leave_the_folder_go_to_7zip_and_the_native_engine_refuses_them() {
     let work = tempfile::tempdir().unwrap();
     let archive = work.path().join("super.img");
     fs::write(&archive, build(&layout)).unwrap();
-    assert_eq!(
-        zipper::choose_reader(zipper::Engine::Auto, &archive).unwrap(),
-        zipper::Reader::Backend {
-            format: Some("-tlp".to_owned())
-        }
-    );
+    assert_eq!(zipper::choose_reader(&archive).unwrap(), zipper::Reader::Lp);
     let native = work.path().join("native");
-    let options = zipper::ExtractOptions {
-        engine: zipper::Engine::Native,
-        ..Default::default()
-    };
-    let error = zipper::extract_archive(&archive, &native, options).unwrap_err();
+    let error =
+        zipper::extract_archive(&archive, &native, zipper::ExtractOptions::default()).unwrap_err();
     assert!(
         format!("{error:#}").contains("unsafe archive path"),
         "{error:#}"
     );
     assert!(!native.exists());
-    let Some(binary) = sevenzip_binary() else {
-        return;
-    };
-    let auto = work.path().join("auto");
-    zipper::extract_archive(&archive, &auto, zipper::ExtractOptions::default()).unwrap();
-    let theirs = sevenzip_tree(&binary, &archive, &work.path().join("7z")).unwrap();
-    assert_eq!(tree(&auto), theirs);
 }
 
 #[test]
