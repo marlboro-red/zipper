@@ -499,7 +499,7 @@ mod proofs {
     }
 
     #[kani::proof]
-    #[kani::unwind(10)]
+    #[kani::unwind(14)]
     fn volume_and_boot_sector_checks_never_panic_on_any_short_head() {
         let bytes: [u8; SECTOR + 8] = kani::any();
         let length: usize = kani::any();

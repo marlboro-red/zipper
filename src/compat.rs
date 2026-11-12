@@ -62,6 +62,7 @@ const IDENTIFIED_FORMATS: &[(&[u8], usize, &str)] = &[
     (b"hsqs", 0, "squashfs"),
     (b"sqsh", 0, "squashfs"),
     (b"\x45\x3D\xCD\x28", 0, "cramfs"),
+    (b"\x28\xCD\x3D\x45", 0, "cramfs"),
     (b"CD001", 0x8001, "iso"),
     (b"BEA01", 0x8001, "udf"),
     (b"\x53\xEF", 1080, "ext"),
