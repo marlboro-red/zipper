@@ -2763,7 +2763,7 @@ mod tests {
         #[test]
         fn a_folder_that_a_new_one_cannot_stand_in_for_is_merged_entry_by_entry() {
             type Change = fn(&Path) -> bool;
-            let cases: [(&str, Change, &[&str]); 11] = [
+            let cases: [(&str, Change, &[&str]); 12] = [
                 ("nothing", |_| true, &["p"]),
                 (
                     "a file the archive does not name",
@@ -2774,6 +2774,11 @@ mod tests {
                     "a file the archive does not name, one folder down",
                     |out| fs::write(out.join("p/sub/other"), b"other").is_ok(),
                     &[],
+                ),
+                (
+                    "a file the archive names only one folder down",
+                    |out| fs::write(out.join("p/d"), b"other").is_ok(),
+                    &["p/sub"],
                 ),
                 (
                     "a name in another case",
