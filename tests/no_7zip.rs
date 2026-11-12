@@ -3,6 +3,7 @@
 //! an error from it or from `zipper::Refused`, while a fake 7-Zip sits first
 //! on `PATH` and in `ZIPPER_7Z` and records any start.
 #![cfg(unix)]
+mod common;
 #[path = "common/ext_image.rs"]
 mod ext_image;
 #[path = "common/fake_7zip.rs"]
@@ -47,41 +48,73 @@ fn fixtures() -> Vec<PathBuf> {
         .collect()
 }
 
+const SWEEP_THREADS: usize = 8;
+
+fn sweep_inputs(work: &Path) -> Vec<PathBuf> {
+    let mut inputs = Vec::new();
+    for (index, fixture) in fixtures().into_iter().enumerate() {
+        inputs.push(fixture.clone());
+        if fixture
+            .extension()
+            .is_none_or(|extension| extension != "xz")
+        {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        let unpacked = liblzma::read::XzDecoder::new(fs::File::open(&fixture).unwrap())
+            .read_to_end(&mut bytes)
+            .is_ok();
+        if unpacked {
+            let stem = fixture.file_stem().unwrap().to_string_lossy();
+            inputs.push(written(work, &format!("{index}-{stem}"), &bytes));
+        }
+    }
+    inputs
+}
+
+fn assert_no_action_starts_7zip(fake: &Fake7Zip, input: &Path) {
+    let output = tempfile::tempdir().unwrap();
+    let destination = output.path().join("out");
+    for args in [
+        vec!["test".as_ref(), input.as_os_str()],
+        vec!["list".as_ref(), input.as_os_str()],
+        vec![
+            "extract".as_ref(),
+            input.as_os_str(),
+            "-o".as_ref(),
+            destination.as_os_str(),
+        ],
+    ] {
+        let run = fake.zipper(&args);
+        if let Some(log) = fake.started() {
+            panic!("{args:?} started 7-Zip: {log}");
+        }
+        assert!(
+            !run.stderr.contains("7-Zip backend") && !run.stderr.contains("zip-engine"),
+            "{args:?}: {}",
+            run.stderr
+        );
+    }
+    common::make_tree_deletable(output.path());
+}
+
 #[test]
 fn no_fixture_and_no_unpacked_fixture_starts_7zip() {
     let fake = Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
     let work = tempfile::tempdir().unwrap();
-    let mut checked = 0;
-    for fixture in fixtures() {
-        let mut inputs = vec![fixture.clone()];
-        if fixture
-            .extension()
-            .is_some_and(|extension| extension == "xz")
-        {
-            let mut bytes = Vec::new();
-            let unpacked = liblzma::read::XzDecoder::new(fs::File::open(&fixture).unwrap())
-                .read_to_end(&mut bytes)
-                .is_ok();
-            if unpacked {
-                let name = fixture.file_stem().unwrap().to_string_lossy().into_owned();
-                inputs.push(written(work.path(), &name, &bytes));
-            }
+    let inputs = sweep_inputs(work.path());
+    assert!(inputs.len() > 600, "found only {} files", inputs.len());
+    let share = inputs.len().div_ceil(SWEEP_THREADS);
+    std::thread::scope(|scope| {
+        for chunk in inputs.chunks(share) {
+            let fake = &fake;
+            scope.spawn(move || {
+                for input in chunk {
+                    assert_no_action_starts_7zip(fake, input);
+                }
+            });
         }
-        for input in inputs {
-            let run = fake.zipper(&["test".as_ref(), input.as_os_str()]);
-            if let Some(log) = fake.started() {
-                panic!("{} started 7-Zip: {log}", input.display());
-            }
-            assert!(
-                !run.stderr.contains("7-Zip backend") && !run.stderr.contains("zip-engine"),
-                "{}: {}",
-                input.display(),
-                run.stderr
-            );
-            checked += 1;
-        }
-    }
-    assert!(checked > 600, "checked only {checked} files");
+    });
 }
 
 #[test]
