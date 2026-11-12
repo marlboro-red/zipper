@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
-use std::{fs, path::Path, process::Command};
+use std::{fs, io::Write, path::Path, process::Command};
 
 pub(crate) const MANIFEST: &str = "verification/coverage.txt";
 const UNCOVERED: &str = "verification/uncovered.txt";
@@ -297,7 +297,9 @@ fn fail_on_stale(root: &Path, owed: Owed) -> Result<()> {
 
 fn run_full_check(root: &Path, check: &str) -> Result<bool> {
     let mut words = check.split_whitespace();
-    let mut command = Command::new(words.next().context("empty full-check")?);
+    let program = words.next().context("empty full-check")?;
+    let mut command = Command::new(program);
+    let mut arguments = Vec::new();
     for word in words {
         match variable(word) {
             Some((key, value)) => {
@@ -305,10 +307,47 @@ fn run_full_check(root: &Path, check: &str) -> Result<bool> {
             }
             None => {
                 command.arg(word);
+                arguments.push(word);
             }
         }
     }
-    Ok(command.current_dir(root).status()?.success())
+    command.current_dir(root);
+    let runs_tests = program == "cargo" && matches!(arguments.first(), Some(&"test" | &"nextest"));
+    if !runs_tests {
+        return Ok(command.status()?.success());
+    }
+    let output = command.output()?;
+    std::io::stdout().write_all(&output.stdout)?;
+    std::io::stderr().write_all(&output.stderr)?;
+    let printed = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if output.status.success() && ran_no_tests(&printed) {
+        eprintln!("xtask: `{check}` ran no test, so it checked nothing");
+        return Ok(false);
+    }
+    Ok(output.status.success())
+}
+
+fn ran_no_tests(output: &str) -> bool {
+    let passed = |line: &str| {
+        line.split_once("test result: ")
+            .and_then(|(_, result)| result.split_once(" passed"))
+            .and_then(|(before, _)| before.rsplit(' ').next())
+            .and_then(|count| count.parse::<u64>().ok())
+    };
+    let cargo_counts: Vec<u64> = output.lines().filter_map(passed).collect();
+    let nextest_ran_none = output
+        .lines()
+        .any(|line| line.trim_start().starts_with("Summary") && line.contains("] 0 tests run"));
+    let nextest_ran_some = output.lines().any(|line| {
+        line.trim_start().starts_with("Summary")
+            && line.contains(" tests run")
+            && !line.contains("] 0 tests run")
+    });
+    !nextest_ran_some && (nextest_ran_none || cargo_counts.iter().all(|count| *count == 0))
 }
 
 fn variable(word: &str) -> Option<(&str, &str)> {
@@ -679,6 +718,23 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_test_run_that_ran_no_test_is_told_from_one_that_ran_some() {
+        let none = "running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s\n";
+        assert!(ran_no_tests(none));
+        assert!(ran_no_tests(&format!("{none}{none}")));
+        assert!(ran_no_tests(
+            "     Summary [   0.001s] 0 tests run: 0 passed, 3 skipped\n"
+        ));
+        assert!(ran_no_tests("Finished `release` profile\n"));
+        let some = "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s\n";
+        assert!(!ran_no_tests(some));
+        assert!(!ran_no_tests(&format!("{none}{some}")));
+        assert!(!ran_no_tests(
+            "     Summary [   2.0s] 13 tests run: 13 passed, 0 skipped\n"
+        ));
+    }
 
     #[test]
     fn a_full_check_word_is_a_variable_when_its_name_is_capitals_digits_and_underscores() {
