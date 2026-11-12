@@ -64,7 +64,7 @@ item = src/memory.rs | impl Memory {
 
 [overwrite]
 skill = .claude/skills/zipper-verify-overwrite/SKILL.md
-fingerprint = 09621e4205c624a6
+fingerprint = bcc23128ea224ec5
 full-check = cargo test --release --test overwrite_exhaustive ZIPPER_MERGE_STRIDE=1 ZIPPER_OVERWRITE_EXHAUSTIVE=1 -- --nocapture
 full-check = cargo test --release --lib staging::tests::cancel ZIPPER_MERGE_STRIDE=1 ZIPPER_OVERWRITE_EXHAUSTIVE=1 -- --nocapture
 item = src/staging.rs | pub(crate) fn stage(
