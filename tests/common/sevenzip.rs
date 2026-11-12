@@ -17,17 +17,13 @@ pub fn windows_forbids(name: &str) -> bool {
     cfg!(windows)
         && name.split('/').any(|part| {
             part.chars()
-                .any(|c| c.is_control() || CHARACTERS_WINDOWS_FORBIDS.contains(&c))
+                .any(|c| c < '\u{20}' || CHARACTERS_WINDOWS_FORBIDS.contains(&c))
                 || part.ends_with(['.', ' '])
         })
 }
 
 pub fn zipper_refused_a_name_windows_forbids(error: &str) -> bool {
-    const REFUSALS: [&str; 3] = [
-        "(os error 123)",
-        "ambiguous Windows path",
-        "Windows device path",
-    ];
+    const REFUSALS: [&str; 2] = ["ambiguous Windows path", "Windows device path"];
     cfg!(windows) && REFUSALS.iter().any(|refusal| error.contains(refusal))
 }
 
@@ -37,7 +33,7 @@ pub fn as_7zip_names_it_on_this_system(name: &str) -> String {
     }
     name.chars()
         .map(
-            |c| match c.is_control() || CHARACTERS_WINDOWS_FORBIDS.contains(&c) {
+            |c| match c < '\u{20}' || CHARACTERS_WINDOWS_FORBIDS.contains(&c) {
                 true => '_',
                 false => c,
             },

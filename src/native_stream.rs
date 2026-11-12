@@ -156,8 +156,8 @@ fn has_extension(path: &Path, extension: &str) -> bool {
 /// extension is dropped, and `.tgz`, `.tbz`, `.tbz2`, `.txz`, `.tzst` and
 /// `.tpz` become `.tar`. Any other extension is dropped, and a name without
 /// one gains `~`, so the decoded file never takes the archive's own name.
-/// `\` and `:` become `_`, trailing spaces go, and on Windows trailing dots
-/// too. A name left as `.` or `..` becomes `_`, and a name that is still not
+/// `\` and `:` become `_`, and on Windows so do `< > " | ? *` and characters
+/// below U+0020. Trailing spaces go, and on Windows trailing dots too. A name left as `.` or `..` becomes `_`, and a name that is still not
 /// safe, such as `CON` on Windows, gains a leading `_`.
 pub fn output_name(archive: &Path) -> Result<String> {
     let name = archive
@@ -208,6 +208,7 @@ fn default_name(archive: &Path) -> Result<String> {
 
 fn safe_name(output: &str, trailing: &[char]) -> String {
     let output = output.replace(['\\', ':'], "_");
+    let output = crate::windows_safe_characters(&output);
     let trailing: Vec<char> = trailing
         .iter()
         .copied()

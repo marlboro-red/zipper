@@ -95,7 +95,7 @@ fn every_bzip2_fixture_extracts_the_same_at_one_two_four_and_default_threads() {
         ("xar-corpus/bzip2.xar", None),
     ] {
         if cfg!(windows) && fixture == XAR_WITH_A_NAME_WINDOWS_REFUSES {
-            refused_at_every_thread_count(&data.join(fixture), "odd & <name>");
+            refused_at_every_thread_count(&data.join(fixture));
         } else {
             same_at_every_thread_count(&data.join(fixture), password);
         }
@@ -104,17 +104,15 @@ fn every_bzip2_fixture_extracts_the_same_at_one_two_four_and_default_threads() {
 
 const XAR_WITH_A_NAME_WINDOWS_REFUSES: &str = "xar-corpus/bzip2.xar";
 
-fn refused_at_every_thread_count(archive: &Path, name: &str) {
+fn refused_at_every_thread_count(archive: &Path) {
     for threads in THREADS {
         let scratch = tempfile::tempdir().unwrap();
         let destination = scratch.path().join("out");
         let output = run_extract(archive, &destination, threads, None);
         let error = String::from_utf8_lossy(&output.stderr);
         assert!(
-            !output.status.success()
-                && error.contains("cannot create xar entry")
-                && error.contains(name),
-            "{} at {threads:?} threads did not refuse {name:?} by name: {error}",
+            !output.status.success() && error.contains("ambiguous Windows path"),
+            "{} at {threads:?} threads did not refuse the name Windows forbids: {error}",
             archive.display()
         );
         assert!(

@@ -208,9 +208,37 @@ fn safe_path(s: &str) -> Result<()> {
     Ok(())
 }
 
+// LINK: https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+#[cfg(any(
+    windows,
+    test,
+    feature = "tar",
+    feature = "flv",
+    feature = "ihex",
+    feature = "swf"
+))]
+pub(crate) fn windows_forbids_character(c: char) -> bool {
+    c < '\u{20}' || matches!(c, '<' | '>' | '"' | '|' | '?' | '*')
+}
+
+#[cfg(any(feature = "tar", feature = "flv", feature = "ihex", feature = "swf"))]
+pub(crate) fn windows_safe_characters(output: &str) -> String {
+    output
+        .chars()
+        .map(|c| match cfg!(windows) && windows_forbids_character(c) {
+            true => '_',
+            false => c,
+        })
+        .collect()
+}
+
 #[cfg(windows)]
 fn ensure_plain_windows_name(component: &str) -> Result<()> {
     ensure!(!component.ends_with(['.', ' ']), "ambiguous Windows path");
+    ensure!(
+        !component.contains(windows_forbids_character),
+        "ambiguous Windows path"
+    );
     ensure!(
         !windows_device_name(component),
         "Windows device path is not a regular archive entry"
@@ -814,6 +842,44 @@ mod escape_spec {
 mod tests {
     use super::*;
     use std::path::Component;
+
+    const ON_WINDOWS: bool = cfg!(windows);
+
+    #[test]
+    fn each_character_windows_forbids_is_refused_by_name_on_windows_alone() {
+        let forbidden = ['<', '>', '"', '|', '?', '*']
+            .into_iter()
+            .chain((1..0x20u8).map(char::from));
+        for c in forbidden {
+            for name in [format!("a{c}b"), format!("{c}"), format!("folder/x{c}")] {
+                let refusal = safe_path(&name).err().map(|error| error.to_string());
+                let expected = ON_WINDOWS.then(|| "ambiguous Windows path".to_owned());
+                assert_eq!(refusal, expected, "{name:?}");
+            }
+        }
+        for name in [
+            "a\u{7f}b",
+            "a\u{80}b",
+            "a\u{9f}b",
+            "a b",
+            "a!b#c[d]{e}",
+            "é",
+            "a'b",
+        ] {
+            assert!(safe_path(name).is_ok(), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn exactly_the_characters_below_space_and_six_symbols_are_ones_windows_forbids() {
+        for code in 0..=0x10FFFFu32 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            let listed = code < 0x20 || "<>\"|?*".contains(c);
+            assert_eq!(windows_forbids_character(c), listed, "{code:#x}");
+        }
+    }
 
     #[test]
     fn every_numbered_port_from_0_to_9_and_superscripts_is_a_device() {

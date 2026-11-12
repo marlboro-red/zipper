@@ -219,6 +219,8 @@ fn windows_output_names_avoid_devices_and_trailing_dots() {
         ("CON.gz", "_CON"),
         ("a..gz", "a"),
         ("nul.txt.gz", "_nul.txt"),
+        ("a<b>c|d?e*f\"g.gz", "a_b_c_d_e_f_g"),
+        ("tab\there.gz", "tab_here"),
     ] {
         assert_eq!(output_name(Path::new(archive)).unwrap(), name, "{archive}");
     }

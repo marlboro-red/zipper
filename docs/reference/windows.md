@@ -67,6 +67,10 @@ Windows marks a downloaded file with a `Zone.Identifier` stream, and warns befor
 
 The current source tree restores the read-only, hidden and system attributes of extracted files, as 7-Zip does. ZIP and 7z entries carry them in their attribute byte. An entry with a Unix mode that has no write bit, including every tar entry, becomes read-only. Overwriting replaces a read-only file in the destination. Folders keep default attributes. `tests/attributes.rs` compares each attribute with 7-Zip's own extraction of 7z, ZIP and tar archives. `--content-only` sets no attribute.
 
+## Names Windows cannot hold
+
+Every in-process reader checks each part of an entry's path before it decodes anything. On Windows it refuses a part that holds `<`, `>`, `"`, `|`, `?`, `*` or a character below U+0020. It also refuses a part that ends in a dot or a space, and a device name such as `CON`. The error says `ambiguous Windows path`. `\`, `:` and NUL are refused on every system. A link target part is checked the same way, so a link whose target holds such a character is refused even though Windows would store it. A single-file stream names its output from the archive instead, so there each such character becomes `_`. 7-Zip writes `_` for these characters, so Zipper refuses archives that 7-Zip extracts. Off Windows none of this applies.
+
 ## Testing status
 
 This unsigned alpha is tested on Windows Server 2022 in GitHub Actions. It has not
