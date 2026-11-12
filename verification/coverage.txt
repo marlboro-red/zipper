@@ -2761,6 +2761,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [rar-fields]
+fingerprint = c3092def16de69e0
 speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach rar-fields
