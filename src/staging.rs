@@ -34,10 +34,13 @@ pub enum Existing {
     /// left alone.
     ///
     /// On Linux and macOS, an existing directory whose every entry the archive
-    /// names is replaced in one step by a new directory with the same mode,
-    /// when both have the same owner, group, flags and extended attributes
-    /// and the old one has no access control list. It then has a new inode
-    /// number. A directory that holds anything else is merged file by file.
+    /// names is replaced in one step by a new directory with the same mode.
+    /// It then has a new inode number. This needs both directories to have
+    /// the same owner, group and extended attributes, and the old one to let
+    /// its owner read, write and enter it. On macOS it also needs equal
+    /// flags, no access control list on either directory, and no flag or
+    /// access control list on a replaced file. Any other directory is merged
+    /// file by file.
     ///
     /// On Linux and macOS, several `Overwrite` extractions may run at once
     /// into one destination when their archives hold only regular files and
@@ -48,7 +51,8 @@ pub enum Existing {
     /// extraction that finds it newly created fails and undoes its renames.
     /// An extraction replaces a directory in one step only while it holds an
     /// exclusive `flock` on the destination. The others hold a shared one,
-    /// and wait, checking the cancel flag, while one is exclusive.
+    /// and wait up to 10 seconds, checking the cancel flag, while one is
+    /// exclusive.
     Overwrite,
     /// Extract into an existing directory, leaving out every archive file
     /// whose path already exists there, as 7-Zip's `-aos` does. An archive
@@ -180,42 +184,60 @@ fn contents(folder: &Path) -> Result<Contents> {
 }
 
 #[cfg(unix)]
-fn ensure_only_replaced_entries(old: &Path, placed: &Path, new: &Contents) -> Result<()> {
+fn move_late_entries_out_of_old_folder(old: &Path, placed: &Path, new: &Contents) -> Result<()> {
     ensure!(
         fs::symlink_metadata(old).is_ok_and(|metadata| metadata.is_dir()),
         "{} stopped being a directory during extraction",
         placed.display()
     );
-    for entry in walkdir::WalkDir::new(old).min_depth(1) {
+    let mut entries = walkdir::WalkDir::new(old).min_depth(1).into_iter();
+    while let Some(entry) = entries.next() {
         let entry = entry?;
         let relative = entry.path().strip_prefix(old)?;
+        let directory = entry.file_type().is_dir();
         match new.get(&path_hash(relative)) {
-            Some(held) if held.directory == entry.file_type().is_dir() => {}
+            Some(held) if held.directory == directory => {}
             Some(_) => bail!(
                 "{} changed between a file and a directory during extraction",
                 placed.join(relative).display()
             ),
-            None => bail!(
-                "{} appeared in the destination during extraction",
-                placed.join(relative).display()
-            ),
+            None => {
+                rename_without_replacing(entry.path(), &placed.join(relative))?;
+                if directory {
+                    entries.skip_current_dir();
+                }
+            }
         }
     }
     Ok(())
 }
 
 #[cfg(unix)]
-fn ensure_only_our_entries(new: &Path, placed: &Path, ours: &Contents) -> Result<()> {
+fn move_entries_of_others_out_of_new_folder(
+    new: &Path,
+    placed: &Path,
+    ours: &Contents,
+) -> Result<()> {
     use walkdir::DirEntryExt;
-    for entry in walkdir::WalkDir::new(new).min_depth(1) {
+    let mut entries = walkdir::WalkDir::new(new).min_depth(1).into_iter();
+    while let Some(entry) = entries.next() {
         let entry = entry?;
         let relative = entry.path().strip_prefix(new)?;
-        ensure!(
-            ours.get(&path_hash(relative))
-                .is_some_and(|held| held.inode == entry.ino()),
-            "another program put {} there",
-            placed.join(relative).display()
-        );
+        let is_ours = ours
+            .get(&path_hash(relative))
+            .is_some_and(|held| held.inode == entry.ino());
+        if !is_ours {
+            rename_without_replacing(entry.path(), &placed.join(relative)).map_err(|error| {
+                anyhow::anyhow!(
+                    "another program put {} there, and it cannot move back: {}",
+                    placed.join(relative).display(),
+                    error.root_cause()
+                )
+            })?;
+            if entry.file_type().is_dir() {
+                entries.skip_current_dir();
+            }
+        }
     }
     Ok(())
 }
@@ -278,6 +300,13 @@ fn remove_files_in(folder: &Path) {
 #[cfg(unix)]
 const LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(1);
 
+#[cfg(unix)]
+const LOCK_PATIENCE: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_millis(300)
+} else {
+    std::time::Duration::from_secs(10)
+};
+
 struct DestinationLock {
     #[cfg(unix)]
     folder: Option<fs::File>,
@@ -319,10 +348,11 @@ impl DestinationLock {
     fn share(&mut self, check: &mut impl FnMut() -> Result<()>) -> Result<()> {
         use rustix::fs::{FlockOperation, flock};
         self.alone = false;
+        let waiting_since = std::time::Instant::now();
         while let Some(folder) = &self.folder {
             match flock(folder, FlockOperation::NonBlockingLockShared) {
                 Ok(()) => break,
-                Err(rustix::io::Errno::WOULDBLOCK) => {
+                Err(rustix::io::Errno::WOULDBLOCK) if waiting_since.elapsed() < LOCK_PATIENCE => {
                     check()?;
                     std::thread::sleep(LOCK_POLL);
                 }
@@ -531,6 +561,7 @@ impl Staging {
             &mut steps,
             lock.alone,
         )?;
+        steps.shrink_to_fit();
         if !steps
             .iter()
             .any(|step| matches!(step, Step::ReplaceFolder(..)))
@@ -782,7 +813,7 @@ impl Staging {
         let Some(Done::FolderReplaced { ours, .. }) = done.last() else {
             unreachable!("the replaced folder was just recorded")
         };
-        ensure_only_replaced_entries(&staged, &placed, ours)?;
+        move_late_entries_out_of_old_folder(&staged, &placed, ours)?;
         Ok(true)
     }
 
@@ -937,7 +968,7 @@ impl Staging {
                         swap(staged, placed)
                             .with_context(|| format!("cannot swap {} back", placed.display()))?;
                         crate::unix_modes::unlock_tree_for_cleanup(staged);
-                        ensure_only_our_entries(staged, placed, ours)
+                        move_entries_of_others_out_of_new_folder(staged, placed, ours)
                     }),
                     Done::MadeAgain(folder) => match fs::remove_dir(folder) {
                         Err(error)
@@ -1471,8 +1502,8 @@ fn plan_folder(
         replaced: 0,
         kept: vec![(relative.to_owned(), mode)],
     });
-    let mut covered_folders = Vec::new();
-    let mut names = HashSet::new();
+    let mut covered_folders: Vec<CoveredFolder> = Vec::new();
+    let first_step = steps.len();
     for entry in
         fs::read_dir(&folder).with_context(|| format!("cannot read {}", folder.display()))?
     {
@@ -1482,7 +1513,7 @@ fn plan_folder(
             Some(name.as_os_str()) != staging.file_name(),
             "archive entry has the staging folder's name"
         );
-        let path = relative.join(&name);
+        let path = relative.join(name);
         let staged = entry.file_type()?;
         match fs::symlink_metadata(destination.join(&path)) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -1536,18 +1567,30 @@ fn plan_folder(
                 ),
                 _ => {
                     match &mut cover {
-                        Some(cover) if flags(&existing) == 0 => cover.replaced += 1,
+                        Some(cover)
+                            if flags(&existing) == 0
+                                && !has_access_control_list(&destination.join(&path)) =>
+                        {
+                            cover.replaced += 1
+                        }
                         _ => cover = None,
                     }
                     steps.push(Step::Replace(path))
                 }
             },
         }
-        if cover.is_some() {
-            names.insert(name);
-        }
     }
-    match cover.filter(|_| names_only(&destination.join(relative), &names)) {
+    let archive_names_every_entry = || {
+        let names: HashSet<&std::ffi::OsStr> = steps[first_step..]
+            .iter()
+            .filter_map(Step::archive_source)
+            .chain(covered_folders.iter().map(|inner| inner.path.as_path()))
+            .filter(|path| path.parent() == Some(relative))
+            .filter_map(Path::file_name)
+            .collect();
+        names_only(&destination.join(relative), &names)
+    };
+    match cover.filter(|_| archive_names_every_entry()) {
         Some(mut cover) => {
             for inner in covered_folders {
                 cover.replaced += inner.cover.replaced;
@@ -1567,9 +1610,9 @@ fn plan_folder(
     }
 }
 
-fn names_only(folder: &Path, names: &HashSet<std::ffi::OsString>) -> bool {
+fn names_only(folder: &Path, names: &HashSet<&std::ffi::OsStr>) -> bool {
     fs::read_dir(folder).is_ok_and(|mut entries| {
-        entries.all(|entry| entry.is_ok_and(|entry| names.contains(&entry.file_name())))
+        entries.all(|entry| entry.is_ok_and(|entry| names.contains(entry.file_name().as_os_str())))
     })
 }
 
@@ -1600,7 +1643,8 @@ fn mode_a_new_folder_can_keep(staged_path: &Path, existing_path: &Path) -> Optio
         && mode & OWNER_READS_WRITES_AND_ENTERS == OWNER_READS_WRITES_AND_ENTERS
         && extended_attributes(existing_path)
             .is_some_and(|attributes| Some(attributes) == extended_attributes(staged_path))
-        && !has_access_control_list(existing_path);
+        && !has_access_control_list(existing_path)
+        && !has_access_control_list(staged_path);
     stands_in.then_some(mode)
 }
 
@@ -1675,7 +1719,7 @@ fn has_access_control_list(path: &Path) -> bool {
     true
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(not(target_os = "macos"))]
 fn has_access_control_list(_: &Path) -> bool {
     false
 }
@@ -2719,7 +2763,7 @@ mod tests {
         #[test]
         fn a_folder_that_a_new_one_cannot_stand_in_for_is_merged_entry_by_entry() {
             type Change = fn(&Path) -> bool;
-            let cases: [(&str, Change, &[&str]); 9] = [
+            let cases: [(&str, Change, &[&str]); 11] = [
                 ("nothing", |_| true, &["p"]),
                 (
                     "a file the archive does not name",
@@ -2777,6 +2821,28 @@ mod tests {
                     },
                     &["p/sub"],
                 ),
+                (
+                    "an access control list on the new folder",
+                    |out| {
+                        let staged = fs::read_dir(out)
+                            .unwrap()
+                            .flatten()
+                            .find(|entry| is_staging(&entry.file_name()))
+                            .unwrap()
+                            .path();
+                        cfg!(target_os = "macos")
+                            && run("chmod", &["+a", "everyone allow list"], &staged.join("p"))
+                    },
+                    &["p/sub"],
+                ),
+                (
+                    "an access control list on a replaced file",
+                    |out| {
+                        cfg!(target_os = "macos")
+                            && run("chmod", &["+a", "everyone deny delete"], &out.join("p/a"))
+                    },
+                    &["p/sub"],
+                ),
             ];
             for (case, change, expected) in cases {
                 let scene = full_folder();
@@ -2788,6 +2854,11 @@ mod tests {
                 assert_eq!(replaced_whole(&planned(&scene, true)), expected, "{case}");
                 assert!(replaced_whole(&planned(&scene, false)).is_empty(), "{case}");
                 set_mode(&out.join("p"), 0o755);
+                if cfg!(target_os = "macos") {
+                    run("chmod", &["-N"], &out.join("p"));
+                    run("chmod", &["-N"], &out.join("p/a"));
+                    run("chmod", &["-N"], &out.join("p/A"));
+                }
             }
         }
 
@@ -2809,21 +2880,47 @@ mod tests {
         }
 
         #[test]
-        fn an_entry_that_appears_in_a_folder_before_it_is_replaced_stops_the_extraction() {
+        fn an_entry_that_appears_in_a_folder_before_it_is_replaced_moves_into_the_new_folder() {
+            let scene = full_folder();
+            let out = scene.root.path().join("out");
+            let steps = planned(&scene, true);
+            fs::write(out.join("p/sub/late"), b"late").unwrap();
+            fs::create_dir(out.join("p/late folder")).unwrap();
+            fs::write(out.join("p/late folder/inside"), b"inside").unwrap();
+            let folder = inode(&out.join("p"));
+            let (carried, done) = carried_out(&scene, steps);
+            carried.unwrap_or_else(|error| panic!("{error:#}"));
+            assert_ne!(inode(&out.join("p")), folder);
+            assert_eq!(fs::read(out.join("p/a")).unwrap(), b"new p/a");
+            assert_eq!(fs::read(out.join("p/sub/late")).unwrap(), b"late");
+            assert_eq!(
+                fs::read(out.join("p/late folder/inside")).unwrap(),
+                b"inside"
+            );
+            let error = scene.staging.undo(&done, anyhow::anyhow!("stopped"));
+            assert!(
+                !format!("{error:#}").contains("could not undo"),
+                "{error:#}"
+            );
+            assert_eq!(inode(&out.join("p")), folder);
+            assert_eq!(fs::read(out.join("p/a")).unwrap(), b"old p/a");
+            assert_eq!(fs::read(out.join("p/sub/late")).unwrap(), b"late");
+            assert_eq!(
+                fs::read(out.join("p/late folder/inside")).unwrap(),
+                b"inside"
+            );
+        }
+
+        #[test]
+        fn a_folder_that_changes_kind_before_it_is_replaced_stops_the_extraction() {
             type Change = fn(&Path);
-            let cases: [(Change, &str, &str); 3] = [
-                (
-                    |out| fs::write(out.join("p/sub/late"), b"late").unwrap(),
-                    "p/sub/late appeared in the destination",
-                    "p/sub/late",
-                ),
+            let cases: [(Change, &str); 2] = [
                 (
                     |out| {
                         fs::remove_file(out.join("p/a")).unwrap();
                         fs::create_dir(out.join("p/a")).unwrap();
                     },
                     "p/a changed between a file and a directory",
-                    "p/a",
                 ),
                 (
                     |out| {
@@ -2831,10 +2928,9 @@ mod tests {
                         fs::write(out.join("p"), b"late").unwrap();
                     },
                     "p stopped being a directory",
-                    "p",
                 ),
             ];
-            for (change, message, changed) in cases {
+            for (change, message) in cases {
                 let scene = full_folder();
                 let out = scene.root.path().join("out");
                 let steps = planned(&scene, true);
@@ -2845,7 +2941,7 @@ mod tests {
                 let text = format!("{error:#}");
                 assert!(text.contains(message), "{text}");
                 assert!(!text.contains("could not undo"), "{text}");
-                assert_eq!(snapshot(scene.root.path()), before, "{changed}");
+                assert_eq!(snapshot(scene.root.path()), before, "{message}");
             }
         }
 
@@ -2863,25 +2959,40 @@ mod tests {
         }
 
         #[test]
-        fn an_undo_keeps_what_another_program_put_in_a_folder_that_replaced_one() {
+        fn an_undo_moves_what_another_program_put_in_the_new_folder_into_the_old_one() {
+            let scene = full_folder();
+            let out = scene.root.path().join("out");
+            let mut expected = snapshot(scene.root.path());
+            expected.insert("out/p/sub/late".into(), Node::File(0o644, b"late".to_vec()));
+            let (carried, done) = carried_out(&scene, planned(&scene, true));
+            carried.unwrap();
+            fs::write(out.join("p/sub/late"), b"late").unwrap();
+            let error = scene.staging.undo(&done, anyhow::anyhow!("stopped"));
+            assert!(
+                !format!("{error:#}").contains("could not undo"),
+                "{error:#}"
+            );
+            assert_eq!(snapshot(scene.root.path()), expected);
+        }
+
+        #[test]
+        fn an_undo_keeps_in_staging_what_another_program_put_where_the_old_folder_has_no_place() {
             let scene = full_folder();
             let out = scene.root.path().join("out");
             let (carried, done) = carried_out(&scene, planned(&scene, true));
             carried.unwrap();
-            let folder = inode(&out.join("p"));
-            fs::write(out.join("p/sub/late"), b"late").unwrap();
+            fs::write(out.join("p/fresh/late"), b"late").unwrap();
             let error = scene.staging.undo(&done, anyhow::anyhow!("stopped"));
             let text = format!("{error:#}");
             assert!(text.contains("could not undo"), "{text}");
             assert!(
-                text.contains(&out.join("p/sub/late").display().to_string()),
+                text.contains(&out.join("p/fresh/late").display().to_string()),
                 "{text}"
             );
             assert_eq!(fs::read(out.join("p/a")).unwrap(), b"old p/a");
-            assert_ne!(inode(&out.join("p")), folder);
             let kept = scene.staging.path().to_owned();
             drop(scene.staging);
-            assert_eq!(fs::read(kept.join("p/sub/late")).unwrap(), b"late");
+            assert_eq!(fs::read(kept.join("p/fresh/late")).unwrap(), b"late");
         }
 
         #[test]
@@ -2905,14 +3016,12 @@ mod tests {
                 let folder = inode(&out.join("p"));
                 let other = fs::File::open(&out).unwrap();
                 rustix::fs::flock(&other, rustix::fs::FlockOperation::LockExclusive).unwrap();
-                let late = other.try_clone().unwrap();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    let _ = rustix::fs::flock(&late, rustix::fs::FlockOperation::Unlock);
-                });
                 let calls = Cell::new(0);
                 let published = staging.publish_checking(&[], || {
                     calls.set(calls.get() + 1);
+                    if calls.get() <= 3 {
+                        assert_eq!(snapshot(root.path()), before, "changed while it waits");
+                    }
                     if calls.get() == 3 && cancels {
                         return Err(crate::Cancelled.into());
                     }
@@ -2933,6 +3042,26 @@ mod tests {
                     assert_eq!(fs::read(out.join("p/a")).unwrap(), b"new p/a");
                 }
             }
+        }
+
+        #[test]
+        fn publication_stops_waiting_for_a_lock_another_program_never_releases() {
+            let Scene { root, staging } = full_folder();
+            let out = root.path().join("out");
+            let folder = inode(&out.join("p"));
+            let other = fs::File::open(&out).unwrap();
+            rustix::fs::flock(&other, rustix::fs::FlockOperation::LockExclusive).unwrap();
+            let released_too_late = other.try_clone().unwrap();
+            std::thread::spawn(move || {
+                std::thread::sleep(LOCK_PATIENCE * 20);
+                let _ = rustix::fs::flock(&released_too_late, rustix::fs::FlockOperation::Unlock);
+            });
+            let waiting = std::time::Instant::now();
+            staging.publish_checking(&[], || Ok(())).unwrap();
+            assert!((LOCK_PATIENCE..LOCK_PATIENCE * 10).contains(&waiting.elapsed()));
+            assert_eq!(inode(&out.join("p")), folder);
+            assert_eq!(fs::read(out.join("p/a")).unwrap(), b"new p/a");
+            assert_eq!(fs::read(out.join("q/extra")).unwrap(), b"old q/extra");
         }
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]

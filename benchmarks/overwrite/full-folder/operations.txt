@@ -1,0 +1,14 @@
+unlink by dirfd, 1 thread(s)                  1.045 s    37.3 us/file
+unlink by dirfd, 2 thread(s)                  0.707 s    25.2 us/file
+unlink by dirfd, 3 thread(s)                  0.600 s    21.4 us/file
+unlink by dirfd, 4 thread(s)                  0.510 s    18.2 us/file
+unlink by dirfd, 8 thread(s)                  0.892 s    31.9 us/file
+swap two top folders, one call                0.000 s   251.8 us/file
+swap 280 leaf folders                         0.047 s   169.2 us/file
+swap each file across trees                   2.572 s    91.9 us/file
+rename replacing each file                    2.863 s   102.2 us/file
+shutil.rmtree                                 1.095 s    39.1 us/file
+move each file, RENAME_EXCL                   2.013 s    71.9 us/file
+lstat each file                               0.059 s     2.1 us/file
+scandir each folder                           0.020 s     0.7 us/file
+open, read, close each file                   0.683 s    24.4 us/file

@@ -1,0 +1,10 @@
+1 thread(s), listing order 0.993 1.025 1.049
+2 thread(s), listing order 0.713 0.714 0.743
+3 thread(s), listing order 0.597 0.601 0.639
+4 thread(s), listing order 0.523 0.525 0.546
+5 thread(s), listing order 0.650 0.658 0.664
+6 thread(s), listing order 0.733 0.747 0.755
+8 thread(s), listing order 0.868 0.875 0.876
+12 thread(s), listing order 1.217 1.237 1.237
+1 thread(s), inode order   1.022 1.033 1.035
+4 thread(s), inode order   0.559 0.587 0.595
