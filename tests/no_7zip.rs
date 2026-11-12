@@ -2,6 +2,12 @@
 //! case that once went to 7-Zip, goes to Zipper's own reader or fails with
 //! an error from it or from `zipper::Refused`, while a fake 7-Zip sits first
 //! on `PATH` and in `ZIPPER_7Z` and records any start.
+//!
+//! The fixture sweep checks every 13th file by default, so it fits every
+//! push. It then skips an `.xz` file that unpacks to more than 1 MiB, whose
+//! decoding is the cost, and checks only what it unpacks to.
+//! `ZIPPER_NO_7ZIP_STRIDE=1` checks every file and every `.xz` file, as the
+//! `[refused-signatures]` full check in `verification/coverage.txt` asks.
 #![cfg(unix)]
 mod common;
 #[path = "common/ext_image.rs"]
@@ -49,21 +55,37 @@ fn fixtures() -> Vec<PathBuf> {
 }
 
 const SWEEP_THREADS: usize = 8;
+const STRIDE: &str = "ZIPPER_NO_7ZIP_STRIDE";
+const DEFAULT_STRIDE: usize = 13;
+const SAMPLED_LARGEST_STREAM: usize = 1 << 20;
 
-fn sweep_inputs(work: &Path) -> Vec<PathBuf> {
+fn stride() -> usize {
+    std::env::var(STRIDE).map_or(DEFAULT_STRIDE, |value| {
+        value
+            .parse()
+            .ok()
+            .filter(|stride| *stride > 0)
+            .unwrap_or_else(|| panic!("{STRIDE} must be a whole number above 0, not {value:?}"))
+    })
+}
+
+fn sweep_inputs(work: &Path, stride: usize) -> Vec<PathBuf> {
     let mut inputs = Vec::new();
-    for (index, fixture) in fixtures().into_iter().enumerate() {
-        inputs.push(fixture.clone());
+    for (index, fixture) in fixtures().into_iter().enumerate().step_by(stride) {
         if fixture
             .extension()
             .is_none_or(|extension| extension != "xz")
         {
+            inputs.push(fixture);
             continue;
         }
         let mut bytes = Vec::new();
         let unpacked = liblzma::read::XzDecoder::new(fs::File::open(&fixture).unwrap())
             .read_to_end(&mut bytes)
             .is_ok();
+        if !unpacked || stride == 1 || bytes.len() <= SAMPLED_LARGEST_STREAM {
+            inputs.push(fixture.clone());
+        }
         if unpacked {
             let stem = fixture.file_stem().unwrap().to_string_lossy();
             inputs.push(written(work, &format!("{index}-{stem}"), &bytes));
@@ -102,8 +124,13 @@ fn assert_no_action_starts_7zip(fake: &Fake7Zip, input: &Path) {
 fn no_fixture_and_no_unpacked_fixture_starts_7zip() {
     let fake = Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
     let work = tempfile::tempdir().unwrap();
-    let inputs = sweep_inputs(work.path());
-    assert!(inputs.len() > 600, "found only {} files", inputs.len());
+    let stride = stride();
+    let inputs = sweep_inputs(work.path(), stride);
+    assert!(
+        inputs.len() * stride > 600,
+        "found only {} files at stride {stride}",
+        inputs.len()
+    );
     let share = inputs.len().div_ceil(SWEEP_THREADS);
     std::thread::scope(|scope| {
         for chunk in inputs.chunks(share) {

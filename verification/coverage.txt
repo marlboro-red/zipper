@@ -2909,6 +2909,7 @@ full-check = cargo xtask kani-reach refused-signatures
 full-check = cargo kani --harness refused::proofs::
 full-check = cargo test --release --lib refused
 full-check = cargo test --release --test refused
+full-check = cargo test --release --test no_7zip ZIPPER_NO_7ZIP_STRIDE=1
 item = src/refused.rs | const SECTOR:
 item = src/refused.rs | const BOOT_SIGNATURE:
 item = src/refused.rs | const COMPOUND:
