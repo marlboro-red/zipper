@@ -187,6 +187,32 @@ fn overwrite_replaces_files_and_keeps_the_rest() {
 }
 
 #[test]
+fn a_merge_whose_paths_pass_windows_260_character_limit_replaces_and_adds_files() {
+    const WINDOWS_MAX_PATH: usize = 260;
+    let root = tempfile::tempdir().unwrap();
+    let deep = ["d".repeat(80), "e".repeat(80), "f".repeat(80)].join("/");
+    let destination = root.path().join("out");
+    fs::create_dir_all(destination.join(&deep)).unwrap();
+    let replaced = format!("{deep}/replaced.txt");
+    let added = format!("{deep}/{}", "n".repeat(60));
+    fs::write(destination.join(&replaced), b"old").unwrap();
+    assert!(destination.join(&added).as_os_str().len() > WINDOWS_MAX_PATH);
+    let archive = root.path().join("a.zip");
+    write_zip(
+        &archive,
+        &[
+            Member::File(&replaced, b"new"),
+            Member::File(&added, b"added"),
+        ],
+    );
+    zip_reader(&archive, &destination, Existing::Overwrite).unwrap();
+    let tree = snapshot(&destination);
+    assert_eq!(tree.get(Path::new(&replaced)), Some(&Some(b"new".to_vec())));
+    assert_eq!(tree.get(Path::new(&added)), Some(&Some(b"added".to_vec())));
+    assert_eq!(tree.len(), 5, "{:?}", tree.keys());
+}
+
+#[test]
 fn existing_destination_is_refused_without_overwrite() {
     for format in &FORMATS {
         let root = tempfile::tempdir().unwrap();

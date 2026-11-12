@@ -173,8 +173,15 @@ fn seven_zip() -> Option<PathBuf> {
 }
 
 fn run_seven_zip(binary: &Path, arguments: &[&std::ffi::OsStr], password: &str) -> bool {
-    run_seven_zip_in(binary, Path::new("."), arguments, password)
+    let switch = std::ffi::OsString::from(format!("-p{password}"));
+    let mut arguments = arguments.to_vec();
+    if WINDOWS_CONSOLE_READS_NO_UTF8_PASSWORD && !password.is_empty() {
+        arguments.insert(1, &switch);
+    }
+    run_seven_zip_in(binary, Path::new("."), &arguments, password)
 }
+
+const WINDOWS_CONSOLE_READS_NO_UTF8_PASSWORD: bool = cfg!(windows);
 
 fn run_seven_zip_in(
     binary: &Path,

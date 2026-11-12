@@ -98,6 +98,8 @@ fn judge(binary: &Path, bytes: &[u8], label: &str) {
     let accepted = sevenzip_accepts(binary, &image);
     match (ours, accepted) {
         (Outcome::Refused(_), false) => {}
+        (Outcome::Extracted(_), false)
+            if is_zstd(bytes) && cfg!(windows) && squashfs_trees::unsquashfs().is_none() => {}
         (Outcome::Extracted(tree), false) => {
             assert!(
                 !is_zstd(bytes) || squashfs_trees::unsquashfs().is_some(),
@@ -115,7 +117,8 @@ fn judge(binary: &Path, bytes: &[u8], label: &str) {
         (Outcome::Refused(message), true) => assert!(
             CHECKS_7ZIP_SKIPS
                 .iter()
-                .any(|check| message.contains(check)),
+                .any(|check| message.contains(check))
+                || sevenzip::zipper_refused_a_name_windows_forbids(&message),
             "{label}: 7-Zip extracts it and Zipper refused: {message}"
         ),
         (Outcome::Extracted(ours), true) => {
@@ -663,7 +666,7 @@ fn entries_are_listed_folder_by_folder_in_the_order_7zip_lists_them() {
         let theirs: Vec<String> = String::from_utf8_lossy(&listing.stdout)
             .lines()
             .filter_map(|line| line.strip_prefix("Path = "))
-            .map(str::to_owned)
+            .map(|path| path.replace(std::path::MAIN_SEPARATOR, "/"))
             .collect();
         assert_eq!(ours, theirs);
     }

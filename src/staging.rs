@@ -1242,6 +1242,24 @@ fn spelled_on_disk(path: &Path, _: &mut Spellings) -> PathBuf {
     path.to_owned()
 }
 
+// LINK: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
+#[cfg(windows)]
+fn verbatim_wide(path: &Path) -> std::io::Result<Vec<u16>> {
+    use std::os::windows::ffi::OsStrExt;
+    let absolute = std::path::absolute(path)?;
+    let wide: Vec<u16> = absolute.as_os_str().encode_wide().collect();
+    let text = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+    let mut out = if wide.starts_with(&text(r"\\?\")) || wide.starts_with(&text(r"\\.\")) {
+        wide
+    } else if let Some(share) = wide.strip_prefix(text(r"\\").as_slice()) {
+        [text(r"\\?\UNC\").as_slice(), share].concat()
+    } else {
+        [text(r"\\?\").as_slice(), &wide].concat()
+    };
+    out.push(0);
+    Ok(out)
+}
+
 fn rename_without_replacing(from: &Path, to: &Path) -> Result<()> {
     #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
     let renamed = rustix::fs::renameat_with(
@@ -1254,14 +1272,7 @@ fn rename_without_replacing(from: &Path, to: &Path) -> Result<()> {
     .map_err(std::io::Error::from);
     #[cfg(windows)]
     let renamed = {
-        use std::os::windows::ffi::OsStrExt;
-        let wide = |path: &Path| {
-            path.as_os_str()
-                .encode_wide()
-                .chain([0])
-                .collect::<Vec<u16>>()
-        };
-        let (from, to) = (wide(from), wide(to));
+        let (from, to) = (verbatim_wide(from)?, verbatim_wide(to)?);
         // SAFETY: both paths are NUL-terminated UTF-16 buffers that outlive the call.
         if unsafe {
             windows_sys::Win32::Storage::FileSystem::MoveFileExW(from.as_ptr(), to.as_ptr(), 0)
@@ -1785,6 +1796,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_renames_take_verbatim_paths_that_pass_the_path_limit() {
+        let text = |wide: Vec<u16>| String::from_utf16(&wide[..wide.len() - 1]).unwrap();
+        let drive = text(verbatim_wide(Path::new(r"C:\a/b\..\c")).unwrap());
+        assert_eq!(drive, r"\\?\C:\a\c");
+        let share = text(verbatim_wide(Path::new(r"\\server\share\x")).unwrap());
+        assert_eq!(share, r"\\?\UNC\server\share\x");
+        let kept = text(verbatim_wide(Path::new(r"\\?\C:\x")).unwrap());
+        assert_eq!(kept, r"\\?\C:\x");
+        let relative = text(verbatim_wide(Path::new("x")).unwrap());
+        assert!(
+            relative.starts_with(r"\\?\") && relative.ends_with(r"\x"),
+            "{relative}"
+        );
     }
 
     #[test]

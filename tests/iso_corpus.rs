@@ -206,8 +206,12 @@ fn compare(binary: &Path, name: &str, disc: &Disc) {
     }
     let theirs = sevenzip_tree(binary, &image, &work.path().join("7z"))
         .unwrap_or_else(|| panic!("{name}: 7-Zip failed"));
-    let ours = zipper_tree(&image, &work.path().join("zipper"))
-        .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+    let ours = match zipper_tree(&image, &work.path().join("zipper")) {
+        Err(error) if sevenzip::zipper_refused_a_name_windows_forbids(&format!("{error:#}")) => {
+            return;
+        }
+        ours => ours.unwrap_or_else(|error| panic!("{name}: {error:#}")),
+    };
     assert_eq!(ours, theirs, "{name} differs from 7-Zip");
 }
 

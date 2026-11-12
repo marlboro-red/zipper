@@ -11,6 +11,46 @@ pub fn sevenzip() -> Option<PathBuf> {
     found_or_skipped(installed(), std::env::var_os(REQUIRE_7Z).is_some())
 }
 
+const CHARACTERS_WINDOWS_FORBIDS: &[char] = &['<', '>', ':', '"', '|', '?', '*'];
+
+pub fn windows_forbids(name: &str) -> bool {
+    cfg!(windows)
+        && name.split('/').any(|part| {
+            part.chars()
+                .any(|c| c.is_control() || CHARACTERS_WINDOWS_FORBIDS.contains(&c))
+                || part.ends_with(['.', ' '])
+        })
+}
+
+pub fn zipper_refused_a_name_windows_forbids(error: &str) -> bool {
+    const REFUSALS: [&str; 3] = [
+        "(os error 123)",
+        "ambiguous Windows path",
+        "Windows device path",
+    ];
+    cfg!(windows) && REFUSALS.iter().any(|refusal| error.contains(refusal))
+}
+
+pub fn as_7zip_names_it_on_this_system(name: &str) -> String {
+    if !cfg!(windows) {
+        return name.to_owned();
+    }
+    name.chars()
+        .map(
+            |c| match c.is_control() || CHARACTERS_WINDOWS_FORBIDS.contains(&c) {
+                true => '_',
+                false => c,
+            },
+        )
+        .collect()
+}
+
+pub fn spelled_through_the_windows_code_page<'a>(
+    names: impl IntoIterator<Item = &'a String>,
+) -> bool {
+    cfg!(windows) && names.into_iter().any(|name| !name.is_ascii())
+}
+
 fn found_or_skipped(found: Option<PathBuf>, required: bool) -> Option<PathBuf> {
     assert!(
         found.is_some() || !required,
@@ -48,6 +88,24 @@ fn version_in_banner(banner: &str) -> Option<(u32, u32)> {
         .find(|word| word.chars().next().is_some_and(|c| c.is_ascii_digit()))?;
     let (major, minor) = number.split_once('.')?;
     Some((major.parse().ok()?, minor.parse().ok()?))
+}
+
+#[test]
+fn names_windows_forbids_are_judged_only_on_windows() {
+    let windows = cfg!(windows);
+    assert_eq!(windows_forbids("folder/a|b"), windows);
+    assert_eq!(windows_forbids("folder/tail."), windows);
+    assert_eq!(windows_forbids("e\u{1}"), windows);
+    assert!(!windows_forbids("folder/plain name.txt"));
+    let renamed = as_7zip_names_it_on_this_system("a|b\u{1}/c");
+    assert_eq!(renamed, if windows { "a_b_/c" } else { "a|b\u{1}/c" });
+    assert!(!zipper_refused_a_name_windows_forbids(
+        "cannot create entry"
+    ));
+    assert_eq!(
+        spelled_through_the_windows_code_page(&["na\u{e9}me".to_owned()]),
+        windows
+    );
 }
 
 #[test]

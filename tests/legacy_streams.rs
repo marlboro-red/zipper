@@ -105,6 +105,7 @@ struct Case {
 fn assert_matches_7zip(binary: &Path, cases: &[Case], allowed: &[&str]) -> (usize, usize) {
     let root = tempfile::tempdir().unwrap();
     let (mut extracted, mut refused) = (0, 0);
+    let mut problems = Vec::new();
     for (number, case) in cases.iter().enumerate() {
         let folder = root.path().join(format!("case{number}"));
         fs::create_dir(&folder).unwrap();
@@ -112,9 +113,14 @@ fn assert_matches_7zip(binary: &Path, cases: &[Case], allowed: &[&str]) -> (usiz
         fs::write(&archive, &case.bytes).unwrap();
         let theirs = sevenzip_tree(binary, &archive, &folder.join("7zip"));
         let ours = zipper_tree(&archive, &folder.join("zipper"));
+        let label = format!("{}: {}", case.name, case.description);
         match (theirs, ours) {
             (Some(theirs), Ok(ours)) => {
-                assert_eq!(ours, theirs, "{}: {}", case.name, case.description);
+                if ours != theirs {
+                    problems.push(format!(
+                        "{label}: Zipper wrote {ours:?} and 7-Zip {theirs:?}"
+                    ));
+                }
                 extracted += 1;
             }
             (None, Err(_)) => {
@@ -125,24 +131,33 @@ fn assert_matches_7zip(binary: &Path, cases: &[Case], allowed: &[&str]) -> (usiz
                 );
                 refused += 1;
             }
-            (None, Ok(ours)) => panic!(
-                "{}: 7-Zip refused it and Zipper extracted {ours:?}; {}",
-                case.name, case.description
-            ),
+            (None, Ok(ours)) => {
+                problems.push(format!(
+                    "{label}: 7-Zip refused it and Zipper extracted {ours:?}"
+                ));
+            }
             (Some(_), Err(error)) => {
                 let message = format!("{error:#}");
-                assert!(
-                    allowed.iter().any(|allowed| message.contains(allowed)),
-                    "{}: 7-Zip extracted it and Zipper refused it: {message}; {}",
-                    case.name,
-                    case.description
-                );
+                if !allowed.iter().any(|allowed| message.contains(allowed))
+                    && !sevenzip::zipper_refused_a_name_windows_forbids(&message)
+                {
+                    problems.push(format!(
+                        "{label}: 7-Zip extracted it and Zipper refused it: {message}"
+                    ));
+                }
                 assert!(!folder.join("zipper").exists());
                 refused += 1;
             }
         }
         common_cleanup(&folder);
     }
+    assert!(
+        problems.is_empty(),
+        "{} of {} cases differ from 7-Zip:\n{}",
+        problems.len(),
+        cases.len(),
+        problems.join("\n")
+    );
     eprintln!("{extracted} extracted and {refused} refused as 7-Zip did");
     (extracted, refused)
 }

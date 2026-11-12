@@ -58,6 +58,7 @@ fn check_all(cases: Vec<(String, Vec<u8>)>, least: usize) {
                 scope.spawn(move || {
                     chunk
                         .iter()
+                        .filter(|(name, _)| !sevenzip::windows_forbids(name))
                         .filter_map(|(name, bytes)| judge(binary, bytes, name, name, &[]))
                         .collect::<Vec<_>>()
                 })
@@ -357,7 +358,10 @@ fn a_name_7zip_would_give_the_archive_itself_gains_a_tilde_and_colons_become_und
             vec!["x_y.mp3"],
         ),
         ("a:b.swf", zlib_swf(&movie(10, 1, &[]), 6), vec!["a_b~.swf"]),
-    ] {
+    ]
+    .into_iter()
+    .filter(|(name, _, _)| !sevenzip::windows_forbids(name))
+    {
         let archive = work.path().join(name);
         fs::write(&archive, bytes).unwrap();
         let out = work.path().join(format!("out-{}", expected[0]));

@@ -104,12 +104,22 @@ pub fn judge(
         (Ok(ours), None) => Some(format!(
             "{label}: 7-Zip refused and Zipper extracted {ours:?}"
         )),
+        (Err(error), Some(_)) if super::sevenzip::zipper_refused_a_name_windows_forbids(error) => {
+            None
+        }
         (Err(error), Some(theirs)) => match stricter.iter().find(|known| error.contains(*known)) {
             Some(_) => None,
             None => Some(format!(
                 "{label}: Zipper refused with {error:?} and 7-Zip extracted {theirs:?}"
             )),
         },
+        (Ok(ours), Some(theirs))
+            if super::sevenzip::spelled_through_the_windows_code_page(
+                ours.keys().chain(theirs.keys()),
+            ) =>
+        {
+            None
+        }
         (Ok(ours), Some(theirs)) => (ours != theirs)
             .then(|| format!("{label}: trees differ\n  zipper {ours:?}\n  7-Zip  {theirs:?}")),
     }

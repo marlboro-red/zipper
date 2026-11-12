@@ -220,6 +220,10 @@ fn every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_ex
             let theirs = work.path().join("7zip");
             if let Some(theirs) = sevenzip_tree(binary, &corpus(name), &theirs) {
                 let ours = tree(&out);
+                if sevenzip::spelled_through_the_windows_code_page(ours.keys()) {
+                    make_deletable(work.path());
+                    continue;
+                }
                 let (ours, theirs) = if name.contains("rar5") {
                     (ours, theirs)
                 } else {

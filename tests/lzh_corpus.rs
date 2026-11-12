@@ -196,7 +196,17 @@ fn every_corpus_lzh_extracts_the_tree_7zip_extracts_or_the_refusal_its_record_gi
         }
         if let Some(binary) = &binary {
             let now = sevenzip_tree(binary, &file, &work.path().join("7zip"));
-            assert_eq!(now, record.tree, "{name}: 7-Zip now extracts another tree");
+            let recorded = record.tree.as_ref().map(|tree| {
+                tree.iter()
+                    .map(|(path, kind)| {
+                        (
+                            sevenzip::as_7zip_names_it_on_this_system(path),
+                            kind.clone(),
+                        )
+                    })
+                    .collect()
+            });
+            assert_eq!(now, recorded, "{name}: 7-Zip now extracts another tree");
         }
     }
 }

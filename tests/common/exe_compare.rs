@@ -154,7 +154,8 @@ pub fn compare_with_7zip(binary: &Path, label: &str, name: &str, bytes: &[u8]) -
             assert!(
                 REFUSALS_STRICTER_THAN_7ZIP
                     .iter()
-                    .any(|reason| message.contains(reason)),
+                    .any(|reason| message.contains(reason))
+                    || crate::sevenzip::zipper_refused_a_name_windows_forbids(&message),
                 "{label}: Zipper refuses what 7-Zip extracts: {message}"
             );
             (false, true)
