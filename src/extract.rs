@@ -380,7 +380,22 @@ pub struct ExtractOptions<'a> {
     pub alternate_streams: bool,
 }
 
-fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Result<()> {
+fn flatten(
+    tree: &Path,
+    into: &Path,
+    holder: &Path,
+    existing: Existing,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<()> {
+    let cancelled = || cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed));
+    let moved = |from: &Path, to: std::path::PathBuf| -> Result<()> {
+        crate::retried_while_windows_holds_it(|| std::fs::rename(from, &to), cancelled).map_err(
+            |error| match cancelled() {
+                true => crate::Cancelled.into(),
+                false => anyhow::Error::from(error),
+            },
+        )
+    };
     let mut by_name: std::collections::BTreeMap<std::ffi::OsString, Vec<std::path::PathBuf>> =
         std::collections::BTreeMap::new();
     for entry in walkdir::WalkDir::new(tree).min_depth(1).sort_by_file_name() {
@@ -416,7 +431,7 @@ fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Resul
             Existing::Skip => (&paths[0], &[]),
             Existing::RenameNew | Existing::RenameExisting => (&paths[0], &paths[1..]),
         };
-        crate::retried_while_windows_holds_it(|| std::fs::rename(kept, into.join(name)))?;
+        moved(kept, into.join(name))?;
         let mut number = 0;
         for other in others {
             let renamed = loop {
@@ -426,7 +441,7 @@ fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Resul
                     break candidate;
                 }
             };
-            crate::retried_while_windows_holds_it(|| std::fs::rename(other, into.join(&renamed)))?;
+            moved(other, into.join(renamed))?;
         }
     }
     Ok(())
@@ -452,7 +467,13 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                 ..options
             },
         )?;
-        flatten(&nested, staging.path(), tree.path(), options.existing)?;
+        flatten(
+            &nested,
+            staging.path(),
+            tree.path(),
+            options.existing,
+            options.control.cancel,
+        )?;
         drop(tree);
         return staging.publish(&[], options.control.cancel);
     }

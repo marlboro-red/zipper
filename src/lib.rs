@@ -597,9 +597,10 @@ pub(crate) struct Directory<'a> {
 
 // EXTERNAL(Windows): a scanner or the search indexer that opens a file just written makes
 // a rename of it, or of its folder, fail with ERROR_ACCESS_DENIED or ERROR_SHARING_VIOLATION
-// for a moment, so such a rename is tried again for up to five seconds.
+// for a moment, so such a rename is tried again for up to five seconds or until a cancel.
 pub(crate) fn retried_while_windows_holds_it<T>(
     mut attempt: impl FnMut() -> std::io::Result<T>,
+    mut stop: impl FnMut() -> bool,
 ) -> std::io::Result<T> {
     const ERROR_ACCESS_DENIED: i32 = 5;
     const ERROR_SHARING_VIOLATION: i32 = 32;
@@ -615,7 +616,8 @@ pub(crate) fn retried_while_windows_holds_it<T>(
                         error.raw_os_error(),
                         Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION)
                     )
-                    && started.elapsed() < PATIENCE =>
+                    && started.elapsed() < PATIENCE
+                    && !stop() =>
             {
                 std::thread::sleep(pause);
                 pause = (pause * 2).min(LONGEST_PAUSE);
@@ -629,7 +631,7 @@ pub(crate) fn publish(
     staging: &Path,
     destination: &Path,
     directories: &[Directory],
-    check: impl FnOnce() -> Result<()>,
+    mut check: impl FnMut() -> Result<()>,
 ) -> Result<()> {
     ensure!(
         std::fs::symlink_metadata(destination).is_err(),
@@ -641,12 +643,18 @@ pub(crate) fn publish(
         #[cfg(windows)]
         restore_directory_times(staging, directories);
         check()?;
-        let renamed = retried_while_windows_holds_it(|| {
-            if std::fs::symlink_metadata(destination).is_ok() {
-                return Err(std::io::ErrorKind::AlreadyExists.into());
-            }
-            std::fs::rename(staging, destination)
-        });
+        let renamed = retried_while_windows_holds_it(
+            || {
+                if std::fs::symlink_metadata(destination).is_ok() {
+                    return Err(std::io::ErrorKind::AlreadyExists.into());
+                }
+                std::fs::rename(staging, destination)
+            },
+            || check().is_err(),
+        );
+        if renamed.is_err() {
+            check()?;
+        }
         if renamed
             .as_ref()
             .is_err_and(|error| error.kind() == std::io::ErrorKind::AlreadyExists)
@@ -910,7 +918,8 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(300));
             drop(held);
         });
-        retried_while_windows_holds_it(|| std::fs::rename(&staging, &destination)).unwrap();
+        retried_while_windows_holds_it(|| std::fs::rename(&staging, &destination), || false)
+            .unwrap();
         release.join().unwrap();
         assert_eq!(
             std::fs::read(destination.join("new.txt")).unwrap(),
@@ -918,15 +927,47 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn a_cancel_stops_the_wait_for_a_held_folder_and_publishes_nothing() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let (staging, destination) = (root.path().join("staging"), root.path().join("out"));
+        std::fs::create_dir(&staging).unwrap();
+        std::fs::write(staging.join("new.txt"), b"written").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(staging.join("new.txt"))
+            .unwrap();
+        let mut checks = 0;
+        let started = std::time::Instant::now();
+        let error = publish(&staging, &destination, &[], || {
+            checks += 1;
+            match checks {
+                1 => Ok(()),
+                _ => Err(Cancelled.into()),
+            }
+        })
+        .unwrap_err();
+        assert!(error.is::<Cancelled>(), "{error:#}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(staging.is_dir() && !destination.exists());
+        drop(held);
+    }
+
     #[test]
     fn an_error_windows_does_not_clear_by_itself_is_returned_without_waiting() {
         let root = tempfile::tempdir().unwrap();
         let started = std::time::Instant::now();
         let mut attempts = 0;
-        let error = retried_while_windows_holds_it(|| {
-            attempts += 1;
-            std::fs::rename(root.path().join("missing"), root.path().join("out"))
-        })
+        let error = retried_while_windows_holds_it(
+            || {
+                attempts += 1;
+                std::fs::rename(root.path().join("missing"), root.path().join("out"))
+            },
+            || false,
+        )
         .unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
         assert_eq!(attempts, 1);

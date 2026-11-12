@@ -202,7 +202,7 @@ fn move_late_entries_out_of_old_folder(old: &Path, placed: &Path, new: &Contents
                 placed.join(relative).display()
             ),
             None => {
-                rename_without_replacing(entry.path(), &placed.join(relative))?;
+                rename_without_replacing(entry.path(), &placed.join(relative), &mut || false)?;
                 if directory {
                     entries.skip_current_dir();
                 }
@@ -227,13 +227,15 @@ fn move_entries_of_others_out_of_new_folder(
             .get(&path_hash(relative))
             .is_some_and(|held| held.inode == entry.ino());
         if !is_ours {
-            rename_without_replacing(entry.path(), &placed.join(relative)).map_err(|error| {
-                anyhow::anyhow!(
-                    "another program put {} there, and it cannot move back: {}",
-                    placed.join(relative).display(),
-                    error.root_cause()
-                )
-            })?;
+            rename_without_replacing(entry.path(), &placed.join(relative), &mut || false).map_err(
+                |error| {
+                    anyhow::anyhow!(
+                        "another program put {} there, and it cannot move back: {}",
+                        placed.join(relative).display(),
+                        error.root_cause()
+                    )
+                },
+            )?;
             if entry.file_type().is_dir() {
                 entries.skip_current_dir();
             }
@@ -621,7 +623,9 @@ impl Staging {
             check()?;
             match step {
                 Step::Create(path) => {
-                    if let Err(error) = Self::create(staged(path), placed(path), done) {
+                    let created =
+                        Self::create(staged(path), placed(path), done, &mut || check().is_err());
+                    if let Err(error) = created {
                         if self.make_vanished_parents_again(path, done, &mut parents_made_again)? {
                             continue;
                         }
@@ -636,19 +640,27 @@ impl Staging {
                                 creates_tried += 1;
                                 continue;
                             }
-                            _ => return Err(error),
+                            _ => return Err(cancel_first(check, error)),
                         }
                     }
                 }
                 Step::Replace(path) => {
                     let (aside, swaps) = self.aside(&mut aside, index)?;
                     let placed = placed(path);
-                    if swaps {
-                        Self::replace_by_swap(staged(path), placed, done)?
+                    let replaced = if swaps {
+                        Self::replace_by_swap(staged(path), placed, done, &mut || check().is_err())
                     } else {
                         let old = spelled_on_disk(&placed, &mut spellings);
-                        Self::replace_in_two_moves(staged(path), placed, old, aside, done)?
-                    }
+                        Self::replace_in_two_moves(
+                            staged(path),
+                            placed,
+                            old,
+                            aside,
+                            done,
+                            &mut || check().is_err(),
+                        )
+                    };
+                    replaced.map_err(|error| cancel_first(check, error))?
                 }
                 Step::ReplaceFolder(path, kept) => {
                     let (_, swaps) = self.aside(&mut aside, index)?;
@@ -659,11 +671,15 @@ impl Staging {
                     }
                 }
                 Step::CreateAs(path, name) => {
-                    Self::move_into_place(staged(path), placed(name), done)?
+                    Self::move_into_place(staged(path), placed(name), done, &mut || {
+                        check().is_err()
+                    })
+                    .map_err(|error| cancel_first(check, error))?
                 }
                 Step::SetAside(path, name) => {
                     let old = spelled_on_disk(&placed(path), &mut spellings);
-                    Self::move_into_place(old, placed(name), done)?
+                    Self::move_into_place(old, placed(name), done, &mut || check().is_err())
+                        .map_err(|error| cancel_first(check, error))?
                 }
             }
             after_each(step);
@@ -823,16 +839,21 @@ impl Staging {
     }
 
     #[cfg(unix)]
-    fn create(staged: PathBuf, placed: PathBuf, done: &mut Vec<Done>) -> Result<()> {
+    fn create(
+        staged: PathBuf,
+        placed: PathBuf,
+        done: &mut Vec<Done>,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> Result<()> {
         if !fs::symlink_metadata(&staged).is_ok_and(|metadata| metadata.is_dir()) {
-            return Self::move_into_place(staged, placed, done);
+            return Self::move_into_place(staged, placed, done, stop);
         }
         let ours = walkdir::WalkDir::new(&staged)
             .min_depth(1)
             .into_iter()
             .map(|entry| entry.map(|entry| entry_key(&staged, &entry)))
             .collect::<Result<HashSet<Entry>, _>>()?;
-        rename_without_replacing(&staged, &placed)?;
+        rename_without_replacing(&staged, &placed, stop)?;
         let moved = identity(&placed);
         done.push(Done::Folder {
             from: staged,
@@ -844,22 +865,37 @@ impl Staging {
     }
 
     #[cfg(not(unix))]
-    fn create(staged: PathBuf, placed: PathBuf, done: &mut Vec<Done>) -> Result<()> {
-        Self::move_into_place(staged, placed, done)
+    fn create(
+        staged: PathBuf,
+        placed: PathBuf,
+        done: &mut Vec<Done>,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> Result<()> {
+        Self::move_into_place(staged, placed, done, stop)
     }
 
-    fn move_into_place(from: PathBuf, to: PathBuf, done: &mut Vec<Done>) -> Result<()> {
-        rename_without_replacing(&from, &to)?;
+    fn move_into_place(
+        from: PathBuf,
+        to: PathBuf,
+        done: &mut Vec<Done>,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> Result<()> {
+        rename_without_replacing(&from, &to, stop)?;
         let moved = identity(&to);
         done.push(Done::Moved { from, to, moved });
         Ok(())
     }
 
-    fn replace_by_swap(staged: PathBuf, placed: PathBuf, done: &mut Vec<Done>) -> Result<()> {
+    fn replace_by_swap(
+        staged: PathBuf,
+        placed: PathBuf,
+        done: &mut Vec<Done>,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> Result<()> {
         match swap(&staged, &placed) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Self::move_into_place(staged, placed, done);
+                return Self::move_into_place(staged, placed, done, stop);
             }
             Err(error) => {
                 return Err(error).with_context(|| format!("cannot replace {}", placed.display()));
@@ -884,8 +920,9 @@ impl Staging {
         old: PathBuf,
         aside: PathBuf,
         done: &mut Vec<Done>,
+        stop: &mut dyn FnMut() -> bool,
     ) -> Result<()> {
-        Self::move_into_place(old, aside.clone(), done).map_err(|error| {
+        Self::move_into_place(old, aside.clone(), done, stop).map_err(|error| {
             anyhow::anyhow!(
                 "cannot move {} aside to replace it: {}",
                 placed.display(),
@@ -893,7 +930,7 @@ impl Staging {
             )
         })?;
         Self::ensure_replaced_no_folder(&aside, &placed)?;
-        Self::move_into_place(staged, placed, done)
+        Self::move_into_place(staged, placed, done, stop)
     }
 
     fn ensure_replaced_no_folder(old: &Path, placed: &Path) -> Result<()> {
@@ -940,7 +977,7 @@ impl Staging {
                 let undone = match step {
                     Done::Moved { from, to, moved } => {
                         ensure_unchanged(to, *moved).and_then(|()| {
-                            rename_without_replacing(to, from).map_err(|error| {
+                            rename_without_replacing(to, from, &mut || false).map_err(|error| {
                                 anyhow::anyhow!(
                                     "cannot move {} back to {}: {}",
                                     to.display(),
@@ -1106,7 +1143,7 @@ fn move_back_only_ours(from: &Path, to: &Path, ours: &HashSet<Entry>) -> Result<
         if entry.file_type().is_dir() {
             fs::create_dir(&back)?;
         } else {
-            rename_without_replacing(entry.path(), &back)?;
+            rename_without_replacing(entry.path(), &back, &mut || false)?;
         }
     }
     for entry in walk(true) {
@@ -1260,7 +1297,13 @@ fn verbatim_wide(path: &Path) -> std::io::Result<Vec<u16>> {
     Ok(out)
 }
 
-fn rename_without_replacing(from: &Path, to: &Path) -> Result<()> {
+fn cancel_first(check: &mut impl FnMut() -> Result<()>, error: anyhow::Error) -> anyhow::Error {
+    check().err().unwrap_or(error)
+}
+
+fn rename_without_replacing(from: &Path, to: &Path, stop: &mut dyn FnMut() -> bool) -> Result<()> {
+    #[cfg(not(windows))]
+    let _ = stop;
     #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
     let renamed = rustix::fs::renameat_with(
         rustix::fs::CWD,
@@ -1273,17 +1316,24 @@ fn rename_without_replacing(from: &Path, to: &Path) -> Result<()> {
     #[cfg(windows)]
     let renamed = {
         let (from, to) = (verbatim_wide(from)?, verbatim_wide(to)?);
-        crate::retried_while_windows_holds_it(|| {
-            // SAFETY: both paths are NUL-terminated UTF-16 buffers that outlive the call.
-            if unsafe {
-                windows_sys::Win32::Storage::FileSystem::MoveFileExW(from.as_ptr(), to.as_ptr(), 0)
-            } != 0
-            {
-                Ok(())
-            } else {
-                Err(std::io::Error::last_os_error())
-            }
-        })
+        crate::retried_while_windows_holds_it(
+            || {
+                // SAFETY: both paths are NUL-terminated UTF-16 buffers that outlive the call.
+                if unsafe {
+                    windows_sys::Win32::Storage::FileSystem::MoveFileExW(
+                        from.as_ptr(),
+                        to.as_ptr(),
+                        0,
+                    )
+                } != 0
+                {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::last_os_error())
+                }
+            },
+            stop,
+        )
     };
     #[cfg(not(any(
         target_os = "linux",
@@ -1823,12 +1873,12 @@ mod tests {
         let (from, to) = (root.path().join("from"), root.path().join("to"));
         fs::write(&from, b"archive").unwrap();
         fs::write(&to, b"written by another program").unwrap();
-        let error = rename_without_replacing(&from, &to).unwrap_err();
+        let error = rename_without_replacing(&from, &to, &mut || false).unwrap_err();
         assert!(format!("{error:#}").contains("appeared in the destination"));
         assert_eq!(fs::read(&to).unwrap(), b"written by another program");
         assert_eq!(fs::read(&from).unwrap(), b"archive");
         fs::remove_file(&to).unwrap();
-        rename_without_replacing(&from, &to).unwrap();
+        rename_without_replacing(&from, &to, &mut || false).unwrap();
         assert_eq!(fs::read(&to).unwrap(), b"archive");
     }
 
@@ -2209,6 +2259,7 @@ mod tests {
             merge.destination.join("x"),
             merge.staging.aside(&mut aside, 1).unwrap().0,
             &mut done,
+            &mut || false,
         )
         .unwrap();
         assert_eq!(fs::read(merge.destination.join("x")).unwrap(), b"new x");
@@ -2225,6 +2276,7 @@ mod tests {
             merge.destination.join("x"),
             merge.staging.aside(&mut aside, 2).unwrap().0,
             &mut done,
+            &mut || false,
         )
         .unwrap_err();
         assert!(
@@ -2247,6 +2299,7 @@ mod tests {
             merge.destination.join("x"),
             aside_path.clone(),
             &mut Vec::new(),
+            &mut || false,
         )
         .unwrap_err();
         set_mode(&merge.destination, 0o755);
