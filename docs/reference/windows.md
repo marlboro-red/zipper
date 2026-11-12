@@ -46,9 +46,10 @@ This list describes the published early release. The current source tree no long
   They do not restore permissions, timestamps, links, or extended attributes on Windows.
 - Encryption is not supported.
 - Native ZIP supports stored and Deflate ZIP, and conventional ZIP64.
-- Native-fast can use up to 64 MiB of entry buffers per worker. For lower memory
-  use, choose `--zip-engine native`.
-- Expanded-size limits apply to native archives and the native ZIP engines, not to the 7-Zip backend.
+- Native-fast can use up to 64 MiB of entry buffers per worker. That release
+  offered a native ZIP reader with less memory, which is now the only one.
+- Expanded-size limits applied to native archives only. The current source tree
+  applies them to every archive.
 
 This release has no GUI, no Explorer integration, no automatic update mechanism,
 and no Windows ARM64 build.
