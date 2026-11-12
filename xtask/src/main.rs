@@ -170,35 +170,44 @@ fn output(program: &str, args: &[&str]) -> Result<String> {
 
 fn ci_wait() -> Result<()> {
     let head = output("git", &["rev-parse", "HEAD"])?;
-    let run = ci_run(&head)?;
+    let run = ci_run(&head, None)?;
     watch_ci_run(&run, &head)
 }
 
-fn ci_run(head: &str) -> Result<String> {
+fn ci_run(head: &str, created_since: Option<&str>) -> Result<String> {
     let pushed = output("git", &["branch", "-r", "--contains", head])?;
     ensure!(
         !pushed.is_empty(),
         "HEAD {head} is not on any remote branch; push it first"
     );
-    let mut run = String::new();
     for _ in 0..CI_APPEAR_ATTEMPTS {
-        run = github(&[
+        let runs = github(&[
             "run",
             "list",
             "--commit",
             head,
             "--json",
-            "databaseId",
-            "--jq",
-            ".[0].databaseId // empty",
+            "databaseId,createdAt",
         ])?;
-        if !run.is_empty() {
-            break;
+        if let Some(run) = newest_run(&runs, created_since)? {
+            return Ok(run);
         }
         std::thread::sleep(CI_APPEAR_INTERVAL);
     }
-    ensure!(!run.is_empty(), "no CI run appeared for {head}");
-    Ok(run)
+    bail!("no CI run appeared for {head}")
+}
+
+fn newest_run(runs: &str, created_since: Option<&str>) -> Result<Option<String>> {
+    let runs: serde_json::Value = serde_json::from_str(runs)?;
+    let mut candidates: Vec<(&str, String)> = runs
+        .as_array()
+        .context("gh run list did not return a list")?
+        .iter()
+        .filter_map(|run| Some((run["createdAt"].as_str()?, run["databaseId"].to_string())))
+        .filter(|(created, _)| created_since.is_none_or(|since| *created >= since))
+        .collect();
+    candidates.sort();
+    Ok(candidates.pop().map(|(_, id)| id))
 }
 
 fn watch_ci_run(run: &str, head: &str) -> Result<()> {
@@ -261,13 +270,30 @@ fn ship() -> Result<()> {
     let push = |args: &[&str]| -> Result<()> {
         with_network_retries("git push", || output("git", args).map(drop))
     };
+    let leftover = with_network_retries("git ls-remote", || {
+        output(
+            "git",
+            &["ls-remote", "origin", &format!("refs/heads/{branch}")],
+        )
+    })?;
+    if !leftover.is_empty() {
+        push(&[
+            "push",
+            "--quiet",
+            "--no-verify",
+            "origin",
+            "--delete",
+            &branch,
+        ])?;
+    }
+    let pushed_at = output("date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"])?;
     push(&[
         "push",
         "--no-verify",
         "origin",
         &format!("HEAD:refs/heads/{branch}"),
     ])?;
-    let run = ci_run(&head)?;
+    let run = ci_run(&head, Some(&pushed_at))?;
     let checked = watch_ci_run(&run, &head).or_else(|failure| {
         let host = match env::consts::OS {
             "macos" => "macos",
@@ -1181,6 +1207,33 @@ mod cargo_command_tests {
             std::ffi::OsStr::new("ZIPPER_X"),
             Some(std::ffi::OsStr::new("1"))
         )));
+    }
+}
+
+#[cfg(test)]
+mod ci_run_tests {
+    use super::newest_run;
+
+    const RUNS: &str = r#"[
+        {"databaseId": 43117428460, "createdAt": "2026-11-11T23:08:03Z"},
+        {"databaseId": 43098311931, "createdAt": "2026-11-11T20:49:44Z"}
+    ]"#;
+
+    #[test]
+    fn a_run_created_before_the_push_is_never_watched() {
+        assert_eq!(
+            newest_run(RUNS, Some("2026-11-11T23:08:00Z"))
+                .unwrap()
+                .as_deref(),
+            Some("43117428460")
+        );
+        assert_eq!(
+            newest_run(RUNS, Some("2026-11-11T23:09:00Z")).unwrap(),
+            None
+        );
+        let stale_first = r#"[{"databaseId": 1, "createdAt": "2026-11-11T20:49:44Z"},
+                             {"databaseId": 2, "createdAt": "2026-11-11T23:08:03Z"}]"#;
+        assert_eq!(newest_run(stale_first, None).unwrap().as_deref(), Some("2"));
     }
 }
 
