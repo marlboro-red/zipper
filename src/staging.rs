@@ -212,6 +212,61 @@ fn ensure_only_our_entries(new: &Path, placed: &Path, ours: &Contents) -> Result
 }
 
 #[cfg(unix)]
+fn files_left_in_staging(done: &[Done]) -> usize {
+    done.iter()
+        .map(|step| match step {
+            Done::Swapped { .. } => 1,
+            Done::FolderReplaced { ours, .. } => ours.len(),
+            _ => 0,
+        })
+        .sum()
+}
+
+#[cfg(unix)]
+const FEWEST_FILES_REMOVED_ON_THREADS: usize = 1024;
+
+// RECORD(benchmarks/overwrite/full-folder/README.md): four threads remove the old files of
+// 280 folders in half the time of one, and eight are slower than four.
+#[cfg(unix)]
+const REMOVING_THREADS: usize = 4;
+
+#[cfg(unix)]
+fn remove_files_on_threads(root: &Path) {
+    let folders: Vec<PathBuf> = walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_dir())
+        .map(walkdir::DirEntry::into_path)
+        .collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZero::get)
+        .min(REMOVING_THREADS)
+        .min(folders.len());
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                while let Some(folder) = folders.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    remove_files_in(folder);
+                }
+            });
+        }
+    });
+}
+
+#[cfg(unix)]
+fn remove_files_in(folder: &Path) {
+    let (Ok(handle), Ok(entries)) = (fs::File::open(folder), fs::read_dir(folder)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry.file_type().is_ok_and(|kind| !kind.is_dir()) {
+            let _ = rustix::fs::unlinkat(&handle, entry.file_name(), rustix::fs::AtFlags::empty());
+        }
+    }
+}
+
+#[cfg(unix)]
 const LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(1);
 
 struct DestinationLock {
@@ -272,6 +327,8 @@ impl DestinationLock {
     fn share(&mut self, _: &mut impl FnMut() -> Result<()>) -> Result<()> {
         Ok(())
     }
+
+    fn release(self) {}
 }
 
 const MOST_TIMES_A_PARENT_IS_MADE_AGAIN: usize = 64;
@@ -498,6 +555,11 @@ impl Staging {
         }
         #[cfg(windows)]
         crate::restore_directory_times(&self.destination, &created);
+        lock.release();
+        #[cfg(unix)]
+        if files_left_in_staging(&done) >= FEWEST_FILES_REMOVED_ON_THREADS {
+            remove_files_on_threads(&self.root);
+        }
         Ok(())
     }
 
@@ -2145,6 +2207,40 @@ mod tests {
             fs::read(merge.destination.join("e_moved/g")).unwrap(),
             b"new g"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removal_on_threads_takes_every_file_and_link_and_follows_no_link() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("kept"), b"kept").unwrap();
+        let staging = root.path().join("staging");
+        for folder in 0..12 {
+            let folder = staging.join(format!("a/{folder}/deep"));
+            fs::create_dir_all(&folder).unwrap();
+            for file in 0..20 {
+                fs::write(folder.join(file.to_string()), b"old").unwrap();
+            }
+            fs::write(folder.parent().unwrap().join("beside"), b"old").unwrap();
+            std::os::unix::fs::symlink(&outside, folder.join("link")).unwrap();
+            std::os::unix::fs::symlink(outside.join("kept"), folder.join("file link")).unwrap();
+        }
+        fs::write(staging.join("top"), b"old").unwrap();
+        remove_files_on_threads(&staging);
+        let left: Vec<PathBuf> = walkdir::WalkDir::new(&staging)
+            .into_iter()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| !entry.file_type().is_dir())
+            .map(walkdir::DirEntry::into_path)
+            .collect();
+        assert_eq!(left, Vec::<PathBuf>::new());
+        assert_eq!(
+            walkdir::WalkDir::new(&staging).into_iter().count(),
+            2 + 12 * 2
+        );
+        assert_eq!(fs::read(outside.join("kept")).unwrap(), b"kept");
     }
 
     #[cfg(unix)]
