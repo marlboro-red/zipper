@@ -6,7 +6,7 @@ Since 12 November 2026 Zipper refuses the formats and methods on this page in ev
 
 - The default and native engines refuse the file where its reader used to be chosen.
 - `--zip-engine backend` checks the file before 7-Zip starts. So does `zipper::compat::run`, the library's way to start 7-Zip.
-- 7-Zip only ever starts with `-t` naming one format, so it never searches a file for another one. `--zip-engine backend` names the format from a signature at a fixed place, such as `7z`, `rar`, `zip`, `gzip`, `tar`, `iso` or `squashfs`. A file with none of these signatures is refused with `Zipper does not read a file through 7-Zip without naming its format as one Zipper hands to 7-Zip`. CAB, WIM, DMG and disk images are never among them.
+- 7-Zip only ever starts with `-t` naming one format, so it never searches a file for another one. `--zip-engine backend` names the format from a signature at a fixed place, such as `7z`, `rar`, `zip`, `gzip`, `tar`, `iso` or `squashfs`. It names Intel HEX `ihex` from its records. A file with none of these signatures is refused with `Zipper does not read a file through 7-Zip without naming its format as one Zipper hands to 7-Zip`. CAB, WIM, DMG and disk images are never among them.
 - The default engine sends to 7-Zip only what its own reader checked first, such as a 7z with BCJ2, a Mach-O universal file as `-tmub`, or a SquashFS image of another version as `-tsquashfs`. A split or pre-1.13 WIM, and a disk image whose file system Zipper does not read, such as exFAT or a differencing image, are refused instead.
 - The error is `zipper::Refused`. Its message is `Zipper does not read`, followed by the format's name.
 - Nothing is written. The destination is never created.

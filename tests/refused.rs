@@ -514,3 +514,46 @@ fn compat_starts_7zip_only_for_a_format_it_names_and_hands_to_7zip() {
         "{stderr}"
     );
 }
+
+#[test]
+fn intel_hex_is_read_in_process_and_named_ihex_for_7zip_in_backend() {
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("firmware.hex");
+    fs::write(
+        &archive,
+        ":10000000000102030405060708090A0B0C0D0E0F78\n:00000001FF\n",
+    )
+    .unwrap();
+    for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
+        let output = work.path().join(format!("{engine:?}"));
+        zipper::extract_archive(
+            &archive,
+            &output,
+            zipper::ExtractOptions {
+                engine,
+                ..zipper::ExtractOptions::default()
+            },
+        )
+        .unwrap_or_else(|error| panic!("{engine:?}: {error:#}"));
+        let bytes: Vec<Vec<u8>> = fs::read_dir(&output)
+            .unwrap()
+            .map(|entry| fs::read(entry.unwrap().path()).unwrap())
+            .collect();
+        assert_eq!(bytes, [(0..16).collect::<Vec<u8>>()], "{engine:?}");
+    }
+    let fake = FakeSevenZip::new();
+    let (_, stderr) = run_cli(
+        &fake,
+        true,
+        &[
+            std::ffi::OsStr::new("--zip-engine"),
+            "backend".as_ref(),
+            "list".as_ref(),
+            archive.as_os_str(),
+        ],
+    );
+    assert!(
+        fake.started().is_some_and(|log| log.contains("-tihex")),
+        "{stderr}"
+    );
+}
