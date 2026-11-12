@@ -130,6 +130,12 @@ fn key(ino: u64, relative: &Path) -> Entry {
 
 const MOST_TIMES_A_PARENT_IS_MADE_AGAIN: usize = 64;
 
+enum AfterFailedCreate {
+    Merge(Vec<Step>),
+    TryAgain,
+    Fail,
+}
+
 enum MadeAgain {
     Made,
     Existed,
@@ -362,6 +368,7 @@ impl Staging {
         let mut spellings = Spellings::new();
         let mut index = 0;
         let mut parents_made_again = Vec::new();
+        let mut creates_tried = 0;
         while let Some(step) = steps.get(index) {
             check()?;
             match step {
@@ -370,11 +377,19 @@ impl Staging {
                         if self.make_vanished_parents_again(path, done, &mut parents_made_again)? {
                             continue;
                         }
-                        let Some(merged) = self.plan_merge_into_appeared_folder(path) else {
-                            return Err(error);
-                        };
-                        steps.splice(index..=index, merged?);
-                        continue;
+                        match self.after_failed_create(path)? {
+                            AfterFailedCreate::Merge(merged) => {
+                                steps.splice(index..=index, merged);
+                                continue;
+                            }
+                            AfterFailedCreate::TryAgain
+                                if creates_tried < MOST_TIMES_A_PARENT_IS_MADE_AGAIN =>
+                            {
+                                creates_tried += 1;
+                                continue;
+                            }
+                            _ => return Err(error),
+                        }
                     }
                 }
                 Step::Replace(path) => {
@@ -398,6 +413,7 @@ impl Staging {
             after_each(step);
             index += 1;
             parents_made_again.clear();
+            creates_tried = 0;
         }
         Ok(steps)
     }
@@ -446,13 +462,33 @@ impl Staging {
         Ok(made)
     }
 
-    fn plan_merge_into_appeared_folder(&self, path: &Path) -> Option<Result<Vec<Step>>> {
+    fn after_failed_create(&self, path: &Path) -> Result<AfterFailedCreate> {
+        let placed = match fs::symlink_metadata(self.destination.join(path)) {
+            Ok(placed) => placed,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && fs::symlink_metadata(self.root.join(path)).is_ok() =>
+            {
+                return Ok(AfterFailedCreate::TryAgain);
+            }
+            Err(_) => return Ok(AfterFailedCreate::Fail),
+        };
+        Ok(match self.plan_merge_into_appeared_folder(path, &placed) {
+            Some(merged) => AfterFailedCreate::Merge(merged?),
+            None => AfterFailedCreate::Fail,
+        })
+    }
+
+    fn plan_merge_into_appeared_folder(
+        &self,
+        path: &Path,
+        placed: &fs::Metadata,
+    ) -> Option<Result<Vec<Step>>> {
         let staged = fs::symlink_metadata(self.root.join(path)).ok()?;
-        let placed = fs::symlink_metadata(self.destination.join(path)).ok()?;
         let links = walkdir::WalkDir::new(self.root.join(path))
             .into_iter()
             .any(|entry| entry.is_ok_and(|entry| entry.path_is_symlink()));
-        if !staged.is_dir() || !placed.is_dir() || !same_filesystem(&staged, &placed) || links {
+        if !staged.is_dir() || !placed.is_dir() || !same_filesystem(&staged, placed) || links {
             return None;
         }
         let mut steps = Vec::new();
@@ -1388,6 +1424,19 @@ mod tests {
         assert_eq!(format!("{error:#}"), "later step");
         assert!(!merge.destination.join("e").exists());
         assert_eq!(fs::read(merge.destination.join("x")).unwrap(), b"old x");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_create_whose_target_is_gone_again_is_tried_again() {
+        let merge = merge();
+        let after = |path: &str| merge.staging.after_failed_create(Path::new(path)).unwrap();
+        assert!(matches!(after("d"), AfterFailedCreate::TryAgain));
+        fs::create_dir(merge.destination.join("d")).unwrap();
+        assert!(matches!(after("d"), AfterFailedCreate::Merge(_)));
+        fs::remove_dir(merge.destination.join("d")).unwrap();
+        fs::write(merge.destination.join("d"), b"another program").unwrap();
+        assert!(matches!(after("d"), AfterFailedCreate::Fail));
     }
 
     #[test]
