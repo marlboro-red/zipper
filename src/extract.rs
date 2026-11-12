@@ -195,7 +195,11 @@ const READERS_BY_LEADING_SIGNATURE: &[LeadingSignature] = &[
         format: "7z",
     },
     LeadingSignature {
-        signature: b"Rar!\x1A\x07",
+        signature: b"Rar!\x1A\x07\x00",
+        format: "rar",
+    },
+    LeadingSignature {
+        signature: b"Rar!\x1A\x07\x01\x00",
         format: "rar",
     },
     LeadingSignature {

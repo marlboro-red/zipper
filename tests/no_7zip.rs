@@ -247,6 +247,29 @@ fn uefi_names_that_leave_the_folder_go_to_the_uefi_reader() {
     Fake7Zip::new(&sevenzip::NAMES_ON_PATH).assert_refused(&archive, "unsafe archive path");
 }
 
+fn assert_unrecognized(name: &str, bytes: &[u8], not_named: &str) {
+    let work = tempfile::tempdir().unwrap();
+    let archive = written(work.path(), name, bytes);
+    let fake = Fake7Zip::new(&sevenzip::NAMES_ON_PATH);
+    for action in ["list", "test"] {
+        let run = fake.zipper(&[action.as_ref(), archive.as_os_str()]);
+        assert_eq!(fake.started(), None, "{action} {name}: {}", run.stderr);
+        assert!(!run.success, "{action} {name} succeeded");
+        assert!(
+            run.stderr.contains("ZIP") && !run.stderr.contains(not_named),
+            "{action} {name}: wanted the unrecognized-file error, got {}",
+            run.stderr
+        );
+    }
+}
+
+#[test]
+fn a_rar_signature_of_another_version_is_an_unrecognized_file() {
+    let mut bytes = b"Rar!\x1A\x07\x02".to_vec();
+    bytes.extend([0xA5; 64]);
+    assert_unrecognized("other.rar", &bytes, "RAR");
+}
+
 #[test]
 fn a_damaged_file_with_a_known_signature_goes_to_its_own_reader() {
     let work = tempfile::tempdir().unwrap();
