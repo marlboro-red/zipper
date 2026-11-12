@@ -63,7 +63,7 @@ fn assert_rejected_with(case: &str, bytes: &[u8], words: &str) {
         "{case}: {error:?} does not say {words:?}"
     );
     assert!(
-        !(error.contains("Rock Ridge") && error.contains("7-Zip")),
+        !((error.contains("Rock Ridge") || error.contains("UDF")) && error.contains("7-Zip")),
         "{case}: {error:?} names 7-Zip"
     );
 }

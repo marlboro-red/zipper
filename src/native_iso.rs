@@ -1269,7 +1269,7 @@ fn read_catalog(image: &mut Image) -> Result<Catalog> {
             match (opened, volume) {
                 (_, Some(volume)) => read_iso(image, volume)?,
                 (crate::udf::Opened::Unsupported(reason), None) => {
-                    bail!("UDF image is not one 7-Zip opens: {reason}")
+                    bail!("Zipper does not read this UDF image: {reason}")
                 }
                 _ => bail!("not an ISO 9660 or UDF image"),
             }

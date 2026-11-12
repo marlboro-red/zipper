@@ -556,7 +556,7 @@ impl Volume {
             TYPE_DIRECTORY | TYPE_FILE | TYPE_REAL_TIME_FILE
         ) {
             return Err(Failure::Unsupported(
-                "UDF entry is not a file or folder, such as a link, which 7-Zip does not open",
+                "UDF entry is not a file or folder, such as a link, which Zipper does not read",
             ));
         }
         if (item.file_type == TYPE_DIRECTORY) != directory {
@@ -571,7 +571,7 @@ impl Volume {
                 ));
             }
             return refuse(format!(
-                "UDF file {name:?} has extents that do not hold its size, which 7-Zip does not extract"
+                "UDF file {name:?} has extents that do not hold its size, which Zipper does not read"
             ));
         }
         let extents = item.extents();
@@ -789,7 +789,7 @@ fn open(image: &mut Image) -> Opening<Catalog> {
         Walk::Cycle => Err(Failure::Unsupported("a UDF folder contains itself")),
         Walk::TooDeep => Err(Failure::Unsupported("UDF folders nest more than 1024 deep")),
         Walk::Shared => refuse(String::from(
-            "a UDF folder is reached from two folders, which 7-Zip extracts twice",
+            "a UDF folder is reached from two folders, which Zipper does not read",
         )),
         Walk::TooMany => refuse(format!("the image has more than {MAX_ENTRIES} entries")),
     }
