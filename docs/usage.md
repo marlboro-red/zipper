@@ -202,7 +202,6 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `squashfs` | The SquashFS reader, and zstd images with `zstd` | None |
 | `cramfs` | The CramFS reader | None |
 | `ext` | The ext2, ext3 and ext4 reader | None |
-| `disk` | The VHD, VHDX, QCOW, VDI, VMDK, Android sparse and MBR or GPT disk reader, and `cramfs`, `ext` and `squashfs` for the partitions it reads | None |
 | `swf` | The SWF reader | None |
 | `flv` | The FLV reader | None |
 | `lp` | The Android logical partition (`super.img`) reader | None |
@@ -250,7 +249,7 @@ Archive-level deduplication is not implemented yet.
 `extract`, `list`, and `test` read ZIP, tar and most 7z archives in process and delegate other formats to `7zz` or `7z` on PATH. A 7z archive whose methods the [7z reader](reference/7z-reader.md) does not decode also goes to 7-Zip. Encrypted 7z archives decrypt in process.
 To use another executable, set `ZIPPER_7Z` to its path. To send ZIP archives to 7-Zip as well, pass `--zip-engine backend`.
 The installed backend decides which formats work and which extraction protections apply.
-No engine hands 7-Zip a format that Zipper refuses for licence reasons, such as CHM, DMG, MSI, FAT or NTFS. Each fails with `zipper::Refused` and writes nothing, as the [refused formats page](reference/refused.md) lists. 7-Zip always starts with `-t` naming one format. `--zip-engine backend` names it from the file's signature and refuses a file it cannot name, and every CAB, WIM, DMG and disk image.
+No engine hands 7-Zip a format that Zipper refuses for licence reasons, such as CHM, DMG, MSI, FAT, NTFS or a disk image such as VHD, VMDK or QCOW. Each fails with `zipper::Refused` and writes nothing, as the [refused formats page](reference/refused.md) lists. 7-Zip always starts with `-t` naming one format. `--zip-engine backend` names it from the file's signature and refuses a file it cannot name, and every CAB, WIM, DMG and disk image.
 This default path is an external compatibility bridge.
 Native `--threads` does not configure the compatibility backend.
 Legacy listing uses the backend's listing operation and does not validate payloads.

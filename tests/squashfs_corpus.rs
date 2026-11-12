@@ -3,15 +3,12 @@
 //! `7zz x` extracts where it is installed, with modes and, for SquashFS,
 //! modification times. Images that `mksquashfs` and `mkfs.cramfs` write
 //! here of every compressor at three block sizes and nine table and
-//! compressor options, raw and in a lone GPT partition, extract as 7-Zip
-//! extracts them and byte for byte as the files they were written from.
+//! compressor options extract as 7-Zip extracts them and byte for byte as the files they were written from.
 //! 7-Zip 26.05 does not open LZ4 images, so those are checked against
 //! `unsquashfs` and the source bytes. Without 7-Zip 26.05 or later the
 //! differential checks are skipped, unless `ZIPPER_PARITY_REQUIRE_7Z` is
 //! set. Without `mksquashfs`, `mkfs.cramfs` or `unsquashfs`, the checks that
 //! need them are skipped.
-#[path = "common/disk_writer.rs"]
-mod disk_writer;
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
 #[path = "common/squashfs_trees.rs"]
@@ -242,15 +239,6 @@ fn source_contents(source: &Path) -> Tree {
     contents(&tree(source, false))
 }
 
-fn gpt(image: &Path, into: &Path) -> PathBuf {
-    let mut bytes = fs::read(image).unwrap();
-    bytes.resize(bytes.len().next_multiple_of(512), 0);
-    let disk = disk_writer::gpt(&[(disk_writer::LINUX_DATA, "root", 40, &bytes)], 8);
-    let path = into.join("disk.img");
-    fs::write(&path, disk).unwrap();
-    path
-}
-
 const UP_LINK: &str = "folder/up";
 
 fn check_generated(image: &Path, source: &Tree, label: &str) {
@@ -260,20 +248,6 @@ fn check_generated(image: &Path, source: &Tree, label: &str) {
     let shape = shape(image);
     let ours = check(image, shape, &[UP_LINK], label);
     assert_eq!(&contents(&ours), source, "{label} differs from its source");
-    let work = tempfile::tempdir().unwrap();
-    let disk = gpt(image, work.path());
-    assert_eq!(
-        zipper::choose_reader(Engine::Auto, &disk).unwrap(),
-        Reader::Disk,
-        "{label}"
-    );
-    let label = format!("{label} in a GPT partition");
-    let partitioned = if shape.lz4 {
-        zipper_tree(&disk, &work.path().join("zipper"), shape)
-    } else {
-        check(&disk, shape, &[UP_LINK], &label)
-    };
-    assert_eq!(partitioned, ours, "{label}");
 }
 
 #[test]

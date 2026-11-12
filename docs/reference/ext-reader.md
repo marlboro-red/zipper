@@ -1,6 +1,6 @@
 # In-process ext reader
 
-Zipper extracts ext2, ext3 and ext4 volumes with its own Rust reader, in `src/native_ext.rs`. It reads a raw volume and a volume in the lone partition of a disk the [disk reader](disk-reader.md) opens. So an MBR or GPT disk, a VHD, VHDX, QCOW, VDI, VMDK or Android sparse image holding one ext volume extracts in process too. The default engine sends a file here when its superblock at byte 1024 passes the layout checks below. A volume that uses a feature Zipper does not read is refused by name, and the error suggests `--zip-engine backend`. The default engine sends such a volume to 7-Zip. `--zip-engine backend` hands every volume to 7-Zip.
+Zipper extracts ext2, ext3 and ext4 volumes with its own Rust reader, in `src/native_ext.rs`. It reads raw volumes only. Until 12 November 2026 it also read the lone partition of a disk image, which the disk image reader opened for it. That reader was removed for licence reasons, so every engine now refuses a disk image that holds an ext volume, as the [refused formats page](refused.md#disk-images) describes. The default engine sends a file here when its superblock at byte 1024 passes the layout checks below. A volume that uses a feature Zipper does not read is refused by name, and the error suggests `--zip-engine backend`. The default engine sends such a volume to 7-Zip. `--zip-engine backend` hands every volume to 7-Zip.
 
 ## Supported volumes
 

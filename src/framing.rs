@@ -123,47 +123,6 @@ pub(crate) fn inflate_block(
     }
 }
 
-pub(crate) fn inflate_until_full(
-    window: &mut Vec<u8>,
-    input: &[u8],
-    output: &mut [u8],
-) -> Result<Option<usize>, Invalid> {
-    match fill(window, input, output, input.len()) {
-        Err(_) => fill(window, input, output, 1),
-        filled => filled,
-    }
-}
-
-fn fill(
-    window: &mut Vec<u8>,
-    input: &[u8],
-    output: &mut [u8],
-    piece: usize,
-) -> Result<Option<usize>, Invalid> {
-    if window.len() < SMALLEST_WINDOW {
-        window.resize(SMALLEST_WINDOW, 0);
-    }
-    let mut inflate = Inflate::new(&mut window[..]);
-    let (mut consumed, mut written) = (0, 0);
-    loop {
-        let end = consumed + piece.min(input.len() - consumed);
-        let step = inflate.decode(&input[consumed..end])?;
-        consumed += step.consumed;
-        let count = step.output.len().min(output.len() - written);
-        output[written..written + count].copy_from_slice(&step.output[..count]);
-        written += count;
-        if written == output.len() || step.finished {
-            return Ok(Some(written));
-        }
-        if step.needs_input() {
-            return match consumed == input.len() {
-                true => Ok(None),
-                false => Err(NO_PROGRESS),
-            };
-        }
-    }
-}
-
 pub(crate) fn zlib_block(
     window: &mut Vec<u8>,
     input: &[u8],

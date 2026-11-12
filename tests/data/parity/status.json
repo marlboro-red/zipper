@@ -5,7 +5,7 @@
     },
     "APFS": {
       "status": "refused",
-      "note": "Refused in every engine, raw and as a disk's lone partition. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
         "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
@@ -81,7 +81,7 @@
     },
     "CramFS": {
       "status": "native",
-      "note": "CramFS images of both byte orders read in process, raw and in a lone disk partition.",
+      "note": "CramFS images of both byte orders read in process. A disk image that holds one is refused, since the disk image reader was removed.",
       "tests": [
         "tests/squashfs_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/squashfs_corpus.rs::generated_cramfs_images_in_both_byte_orders_extract_as_7zip_extracts_them",
@@ -107,17 +107,16 @@
     },
     "Ext": {
       "status": "native",
-      "note": "ext2, ext3 and ext4 read in process, raw and as the lone partition of a disk image, with block maps, extents, inline data, metadata checksums, hard links and links. 7-Zip cannot open inline folders or sparse block-mapped files with a zero indirect pointer, so those are checked against the source tree. A volume that needs journal recovery, or uses encryption or another feature Zipper does not read, goes to 7-Zip.",
+      "note": "ext2, ext3 and ext4 read in process as raw volumes, with block maps, extents, inline data, metadata checksums, hard links and links. 7-Zip cannot open inline folders or sparse block-mapped files with a zero indirect pointer, so those are checked against the source tree. A volume that needs journal recovery, or uses encryption or another feature Zipper does not read, goes to 7-Zip. A disk image that holds one is refused, since the disk image reader was removed.",
       "tests": [
         "tests/ext_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/ext_corpus.rs::generated_volumes_extract_byte_for_byte_as_7zip_extracts_them",
-        "tests/ext_corpus.rs::the_corpus_volume_extracts_as_7zip_extracts_it_in_every_disk_container",
         "tests/hostile_ext.rs::damaged_ext4_volumes_are_refused_when_7zip_refuses_them"
       ]
     },
     "FAT": {
       "status": "refused",
-      "note": "Refused in every engine, raw and as a disk's lone partition. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
         "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
@@ -133,20 +132,16 @@
       ]
     },
     "GPT": {
-      "status": "native",
-      "note": "Read in process, each partition of a disk with several as one raw file. A lone SquashFS, CramFS or ext partition extracts. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A lone partition of another file system, or a partition name 7-Zip writes as a path, is refused, since Zipper hands no disk image to 7-Zip. The corpus disk holds one FAT partition, so it is refused.",
+      "status": "refused",
+      "note": "Raw GPT disks are refused in every engine, whatever their partitions hold. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
-        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
-        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
-      ],
-      "refused archives": [
-        "gpt.img"
+        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "HFS": {
       "status": "refused",
-      "note": "HFS+ and HFSX are refused in every engine, raw and as a disk's lone partition. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "HFS+ and HFSX are refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
         "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
@@ -198,15 +193,11 @@
       ]
     },
     "MBR": {
-      "status": "native",
-      "note": "Primary, extended and logical partitions read in process, each as one raw file when there are several. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A lone partition of another file system is refused, since Zipper hands no disk image to 7-Zip. The corpus disk holds one FAT partition, so it is refused.",
+      "status": "refused",
+      "note": "Raw MBR disks are refused in every engine, whatever their partitions hold. An ISO 9660 or UDF disc with a hybrid MBR, and an ext volume whose boot block holds an MBR, still read. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
-        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
-        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
-      ],
-      "refused archives": [
-        "mbr.img"
+        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "MachO": {
@@ -238,7 +229,7 @@
     },
     "NTFS": {
       "status": "refused",
-      "note": "Refused in every engine, raw and as a disk's lone partition. The reader was removed on 12 November 2026 for licence reasons.",
+      "note": "Refused in every engine. The reader was removed on 12 November 2026 for licence reasons.",
       "tests": [
         "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
         "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
@@ -265,14 +256,11 @@
       ]
     },
     "QCOW": {
-      "status": "native",
-      "note": "QCOW versions 1, 2 and 3 read in process, with zlib clusters. An image with a backing file, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. Encrypted, external-data, extended-L2 and zstd images are refused, as 7-Zip refuses them.",
+      "status": "refused",
+      "note": "QCOW images of every version are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
-        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
-        "tests/disk_corpus.rs::damaged_containers_are_refused_exactly_when_7zip_refuses_them",
-        "tests/disk_corpus.rs::qemu_images_extract_as_7zip_extracts_them",
-        "tests/hostile_disk.rs::qcow_images_are_checked_before_their_disk_is_read"
+        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "Rar": {
@@ -321,13 +309,11 @@
       ]
     },
     "Sparse": {
-      "status": "native",
-      "note": "Android sparse images read in process. A disk whose file system Zipper neither reads nor refuses is refused, since Zipper hands no disk image to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons.",
+      "status": "refused",
+      "note": "Android sparse images are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
-        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
-        "tests/disk_corpus.rs::damaged_containers_are_refused_exactly_when_7zip_refuses_them",
-        "tests/hostile_disk.rs::android_sparse_images_are_checked_before_their_disk_is_read"
+        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "Split": {
@@ -336,7 +322,7 @@
     },
     "SquashFS": {
       "status": "native",
-      "note": "SquashFS 4.0 images of every compressor read in process, raw and in a lone disk partition. 7-Zip does not open LZ4 images, which Zipper reads. SquashFS versions 1 to 3 and big-endian images go to 7-Zip.",
+      "note": "SquashFS 4.0 images of every compressor read in process. A disk image that holds one is refused, since the disk image reader was removed. 7-Zip does not open LZ4 images, which Zipper reads. SquashFS versions 1 to 3 and big-endian images go to 7-Zip.",
       "tests": [
         "tests/squashfs_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/squashfs_corpus.rs::generated_images_of_every_compressor_and_block_size_extract_as_7zip_extracts_them",
@@ -381,46 +367,35 @@
       ]
     },
     "VDI": {
-      "status": "native",
-      "note": "Dynamic, static and undo VDI images with 1 MiB blocks read in process. A differencing VDI, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons.",
+      "status": "refused",
+      "note": "VDI images are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
-        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
-        "tests/disk_corpus.rs::damaged_containers_are_refused_exactly_when_7zip_refuses_them",
-        "tests/disk_corpus.rs::qemu_images_extract_as_7zip_extracts_them",
-        "tests/hostile_disk.rs::vdi_images_are_checked_before_their_disk_is_read"
+        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "VHD": {
-      "status": "native",
-      "note": "Fixed and dynamic VHD read in process. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A differencing VHD, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip.",
+      "status": "refused",
+      "note": "Fixed, dynamic and differencing VHD images are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
-        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
-        "tests/disk_corpus.rs::tool_images_extract_as_7zip_extracts_them",
-        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
+        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "VHDX": {
-      "status": "native",
-      "note": "Fixed and dynamic VHDX read in process. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. A differencing VHDX, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip.",
+      "status": "refused",
+      "note": "VHDX images are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
-        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
-        "tests/disk_corpus.rs::tool_images_extract_as_7zip_extracts_them",
-        "tests/disk_corpus.rs::damaged_images_are_refused_exactly_when_7zip_refuses_them"
+        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "VMDK": {
-      "status": "native",
-      "note": "Monolithic sparse and stream-optimized extents and descriptors with flat and sparse extents read in process. A differencing VMDK, or a disk whose file system Zipper neither reads nor refuses, is refused, since Zipper hands no disk image to 7-Zip. A lone FAT, NTFS, HFS+ or APFS partition is refused, since those readers were removed on 12 November 2026 for licence reasons. 7-Zip and Zipper both refuse the stream-optimized layout qemu-img writes.",
+      "status": "refused",
+      "note": "VMDK sparse extents and descriptors are refused in every engine. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite.",
       "tests": [
-        "tests/disk_corpus.rs::every_corpus_image_extracts_the_tree_7zip_extracts",
-        "tests/disk_corpus.rs::writer_images_extract_as_7zip_extracts_them_in_every_container",
-        "tests/disk_corpus.rs::damaged_containers_are_refused_exactly_when_7zip_refuses_them",
-        "tests/disk_corpus.rs::qemu_images_extract_as_7zip_extracts_them",
-        "tests/disk_corpus.rs::vmdk_descriptors_with_flat_and_sparse_extents_extract_as_7zip_extracts_them",
-        "tests/hostile_disk.rs::vmdk_images_are_checked_before_their_disk_is_read"
+        "tests/refused.rs::every_refused_format_is_refused_in_every_engine_with_nothing_written",
+        "tests/refused.rs::no_refused_format_reaches_a_fake_7zip_on_path"
       ]
     },
     "Xar": {

@@ -37,10 +37,9 @@ Extraction needs a new destination folder with an existing parent, or `--overwri
 - [RAR reader reference](docs/reference/rar-reader.md) covers RAR 5 archives, stored, compressed and solid, RAR 4 archives that are not solid, the sources the reader was written from, and how it differs from 7-Zip.
 - [ISO reader reference](docs/reference/iso-reader.md) covers ISO 9660, Joliet, Rock Ridge, El Torito and UDF disc images, which tree a hybrid disc gives, and how they differ from 7-Zip.
 - [WIM reader reference](docs/reference/wim-reader.md) covers Windows Imaging files with stored and XPRESS resources, and how they differ from 7-Zip.
-- [Disk image reader reference](docs/reference/disk-reader.md) covers VHD, VHDX, QCOW, VDI, VMDK and Android sparse images and MBR and GPT partition tables, and how they differ from 7-Zip.
-- [ext reader reference](docs/reference/ext-reader.md) covers ext2, ext3 and ext4 volumes, raw and inside disk images, with block maps, extents, inline data and checksums, and how they differ from 7-Zip.
+- [ext reader reference](docs/reference/ext-reader.md) covers raw ext2, ext3 and ext4 volumes, with block maps, extents, inline data and checksums, and how they differ from 7-Zip.
 - [FLV and SWF reader reference](docs/reference/swf-reader.md) covers Flash Video files and SWF files, uncompressed or compressed with zlib or LZMA, and how they differ from 7-Zip.
-- [SquashFS and CramFS reader reference](docs/reference/squashfs-reader.md) covers SquashFS 4.0 images of every compressor and CramFS images of both byte orders, raw and in a lone disk partition, and how they differ from 7-Zip.
+- [SquashFS and CramFS reader reference](docs/reference/squashfs-reader.md) covers SquashFS 4.0 images of every compressor and CramFS images of both byte orders, and how they differ from 7-Zip.
 - [Executable reader reference](docs/reference/exe-reader.md) covers PE images with their resources, COFF objects, TE images, ELF files, Mach-O files and Mach-O universal files, and how they differ from 7-Zip.
 - [LP reader reference](docs/reference/lp-reader.md) covers Android logical partition images, the `super.img` of dynamic partitions, and how they differ from 7-Zip.
 - [Intel HEX reader reference](docs/reference/ihex-reader.md) covers Intel HEX files, which extract to one file for each run of addresses, and how they differ from 7-Zip.

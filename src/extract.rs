@@ -1,5 +1,3 @@
-#[cfg(feature = "disk")]
-use crate::disk;
 #[cfg(feature = "7z")]
 use crate::native_7z;
 #[cfg(feature = "ar")]
@@ -52,20 +50,19 @@ use std::{io::Read, path::Path};
 pub enum Engine {
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, ISO and UDF disc images,
     /// single compressed files, unrecognized files, CAB files and cabinet
-    /// sets, LZH, ARJ, RAR, WIM and ESD images, ext2, ext3 and ext4 volumes,
-    /// VHD, VHDX, QCOW, VDI, VMDK and Android sparse images and MBR and GPT
-    /// disks, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files, SquashFS
-    /// 4.0 and CramFS images, raw or in a disk's lone partition, Android
-    /// logical partition images, UEFI firmware volumes and capsules, Intel HEX
-    /// files, and 7z whose methods it decodes. 7-Zip, with `-t` naming the
+    /// sets, LZH, ARJ, RAR, WIM and ESD images, raw ext2, ext3 and ext4
+    /// volumes, FLV and SWF files, PE, COFF, TE, ELF and Mach-O files, raw
+    /// SquashFS 4.0 and CramFS images, Android logical partition images, UEFI
+    /// firmware volumes and capsules, Intel HEX files, and 7z whose methods it
+    /// decodes. 7-Zip, with `-t` naming the
     /// format, for other 7z, a RAR volume, a RAR 4 solid archive or a RAR
     /// archive with encrypted headers, other SquashFS versions and byte orders,
     /// an ext volume that needs journal recovery or uses a feature Zipper does
     /// not read, a Mach-O universal file with the `B9 FA F1 0E` signature, and
     /// a logical partition image or UEFI firmware whose names are not plain
-    /// relative paths. A split or pre-1.13 WIM and a disk image whose file
-    /// system Zipper does not read fail. Every engine fails with [`Refused`] on
-    /// the formats that type names, so none reaches 7-Zip.
+    /// relative paths. A split or pre-1.13 WIM fails. Every engine fails with
+    /// [`Refused`] on the formats that type names, disk images among them, so
+    /// none reaches 7-Zip.
     #[default]
     Auto,
     /// 7-Zip for every archive whose format Zipper names by its signature, such
@@ -74,7 +71,7 @@ pub enum Engine {
     /// disk image, fails with [`Refused`].
     Backend,
     /// Native for ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, RAR, disc
-    /// images, WIM, disk images, ext, SquashFS 4.0, CramFS, FLV, SWF,
+    /// images, WIM, ext, SquashFS 4.0, CramFS, FLV, SWF,
     /// executables, logical partition images, UEFI firmware, Intel HEX, 7z and
     /// single compressed files, and native ZIP for unrecognized files.
     Native,
@@ -113,9 +110,6 @@ pub enum Reader {
     /// The native reader for PE images, COFF objects, TE images, ELF files,
     /// Mach-O files and Mach-O universal files.
     Exe,
-    /// The native reader for VHD, VHDX, QCOW, VDI, VMDK and Android sparse
-    /// images and MBR and GPT disks.
-    Disk,
     /// The native reader for SquashFS 4.0 images.
     Squashfs,
     /// The native reader for CramFS images.
@@ -196,6 +190,7 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         #[cfg(feature = "rar")]
         _ if native_rar::sniff(archive)? => Reader::Rar,
         _ if let Some(format) = refused::leading_signature(archive)? => bail!(Refused(format)),
+        _ if let Some(format) = refused::disk_container(archive)? => bail!(Refused(format)),
         #[cfg(feature = "wim")]
         _ if native_wim::sniff(archive)? => Reader::Wim,
         #[cfg(feature = "7z")]
@@ -254,8 +249,7 @@ pub fn choose_reader(engine: Engine, archive: &Path) -> Result<Reader> {
         }
         #[cfg(feature = "ext")]
         _ if native_ext::sniff(archive)? => Reader::Ext,
-        #[cfg(feature = "disk")]
-        _ if disk::sniff(archive)? => Reader::Disk,
+        _ if let Some(format) = refused::disk(archive)? => bail!(Refused(format)),
         #[cfg(feature = "flv")]
         _ if native_flv::sniff(archive)? => Reader::Flv,
         #[cfg(feature = "swf")]
@@ -639,8 +633,6 @@ fn tree_reader(reader: &Reader) -> Option<TreeReader> {
         Reader::Wim => Some(native_wim::read_archive),
         #[cfg(feature = "exe")]
         Reader::Exe => Some(native_exe::read_archive),
-        #[cfg(feature = "disk")]
-        Reader::Disk => Some(disk::read_archive),
         #[cfg(feature = "squashfs")]
         Reader::Squashfs => Some(native_squashfs::read_archive),
         #[cfg(feature = "cramfs")]

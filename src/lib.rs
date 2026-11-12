@@ -22,16 +22,6 @@ pub mod counters;
 mod crc32;
 #[cfg(any(feature = "tar", feature = "xar"))]
 mod dictionary;
-#[cfg(feature = "disk")]
-pub mod disk;
-#[cfg(feature = "disk")]
-mod disk_qcow;
-#[cfg(feature = "disk")]
-mod disk_sparse;
-#[cfg(feature = "disk")]
-mod disk_vdi;
-#[cfg(feature = "disk")]
-mod disk_vmdk;
 pub mod duplicates;
 mod extract;
 mod framing;

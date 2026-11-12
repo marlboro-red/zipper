@@ -433,8 +433,8 @@ const FORMAT_TESTS: &[(&str, &[&str])] = &[
     ("uefi", &["uefi_corpus", "hostile_uefi"]),
     ("ihex", &["ihex_corpus", "hostile_ihex"]),
     (
-        "disk,zstd",
-        &["disk_corpus", "squashfs_corpus", "ext_corpus"],
+        "cramfs,ext,squashfs,zstd",
+        &["squashfs_corpus", "ext_corpus"],
     ),
     ("tar,squashfs", &["zstd_feature"]),
 ];

@@ -20,3 +20,24 @@ compound.doc.xz and installer.msi.xz are generated-v4-storages.doc and
 generated-v3-two-cabs.msi from tests/data/msi-corpus before 12 November
 2026, compressed with xz. Zipper's own compound file test writer wrote
 them. They hold no third-party content.
+
+The disk image samples come from tests/data/disk-corpus before
+12 November 2026. They were written on macOS from seeded pseudo-random
+data that tests/disk_corpus.rs generated, and hold no third-party content.
+mkfs.fat 4.2 formatted the FAT volumes inside them and mtools 4.0.50
+filled them.
+
+- dynamic.vhd.xz and raw-fat.vhd.xz are VHD images and blocks-1m.vhdx.xz
+  a VHDX image, written by qemu-img 11.1.3.
+- fat12.qcow.xz, mbr-one.qcow2.xz, fat12-static.vdi.xz and
+  mbr-one.vmdk.xz were converted from raw disks by qemu-img 11.1.3.
+  gpt-two-flat.vmdk.xz is the descriptor of a monolithic flat VMDK that
+  qemu-img wrote. Its extent is not kept, since only the descriptor's
+  first line is checked.
+- hfs-gpt.qcow2.xz and apfs-gpt.vdi.xz wrap GPT disks that hdiutil on
+  macOS 26 wrote, holding HFS+ and APFS volumes.
+- mbr-two.simg.xz is an Android sparse image from Zipper's former disk
+  test writer.
+- gpt-two.img.xz is a GPT disk that sgdisk 1.0.10 partitioned, and
+  mbr-two.img.xz an MBR disk from Zipper's former disk test writer. Each
+  is cut to its first 1 MiB, which holds the partition tables.

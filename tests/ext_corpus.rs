@@ -6,14 +6,10 @@
 //! against the source tree `mke2fs -d` copied. Where
 //! `mke2fs` is installed, seeded source trees are copied into ext2, ext3 and
 //! ext4 volumes of every layout Zipper reads, and each must extract byte for
-//! byte with its modes and times as the source and 7-Zip give them. The
-//! corpus volume must also extract as 7-Zip extracts it inside MBR and GPT
-//! disks, VHD, VHDX, QCOW, VDI, VMDK and Android sparse images. Without 7-Zip
-//! 26.05 or later the differential checks are skipped, unless
+//! byte with its modes and times as the source and 7-Zip give them. Without
+//! 7-Zip 26.05 or later the differential checks are skipped, unless
 //! `ZIPPER_PARITY_REQUIRE_7Z` is set.
 #![cfg(unix)]
-#[path = "common/disk_writer.rs"]
-mod disk_writer;
 #[path = "common/ext_trees.rs"]
 mod ext_trees;
 #[path = "common/sevenzip.rs"]
@@ -328,88 +324,6 @@ fn generated_volumes_extract_byte_for_byte_as_7zip_extracts_them() {
                 );
                 ext_trees::assert_matches_sevenzip(&ours, &theirs, &output, &label);
             }
-        }
-    }
-}
-
-fn qemu_convert(qemu: &Path, work: &Path, disk: &Path, format: &[&str], name: &str) -> PathBuf {
-    let out = work.join(name);
-    let run = Command::new(qemu)
-        .args(["convert", "-f", "raw", "-O"])
-        .args(format)
-        .arg(disk)
-        .arg(&out)
-        .output()
-        .unwrap();
-    assert!(
-        run.status.success(),
-        "qemu-img {format:?}: {}",
-        String::from_utf8_lossy(&run.stderr)
-    );
-    out
-}
-
-#[test]
-fn the_corpus_volume_extracts_as_7zip_extracts_it_in_every_disk_container() {
-    let work = tempfile::tempdir().unwrap();
-    let volume = unpacked("ext4.img.xz");
-    let recorded = recorded()
-        .into_iter()
-        .find(|(name, _)| name == "ext4.img")
-        .unwrap()
-        .1;
-    let expected = masked(&recorded.tree, umask_ceiling(work.path()));
-    let mut images: Vec<(String, PathBuf)> = Vec::new();
-    let mut write = |name: &str, bytes: &[u8]| {
-        let path = work.path().join(name);
-        fs::write(&path, bytes).unwrap();
-        images.push((name.to_owned(), path));
-    };
-    let mbr = disk_writer::mbr(&[(0x83, 2048, &volume)], 64);
-    let gpt = disk_writer::gpt(&[(disk_writer::LINUX_DATA, "root", 2048, &volume)], 64);
-    write("mbr.img", &mbr);
-    write("gpt.img", &gpt);
-    write("mbr.vhd", &disk_writer::vhd_fixed(&mbr));
-    write("gpt.vhd", &disk_writer::vhd_dynamic(&gpt, 21));
-    write("mbr.vhdx", &disk_writer::vhdx(&mbr, 20));
-    write("gpt.simg", &disk_writer::android_sparse(&gpt, 4096));
-    if let Some(qemu) = tool("qemu-img") {
-        for (format, name) in [
-            (&["qcow2"][..], "mbr.qcow2"),
-            (&["vdi"][..], "mbr.vdi"),
-            (&["vmdk"][..], "gpt.vmdk"),
-            (&["qcow2"][..], "raw.qcow2"),
-        ] {
-            let disk = if name.starts_with("raw") {
-                let raw = work.path().join("raw-volume");
-                fs::write(&raw, &volume).unwrap();
-                raw
-            } else if name.starts_with("mbr") {
-                work.path().join("mbr.img")
-            } else {
-                work.path().join("gpt.img")
-            };
-            let out = qemu_convert(&qemu, work.path(), &disk, format, name);
-            images.push((name.to_owned(), out));
-        }
-    }
-    let binary = sevenzip_binary();
-    for (name, image) in images {
-        assert_eq!(
-            zipper::choose_reader(Engine::Auto, &image).unwrap(),
-            Reader::Disk,
-            "{name}"
-        );
-        let ours = zipper_tree(&image, &work.path().join(format!("{name}.zipper")));
-        assert_eq!(ours, expected, "{name} differs from the recorded tree");
-        if let Some(binary) = &binary {
-            let (accepted, theirs, output) = ext_trees::sevenzip_extract(
-                binary,
-                &image,
-                &work.path().join(format!("{name}.7z")),
-            );
-            assert!(accepted, "{name}: 7-Zip failed:\n{output}");
-            assert_eq!(ours, theirs, "{name} differs from 7-Zip:\n{output}");
         }
     }
 }

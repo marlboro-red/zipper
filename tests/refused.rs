@@ -72,6 +72,22 @@ fn lone_partition(kind: u8, volume: &[u8]) -> Vec<u8> {
     disk
 }
 
+// SPEC(Microsoft Virtual Hard Disk Image Format Specification, Hard Disk Footer Format): the
+// checksum is the one's complement of the sum of the footer's bytes without it.
+fn fixed_vhd(disk: &[u8]) -> Vec<u8> {
+    let mut footer = [0u8; SECTOR];
+    footer[..8].copy_from_slice(b"conectix");
+    footer[8..12].copy_from_slice(&2u32.to_be_bytes());
+    footer[12..16].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    footer[16..24].copy_from_slice(&u64::MAX.to_be_bytes());
+    footer[40..48].copy_from_slice(&(disk.len() as u64).to_be_bytes());
+    footer[48..56].copy_from_slice(&(disk.len() as u64).to_be_bytes());
+    footer[60..64].copy_from_slice(&2u32.to_be_bytes());
+    let sum = footer.iter().fold(0u32, |sum, byte| sum + u32::from(*byte));
+    footer[64..68].copy_from_slice(&(!sum).to_be_bytes());
+    [disk, &footer].concat()
+}
+
 fn case(name: &'static str, bytes: Vec<u8>, words: &'static str) -> Case {
     Case {
         name,
@@ -88,6 +104,14 @@ fn cases() -> Vec<Case> {
     let ntfs = "Zipper does not read NTFS volumes";
     let hfs = "Zipper does not read HFS+ and HFSX volumes";
     let apfs = "Zipper does not read APFS containers";
+    let vhd = "Zipper does not read VHD images";
+    let vhdx = "Zipper does not read VHDX images";
+    let qcow = "Zipper does not read QCOW images";
+    let vdi = "Zipper does not read VDI images";
+    let vmdk = "Zipper does not read VMDK images";
+    let sparse = "Zipper does not read Android sparse images";
+    let mbr = "Zipper does not read MBR disk images";
+    let gpt = "Zipper does not read GPT disk images";
     let compound_magic = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
     vec![
         case("help.chm", stored("refused/chm.chm.xz"), chm),
@@ -120,24 +144,58 @@ fn cases() -> Vec<Case> {
         case(
             "gpt-fat.img",
             stored("parity/archives/gpt.img.stored.xz"),
-            fat,
+            gpt,
         ),
         case(
             "mbr-fat.img",
             stored("parity/archives/mbr.img.stored.xz"),
-            fat,
+            mbr,
         ),
         case("ntfs.img", ntfs_volume(), ntfs),
-        case("ntfs-mbr.img", lone_partition(0x07, &ntfs_volume()), ntfs),
-        case("raw-fat.vhd", stored("disk-corpus/raw-fat.vhd.xz"), fat),
-        case("fat12.qcow", stored("disk-corpus/fat12.qcow.xz"), fat),
-        case("hfs-gpt.qcow2", stored("disk-corpus/hfs-gpt.qcow2.xz"), hfs),
-        case("apfs-gpt.vdi", stored("disk-corpus/apfs-gpt.vdi.xz"), apfs),
+        case("ntfs-mbr.img", lone_partition(0x07, &ntfs_volume()), mbr),
         case(
-            "ntfs-mbr.vmdk",
-            stored("disk-corpus/ntfs-mbr.vmdk.xz"),
-            ntfs,
+            "linux-mbr.img",
+            lone_partition(0x83, &[0; 64 * SECTOR]),
+            mbr,
         ),
+        case("mbr-two.img", stored("refused/mbr-two.img.xz"), mbr),
+        case("gpt-two.img", stored("refused/gpt-two.img.xz"), gpt),
+        case(
+            "gpt-4k.img",
+            padded(b"EFI PART\0\0\x01\0", 4096, 16384),
+            gpt,
+        ),
+        case("dynamic.vhd", stored("refused/dynamic.vhd.xz"), vhd),
+        case("raw-fat.vhd", stored("refused/raw-fat.vhd.xz"), vhd),
+        case("fixed.vhd", fixed_vhd(&[0x5A; 8 * SECTOR]), vhd),
+        case("fixed.bin", fixed_vhd(&[0x5A; 8 * SECTOR]), vhd),
+        case(
+            "fixed-mbr.vhd",
+            fixed_vhd(&lone_partition(0x83, &[0; 8 * SECTOR])),
+            vhd,
+        ),
+        case("blocks-1m.vhdx", stored("refused/blocks-1m.vhdx.xz"), vhdx),
+        case("fat12.qcow", stored("refused/fat12.qcow.xz"), qcow),
+        case("mbr-one.qcow2", stored("refused/mbr-one.qcow2.xz"), qcow),
+        case("hfs-gpt.qcow2", stored("refused/hfs-gpt.qcow2.xz"), qcow),
+        case(
+            "fat12-static.vdi",
+            stored("refused/fat12-static.vdi.xz"),
+            vdi,
+        ),
+        case("apfs-gpt.vdi", stored("refused/apfs-gpt.vdi.xz"), vdi),
+        case("mbr-one.vmdk", stored("refused/mbr-one.vmdk.xz"), vmdk),
+        case(
+            "gpt-two-flat.vmdk",
+            stored("refused/gpt-two-flat.vmdk.xz"),
+            vmdk,
+        ),
+        case(
+            "descriptor.txt",
+            stored("refused/gpt-two-flat.vmdk.xz"),
+            vmdk,
+        ),
+        case("mbr-two.simg", stored("refused/mbr-two.simg.xz"), sparse),
         case(
             "hello.b64",
             b"aGVsbG8sIGEgc21hbGwgZmlsZQo=\n".to_vec(),
@@ -356,6 +414,10 @@ fn crafted() -> Vec<(&'static str, Vec<u8>)> {
     let mut mub_prefix = vec![0xB9, 0xFA, 0xF1, 0x0E];
     mub_prefix.resize(16, 0);
     let fat = stored("parity/archives/fat.img.stored.xz");
+    let vhd = fixed_vhd(&lone_partition(0x83, &[0; 8 * SECTOR]));
+    let qcow = stored("refused/mbr-one.qcow2.xz");
+    let vhdx = stored("refused/blocks-1m.vhdx.xz");
+    let gpt = stored("refused/gpt-two.img.xz");
     vec![
         ("one-byte-prefix.bin", prefixed(&[0], &installer)),
         (
@@ -377,6 +439,12 @@ fn crafted() -> Vec<(&'static str, Vec<u8>)> {
         ),
         ("cd001.img", with_disc_descriptor(fat)),
         ("x.b64.001", b"aGVsbG8sIGEgc21h".to_vec()),
+        ("vhd-prefix.bin", prefixed(&[0], &vhd)),
+        ("far-qcow.bin", prefixed(&vec![0; 70_000], &qcow)),
+        ("mub-vhdx.bin", prefixed(&mub_prefix, &vhdx)),
+        ("macho-qcow.bin", prefixed(b"\xCF\xFA\xED\xFE", &qcow)),
+        ("cd001-gpt.img", with_disc_descriptor(gpt.clone())),
+        ("mub-gpt.bin", prefixed(&mub_prefix, &gpt)),
     ]
 }
 
@@ -452,8 +520,16 @@ fn archives_that_hold_a_refused_signature_still_extract() {
         &cab_writer::Method::Stored,
     )
     .build();
-    let cases: [(&str, Vec<u8>, &str); 3] = [
+    let vhd = fixed_vhd(&lone_partition(0x83, &[0; 8 * SECTOR]));
+    let cases: [(&str, Vec<u8>, &str); 6] = [
         ("holds-a-dmg.cab", cab, "disk.dmg"),
+        ("holds-a-vhd.tar", tar_with(b"disk.vhd", &vhd), "disk.vhd"),
+        ("kdmv.tar", tar_with(b"KDMV-notes.txt", b"notes\n"), "KDMV"),
+        (
+            "holds-a-qcow.tar",
+            tar_with(b"disk.qcow2", &stored("refused/mbr-one.qcow2.xz")),
+            "disk.qcow2",
+        ),
         (
             "koly.tar",
             tar_with(b"koly\0", b"koly\0\0\0\x04\0\0\x02\0"),
@@ -475,6 +551,86 @@ fn archives_that_hold_a_refused_signature_still_extract() {
         assert!(
             found.iter().any(|file| file.starts_with(wanted)),
             "{name}: {found:?}"
+        );
+    }
+}
+
+#[test]
+fn a_disk_image_split_into_numbered_volumes_is_refused_in_every_engine() {
+    let fake = FakeSevenZip::new();
+    let image = fixed_vhd(&[0x5A; 8 * SECTOR]);
+    let work = tempfile::tempdir().unwrap();
+    let first = work.path().join("disk.vhd.001");
+    let (front, back) = image.split_at(6 * SECTOR);
+    fs::write(&first, front).unwrap();
+    fs::write(work.path().join("disk.vhd.002"), back).unwrap();
+    let output = work.path().join("out");
+    for engine in CLI_ENGINES {
+        for action in ["extract", "list", "test"] {
+            let mut args: Vec<&std::ffi::OsStr> = Vec::new();
+            if let Some(engine) = engine {
+                args.extend([std::ffi::OsStr::new("--zip-engine"), engine.as_ref()]);
+            }
+            args.extend([action.as_ref(), first.as_os_str()]);
+            if action == "extract" {
+                args.extend(["-o".as_ref(), output.as_os_str()]);
+            }
+            let (success, stderr) = run_cli(&fake, true, &args);
+            let label = format!("{action} with {engine:?}");
+            assert!(!success, "{label} succeeded");
+            assert!(
+                stderr.contains("Zipper does not read VHD images"),
+                "{label}: {stderr}"
+            );
+            assert!(!output.exists(), "{label} wrote output");
+        }
+    }
+    assert_eq!(fake.started(), None);
+}
+
+fn with_partition_table(mut bytes: Vec<u8>) -> Vec<u8> {
+    let table = lone_partition(0x83, &[0; SECTOR]);
+    bytes[0x1BE..SECTOR].copy_from_slice(&table[0x1BE..SECTOR]);
+    bytes
+}
+
+#[test]
+fn discs_and_ext_volumes_that_start_with_a_partition_table_still_read() {
+    let cases = [
+        (
+            "hybrid.iso",
+            with_partition_table(stored("parity/archives/iso.iso.stored.xz")),
+            "-tiso",
+        ),
+        (
+            "booted.ext4",
+            with_partition_table(stored("ext-corpus/ext4.img.xz")),
+            "-text",
+        ),
+    ];
+    for (name, bytes, switch) in cases {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join(name);
+        fs::write(&archive, &bytes).unwrap();
+        for engine in [zipper::Engine::Auto, zipper::Engine::Native] {
+            let output = work.path().join(format!("{engine:?}"));
+            zipper::extract_archive(
+                &archive,
+                &output,
+                zipper::ExtractOptions {
+                    engine,
+                    ..zipper::ExtractOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{name} with {engine:?}: {error:#}"));
+            assert!(fs::read_dir(&output).unwrap().next().is_some(), "{name}");
+        }
+        assert_eq!(
+            zipper::choose_reader(zipper::Engine::Backend, &archive).unwrap(),
+            zipper::Reader::Backend {
+                format: Some(switch.to_owned())
+            },
+            "{name}"
         );
     }
 }
