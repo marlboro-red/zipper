@@ -223,11 +223,15 @@ pub(crate) fn windows_forbids_character(c: char) -> bool {
 
 #[cfg(any(feature = "tar", feature = "flv", feature = "ihex", feature = "swf"))]
 pub(crate) fn windows_safe_characters(output: &str) -> String {
+    let kept = output.trim_end_matches(['.', ' ']).len();
     output
-        .chars()
-        .map(|c| match cfg!(windows) && windows_forbids_character(c) {
-            true => '_',
-            false => c,
+        .char_indices()
+        .map(|(at, c)| {
+            let replaced = windows_forbids_character(c) || at >= kept;
+            match cfg!(windows) && replaced {
+                true => '_',
+                false => c,
+            }
         })
         .collect()
 }
@@ -591,6 +595,36 @@ pub(crate) struct Directory<'a> {
     pub modified: Option<std::time::SystemTime>,
 }
 
+// EXTERNAL(Windows): a scanner or the search indexer that opens a file just written makes
+// a rename of it, or of its folder, fail with ERROR_ACCESS_DENIED or ERROR_SHARING_VIOLATION
+// for a moment, so such a rename is tried again for up to five seconds.
+pub(crate) fn retried_while_windows_holds_it<T>(
+    mut attempt: impl FnMut() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    const ERROR_ACCESS_DENIED: i32 = 5;
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    const PATIENCE: std::time::Duration = std::time::Duration::from_secs(5);
+    const LONGEST_PAUSE: std::time::Duration = std::time::Duration::from_millis(100);
+    let started = std::time::Instant::now();
+    let mut pause = std::time::Duration::from_millis(1);
+    loop {
+        match attempt() {
+            Err(error)
+                if cfg!(windows)
+                    && matches!(
+                        error.raw_os_error(),
+                        Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION)
+                    )
+                    && started.elapsed() < PATIENCE =>
+            {
+                std::thread::sleep(pause);
+                pause = (pause * 2).min(LONGEST_PAUSE);
+            }
+            result => return result,
+        }
+    }
+}
+
 pub(crate) fn publish(
     staging: &Path,
     destination: &Path,
@@ -607,7 +641,19 @@ pub(crate) fn publish(
         #[cfg(windows)]
         restore_directory_times(staging, directories);
         check()?;
-        std::fs::rename(staging, destination)?;
+        let renamed = retried_while_windows_holds_it(|| {
+            if std::fs::symlink_metadata(destination).is_ok() {
+                return Err(std::io::ErrorKind::AlreadyExists.into());
+            }
+            std::fs::rename(staging, destination)
+        });
+        if renamed
+            .as_ref()
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::AlreadyExists)
+        {
+            anyhow::bail!("destination appeared during extraction");
+        }
+        renamed?;
         anyhow::Ok(())
     })();
     if published.is_err() {
@@ -844,6 +890,48 @@ mod tests {
     use std::path::Component;
 
     const ON_WINDOWS: bool = cfg!(windows);
+
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_rename_waits_while_another_handle_holds_a_file_in_it() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let (staging, destination) = (root.path().join("staging"), root.path().join("out"));
+        std::fs::create_dir(&staging).unwrap();
+        std::fs::write(staging.join("new.txt"), b"written").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(staging.join("new.txt"))
+            .unwrap();
+        let refused = std::fs::rename(&staging, &destination).unwrap_err();
+        assert!(matches!(refused.raw_os_error(), Some(5 | 32)), "{refused}");
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            drop(held);
+        });
+        retried_while_windows_holds_it(|| std::fs::rename(&staging, &destination)).unwrap();
+        release.join().unwrap();
+        assert_eq!(
+            std::fs::read(destination.join("new.txt")).unwrap(),
+            b"written"
+        );
+    }
+
+    #[test]
+    fn an_error_windows_does_not_clear_by_itself_is_returned_without_waiting() {
+        let root = tempfile::tempdir().unwrap();
+        let started = std::time::Instant::now();
+        let mut attempts = 0;
+        let error = retried_while_windows_holds_it(|| {
+            attempts += 1;
+            std::fs::rename(root.path().join("missing"), root.path().join("out"))
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(attempts, 1);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
 
     #[test]
     fn each_character_windows_forbids_is_refused_by_name_on_windows_alone() {

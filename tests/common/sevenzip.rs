@@ -31,14 +31,20 @@ pub fn as_7zip_names_it_on_this_system(name: &str) -> String {
     if !cfg!(windows) {
         return name.to_owned();
     }
-    name.chars()
-        .map(
-            |c| match c < '\u{20}' || CHARACTERS_WINDOWS_FORBIDS.contains(&c) {
-                true => '_',
-                false => c,
-            },
-        )
-        .collect()
+    name.split('/')
+        .map(|part| {
+            let kept = part.trim_end_matches(['.', ' ']).len();
+            part.char_indices()
+                .map(|(at, c)| {
+                    match c < '\u{20}' || CHARACTERS_WINDOWS_FORBIDS.contains(&c) || at >= kept {
+                        true => '_',
+                        false => c,
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 pub fn spelled_through_the_windows_code_page<'a>(
@@ -93,8 +99,15 @@ fn names_windows_forbids_are_judged_only_on_windows() {
     assert_eq!(windows_forbids("folder/tail."), windows);
     assert_eq!(windows_forbids("e\u{1}"), windows);
     assert!(!windows_forbids("folder/plain name.txt"));
-    let renamed = as_7zip_names_it_on_this_system("a|b\u{1}/c");
-    assert_eq!(renamed, if windows { "a_b_/c" } else { "a|b\u{1}/c" });
+    let renamed = as_7zip_names_it_on_this_system("a|b\u{1}/c../d");
+    assert_eq!(
+        renamed,
+        if windows {
+            "a_b_/c__/d"
+        } else {
+            "a|b\u{1}/c../d"
+        }
+    );
     assert!(!zipper_refused_a_name_windows_forbids(
         "cannot create entry"
     ));

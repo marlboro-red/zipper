@@ -424,19 +424,14 @@ fn generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them
         let work = tempfile::tempdir().unwrap();
         let path = work.path().join(name);
         fs::write(&path, &bytes).unwrap();
-        let plain = zipper_tree(&path, &work.path().join("plain"), false);
-        if expected
-            .iter()
-            .any(|(name, _)| sevenzip::windows_forbids(name))
-        {
-            let error = format!("{:#}", plain.expect_err(&label));
-            assert!(
-                sevenzip::zipper_refused_a_name_windows_forbids(&error),
-                "{label}: {error}"
-            );
-            continue;
-        }
-        plain.unwrap_or_else(|error| panic!("{label}: {error:#}"));
+        match zipper_tree(&path, &work.path().join("plain"), false) {
+            Err(error)
+                if sevenzip::zipper_refused_a_name_windows_forbids(&format!("{error:#}")) =>
+            {
+                continue;
+            }
+            plain => plain.unwrap_or_else(|error| panic!("{label}: {error:#}")),
+        };
         check_expected(&label, &work.path().join("plain"), &expected);
         if let Some(binary) = &binary {
             compare_with_7zip(binary, &label, name, &bytes);

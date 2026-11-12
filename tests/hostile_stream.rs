@@ -217,7 +217,10 @@ fn a_backslash_in_a_unix_file_name_becomes_an_underscore() {
 fn windows_output_names_avoid_devices_and_trailing_dots() {
     for (archive, name) in [
         ("CON.gz", "_CON"),
-        ("a..gz", "a"),
+        ("a..gz", "a_"),
+        ("a. .gz", "a_"),
+        ("x...gz", "x__"),
+        ("...gz", "_"),
         ("nul.txt.gz", "_nul.txt"),
         ("a<b>c|d?e*f\"g.gz", "a_b_c_d_e_f_g"),
         ("tab\there.gz", "tab_here"),

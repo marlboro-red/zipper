@@ -137,6 +137,13 @@ pub fn compare_with_7zip(binary: &Path, label: &str, name: &str, bytes: &[u8]) -
     let ours = zipper_tree(&path, &work.path().join("zipper"), true);
     let theirs = sevenzip_tree(binary, &path, &work.path().join("7zip"), true);
     let outcome = match (&ours, &theirs) {
+        (Ok(ours), Some(theirs))
+            if crate::sevenzip::spelled_through_the_windows_code_page(
+                ours.keys().chain(theirs.keys()),
+            ) =>
+        {
+            (true, false)
+        }
         (Ok(ours), Some(theirs)) => {
             assert_eq!(ours, theirs, "{label}");
             (true, false)

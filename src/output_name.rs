@@ -30,10 +30,9 @@ pub(crate) fn without_trailing_spaces(name: &str) -> &str {
 
 pub(crate) fn safe_output_name(output: &str, archive_name: &str) -> String {
     let output = output.replace(['\\', ':'], "_");
-    let output = crate::windows_safe_characters(&output);
-    let output = match without_trailing_spaces(&output) {
+    let output = match output.trim_end_matches(' ') {
         "" | "." | ".." => "_".to_owned(),
-        trimmed => trimmed.to_owned(),
+        trimmed => crate::windows_safe_characters(trimmed),
     };
     let output = match output.eq_ignore_ascii_case(archive_name) {
         true => format!("{output}~"),

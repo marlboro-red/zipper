@@ -1273,15 +1273,17 @@ fn rename_without_replacing(from: &Path, to: &Path) -> Result<()> {
     #[cfg(windows)]
     let renamed = {
         let (from, to) = (verbatim_wide(from)?, verbatim_wide(to)?);
-        // SAFETY: both paths are NUL-terminated UTF-16 buffers that outlive the call.
-        if unsafe {
-            windows_sys::Win32::Storage::FileSystem::MoveFileExW(from.as_ptr(), to.as_ptr(), 0)
-        } != 0
-        {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
+        crate::retried_while_windows_holds_it(|| {
+            // SAFETY: both paths are NUL-terminated UTF-16 buffers that outlive the call.
+            if unsafe {
+                windows_sys::Win32::Storage::FileSystem::MoveFileExW(from.as_ptr(), to.as_ptr(), 0)
+            } != 0
+            {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        })
     };
     #[cfg(not(any(
         target_os = "linux",

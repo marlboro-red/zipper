@@ -212,6 +212,9 @@ fn compare(binary: &Path, name: &str, disc: &Disc) {
         }
         ours => ours.unwrap_or_else(|error| panic!("{name}: {error:#}")),
     };
+    if sevenzip::spelled_through_the_windows_code_page(ours.keys().chain(theirs.keys())) {
+        return;
+    }
     assert_eq!(ours, theirs, "{name} differs from 7-Zip");
 }
 

@@ -416,7 +416,7 @@ fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Resul
             Existing::Skip => (&paths[0], &[]),
             Existing::RenameNew | Existing::RenameExisting => (&paths[0], &paths[1..]),
         };
-        std::fs::rename(kept, into.join(name))?;
+        crate::retried_while_windows_holds_it(|| std::fs::rename(kept, into.join(name)))?;
         let mut number = 0;
         for other in others {
             let renamed = loop {
@@ -426,7 +426,7 @@ fn flatten(tree: &Path, into: &Path, holder: &Path, existing: Existing) -> Resul
                     break candidate;
                 }
             };
-            std::fs::rename(other, into.join(renamed))?;
+            crate::retried_while_windows_holds_it(|| std::fs::rename(other, into.join(&renamed)))?;
         }
     }
     Ok(())

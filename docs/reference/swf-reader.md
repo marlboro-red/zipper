@@ -51,7 +51,7 @@ A compressed SWF and an FLV hold no names of their own, so the reader names thei
 - The archive name loses its last extension. A name with no extension, or whose only dot comes first, such as `.flv`, keeps it whole.
 - A compressed SWF adds `~.swf`, so `movie.swf` writes `movie~.swf` and `movie` writes `movie~.swf`.
 - An FLV drops trailing spaces from that stem, then adds a dot and the extension, so `movie.flv` writes `movie.mp3`. A name with no extension gains `~` first, so `movie` writes `movie~.mp3`.
-- `\` and `:` become `_`, and so do `<`, `>`, `"`, `|`, `?`, `*` and characters below U+0020 on Windows. Trailing spaces are dropped, with trailing dots too on Windows. 7-Zip on macOS and Linux keeps both.
+- `\` and `:` become `_`, and so do `<`, `>`, `"`, `|`, `?`, `*` and characters below U+0020 on Windows. Trailing spaces are dropped. On Windows each dot or space of the run that then ends the name becomes `_`. 7-Zip on macOS and Linux keeps trailing spaces and dots.
 - A name that equals the archive's own name, ignoring ASCII case, gains `~`, where 7-Zip would write over the archive in its own folder. `x.aac.aac` holding AAC writes `x.aac.aac~`.
 
 A file split into [volumes](zip-reader.md#split-volumes) is named from its first volume's name without `.001`.

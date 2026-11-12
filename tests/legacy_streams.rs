@@ -89,6 +89,18 @@ fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> Option<BTreeMap<
     run.status.success().then(|| tree(into))
 }
 
+fn never_the_archive_name(
+    tree: BTreeMap<String, String>,
+    archive: &str,
+) -> BTreeMap<String, String> {
+    tree.into_iter()
+        .map(|(name, kind)| match name.eq_ignore_ascii_case(archive) {
+            true => (format!("{name}~"), kind),
+            false => (name, kind),
+        })
+        .collect()
+}
+
 fn zipper_tree(archive: &Path, into: &Path) -> anyhow::Result<BTreeMap<String, String>> {
     zipper::extract_archive(archive, into, zipper::ExtractOptions::default())?;
     Ok(tree(into))
@@ -116,6 +128,7 @@ fn assert_matches_7zip(binary: &Path, cases: &[Case], allowed: &[&str]) -> (usiz
         let label = format!("{}: {}", case.name, case.description);
         match (theirs, ours) {
             (Some(theirs), Ok(ours)) => {
+                let theirs = never_the_archive_name(theirs, &case.name);
                 if ours != theirs {
                     problems.push(format!(
                         "{label}: Zipper wrote {ours:?} and 7-Zip {theirs:?}"
@@ -319,6 +332,8 @@ fn szdd_names_follow_7zip_and_stay_safe() {
         ("space _", 0),
         (".._", b'.'),
         ("x._", b'.'),
+        ("._", b'.'),
+        ("_", b'.'),
         ("archive.mslz", b'x'),
     ] {
         cases.push(Case {

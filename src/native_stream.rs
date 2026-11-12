@@ -157,8 +157,10 @@ fn has_extension(path: &Path, extension: &str) -> bool {
 /// `.tpz` become `.tar`. Any other extension is dropped, and a name without
 /// one gains `~`, so the decoded file never takes the archive's own name.
 /// `\` and `:` become `_`, and on Windows so do `< > " | ? *` and characters
-/// below U+0020. Trailing spaces go, and on Windows trailing dots too. A name left as `.` or `..` becomes `_`, and a name that is still not
-/// safe, such as `CON` on Windows, gains a leading `_`.
+/// below U+0020. Trailing spaces go. A name left as `.` or `..` becomes `_`,
+/// and otherwise on Windows each dot or space of the run that ends the name
+/// becomes `_`, so `a .` becomes `a__`. A name that is still not safe, such
+/// as `CON` on Windows, gains a leading `_`.
 pub fn output_name(archive: &Path) -> Result<String> {
     let name = archive
         .file_name()
@@ -208,15 +210,9 @@ fn default_name(archive: &Path) -> Result<String> {
 
 fn safe_name(output: &str, trailing: &[char]) -> String {
     let output = output.replace(['\\', ':'], "_");
-    let output = crate::windows_safe_characters(&output);
-    let trailing: Vec<char> = trailing
-        .iter()
-        .copied()
-        .chain(cfg!(windows).then_some([' ', '.']).into_iter().flatten())
-        .collect();
-    let output = match output.trim_end_matches(trailing.as_slice()) {
+    let output = match output.trim_end_matches(trailing) {
         "" | "." | ".." => "_".to_owned(),
-        trimmed => trimmed.to_owned(),
+        trimmed => crate::windows_safe_characters(trimmed),
     };
     [output.clone(), format!("_{output}"), "_".to_owned()]
         .into_iter()
