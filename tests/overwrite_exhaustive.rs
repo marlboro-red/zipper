@@ -328,7 +328,10 @@ fn check_mode(mode: Existing, spell: fn(&str) -> String, compare: fn(Snapshot) -
             path
         })
         .collect();
-    let (mut merged, mut refused, mut checked) = (0, 0, 0);
+    const PAIRS_PER_PROGRESS_LINE: usize = 5000;
+    let total = (destinations.len() * archives.len()).div_ceil(stride);
+    let started = std::time::Instant::now();
+    let (mut merged, mut refused, mut checked) = (0, 0, 0_usize);
     for (case, (destination, archive)) in destinations
         .iter()
         .flat_map(|destination| {
@@ -378,6 +381,12 @@ fn check_mode(mode: Existing, spell: fn(&str) -> String, compare: fn(Snapshot) -
             }
         }
         checked += 1;
+        if checked.is_multiple_of(PAIRS_PER_PROGRESS_LINE) {
+            eprintln!(
+                "{mode:?}: {checked} of {total} pairs after {:.0?}",
+                started.elapsed()
+            );
+        }
         common::make_tree_deletable(root.path());
     }
     eprintln!("{mode:?}: {checked} pairs, {merged} merged, {refused} refused as conflicts");

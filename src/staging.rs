@@ -3590,15 +3590,27 @@ mod tests {
                 .flat_map(|destination| trees.iter().map(move |archive| (destination, archive)))
                 .step_by(stride)
                 .collect();
+            const PAIRS_PER_PROGRESS_LINE: usize = 2000;
+            let started = std::time::Instant::now();
+            let done = std::sync::atomic::AtomicUsize::new(0);
             let cancelled: usize = pairs
                 .par_iter()
                 .map(|&(destination, archive)| {
-                    MERGING
+                    let restored = MERGING
                         .iter()
                         .map(|&existing| {
                             cancel_points_restoring_the_pair(destination, archive, existing)
                         })
-                        .sum::<usize>()
+                        .sum::<usize>();
+                    let finished = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    if finished.is_multiple_of(PAIRS_PER_PROGRESS_LINE) {
+                        eprintln!(
+                            "cancel: {finished} of {} pairs after {:.0?}",
+                            pairs.len(),
+                            started.elapsed()
+                        );
+                    }
+                    restored
                 })
                 .sum();
             eprintln!(

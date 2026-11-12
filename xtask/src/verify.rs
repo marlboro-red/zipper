@@ -583,17 +583,37 @@ fn run_at_head_remotely(
             &format!("{head}:refs/heads/{branch}"),
         ],
     )?;
-    let run = Command::new("ssh")
-        .args([host.as_str(), "zsh", "-lc"])
-        .arg(shell_quoted(&remote_script(&dir, &branch, head, xtask)))
-        .output()?;
-    print!("{}", String::from_utf8_lossy(&run.stdout));
-    eprint!("{}", String::from_utf8_lossy(&run.stderr));
+    let run = streamed(
+        Command::new("ssh")
+            .args([host.as_str(), "zsh", "-lc"])
+            .arg(shell_quoted(&remote_script(&dir, &branch, head, xtask))),
+    )?;
     let _ = local_git(
         root,
         &["push", "-q", "--no-verify", &remote, "--delete", &branch],
     );
     Ok(run)
+}
+
+fn streamed(command: &mut Command) -> Result<std::process::Output> {
+    use std::io::{BufRead, Write};
+    let mut child = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()?;
+    let mut stdout = Vec::new();
+    for line in std::io::BufReader::new(child.stdout.take().context("no stdout pipe")?).split(b'\n')
+    {
+        let mut line = line?;
+        line.push(b'\n');
+        std::io::stdout().write_all(&line)?;
+        stdout.extend_from_slice(&line);
+    }
+    Ok(std::process::Output {
+        status: child.wait()?,
+        stdout,
+        stderr: Vec::new(),
+    })
 }
 
 pub fn gate_remotely(root: &Path, kind: &str) -> Result<()> {
@@ -688,6 +708,22 @@ mod tests {
         );
     }
     use std::{collections::BTreeSet, path::PathBuf};
+
+    #[cfg(unix)]
+    #[test]
+    fn a_streamed_run_keeps_every_stdout_line_and_its_exit_status() {
+        let run = streamed(
+            Command::new("/bin/sh")
+                .arg("-c")
+                .arg("echo first; echo progress >&2; printf 'synced at fingerprint x'; exit 3"),
+        )
+        .unwrap();
+        assert_eq!(run.status.code(), Some(3));
+        assert_eq!(
+            String::from_utf8(run.stdout).unwrap(),
+            "first\nsynced at fingerprint x\n"
+        );
+    }
 
     #[test]
     fn the_remote_script_quotes_every_value_and_works_inside_the_checkouts_target() {
