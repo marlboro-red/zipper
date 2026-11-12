@@ -299,16 +299,25 @@ fn run_full_check(root: &Path, check: &str) -> Result<bool> {
     let mut words = check.split_whitespace();
     let mut command = Command::new(words.next().context("empty full-check")?);
     for word in words {
-        match word.split_once('=') {
-            Some((key, value)) if key.chars().all(|c| c.is_ascii_uppercase() || c == '_') => {
+        match variable(word) {
+            Some((key, value)) => {
                 command.env(key, value);
             }
-            _ => {
+            None => {
                 command.arg(word);
             }
         }
     }
     Ok(command.current_dir(root).status()?.success())
+}
+
+fn variable(word: &str) -> Option<(&str, &str)> {
+    word.split_once('=').filter(|(key, _)| {
+        key.starts_with(|c: char| c.is_ascii_uppercase())
+            && key
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    })
 }
 
 pub fn run_every_full_check(root: &Path) -> Result<()> {
@@ -670,6 +679,22 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_full_check_word_is_a_variable_when_its_name_is_capitals_digits_and_underscores() {
+        assert_eq!(
+            variable("ZIPPER_LINK_STRIDE=1"),
+            Some(("ZIPPER_LINK_STRIDE", "1"))
+        );
+        assert_eq!(
+            variable("ZIPPER_NO_7ZIP_STRIDE=1"),
+            Some(("ZIPPER_NO_7ZIP_STRIDE", "1"))
+        );
+        assert_eq!(variable("A=b=c"), Some(("A", "b=c")));
+        for word in ["7ZIP=1", "lower=1", "=1", "--flag=1", "Mixed=1", "ZIPPER"] {
+            assert_eq!(variable(word), None, "{word}");
+        }
+    }
 
     #[cfg(unix)]
     #[test]
