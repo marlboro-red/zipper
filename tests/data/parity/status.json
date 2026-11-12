@@ -107,7 +107,7 @@
     },
     "Ext": {
       "status": "native",
-      "note": "ext2, ext3 and ext4 read in process as raw volumes, with block maps, extents, inline data, metadata checksums, hard links and links. 7-Zip cannot open inline folders or sparse block-mapped files with a zero indirect pointer, so those are checked against the source tree. A volume that needs journal recovery, or uses encryption or another feature Zipper does not read, goes to 7-Zip. A disk image that holds one is refused, since the disk image reader was removed.",
+      "note": "ext2, ext3 and ext4 read in process as raw volumes, with block maps, extents, inline data, metadata checksums, hard links and links. 7-Zip cannot open inline folders or sparse block-mapped files with a zero indirect pointer, so those are checked against the source tree. A volume that needs journal recovery, or uses encryption or another feature Zipper does not read, is refused by the feature's name. A disk image that holds one is refused, since the disk image reader was removed.",
       "tests": [
         "tests/ext_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/ext_corpus.rs::generated_volumes_extract_byte_for_byte_as_7zip_extracts_them",
@@ -175,7 +175,7 @@
     },
     "LP": {
       "status": "native",
-      "note": "Android logical partition images read in process. No AOSP lpmake runs here, so a test writer builds every image from the liblp format, and 7-Zip checks each. A partition name that is not a plain relative path goes to 7-Zip.",
+      "note": "Android logical partition images read in process. No AOSP lpmake runs here, so a test writer builds every image from the liblp format, and 7-Zip checks each. A partition name that is not a plain relative path is refused.",
       "tests": [
         "tests/lp_corpus.rs::generated_images_extract_as_7zip_extracts_them",
         "tests/hostile_lp.rs::every_changed_metadata_byte_with_repaired_checksums_is_refused_when_7zip_refuses_it",
@@ -220,7 +220,7 @@
     },
     "Mub": {
       "status": "native",
-      "note": "Mach-O universal files read in process, each slice named as 7-Zip names it. A file with the `B9 FA F1 0E` signature goes to 7-Zip. The corpus comes from lipo.",
+      "note": "Mach-O universal files read in process, each slice named as 7-Zip names it. A file with the `B9 FA F1 0E` signature is refused. The corpus comes from lipo.",
       "tests": [
         "tests/exe_corpus.rs::every_corpus_executable_extracts_the_tree_7zip_extracts",
         "tests/exe_corpus.rs::generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them",
@@ -266,7 +266,7 @@
     },
     "Rar": {
       "status": "native",
-      "note": "RAR 4 archives that are not solid read in process with Zipper's own RAR 2.9 decoder, with PPMd blocks that start a model and the standard filters libarchive recognizes. Solid archives, volumes, encrypted archives, RAR 1.5 and 2.0 compression and PPMd blocks that continue a model go to 7-Zip.",
+      "note": "RAR 4 archives that are not solid read in process with Zipper's own RAR 2.9 decoder, with PPMd blocks that start a model and the standard filters libarchive recognizes. Solid archives, volumes, encrypted archives, RAR 1.5 and 2.0 compression and PPMd blocks that continue a model are refused.",
       "tests": [
         "tests/rar_corpus.rs::every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/rar_corpus.rs::every_damaged_or_unsupported_corpus_archive_is_refused_and_leaves_nothing",
@@ -277,7 +277,7 @@
     },
     "Rar5": {
       "status": "native",
-      "note": "RAR 5 archives read in process with Zipper's own decoder, stored, compressed and solid, with the delta, E8, E8E9 and ARM filters. Volumes, encrypted archives, junctions and file copies go to 7-Zip.",
+      "note": "RAR 5 archives read in process with Zipper's own decoder, stored, compressed and solid, with the delta, E8, E8E9 and ARM filters. Volumes, encrypted archives, junctions and file copies are refused.",
       "tests": [
         "tests/rar_corpus.rs::every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/rar_corpus.rs::every_damaged_or_unsupported_corpus_archive_is_refused_and_leaves_nothing",
@@ -319,11 +319,11 @@
     },
     "Split": {
       "status": "native",
-      "note": "Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. RAR and other formats in volumes still go to 7-Zip."
+      "note": "Raw numbered volumes of ZIP, tar, compressed tar, 7z and single compressed files. A set in another format is read as one archive by its own reader, which refuses a RAR volume."
     },
     "SquashFS": {
       "status": "native",
-      "note": "SquashFS 4.0 images of every compressor read in process. A disk image that holds one is refused, since the disk image reader was removed. 7-Zip does not open LZ4 images, which Zipper reads. SquashFS versions 1 to 3 and big-endian images go to 7-Zip.",
+      "note": "SquashFS 4.0 images of every compressor read in process. A disk image that holds one is refused, since the disk image reader was removed. 7-Zip does not open LZ4 images, which Zipper reads. SquashFS versions 1 to 3 and big-endian images are refused.",
       "tests": [
         "tests/squashfs_corpus.rs::every_corpus_image_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/squashfs_corpus.rs::generated_images_of_every_compressor_and_block_size_extract_as_7zip_extracts_them",
@@ -341,7 +341,7 @@
     },
     "UEFIc": {
       "status": "native",
-      "note": "UEFI capsules read in process, with LZMA sections and nested volumes, named as 7-Zip names them. No EDK2 tool runs here, so a test writer builds volumes from the UEFI PI format, and QEMU's firmware images are checked where installed. A name that is not a plain relative path goes to 7-Zip.",
+      "note": "UEFI capsules read in process, with LZMA sections and nested volumes, named as 7-Zip names them. No EDK2 tool runs here, so a test writer builds volumes from the UEFI PI format, and QEMU's firmware images are checked where installed. A name that is not a plain relative path is refused.",
       "tests": [
         "tests/uefi_corpus.rs::generated_volumes_and_capsules_extract_as_7zip_extracts_them",
         "tests/uefi_corpus.rs::qemu_firmware_images_extract_as_7zip_extracts_them",
@@ -351,7 +351,7 @@
     },
     "UEFIf": {
       "status": "native",
-      "note": "UEFI firmware volumes read in process, with LZMA sections and nested volumes, named as 7-Zip names them. No EDK2 tool runs here, so a test writer builds volumes from the UEFI PI format, and QEMU's firmware images are checked where installed. A name that is not a plain relative path goes to 7-Zip.",
+      "note": "UEFI firmware volumes read in process, with LZMA sections and nested volumes, named as 7-Zip names them. No EDK2 tool runs here, so a test writer builds volumes from the UEFI PI format, and QEMU's firmware images are checked where installed. A name that is not a plain relative path is refused.",
       "tests": [
         "tests/uefi_corpus.rs::generated_volumes_and_capsules_extract_as_7zip_extracts_them",
         "tests/uefi_corpus.rs::qemu_firmware_images_extract_as_7zip_extracts_them",
