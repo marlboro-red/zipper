@@ -82,3 +82,4 @@ The check is proven able to fail. Each of these changes to the real code fails i
 | `replace_in_two_moves` does not try again when another file took the place | `a_replace_in_two_moves_sets_aside_the_file_another_extraction_placed_meanwhile` fails. |
 | The undo of a set-aside file fails when another file holds its path | `an_undo_leaves_a_file_set_aside_when_another_extraction_has_replaced_it` fails. |
 | The undo of a set-aside file fails when the file is no longer in the hidden folder | `an_undo_counts_a_set_aside_file_another_extraction_took_as_done` fails. |
+| `create_without_inodes`, which Windows uses, records a created folder as one move | `an_undo_without_inodes_keeps_what_another_extraction_put_in_a_folder_it_created` fails. |

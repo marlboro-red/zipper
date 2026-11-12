@@ -30,7 +30,7 @@ The archives may share folder names, such as `bin/` and `lib/`, but no file path
 - Every run that succeeds has published every one of its files with the archive's bytes.
 - No hidden `.zipper-` folder is left after a run that succeeds or fails, unless an undo fails as the usage page describes.
 - A run that fails before publication, such as one with a damaged archive, changes nothing in the destination. The other runs are not affected.
-- A run that fails or is cancelled during publication undoes only its own work. It moves back the files it placed and removes only the folders it created that are empty afterwards. A folder it created that another run has since put files into stays, with those files and their modes. It tells its own entries from the others by inode number and path.
+- A run that fails or is cancelled during publication undoes only its own work. It moves back the files it placed and removes only the folders it created that are empty afterwards. A folder it created that another run has since put files into stays, with those files and their modes. It tells its own entries from the others by inode number and path. Where the system gives no inode number, as on Windows, it tells them by path alone.
 - A folder that holds none of a successful run's files is not kept for that run. If another run created that folder and then fails or is cancelled, its undo removes the folder when it is empty. This holds even when the successful run's archive names the folder. Its files are always kept, along with every folder that holds them.
 
 ## What happens when a file path is shared

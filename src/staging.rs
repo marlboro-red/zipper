@@ -115,12 +115,12 @@ enum Done {
         placed: PathBuf,
         new: Identity,
     },
-    #[cfg(unix)]
     Folder {
         from: PathBuf,
         to: PathBuf,
         moved: Identity,
         ours: HashSet<Entry>,
+        inode_of: InodeOf,
     },
     #[cfg(unix)]
     FolderReplaced {
@@ -137,24 +137,30 @@ enum Done {
     MadeAgain(PathBuf),
 }
 
-#[cfg(unix)]
 type Entry = (u64, u64);
 
+type InodeOf = fn(&walkdir::DirEntry) -> u64;
+
 #[cfg(unix)]
-fn entry_key(root: &Path, entry: &walkdir::DirEntry) -> Entry {
-    use walkdir::DirEntryExt;
+fn inode_on_disk(entry: &walkdir::DirEntry) -> u64 {
+    walkdir::DirEntryExt::ino(entry)
+}
+
+fn no_inode(_: &walkdir::DirEntry) -> u64 {
+    0
+}
+
+fn entry_key(root: &Path, entry: &walkdir::DirEntry, inode_of: InodeOf) -> Entry {
     key(
-        entry.ino(),
+        inode_of(entry),
         entry.path().strip_prefix(root).unwrap_or(entry.path()),
     )
 }
 
-#[cfg(unix)]
 fn key(ino: u64, relative: &Path) -> Entry {
     (ino, path_hash(relative))
 }
 
-#[cfg(unix)]
 fn path_hash(relative: &Path) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -863,13 +869,23 @@ impl Staging {
         done: &mut Vec<Done>,
         stop: &mut dyn FnMut() -> bool,
     ) -> Result<()> {
+        Self::create_recording_entries(staged, placed, done, stop, inode_on_disk)
+    }
+
+    fn create_recording_entries(
+        staged: PathBuf,
+        placed: PathBuf,
+        done: &mut Vec<Done>,
+        stop: &mut dyn FnMut() -> bool,
+        inode_of: InodeOf,
+    ) -> Result<()> {
         if !fs::symlink_metadata(&staged).is_ok_and(|metadata| metadata.is_dir()) {
             return Self::move_into_place(staged, placed, done, stop);
         }
         let ours = walkdir::WalkDir::new(&staged)
             .min_depth(1)
             .into_iter()
-            .map(|entry| entry.map(|entry| entry_key(&staged, &entry)))
+            .map(|entry| entry.map(|entry| entry_key(&staged, &entry, inode_of)))
             .collect::<Result<HashSet<Entry>, _>>()?;
         rename_without_replacing(&staged, &placed, stop)?;
         let moved = identity(&placed);
@@ -878,6 +894,7 @@ impl Staging {
             to: placed,
             moved,
             ours,
+            inode_of,
         });
         Ok(())
     }
@@ -889,7 +906,17 @@ impl Staging {
         done: &mut Vec<Done>,
         stop: &mut dyn FnMut() -> bool,
     ) -> Result<()> {
-        Self::move_into_place(staged, placed, done, stop)
+        Self::create_without_inodes(staged, placed, done, stop)
+    }
+
+    #[cfg_attr(all(unix, not(test)), allow(dead_code))]
+    fn create_without_inodes(
+        staged: PathBuf,
+        placed: PathBuf,
+        done: &mut Vec<Done>,
+        stop: &mut dyn FnMut() -> bool,
+    ) -> Result<()> {
+        Self::create_recording_entries(staged, placed, done, stop, no_inode)
     }
 
     fn move_into_place(
@@ -1091,14 +1118,14 @@ impl Staging {
                             removed => removed
                                 .with_context(|| format!("cannot remove {}", folder.display())),
                         },
-                        #[cfg(unix)]
                         Done::Folder {
                             from,
                             to,
                             moved,
                             ours,
+                            inode_of,
                         } => ensure_unchanged(to, *moved).and_then(|()| {
-                            move_back_only_ours(from, to, ours).map_err(|error| {
+                            move_back_only_ours(from, to, ours, *inode_of).map_err(|error| {
                                 anyhow::anyhow!(
                                     "cannot move {} back to {}: {}",
                                     to.display(),
@@ -1113,7 +1140,6 @@ impl Staging {
                         Done::Moved { from, to, .. } => {
                             format!("{} moved from {}", to.display(), from.display())
                         }
-                        #[cfg(unix)]
                         Done::Folder { from, to, .. } => {
                             format!("{} moved from {}", to.display(), from.display())
                         }
@@ -1195,21 +1221,27 @@ fn unlock_only_ours(root: &Path, folder: &Path, ours: &HashSet<Entry>) {
     }
 }
 
-#[cfg(unix)]
 fn only_ours<'a>(
     to: &'a Path,
     ours: &'a HashSet<Entry>,
     contents_first: bool,
+    inode_of: InodeOf,
 ) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> + 'a {
     walkdir::WalkDir::new(to)
         .contents_first(contents_first)
         .into_iter()
-        .filter_entry(move |entry| entry.depth() == 0 || ours.contains(&entry_key(to, entry)))
+        .filter_entry(move |entry| {
+            entry.depth() == 0 || ours.contains(&entry_key(to, entry, inode_of))
+        })
 }
 
-#[cfg(unix)]
-fn move_back_only_ours(from: &Path, to: &Path, ours: &HashSet<Entry>) -> Result<()> {
-    let walk = |contents_first| only_ours(to, ours, contents_first);
+fn move_back_only_ours(
+    from: &Path,
+    to: &Path,
+    ours: &HashSet<Entry>,
+    inode_of: InodeOf,
+) -> Result<()> {
+    let walk = |contents_first| only_ours(to, ours, contents_first, inode_of);
     for entry in walk(false) {
         let entry = entry?;
         let back = join_rest(from, entry.path().strip_prefix(to)?);
@@ -2481,6 +2513,46 @@ mod tests {
         let error = merge.staging.undo(&done, anyhow::anyhow!("later step"));
         assert_eq!(format!("{error:#}"), "later step");
         assert!(!placed.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_undo_without_inodes_keeps_what_another_extraction_put_in_a_folder_it_created() {
+        let merge = merge();
+        let (staged, placed) = (merge.staging.path().join("d"), merge.destination.join("d"));
+        fs::create_dir(staged.join("inner")).unwrap();
+        fs::write(staged.join("inner/g"), b"new g").unwrap();
+        let mut done = Vec::new();
+        Staging::create_without_inodes(staged.clone(), placed.clone(), &mut done, &mut || false)
+            .unwrap();
+        fs::write(placed.join("other"), b"another extraction").unwrap();
+        fs::write(placed.join("inner/other"), b"another extraction").unwrap();
+        let error = merge.staging.undo(&done, anyhow::anyhow!("cancelled"));
+        assert_eq!(format!("{error:#}"), "cancelled");
+        assert_eq!(
+            fs::read(placed.join("other")).unwrap(),
+            b"another extraction"
+        );
+        assert_eq!(
+            fs::read(placed.join("inner/other")).unwrap(),
+            b"another extraction"
+        );
+        assert!(!placed.join("f").exists());
+        assert!(!placed.join("inner/g").exists());
+        assert_eq!(fs::read(staged.join("f")).unwrap(), b"new f");
+        assert_eq!(fs::read(staged.join("inner/g")).unwrap(), b"new g");
+        let mut done = Vec::new();
+        let alone = merge.staging.path().join("d");
+        Staging::create_without_inodes(alone.clone(), placed.clone(), &mut done, &mut || false)
+            .unwrap_err();
+        fs::remove_dir_all(&placed).unwrap();
+        Staging::create_without_inodes(alone, placed.clone(), &mut done, &mut || false).unwrap();
+        let error = merge.staging.undo(&done, anyhow::anyhow!("cancelled"));
+        assert_eq!(format!("{error:#}"), "cancelled");
+        assert!(
+            !placed.exists(),
+            "a folder nobody else used goes back whole"
+        );
     }
 
     #[cfg(unix)]
