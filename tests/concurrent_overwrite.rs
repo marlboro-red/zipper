@@ -129,9 +129,14 @@ enum Start {
     Empty,
     WithSharedFolders,
     Missing,
+    WithOldFiles,
 }
 
-fn prepare(destination: &Path, start: Start) {
+fn old_content(path: &Path) -> Vec<u8> {
+    format!("old {}", path.display()).into_bytes()
+}
+
+fn prepare(destination: &Path, start: Start, archives: &[Archive]) {
     match start {
         Start::Missing => {}
         Start::Empty => fs::create_dir(destination).unwrap(),
@@ -139,7 +144,22 @@ fn prepare(destination: &Path, start: Start) {
             fs::create_dir_all(destination.join("bin")).unwrap();
             fs::create_dir_all(destination.join("lib/python")).unwrap();
         }
+        Start::WithOldFiles => {
+            for path in archives.iter().flat_map(|archive| archive.files.keys()) {
+                let placed = destination.join(path);
+                fs::create_dir_all(placed.parent().unwrap()).unwrap();
+                fs::write(placed, old_content(path)).unwrap();
+            }
+        }
     }
+}
+
+fn old_files(archives: &[Archive]) -> Tree {
+    archives
+        .iter()
+        .flat_map(|archive| archive.files.keys())
+        .map(|path| (path.clone(), Some(old_content(path))))
+        .collect()
 }
 
 fn extract_all(
@@ -214,7 +234,12 @@ fn extract_cancelling(
     })
 }
 
-const STARTS: [Start; 3] = [Start::Empty, Start::WithSharedFolders, Start::Missing];
+const STARTS: [Start; 4] = [
+    Start::Empty,
+    Start::WithSharedFolders,
+    Start::Missing,
+    Start::WithOldFiles,
+];
 
 #[test]
 fn disjoint_files_in_shared_folders_extract_together_byte_exact() {
@@ -232,7 +257,7 @@ fn disjoint_files_in_shared_folders_extract_together_byte_exact() {
         let start = STARTS[round % STARTS.len()];
         let root = tempfile::tempdir().unwrap();
         let destination = root.path().join("out");
-        prepare(&destination, start);
+        prepare(&destination, start, &archives);
         let results = extract_all(&archives, &destination, round);
         for (index, result) in results.iter().enumerate() {
             if let Err(error) = result {
@@ -265,17 +290,20 @@ fn a_damaged_archive_fails_alone_and_the_others_publish() {
     let damaged = count / 2;
     let stored = damaged - damaged % 2;
     damage_last_file(&archives[stored]);
-    let mut expected = Tree::new();
-    for (index, archive) in archives.iter().enumerate() {
-        if index != stored {
-            expected.extend(archive.files.clone());
-        }
-    }
     for round in 0..rounds {
         let start = STARTS[round % STARTS.len()];
+        let mut expected = match start {
+            Start::WithOldFiles => old_files(&archives),
+            _ => Tree::new(),
+        };
+        for (index, archive) in archives.iter().enumerate() {
+            if index != stored {
+                expected.extend(archive.files.clone());
+            }
+        }
         let root = tempfile::tempdir().unwrap();
         let destination = root.path().join("out");
-        prepare(&destination, start);
+        prepare(&destination, start, &archives);
         let results = extract_all(&archives, &destination, round);
         for (index, result) in results.iter().enumerate() {
             match result {
@@ -318,7 +346,7 @@ fn a_file_two_archives_share_ends_whole_from_one_of_them() {
         let start = STARTS[round % STARTS.len()];
         let root = tempfile::tempdir().unwrap();
         let destination = root.path().join("out");
-        prepare(&destination, start);
+        prepare(&destination, start, &archives);
         if round % 2 == 1 && !matches!(start, Start::Missing) {
             fs::create_dir_all(destination.join("bin")).unwrap();
             fs::write(destination.join(shared), b"old").unwrap();
@@ -347,7 +375,9 @@ fn a_file_two_archives_share_ends_whole_from_one_of_them() {
                             message.contains("appeared in the destination"),
                             "round {round}: archive {index} failed: {message}"
                         );
-                        assert_eq!(actual.get(path), None, "round {round}: {message}");
+                        let left =
+                            matches!(start, Start::WithOldFiles).then(|| Some(old_content(path)));
+                        assert_eq!(actual.get(path), left.as_ref(), "round {round}: {message}");
                     }
                 }
             }
@@ -373,10 +403,13 @@ fn runs_cancelled_while_they_publish_undo_only_their_own_files() {
         let start = STARTS[round % STARTS.len()];
         let root = tempfile::tempdir().unwrap();
         let destination = root.path().join("out");
-        prepare(&destination, start);
+        prepare(&destination, start, &archives);
         let cancels = |index: usize| index % 2 == 1;
         let results = extract_cancelling(&archives, &destination, round, cancels);
-        let mut expected = Tree::new();
+        let mut expected = match start {
+            Start::WithOldFiles => old_files(&archives),
+            _ => Tree::new(),
+        };
         for (index, (archive, result)) in archives.iter().zip(&results).enumerate() {
             match result {
                 Ok(_) => {

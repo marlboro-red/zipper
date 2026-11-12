@@ -667,7 +667,7 @@ pub(crate) mod unix_modes {
         }
         Ok(())
     }
-    pub(super) fn unlock_tree_for_cleanup(directory: &Path) {
+    pub(crate) fn unlock_tree_for_cleanup(directory: &Path) {
         let Ok(metadata) = fs::symlink_metadata(directory) else {
             return;
         };

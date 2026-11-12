@@ -60,6 +60,7 @@ pub enum Existing {
 enum Step {
     Create(PathBuf),
     Replace(PathBuf),
+    ReplaceFolder(PathBuf, Vec<(PathBuf, u32)>),
     CreateAs(PathBuf, PathBuf),
     SetAside(PathBuf, PathBuf),
 }
@@ -67,14 +68,17 @@ enum Step {
 impl Step {
     fn archive_source(&self) -> Option<&Path> {
         match self {
-            Step::Create(path) | Step::Replace(path) | Step::CreateAs(path, _) => Some(path),
+            Step::Create(path)
+            | Step::Replace(path)
+            | Step::ReplaceFolder(path, _)
+            | Step::CreateAs(path, _) => Some(path),
             Step::SetAside(..) => None,
         }
     }
 
     fn archive_target(&self) -> Option<&Path> {
         match self {
-            Step::Create(path) | Step::Replace(path) => Some(path),
+            Step::Create(path) | Step::Replace(path) | Step::ReplaceFolder(path, _) => Some(path),
             Step::CreateAs(_, name) => Some(name),
             Step::SetAside(..) => None,
         }
@@ -105,6 +109,13 @@ enum Done {
         moved: Identity,
         ours: HashSet<Entry>,
     },
+    #[cfg(unix)]
+    FolderReplaced {
+        staged: PathBuf,
+        placed: PathBuf,
+        new: Identity,
+        ours: Contents,
+    },
     MadeAgain(PathBuf),
 }
 
@@ -122,10 +133,145 @@ fn entry_key(root: &Path, entry: &walkdir::DirEntry) -> Entry {
 
 #[cfg(unix)]
 fn key(ino: u64, relative: &Path) -> Entry {
+    (ino, path_hash(relative))
+}
+
+#[cfg(unix)]
+fn path_hash(relative: &Path) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     relative.hash(&mut hasher);
-    (ino, hasher.finish())
+    hasher.finish()
+}
+
+#[cfg(unix)]
+struct Held {
+    inode: u64,
+    directory: bool,
+}
+
+#[cfg(unix)]
+type Contents = std::collections::HashMap<u64, Held>;
+
+#[cfg(unix)]
+fn contents(folder: &Path) -> Result<Contents> {
+    use walkdir::DirEntryExt;
+    walkdir::WalkDir::new(folder)
+        .min_depth(1)
+        .into_iter()
+        .map(|entry| {
+            let entry = entry?;
+            let held = Held {
+                inode: entry.ino(),
+                directory: entry.file_type().is_dir(),
+            };
+            Ok((path_hash(entry.path().strip_prefix(folder)?), held))
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn ensure_only_replaced_entries(old: &Path, placed: &Path, new: &Contents) -> Result<()> {
+    ensure!(
+        fs::symlink_metadata(old).is_ok_and(|metadata| metadata.is_dir()),
+        "{} stopped being a directory during extraction",
+        placed.display()
+    );
+    for entry in walkdir::WalkDir::new(old).min_depth(1) {
+        let entry = entry?;
+        let relative = entry.path().strip_prefix(old)?;
+        match new.get(&path_hash(relative)) {
+            Some(held) if held.directory == entry.file_type().is_dir() => {}
+            Some(_) => bail!(
+                "{} changed between a file and a directory during extraction",
+                placed.join(relative).display()
+            ),
+            None => bail!(
+                "{} appeared in the destination during extraction",
+                placed.join(relative).display()
+            ),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn ensure_only_our_entries(new: &Path, placed: &Path, ours: &Contents) -> Result<()> {
+    use walkdir::DirEntryExt;
+    for entry in walkdir::WalkDir::new(new).min_depth(1) {
+        let entry = entry?;
+        let relative = entry.path().strip_prefix(new)?;
+        ensure!(
+            ours.get(&path_hash(relative))
+                .is_some_and(|held| held.inode == entry.ino()),
+            "another program put {} there",
+            placed.join(relative).display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+const LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(1);
+
+struct DestinationLock {
+    #[cfg(unix)]
+    folder: Option<fs::File>,
+    alone: bool,
+}
+
+impl DestinationLock {
+    #[cfg(unix)]
+    fn take(
+        destination: &Path,
+        existing: Existing,
+        check: &mut impl FnMut() -> Result<()>,
+    ) -> Result<Self> {
+        use rustix::fs::{FlockOperation, flock};
+        let Ok(folder) = fs::File::open(destination) else {
+            return Ok(Self {
+                folder: None,
+                alone: false,
+            });
+        };
+        let alone = existing == Existing::Overwrite
+            && flock(&folder, FlockOperation::NonBlockingLockExclusive).is_ok();
+        let mut lock = Self {
+            folder: Some(folder),
+            alone,
+        };
+        if !alone {
+            lock.share(check)?;
+        }
+        Ok(lock)
+    }
+
+    #[cfg(not(unix))]
+    fn take(_: &Path, _: Existing, _: &mut impl FnMut() -> Result<()>) -> Result<Self> {
+        Ok(Self { alone: false })
+    }
+
+    #[cfg(unix)]
+    fn share(&mut self, check: &mut impl FnMut() -> Result<()>) -> Result<()> {
+        use rustix::fs::{FlockOperation, flock};
+        self.alone = false;
+        while let Some(folder) = &self.folder {
+            match flock(folder, FlockOperation::NonBlockingLockShared) {
+                Ok(()) => break,
+                Err(rustix::io::Errno::WOULDBLOCK) => {
+                    check()?;
+                    std::thread::sleep(LOCK_POLL);
+                }
+                Err(_) => self.folder = None,
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    fn share(&mut self, _: &mut impl FnMut() -> Result<()>) -> Result<()> {
+        Ok(())
+    }
 }
 
 const MOST_TIMES_A_PARENT_IS_MADE_AGAIN: usize = 64;
@@ -308,15 +454,23 @@ impl Staging {
             }
             Self::ensure_exact_merge(&self.destination, &self.root)?;
         }
+        let mut lock = DestinationLock::take(&self.destination, self.existing, &mut check)?;
         let mut steps = Vec::new();
-        plan(
+        plan_folder(
             &self.root,
             &self.destination,
             self.existing,
             Path::new(""),
             &mut HashSet::new(),
             &mut steps,
+            lock.alone,
         )?;
+        if !steps
+            .iter()
+            .any(|step| matches!(step, Step::ReplaceFolder(..)))
+        {
+            lock.share(&mut check)?;
+        }
         ensure_links_stay_in_archive_paths(&self.root, &self.destination, &steps)?;
         #[cfg(unix)]
         let default = {
@@ -392,6 +546,14 @@ impl Staging {
                     } else {
                         let old = spelled_on_disk(&placed, &mut spellings);
                         Self::replace_in_two_moves(staged(path), placed, old, aside, done)?
+                    }
+                }
+                Step::ReplaceFolder(path, kept) => {
+                    let (_, swaps) = self.aside(&mut aside, index)?;
+                    if !swaps || !self.replace_folder(path, kept, done)? {
+                        let merged = self.plan_merge_of_each_entry(path)?;
+                        steps.splice(index..=index, merged);
+                        continue;
                     }
                 }
                 Step::CreateAs(path, name) => {
@@ -493,6 +655,69 @@ impl Staging {
             &mut steps,
         );
         Some(planned.map(|()| steps))
+    }
+
+    fn plan_merge_of_each_entry(&self, path: &Path) -> Result<Vec<Step>> {
+        let placed = self.destination.join(path);
+        let mut steps = Vec::new();
+        match fs::symlink_metadata(&placed) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                steps.push(Step::Create(path.to_owned()))
+            }
+            Err(error) => {
+                return Err(error).with_context(|| format!("cannot read {}", placed.display()));
+            }
+            Ok(existing) if existing.is_dir() => plan(
+                &self.root,
+                &self.destination,
+                self.existing,
+                path,
+                &mut HashSet::new(),
+                &mut steps,
+            )?,
+            Ok(existing) => bail!(
+                "{} is a {} in the destination and a directory in the archive",
+                path.display(),
+                kind(&existing)
+            ),
+        }
+        Ok(steps)
+    }
+
+    #[cfg(unix)]
+    fn replace_folder(
+        &self,
+        path: &Path,
+        kept: &[(PathBuf, u32)],
+        done: &mut Vec<Done>,
+    ) -> Result<bool> {
+        use std::os::unix::fs::PermissionsExt;
+        let (staged, placed) = (self.root.join(path), self.destination.join(path));
+        let ours = contents(&staged)?;
+        for (folder, mode) in kept {
+            let folder = self.root.join(folder);
+            fs::set_permissions(&folder, fs::Permissions::from_mode(*mode))
+                .with_context(|| format!("cannot set the mode of {}", folder.display()))?;
+        }
+        if swap(&staged, &placed).is_err() {
+            return Ok(false);
+        }
+        done.push(Done::FolderReplaced {
+            new: identity(&placed),
+            staged: staged.clone(),
+            placed: placed.clone(),
+            ours,
+        });
+        let Some(Done::FolderReplaced { ours, .. }) = done.last() else {
+            unreachable!("the replaced folder was just recorded")
+        };
+        ensure_only_replaced_entries(&staged, &placed, ours)?;
+        Ok(true)
+    }
+
+    #[cfg(not(unix))]
+    fn replace_folder(&self, _: &Path, _: &[(PathBuf, u32)], _: &mut Vec<Done>) -> Result<bool> {
+        Ok(false)
     }
 
     #[cfg(unix)]
@@ -606,52 +831,14 @@ impl Staging {
     }
 
     fn undo(&self, done: &[Done], error: anyhow::Error) -> anyhow::Error {
-        let left: Vec<String> =
-            done.iter()
-                .rev()
-                .filter_map(|step| {
-                    let undone = match step {
-                        Done::Moved { from, to, moved } => {
-                            ensure_unchanged(to, *moved).and_then(|()| {
-                                rename_without_replacing(to, from).map_err(|error| {
-                                    anyhow::anyhow!(
-                                        "cannot move {} back to {}: {}",
-                                        to.display(),
-                                        from.display(),
-                                        error.root_cause()
-                                    )
-                                })
-                            })
-                        }
-                        Done::Swapped {
-                            staged,
-                            placed,
-                            new,
-                        } => ensure_unchanged(placed, *new).and_then(|()| {
-                            swap(staged, placed)
-                                .with_context(|| format!("cannot swap {} back", placed.display()))
-                        }),
-                        Done::MadeAgain(folder) => match fs::remove_dir(folder) {
-                            Err(error)
-                                if [
-                                    std::io::ErrorKind::DirectoryNotEmpty,
-                                    std::io::ErrorKind::NotFound,
-                                ]
-                                .contains(&error.kind()) =>
-                            {
-                                Ok(())
-                            }
-                            removed => removed
-                                .with_context(|| format!("cannot remove {}", folder.display())),
-                        },
-                        #[cfg(unix)]
-                        Done::Folder {
-                            from,
-                            to,
-                            moved,
-                            ours,
-                        } => ensure_unchanged(to, *moved).and_then(|()| {
-                            move_back_only_ours(from, to, ours).map_err(|error| {
+        let left: Vec<String> = done
+            .iter()
+            .rev()
+            .filter_map(|step| {
+                let undone = match step {
+                    Done::Moved { from, to, moved } => {
+                        ensure_unchanged(to, *moved).and_then(|()| {
+                            rename_without_replacing(to, from).map_err(|error| {
                                 anyhow::anyhow!(
                                     "cannot move {} back to {}: {}",
                                     to.display(),
@@ -659,27 +846,82 @@ impl Staging {
                                     error.root_cause()
                                 )
                             })
-                        }),
-                    };
+                        })
+                    }
+                    Done::Swapped {
+                        staged,
+                        placed,
+                        new,
+                    } => ensure_unchanged(placed, *new).and_then(|()| {
+                        swap(staged, placed)
+                            .with_context(|| format!("cannot swap {} back", placed.display()))
+                    }),
+                    #[cfg(unix)]
+                    Done::FolderReplaced {
+                        staged,
+                        placed,
+                        new,
+                        ours,
+                    } => ensure_unchanged(placed, *new).and_then(|()| {
+                        swap(staged, placed)
+                            .with_context(|| format!("cannot swap {} back", placed.display()))?;
+                        crate::unix_modes::unlock_tree_for_cleanup(staged);
+                        ensure_only_our_entries(staged, placed, ours)
+                    }),
+                    Done::MadeAgain(folder) => match fs::remove_dir(folder) {
+                        Err(error)
+                            if [
+                                std::io::ErrorKind::DirectoryNotEmpty,
+                                std::io::ErrorKind::NotFound,
+                            ]
+                            .contains(&error.kind()) =>
+                        {
+                            Ok(())
+                        }
+                        removed => {
+                            removed.with_context(|| format!("cannot remove {}", folder.display()))
+                        }
+                    },
+                    #[cfg(unix)]
+                    Done::Folder {
+                        from,
+                        to,
+                        moved,
+                        ours,
+                    } => ensure_unchanged(to, *moved).and_then(|()| {
+                        move_back_only_ours(from, to, ours).map_err(|error| {
+                            anyhow::anyhow!(
+                                "cannot move {} back to {}: {}",
+                                to.display(),
+                                from.display(),
+                                error.root_cause()
+                            )
+                        })
+                    }),
+                };
 
-                    let describe = || match step {
-                        Done::Moved { from, to, .. } => {
-                            format!("{} moved from {}", to.display(), from.display())
-                        }
-                        #[cfg(unix)]
-                        Done::Folder { from, to, .. } => {
-                            format!("{} moved from {}", to.display(), from.display())
-                        }
-                        Done::MadeAgain(folder) => format!("{} made again", folder.display()),
-                        Done::Swapped { staged, placed, .. } => {
-                            format!("{} swapped with {}", placed.display(), staged.display())
-                        }
-                    };
-                    undone
-                        .err()
-                        .map(|undo| format!("{} ({undo:#})", describe()))
-                })
-                .collect();
+                let describe = || match step {
+                    Done::Moved { from, to, .. } => {
+                        format!("{} moved from {}", to.display(), from.display())
+                    }
+                    #[cfg(unix)]
+                    Done::Folder { from, to, .. } => {
+                        format!("{} moved from {}", to.display(), from.display())
+                    }
+                    Done::MadeAgain(folder) => format!("{} made again", folder.display()),
+                    Done::Swapped { staged, placed, .. } => {
+                        format!("{} swapped with {}", placed.display(), staged.display())
+                    }
+                    #[cfg(unix)]
+                    Done::FolderReplaced { staged, placed, .. } => {
+                        format!("{} swapped with {}", placed.display(), staged.display())
+                    }
+                };
+                undone
+                    .err()
+                    .map(|undo| format!("{} ({undo:#})", describe()))
+            })
+            .collect();
         if left.is_empty() {
             return error;
         }
@@ -698,16 +940,26 @@ fn created_directories<'a>(directories: &[Directory<'a>], steps: &[Step]) -> Vec
     let moved: HashSet<&Path> = steps
         .iter()
         .filter_map(|step| match step {
-            Step::Create(path) | Step::Replace(path) => Some(path.as_path()),
+            Step::Create(path) | Step::Replace(path) | Step::ReplaceFolder(path, _) => {
+                Some(path.as_path())
+            }
             _ => None,
         })
+        .collect();
+    let kept: HashSet<&Path> = steps
+        .iter()
+        .filter_map(|step| match step {
+            Step::ReplaceFolder(_, kept) => Some(kept),
+            _ => None,
+        })
+        .flatten()
+        .map(|(folder, _)| folder.as_path())
         .collect();
     directories
         .iter()
         .filter(|directory| {
-            Path::new(directory.name)
-                .ancestors()
-                .any(|ancestor| moved.contains(ancestor))
+            let name = Path::new(directory.name);
+            name.ancestors().any(|ancestor| moved.contains(ancestor)) && !kept.contains(name)
         })
         .copied()
         .collect()
@@ -1106,7 +1358,50 @@ fn plan(
     taken: &mut HashSet<PathBuf>,
     steps: &mut Vec<Step>,
 ) -> Result<()> {
+    plan_folder(
+        staging,
+        destination,
+        existing_mode,
+        relative,
+        taken,
+        steps,
+        false,
+    )
+    .map(drop)
+}
+
+struct Cover {
+    replaced: usize,
+    kept: Vec<(PathBuf, u32)>,
+}
+
+struct CoveredFolder {
+    path: PathBuf,
+    steps: std::ops::Range<usize>,
+    cover: Cover,
+}
+
+fn plan_folder(
+    staging: &Path,
+    destination: &Path,
+    existing_mode: Existing,
+    relative: &Path,
+    taken: &mut HashSet<PathBuf>,
+    steps: &mut Vec<Step>,
+    replace_covered_folders: bool,
+) -> Result<Option<Cover>> {
     let folder = staging.join(relative);
+    let mut cover = (replace_covered_folders
+        && existing_mode == Existing::Overwrite
+        && !relative.as_os_str().is_empty())
+    .then(|| mode_a_new_folder_can_keep(&folder, &destination.join(relative)))
+    .flatten()
+    .map(|mode| Cover {
+        replaced: 0,
+        kept: vec![(relative.to_owned(), mode)],
+    });
+    let mut covered_folders = Vec::new();
+    let mut names = HashSet::new();
     for entry in
         fs::read_dir(&folder).with_context(|| format!("cannot read {}", folder.display()))?
     {
@@ -1115,7 +1410,7 @@ fn plan(
             Some(name.as_os_str()) != staging.file_name(),
             "archive entry has the staging folder's name"
         );
-        let path = relative.join(name);
+        let path = relative.join(&name);
         let staged = fs::symlink_metadata(staging.join(&path))?;
         match fs::symlink_metadata(destination.join(&path)) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -1131,7 +1426,24 @@ fn plan(
                     "{} is on another filesystem than the destination",
                     path.display()
                 );
-                plan(staging, destination, existing_mode, &path, taken, steps)?
+                let start = steps.len();
+                let inner = plan_folder(
+                    staging,
+                    destination,
+                    existing_mode,
+                    &path,
+                    taken,
+                    steps,
+                    replace_covered_folders,
+                )?;
+                match inner {
+                    Some(inner) => covered_folders.push(CoveredFolder {
+                        path,
+                        steps: start..steps.len(),
+                        cover: inner,
+                    }),
+                    None => cover = None,
+                }
             }
             Ok(existing) => match existing_mode {
                 Existing::Skip => {}
@@ -1150,11 +1462,150 @@ fn plan(
                     kind(&existing),
                     kind(&staged)
                 ),
-                _ => steps.push(Step::Replace(path)),
+                _ => {
+                    match &mut cover {
+                        Some(cover) if flags(&existing) == 0 => cover.replaced += 1,
+                        _ => cover = None,
+                    }
+                    steps.push(Step::Replace(path))
+                }
             },
         }
+        if cover.is_some() {
+            names.insert(name);
+        }
     }
-    Ok(())
+    match cover.filter(|_| names_only(&destination.join(relative), &names)) {
+        Some(mut cover) => {
+            for inner in covered_folders {
+                cover.replaced += inner.cover.replaced;
+                cover.kept.extend(inner.cover.kept);
+            }
+            Ok(Some(cover))
+        }
+        None => {
+            for inner in covered_folders.into_iter().rev() {
+                if inner.cover.replaced > 0 {
+                    let whole = Step::ReplaceFolder(inner.path, inner.cover.kept);
+                    steps.splice(inner.steps, [whole]);
+                }
+            }
+            Ok(None)
+        }
+    }
+}
+
+fn names_only(folder: &Path, names: &HashSet<std::ffi::OsString>) -> bool {
+    fs::read_dir(folder).is_ok_and(|mut entries| {
+        entries.all(|entry| entry.is_ok_and(|entry| names.contains(&entry.file_name())))
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn flags(metadata: &fs::Metadata) -> u32 {
+    std::os::macos::fs::MetadataExt::st_flags(metadata)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn flags(_: &fs::Metadata) -> u32 {
+    0
+}
+
+#[cfg(unix)]
+const OWNER_READS_WRITES_AND_ENTERS: u32 = 0o700;
+
+#[cfg(unix)]
+fn mode_a_new_folder_can_keep(staged_path: &Path, existing_path: &Path) -> Option<u32> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let staged = fs::symlink_metadata(staged_path).ok()?;
+    let existing = fs::symlink_metadata(existing_path).ok()?;
+    let mode = existing.permissions().mode() & 0o7777;
+    let stands_in = staged.is_dir()
+        && existing.is_dir()
+        && staged.uid() == existing.uid()
+        && staged.gid() == existing.gid()
+        && flags(&staged) == flags(&existing)
+        && mode & OWNER_READS_WRITES_AND_ENTERS == OWNER_READS_WRITES_AND_ENTERS
+        && extended_attributes(existing_path)
+            .is_some_and(|attributes| Some(attributes) == extended_attributes(staged_path))
+        && !has_access_control_list(existing_path);
+    stands_in.then_some(mode)
+}
+
+#[cfg(not(unix))]
+fn mode_a_new_folder_can_keep(_: &Path, _: &Path) -> Option<u32> {
+    None
+}
+
+#[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
+const FIRST_ATTRIBUTE_BUFFER: usize = 256;
+
+#[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
+const LARGEST_ATTRIBUTE_BUFFER: usize = 1 << 20;
+
+#[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
+fn extended_attributes(path: &Path) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
+    let filled = |read: &dyn Fn(&mut [u8]) -> rustix::io::Result<usize>| {
+        let mut bytes = vec![0; FIRST_ATTRIBUTE_BUFFER];
+        loop {
+            match read(&mut bytes) {
+                Ok(length) => {
+                    bytes.truncate(length);
+                    return Some(bytes);
+                }
+                Err(rustix::io::Errno::RANGE) if bytes.len() < LARGEST_ATTRIBUTE_BUFFER => {
+                    bytes.resize(bytes.len() * 2, 0)
+                }
+                Err(_) => return None,
+            }
+        }
+    };
+    let names = filled(&|buffer| rustix::fs::llistxattr(path, buffer))?;
+    names
+        .split(|&byte| byte == 0)
+        .filter(|name| !name.is_empty())
+        .map(|name| {
+            let value = filled(&|buffer| rustix::fs::lgetxattr(path, name, buffer))?;
+            Some((name.to_vec(), value))
+        })
+        .collect()
+}
+
+#[cfg(all(
+    unix,
+    not(any(target_os = "linux", target_os = "android", target_vendor = "apple"))
+))]
+fn extended_attributes(_: &Path) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn has_access_control_list(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    unsafe extern "C" {
+        fn acl_get_link_np(
+            path: *const std::ffi::c_char,
+            kind: std::ffi::c_int,
+        ) -> *mut std::ffi::c_void;
+        fn acl_free(object: *mut std::ffi::c_void) -> std::ffi::c_int;
+    }
+    const ACL_TYPE_EXTENDED: std::ffi::c_int = 0x100;
+    let Ok(path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return true;
+    };
+    // SAFETY: the path is NUL-terminated and outlives the call, which only reads it.
+    let list = unsafe { acl_get_link_np(path.as_ptr(), ACL_TYPE_EXTENDED) };
+    if list.is_null() {
+        return std::io::Error::last_os_error().kind() != std::io::ErrorKind::NotFound;
+    }
+    // SAFETY: the list is the non-null result of acl_get_link_np and is freed once.
+    unsafe { acl_free(list) };
+    true
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn has_access_control_list(_: &Path) -> bool {
+    false
 }
 
 #[cfg(unix)]
@@ -1742,14 +2193,23 @@ mod tests {
                     2 => Some(Step::Replace(path.into())),
                     3 => Some(Step::CreateAs(path.into(), "x".into())),
                     4 => Some(Step::SetAside(path.into(), "y".into())),
+                    5 => Some(Step::ReplaceFolder(path.into(), vec![(path.into(), 0)])),
                     _ => None,
                 })
                 .collect();
             let expected: Vec<&str> = directories
                 .iter()
                 .filter(|directory| {
-                    steps.iter().any(|step| {
-                        matches!(step, Step::Create(path) | Step::Replace(path) if Path::new(directory.name).starts_with(path))
+                    let name = Path::new(directory.name);
+                    let kept = steps
+                        .iter()
+                        .any(|step| matches!(step, Step::ReplaceFolder(path, _) if name == path));
+                    !kept && steps.iter().any(|step| {
+                        matches!(
+                            step,
+                            Step::Create(path) | Step::Replace(path) | Step::ReplaceFolder(path, _)
+                                if name.starts_with(path)
+                        )
                     })
                 })
                 .map(|directory| directory.name)
@@ -1967,6 +2427,401 @@ mod tests {
             let kept = staging.path().to_owned();
             drop(staging);
             assert!(kept.is_dir());
+        }
+
+        const FULL_FOLDER_MODES: [(&str, u32); 3] =
+            [("p", 0o555), ("p/sub", 0o555), ("p/fresh", 0o555)];
+
+        fn full_folder_modes() -> Vec<Directory<'static>> {
+            FULL_FOLDER_MODES
+                .iter()
+                .map(|&(name, mode)| Directory {
+                    name,
+                    mode: Some(mode),
+                    modified: None,
+                })
+                .collect()
+        }
+
+        fn full_folder() -> Scene {
+            let root = tempfile::tempdir().unwrap();
+            fs::create_dir(root.path().join("outside")).unwrap();
+            fs::write(root.path().join("outside/file"), b"outside").unwrap();
+            let destination = root.path().join("out");
+            fs::create_dir_all(destination.join("p/sub")).unwrap();
+            fs::create_dir_all(destination.join("q")).unwrap();
+            for name in ["p/a", "p/b", "p/sub/c", "q/x", "q/extra", "kept"] {
+                fs::write(destination.join(name), format!("old {name}")).unwrap();
+            }
+            symlink("../../outside/file", destination.join("p/link")).unwrap();
+            set_mode(&destination.join("p/a"), 0o440);
+            set_mode(&destination.join("p"), 0o750);
+            set_mode(&destination.join("p/sub"), 0o700);
+            let staging = stage(
+                &root.path().join("archive"),
+                &destination,
+                Existing::Overwrite,
+                crate::Metadata::Restore,
+            )
+            .unwrap();
+            let staged = staging.path().to_owned();
+            fs::create_dir_all(staged.join("p/sub")).unwrap();
+            fs::create_dir_all(staged.join("p/fresh")).unwrap();
+            fs::create_dir_all(staged.join("q")).unwrap();
+            for name in [
+                "p/a",
+                "p/b",
+                "p/link",
+                "p/sub/c",
+                "p/sub/d",
+                "p/fresh/e",
+                "q/x",
+            ] {
+                fs::write(staged.join(name), format!("new {name}")).unwrap();
+            }
+            Scene { root, staging }
+        }
+
+        fn inode(path: &Path) -> u64 {
+            std::os::unix::fs::MetadataExt::ino(&fs::symlink_metadata(path).unwrap())
+        }
+
+        #[test]
+        fn a_folder_the_archive_replaces_entirely_is_published_in_one_step() {
+            let Scene { root, staging } = full_folder();
+            let destination = root.path().join("out");
+            let mut expected = snapshot(root.path());
+            let file = |name: &str| Node::File(0o644, format!("new {name}").into_bytes());
+            for name in [
+                "p/a",
+                "p/b",
+                "p/link",
+                "p/sub/c",
+                "p/sub/d",
+                "p/fresh/e",
+                "q/x",
+            ] {
+                expected.insert(Path::new("out").join(name), file(name));
+            }
+            expected.insert("out/p/fresh".into(), Node::Directory(0o555));
+            let calls = Cell::new(0);
+            let published = staging.publish_checking(&full_folder_modes(), || {
+                calls.set(calls.get() + 1);
+                Ok(())
+            });
+            published.unwrap_or_else(|error| panic!("{error:#}"));
+            drop(staging);
+            assert_eq!(staging_left(root.path()), Vec::<PathBuf>::new());
+            assert_eq!(snapshot(root.path()), expected);
+            assert_eq!(
+                calls.get(),
+                3,
+                "one check before p, one before q/x and one after the folder modes"
+            );
+            set_mode(&destination.join("p/fresh"), 0o755);
+        }
+
+        #[test]
+        fn a_cancel_at_any_check_puts_a_replaced_folder_back_as_it_was() {
+            for call in 0..3 {
+                let Scene { root, staging } = full_folder();
+                let destination = root.path().join("out");
+                let before = snapshot(root.path());
+                let folders = [
+                    inode(&destination.join("p")),
+                    inode(&destination.join("p/sub")),
+                ];
+                let calls = Cell::new(0);
+                let published =
+                    staging.publish_checking(&full_folder_modes(), cancel_from(call, &calls));
+                drop(staging);
+                let error = published.unwrap_err();
+                assert!(error.is::<crate::Cancelled>(), "check {call}: {error:#}");
+                assert!(
+                    !format!("{error:#}").contains("could not undo"),
+                    "check {call}: {error:#}"
+                );
+                assert_eq!(
+                    staging_left(root.path()),
+                    Vec::<PathBuf>::new(),
+                    "check {call}"
+                );
+                assert_eq!(snapshot(root.path()), before, "check {call}");
+                assert_eq!(
+                    [
+                        inode(&destination.join("p")),
+                        inode(&destination.join("p/sub"))
+                    ],
+                    folders,
+                    "check {call}"
+                );
+            }
+        }
+
+        fn planned(scene: &Scene, alone: bool) -> Vec<Step> {
+            let mut steps = Vec::new();
+            plan_folder(
+                scene.staging.path(),
+                &scene.root.path().join("out"),
+                Existing::Overwrite,
+                Path::new(""),
+                &mut HashSet::new(),
+                &mut steps,
+                alone,
+            )
+            .unwrap();
+            steps
+        }
+
+        fn replaced_whole(steps: &[Step]) -> Vec<&str> {
+            let mut folders: Vec<&str> = steps
+                .iter()
+                .filter_map(|step| match step {
+                    Step::ReplaceFolder(path, _) => path.to_str(),
+                    _ => None,
+                })
+                .collect();
+            folders.sort();
+            folders
+        }
+
+        #[test]
+        fn a_covered_folder_is_planned_as_one_step_that_keeps_the_modes_of_its_folders() {
+            let scene = full_folder();
+            let mut steps = planned(&scene, true);
+            steps.sort_by_key(|step| step.archive_source().map(Path::to_owned));
+            let [Step::ReplaceFolder(folder, kept), Step::Replace(file)] = steps.as_slice() else {
+                panic!("{steps:?}")
+            };
+            assert_eq!(
+                (folder.as_path(), file.as_path()),
+                (Path::new("p"), Path::new("q/x"))
+            );
+            let mut kept = kept.clone();
+            kept.sort();
+            assert_eq!(kept, [("p".into(), 0o750), ("p/sub".into(), 0o700)]);
+        }
+
+        fn run(command: &str, arguments: &[&str], path: &Path) -> bool {
+            std::process::Command::new(command)
+                .args(arguments)
+                .arg(path)
+                .status()
+                .is_ok_and(|status| status.success())
+        }
+
+        #[test]
+        fn a_folder_that_a_new_one_cannot_stand_in_for_is_merged_entry_by_entry() {
+            type Change = fn(&Path) -> bool;
+            let cases: [(&str, Change, &[&str]); 9] = [
+                ("nothing", |_| true, &["p"]),
+                (
+                    "a file the archive does not name",
+                    |out| fs::write(out.join("p/other"), b"other").is_ok(),
+                    &["p/sub"],
+                ),
+                (
+                    "a file the archive does not name, one folder down",
+                    |out| fs::write(out.join("p/sub/other"), b"other").is_ok(),
+                    &[],
+                ),
+                (
+                    "a name in another case",
+                    |out| fs::rename(out.join("p/a"), out.join("p/A")).is_ok(),
+                    &["p/sub"],
+                ),
+                (
+                    "a mode that stops its owner writing",
+                    |out| {
+                        fs::set_permissions(out.join("p"), fs::Permissions::from_mode(0o500))
+                            .is_ok()
+                    },
+                    &["p/sub"],
+                ),
+                (
+                    "an extended attribute",
+                    |out| {
+                        rustix::fs::lsetxattr(
+                            out.join("p"),
+                            "user.zipper.test",
+                            b"1",
+                            rustix::fs::XattrFlags::empty(),
+                        )
+                        .is_ok()
+                    },
+                    &["p/sub"],
+                ),
+                (
+                    "a file flag",
+                    |out| {
+                        cfg!(target_os = "macos") && run("chflags", &["hidden"], &out.join("p/a"))
+                    },
+                    &["p/sub"],
+                ),
+                (
+                    "a folder flag",
+                    |out| cfg!(target_os = "macos") && run("chflags", &["hidden"], &out.join("p")),
+                    &["p/sub"],
+                ),
+                (
+                    "an access control list",
+                    |out| {
+                        cfg!(target_os = "macos")
+                            && run("chmod", &["+a", "everyone deny delete"], &out.join("p"))
+                    },
+                    &["p/sub"],
+                ),
+            ];
+            for (case, change, expected) in cases {
+                let scene = full_folder();
+                let out = scene.root.path().join("out");
+                if !change(&out) {
+                    eprintln!("skipped {case}, which this system cannot set up");
+                    continue;
+                }
+                assert_eq!(replaced_whole(&planned(&scene, true)), expected, "{case}");
+                assert!(replaced_whole(&planned(&scene, false)).is_empty(), "{case}");
+                set_mode(&out.join("p"), 0o755);
+            }
+        }
+
+        #[test]
+        fn an_existing_folder_with_no_file_to_replace_is_merged_into() {
+            let scene = full_folder();
+            let out = scene.root.path().join("out");
+            fs::write(out.join("p/other"), b"other").unwrap();
+            fs::remove_file(out.join("p/sub/c")).unwrap();
+            assert!(replaced_whole(&planned(&scene, true)).is_empty());
+        }
+
+        fn carried_out(scene: &Scene, steps: Vec<Step>) -> (Result<Vec<Step>>, Vec<Done>) {
+            let mut done = Vec::new();
+            let carried = scene
+                .staging
+                .carry_out(steps, &mut done, &mut || Ok(()), |_| {});
+            (carried, done)
+        }
+
+        #[test]
+        fn an_entry_that_appears_in_a_folder_before_it_is_replaced_stops_the_extraction() {
+            type Change = fn(&Path);
+            let cases: [(Change, &str, &str); 3] = [
+                (
+                    |out| fs::write(out.join("p/sub/late"), b"late").unwrap(),
+                    "p/sub/late appeared in the destination",
+                    "p/sub/late",
+                ),
+                (
+                    |out| {
+                        fs::remove_file(out.join("p/a")).unwrap();
+                        fs::create_dir(out.join("p/a")).unwrap();
+                    },
+                    "p/a changed between a file and a directory",
+                    "p/a",
+                ),
+                (
+                    |out| {
+                        fs::remove_dir_all(out.join("p")).unwrap();
+                        fs::write(out.join("p"), b"late").unwrap();
+                    },
+                    "p stopped being a directory",
+                    "p",
+                ),
+            ];
+            for (change, message, changed) in cases {
+                let scene = full_folder();
+                let out = scene.root.path().join("out");
+                let steps = planned(&scene, true);
+                change(&out);
+                let before = snapshot(scene.root.path());
+                let (carried, done) = carried_out(&scene, steps);
+                let error = scene.staging.undo(&done, carried.unwrap_err());
+                let text = format!("{error:#}");
+                assert!(text.contains(message), "{text}");
+                assert!(!text.contains("could not undo"), "{text}");
+                assert_eq!(snapshot(scene.root.path()), before, "{changed}");
+            }
+        }
+
+        #[test]
+        fn a_folder_that_vanishes_before_it_is_replaced_is_created() {
+            let scene = full_folder();
+            let out = scene.root.path().join("out");
+            let steps = planned(&scene, true);
+            fs::remove_dir_all(out.join("p")).unwrap();
+            let (carried, _) = carried_out(&scene, steps);
+            let carried = carried.unwrap_or_else(|error| panic!("{error:#}"));
+            assert!(replaced_whole(&carried).is_empty(), "{carried:?}");
+            assert_eq!(fs::read(out.join("p/sub/d")).unwrap(), b"new p/sub/d");
+            assert_eq!(fs::read(out.join("q/extra")).unwrap(), b"old q/extra");
+        }
+
+        #[test]
+        fn an_undo_keeps_what_another_program_put_in_a_folder_that_replaced_one() {
+            let scene = full_folder();
+            let out = scene.root.path().join("out");
+            let (carried, done) = carried_out(&scene, planned(&scene, true));
+            carried.unwrap();
+            let folder = inode(&out.join("p"));
+            fs::write(out.join("p/sub/late"), b"late").unwrap();
+            let error = scene.staging.undo(&done, anyhow::anyhow!("stopped"));
+            let text = format!("{error:#}");
+            assert!(text.contains("could not undo"), "{text}");
+            assert!(
+                text.contains(&out.join("p/sub/late").display().to_string()),
+                "{text}"
+            );
+            assert_eq!(fs::read(out.join("p/a")).unwrap(), b"old p/a");
+            assert_ne!(inode(&out.join("p")), folder);
+            let kept = scene.staging.path().to_owned();
+            drop(scene.staging);
+            assert_eq!(fs::read(kept.join("p/sub/late")).unwrap(), b"late");
+        }
+
+        #[test]
+        fn a_folder_is_merged_entry_by_entry_while_another_extraction_shares_the_destination() {
+            let Scene { root, staging } = full_folder();
+            let out = root.path().join("out");
+            let folder = inode(&out.join("p"));
+            let other = fs::File::open(&out).unwrap();
+            rustix::fs::flock(&other, rustix::fs::FlockOperation::LockShared).unwrap();
+            staging.publish_checking(&[], || Ok(())).unwrap();
+            assert_eq!(inode(&out.join("p")), folder);
+            assert_eq!(fs::read(out.join("p/a")).unwrap(), b"new p/a");
+        }
+
+        #[test]
+        fn publication_waits_for_an_extraction_that_replaces_folders_and_a_cancel_ends_the_wait() {
+            for cancels in [true, false] {
+                let Scene { root, staging } = full_folder();
+                let out = root.path().join("out");
+                let before = snapshot(root.path());
+                let folder = inode(&out.join("p"));
+                let other = fs::File::open(&out).unwrap();
+                rustix::fs::flock(&other, rustix::fs::FlockOperation::LockExclusive).unwrap();
+                let calls = Cell::new(0);
+                let published = staging.publish_checking(&[], || {
+                    calls.set(calls.get() + 1);
+                    if calls.get() == 3 && cancels {
+                        return Err(crate::Cancelled.into());
+                    }
+                    if calls.get() == 3 {
+                        rustix::fs::flock(&other, rustix::fs::FlockOperation::Unlock).unwrap();
+                    }
+                    Ok(())
+                });
+                if cancels {
+                    assert!(published.unwrap_err().is::<crate::Cancelled>());
+                    assert_eq!(calls.get(), 3);
+                    drop(staging);
+                    assert_eq!(snapshot(root.path()), before);
+                } else {
+                    published.unwrap();
+                    assert!(calls.get() > 3);
+                    assert_eq!(inode(&out.join("p")), folder);
+                    assert_eq!(fs::read(out.join("p/a")).unwrap(), b"new p/a");
+                }
+            }
         }
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
