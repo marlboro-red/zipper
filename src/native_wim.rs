@@ -2014,7 +2014,8 @@ mod field_tests {
             modified(unix - TICKS_PER_SECOND + 1),
             std::time::UNIX_EPOCH.checked_sub(std::time::Duration::from_nanos(999_999_900))
         );
-        assert!(modified(u64::MAX).is_some());
+        let latest = modified(u64::MAX);
+        assert_eq!(latest.is_some(), cfg!(not(windows)), "{latest:?}");
     }
 
     fn symlink(target: &str, relative: bool) -> Vec<u8> {
