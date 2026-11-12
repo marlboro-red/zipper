@@ -118,7 +118,7 @@ item = src/memory.rs | impl Drop for Reservation<'_> {
 
 [link-escape]
 skill = .claude/skills/zipper-verify-links/SKILL.md
-fingerprint = a4e0a4e1b7480923
+fingerprint = 27d7da5b757efd88
 full-check = cargo test --release --test link_escape_exhaustive ZIPPER_LINK_STRIDE=1 ZIPPER_LINK_ESCAPE=1 -- --nocapture
 item = src/staging.rs | fn ensure_links_stay_in_archive_paths(
 item = src/staging.rs | fn owner_after_publish(
@@ -360,7 +360,7 @@ item = src/native_7z.rs | impl<R: Read> Read for ByteSwap<R> {
 
 [7z-filters]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 6213f4bfd4c8d2fb
+fingerprint = fc9e4bb5304bf991
 full-check = cargo xtask kani-reach 7z-filters
 full-check = cargo kani --harness xz_filters::proofs:: --harness native_7z::proofs::filter_properties_
 full-check = cargo test --release --lib filter
@@ -916,7 +916,7 @@ item = src/lzma.rs |     fn lzip_trailers_accept_only_their_crc_and_sizes(
 
 [zip-crypto]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 19e5db1cd97a8f44
+fingerprint = 8f8f65dbabce7257
 full-check = cargo xtask kani-reach zip-crypto
 full-check = cargo kani --harness zip_crypto::proofs::
 full-check = cargo test --release --lib zip_crypto
@@ -1687,7 +1687,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [squashfs-fields]
-fingerprint = e99b0c5a68c86951
+fingerprint = 5a27fe1f45c4cee7
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach squashfs-fields
 full-check = cargo kani --harness native_squashfs::field_proofs::
@@ -1871,7 +1871,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [ext-fields]
-fingerprint = e8e23de03d17e57f
+fingerprint = ca9bbc3342e43549
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach ext-fields
 full-check = cargo kani --harness native_ext::proofs::
@@ -2670,7 +2670,7 @@ item = src/rar4_lz.rs | pub(crate) const WINDOW:
 item = src/rar5_lz.rs | pub(crate) const DECODER_MEMORY:
 
 [rar5-lz]
-fingerprint = df31822632090179
+fingerprint = 597e8b5b66ed4886
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo test --release --lib rar5_lz
 full-check = cargo test --release --lib blake2sp
@@ -2743,7 +2743,7 @@ item = src/native_rar.rs | struct Reader {
 item = src/native_rar.rs | impl Reader {
 
 [rar4-lz]
-fingerprint = 0dab78e1dd07719b
+fingerprint = 5275d4de7a74e1b1
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo test --release --lib rar4
 full-check = cargo test --release --test rar_corpus
@@ -2903,7 +2903,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [refused-signatures]
-fingerprint = 7a704bec9d77593c
+fingerprint = 2fe8e20444a9600e
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach refused-signatures
 full-check = cargo kani --harness refused::proofs::
