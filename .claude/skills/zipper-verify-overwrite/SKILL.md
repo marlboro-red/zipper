@@ -78,3 +78,7 @@ The check is proven able to fail. Each of these changes to the real code fails i
 | `DestinationLock::share` does not wait, or waits without a cancel check | `publication_waits_for_an_extraction_that_replaces_folders_and_a_cancel_ends_the_wait` fails. |
 | `DestinationLock::share` waits without a limit | `publication_stops_waiting_for_a_lock_another_program_never_releases` fails. |
 | `remove_files_in` leaves links behind | `removal_on_threads_takes_every_file_and_link_and_follows_no_link` fails. |
+| `replace_in_two_moves` fails when the old file is already gone | `a_replace_in_two_moves_places_the_file_when_another_extraction_took_the_old_one` fails. |
+| `replace_in_two_moves` does not try again when another file took the place | `a_replace_in_two_moves_sets_aside_the_file_another_extraction_placed_meanwhile` fails. |
+| The undo of a set-aside file fails when another file holds its path | `an_undo_leaves_a_file_set_aside_when_another_extraction_has_replaced_it` fails. |
+| The undo of a set-aside file fails when the file is no longer in the hidden folder | `an_undo_counts_a_set_aside_file_another_extraction_took_as_done` fails. |

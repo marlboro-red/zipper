@@ -38,6 +38,7 @@ The archives may share folder names, such as `bin/` and `lib/`, but no file path
 When two runs write the same file path, the path ends with the whole file from one archive. It never holds a mix of the bytes of both.
 
 - If the path existed when both runs planned, each run replaces it by rename, and the last rename wins.
+- Where the filesystem cannot swap two names, a run moves the old file into its hidden folder and then moves its own file in. A run that finds the old file already taken by another run moves its own file in. A run that finds another run's file in the way sets that file aside in turn, at most 64 times. An undo leaves a set-aside file in the hidden folder when another run's file now holds its path. On Windows two runs can each be told that they moved the same old file aside, and only one of them holds it. The other carries on as if the file had already been taken.
 - If neither run saw the path, the first rename creates it. The other run stops with an error that the path appeared in the destination during extraction, and undoes its other files.
 
 ## How it is tested
