@@ -1349,6 +1349,14 @@ pub fn sniff(path: &Path) -> Result<bool> {
     crate::udf::has_anchor(&mut image)
 }
 
+pub(crate) fn holds_a_disc(path: &Path) -> Result<bool> {
+    let mut image = Image::open(path)?;
+    Ok(
+        read_volumes(&mut image).is_ok_and(|volume| volume.is_some())
+            || crate::udf::has_anchor(&mut image)?,
+    )
+}
+
 /// Verify and optionally extract an ISO 9660 or UDF disc image into a new
 /// directory, in the tree `7z x` extracts. A UDF file system that 7-Zip
 /// opens wins over ISO 9660, and a Joliet volume wins over the primary one,

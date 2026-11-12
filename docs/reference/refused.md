@@ -53,9 +53,11 @@ Every ESD file, and every solid WIM that wimlib writes with its default compress
 Every engine refuses disk images whole, whatever they hold. That covers raw MBR and GPT disks and VHD, VHDX, QCOW, VDI, VMDK and Android sparse images. No partition is read, so no file system inside is decoded, and no image goes to 7-Zip.
 
 - The container signatures at offset 0 are checked before the WIM, 7z, executable, disc and file system readers sniff the file. Only a ZIP, executable, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ or RAR signature wins over them.
-- A VHD footer at the end, a FAT boot sector, a GPT header and an MBR table are checked after the disc, SquashFS, CramFS and ext readers. So an ISO 9660 or UDF disc with a hybrid MBR still reads as a disc. An ext volume keeps its boot block, which may hold an old MBR, so an MBR table is not refused when an ext superblock magic `53 EF` sits at offset 1080.
+- A VHD footer at the end, a FAT boot sector, a GPT header and an MBR table are checked after the 7z, WIM, executable, LP, UEFI, disc, SquashFS, CramFS and ext readers. So an ISO 9660 or UDF disc with a hybrid MBR still reads as a disc. An ext volume keeps its boot block, which may hold an old MBR. So an MBR table is not refused when the ext reader's superblock checks accept the superblock at offset 1024.
 - A fixed VHD that holds an ext, SquashFS or CramFS volume with no partition table reads as that volume, since its bytes are the volume followed by a footer. No disk code reads it.
-- An archive that holds a disk image, such as a tar, extracts the image as one file.
+- An archive that holds a disk image, such as a tar, extracts the image as one file in the default and native engines. `--zip-engine backend` refuses a file whose last 512 bytes are a valid VHD footer, or that holds a GPT header at offset 512, before it looks for another format. So it refuses an `ar` archive whose last member is a fixed VHD, a ZIP whose comment is a VHD footer and an ext volume with an old GPT header.
+- `--zip-engine backend` hands a disk that also has a disc descriptor at `0x8001` to 7-Zip as a disc only in one case. Zipper's disc reader must find a whole descriptor set with a primary volume, or a UDF anchor. Otherwise it refuses the disk. A few planted descriptor bytes are not enough.
+- A first volume `name.001` that Zipper reads alone, because `name.002` is larger, goes to 7-Zip without `.split`. So 7-Zip never joins volumes whose joined bytes Zipper did not check.
 
 The ext, SquashFS and CramFS readers still read raw volumes. Before 12 November 2026 they also read the lone partition of a disk image, which the disk reader opened for them.
 
@@ -83,6 +85,8 @@ The disk image signatures come from these specifications. No code was copied fro
 - `lzx_folders_are_refused_by_name_with_nothing_written` in `tests/hostile_cab.rs` refuses a lone LZX folder and an LZX folder after an MSZIP one.
 - `tests/wim_corpus.rs` captures LZX, LZMS and solid images with `wimlib-imagex` and requires each to be refused by its method's name.
 - `a_disk_image_split_into_numbered_volumes_is_refused_in_every_engine` refuses a VHD named `disk.vhd.001` with its `.002`, whose joined bytes end with the footer.
+- `disks_with_a_planted_disc_descriptor_are_refused_before_7zip` refuses GPT, MBR and fixed VHD disks that carry a planted disc descriptor, through `choose_reader` and `compat::run`.
+- `a_first_volume_read_alone_never_reaches_7zip_as_a_split_set` splits a fixed VHD that holds an ext volume into a small `.001` and a larger `.002`, and checks that 7-Zip never starts with `.split`.
 - `discs_and_ext_volumes_that_start_with_a_partition_table_still_read` reads an ISO 9660 disc and an ext4 volume that each hold an MBR table in their first sector, in process, and names them `-tiso` and `-text` for 7-Zip.
 - `tests/parity.rs` runs every corpus archive on a row marked `refused` in the [parity matrix](parity.md) through every engine.
 - Kani proves under `[refused-signatures]` that the signature, boot sector, partition table, CAB folder and WIM header checks never panic on any short input. A CAB counts as LZX only from a folder inside the bytes read.

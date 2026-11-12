@@ -107,7 +107,8 @@ fn switch_for(
     let split = archive
         .canonicalize()?
         .extension()
-        .is_some_and(|extension| extension == "001");
+        .is_some_and(|extension| extension == "001")
+        && !crate::volumes::read_alone_beside_its_next_volume(archive)?;
     Ok(formats
         .iter()
         .find(|(signature, at, _)| head.get(*at..at + signature.len()) == Some(*signature))

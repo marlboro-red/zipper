@@ -158,6 +158,11 @@ fn cases() -> Vec<Case> {
             lone_partition(0x83, &[0; 64 * SECTOR]),
             mbr,
         ),
+        case(
+            "ext-magic-mbr.img",
+            with_ext_magic(lone_partition(0x83, &[0; 64 * SECTOR])),
+            mbr,
+        ),
         case("mbr-two.img", stored("refused/mbr-two.img.xz"), mbr),
         case("gpt-two.img", stored("refused/gpt-two.img.xz"), gpt),
         case(
@@ -586,6 +591,63 @@ fn a_disk_image_split_into_numbered_volumes_is_refused_in_every_engine() {
         }
     }
     assert_eq!(fake.started(), None);
+}
+
+fn with_ext_magic(mut bytes: Vec<u8>) -> Vec<u8> {
+    bytes[1080..1082].copy_from_slice(&[0x53, 0xEF]);
+    bytes
+}
+
+#[test]
+fn disks_with_a_planted_disc_descriptor_are_refused_before_7zip() {
+    let cases = [
+        ("cd001-gpt.img", stored("refused/gpt-two.img.xz")),
+        ("cd001-mbr.img", stored("refused/mbr-two.img.xz")),
+        ("cd001-fixed.vhd", fixed_vhd(&vec![0; 0x9000])),
+    ];
+    for (name, bytes) in cases {
+        let work = tempfile::tempdir().unwrap();
+        let archive = work.path().join(name);
+        fs::write(&archive, with_disc_descriptor(bytes)).unwrap();
+        let error = zipper::choose_reader(zipper::Engine::Backend, &archive).unwrap_err();
+        assert!(
+            error.downcast_ref::<zipper::Refused>().is_some(),
+            "{name}: {error:#}"
+        );
+        let error =
+            zipper::compat::run("l", &archive, None, Some("-tiso"), zipper::Existing::Refuse)
+                .unwrap_err();
+        assert!(
+            error.downcast_ref::<zipper::Refused>().is_some(),
+            "{name} through compat::run: {error:#}"
+        );
+    }
+}
+
+#[test]
+fn a_first_volume_read_alone_never_reaches_7zip_as_a_split_set() {
+    let fake = FakeSevenZip::new();
+    let image = fixed_vhd(&stored("ext-corpus/ext4.img.xz"));
+    let work = tempfile::tempdir().unwrap();
+    let first = work.path().join("disk.img.001");
+    let (front, back) = image.split_at(4096);
+    fs::write(&first, front).unwrap();
+    fs::write(work.path().join("disk.img.002"), back).unwrap();
+    let output = work.path().join("out");
+    for action in ["extract", "list", "test"] {
+        let mut args: Vec<&std::ffi::OsStr> = vec![
+            "--zip-engine".as_ref(),
+            "backend".as_ref(),
+            action.as_ref(),
+            first.as_os_str(),
+        ];
+        if action == "extract" {
+            args.extend(["-o".as_ref(), output.as_os_str()]);
+        }
+        let _ = run_cli(&fake, true, &args);
+    }
+    let log = fake.started().unwrap_or_default();
+    assert!(!log.contains(".split"), "{log}");
 }
 
 fn with_partition_table(mut bytes: Vec<u8>) -> Vec<u8> {

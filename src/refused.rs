@@ -57,8 +57,6 @@ const MBR_ENTRY: usize = 16;
 const MBR_STATUSES: [u8; 2] = [0x00, 0x80];
 const MBR_TYPE_AT: usize = 4;
 const MBR_SECTORS_AT: usize = 12;
-const EXT_MAGIC_AT: usize = 1080;
-const EXT_MAGIC: [u8; 2] = [0x53, 0xEF];
 
 pub(crate) const COMPOUND_FILES: &str = "compound files such as MSI, DOC and XLS";
 pub(crate) const CHM_FILES: &str = "CHM and Help 2 files";
@@ -133,8 +131,24 @@ fn container(head: &[u8]) -> Option<&'static str> {
     }
 }
 
+#[cfg(feature = "ext")]
 fn is_ext_volume(head: &[u8]) -> bool {
-    head.get(EXT_MAGIC_AT..EXT_MAGIC_AT + 2) == Some(EXT_MAGIC.as_slice())
+    crate::native_ext::is_volume(head)
+}
+
+#[cfg(not(feature = "ext"))]
+fn is_ext_volume(_: &[u8]) -> bool {
+    false
+}
+
+#[cfg(feature = "iso")]
+fn holds_a_disc(path: &Path) -> Result<bool> {
+    crate::native_iso::holds_a_disc(path)
+}
+
+#[cfg(not(feature = "iso"))]
+fn holds_a_disc(_: &Path) -> Result<bool> {
+    Ok(false)
 }
 
 // SPEC(UEFI 2.10, 5.2.1 Legacy MBR): four 16-byte partition records at 446, then the signature
@@ -444,7 +458,11 @@ pub(crate) fn format(path: &Path) -> Result<Option<&'static str>> {
     // EXTERNAL(hdiutil makehybrid, xorriso): hybrid discs carry an Apple partition map or an
     // HFS+ volume beside ISO 9660 or UDF.
     if start.is_disc()? {
-        return Ok(None);
+        return if holds_a_disc(path)? {
+            Ok(None)
+        } else {
+            start.disk()
+        };
     }
     if let Some(format) = volume(head) {
         return Ok(Some(format));
@@ -601,7 +619,7 @@ mod tests {
                 is_base64_text(&head),
             );
             let _ = (container(&head), has_partition_table(&head));
-            let _ = (is_vhd_footer(&head), is_ext_volume(&head));
+            let _ = is_vhd_footer(&head);
         }
     }
 
@@ -741,6 +759,5 @@ mod proofs {
         if has_partition_table(head) {
             assert!(head.len() >= SECTOR && head[SECTOR - 2..SECTOR] == BOOT_SIGNATURE);
         }
-        let _ = is_ext_volume(head);
     }
 }
