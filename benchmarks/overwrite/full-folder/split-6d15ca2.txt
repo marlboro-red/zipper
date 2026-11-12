@@ -1,0 +1,58 @@
+thread zipper-6d15ca2 main=True samples=20498 (~5124 ms) cpu=4705 ms
+  carry_out                                    3226 ms  cpu     2988 ms
+  staging cleanup                              1362 ms  cpu     1199 ms
+  read archive / write staging                  400 ms  cpu      389 ms
+  plan                                          136 ms  cpu      129 ms
+  other                                           0 ms  cpu        0 ms
+       2716 ms  [carry_out] __renameatx_np <- renameatx_np
+       1334 ms  [staging cleanup] __unlinkat <- unlinkat
+        496 ms  [carry_out] lstat <- std::sys::fs::symlink_metadata
+        190 ms  [read archive / write staging] <std::path::Components as core::iter::traits::iterator::Iterator>::nex <- <std::path::Path>::_starts_with
+        109 ms  [plan] lstat <- std::sys::fs::symlink_metadata
+         49 ms  [read archive / write staging] <std::path::Component as core::cmp::PartialEq>::eq <- <std::path::Path>::_starts_with
+         47 ms  [read archive / write staging] <std::path::Path>::_starts_with <- <zipper::staging::Staging>::publish
+         21 ms  [read archive / write staging] mkdir <- <std::sys::fs::unix::DirBuilder>::mkdir
+         20 ms  [read archive / write staging] _platform_memcmp <- <std::path::Component as core::cmp::PartialEq>::eq
+         12 ms  [staging cleanup] __getdirentries64 <- libsystem_c.dylib
+         11 ms  [staging cleanup] __openat <- openat
+          9 ms  [read archive / write staging] __getdirentries64 <- libsystem_c.dylib
+          9 ms  [plan] __getdirentries64 <- libsystem_c.dylib
+          9 ms  [plan] __open_nocancel <- open$NOCANCEL
+thread Thread <4907637> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907638> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907639> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907640> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907641> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907642> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907643> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907644> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907645> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907646> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907647> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907648> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907649> main=False samples=4166 (~1042 ms) cpu=1024 ms
+  read archive / write staging                 1042 ms  cpu     1024 ms
+thread Thread <4907650> main=False samples=4163 (~1041 ms) cpu=1023 ms
+  read archive / write staging                 1041 ms  cpu     1023 ms
+thread Thread <4907651> main=False samples=4164 (~1041 ms) cpu=1025 ms
+  read archive / write staging                 1041 ms  cpu     1025 ms
+thread Thread <4907652> main=False samples=4163 (~1041 ms) cpu=1024 ms
+  read archive / write staging                 1041 ms  cpu     1024 ms
+all threads
+  read archive / write staging                 4564 ms  cpu     4485 ms
+  carry_out                                    3226 ms  cpu     2988 ms
+  staging cleanup                              1362 ms  cpu     1199 ms
+  plan                                          136 ms  cpu      129 ms
+  other                                           6 ms  cpu        1 ms

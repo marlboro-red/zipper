@@ -1,0 +1,66 @@
+thread zipper-244114f main=True samples=1240 (~310 ms) cpu=295 ms
+  plan                                          147 ms  cpu      138 ms
+  carry_out                                      62 ms  cpu       58 ms
+  read archive / write staging                   54 ms  cpu       54 ms
+  staging cleanup                                47 ms  cpu       44 ms
+  other                                           0 ms  cpu        0 ms
+         58 ms  [plan] lstat <- std::sys::fs::symlink_metadata
+         34 ms  [plan] __lstat64_extended <- libsystem_c.dylib
+         24 ms  [plan] __getdirentries64 <- libsystem_c.dylib
+         19 ms  [carry_out] __getdirentries64 <- libsystem_c.dylib
+         18 ms  [staging cleanup] __unlinkat <- unlinkat
+         13 ms  [read archive / write staging] mkdir <- <std::sys::fs::unix::DirBuilder>::mkdir
+         13 ms  [plan] __open_nocancel <- open$NOCANCEL
+         13 ms  [carry_out] __open_nocancel <- open$NOCANCEL
+         12 ms  [staging cleanup] __getdirentries64 <- libsystem_c.dylib
+         11 ms  [read archive / write staging] __getdirentries64 <- libsystem_c.dylib
+         10 ms  [staging cleanup] __openat <- openat
+          9 ms  [carry_out] <std::path::Components as core::iter::traits::iterator::Iterator>::nex <- <std::path::Path>::_strip_prefix
+          6 ms  [carry_out] __chmod <- chmod
+          4 ms  [read archive / write staging] __open_nocancel <- open$NOCANCEL
+thread Thread <4907796> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907797> main=False samples=3 (~1 ms) cpu=0 ms
+  other                                           1 ms  cpu        0 ms
+thread Thread <4907798> main=False samples=3 (~1 ms) cpu=0 ms
+  other                                           1 ms  cpu        0 ms
+thread Thread <4907799> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907800> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907801> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907802> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907803> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907804> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907805> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907806> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907807> main=False samples=2 (~0 ms) cpu=0 ms
+  other                                           0 ms  cpu        0 ms
+thread Thread <4907808> main=False samples=4270 (~1068 ms) cpu=1055 ms
+  read archive / write staging                 1068 ms  cpu     1055 ms
+thread Thread <4907809> main=False samples=4269 (~1067 ms) cpu=1051 ms
+  read archive / write staging                 1067 ms  cpu     1051 ms
+thread Thread <4907810> main=False samples=4269 (~1067 ms) cpu=1055 ms
+  read archive / write staging                 1067 ms  cpu     1055 ms
+thread Thread <4907811> main=False samples=4270 (~1068 ms) cpu=1054 ms
+  read archive / write staging                 1068 ms  cpu     1054 ms
+thread Thread <4907822> main=False samples=2578 (~644 ms) cpu=606 ms
+  staging cleanup                               644 ms  cpu      606 ms
+thread Thread <4907823> main=False samples=2579 (~645 ms) cpu=610 ms
+  staging cleanup                               645 ms  cpu      610 ms
+thread Thread <4907824> main=False samples=2577 (~644 ms) cpu=612 ms
+  staging cleanup                               644 ms  cpu      612 ms
+thread Thread <4907825> main=False samples=2576 (~644 ms) cpu=610 ms
+  staging cleanup                               644 ms  cpu      610 ms
+all threads
+  read archive / write staging                 4324 ms  cpu     4269 ms
+  staging cleanup                              2625 ms  cpu     2482 ms
+  plan                                          147 ms  cpu      138 ms
+  carry_out                                      62 ms  cpu       58 ms
+  other                                           7 ms  cpu        1 ms
