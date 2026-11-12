@@ -82,6 +82,19 @@ item = src/staging.rs | fn identity(
 item = src/staging.rs | fn ensure_unchanged(
 item = src/staging.rs | fn spelled_on_disk(
 item = src/staging.rs | fn created_directories<
+item = src/staging.rs | fn plan_folder(
+item = src/staging.rs | fn names_only(
+item = src/staging.rs | fn flags(
+item = src/staging.rs | fn mode_a_new_folder_can_keep(
+item = src/staging.rs | fn extended_attributes(
+item = src/staging.rs | fn has_access_control_list(
+item = src/staging.rs | fn contents(
+item = src/staging.rs | fn ensure_only_replaced_entries(
+item = src/staging.rs | fn ensure_only_our_entries(
+item = src/staging.rs | impl DestinationLock {
+item = src/staging.rs | fn files_left_in_staging(
+item = src/staging.rs | fn remove_files_on_threads(
+item = src/staging.rs | fn remove_files_in(
 item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]

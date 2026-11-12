@@ -11,6 +11,16 @@ Several `--overwrite` extractions can run at once into one destination folder on
 - The destination may exist before the runs start, or one of the runs may create it.
 - Every folder the archives name lets its owner write into it. A run that creates a shared folder with a mode such as `0555` stops the other runs from placing files there, even when the runs follow one another.
 
+## How runs take turns
+
+A run holds a lock on the destination folder while it publishes, taken with `flock`. The lock is advisory, so it binds Zipper runs only.
+
+- A run that can [replace a whole folder in one step](../usage.md#extract-into-an-existing-folder) needs the destination to itself. It tries for an exclusive lock without waiting, and it replaces folders only if it gets one. If its plan then holds no such folder, it changes to a shared lock before it moves anything.
+- Every other run takes a shared lock, so runs that merge file by file publish at the same time. Such a run waits while another run holds the exclusive lock. It checks its cancel flag about every millisecond while it waits.
+- A run takes no lock on a filesystem that has none. It then merges file by file.
+
+Without the lock, a run that swapped a folder could take away the files another run had just placed in it.
+
 ## What holds when no file path is shared
 
 The archives may share folder names, such as `bin/` and `lib/`, but no file path.
@@ -32,4 +42,4 @@ When two runs write the same file path, the path ends with the whole file from o
 
 ## How it is tested
 
-`tests/concurrent_overwrite.rs` runs 8 ZIP archives at once into one folder for 6 rounds by default. Each archive has 121 files in shared folders. The rounds start from an empty folder, a folder that already holds the shared folders, and a missing folder. Every round compares every file on disk with its source and checks that no `.zipper-` folder is left. One test damages one archive so that it fails before publication. Another gives 4 archives a shared 1 MiB file. A fourth cancels every second run at varied times during its publication. The others must still publish every file, and a cancelled run must leave none of its own. `ZIPPER_CONCURRENT_ROUNDS` and `ZIPPER_CONCURRENT_ARCHIVES` raise the counts for a longer run. The cases that need an exact moment are tested in `src/staging.rs`. These are an undo in a folder that another run has used, a folder removed by another run's undo, a cancel before a merged step, and the mode unlock after a cancel.
+`tests/concurrent_overwrite.rs` runs 8 ZIP archives at once into one folder for 6 rounds by default. Each archive has 121 files in shared folders. The rounds start from an empty folder, a folder that already holds the shared folders, a missing folder, and a folder that already holds every archive's files with other bytes. In that last start each archive names every entry of its own folder under `share/doc`, so the run that gets the exclusive lock replaces that folder in one step while the others wait. Every round compares every file on disk with its source and checks that no `.zipper-` folder is left. One test damages one archive so that it fails before publication. Another gives 4 archives a shared 1 MiB file. A fourth cancels every second run at varied times during its publication. The others must still publish every file, and a cancelled run must leave none of its own. `ZIPPER_CONCURRENT_ROUNDS` and `ZIPPER_CONCURRENT_ARCHIVES` raise the counts for a longer run. The cases that need an exact moment are tested in `src/staging.rs`. These are an undo in a folder that another run has used, a folder removed by another run's undo, a cancel before a merged step, and the mode unlock after a cancel. They also test a run that finds the destination shared and merges file by file, and a run that waits for the exclusive lock and is cancelled.

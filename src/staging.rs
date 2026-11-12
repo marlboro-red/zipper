@@ -2905,6 +2905,11 @@ mod tests {
                 let folder = inode(&out.join("p"));
                 let other = fs::File::open(&out).unwrap();
                 rustix::fs::flock(&other, rustix::fs::FlockOperation::LockExclusive).unwrap();
+                let late = other.try_clone().unwrap();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    let _ = rustix::fs::flock(&late, rustix::fs::FlockOperation::Unlock);
+                });
                 let calls = Cell::new(0);
                 let published = staging.publish_checking(&[], || {
                     calls.set(calls.get() + 1);
