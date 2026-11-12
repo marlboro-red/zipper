@@ -328,15 +328,7 @@ impl Staging {
             Ok(steps) => (steps, Ok(())),
             Err(error) => (Vec::new(), Err(error)),
         };
-        let created: Vec<Directory> = directories
-            .iter()
-            .filter(|directory| {
-                steps.iter().any(|step| {
-                    matches!(step, Step::Create(path) | Step::Replace(path) if Path::new(directory.name).starts_with(path))
-                })
-            })
-            .copied()
-            .collect();
+        let created = created_directories(directories, &steps);
         #[cfg(unix)]
         if published.is_ok() {
             published = crate::unix_modes::apply_with_default(&self.destination, &created, default)
@@ -700,6 +692,25 @@ impl Staging {
             self.root.display()
         ))
     }
+}
+
+fn created_directories<'a>(directories: &[Directory<'a>], steps: &[Step]) -> Vec<Directory<'a>> {
+    let moved: HashSet<&Path> = steps
+        .iter()
+        .filter_map(|step| match step {
+            Step::Create(path) | Step::Replace(path) => Some(path.as_path()),
+            _ => None,
+        })
+        .collect();
+    directories
+        .iter()
+        .filter(|directory| {
+            Path::new(directory.name)
+                .ancestors()
+                .any(|ancestor| moved.contains(ancestor))
+        })
+        .copied()
+        .collect()
 }
 
 #[cfg(unix)]
@@ -1706,6 +1717,49 @@ mod tests {
         let unwritable = swap_works(folder.path());
         set_mode(folder.path(), 0o755);
         assert!(unwritable.is_err());
+    }
+
+    #[test]
+    fn created_directories_are_those_under_a_created_or_replaced_path_on_every_small_plan() {
+        let names = [
+            "a", "a/", "b", "a/a", "a/b", "a/a/", "b/a", "ab", "a/ab", "a/a/a",
+        ];
+        let directories: Vec<Directory> = names
+            .iter()
+            .map(|name| Directory {
+                name,
+                mode: None,
+                modified: None,
+            })
+            .collect();
+        let paths = ["a", "b", "a/a", "a/b", "ab", "b/a"];
+        for mask in 0u32..(1 << (paths.len() * 3)) {
+            let steps: Vec<Step> = paths
+                .iter()
+                .enumerate()
+                .filter_map(|(index, path)| match (mask >> (index * 3)) & 0b111 {
+                    1 => Some(Step::Create(path.into())),
+                    2 => Some(Step::Replace(path.into())),
+                    3 => Some(Step::CreateAs(path.into(), "x".into())),
+                    4 => Some(Step::SetAside(path.into(), "y".into())),
+                    _ => None,
+                })
+                .collect();
+            let expected: Vec<&str> = directories
+                .iter()
+                .filter(|directory| {
+                    steps.iter().any(|step| {
+                        matches!(step, Step::Create(path) | Step::Replace(path) if Path::new(directory.name).starts_with(path))
+                    })
+                })
+                .map(|directory| directory.name)
+                .collect();
+            let created: Vec<&str> = created_directories(&directories, &steps)
+                .iter()
+                .map(|directory| directory.name)
+                .collect();
+            assert_eq!(created, expected, "{steps:?}");
+        }
     }
 
     #[cfg(unix)]

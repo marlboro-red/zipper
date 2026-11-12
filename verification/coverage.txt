@@ -81,6 +81,7 @@ item = src/staging.rs | fn unsupported(
 item = src/staging.rs | fn identity(
 item = src/staging.rs | fn ensure_unchanged(
 item = src/staging.rs | fn spelled_on_disk(
+item = src/staging.rs | fn created_directories<
 item = src/lib.rs | pub(crate) fn publish(
 
 [zip-decoder-budget]
