@@ -3073,7 +3073,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [refused-signatures]
-fingerprint = dc2c97b5440ef5e2
+fingerprint = 256f5a651e7e80cb
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach refused-signatures
 full-check = cargo kani --harness refused::proofs::
