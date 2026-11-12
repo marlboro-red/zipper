@@ -186,36 +186,54 @@ pub fn choose_reader(archive: &Path) -> Result<Reader> {
 
 struct LeadingSignature {
     signature: &'static [u8],
+    next_byte_one_of: &'static [u8],
     format: &'static str,
+}
+
+impl LeadingSignature {
+    fn starts(&self, head: &[u8]) -> bool {
+        head.starts_with(self.signature)
+            && (self.next_byte_one_of.is_empty()
+                || head
+                    .get(self.signature.len())
+                    .is_some_and(|byte| self.next_byte_one_of.contains(byte)))
+    }
 }
 
 const READERS_BY_LEADING_SIGNATURE: &[LeadingSignature] = &[
     LeadingSignature {
         signature: b"7z\xBC\xAF\x27\x1C",
+        next_byte_one_of: b"",
         format: "7z",
     },
     LeadingSignature {
         signature: b"Rar!\x1A\x07\x00",
+        next_byte_one_of: b"",
         format: "rar",
     },
     LeadingSignature {
         signature: b"Rar!\x1A\x07\x01\x00",
+        next_byte_one_of: b"",
         format: "rar",
     },
     LeadingSignature {
         signature: b"\x1F\x8B",
+        next_byte_one_of: b"",
         format: "gzip",
     },
     LeadingSignature {
         signature: b"BZh",
+        next_byte_one_of: b"123456789",
         format: "bzip2",
     },
     LeadingSignature {
         signature: b"\xFD7zXZ\x00",
+        next_byte_one_of: b"",
         format: "xz",
     },
     LeadingSignature {
         signature: b"MSCF",
+        next_byte_one_of: b"",
         format: "cab",
     },
 ];
@@ -246,7 +264,7 @@ fn by_signature(archive: &Path) -> Result<Reader> {
     }
     match READERS_BY_LEADING_SIGNATURE
         .iter()
-        .find(|known| head.starts_with(known.signature))
+        .find(|known| known.starts(&head))
     {
         Some(known) => {
             signature_reader(known.format).ok_or_else(|| NotBuilt(known.format.to_owned()).into())

@@ -271,6 +271,16 @@ fn a_rar_signature_of_another_version_is_an_unrecognized_file() {
 }
 
 #[test]
+fn text_that_starts_with_bzh_and_no_block_size_is_an_unrecognized_file() {
+    assert_unrecognized(
+        "notes.txt",
+        b"BZhang meeting notes\nline two\n",
+        "compressed stream",
+    );
+    assert_unrecognized("bzh", b"BZh", "compressed stream");
+}
+
+#[test]
 fn a_damaged_file_with_a_known_signature_goes_to_its_own_reader() {
     let work = tempfile::tempdir().unwrap();
     for (name, signature, words) in [
@@ -278,7 +288,7 @@ fn a_damaged_file_with_a_known_signature_goes_to_its_own_reader() {
         ("damaged.rar", b"Rar!\x1A\x07\x01\x00", "RAR"),
         ("damaged.rar4", b"Rar!\x1A\x07\x00", "RAR"),
         ("damaged.gz", b"\x1F\x8B", "gzip"),
-        ("damaged.bz2", b"BZh", "single compressed stream"),
+        ("damaged.bz2", b"BZh9", "bzip2"),
         ("damaged.xz", b"\xFD7zXZ\x00", "xz"),
         ("damaged.cab", b"MSCF", "CAB"),
     ] {
