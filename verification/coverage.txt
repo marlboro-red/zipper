@@ -1294,7 +1294,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [wim-fields]
-fingerprint = d9809a6a7c66d9f0
+fingerprint = 2d2d7cfce828a4bc
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo xtask kani-reach wim-fields
 full-check = cargo kani --harness native_wim::proofs:: --harness xpress::proofs::
@@ -2909,7 +2909,7 @@ full-check = cargo xtask kani-reach refused-signatures
 full-check = cargo kani --harness refused::proofs::
 full-check = cargo test --release --lib refused
 full-check = cargo test --release --test refused
-full-check = cargo test --release --test no_7zip ZIPPER_NO_7ZIP_STRIDE=1
+full-check = cargo test --release --test no_7zip ZIPPER_FIXTURE_STRIDE=1
 item = src/refused.rs | const SECTOR:
 item = src/refused.rs | const BOOT_SIGNATURE:
 item = src/refused.rs | const COMPOUND:

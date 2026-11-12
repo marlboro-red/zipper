@@ -6,7 +6,7 @@
 //! The fixture sweep checks every 13th file by default, so it fits every
 //! push. It then skips an `.xz` file that unpacks to more than 1 MiB, whose
 //! decoding is the cost, and checks only what it unpacks to.
-//! `ZIPPER_NO_7ZIP_STRIDE=1` checks every file and every `.xz` file, as the
+//! `ZIPPER_FIXTURE_STRIDE=1` checks every file and every `.xz` file, as the
 //! `[refused-signatures]` full check in `verification/coverage.txt` asks.
 #![cfg(unix)]
 mod common;
@@ -55,7 +55,7 @@ fn fixtures() -> Vec<PathBuf> {
 }
 
 const SWEEP_THREADS: usize = 8;
-const STRIDE: &str = "ZIPPER_NO_7ZIP_STRIDE";
+const STRIDE: &str = "ZIPPER_FIXTURE_STRIDE";
 const DEFAULT_STRIDE: usize = 13;
 const SAMPLED_LARGEST_STREAM: usize = 1 << 20;
 
