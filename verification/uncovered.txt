@@ -3,6 +3,7 @@
 # module needs a formal check or a line here. A line is `path | reason`.
 # A reason that starts with `candidate:` names a formal check still owed.
 
+src/bench.rs | hidden entry points for the decode bench in benchmarks/decoders/decode-bench over decoders other sections cover; its unit tests and smoke test check every decoded byte
 src/counters.rs | profiling counters that compile to nothing without the `counters` feature
 src/creation_bound.rs | the rule that caps automatic ZIP and 7z workers when an archive creates many small files; it changes only a thread count, which the worker models leave free, and its unit tests and the native_7z folder_worker_tests check each boundary
 src/dictionary.rs | turns an LZMA dictionary over the 256 MiB limit into an out-of-memory error; the native_tar xz and lzip unit tests and tests/hostile_tar.rs, tests/hostile_rpm.rs and tests/hostile_stream.rs check each message

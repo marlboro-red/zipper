@@ -114,7 +114,11 @@ fn corpus(original: &Path, out: &Path) -> Result<()> {
         .context("the original's name is not UTF-8")?;
     fs::create_dir_all(out)?;
     let mut streams = serde_json::Map::new();
-    for (codec, extension) in decoders::CODECS {
+    for decoders::Codec {
+        name: codec,
+        extension,
+    } in decoders::CODECS
+    {
         let (bytes, encoder) = encode(codec, &data)?;
         let file = format!("{name}.{extension}");
         fs::write(out.join(&file), &bytes)?;

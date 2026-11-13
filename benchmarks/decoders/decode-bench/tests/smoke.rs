@@ -133,3 +133,47 @@ fn one_round_on_a_small_input_records_every_decoder_with_its_bytes_checked() {
         }
     }
 }
+
+#[test]
+fn a_decoded_byte_that_differs_from_the_original_fails_the_sample() {
+    let work = tempfile::tempdir().unwrap();
+    let original = work.path().join("sample.tar");
+    let bytes = sample();
+    fs::write(&original, &bytes).unwrap();
+    let streams = work.path().join("streams");
+    run(Command::new(BENCH)
+        .arg("corpus")
+        .arg(&original)
+        .arg(&streams));
+    let mut changed = bytes;
+    changed[SAMPLE_BYTES / 2] ^= 1;
+    let other = work.path().join("other.tar");
+    fs::write(&other, changed).unwrap();
+    for (codec, decoder, extension) in [
+        ("gzip", "zipper", "gz"),
+        ("xpress", "xpress-huffman", "xpress"),
+    ] {
+        let output = Command::new(BENCH)
+            .args(["decode", codec, decoder])
+            .arg(streams.join(format!("sample.tar.{extension}")))
+            .arg(&other)
+            .arg(work.path().join("report.json"))
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "{codec} {decoder} passed");
+        assert!(stderr.contains("differ from the original"), "{stderr}");
+    }
+    let refused = Command::new(python())
+        .arg(repository().join("scripts/m31_decoders.py"))
+        .args(["decode", "--harness", BENCH, "--corpus"])
+        .arg(&streams)
+        .arg("--original")
+        .arg(&other)
+        .args(["--rounds", "1", "--trial", "--allow-busy"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success());
+    assert!(stderr.contains("is not the original"), "{stderr}");
+}

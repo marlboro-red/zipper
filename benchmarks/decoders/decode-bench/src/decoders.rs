@@ -2,25 +2,38 @@ use anyhow::{Context, Result, anyhow, ensure};
 use std::{
     ffi::{c_char, c_int, c_uint},
     io::Read,
-    ops::Range,
     sync::Arc,
 };
 use zipper::bench::Stream;
 
-/// Each codec and the extension its stream file carries.
-pub const CODECS: [(&str, &str); 7] = [
-    ("deflate", "deflate"),
-    ("gzip", "gz"),
-    ("zstd", "zst"),
-    ("xz", "xz"),
-    ("lzma", "lzma"),
-    ("bzip2", "bz2"),
-    ("xpress", "xpress"),
+pub struct Codec {
+    pub name: &'static str,
+    pub extension: &'static str,
+}
+
+const fn codec(name: &'static str, extension: &'static str) -> Codec {
+    Codec { name, extension }
+}
+
+pub const CODECS: [Codec; 7] = [
+    codec("deflate", "deflate"),
+    codec("gzip", "gz"),
+    codec("zstd", "zst"),
+    codec("xz", "xz"),
+    codec("lzma", "lzma"),
+    codec("bzip2", "bz2"),
+    codec("xpress", "xpress"),
 ];
+
+const GZIP_FIXED_HEADER: usize = 10;
+const FHCRC: u8 = 2;
+const FEXTRA: u8 = 4;
+const FNAME: u8 = 8;
+const FCOMMENT: u8 = 16;
 
 pub struct Input {
     pub stream: Arc<[u8]>,
-    chunks: Vec<(Range<usize>, usize)>,
+    chunks: Vec<crate::xpress::PackedChunk>,
     padded: Vec<Vec<u8>>,
     pool: Option<rayon::ThreadPool>,
 }
@@ -77,7 +90,10 @@ fn fill(mut reader: impl Read, output: &mut [u8]) -> Result<()> {
 }
 
 fn zipper_reader(stream: Stream, input: &Input, output: &mut [u8]) -> Result<()> {
-    fill(zipper::bench::reader(stream, input.stream.clone())?, output)
+    fill(
+        zipper::bench::reader_on_current_pool(stream, input.stream.clone())?,
+        output,
+    )
 }
 
 fn one_thread(input: &mut Input) -> Result<()> {
@@ -125,16 +141,16 @@ fn miniz_raw(stream: &[u8], output: &mut [u8]) -> Result<usize> {
 // SPEC(RFC 1952 2.3.1): FEXTRA, FNAME, FCOMMENT and FHCRC follow the 10-byte header in that order.
 fn gzip_header(stream: &[u8]) -> Result<usize> {
     ensure!(
-        stream.len() >= 10 && stream[..3] == [0x1f, 0x8b, 8],
+        stream.len() >= GZIP_FIXED_HEADER && stream[..3] == [0x1f, 0x8b, 8],
         "not a gzip member"
     );
     let flags = stream[3];
-    let mut at = 10;
-    if flags & 4 != 0 {
+    let mut at = GZIP_FIXED_HEADER;
+    if flags & FEXTRA != 0 {
         let length = stream.get(at..at + 2).context("truncated gzip header")?;
         at += 2 + usize::from(u16::from_le_bytes([length[0], length[1]]));
     }
-    for field in [8, 16] {
+    for field in [FNAME, FCOMMENT] {
         if flags & field != 0 {
             let end = stream
                 .get(at..)
@@ -143,7 +159,7 @@ fn gzip_header(stream: &[u8]) -> Result<usize> {
             at += end + 1;
         }
     }
-    if flags & 2 != 0 {
+    if flags & FHCRC != 0 {
         at += 2;
     }
     ensure!(at <= stream.len(), "truncated gzip header");
@@ -290,25 +306,21 @@ fn xpress_chunks(input: &mut Input) -> Result<()> {
 }
 
 fn zipper_xpress(input: &Input, output: &mut [u8]) -> Result<()> {
-    let chunks: Vec<(&[u8], usize)> = input
-        .chunks
-        .iter()
-        .map(|(range, size)| (&input.stream[range.clone()], *size))
-        .collect();
+    let chunks = crate::xpress::zipper_chunks(&input.stream, &input.chunks);
     zipper::bench::xpress(&chunks, output)
 }
 
 // EXTERNAL(xpress-huffman 0.1.3): it stops once its input cursor reaches the end, which a
 // chunk that ends as WIM chunks end reaches before its last symbols, so each coded chunk
-// gets two more zero bytes, added before timing.
+// gets two more zero bytes.
 fn padded_chunks(input: &mut Input) -> Result<()> {
     xpress_chunks(input)?;
     input.padded = input
         .chunks
         .iter()
-        .map(|(range, size)| {
-            let mut packed = input.stream[range.clone()].to_vec();
-            if packed.len() != *size {
+        .map(|chunk| {
+            let mut packed = input.stream[chunk.packed.clone()].to_vec();
+            if !chunk.is_stored() {
                 packed.extend([0, 0]);
             }
             packed
@@ -319,17 +331,18 @@ fn padded_chunks(input: &mut Input) -> Result<()> {
 
 fn xpress_huffman(input: &Input, output: &mut [u8]) -> Result<()> {
     let mut at = 0;
-    for ((range, size), packed) in input.chunks.iter().zip(&input.padded) {
+    for (chunk, packed) in input.chunks.iter().zip(&input.padded) {
+        let size = chunk.decoded_size;
         let decoded = output
             .get_mut(at..at + size)
             .context("XPRESS chunks decode past the end of the output")?;
-        if range.len() == *size {
+        if chunk.is_stored() {
             decoded.copy_from_slice(packed);
         } else {
-            let chunk = xpress_huffman::decompress(packed, *size)
+            let chunk = xpress_huffman::decompress(packed, size)
                 .map_err(|error| anyhow!("xpress-huffman: {error:?}"))?;
             ensure!(
-                chunk.len() == *size,
+                chunk.len() == size,
                 "xpress-huffman decoded {} of {size} bytes",
                 chunk.len()
             );
@@ -354,7 +367,7 @@ pub const DECODERS: &[Decoder] = &[
         crates: ZIPPER,
         api: READER,
         prepare: nothing,
-        decode: |input, output| zipper_reader(Stream::Deflate, input, output),
+        decode: |input, output| zipper_reader(Stream::RawDeflate, input, output),
     },
     Decoder {
         codec: "deflate",
@@ -474,7 +487,7 @@ pub const DECODERS: &[Decoder] = &[
         crates: ZIPPER,
         api: READER,
         prepare: nothing,
-        decode: |input, output| zipper_reader(Stream::Lzma, input, output),
+        decode: |input, output| zipper_reader(Stream::LzmaAlone, input, output),
     },
     Decoder {
         codec: "lzma",

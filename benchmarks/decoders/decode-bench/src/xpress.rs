@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use std::ops::Range;
+use zipper::bench::Chunk;
 
 pub const CHUNK: usize = 32 * 1024;
 const MAGIC: &[u8; 8] = b"ZXPRESS1";
@@ -14,6 +15,8 @@ const BYTE_LENGTH_LIMIT: usize = 0xFF;
 const HASH_BITS: u32 = 15;
 const CHAIN_LIMIT: usize = 32;
 const NO_POSITION: usize = usize::MAX;
+const LOOKAHEAD_WORDS: usize = 1;
+const FIRST_LOADED_WORDS: usize = 2;
 
 #[derive(Clone, Copy)]
 enum Token {
@@ -91,8 +94,6 @@ enum Node {
     Pair(usize, usize),
 }
 
-// SPEC(package-merge, Larmore and Hirschberg 1990): the first 2n - 2 items of the
-// last merged list hold each symbol as many times as its code is long.
 fn code_lengths(frequencies: &[u32; SYMBOLS]) -> [u8; SYMBOLS] {
     let mut leaves: Vec<(u64, usize)> = frequencies
         .iter()
@@ -116,7 +117,7 @@ fn code_lengths(frequencies: &[u32; SYMBOLS]) -> [u8; SYMBOLS] {
     let mut list = singles.clone();
     for _ in 1..LONGEST_CODE {
         let mut packages = Vec::with_capacity(list.len() / 2);
-        for pair in list.chunks_exact(2) {
+        for pair in list.as_chunks::<2>().0 {
             nodes.push(Node::Pair(pair[0].1, pair[1].1));
             packages.push((pair[0].0 + pair[1].0, nodes.len() - 1));
         }
@@ -124,7 +125,7 @@ fn code_lengths(frequencies: &[u32; SYMBOLS]) -> [u8; SYMBOLS] {
     }
     let mut lengths = [0u8; SYMBOLS];
     let mut stack = Vec::new();
-    for &(_, node) in &list[..2 * leaves.len() - 2] {
+    for &(_, node) in package_merge_selection(&list, leaves.len()) {
         stack.push(node);
         while let Some(node) = stack.pop() {
             match nodes[node] {
@@ -134,6 +135,10 @@ fn code_lengths(frequencies: &[u32; SYMBOLS]) -> [u8; SYMBOLS] {
         }
     }
     lengths
+}
+
+fn package_merge_selection(list: &[(u64, usize)], symbols: usize) -> &[(u64, usize)] {
+    &list[..2 * symbols - 2]
 }
 
 fn merged(singles: &[(u64, usize)], packages: &[(u64, usize)]) -> Vec<(u64, usize)> {
@@ -201,10 +206,13 @@ impl Bits {
     }
 }
 
-/// One chunk as `wimlib-imagex` and 7-Zip write it: 256 bytes of 4-bit code
-/// lengths, the coded symbols with their length bytes, the end symbol, and one
-/// more 16-bit word, so a decoder that keeps 32 bits loaded ends on the last
-/// byte.
+// SPEC(MS-XCA 2.2.4): the decoder keeps 32 bits loaded, so one more word follows the
+// word that holds the end symbol, and a chunk has at least the two words it loads first.
+fn pad_for_lookahead(words: &mut Vec<u16>) {
+    let loaded = (words.len() + LOOKAHEAD_WORDS).max(FIRST_LOADED_WORDS);
+    words.resize(loaded, 0);
+}
+
 pub fn compress_chunk(data: &[u8]) -> Vec<u8> {
     let tokens = tokens(data);
     let mut frequencies = [0u32; SYMBOLS];
@@ -243,10 +251,15 @@ pub fn compress_chunk(data: &[u8]) -> Vec<u8> {
     if bits.count > 0 {
         bits.put(0, 16 - bits.count);
     }
-    let loaded = (bits.words.len() + 1).max(2);
-    bits.words.resize(loaded, 0);
+    pad_for_lookahead(&mut bits.words);
     let mut out = Vec::with_capacity(LENGTH_TABLE + 2 * bits.words.len());
-    out.extend(lengths.chunks_exact(2).map(|pair| pair[0] | pair[1] << 4));
+    out.extend(
+        lengths
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| pair[0] | pair[1] << 4),
+    );
     let mut extra = bits.extra.into_iter().peekable();
     for (index, word) in bits.words.iter().enumerate() {
         out.extend(word.to_le_bytes());
@@ -258,9 +271,6 @@ pub fn compress_chunk(data: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Chunks of `CHUNK` bytes, each stored when coding does not shrink it, in a
-/// container of this bench's own: a magic, then for each chunk its decoded
-/// size, its packed size and its packed bytes, as little-endian `u32`s.
 pub fn compress(data: &[u8]) -> Vec<u8> {
     let mut out = MAGIC.to_vec();
     for chunk in data.chunks(CHUNK) {
@@ -270,15 +280,51 @@ pub fn compress(data: &[u8]) -> Vec<u8> {
         } else {
             chunk
         };
-        out.extend((chunk.len() as u32).to_le_bytes());
-        out.extend((packed.len() as u32).to_le_bytes());
+        let header = ChunkHeader {
+            decoded: chunk.len() as u32,
+            packed: packed.len() as u32,
+        };
+        out.extend(header.decoded.to_le_bytes());
+        out.extend(header.packed.to_le_bytes());
         out.extend(packed);
     }
     out
 }
 
-/// The packed range and the decoded size of each chunk in `container`.
-pub fn chunks(container: &[u8]) -> Result<Vec<(Range<usize>, usize)>> {
+struct ChunkHeader {
+    decoded: u32,
+    packed: u32,
+}
+
+pub struct PackedChunk {
+    pub packed: Range<usize>,
+    pub decoded_size: usize,
+}
+
+impl PackedChunk {
+    pub fn is_stored(&self) -> bool {
+        self.packed.len() == self.decoded_size
+    }
+}
+
+pub fn zipper_chunks<'a>(container: &'a [u8], chunks: &[PackedChunk]) -> Vec<Chunk<'a>> {
+    chunks
+        .iter()
+        .map(|chunk| {
+            let packed = &container[chunk.packed.clone()];
+            if chunk.is_stored() {
+                Chunk::Stored(packed)
+            } else {
+                Chunk::Coded {
+                    packed,
+                    size: chunk.decoded_size,
+                }
+            }
+        })
+        .collect()
+}
+
+pub fn chunks(container: &[u8]) -> Result<Vec<PackedChunk>> {
     ensure!(
         container.starts_with(MAGIC),
         "not an XPRESS chunk container"
@@ -298,7 +344,10 @@ pub fn chunks(container: &[u8]) -> Result<Vec<(Range<usize>, usize)>> {
             start + packed <= container.len(),
             "truncated XPRESS chunk container"
         );
-        out.push((start..start + packed, size));
+        out.push(PackedChunk {
+            packed: start..start + packed,
+            decoded_size: size,
+        });
         at = start + packed;
     }
     Ok(out)
@@ -343,7 +392,11 @@ mod tests {
     fn assert_both_decoders_read(data: &[u8]) {
         let coded = compress_chunk(data);
         let mut ours = vec![0; data.len()];
-        zipper::bench::xpress(&[(&coded, data.len())], &mut ours).unwrap();
+        let chunk = zipper::bench::Chunk::Coded {
+            packed: &coded,
+            size: data.len(),
+        };
+        zipper::bench::xpress(&[chunk], &mut ours).unwrap();
         assert_eq!(ours, data);
         let mut padded = coded.clone();
         padded.extend([0, 0]);
@@ -398,10 +451,7 @@ mod tests {
         let container = compress(&data);
         let chunks = chunks(&container).unwrap();
         assert_eq!(chunks.len(), 4);
-        let inputs: Vec<(&[u8], usize)> = chunks
-            .iter()
-            .map(|(range, size)| (&container[range.clone()], *size))
-            .collect();
+        let inputs = zipper_chunks(&container, &chunks);
         let mut out = vec![0; data.len()];
         zipper::bench::xpress(&inputs, &mut out).unwrap();
         assert_eq!(out, data);
