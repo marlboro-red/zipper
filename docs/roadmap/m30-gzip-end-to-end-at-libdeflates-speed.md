@@ -2,7 +2,7 @@
 
 `zipper extract` on a single `.gz` file takes no longer than `libdeflate-gunzip` writing the same file, with the staging, cancel and memory rules kept.
 
-Zipper's Deflate decoder alone already takes fewer cycles than libdeflate 1.26 on an Apple M2 Max. The whole workflow does not. On 12 November 2026 a 212 MB file gzipped at level 6 took 230.9 ms to extract with Zipper, 220.2 ms with `libdeflate-gunzip` and 256.1 ms with `gzip -d`, 15 rounds in turn on that machine. So the gap of about 5% sits around the decoder.
+Zipper's Deflate decoder alone already takes fewer cycles than libdeflate 1.26 on an Apple M2 Max, as the [last-pass record](../../benchmarks/deflate/last-pass/README.md) shows. The whole workflow does not. Before this milestone, a 212 MB file gzipped at level 6 took 227.1 ms to extract with Zipper, 218.7 ms with `libdeflate-gunzip` and 255.3 ms with `gzip`, 15 rounds in turn on that machine. The `base` rows of the [gzip file record](../../benchmarks/deflate/gzip-file/README.md) give these times. So the gap sits around the decoder.
 
 Scope:
 

@@ -21,4 +21,6 @@ Done so far, by 8 November 2026:
 
 - ZIP ZipCrypto and WinZip AES decrypt in process, with `--password`, the prompt on Unix and the library option, as the [ZIP reader reference](../reference/zip-reader.md) describes. WinZip itself does not run on macOS, so the WinZip AES archives in `tests/data/encrypted-zip` come from 7-Zip instead. Info-ZIP writes only ZipCrypto, so it adds ZipCrypto archives alone.
 - 7z AES-256 decrypts in process, in every folder layout 7-Zip writes and in encrypted headers, as [Encryption](../reference/7z-reader.md#encryption) describes. The default engine no longer sends an encrypted 7z to 7-Zip. A wrong password fails through the header CRC or the data CRC, before publish. A key derivation power above 7-Zip's limit of 24 is refused before any work. `tests/encrypted_7z.rs` checks 26 archives from `7zz` against the trees 7-Zip gave, a wrong password and none on each, and every point where decryption can fail. A Kani proof covers the property parser under `[7z-aes-properties]`.
+Closed on 8 November 2026:
+
 - M14 closed on 8 November 2026. WinZip does not run on macOS and Info-ZIP writes only ZipCrypto, so the WinZip AES archives of exit check 1 come from 7-Zip, which writes the same format.

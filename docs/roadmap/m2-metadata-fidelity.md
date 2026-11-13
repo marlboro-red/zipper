@@ -15,3 +15,7 @@ Exit checks:
 1. The reference comparison also compares permissions and modification times.
 2. `docs/reference/zip-reader.md` lists exactly what is restored and what is not.
 3. Benchmarks compare against default bsdtar, because both sides now do the same metadata work. Done in `scripts/extraction_matrix.py`. The [bsdtar comparison](../../benchmarks/native-zip/bsdtar-comparison.md) predates metadata restore, so M3 measures it again.
+
+Closed on 2 November 2026:
+
+- `d0495b0` set M2 to done. Exit check 3 is met in `scripts/extraction_matrix.py`. The page records no proof of exit checks 1 and 2 beyond the records linked in its scope.

@@ -7,3 +7,7 @@ The repository enforces its own rules.
 - `cargo xtask lint-docs` checks writing rules, links, record headings, reachability and every path a page names.
 - Benchmark scripts record CPU time and refuse comparisons without a 1-thread Zipper row.
 - The skills in `.claude/skills/` cover benchmarking, review, documentation and reflection.
+
+Closed on 1 November 2026:
+
+- `ccd99ba` added the roadmap with M0 already done. M0 has no numbered exit checks, so each item above stands as one.

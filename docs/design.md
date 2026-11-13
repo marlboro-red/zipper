@@ -13,7 +13,10 @@ The review reached these conclusions:
   local macOS small-file target remains unmet.
 - Removing decoding from the current output implementation does not approach 3×.
   Output work has to be executed differently.
-- The recent 10–16× gain in ZIP integrity verification is not an extraction gain.
+- The 10.63× and 16.58× gains in ZIP integrity verification, in the
+  [threefold record](../benchmarks/native-zip/threefold/README.md), are not
+  extraction gains. They came from the `native-fast` archive cache, which
+  [M25](roadmap/m25-a-release-build-without-c.md) retired.
 - Execution is rebuilt around a validated extraction plan, one measured seam at a
   time.
 

@@ -37,3 +37,7 @@ Built on 12 November 2026:
 Left, on 12 November 2026:
 
 - A run of the `Windows release candidate` workflow that passes the `on_windows` tests in `tests/wim_streams.rs`. Every other row of this milestone reads native or is refused for licence reasons in the parity matrix.
+
+Checked on 14 November 2026:
+
+- The `Windows release candidate` workflow runs `cargo test --release` on every test, these included. The [M20 close](m20-zipper-without-7-zip.md#closed-on-14-november-2026) records that its run on `0824bf1` passed. No line on this page yet confirms exit check 2, so the milestone stays in progress.

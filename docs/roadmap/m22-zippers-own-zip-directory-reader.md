@@ -25,4 +25,6 @@ Done so far, by 8 November 2026:
 - An adversarial review of the wired path ran about 6,850 archives on `zipper list` and both engines. It confirmed no layout that the new path accepts and the `zip` crate refuses, and no listing that differs. Peak memory of `zipper list` stayed at or below the old build's on archives at the entry and metadata limits.
 - A run of 5,000 damaged copies of each archive found one empty archive of ZIP64 records without sentinels that the new reader listed and the old one refused. The reader now refuses it, as the old reader and 7-Zip do, and a built case covers it.
 - One layout stays accepted on purpose. A ZIP64 end record without sentinels after a directory with entries lists its real entries, as the `zip` crate and Python list them, though the old reader refused it. Refusing it would risk archives that real writers produce.
-- Listing takes the same time as with the `zip` crate, as the [listing record](../../benchmarks/native-zip/own-directory-listing/README.md) shows, and the `[zip-directory]` proofs passed on the final code. M22 closed on 8 November 2026.
+Closed on 8 November 2026:
+
+- Listing takes the same time as with the `zip` crate, as the [listing record](../../benchmarks/native-zip/own-directory-listing/README.md) shows, and the `[zip-directory]` proofs passed on the final code. M22 closed on 8 November 2026, in `46a8df0`.

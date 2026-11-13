@@ -20,3 +20,8 @@ Exit checks:
 2. Every hostile case is rejected or stays inside the destination, and its test fails if the check is removed.
 3. A short fuzz run executes in `cargo xtask gate fast` and `gate full`. Longer runs find no crash.
 4. Each parser change passed the `zipper-review` skill.
+
+Closed on 1 November 2026:
+
+- `3af1bea` set M1 to done. For exit check 3, the gate runs 1,000 mutation cases, and a run of 300,000 cases on 2026-11-01 found no failure, as [mutation testing](../reference/zip-reader.md#mutation-testing) records. That is random mutation, not coverage-guided fuzzing.
+- The page records no proof of exit checks 2 and 4 beyond the records linked in its scope. The reference corpus still lacks Java `jar` output.

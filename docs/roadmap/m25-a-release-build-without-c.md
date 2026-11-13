@@ -16,7 +16,7 @@ Exit checks:
 2. A record for each library compares the Rust replacement with it, with ranges apart or the verdict stated as a tie.
 3. The codec rows and the scoreboard show no workload slower beyond the spread, or the record names the gap and why it is accepted.
 
-M25 closed on 11 November 2026. Every exit check passed:
+Closed on 11 November 2026, in `c64e0bb`. Every exit check passed:
 
 1. The gate's `pure rust` step fails when a crate in the build compiles or links native code, on every platform.
 2. [The Deflate record](../../benchmarks/deflate/no-zlib/README.md) and [the Zstandard record](../../benchmarks/zstd/own-decoder/README.md) compare each Rust decoder with the C library it replaced. libdeflate left with `native-fast`.

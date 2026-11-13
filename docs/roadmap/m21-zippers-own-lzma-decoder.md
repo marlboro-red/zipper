@@ -39,9 +39,9 @@ Done by 7 November 2026:
 
 Decided, on 8 November 2026:
 
-- Zipper stays pure Rust, with no hand-written assembly in the hot loop. The user decided this on 8 November 2026, after first allowing assembly the same morning. 7-Zip's arm64 loop is assembly, and every safe-Rust change tried left 7-Zip about 11% faster at one thread on solid Silesia, 1.335 against 1.484 s in the [unchecked tables record](../../benchmarks/lzma/unchecked-tables/README.md).
+- Zipper stays pure Rust, with no hand-written assembly in the hot loop. The user decided this on 8 November 2026, after first allowing assembly the same morning. 7-Zip's arm64 loop is assembly, and every safe-Rust change tried left 7-Zip about 10% faster at one thread on solid Silesia, 1.335 against 1.484 s in the [unchecked tables record](../../benchmarks/lzma/unchecked-tables/README.md).
 - A study of 7-Zip's arm64 `LzmaDecOpt.S` found two shortcuts that a port must not copy. Its eight direct bits after a normalization are exact only when the range is at least 2^31, and its sign-flag compares differ from an unsigned compare on damaged streams. Valid encoder output does not reach either case.
 
-Closed:
+Closed on 8 November 2026:
 
 - M21 closed on 8 November 2026, by the user's decision. Exit checks 1, 2, 3 and 5 are met, and so is the memory half of exit check 4. The speed half is not met. At one thread on solid Silesia, 7-Zip takes 1.335 s and Zipper's safe decoder at `46a8df0` takes 1.484 s, in one rotation of the [unchecked tables record](../../benchmarks/lzma/unchecked-tables/README.md). The remaining gap is 7-Zip's hand-written arm64 loop, which the pure Rust decision rules out. Zipper's decoder is still faster than liblzma, which it replaced.

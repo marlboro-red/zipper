@@ -12,5 +12,9 @@ Scope:
 Exit checks:
 
 1. `docs/results.md` is generated, and the gate fails when it does not match the committed JSON. Done in the `results` gate step.
-2. Two sessions on one host record the session-to-session drift for each workload. Done on 2026-11-02 in the drift column of [Results](../results.md). Most rows moved less than 5%, and rows near 25 ms moved up to 11%.
+2. Two sessions on one host record the session-to-session drift for each workload. Done on 2026-11-02 in the drift column of [Results](../results.md) at `a71d3e6`. Most rows moved less than 5%, and rows near 25 ms moved up to 11%.
 3. One command reproduces every published number. `cargo xtask bench` regenerates every number in [Results](../results.md).
+
+Closed on 2 November 2026:
+
+- `f010298` recorded extraction counters for every workload and set M3 to done. Exit checks 1 to 3 are met as each one states.

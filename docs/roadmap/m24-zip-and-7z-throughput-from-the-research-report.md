@@ -23,7 +23,7 @@ Done so far, by 11 November 2026:
 - [Parallel LZMA2 segments behind 7z filters](../../benchmarks/native-7z/filtered-lzma2-segments/README.md). An ARM64-filtered 7z extracts 1.29 times faster at four threads.
 - [A macOS worker cap for ZIPs of mostly small files](../../benchmarks/native-zip/small-files-cap/README.md). The dependency sources and the mixed tree extract about 10% faster at default threads. The same sweep found no wall-time gain for a cap on non-solid 7z, so 7z keeps its worker count.
 
-- [The BCJ2 main stream copied a slice at a time](../../benchmarks/native-7z/bcj2-slice-scan/README.md). A BCJ2 7z of Silesia extracts a further 1.38 times faster at one thread, so BCJ2 is about three times faster than before this milestone.
+- [The BCJ2 main stream copied a slice at a time](../../benchmarks/native-7z/bcj2-slice-scan/README.md). A BCJ2 7z of Silesia extracts a further 1.38 times faster at one thread. On one machine, [before and after the research report's changes](../../benchmarks/research-report/before-after/README.md) times BCJ2 2.85 times faster than before this milestone.
 - [Zipper against the Go ZIP extractors pzip and fastzip](../../benchmarks/native-zip/go-zip-tools/README.md), timed as a check on the ZIP reader. Zipper is about 2.5 times faster on Silesia, and its content-only mode beats both on small files.
 
 - [A writer pool for solid 7z folders of small files](../../benchmarks/native-7z/solid-writer-pool/README.md). The solid dependency sources extract 1.60 times faster at default threads, and a TLA+ model of the hand-off holds 8 rules.
