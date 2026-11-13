@@ -147,6 +147,7 @@ The LZ4 reader in `src/lz4.rs`, under `[lz4-frames]`, has these exhaustive tests
 - `random_and_damaged_blocks_decode_as_the_reference_does` compares the two decoders on 20,000 generated blocks after up to 70,000 bytes of history, with long literal runs, long matches and offsets from 1 to 65,535. A third of the blocks have bytes overwritten and some are cut short, and each is decoded within its exact size, one byte less and more.
 - `a_block_at_its_largest_expansion_decodes` checks that a block near the largest output per input byte fits the room the decoder sets aside.
 - `reading_on_after_a_malformed_block_never_panics` reads again after a block is refused.
+- `content_checksums_hold_over_blocks_of_every_alignment` checks frames whose blocks start on and off the checksum's 16-byte stripes, since the reader hashes a block's output while it decodes it when the block starts on a stripe.
 - `xxh32_matches_known_values_and_every_split` checks xxHash32 against its published values for the empty string and `abc`, and on every length up to 70 bytes fed in every 3-way split.
 - `frames_round_trip_and_every_damage_is_refused` cuts frames at every length and flips each byte. A frame with a content checksum must never decode to other bytes.
 - `a_long_match_is_refused_before_the_output_grows_past_its_limit` covers a match that would allocate far past the block limit before the final size check.

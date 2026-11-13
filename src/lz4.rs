@@ -11,6 +11,7 @@ const UNCOMPRESSED_BLOCK: u32 = 1 << 31;
 const LARGEST_BLOCK: usize = 4 * 1024 * 1024;
 // SPEC(LZ4 Frame Format 1.6.4): a header of at most 19 bytes, then a block's size, data and checksum.
 pub(crate) const FIRST_BLOCK_INPUT_MAX: u64 = 19 + 4 + LARGEST_BLOCK as u64 + 4;
+const STRIPE: usize = 16;
 const PRIMES: [u32; 5] = [
     2_654_435_761,
     2_246_822_519,
@@ -26,7 +27,7 @@ fn data_error(message: &'static str) -> io::Error {
 // LINK: https://github.com/Cyan4973/xxHash/blob/dev/doc/xxhash_spec.md
 pub(crate) struct Xxh32 {
     lanes: [u32; 4],
-    held: [u8; 16],
+    held: [u8; STRIPE],
     held_len: usize,
     total: u64,
 }
@@ -52,31 +53,41 @@ impl Xxh32 {
             .wrapping_mul(PRIMES[0])
     }
 
-    fn stripe(&mut self, stripe: &[u8]) {
-        for (lane, word) in self.lanes.iter_mut().zip(stripe.chunks_exact(4)) {
-            *lane = Self::round(*lane, u32::from_le_bytes(word.try_into().unwrap()));
+    fn lanes_between_stripes(&self) -> Option<[u32; 4]> {
+        (self.held_len == 0).then_some(self.lanes)
+    }
+
+    fn stripe_into(lanes: &mut [u32; 4], stripe: &[u8; STRIPE]) {
+        let (words, _) = stripe.as_chunks::<4>();
+        for (lane, word) in lanes.iter_mut().zip(words) {
+            *lane = Self::round(*lane, u32::from_le_bytes(*word));
         }
+    }
+
+    fn add_stripes(&mut self, lanes: [u32; 4], stripes: &[u8]) {
+        debug_assert!(self.held_len == 0 && stripes.len().is_multiple_of(STRIPE));
+        self.lanes = lanes;
+        self.total += stripes.len() as u64;
     }
 
     pub(crate) fn update(&mut self, mut data: &[u8]) {
         self.total += data.len() as u64;
         if self.held_len > 0 {
-            let take = (16 - self.held_len).min(data.len());
+            let take = (STRIPE - self.held_len).min(data.len());
             self.held[self.held_len..self.held_len + take].copy_from_slice(&data[..take]);
             self.held_len += take;
             data = &data[take..];
-            if self.held_len < 16 {
+            if self.held_len < STRIPE {
                 return;
             }
             let held = self.held;
-            self.stripe(&held);
+            Self::stripe_into(&mut self.lanes, &held);
             self.held_len = 0;
         }
-        let whole = data.len() / 16 * 16;
-        for stripe in data[..whole].chunks_exact(16) {
-            self.stripe(stripe);
+        let (stripes, rest) = data.as_chunks::<STRIPE>();
+        for stripe in stripes {
+            Self::stripe_into(&mut self.lanes, stripe);
         }
-        let rest = &data[whole..];
         self.held[..rest.len()].copy_from_slice(rest);
         self.held_len = rest.len();
     }
@@ -147,6 +158,15 @@ fn decoded_bound(block: usize, limit: usize) -> usize {
 }
 
 fn decode_into<const WILD: usize>(block: &[u8], window: &mut [u8], start: usize) -> Option<usize> {
+    decode_following::<WILD>(block, window, start, |_, _| {})
+}
+
+fn decode_following<const WILD: usize>(
+    block: &[u8],
+    window: &mut [u8],
+    start: usize,
+    mut follow: impl FnMut(&[u8], usize),
+) -> Option<usize> {
     let end = window.len().checked_sub(WILD)?;
     if start > end {
         return None;
@@ -154,6 +174,7 @@ fn decode_into<const WILD: usize>(block: &[u8], window: &mut [u8], start: usize)
     let mut out = start;
     let mut index = 0;
     loop {
+        follow(window, out);
         let token = *block.get(index)?;
         if let Some(input) = block.get(index..index + WILD + 3)
             && end - out >= 3 * WILD
@@ -412,6 +433,7 @@ impl<R: BufRead> Lz4Frames<R> {
         let limit =
             usize::try_from(left).map_or(frame.block_limit, |left| left.min(frame.block_limit));
         let data = &self.block[..stored];
+        let mut hashed_to = keep;
         if size & UNCOMPRESSED_BLOCK != 0 {
             if stored > limit {
                 return Err(data_error("LZ4 frame decodes past its content size"));
@@ -426,12 +448,30 @@ impl<R: BufRead> Lz4Frames<R> {
             if self.window.len() < room {
                 self.window.resize(room, 0);
             }
-            self.filled =
-                decode_into::<WILD>(data, &mut self.window[..room], keep).ok_or_else(|| {
-                    data_error("LZ4 block is malformed or passes its frame's content size")
-                })?;
+            let lanes = frame
+                .hash
+                .lanes_between_stripes()
+                .filter(|_| frame.content_checksum);
+            let window = &mut self.window[..room];
+            let decoded = if let Some(mut lanes) = lanes {
+                let decoded = decode_following::<WILD>(data, window, keep, |window, out| {
+                    if let Some(stripe) = window[hashed_to..out].first_chunk::<STRIPE>() {
+                        Xxh32::stripe_into(&mut lanes, stripe);
+                        hashed_to += STRIPE;
+                    }
+                });
+                frame.hash.add_stripes(lanes, &self.window[keep..hashed_to]);
+                decoded
+            } else {
+                decode_into::<WILD>(data, window, keep)
+            };
+            self.filled = decoded.ok_or_else(|| {
+                data_error("LZ4 block is malformed or passes its frame's content size")
+            })?;
         }
-        frame.hash.update(&self.window[keep..self.filled]);
+        if frame.content_checksum {
+            frame.hash.update(&self.window[hashed_to..self.filled]);
+        }
         frame.produced += (self.filled - keep) as u64;
         self.frame = Some(frame);
         Ok(())
@@ -682,22 +722,9 @@ mod tests {
             if run >= 5 && data.len() - at - run >= 1 {
                 let length = run - 1 - 4;
                 block.push(0x10 | length.min(15) as u8);
-                if length >= 15 {
-                    let mut rest = length - 15;
-                    while rest >= 255 {
-                        block.push(255);
-                        rest -= 255;
-                    }
-                    block.push(rest as u8);
-                }
-                let token = block.len()
-                    - if length >= 15 {
-                        2 + (length - 15) / 255
-                    } else {
-                        1
-                    };
-                block.insert(token + 1, data[at]);
+                block.push(data[at]);
                 block.extend_from_slice(&1u16.to_le_bytes());
+                push_length(&mut block, length);
                 at += run;
             } else {
                 let literals = &data[at..];
@@ -787,6 +814,39 @@ mod tests {
         }
         let wrong_size = frame(&parts, 0x20, Some(content.len() as u64 + 1));
         assert!(decode(&wrong_size).is_err());
+    }
+
+    #[test]
+    fn content_checksums_hold_over_blocks_of_every_alignment() {
+        let mut random = Random(0x2545_F491_4F6C_DD1D);
+        for lengths in [
+            &[16, 32, 4096][..],
+            &[5, 16, 48, 1000],
+            &[17, 15, 1024, 1, 4095, 64],
+            &[0, 160, 3],
+        ] {
+            let parts: Vec<Vec<u8>> = lengths
+                .iter()
+                .map(|&length| {
+                    let mut part = Vec::new();
+                    while part.len() < length {
+                        let byte = random.below(4) as u8;
+                        let run = 1 + random.length(3, 40);
+                        part.extend(std::iter::repeat_n(byte, run.min(length - part.len())));
+                    }
+                    part
+                })
+                .collect();
+            let content = parts.concat();
+            for flags in [0x20 | 0x04, 0x04] {
+                let whole = frame(&parts, flags, None);
+                assert_eq!(decode(&whole).unwrap(), content, "{lengths:?}");
+                let checksum = whole.len() - 4;
+                let mut damaged = whole.clone();
+                damaged[checksum] ^= 0x01;
+                assert!(decode(&damaged).is_err(), "{lengths:?}");
+            }
+        }
     }
 
     fn raw_frame(flags: u8, content_size: Option<u64>, blocks: &[Vec<u8>]) -> Vec<u8> {
