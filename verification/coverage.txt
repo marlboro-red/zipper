@@ -212,7 +212,7 @@ item = src/native_7z.rs | fn decode_header(
 
 [zip-extra-times]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 967f4909738f546d
+fingerprint = d1e371b45b809f36
 full-check = cargo xtask kani-reach zip-extra-times
 full-check = cargo kani --exact --harness native_zip::proofs::time_fields_never_panic_on_any_extra_field
 item = src/native_zip.rs | fn exact_time(
@@ -226,16 +226,24 @@ item = src/native_zip.rs | const UNIX_EPOCH_IN_FILETIME_SECONDS:
 item = src/native_zip.rs | pub(crate) struct EntryTime {
 item = src/native_zip.rs |     const EXTRA:
 item = src/native_zip.rs |     fn time_fields_never_panic_on_any_extra_field(
+item = src/inflate.rs | pub(crate) const HISTORY:
+item = src/native_zip.rs | const DEFLATE_INPUT:
+item = src/native_zip.rs | const WORKER_BUFFER:
+item = src/native_zip.rs | const _:
 
 [zip-dos-times]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = b50b9d1ca0bb3f39
+fingerprint = 8ad4e6f93981a652
 full-check = cargo xtask kani-reach zip-dos-times
 full-check = cargo kani --exact --harness native_zip::proofs::dos_time_arithmetic_never_overflows
 item = src/native_zip.rs | fn dos_fields(
 item = src/native_zip.rs | fn days_since_unix_epoch(
 item = src/native_zip.rs | fn reading_nearer_dos_time(
 item = src/native_zip.rs |     fn dos_time_arithmetic_never_overflows(
+item = src/inflate.rs | pub(crate) const HISTORY:
+item = src/native_zip.rs | const DEFLATE_INPUT:
+item = src/native_zip.rs | const WORKER_BUFFER:
+item = src/native_zip.rs | const _:
 
 [zip64-extra-field]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
@@ -251,7 +259,7 @@ item = src/lib.rs | pub(crate) type Field<
 
 [zip-data-descriptors]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0187a8c3a14b23fb
+fingerprint = 9d2bb5cfa24a5190
 full-check = cargo xtask kani-reach zip-data-descriptors
 full-check = cargo kani --exact --harness native_zip::proofs::every_descriptor_layout_reads_exactly_its_bytes
 item = src/native_zip.rs | fn descriptor_layout(
@@ -261,6 +269,10 @@ item = src/native_zip.rs |     fn every_descriptor_layout_reads_exactly_its_byte
 item = src/lib.rs | pub(crate) fn field_check(
 item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
+item = src/inflate.rs | pub(crate) const HISTORY:
+item = src/native_zip.rs | const DEFLATE_INPUT:
+item = src/native_zip.rs | const WORKER_BUFFER:
+item = src/native_zip.rs | const _:
 
 [zip-lzma-headers]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
@@ -423,7 +435,7 @@ item = src/lzw.rs | impl<R: BufRead> Read for Unlzw<R> {
 [zip-directory]
 speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 8205fe55a91f632a
+fingerprint = d9fbb8dfae92f80d
 full-check = cargo xtask kani-reach zip-directory
 full-check = cargo kani --harness zip_directory::proofs::
 item = src/zip_directory.rs | fn fixed<
@@ -509,6 +521,10 @@ item = src/zip_directory.rs | struct DirectoryBytes<
 item = src/zip_directory.rs | struct Extent {
 item = src/zip_directory.rs | struct Record<
 item = src/zip_directory.rs | type Walk<
+item = src/inflate.rs | pub(crate) const HISTORY:
+item = src/native_zip.rs | const DEFLATE_INPUT:
+item = src/native_zip.rs | const WORKER_BUFFER:
+item = src/native_zip.rs | const _:
 
 [xz-filters]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
