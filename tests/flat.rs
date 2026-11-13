@@ -238,3 +238,61 @@ fn a_read_only_folder_in_any_place_leaves_the_output_and_its_parent_as_they_were
     }
     assert!(failures > 0, "no read-only folder made the extraction fail");
 }
+
+fn contents(root: &Path) -> Vec<String> {
+    let mut found: Vec<String> = tree(root).into_iter().map(|(_, data)| data).collect();
+    found.sort();
+    found
+}
+
+#[test]
+fn names_that_differ_only_in_case_or_normalization_are_one_name_where_the_filesystem_ignores_it() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("Probe"), "").unwrap();
+    if !root.path().join("probe").exists() {
+        eprintln!("skipped: this filesystem tells names apart by case");
+        return;
+    }
+    let case = root.path().join("case.zip");
+    zip(&case, &[("a/X.txt", "upper"), ("b/x.txt", "lower")]);
+    let normalization = root.path().join("normalization.zip");
+    zip(
+        &normalization,
+        &[
+            ("a/\u{e9}.txt", "composed"),
+            ("b/e\u{301}.txt", "decomposed"),
+        ],
+    );
+    let numbered = root.path().join("numbered.zip");
+    zip(
+        &numbered,
+        &[("a/x.txt", "a"), ("b/x.txt", "b"), ("c/X_1.txt", "c")],
+    );
+    let run = |archive: &Path, existing| {
+        let destination = root.path().join(format!(
+            "{}-{existing:?}",
+            archive.file_stem().unwrap().to_string_lossy()
+        ));
+        extract_archive(archive, &destination, flat(existing)).map(|()| contents(&destination))
+    };
+    for archive in [&case, &normalization] {
+        let error = format!("{:#}", run(archive, Existing::Refuse).unwrap_err());
+        assert!(error.contains("several archive files are named"), "{error}");
+        let parent: Vec<_> = fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(parent.len(), 4, "{parent:?}");
+    }
+    assert_eq!(run(&case, Existing::Skip).unwrap(), ["upper"]);
+    assert_eq!(run(&case, Existing::Overwrite).unwrap(), ["lower"]);
+    assert_eq!(run(&case, Existing::RenameNew).unwrap(), ["lower", "upper"]);
+    assert_eq!(
+        run(&normalization, Existing::RenameExisting).unwrap(),
+        ["composed", "decomposed"]
+    );
+    assert_eq!(
+        run(&numbered, Existing::RenameNew).unwrap(),
+        ["a", "b", "c"]
+    );
+}
