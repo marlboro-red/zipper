@@ -236,7 +236,9 @@ pub(crate) struct Lz4Frames<R> {
     frame: Option<Frame>,
     frames: u64,
     window: Vec<u8>,
+    filled: usize,
     position: usize,
+    block: Vec<u8>,
     finished: bool,
 }
 
@@ -247,7 +249,9 @@ impl<R: BufRead> Lz4Frames<R> {
             frame: None,
             frames: 0,
             window: Vec::new(),
+            filled: 0,
             position: 0,
+            block: Vec::new(),
             finished: false,
         }
     }
@@ -321,7 +325,7 @@ impl<R: BufRead> Lz4Frames<R> {
                 return Err(data_error("LZ4 frame header checksum does not match"));
             }
             self.frames += 1;
-            self.window.clear();
+            self.filled = 0;
             self.position = 0;
             self.frame = Some(Frame {
                 independent: flags & 0x20 != 0,
@@ -355,37 +359,52 @@ impl<R: BufRead> Lz4Frames<R> {
         if stored as usize > frame.block_limit {
             return Err(data_error("LZ4 block is larger than its frame allows"));
         }
-        let mut data = vec![0u8; stored as usize];
+        let stored = stored as usize;
+        if self.block.len() < stored {
+            self.block.resize(stored, 0);
+        }
         self.input
-            .read_exact(&mut data)
+            .read_exact(&mut self.block[..stored])
             .map_err(|_| data_error("truncated LZ4 block"))?;
-        if frame.block_checksums && self.word()? != xxh32(&data) {
+        if frame.block_checksums && self.word()? != xxh32(&self.block[..stored]) {
             return Err(data_error("LZ4 block checksum does not match"));
         }
         if frame.independent {
-            self.window.clear();
-        } else if self.window.len() > HISTORY_HELD {
-            self.window.drain(..self.window.len() - WINDOW);
+            self.filled = 0;
+        } else if self.filled > HISTORY_HELD {
+            self.window
+                .copy_within(self.filled - WINDOW..self.filled, 0);
+            self.filled = WINDOW;
         }
-        let keep = self.window.len();
+        let keep = self.filled;
+        self.position = keep;
         let left = frame
             .content_size
             .map_or(u64::MAX, |size| size - frame.produced);
         let limit =
             usize::try_from(left).map_or(frame.block_limit, |left| left.min(frame.block_limit));
+        let data = &self.block[..stored];
         if size & UNCOMPRESSED_BLOCK != 0 {
-            if data.len() > limit {
+            if stored > limit {
                 return Err(data_error("LZ4 frame decodes past its content size"));
             }
-            self.window.extend_from_slice(&data);
+            if self.window.len() < keep + stored {
+                self.window.resize(keep + stored, 0);
+            }
+            self.window[keep..keep + stored].copy_from_slice(data);
+            self.filled = keep + stored;
         } else {
-            decode_block(&data, &mut self.window, limit).ok_or_else(|| {
-                data_error("LZ4 block is malformed or passes its frame's content size")
-            })?;
+            let room = keep + decoded_bound(stored, limit) + WILD;
+            if self.window.len() < room {
+                self.window.resize(room, 0);
+            }
+            self.filled =
+                decode_into::<WILD>(data, &mut self.window[..room], keep).ok_or_else(|| {
+                    data_error("LZ4 block is malformed or passes its frame's content size")
+                })?;
         }
-        frame.hash.update(&self.window[keep..]);
-        frame.produced += (self.window.len() - keep) as u64;
-        self.position = keep;
+        frame.hash.update(&self.window[keep..self.filled]);
+        frame.produced += (self.filled - keep) as u64;
         self.frame = Some(frame);
         Ok(())
     }
@@ -393,7 +412,7 @@ impl<R: BufRead> Lz4Frames<R> {
 
 impl<R: BufRead> Read for Lz4Frames<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        while self.position == self.window.len() && !buffer.is_empty() {
+        while self.position == self.filled && !buffer.is_empty() {
             if self.finished {
                 return Ok(0);
             }
@@ -403,7 +422,7 @@ impl<R: BufRead> Read for Lz4Frames<R> {
             }
             self.next_block()?;
         }
-        let count = buffer.len().min(self.window.len() - self.position);
+        let count = buffer.len().min(self.filled - self.position);
         buffer[..count].copy_from_slice(&self.window[self.position..self.position + count]);
         self.position += count;
         Ok(count)
@@ -800,6 +819,21 @@ mod tests {
                 }
             };
             assert!(produced <= 1, "{produced} bytes before {error}");
+        }
+    }
+
+    #[test]
+    fn reading_on_after_a_malformed_block_never_panics() {
+        let first = vec![0x80, b'a', b'b', b'c', b'd', b'e', b'f', b'g', b'h'];
+        for flags in [0x20, 0x00] {
+            let frame = raw_frame(flags, None, &[first.clone(), vec![0x00, 0x00]]);
+            let mut reader = Lz4Frames::new(&frame[..]);
+            let mut buffer = [0u8; 64];
+            assert_eq!(reader.read(&mut buffer).unwrap(), 8);
+            assert!(reader.read(&mut buffer).is_err());
+            for _ in 0..3 {
+                let _ = reader.read(&mut buffer);
+            }
         }
     }
 
