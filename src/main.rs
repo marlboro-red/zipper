@@ -665,6 +665,62 @@ mod stop_on_signal {
     }
 }
 
+#[cfg(windows)]
+mod stop_on_console_event {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use windows_sys::{
+        Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler},
+        core::BOOL,
+    };
+
+    const HANDLED: BOOL = 1;
+    const PASSED_ON: BOOL = 0;
+
+    pub(super) static CANCEL: AtomicBool = AtomicBool::new(false);
+    static RECEIVED: AtomicBool = AtomicBool::new(false);
+
+    unsafe extern "system" fn record(event: u32) -> BOOL {
+        match event {
+            CTRL_C_EVENT | CTRL_BREAK_EVENT => {
+                RECEIVED.store(true, Ordering::SeqCst);
+                CANCEL.store(true, Ordering::SeqCst);
+                HANDLED
+            }
+            _ => PASSED_ON,
+        }
+    }
+
+    pub(super) struct Catching {
+        added: bool,
+    }
+
+    impl Catching {
+        pub(super) fn start() -> Self {
+            // SAFETY: `record` lives for the whole process, and it only stores to lock-free
+            // atomics from the thread Windows starts for each console event.
+            let added = unsafe { SetConsoleCtrlHandler(Some(record), 1) } != 0;
+            Self { added }
+        }
+
+        pub(super) fn keep_until_exit(self) {
+            std::mem::forget(self);
+        }
+    }
+
+    impl Drop for Catching {
+        fn drop(&mut self) {
+            if self.added {
+                // SAFETY: this removes the handler `start` added, which takes no other state.
+                unsafe { SetConsoleCtrlHandler(Some(record), 0) };
+            }
+        }
+    }
+
+    pub(super) fn take_received() -> bool {
+        RECEIVED.swap(false, Ordering::SeqCst)
+    }
+}
+
 #[cfg(unix)]
 fn no_signal_action() -> libc::sigaction {
     // SAFETY: sigaction is plain data, and zeroed is a valid value for every field: no
@@ -705,7 +761,12 @@ fn cancel_on_signal() -> Option<&'static std::sync::atomic::AtomicBool> {
     Some(&stop_on_signal::CANCEL)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn cancel_on_signal() -> Option<&'static std::sync::atomic::AtomicBool> {
+    Some(&stop_on_console_event::CANCEL)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn cancel_on_signal() -> Option<&'static std::sync::atomic::AtomicBool> {
     None
 }
@@ -715,15 +776,20 @@ fn catch_ending_signals() -> stop_on_signal::Catching {
     stop_on_signal::Catching::start()
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn catch_ending_signals() -> stop_on_console_event::Catching {
+    stop_on_console_event::Catching::start()
+}
+
+#[cfg(not(any(unix, windows)))]
 struct NoSignalsCaught;
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 impl NoSignalsCaught {
     fn keep_until_exit(self) {}
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn catch_ending_signals() -> NoSignalsCaught {
     NoSignalsCaught
 }
@@ -744,7 +810,11 @@ fn raise_signals_that_ended_the_run(succeeded: bool) {
         // SAFETY: kill takes plain integers, and every handler of ours is gone again.
         unsafe { libc::kill(libc::getpid(), signal) };
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    if stop_on_console_event::take_received() && !succeeded {
+        std::process::exit(windows_sys::Win32::Foundation::STATUS_CONTROL_C_EXIT);
+    }
+    #[cfg(not(any(unix, windows)))]
     let _ = succeeded;
 }
 
