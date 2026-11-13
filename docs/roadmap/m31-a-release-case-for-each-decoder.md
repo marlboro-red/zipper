@@ -27,6 +27,8 @@ Exit checks:
 - `decode` runs each decoder in its own process for each sample. The process times only the decode call, into an output buffer written beforehand. It then compares every byte with the original and reports wall and CPU time. Its parent records the peak RSS.
 - Every round runs the decoders in a new seeded order, after one warmup round. `decode` refuses fewer than 7 rounds without `--trial`, and it refuses to start while another process uses 25% of a core, as `scripts/bench_common.py` decides.
 - `extract` runs [`scripts/compare_zip_readers.py`](../../scripts/compare_zip_readers.py) on each tar stream, with Zipper at one thread and at all threads against bsdtar and 7-Zip at one thread. The WIM runs against 7-Zip. LZMA has no extraction row. Zipper writes `silesia.tar.lzma` out as one file, `silesia.tar`, where bsdtar reads the tar inside, so the trees differ.
+- A row whose comparison fails is kept in the JSON as an error with the end of its stderr, and the run goes on. The JSON is written after the decode rows and after each extraction row. `all` and `extract` exit nonzero when any row failed. The JSON lists rows left out on purpose, such as LZMA, under `extract.skipped`.
+- `corpus` moves the manifest that `scripts/fetch_silesia.py` writes beside `tree/silesia` out of `tree`, and refuses a `tree` that holds anything else. `wimlib-imagex` captures all of `tree`, so the manifest made the hosted run's WIM hold one file more than the source.
 - The JSON names the corpus and stream sha256s, every crate version from `Cargo.lock`, the machine, the toolchain and the revision with whether the tree was clean.
 
 The alternatives are these crates.
@@ -55,7 +57,7 @@ python3 scripts/m31_decoders.py all --harness target/release/zipper-decode-bench
   --rounds 11 --runs 7 --out target/m31/m31-decoders-m2-max.json
 ```
 
-On a hosted x86-64 Linux runner, dispatch [`m31-decoders.yml`](../../.github/workflows/m31-decoders.yml). It installs 7-Zip, bsdtar and `wimlib-imagex`, builds the same binaries, builds the corpus and uploads the JSON as the artifact `m31-decoders-linux-x86_64`. It runs only when dispatched.
+On a hosted x86-64 Linux runner, dispatch [`m31-decoders.yml`](../../.github/workflows/m31-decoders.yml). It installs 7-Zip, bsdtar and `wimlib-imagex`, builds the same binaries, builds the corpus and uploads the JSON as the artifact `m31-decoders-linux-x86_64`, also when a step fails. It runs only when dispatched.
 
 ```sh
 gh workflow run m31-decoders.yml --ref main -f rounds=11 -f runs=7

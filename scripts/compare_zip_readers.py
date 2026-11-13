@@ -19,6 +19,17 @@ from bench_common import inventory, refuse_when_busy, verify
 
 
 READER_MODES = ["native", "native-content-only", "7zip", "7zip-tar", "bsdtar", "sevenz-rust2", "pzip", "fastzip"]
+NAMES_SHOWN = 10
+
+
+def tree_difference(wanted, found):
+    """The first names the output lacks, adds, or holds at another size, each with its sizes as
+    wanted and found, where None is a folder."""
+    names = sorted(set(wanted) | set(found), key=str)
+    differing = [name for name in names if wanted.get(name, "absent") != found.get(name, "absent")]
+    shown = ", ".join(f"{name} (wanted {wanted.get(name, 'absent')}, found {found.get(name, 'absent')})"
+                      for name in differing[:NAMES_SHOWN])
+    return f"{len(differing)} names differ: {shown}"
 
 
 def main():
@@ -118,8 +129,9 @@ def main():
                     subprocess.run(extract, check=True, cwd=source.parent, stdout=subprocess.DEVNULL)
                 wanted = {source.name: None}
                 wanted.update({str(Path(source.name) / key): value for key, value in expected.items()})
-                if inventory(output) != wanted:
-                    raise RuntimeError("full output tree mismatch")
+                found = inventory(output)
+                if found != wanted:
+                    raise RuntimeError(f"full output tree mismatch from {label}: {tree_difference(wanted, found)}")
                 sample["verified_bytes"] = verify(source, output / source.name, expected)
                 if sample["verified_bytes"] != total:
                     raise RuntimeError("verified byte count mismatch")

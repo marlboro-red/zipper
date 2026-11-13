@@ -34,6 +34,9 @@ TAR_NAME = "silesia.tar"
 TAR_STREAMS = {"gzip": "gz", "zstd": "zst", "xz": "xz", "bzip2": "bz2"}
 WIM_NAME = "silesia.wim"
 WIM_CHUNK = 32768
+STDERR_KEPT = 20000
+SKIPPED_ROWS = {"lzma": "no extraction row: Zipper writes silesia.tar.lzma out as one file, silesia.tar, where "
+                        "bsdtar reads the tar inside, so the trees differ; the decode rows still measure LZMA"}
 
 
 def sha256_file(path):
@@ -70,6 +73,18 @@ def deterministic_tar(source, archive):
             tar.add(path, arcname=name, recursive=False, filter=normalised)
 
 
+def keep_only_the_source(tree, source, out):
+    """wimlib-imagex captures all of `tree`, and compare_zip_readers.py expects it to hold `source`
+    alone. fetch_silesia.py writes its manifest beside the folder it fetches, so it moves to `out`."""
+    manifest = tree / f"{SOURCE_NAME}.manifest.json"
+    if manifest.exists():
+        manifest.replace(out / manifest.name)
+    stray = sorted(path.name for path in tree.iterdir() if path != source)
+    if stray:
+        raise SystemExit(f"{tree} must hold only {source.name}, so the WIM holds the same tree; "
+                         f"it also holds {', '.join(stray)}")
+
+
 def corpus(args):
     out = args.out.resolve()
     tree = out / "tree"
@@ -80,6 +95,7 @@ def corpus(args):
             shutil.copytree(args.silesia.resolve(strict=True), source)
         else:
             subprocess.run([sys.executable, str(ROOT / "scripts/fetch_silesia.py"), str(source)], check=True)
+    keep_only_the_source(tree, source, out)
     archive = out / TAR_NAME
     deterministic_tar(source, archive)
     streams = out / "streams"
@@ -225,45 +241,63 @@ def decode(harness, streams, original, rounds, only):
 
 
 def compare(archive, source, archive_format, runs, readers, allow_busy):
+    """The comparison's JSON, or an error entry that keeps the end of its stderr."""
     command = [sys.executable, str(ROOT / "scripts/compare_zip_readers.py"), str(archive), str(source),
                "--archive-format", archive_format, "--runs", str(runs), "--threads", "1", *readers]
     if allow_busy:
         command.append("--allow-busy")
     result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode:
-        raise RuntimeError(f"{archive.name}: compare_zip_readers.py failed:\n{result.stderr}")
-    return json.loads(result.stdout)
+    if not result.returncode:
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            failure = f"compare_zip_readers.py printed no JSON: {error}"
+    else:
+        failure = f"compare_zip_readers.py exited with {result.returncode}"
+    stderr = result.stderr[-STDERR_KEPT:]
+    print(f"{archive.name}: {failure}\n{stderr}", file=sys.stderr, flush=True)
+    return {"error": failure, "returncode": result.returncode, "stderr": stderr}
 
 
-def extract(zipper, root, runs, allow_busy, only):
+def extract(zipper, root, runs, allow_busy, only, section, save):
+    """Fills `section` one row at a time and calls `save` after each, so a failed row is kept as an
+    error entry and the rows before it stay on disk."""
     zipper = str(zipper.resolve(strict=True))
     root = root.resolve(strict=True)
     source = root / "tree" / SOURCE_NAME
     streams = root / "streams"
+    wim = streams / WIM_NAME
     seven, bsdtar = shutil.which("7zz"), shutil.which("bsdtar")
+    skipped = dict(SKIPPED_ROWS)
+    if not wim.exists():
+        skipped["xpress"] = "no silesia.wim, since wimlib-imagex was not installed for corpus"
+    section.update({"runs": runs, "warmup_rounds": 1, "threads": 1,
+                    "references_missing": [name for name, path in (("7zz", seven), ("bsdtar", bsdtar)) if not path],
+                    "wim": "present" if wim.exists() else "absent, since wimlib-imagex was not installed for corpus",
+                    "deflate": "gzip extraction covers Deflate; a raw Deflate stream has no container to extract",
+                    "skipped": skipped, "failed": [], "results": {}})
     zipper_rows = ["--reader", "zipper", "native", zipper, "--reader", "zipper-all-threads", "native", zipper,
                    "--reader-threads", "zipper-all-threads", "auto"]
-    results = {}
+    rows = []
     for codec, extension in TAR_STREAMS.items():
-        if only and codec not in only:
-            continue
         readers = list(zipper_rows)
         if bsdtar:
             readers += ["--reader", "bsdtar", "bsdtar", bsdtar]
         if seven:
             readers += ["--reader", "7zip", "7zip-tar", seven]
-        print(f"Extracting {TAR_NAME}.{extension}", file=sys.stderr, flush=True)
-        results[codec] = compare(streams / f"{TAR_NAME}.{extension}", source, "tar", runs, readers, allow_busy)
-    wim = streams / WIM_NAME
-    if wim.exists() and (not only or "xpress" in only):
-        readers = list(zipper_rows) + (["--reader", "7zip", "7zip", seven] if seven else [])
-        print(f"Extracting {WIM_NAME}", file=sys.stderr, flush=True)
-        results["xpress"] = compare(wim, source, "native", runs, readers, allow_busy)
-    return {"runs": runs, "warmup_rounds": 1, "threads": 1,
-            "references_missing": [name for name, path in (("7zz", seven), ("bsdtar", bsdtar)) if not path],
-            "wim": "present" if wim.exists() else "absent, since wimlib-imagex was not installed for corpus",
-            "deflate": "gzip extraction covers Deflate; a raw Deflate stream has no container to extract",
-            "results": results}
+        rows.append((codec, streams / f"{TAR_NAME}.{extension}", "tar", readers))
+    if wim.exists():
+        seven_wim = ["--reader", "7zip", "7zip", seven] if seven else []
+        rows.append(("xpress", wim, "native", list(zipper_rows) + seven_wim))
+    for codec, archive, archive_format, readers in rows:
+        if only and codec not in only:
+            continue
+        print(f"Extracting {archive.name}", file=sys.stderr, flush=True)
+        row = compare(archive, source, archive_format, runs, readers, allow_busy)
+        section["results"][codec] = row
+        if "error" in row:
+            section["failed"].append(codec)
+        save()
 
 
 def write(record, out):
@@ -271,7 +305,9 @@ def write(record, out):
     text = json.dumps(record, indent=2) + "\n"
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text)
+        partial = out.with_name(out.name + ".partial")
+        partial.write_text(text)
+        partial.replace(out)
     else:
         sys.stdout.write(text)
 
@@ -321,8 +357,16 @@ def main():
         record["decode"], record["corpus"] = decode(args.harness, args.corpus / "streams", args.corpus / TAR_NAME,
                                                     args.rounds, args.only)
     if args.command in ("extract", "all"):
-        record["extract"] = extract(args.zipper, args.corpus, args.runs, args.allow_busy, args.only)
+        def save():
+            if args.out:
+                write(record, args.out)
+        save()
+        record["extract"] = {}
+        extract(args.zipper, args.corpus, args.runs, args.allow_busy, args.only, record["extract"], save)
     write(record, args.out)
+    failed = record.get("extract", {}).get("failed")
+    if failed:
+        raise SystemExit(f"extraction rows failed: {', '.join(failed)}; the JSON keeps each one's stderr")
 
 
 if __name__ == "__main__":
