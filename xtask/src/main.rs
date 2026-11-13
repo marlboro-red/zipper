@@ -53,7 +53,10 @@ fn main() -> ExitCode {
         ["consumer-crate"] => consumer_crate(),
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
         ["lint-commits"] => commits::lint_unpushed(&root()),
-        ["verify-sync", name] => verify::record_checked_fingerprint(&root(), name),
+        ["verify-sync", name] => verify::record_checked_fingerprint(&root(), name, None),
+        ["verify-sync", name, release::RECORD_FILE_OPTION, file] => {
+            verify::record_checked_fingerprint(&root(), name, Some(Path::new(file)))
+        }
         ["verify-sync", name, "--remote"] => {
             verify::record_remotely_checked_fingerprint(&root(), name)
         }
@@ -257,6 +260,7 @@ fn release_checks(words: &[&str]) -> Result<()> {
     let mut options = release::Options {
         all: false,
         jobs: release::DEFAULT_JOBS,
+        record_file: None,
     };
     let mut remote = false;
     let mut passed_on = Vec::new();
@@ -268,6 +272,10 @@ fn release_checks(words: &[&str]) -> Result<()> {
                 passed_on.push(word.to_owned());
             }
             "--remote" => remote = true,
+            release::RECORD_FILE_OPTION => {
+                let file = words.next().context("--record-file takes a path")?;
+                options.record_file = Some(PathBuf::from(file));
+            }
             "--jobs" => {
                 let jobs = words.next().context("--jobs takes a number")?;
                 options.jobs = jobs

@@ -33,6 +33,10 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
                 !name.is_empty() && !name.contains(char::is_whitespace),
                 "{MANIFEST}:{number}: a section name is one word, not {name:?}"
             );
+            ensure!(
+                all.iter().all(|earlier| earlier.name != name),
+                "{MANIFEST}:{number}: [{name}] is a second section of that name"
+            );
             all.push(Verification {
                 name: name.to_owned(),
                 skill: String::new(),
@@ -411,7 +415,11 @@ pub(crate) fn write_atomically(path: &Path, text: &str) -> Result<()> {
     })
 }
 
-pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
+pub fn record_checked_fingerprint(
+    root: &Path,
+    name: &str,
+    record_file: Option<&Path>,
+) -> Result<()> {
     let all = manifest(root)?;
     let verification = all
         .iter()
@@ -441,11 +449,10 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
     let passed_on = crate::release::passed_on(&key, &tools);
     crate::release::record_checked(root, name, &passed_on)?;
     println!("{name}: synced at fingerprint {current}");
-    println!(
-        "{}",
-        crate::release::printed_line(name, &current, &passed_on)
-    );
-    Ok(())
+    crate::release::emit_record(
+        &crate::release::printed_line(name, &current, &passed_on),
+        record_file,
+    )
 }
 
 fn with_fingerprint(text: &str, name: &str, current: &str) -> String {
@@ -612,10 +619,29 @@ fn remote_lock(base: &str) -> String {
     )
 }
 
-fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str]) -> String {
+pub(crate) enum Records<'a> {
+    None,
+    PrefixedBy(&'a str),
+}
+
+fn records_printout(nonce: &str) -> String {
+    format!(
+        "if [ -f \"$run/records\" ]; then sed 's/^/{nonce} /' \"$run/records\"; rm -f \"$run/records\"; fi\n"
+    )
+}
+
+fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str], records: &Records) -> String {
     let [dir, branch, head] = [dir, branch, head].map(shell_quoted);
     let xtask: Vec<String> = xtask.iter().map(|word| shell_quoted(word)).collect();
-    let xtask = xtask.join(" ");
+    let mut xtask = xtask.join(" ");
+    let mut print_records = String::new();
+    if let Records::PrefixedBy(nonce) = records {
+        xtask.push_str(&format!(
+            " {} \"$run/records\"",
+            crate::release::RECORD_FILE_OPTION
+        ));
+        print_records = records_printout(nonce);
+    }
     format!(
         "set -e\n\
          cd {dir}\n\
@@ -632,11 +658,26 @@ fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str]) -> String 
          CARGO_TARGET_DIR=\"$base/target/remote-sync-build\" cargo xtask {xtask}) || result=$?\n\
          git -C \"$run/tree\" checkout -q -- .\n\
          git worktree remove \"$run/tree\"\n\
+         {print_records}\
          rmdir \"$run\"\n\
          exit $result\n",
         preflight = remote_preflight(),
         lock = remote_lock("\"$base\""),
     )
+}
+
+fn run_nonce() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let part = || {
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_nanos()),
+        );
+        hasher.finish()
+    };
+    format!("zipper-record-{:016x}{:016x}", part(), part())
 }
 
 fn ensure_committed(root: &Path) -> Result<()> {
@@ -652,6 +693,7 @@ fn run_at_head_remotely(
     head: &str,
     label: &str,
     xtask: &[&str],
+    records: &Records,
 ) -> Result<std::process::Output> {
     let [host, remote, dir] = remote_settings(root)?;
     let branch = format!("remote-sync/{}-{label}", &head[..12]);
@@ -669,7 +711,9 @@ fn run_at_head_remotely(
     let run = streamed(
         Command::new("ssh")
             .args([host.as_str(), "zsh", "-lc"])
-            .arg(shell_quoted(&remote_script(&dir, &branch, head, xtask))),
+            .arg(shell_quoted(&remote_script(
+                &dir, &branch, head, xtask, records,
+            ))),
     )?;
     let _ = local_git(
         root,
@@ -730,7 +774,7 @@ fn copied_lines(pipe: impl std::io::Read, mut sink: impl Write) -> Result<Vec<u8
 pub fn gate_remotely(root: &Path, kind: &str) -> Result<()> {
     ensure_committed(root)?;
     let head = local_git(root, &["rev-parse", "HEAD"])?;
-    let run = run_at_head_remotely(root, &head, "gate", &["gate", kind])?;
+    let run = run_at_head_remotely(root, &head, "gate", &["gate", kind], &Records::None)?;
     ensure!(
         run.status.success(),
         "gate {kind} on the second machine at {} exited with {}",
@@ -747,14 +791,16 @@ pub fn release_checks_remotely(root: &Path, options: &[&str]) -> Result<()> {
     let head = local_git(root, &["rev-parse", "HEAD"])?;
     let mut xtask = vec!["release-checks"];
     xtask.extend_from_slice(options);
-    let run = run_at_head_remotely(root, &head, "release", &xtask)?;
+    let nonce = run_nonce();
+    let run = run_at_head_remotely(root, &head, "release", &xtask, &Records::PrefixedBy(&nonce))?;
     let printed = String::from_utf8_lossy(&run.stdout);
     ensure!(
         local_git(root, &["rev-parse", "HEAD"])? == head
             && local_git(root, &["status", "--porcelain"])?.is_empty(),
         "HEAD or the tree changed while the release checks ran on the second machine; nothing was recorded"
     );
-    let applied = crate::release::apply_printed_record(root, &printed)?;
+    let records = crate::release::records_to_apply(&printed, &nonce, run.status.success(), None)?;
+    let applied = crate::release::apply_records(root, &records)?;
     println!("{applied}");
     ensure!(
         run.status.success(),
@@ -778,7 +824,14 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
     ensure_committed(root)?;
     let head = local_git(root, &["rev-parse", "HEAD"])?;
     let checked = fingerprint(root, verification)?;
-    let run = run_at_head_remotely(root, &head, name, &["verify-sync", name])?;
+    let nonce = run_nonce();
+    let run = run_at_head_remotely(
+        root,
+        &head,
+        name,
+        &["verify-sync", name],
+        &Records::PrefixedBy(&nonce),
+    )?;
     let printed = String::from_utf8_lossy(&run.stdout);
     ensure!(
         run.status.success(),
@@ -801,8 +854,10 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
             && fingerprint(root, verification)? == checked,
         "{name}: HEAD or the covered code changed while the check ran; nothing was synced"
     );
+    let records =
+        crate::release::records_to_apply(&printed, &nonce, run.status.success(), Some(name))?;
     write_fingerprint(root, name, &checked)?;
-    let applied = crate::release::apply_printed_record(root, &printed)?;
+    let applied = crate::release::apply_records(root, &records)?;
     println!("{name}: synced at fingerprint {checked}, checked on a second machine; {applied}");
     Ok(())
 }
@@ -959,13 +1014,72 @@ mod tests {
             "remote-sync/x",
             "0123abcd",
             &["verify-sync", "zip-crypto"],
+            &Records::PrefixedBy("n0nce"),
         );
         assert!(script.contains(r"cd '/a b/it'\''s'"));
+        assert!(
+            script
+                .contains("cargo xtask 'verify-sync' 'zip-crypto' --record-file \"$run/records\")")
+        );
+        assert!(script.contains(&records_printout("n0nce")));
+        let gate = remote_script("/d", "b", "h", &["gate", "fast"], &Records::None);
+        assert!(!gate.contains("--record-file") && !gate.contains("records"));
         assert!(script.contains("mktemp -d \"$base/target/remote-sync.XXXXXX\""));
         assert!(script.contains("cargo xtask 'verify-sync' 'zip-crypto'"));
         assert!(script.contains("--detach \"$run/tree\" '0123abcd'"));
         let wrapped = shell_quoted(&script);
         assert!(wrapped.starts_with('\'') && wrapped.ends_with('\''));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_the_record_file_reaches_the_record_and_never_a_line_a_check_printed() {
+        let run = tempfile::tempdir().unwrap();
+        let line = |name: &str| crate::release::printed_line(name, "00ff", "12 | rustc 1");
+        fs::write(run.path().join("records"), format!("{}\n", line("asked"))).unwrap();
+        let script = format!(
+            "echo '{forged}'\necho 'n0nce {forged}'\n{printout}",
+            forged = line("forged"),
+            printout = records_printout("n0nce"),
+        );
+        let output = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(script)
+            .env("run", run.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let printed = String::from_utf8(output.stdout).unwrap();
+        let checked =
+            crate::release::records_to_apply(&printed, "n0nce", true, Some("asked")).unwrap();
+        assert_eq!(checked.len(), 1);
+        assert!(
+            !run.path().join("records").exists(),
+            "the printout removes the file"
+        );
+        assert!(
+            crate::release::records_to_apply(&printed, "other-nonce", true, None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_section_appears_once_so_every_copy_of_its_checks_runs() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("verification")).unwrap();
+        fs::write(
+            root.path().join(MANIFEST),
+            "[dup]\nskill = s.md\nfingerprint = 01\nfull-check = true\n\n\
+             [other]\nskill = s.md\nfingerprint = 02\n\n\
+             [dup]\nskill = s.md\nfingerprint = 01\nfull-check = sh -c 'exit 1'\n",
+        )
+        .unwrap();
+        let Err(refusal) = manifest(root.path()) else {
+            panic!("two [dup] sections parsed");
+        };
+        let refusal = format!("{refusal:#}");
+        assert!(refusal.contains("[dup]"), "{refusal}");
     }
 
     #[test]

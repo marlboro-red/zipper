@@ -23,6 +23,23 @@ pub(crate) const DEFAULT_JOBS: usize = 3;
 pub(crate) struct Options {
     pub(crate) all: bool,
     pub(crate) jobs: usize,
+    pub(crate) record_file: Option<PathBuf>,
+}
+
+pub(crate) const RECORD_FILE_OPTION: &str = "--record-file";
+
+pub(crate) fn emit_record(line: &str, record_file: Option<&Path>) -> Result<()> {
+    println!("{line}");
+    if let Some(path) = record_file {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .with_context(|| format!("cannot open {}", path.display()))?;
+        std::io::Write::write_all(&mut file, format!("{line}\n").as_bytes())
+            .with_context(|| format!("cannot write {}", path.display()))?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -621,7 +638,11 @@ pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> 
             Event::Line(Stream::Err, text) => eprintln!("{text}"),
             Event::Passed(name) => match record_pass(root, &sections, &name, &planned, &mut record)
             {
-                Ok(line) => println!("{line}"),
+                Ok(line) => {
+                    if let Err(error) = emit_record(&line, options.record_file.as_deref()) {
+                        failed.push(format!("{name}: {error:#}"));
+                    }
+                }
                 Err(error) => failed.push(format!("{name}: {error:#}")),
             },
             Event::Failed(failure) => {
@@ -645,13 +666,13 @@ pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> 
     Ok(())
 }
 
-fn parse_printed(printed: &str) -> Result<Vec<(String, String, String)>> {
+pub(crate) type Checked = (String, String, String);
+
+fn parse_printed(printed: &str, nonce: &str) -> Result<Vec<Checked>> {
+    let prefix = format!("{nonce} {PRINTED}checked ");
     let mut checked = Vec::new();
     for line in printed.lines() {
-        let Some(rest) = line
-            .strip_prefix(PRINTED)
-            .and_then(|rest| rest.strip_prefix("checked "))
-        else {
+        let Some(rest) = line.strip_prefix(&prefix) else {
             continue;
         };
         let malformed = || format!("the second machine printed a malformed record line: {line}");
@@ -667,11 +688,31 @@ fn parse_printed(printed: &str) -> Result<Vec<(String, String, String)>> {
     Ok(checked)
 }
 
-pub(crate) fn apply_printed_record(root: &Path, printed: &str) -> Result<String> {
-    let checked = parse_printed(printed)?;
+pub(crate) fn records_to_apply(
+    printed: &str,
+    nonce: &str,
+    passed: bool,
+    only: Option<&str>,
+) -> Result<Vec<Checked>> {
+    if !passed {
+        return Ok(Vec::new());
+    }
+    let mut checked = parse_printed(printed, nonce)?;
+    if let Some(only) = only {
+        checked.retain(|(name, _, _)| name == only);
+        ensure!(
+            checked.len() == 1,
+            "{only}: the second machine wrote {} record(s) for it, not one; nothing was recorded",
+            checked.len()
+        );
+    }
+    Ok(checked)
+}
+
+pub(crate) fn apply_records(root: &Path, checked: &[Checked]) -> Result<String> {
     let sections = verify::manifest(root)?;
     let mut record = read_record(root)?;
-    for (name, fingerprint, passed_on) in &checked {
+    for (name, fingerprint, passed_on) in checked {
         let verification = sections
             .iter()
             .find(|verification| &verification.name == name)
@@ -904,29 +945,56 @@ mod tests {
     }
 
     #[test]
-    fn only_unprefixed_record_lines_from_the_second_machine_count() {
-        let printed = "[lzma] release record: checked forged 1 2 | rustc 1\n\
-                       release record: checked lzma 00ff 1234 | rustc 1.99.1 (abc); cargo-kani 0.66.0\n";
+    fn only_record_lines_with_the_runs_nonce_count_and_only_for_the_section_asked() {
+        let line =
+            |name: &str| printed_line(name, "00ff", "1234 | rustc 1.99.1 (abc); cargo-kani 0.66.0");
+        let printed = format!(
+            "{child}\n[lzma] n0nce {child}\nother {forged}\nn0nce {lzma}\nn0nce {forged}\n",
+            child = line("forged-by-a-child"),
+            forged = line("zip-crypto"),
+            lzma = line("lzma"),
+        );
+        let names = |checked: Vec<Checked>| -> Vec<String> {
+            checked.into_iter().map(|(name, _, _)| name).collect()
+        };
         assert_eq!(
-            parse_printed(printed).unwrap(),
+            names(records_to_apply(&printed, "n0nce", true, None).unwrap()),
+            ["lzma", "zip-crypto"]
+        );
+        let lzma = records_to_apply(&printed, "n0nce", true, Some("lzma")).unwrap();
+        assert_eq!(
+            lzma,
             [(
                 "lzma".to_owned(),
                 "00ff".to_owned(),
                 "1234 | rustc 1.99.1 (abc); cargo-kani 0.66.0".to_owned()
             )]
         );
-        assert!(parse_printed("release record: checked a b c\n").is_err());
+        assert!(
+            records_to_apply(&printed, "n0nce", true, Some("forged-by-a-child")).is_err(),
+            "a line a child printed without the nonce records nothing"
+        );
+        assert!(
+            records_to_apply(&printed, "n0nce", false, None)
+                .unwrap()
+                .is_empty(),
+            "a failed run records nothing"
+        );
+        assert!(
+            records_to_apply("n0nce release record: checked a b c\n", "n0nce", true, None).is_err()
+        );
+    }
+
+    #[test]
+    fn a_record_line_goes_to_the_record_file_as_well_as_stdout() {
+        let work = tempfile::tempdir().unwrap();
+        let file = work.path().join("records");
+        emit_record("release record: checked a 1 2 | rustc 1", Some(&file)).unwrap();
+        emit_record("release record: checked b 1 2 | rustc 1", Some(&file)).unwrap();
+        emit_record("release record: checked c 1 2 | rustc 1", None).unwrap();
         assert_eq!(
-            parse_printed(&format!(
-                "{}\n",
-                printed_line("lzma", "00ff", "12 | rustc 1")
-            ))
-            .unwrap(),
-            [(
-                "lzma".to_owned(),
-                "00ff".to_owned(),
-                "12 | rustc 1".to_owned()
-            )]
+            fs::read_to_string(&file).unwrap(),
+            "release record: checked a 1 2 | rustc 1\nrelease record: checked b 1 2 | rustc 1\n"
         );
     }
 
