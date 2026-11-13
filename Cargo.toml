@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "tests/consumer", "xtask"]
+members = [".", "benchmarks/decoders/decode-bench", "tests/consumer", "xtask"]
 
 [package]
 name = "zipper"

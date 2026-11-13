@@ -1,0 +1,58 @@
+name: M31 decoders
+
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: Decode rounds after one warmup, 7 or more
+        default: '11'
+        required: true
+      runs:
+        description: Extraction runs after one warmup, 7 or more
+        default: '7'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      ROUNDS: ${{ inputs.rounds }}
+      RUNS: ${{ inputs.runs }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate inputs
+        run: |
+          python3 - <<'EOF'
+          import os
+          assert 7 <= int(os.environ['ROUNDS']) <= 31
+          assert 7 <= int(os.environ['RUNS']) <= 31
+          EOF
+      - name: Check the runner is x86-64
+        run: test "$(uname -m)" = x86_64
+      - run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Install the reference tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends 7zip libarchive-tools time wimtools
+          7zz | head -3
+          bsdtar --version
+          wimlib-imagex --version | head -1
+      - name: Build release binaries
+        run: cargo +1.99.1 build --release --locked --package zipper --package zipper-decode-bench
+      - name: Build the corpus
+        run: python3 scripts/m31_decoders.py corpus --harness target/release/zipper-decode-bench --out target/m31/corpus
+      - name: Measure
+        run: |
+          python3 scripts/m31_decoders.py all --harness target/release/zipper-decode-bench \
+            --zipper target/release/zipper --corpus target/m31/corpus \
+            --rounds "$ROUNDS" --runs "$RUNS" --out target/m31/m31-decoders-linux-x86_64.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m31-decoders-linux-x86_64
+          path: |
+            target/m31/m31-decoders-linux-x86_64.json
+            target/m31/corpus/streams/corpus.json

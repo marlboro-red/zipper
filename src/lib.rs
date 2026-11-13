@@ -1,6 +1,9 @@
 #![cfg_attr(not(feature = "all-formats"), allow(dead_code, unused_imports))]
 #[cfg(feature = "7z")]
 mod bcj2;
+#[cfg(all(feature = "tar", feature = "zstd", feature = "wim"))]
+#[doc(hidden)]
+pub mod bench;
 #[cfg(feature = "rar")]
 mod blake2sp;
 #[cfg(any(

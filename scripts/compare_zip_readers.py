@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--reader", action="append", nargs=3, metavar=("LABEL", "MODE", "BINARY"), required=True)
     parser.add_argument("--archive-format", choices=["zip", "native", "tar", "7z"], default="zip",
                         help="native, tar and 7z compare extraction by the default engine, without ZIP engine "
-                             "flags; zip and 7z also accept 7-Zip itself as a `7zip` reader, and tar accepts "
+                             "flags; zip, 7z and native also accept 7-Zip itself as a `7zip` reader, and tar accepts "
                              "`7zip-tar` (7-Zip decoding into a second 7-Zip that reads the tar) and `bsdtar`; 7z also "
                              "accepts `sevenz-rust2`, the harness in benchmarks/lzma/sevenz-rust2/harness; zip also "
                              "accepts `native-content-only` (Zipper with --content-only), and the Go tools `pzip` "
@@ -54,7 +54,7 @@ def main():
         readers[label] = {"mode": mode, "binary": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                           "threads": args.threads}
     allowed = {"zip": {"native", "native-content-only", "7zip", "pzip", "fastzip"}, "7z": {"native", "7zip", "sevenz-rust2"},
-               "tar": {"native", "7zip-tar", "bsdtar"}}.get(args.archive_format, {"native"})
+               "tar": {"native", "7zip-tar", "bsdtar"}, "native": {"native", "7zip"}}[args.archive_format]
     if any(reader["mode"] not in allowed for reader in readers.values()):
         parser.error(f"{args.archive_format} comparisons accept {sorted(allowed)} readers")
     overridden = set()
