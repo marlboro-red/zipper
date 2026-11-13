@@ -2,6 +2,10 @@ name: Rust correctness
 
 on:
   push:
+    branches-ignore:
+      - 'win/**'
+    tags:
+      - '**'
   pull_request:
 
 permissions:
@@ -15,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        shard: [lints, tests, builds]
+        shard: [lints, tests-1, tests-2, tests-3, builds]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:

@@ -19,7 +19,7 @@ mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | gate full --shard lints|tests|builds | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | check-minimums | install-hooks | ci-wait | warm-cache | format-tests | consumer-crate | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | gate full --shard lints|tests|tests-1..3|builds | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | check-minimums | install-hooks | ci-wait | warm-cache | format-tests | consumer-crate | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -36,7 +36,7 @@ fn main() -> ExitCode {
         ["gate", "fast"] => gate(false),
         ["gate", "full"] => gate(true),
         ["gate", kind @ ("fast" | "full"), "--remote"] => verify::gate_remotely(&root(), kind),
-        ["gate", "full", "--shard", shard] => gate_shards(&[shard]),
+        ["gate", "full", "--shard", shard] => gate_shards(&[shard.to_owned()]),
         ["lint-docs"] => docs::lint(&root()),
         ["lint-comments"] => comments::lint(&root()),
         ["lint-7zip-lookups"] => sevenzip_lookups::lint(&root()),
@@ -729,7 +729,7 @@ const GATE_SHARDS: &[(&str, &[&str])] = &[
             "dependency minimums",
         ],
     ),
-    ("tests", &["test"]),
+    (PARTITIONED_SHARD, &["test"]),
     (
         "builds",
         &[
@@ -744,35 +744,102 @@ const GATE_SHARDS: &[(&str, &[&str])] = &[
     ),
 ];
 
+const PARTITIONED_SHARD: &str = "tests";
+const TEST_PARTITIONS: u32 = 3;
+
+type BoxedStep = Box<dyn Fn() -> Result<()>>;
+
 fn gate(full: bool) -> Result<()> {
-    run_gate_steps(gate_steps(full), if full { "full" } else { "fast" })
+    let steps = gate_steps(full)
+        .into_iter()
+        .map(|(name, step)| (name, Box::new(step) as BoxedStep))
+        .collect();
+    run_gate_steps(steps, if full { "full" } else { "fast" })
 }
 
-fn gate_shards(shards: &[&str]) -> Result<()> {
-    let mut chosen = Vec::new();
-    for shard in shards {
-        let (_, names) = GATE_SHARDS
-            .iter()
-            .find(|(name, _)| name == shard)
-            .with_context(|| format!("no gate shard named {shard:?}; {USAGE}"))?;
-        chosen.extend_from_slice(names);
+fn ci_shards() -> Vec<String> {
+    GATE_SHARDS
+        .iter()
+        .flat_map(|(name, _)| {
+            if *name == PARTITIONED_SHARD {
+                (1..=TEST_PARTITIONS)
+                    .map(|part| format!("{name}-{part}"))
+                    .collect()
+            } else {
+                vec![(*name).to_owned()]
+            }
+        })
+        .collect()
+}
+
+fn shard_plan(shard: &str) -> Result<(&'static [&'static str], Option<u32>)> {
+    if let Some((_, steps)) = GATE_SHARDS.iter().find(|(name, _)| *name == shard) {
+        return Ok((steps, None));
     }
-    let steps = gate_steps(true)
+    let part = shard
+        .strip_prefix(PARTITIONED_SHARD)
+        .and_then(|rest| rest.strip_prefix('-'))
+        .and_then(|part| part.parse::<u32>().ok())
+        .filter(|part| (1..=TEST_PARTITIONS).contains(part))
+        .with_context(|| format!("no gate shard named {shard:?}; {USAGE}"))?;
+    let (_, steps) = GATE_SHARDS
+        .iter()
+        .find(|(name, _)| *name == PARTITIONED_SHARD)
+        .context("GATE_SHARDS lacks the partitioned shard")?;
+    Ok((steps, Some(part)))
+}
+
+fn shard_steps(shards: &[String]) -> Result<Vec<(&'static str, Step, Option<u32>)>> {
+    let mut steps = Vec::new();
+    for shard in shards {
+        let (names, part) = shard_plan(shard)?;
+        for (name, step) in gate_steps(true) {
+            if names.contains(&name) {
+                steps.push((name, step, part.filter(|_| name == "test")));
+            }
+        }
+    }
+    Ok(steps)
+}
+
+fn gate_shards(shards: &[String]) -> Result<()> {
+    let steps = shard_steps(shards)?
         .into_iter()
-        .filter(|(name, _)| chosen.contains(name))
+        .map(|(name, step, part)| {
+            let step: BoxedStep = match part {
+                Some(part) => Box::new(move || run_tests(Some(part))),
+                None => Box::new(step),
+            };
+            (name, step)
+        })
         .collect();
     run_gate_steps(steps, &format!("full shard {}", shards.join(", ")))
 }
 
-fn shard_of_job(job: &str) -> Option<&'static str> {
-    let shard = job.strip_prefix("gate ")?.split_once(" (")?.0;
-    GATE_SHARDS
-        .iter()
-        .map(|(name, _)| *name)
-        .find(|name| *name == shard)
+fn test_args(partition: Option<u32>) -> Vec<String> {
+    let mut args: Vec<String> = CI_TESTS.iter().map(|arg| (*arg).to_owned()).collect();
+    if let Some(part) = partition {
+        args.extend([
+            "--partition".to_owned(),
+            format!("hash:{part}/{TEST_PARTITIONS}"),
+        ]);
+    }
+    args
 }
 
-fn shards_not_passed(jobs: &str, host: &str) -> Result<Vec<&'static str>> {
+fn run_tests(partition: Option<u32>) -> Result<()> {
+    ensure_nextest()?;
+    let args = test_args(partition);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    cargo_with(&args, &required_7zip_comparisons_outside_ci())
+}
+
+fn shard_of_job(job: &str) -> Option<String> {
+    let shard = job.strip_prefix("gate ")?.split_once(" (")?.0;
+    ci_shards().into_iter().find(|name| name == shard)
+}
+
+fn shards_not_passed(jobs: &str, host: &str) -> Result<Vec<String>> {
     let mut passed = Vec::new();
     for job in jobs.lines() {
         let fields: Vec<&str> = job.split('\t').collect();
@@ -786,9 +853,8 @@ fn shards_not_passed(jobs: &str, host: &str) -> Result<Vec<&'static str>> {
             _ => bail!("CI job {name} ended {conclusion}"),
         }
     }
-    Ok(GATE_SHARDS
-        .iter()
-        .map(|(name, _)| *name)
+    Ok(ci_shards()
+        .into_iter()
         .filter(|name| !passed.contains(name))
         .collect())
 }
@@ -806,10 +872,7 @@ fn gate_steps(full: bool) -> Vec<(&'static str, Step)> {
         ("verify", || verify::fail_on_stale_fingerprints(&root())),
         ("parity", || python_script("scripts/parity.py", &["check"])),
         ("clippy", || cargo(CLIPPY)),
-        ("test", || {
-            ensure_nextest()?;
-            cargo_with(CI_TESTS, &required_7zip_comparisons_outside_ci())
-        }),
+        ("test", || run_tests(None)),
         ("feature subsets", || {
             lint_feature_subsets()?;
             ensure_nextest()?;
@@ -836,7 +899,7 @@ fn gate_steps(full: bool) -> Vec<(&'static str, Step)> {
     steps
 }
 
-fn run_gate_steps(steps: Vec<(&str, Step)>, label: &str) -> Result<()> {
+fn run_gate_steps(steps: Vec<(&str, BoxedStep)>, label: &str) -> Result<()> {
     let mut rows = Vec::new();
     for (name, step) in &steps {
         eprintln!("xtask: gate step {name}");
@@ -1326,6 +1389,11 @@ mod gate_shard_tests {
         names.sort();
         names.dedup();
         assert_eq!(names.len(), GATE_SHARDS.len(), "two shards share a name");
+        let mut jobs = ci_shards();
+        let count = jobs.len();
+        jobs.sort();
+        jobs.dedup();
+        assert_eq!(jobs.len(), count, "two CI jobs share a shard name");
     }
 
     #[test]
@@ -1340,7 +1408,7 @@ mod gate_shard_tests {
     fn ci_runs_one_job_per_shard_by_the_name_ship_reads() {
         let workflow = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
         for line in [
-            format!("shard: [{}]", shard_names().join(", ")),
+            format!("shard: [{}]", ci_shards().join(", ")),
             "name: gate ${{ matrix.shard }} (${{ matrix.os }})".to_owned(),
             "run: cargo +1.99.1 xtask gate full --shard ${{ matrix.shard }}".to_owned(),
         ] {
@@ -1355,8 +1423,72 @@ mod gate_shard_tests {
         );
     }
 
+    #[test]
+    fn a_push_of_a_windows_dispatch_branch_starts_no_ci_run() {
+        let workflow = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+        let trigger = "on:\n  push:\n    branches-ignore:\n      - 'win/**'\n    tags:\n      - '**'\n  pull_request:\n";
+        assert!(workflow.contains(trigger), "ci.yml lacks {trigger:?}");
+    }
+
+    #[test]
+    fn the_test_partitions_of_ci_together_run_every_test_once() {
+        let mut partitions = Vec::new();
+        for shard in ci_shards() {
+            let (steps, part) = shard_plan(&shard).unwrap();
+            if steps.contains(&"test") {
+                partitions.push(part.expect("a CI job runs the test step unpartitioned"));
+            } else {
+                assert_eq!(part, None, "{shard}");
+            }
+        }
+        partitions.sort_unstable();
+        assert_eq!(partitions, (1..=TEST_PARTITIONS).collect::<Vec<_>>());
+        for part in partitions {
+            let args = test_args(Some(part));
+            assert_eq!(args[..CI_TESTS.len()], *CI_TESTS);
+            assert_eq!(
+                args[CI_TESTS.len()..],
+                ["--partition", &format!("hash:{part}/{TEST_PARTITIONS}")]
+            );
+        }
+        assert_eq!(test_args(None), CI_TESTS);
+        assert_eq!(shard_plan(PARTITIONED_SHARD).unwrap().1, None);
+        let past_the_last = format!("tests-{}", TEST_PARTITIONS + 1);
+        for unknown in ["tests-0", &past_the_last, "tests-", "tests1"] {
+            assert!(shard_plan(unknown).is_err(), "{unknown}");
+        }
+        assert!(USAGE.contains(&format!("|tests|tests-1..{TEST_PARTITIONS}|")));
+    }
+
+    fn planned(shards: &[&str]) -> Vec<(&'static str, Option<u32>)> {
+        let shards: Vec<String> = shards.iter().map(|shard| (*shard).to_owned()).collect();
+        shard_steps(&shards)
+            .unwrap()
+            .into_iter()
+            .map(|(name, _, part)| (name, part))
+            .collect()
+    }
+
+    #[test]
+    fn a_partition_shard_runs_only_its_partition_of_the_test_step() {
+        assert_eq!(
+            planned(&["tests-1", "tests-3"]),
+            [("test", Some(1)), ("test", Some(3))]
+        );
+        assert_eq!(planned(&[PARTITIONED_SHARD]), [("test", None)]);
+        let builds = planned(&["builds"]);
+        assert!(!builds.is_empty());
+        assert!(
+            builds
+                .iter()
+                .all(|(name, part)| *name != "test" && part.is_none())
+        );
+    }
+
     const PASSED: &str = "gate lints (ubuntu-latest)\tsuccess\t9\n\
-                          gate tests (ubuntu-latest)\tsuccess\t9\n\
+                          gate tests-1 (ubuntu-latest)\tsuccess\t9\n\
+                          gate tests-2 (ubuntu-latest)\tsuccess\t9\n\
+                          gate tests-3 (ubuntu-latest)\tsuccess\t9\n\
                           gate builds (ubuntu-latest)\tsuccess\t9\n\
                           Refresh the build cache\tskipped\t0";
 
@@ -1364,23 +1496,51 @@ mod gate_shard_tests {
     fn ship_runs_here_only_the_shards_whose_job_never_started_on_this_host() {
         assert!(shards_not_passed(PASSED, "ubuntu").unwrap().is_empty());
         let unstarted = PASSED.replace(
-            "tests (ubuntu-latest)\tsuccess\t9",
-            "tests (ubuntu-latest)\tcancelled\t0",
+            "tests-2 (ubuntu-latest)\tsuccess\t9",
+            "tests-2 (ubuntu-latest)\tcancelled\t0",
         );
-        assert_eq!(shards_not_passed(&unstarted, "ubuntu").unwrap(), ["tests"]);
+        assert_eq!(
+            shards_not_passed(&unstarted, "ubuntu").unwrap(),
+            ["tests-2"]
+        );
         assert!(shards_not_passed(&unstarted, "macos").is_err());
         let missing: String = PASSED.lines().skip(1).collect::<Vec<_>>().join("\n");
         assert_eq!(shards_not_passed(&missing, "ubuntu").unwrap(), ["lints"]);
+        let no_partition: String = PASSED
+            .lines()
+            .filter(|job| !job.contains("tests-3"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            shards_not_passed(&no_partition, "ubuntu").unwrap(),
+            ["tests-3"]
+        );
+        let whole = "gate lints (ubuntu-latest)\tsuccess\t9\n\
+                     gate tests (ubuntu-latest)\tsuccess\t9\n\
+                     gate builds (ubuntu-latest)\tsuccess\t9";
+        assert_eq!(
+            shards_not_passed(whole, "ubuntu").unwrap(),
+            ["tests-1", "tests-2", "tests-3"]
+        );
         for ended in ["failure\t9", "cancelled\t3", "skipped\t0", "timed_out\t9"] {
-            let failed = PASSED.replace(
-                "builds (ubuntu-latest)\tsuccess\t9",
-                &format!("builds (ubuntu-latest)\t{ended}"),
-            );
-            assert!(shards_not_passed(&failed, "ubuntu").is_err(), "{ended}");
+            for job in ["builds", "tests-1"] {
+                let failed = PASSED.replace(
+                    &format!("{job} (ubuntu-latest)\tsuccess\t9"),
+                    &format!("{job} (ubuntu-latest)\t{ended}"),
+                );
+                assert!(
+                    shards_not_passed(&failed, "ubuntu").is_err(),
+                    "{job} {ended}"
+                );
+            }
         }
         let other_failed = PASSED.replace("skipped", "failure");
         assert!(shards_not_passed(&other_failed, "ubuntu").is_err());
-        assert_eq!(shard_of_job("gate tests (ubuntu-latest)"), Some("tests"));
+        assert_eq!(
+            shard_of_job("gate tests-2 (ubuntu-latest)").as_deref(),
+            Some("tests-2")
+        );
+        assert_eq!(shard_of_job("gate tests-4 (ubuntu-latest)"), None);
         assert_eq!(shard_of_job("gate test (ubuntu-latest)"), None);
     }
 }
