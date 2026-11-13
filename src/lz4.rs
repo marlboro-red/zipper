@@ -155,6 +155,34 @@ fn decode_into<const WILD: usize>(block: &[u8], window: &mut [u8], start: usize)
     let mut index = 0;
     loop {
         let token = *block.get(index)?;
+        if let Some(input) = block.get(index..index + WILD + 3)
+            && end - out >= 3 * WILD
+        {
+            let literals = usize::from(token >> 4);
+            let matched = usize::from(token & 0x0F) + MIN_MATCH;
+            if literals < 15 && token & 0x0F < 15 && literals <= WILD && matched <= 2 * WILD {
+                window[out..out + WILD].copy_from_slice(&input[1..1 + WILD]);
+                out += literals;
+                let offset = usize::from(u16::from_le_bytes([
+                    input[1 + literals],
+                    input[2 + literals],
+                ]));
+                index += 3 + literals;
+                if offset >= WILD && offset <= out {
+                    let from = out - offset;
+                    window.copy_within(from..from + WILD, out);
+                    if matched > WILD {
+                        window.copy_within(from + WILD..from + 2 * WILD, out + WILD);
+                    }
+                } else if offset == 0 || offset > out {
+                    return None;
+                } else {
+                    copy_match::<WILD>(window, out - offset, out, matched);
+                }
+                out += matched;
+                continue;
+            }
+        }
         index += 1;
         let literals = length(block, &mut index, usize::from(token >> 4))?;
         if literals > end - out {
