@@ -26,7 +26,7 @@ Exit checks:
 - XPRESS comes from the bench's own greedy encoder, written from [MS-XCA](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/), in 32 KiB chunks as WIM stores them. When `wimlib-imagex` is installed, `corpus` also writes `silesia.wim` with XPRESS chunks for the extraction row.
 - `decode` runs each decoder in its own process for each sample. The process times only the decode call, into an output buffer written beforehand. It then compares every byte with the original and reports wall and CPU time. Its parent records the peak RSS.
 - Every round runs the decoders in a new seeded order, after one warmup round. `decode` refuses fewer than 7 rounds without `--trial`, and it refuses to start while another process uses 25% of a core, as `scripts/bench_common.py` decides.
-- `extract` runs [`scripts/compare_zip_readers.py`](../../scripts/compare_zip_readers.py) on each tar stream, with Zipper at one thread and at all threads against bsdtar and 7-Zip at one thread. The WIM runs against 7-Zip.
+- `extract` runs [`scripts/compare_zip_readers.py`](../../scripts/compare_zip_readers.py) on each tar stream, with Zipper at one thread and at all threads against bsdtar and 7-Zip at one thread. The WIM runs against 7-Zip. LZMA has no extraction row. Zipper writes `silesia.tar.lzma` out as one file, `silesia.tar`, where bsdtar reads the tar inside, so the trees differ.
 - The JSON names the corpus and stream sha256s, every crate version from `Cargo.lock`, the machine, the toolchain and the revision with whether the tree was clean.
 
 The alternatives are these crates.

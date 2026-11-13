@@ -31,7 +31,7 @@ MIN_ROUNDS = 7
 ORDER_SEED = 20261114
 SOURCE_NAME = "silesia"
 TAR_NAME = "silesia.tar"
-TAR_STREAMS = {"gzip": "gz", "zstd": "zst", "xz": "xz", "lzma": "lzma", "bzip2": "bz2"}
+TAR_STREAMS = {"gzip": "gz", "zstd": "zst", "xz": "xz", "bzip2": "bz2"}
 WIM_NAME = "silesia.wim"
 WIM_CHUNK = 32768
 
