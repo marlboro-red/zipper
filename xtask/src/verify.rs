@@ -316,9 +316,7 @@ fn run_full_check(root: &Path, check: &str) -> Result<bool> {
     if !runs_tests {
         return Ok(command.status()?.success());
     }
-    let output = command.output()?;
-    std::io::stdout().write_all(&output.stdout)?;
-    std::io::stderr().write_all(&output.stderr)?;
+    let output = teed(&mut command)?;
     let printed = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -644,24 +642,52 @@ fn run_at_head_remotely(
 }
 
 fn streamed(command: &mut Command) -> Result<std::process::Output> {
-    use std::io::{BufRead, Write};
     let mut child = command
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
         .spawn()?;
-    let mut stdout = Vec::new();
-    for line in std::io::BufReader::new(child.stdout.take().context("no stdout pipe")?).split(b'\n')
-    {
-        let mut line = line?;
-        line.push(b'\n');
-        std::io::stdout().write_all(&line)?;
-        stdout.extend_from_slice(&line);
-    }
+    let stdout = copied_lines(
+        child.stdout.take().context("no stdout pipe")?,
+        std::io::stdout(),
+    )?;
     Ok(std::process::Output {
         status: child.wait()?,
         stdout,
         stderr: Vec::new(),
     })
+}
+
+fn teed(command: &mut Command) -> Result<std::process::Output> {
+    let mut child = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    let stderr_pipe = child.stderr.take().context("no stderr pipe")?;
+    let stderr = std::thread::spawn(move || copied_lines(stderr_pipe, std::io::stderr()));
+    let stdout = copied_lines(
+        child.stdout.take().context("no stdout pipe")?,
+        std::io::stdout(),
+    )?;
+    let stderr = stderr
+        .join()
+        .map_err(|_| anyhow::anyhow!("the stderr copy panicked"))??;
+    Ok(std::process::Output {
+        status: child.wait()?,
+        stdout,
+        stderr,
+    })
+}
+
+fn copied_lines(pipe: impl std::io::Read, mut sink: impl Write) -> Result<Vec<u8>> {
+    use std::io::BufRead;
+    let mut copied = Vec::new();
+    for line in std::io::BufReader::new(pipe).split(b'\n') {
+        let mut line = line?;
+        line.push(b'\n');
+        sink.write_all(&line)?;
+        copied.extend_from_slice(&line);
+    }
+    Ok(copied)
 }
 
 pub fn gate_remotely(root: &Path, kind: &str) -> Result<()> {
@@ -804,6 +830,22 @@ mod tests {
             String::from_utf8(run.stdout).unwrap(),
             "first\nsynced at fingerprint x\n"
         );
+    }
+
+    #[test]
+    fn a_teed_run_keeps_both_streams_and_its_exit_status() {
+        let run = teed(
+            Command::new("/bin/sh")
+                .arg("-c")
+                .arg("echo first; echo progress >&2; echo 'test result: ok. 0 passed'; exit 3"),
+        )
+        .unwrap();
+        assert_eq!(run.status.code(), Some(3));
+        assert_eq!(
+            String::from_utf8(run.stdout).unwrap(),
+            "first\ntest result: ok. 0 passed\n"
+        );
+        assert_eq!(String::from_utf8(run.stderr).unwrap(), "progress\n");
     }
 
     #[test]
