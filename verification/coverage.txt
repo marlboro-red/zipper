@@ -2056,7 +2056,7 @@ item = src/lib.rs | pub(crate) struct BadField(
 item = src/lib.rs | pub(crate) type Field<
 
 [7z-writer-pool]
-fingerprint = 85e4ebb1427f8410
+fingerprint = 36104e2c506bd723
 skill = .claude/skills/zipper-verify-7z-workers/SKILL.md
 full-check = python3 scripts/check_model.py verification/7z-writer-pool MCUnix.tla:unix.cfg MCWindows.tla:windows.cfg
 item = src/native_7z.rs | const FILE_WRITERS:
