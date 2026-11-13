@@ -123,17 +123,52 @@ pub(crate) fn xxh32(data: &[u8]) -> u32 {
 /// Decodes one LZ4 block onto `output`, whose existing bytes are the window
 /// that matches may reach. Returns `None` for a malformed block.
 pub(crate) fn decode_block(block: &[u8], output: &mut Vec<u8>, limit: usize) -> Option<()> {
+    decode_block_copying::<WILD>(block, output, limit)
+}
+
+fn decode_block_copying<const WILD: usize>(
+    block: &[u8],
+    output: &mut Vec<u8>,
+    limit: usize,
+) -> Option<()> {
     let start = output.len();
+    let room = decoded_bound(block.len(), limit);
+    output.resize(start.checked_add(room)?.checked_add(WILD)?, 0);
+    let end = decode_into::<WILD>(block, output, start);
+    output.truncate(end.unwrap_or(start));
+    end.map(|_| ())
+}
+
+const WILD: usize = 16;
+const MOST_OUTPUT_PER_INPUT_BYTE: usize = 255;
+
+fn decoded_bound(block: usize, limit: usize) -> usize {
+    block.saturating_mul(MOST_OUTPUT_PER_INPUT_BYTE).min(limit)
+}
+
+fn decode_into<const WILD: usize>(block: &[u8], window: &mut [u8], start: usize) -> Option<usize> {
+    let end = window.len().checked_sub(WILD)?;
+    if start > end {
+        return None;
+    }
+    let mut out = start;
     let mut index = 0;
     loop {
         let token = *block.get(index)?;
         index += 1;
         let literals = length(block, &mut index, usize::from(token >> 4))?;
-        let end = index.checked_add(literals)?;
-        output.extend_from_slice(block.get(index..end)?);
-        index = end;
+        if literals > end - out {
+            return None;
+        }
+        if literals <= WILD && block.len() - index >= WILD {
+            window[out..out + WILD].copy_from_slice(&block[index..index + WILD]);
+        } else {
+            window[out..out + literals].copy_from_slice(block.get(index..index + literals)?);
+        }
+        out += literals;
+        index += literals;
         if index == block.len() {
-            return (output.len() - start <= limit).then_some(());
+            return Some(out);
         }
         let offset = usize::from(u16::from_le_bytes([
             *block.get(index)?,
@@ -142,13 +177,30 @@ pub(crate) fn decode_block(block: &[u8], output: &mut Vec<u8>, limit: usize) -> 
         index += 2;
         let matched =
             length(block, &mut index, usize::from(token & 0x0F))?.checked_add(MIN_MATCH)?;
-        if offset == 0 || offset > output.len() || output.len() - start + matched > limit {
+        if offset == 0 || offset > out || matched > end - out {
             return None;
         }
-        let from = output.len() - offset;
-        for position in from..from + matched {
-            let byte = output[position];
-            output.push(byte);
+        copy_match::<WILD>(window, out - offset, out, matched);
+        out += matched;
+    }
+}
+
+fn copy_match<const WILD: usize>(window: &mut [u8], from: usize, to: usize, matched: usize) {
+    let offset = to - from;
+    if offset >= matched && matched > 2 * WILD {
+        window.copy_within(from..from + matched, to);
+    } else if offset >= WILD {
+        let mut copied = 0;
+        while copied < matched {
+            window.copy_within(from + copied..from + copied + WILD, to + copied);
+            copied += WILD;
+        }
+    } else {
+        let mut copied = 0;
+        while copied < matched {
+            let pattern = (matched - copied).min(to + copied - from);
+            window.copy_within(from..from + pattern, to + copied);
+            copied += pattern;
         }
     }
 }
@@ -416,21 +468,131 @@ mod tests {
                 })
                 .collect();
             for block in &blocks {
-                for history in [&b""[..], b"a", b"abc"] {
+                for history in [&b""[..], b"a", b"abc", b"abcdefgh"] {
                     for limit in [3, 64] {
-                        let mut output = history.to_vec();
-                        let decoded = decode_block(block, &mut output, limit).map(|()| output);
-                        assert_eq!(
-                            decoded,
-                            reference_block(block, history, limit),
-                            "{block:02x?} after {history:?} within {limit}"
-                        );
-                        checked += 1;
+                        for (wild, decoder) in [
+                            (WILD, decode_block as fn(&[u8], &mut Vec<u8>, usize) -> _),
+                            (1, decode_block_copying::<1>),
+                            (2, decode_block_copying::<2>),
+                        ] {
+                            let mut output = history.to_vec();
+                            let decoded = decoder(block, &mut output, limit).map(|()| output);
+                            assert_eq!(
+                                decoded,
+                                reference_block(block, history, limit),
+                                "{block:02x?} after {history:?} within {limit}, copying {wild}"
+                            );
+                            checked += 1;
+                        }
                     }
                 }
             }
         }
-        assert!(checked > 200_000, "{checked}");
+        assert!(checked > 800_000, "{checked}");
+    }
+
+    struct Random(u64);
+
+    impl Random {
+        fn below(&mut self, bound: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % bound as u64) as usize
+        }
+
+        fn length(&mut self, short: usize, long: usize) -> usize {
+            if self.below(8) == 0 {
+                self.below(long)
+            } else {
+                self.below(short)
+            }
+        }
+    }
+
+    fn push_length(block: &mut Vec<u8>, length: usize) {
+        if length >= 15 {
+            let mut rest = length - 15;
+            while rest >= 255 {
+                block.push(255);
+                rest -= 255;
+            }
+            block.push(rest as u8);
+        }
+    }
+
+    fn random_block(random: &mut Random, history: usize) -> Vec<u8> {
+        let mut block = Vec::new();
+        let mut produced = history;
+        for _ in 0..random.below(12) {
+            let literals = random.length(20, 600);
+            let reach = (produced + literals).min(usize::from(u16::MAX));
+            if reach == 0 {
+                continue;
+            }
+            let offset = 1 + if random.below(2) == 0 {
+                random.below(reach.min(20))
+            } else {
+                random.below(reach)
+            };
+            let matched = random.length(24, 2000);
+            block.push((literals.min(15) as u8) << 4 | matched.min(15) as u8);
+            push_length(&mut block, literals);
+            block.extend((0..literals).map(|_| random.below(256) as u8));
+            block.extend_from_slice(&(offset as u16).to_le_bytes());
+            push_length(&mut block, matched);
+            produced += literals + matched + MIN_MATCH;
+        }
+        let literals = random.length(20, 300);
+        block.push((literals.min(15) as u8) << 4);
+        push_length(&mut block, literals);
+        block.extend((0..literals).map(|_| random.below(256) as u8));
+        block
+    }
+
+    #[test]
+    fn random_and_damaged_blocks_decode_as_the_reference_does() {
+        let mut random = Random(0x9E37_79B9_7F4A_7C15);
+        for round in 0..20_000 {
+            let history: Vec<u8> = (0..random.length(40, 70_000))
+                .map(|_| random.below(256) as u8)
+                .collect();
+            let mut block = random_block(&mut random, history.len());
+            let whole = reference_block(&block, &history, usize::MAX)
+                .expect("a generated block is well formed")
+                .len()
+                - history.len();
+            if round % 3 == 1 {
+                for _ in 0..1 + random.below(3) {
+                    let at = random.below(block.len());
+                    block[at] = random.below(256) as u8;
+                }
+            }
+            if round % 7 == 2 {
+                block.truncate(random.below(block.len() + 1));
+            }
+            for limit in [whole, whole.saturating_sub(1), whole + 1, whole + 100] {
+                let mut output = history.clone();
+                let decoded = decode_block(&block, &mut output, limit).map(|()| output);
+                assert_eq!(
+                    decoded,
+                    reference_block(&block, &history, limit),
+                    "round {round} within {limit} after {} bytes",
+                    history.len()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_block_at_its_largest_expansion_decodes() {
+        let mut block = vec![0x1F, b'a', 1, 0];
+        block.extend(std::iter::repeat_n(255, 50));
+        block.extend_from_slice(&[255, 0, 0x00]);
+        let expected = 1 + 15 + MIN_MATCH + 255 * 51;
+        let mut output = Vec::new();
+        assert_eq!(decode_block(&block, &mut output, expected), Some(()));
+        assert_eq!(output, vec![b'a'; expected]);
     }
 
     #[test]
@@ -674,17 +836,30 @@ mod proofs {
         let block: [u8; 4] = kani::any();
         let length: usize = kani::any();
         kani::assume(length <= block.len());
-        let history: u8 = kani::any();
-        let kept: bool = kani::any();
+        let start = usize::from(kani::any::<bool>());
         let limit: usize = kani::any();
         kani::assume(limit <= 4);
-        let mut output = Vec::with_capacity(8);
-        if kept {
-            output.push(history);
+        let mut window: [u8; 1 + 4 + WILD] = kani::any();
+        let size = start + decoded_bound(length, limit) + WILD;
+        if let Some(end) = decode_into::<WILD>(&block[..length], &mut window[..size], start) {
+            assert!(start <= end && end <= start + limit);
         }
-        let start = output.len();
-        if decode_block(&block[..length], &mut output, limit).is_some() {
-            assert!(output.len() <= start + limit);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn short_copies_never_panic_touch_the_history_or_pass_the_room() {
+        const NARROW: usize = 2;
+        let block: [u8; 5] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= block.len());
+        let mut window: [u8; 8] = kani::any();
+        let history = window;
+        let start: usize = kani::any();
+        kani::assume(start <= window.len());
+        if let Some(end) = decode_into::<NARROW>(&block[..length], &mut window, start) {
+            assert!(start <= end && end + NARROW <= window.len());
         }
+        assert!(window[..start] == history[..start]);
     }
 }

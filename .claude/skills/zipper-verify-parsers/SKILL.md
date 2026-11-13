@@ -24,7 +24,7 @@ A parser that panics or overflows on a crafted archive crashes a library caller 
 | `[zip-ppmd-headers]` | `ppmd_headers_stay_inside_the_decoders_bounds` | 0.1 s |
 | `[tar-numbers]` | the three `native_tar` proofs | 25 s |
 | `[bcj2-decoder]` | `decoding_any_short_streams_never_panics` | 422 s |
-| `[lz4-blocks]` | `decoding_any_short_block_never_panics_or_passes_its_limit` | 136 s |
+| `[lz4-blocks]` | `decoding_any_short_block_never_panics_or_passes_its_limit`, `short_copies_never_panic_touch_the_history_or_pass_the_room` | 345 s |
 | `[zip-directory]` | the ten `zip_directory` proofs | 706 s |
 | `[zip-crypto]`, `[split-volumes]`, `[cpio-fields]`, `[ar-fields]`, `[rpm-fields]` | each module's whole `proofs` | unchanged |
 | `[xar-header]` | the module's whole `proofs` | a few seconds |
@@ -69,7 +69,8 @@ Times are the CBMC time of one `verify-sync` on an Apple M5 shared with other jo
 | `lzma_headers_keep_the_properties_and_never_shrink_the_dictionary_below_need` | `lzma_alone_header` keeps the ZIP LZMA properties byte and the size, and caps the dictionary no lower than the entry or the declared dictionary needs | 3 s |
 | `ppmd_headers_stay_inside_the_decoders_bounds` | every ZIP PPMd header `ppmd8_fields` accepts has an order, model size and restore method the decoder accepts, within its 256 MiB reservation | 1 s |
 | `ppmd_properties_read_only_five_bytes` | `ppmd7_fields` reads exactly five 7z PPMd property bytes and nothing else | 2 s |
-| `decoding_any_short_block_never_panics_or_passes_its_limit` | the LZ4 block decoder never panics on any block of up to 4 bytes after 0 or 1 byte of history, and never writes past its limit | 119 s |
+| `decoding_any_short_block_never_panics_or_passes_its_limit` | the LZ4 block decoder, with its copies of 16 bytes, never panics on any block of up to 4 bytes after 0 or 1 byte of any history, and never decodes past its limit | 56 s |
+| `short_copies_never_panic_touch_the_history_or_pass_the_room` | the same decoder built with copies of 2 bytes, so short blocks reach its wide literal and match copies, never panics on any block of up to 5 bytes into any 8-byte window from any start. It leaves the history before the start unchanged and never decodes into the 2 spare bytes at the end | 289 s |
 | `decoding_any_short_streams_never_panics` | the BCJ2 decoder never panics or overflows on any main, call and jump streams of 4 bytes, range coder stream of 6 bytes and output size up to 8, with the main stream buffered in two slices cut at any point | 422 s |
 | `newc_headers_never_panic_and_fit_their_fields` | the cpio newc reader never panics on any 110 header bytes, and every size and name size it returns fits 32 bits and pads below 4 | 54 s |
 | `odc_headers_never_panic_and_fit_their_fields` | the cpio odc reader never panics on any 76 header bytes, and its size, time and name size fit their octal fields | 49 s |
@@ -142,7 +143,9 @@ The reader starts a block's thread before the block before it has confirmed wher
 
 The LZ4 reader in `src/lz4.rs`, under `[lz4-frames]`, has these exhaustive tests:
 
-- `every_short_block_decodes_as_the_reference_does` compares `decode_block` with a reference decoder written separately. It covers every block of up to 5 bytes over 8 bytes that matter, after 0, 1 or 3 bytes of history and within limits of 3 and 64, over 200,000 cases.
+- `every_short_block_decodes_as_the_reference_does` compares `decode_block` with a reference decoder written separately. It covers every block of up to 5 bytes over 8 bytes that matter, after 0, 1, 3 or 8 bytes of history and within limits of 3 and 64. It runs the decoder with copies of 16 bytes, as Zipper builds it, and of 1 and 2 bytes, so these short blocks reach every copy path. That is over 800,000 cases.
+- `random_and_damaged_blocks_decode_as_the_reference_does` compares the two decoders on 20,000 generated blocks after up to 70,000 bytes of history, with long literal runs, long matches and offsets from 1 to 65,535. A third of the blocks have bytes overwritten and some are cut short, and each is decoded within its exact size, one byte less and more.
+- `a_block_at_its_largest_expansion_decodes` checks that a block near the largest output per input byte fits the room the decoder sets aside.
 - `xxh32_matches_known_values_and_every_split` checks xxHash32 against its published values for the empty string and `abc`, and on every length up to 70 bytes fed in every 3-way split.
 - `frames_round_trip_and_every_damage_is_refused` cuts frames at every length and flips each byte. A frame with a content checksum must never decode to other bytes.
 - `a_long_match_is_refused_before_the_output_grows_past_its_limit` covers a match that would allocate far past the block limit before the final size check.

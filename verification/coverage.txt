@@ -338,6 +338,12 @@ fingerprint = 6574afa11bd8e9e3
 full-check = cargo xtask kani-reach lz4-blocks
 full-check = cargo kani --harness lz4::proofs::
 item = src/lz4.rs | pub(crate) fn decode_block(
+item = src/lz4.rs | fn decode_block_copying<
+item = src/lz4.rs | const WILD:
+item = src/lz4.rs | const MOST_OUTPUT_PER_INPUT_BYTE:
+item = src/lz4.rs | fn decoded_bound(
+item = src/lz4.rs | fn decode_into<
+item = src/lz4.rs | fn copy_match<
 item = src/lz4.rs | fn length(
 item = src/lz4.rs | const MIN_MATCH:
 item = src/lz4.rs | mod proofs {
@@ -424,6 +430,10 @@ item = src/lz4.rs | impl Xxh32 {
 item = src/lz4.rs | impl<R: BufRead> Lz4Frames<R> {
 item = src/lz4.rs | impl<R: BufRead> Read for Lz4Frames<R> {
 item = src/lz4.rs | pub(crate) fn decode_block(
+item = src/lz4.rs | fn decode_block_copying<
+item = src/lz4.rs | fn decoded_bound(
+item = src/lz4.rs | fn decode_into<
+item = src/lz4.rs | fn copy_match<
 
 [compress]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
