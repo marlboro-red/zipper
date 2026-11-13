@@ -729,11 +729,10 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn a_cancel_during_a_failing_flat_rename_returns_cancelled_and_moves_nothing() {
         use std::os::unix::fs::PermissionsExt;
