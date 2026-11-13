@@ -39,7 +39,7 @@ A RAR 4 archive is the signature, a main header, then blocks for files, service 
 
 - Stored entries, and entries compressed with RAR 2.9's LZ and Huffman coding, the algorithm RAR 3 and RAR 4 write for every method.
 - PPMd variant H blocks that start a new model, mixed with LZ blocks.
-- The standard filters RAR's virtual machine runs, recognized by their program's CRC-32 and length as libarchive recognizes them. These are delta, E8, E8E9, RGB and audio.
+- The standard filters RAR's virtual machine runs, recognized by their program's CRC-32 and length as libarchive recognizes them. These are delta, E8, E8E9, RGB and audio. The Itanium filter is refused with every other program, as bsdtar refuses it.
 - Folders, Unix symlinks, DOS times with extended time fractions, Unix modes and the read-only attribute.
 - An archive that ends without an end of archive header, as libarchive and 7-Zip read it.
 
@@ -76,7 +76,7 @@ The reader checks every entry before it publishes anything, and it publishes not
 - The packed data ends where the decoded file ends. Each file's CRC-32 and BLAKE2sp must match.
 - Every RAR 4 header holds at least 7 bytes and its CRC-16 matches. Its fields, name, salt and extended time lie inside it, and its data lies inside the file.
 - A RAR 4 match reaches no further back than the start of its file or the 4 MiB window. A RAR 4 filter lies inside its file, after the filter before it unless a program reset dropped it, and inside the 256 KiB filter memory, and its length register equals its block length.
-- A RAR 4 file may start new PPMd models only while their sizes stay inside the allowance in the limits below. An adversarial review built an 8 KB archive that started a 256 MiB model 1,000 times for one byte of output, which took 3.9 s of CPU before the allowance.
+- A RAR 4 archive may start new PPMd models only while their sizes stay inside the allowance in the limits below. The allowance is shared by every file in the archive. An adversarial review built an 8 KB archive that started a 256 MiB model 1,000 times for one byte of output, which took 3.9 s of CPU before the allowance. The review of the RAR 4 filters spread the restarts over 2,000 files of 1 byte, four to a file, in 162 KB. While each file had its own allowance, Zipper ran 137 G instructions on it and bsdtar 3.7 G.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
 
 ## Limits
@@ -89,7 +89,7 @@ The reader checks every entry before it publishes anything, and it publishes not
 | All names | at most 64 MiB |
 | Dictionary | at most 2 GiB, the decoder budget the 7z reader also uses. RAR 4 uses a 4 MiB window, the RAR 3 maximum |
 | PPMd model | at most 256 MiB, the most a RAR 4 block can ask for |
-| PPMd models in one file | 1 GiB of models, plus 64 bytes of model for each byte decoded, since each new model is filled with zeros |
+| PPMd models in one archive | 1 GiB of models, plus 64 bytes of model for each byte its compressed files decode, since each new model is filled with zeros |
 | Decoder memory | the window, grown as the stream writes it up to the dictionary, one block of up to 16 MiB and one filter of up to 4 MiB. A RAR 4 window and its largest PPMd model fit the same 2 GiB budget |
 
 Each RAR 5 file's dictionary is charged against a 2 GiB decoder budget, the one the 7z reader uses, before any window is allocated. A file that declares more is refused. An adversarial review built a 768 KiB archive with a 4 GiB dictionary and 1 GiB of zeros, which raised `zipper test` to 1.08 GB of resident memory before the budget. `tests/hostile_rar.rs` builds a 90 KB file that declares a 4 GiB dictionary and decodes to 328 MB. Before the budget `zipper test` extracted it at 541 MB of resident memory, and now the test requires a refusal that raises peak memory by less than 64 MiB. The window grows only as data arrives, so a small file with a large dictionary allocates no more than about twice its size. Growth uses a fallible allocation, so a window the machine cannot hold is an error, not an abort. The reader keeps only the tree that the cpio reader also uses, with each name. On a RAR 5 archive of 300,000 empty stored files whose names total 60 MB, `zipper test` peaked at 189 MB of resident memory, and `7zz t`, which read every RAR before this reader, at 133 MB. On the same files in RAR 4 they peaked at 173 MB and 133 MB. `--threads` has no effect on RAR.
@@ -102,7 +102,30 @@ No RAR writer is installed here. The Homebrew build of 7-Zip 26.05 has no RAR co
 - 7-Zip extracts a RAR 5 archive cut inside or before its end of archive header. Zipper refuses it. A RAR 4 archive cut between two blocks extracts the entries before the cut, as 7-Zip and libarchive extract it.
 - bsdtar 3.7.4 extracts a RAR 5 filter longer than half the dictionary, and a solid file that declares a larger dictionary than its stream. Zipper refuses both, as libarchive's current source does. No RAR writer was at hand to show whether RAR writes either.
 - 7-Zip reads a RAR 4 DOS time with the offset from UTC in force today. Zipper reads it with the offset in force on that date, as its ZIP and ARJ readers do, so a file written in another daylight saving season differs by an hour. The corpus records no RAR 4 times for that reason.
+- An RGB filter with a stride below 4 reads bytes its block has not written yet. Zipper reads them as zeros. libarchive reads whatever an earlier filter left in its filter memory, so after another filter the two decode different files. Each refuses the other's file by its CRC-32. No archive written by RAR was at hand to show which reading RAR uses.
 - libarchive refuses `test_read_format_rar_filter_incomplete_block.rar`, which its test calls a filter that is never decoded in full. Zipper extracts it, and the file's CRC-32 matches.
+
+## Review of the RAR 4 filters
+
+On 14 November 2026 an adversarial review attacked the RAR 4 container and each RAR 4 filter on its own. It read only Zipper's code, libarchive and this page, and ran bsdtar 3.7.4 as a black box. Zipper and libarchive know a standard filter only by its program's CRC-32 and length. So the review's archives carry forged programs, with the last 4 bytes chosen to give the CRC-32 and the first byte set to the program's check. bsdtar refuses under-full Huffman tables, so the archives use complete ones. The review built 110 archives. It found one failure, which is fixed, and one difference, which is recorded above.
+
+| Filter or area | Cases tried | How Zipper handled them |
+| --- | --- | --- |
+| E8 | Blocks of 1, 4, 5, 0x3C000, 0x3C001, 0x40000 and 0x40001 bytes. Calls at the first and last positions, starts after 100 bytes and 258 bytes on, and negative addresses | Blocks of 4 bytes or fewer, or longer than the work memory, are refused. The rest decode as bsdtar decodes them |
+| E8E9 | E8 and E9 calls in one block, and a block 258 bytes on | Decoded as bsdtar decodes them |
+| Delta | 1 byte, and 3 and 128 channels over 0x1E000 bytes. 0, 129 and 2^32 − 1 channels, no registers, and 0x1E001 bytes | The first set decodes as bsdtar decodes it. The second is refused |
+| RGB | Strides from 0 to 3 and equal to the block, byte offsets 0 to 2, 3 bytes and 0x1E000 bytes. A stride past the block, 2 bytes, byte offset 3 and 0x1E001 bytes | The first set decodes as bsdtar decodes it on fresh filter memory. The second is refused. A stride below 4 after another filter differs from libarchive, as above |
+| Audio | 1, 2 and 128 channels, and 1 byte. 0 and 129 channels, and 0x1E001 bytes | The first set decodes as bsdtar decodes it. The second is refused |
+| Itanium | The Itanium program's length and CRC-32, and other unknown programs | Refused as a program that is not a standard filter. bsdtar refuses it too |
+| Block placement | Overlapping blocks, a block one byte past the size, a start number of 2^32 − 1 plus 258, a length register that disagrees, and a stream that ends inside a block | Refused, with nothing published |
+| Block placement | Adjacent blocks, an old length reused, empty blocks, a block 5 MiB ahead, a block across the window's wrap, and a program reset after a block | Decoded as bsdtar decodes them, at 11.7 MB of peak memory |
+| Window | A match copied from a filtered block, and a filter whose data the window might overwrite before it runs | The window keeps the unfiltered bytes. The decoder runs at most 1 MiB and one match ahead of its output, inside the 4 MiB window |
+| Counts | 8,192 pending filters, 1,024 programs, and 0x1FC0 bytes of global data. One more of each | The first set extracts at 6 MB of peak memory. The second is refused |
+| PPMd | 4 restarts of 256 MiB in one file, 5 in one file, and 4 in each of 2,000 files | 4 in one file extract and 5 are refused. The 2,000 files extracted before the fix, as the safety checks describe. Now the archive is refused |
+| Container | A short header, a second marker, sizes past the file, 1 TiB declared, stored sizes that disagree, a short or long stream, an entry after the end header, and duplicate names | Each is refused, ignored after the end header, or extracted with the last duplicate winning. Nothing is published on a refusal |
+| Names and links | Case and Unicode collisions, NUL, Unicode names that decode to `../x` or `/etc`, and links through `d`, `.` and `a/..` | Refused. A link to `d/x` stays inside the destination |
+
+`tests/hostile_rar.rs` builds an archive for each filter with its own writer, which forges programs the same way. Thirteen archives must decode to the CRC-32 of the bytes bsdtar wrote for them. Twenty-three filter archives must be refused for the reason the table gives, as must 8,193 pending filters, an unknown program and PPMd restarts spread over two files. Plants of the filter checks are caught by these tests. They cover the bounds of each filter, the RGB predictor, the E8 file size, the E9 opcode, the audio weights, the 258-byte offset and the filter queue.
 
 ## Extraction options
 

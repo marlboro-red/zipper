@@ -298,10 +298,12 @@ impl Read for Checked<'_> {
 }
 
 impl Checked<'_> {
-    fn finish(self, name: &str, header: &FileHeader) -> Result<()> {
+    fn finish(self, name: &str, header: &FileHeader) -> Result<Option<rar4_lz::PpmdSpent>> {
+        let mut spent = None;
         if let Data::Compressed(data) = &self.data {
             data.finish_at_declared_size()
                 .with_context(|| format!("RAR 4 entry {name:?} is damaged"))?;
+            spent = Some(data.ppmd_spent());
         }
         ensure!(
             self.read == header.unpacked,
@@ -311,7 +313,7 @@ impl Checked<'_> {
             self.crc.finalize() == header.crc,
             "RAR 4 entry {name:?} fails its CRC-32 check"
         );
-        Ok(())
+        Ok(spent)
     }
 }
 
@@ -326,6 +328,7 @@ pub(crate) struct Reader {
     reader: BufReader<ArchiveFile>,
     length: u64,
     next: u64,
+    ppmd_spent: rar4_lz::PpmdSpent,
 }
 
 impl Reader {
@@ -336,6 +339,7 @@ impl Reader {
             reader: BufReader::with_capacity(COPY_BUFFER, file),
             length,
             next: 0,
+            ppmd_spent: rar4_lz::PpmdSpent::default(),
         };
         let mut signature = [0u8; SIGNATURE.len()];
         reader
@@ -479,6 +483,7 @@ impl Reader {
                 raw,
                 header.packed,
                 header.unpacked,
+                self.ppmd_spent,
             )))
         };
         let mut checked = Checked {
@@ -492,13 +497,22 @@ impl Reader {
                 .take(header.unpacked)
                 .read_to_end(&mut target)
                 .with_context(|| format!("RAR 4 entry {name:?} is damaged"))?;
-            checked.finish(&name, &header)?;
+            let spent = checked.finish(&name, &header)?;
+            self.charge(spent);
             let target = String::from_utf8(target)
                 .map_err(|_| anyhow::anyhow!("RAR 4 link target is not UTF-8"))?;
             return tree.symlink(&name, target);
         }
         tree.file(&name, header.unpacked, mode, time, &mut checked)?;
-        checked.finish(&name, &header)
+        let spent = checked.finish(&name, &header)?;
+        self.charge(spent);
+        Ok(())
+    }
+
+    fn charge(&mut self, spent: Option<rar4_lz::PpmdSpent>) {
+        if let Some(spent) = spent {
+            self.ppmd_spent = spent;
+        }
     }
 
     pub(crate) fn parse(&mut self, tree: &mut tree::Tree) -> Result<()> {

@@ -397,6 +397,12 @@ impl Audio {
 
 type Ppmd<R> = ppmd_rust::Ppmd7aDecoder<PpmdInput<R>>;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PpmdSpent {
+    models: u64,
+    output: u64,
+}
+
 pub(crate) struct Decoder<R: Read> {
     input: Rc<RefCell<Input<R>>>,
     window: Vec<u8>,
@@ -417,6 +423,7 @@ pub(crate) struct Decoder<R: Read> {
     filtered: Vec<u8>,
     filtered_read: usize,
     ppmd: Option<Ppmd<R>>,
+    spent_before: PpmdSpent,
     model_bytes: u64,
     in_ppmd: bool,
     escape: u8,
@@ -425,7 +432,7 @@ pub(crate) struct Decoder<R: Read> {
 }
 
 impl<R: Read> Decoder<R> {
-    pub(crate) fn new(packed: R, packed_size: u64, size: u64) -> Self {
+    pub(crate) fn new(packed: R, packed_size: u64, size: u64, spent_before: PpmdSpent) -> Self {
         Decoder {
             input: Rc::new(RefCell::new(Input::new(packed, packed_size))),
             window: Vec::new(),
@@ -446,7 +453,8 @@ impl<R: Read> Decoder<R> {
             filtered: Vec::new(),
             filtered_read: 0,
             ppmd: None,
-            model_bytes: 0,
+            spent_before,
+            model_bytes: spent_before.models,
             in_ppmd: false,
             escape: DEFAULT_ESCAPE,
             new_table: true,
@@ -592,7 +600,8 @@ impl<R: Read> Decoder<R> {
             return Err(invalid("RAR 4 PPMd model is outside its limits"));
         }
         self.model_bytes += u64::from(memory);
-        if self.model_bytes > PPMD_MODEL_ALLOWANCE + PPMD_MODEL_BYTES_PER_OUTPUT * self.written {
+        let output = self.spent_before.output + self.written;
+        if self.model_bytes > PPMD_MODEL_ALLOWANCE + PPMD_MODEL_BYTES_PER_OUTPUT * output {
             return Err(invalid(
                 "RAR 4 PPMd models restart more often than their output justifies",
             ));
@@ -895,6 +904,13 @@ impl<R: Read> Decoder<R> {
         Ok(true)
     }
 
+    pub(crate) fn ppmd_spent(&self) -> PpmdSpent {
+        PpmdSpent {
+            models: self.model_bytes,
+            output: self.spent_before.output + self.written,
+        }
+    }
+
     pub(crate) fn finish_at_declared_size(&self) -> io::Result<()> {
         if self.flushed != self.size
             || self.filtered_read < self.filtered.len()
@@ -1109,7 +1125,7 @@ mod stream_tests {
     }
 
     fn decode(packed: &[u8], size: u64) -> io::Result<Vec<u8>> {
-        let mut decoder = Decoder::new(packed, packed.len() as u64, size);
+        let mut decoder = Decoder::new(packed, packed.len() as u64, size, PpmdSpent::default());
         let mut out = Vec::new();
         let mut buffer = [0u8; 5];
         while (out.len() as u64) < size {
