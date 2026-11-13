@@ -19,6 +19,8 @@ mod bzip2;
 mod bzip2_streams;
 pub mod counters;
 mod crc32;
+#[cfg(any(feature = "zip-deflate", feature = "7z"))]
+mod creation_bound;
 #[cfg(any(feature = "tar", feature = "xar"))]
 mod dictionary;
 pub mod duplicates;

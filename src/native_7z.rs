@@ -1,7 +1,7 @@
 //! In-process extraction of 7z archives whose folders use Copy, LZMA, LZMA2,
 //! Deflate and the 7-Zip branch and delta filters. See
 //! `docs/reference/7z-reader.md` for what it accepts and restores.
-use crate::native_zip::{CREATION_BOUND_WORKERS, CreationBound};
+use crate::creation_bound::{CREATION_BOUND_WORKERS, CreationBound};
 use crate::sevenz_crypto::{self, AES_BUFFER, AES_METHOD, BLOCK, CbcReader, KeyError, Keys};
 use crate::writer_pool::{self, CHUNK, ClosesOnDrop, InFlight, Job, Writers, Written};
 use crate::xz_filters::{self, BRANCH_BUFFER, DELTA_HISTORY, DeltaDecoder, Filter, read_through};

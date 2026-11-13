@@ -4,6 +4,7 @@
 # A reason that starts with `candidate:` names a formal check still owed.
 
 src/counters.rs | profiling counters that compile to nothing without the `counters` feature
+src/creation_bound.rs | the rule that caps automatic ZIP and 7z workers when an archive creates many small files; it changes only a thread count, which the worker models leave free, and its unit tests and the native_7z folder_worker_tests check each boundary
 src/dictionary.rs | turns an LZMA dictionary over the 256 MiB limit into an out-of-memory error; the native_tar xz and lzip unit tests and tests/hostile_tar.rs, tests/hostile_rpm.rs and tests/hostile_stream.rs check each message
 src/duplicates.rs | read-only duplicate scan that writes nothing; tests/duplicates.rs covers it
 src/extract.rs | dispatch from the public API to a reader, never to 7-Zip; every reader it calls has its own checks, and tests/no_7zip.rs checks that no fixture starts 7-Zip
