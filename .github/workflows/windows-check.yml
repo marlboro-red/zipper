@@ -1,4 +1,5 @@
 name: Windows check
+run-name: Windows check ${{ inputs.ref || github.sha }}
 
 on:
   workflow_dispatch:
@@ -13,7 +14,12 @@ permissions:
 
 jobs:
   test:
+    name: test ${{ matrix.partition }} of 4
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
     timeout-minutes: 60
     env:
       RUSTFLAGS: -C target-feature=+crt-static
@@ -31,9 +37,10 @@ jobs:
         with:
           prefix-key: rust-1.99.1
           shared-key: windows-check
-          save-if: true
+          save-if: ${{ matrix.partition == 1 }}
       - name: Clippy
+        if: ${{ matrix.partition == 1 }}
         run: cargo +1.99.1 clippy --locked --target x86_64-pc-windows-msvc --all-targets -- -D warnings
       - name: Tests
         if: ${{ !cancelled() }}
-        run: cargo +1.99.1 nextest run --locked --no-fail-fast --cargo-profile ci --target x86_64-pc-windows-msvc
+        run: cargo +1.99.1 nextest run --locked --no-fail-fast --cargo-profile ci --target x86_64-pc-windows-msvc --partition hash:${{ matrix.partition }}/4
