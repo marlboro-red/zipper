@@ -624,22 +624,24 @@ pub(crate) enum Records<'a> {
     PrefixedBy(&'a str),
 }
 
+const RECORDS_SETUP: &str = "records=$(mktemp \"$base/target/remote-records.XXXXXX\")\n";
+
 fn records_printout(nonce: &str) -> String {
-    format!(
-        "if [ -f \"$run/records\" ]; then sed 's/^/{nonce} /' \"$run/records\"; rm -f \"$run/records\"; fi\n"
-    )
+    format!("sed 's/^/{nonce} /' \"$records\"\nrm -f \"$records\"\n")
 }
 
 fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str], records: &Records) -> String {
     let [dir, branch, head] = [dir, branch, head].map(shell_quoted);
     let xtask: Vec<String> = xtask.iter().map(|word| shell_quoted(word)).collect();
     let mut xtask = xtask.join(" ");
+    let mut set_up_records = "";
     let mut print_records = String::new();
     if let Records::PrefixedBy(nonce) = records {
         xtask.push_str(&format!(
-            " {} \"$run/records\"",
+            " {} \"$records\"",
             crate::release::RECORD_FILE_OPTION
         ));
+        set_up_records = RECORDS_SETUP;
         print_records = records_printout(nonce);
     }
     format!(
@@ -653,13 +655,14 @@ fn remote_script(dir: &str, branch: &str, head: &str, xtask: &[&str], records: &
          mkdir -p target\n\
          run=$(mktemp -d \"$base/target/remote-sync.XXXXXX\")\n\
          git worktree add -q --detach \"$run/tree\" {head}\n\
+         {set_up_records}\
          result=0\n\
          (cd \"$run/tree\" && PATH=\"$base/target/tools:$PATH\" \
          CARGO_TARGET_DIR=\"$base/target/remote-sync-build\" cargo xtask {xtask}) || result=$?\n\
-         git -C \"$run/tree\" checkout -q -- .\n\
-         git worktree remove \"$run/tree\"\n\
          {print_records}\
-         rmdir \"$run\"\n\
+         git -C \"$run/tree\" checkout -q -- . || echo \"remote: could not reset $run/tree\" >&2\n\
+         git worktree remove \"$run/tree\" || echo \"remote: left $run/tree for git worktree remove\" >&2\n\
+         rmdir \"$run\" 2>/dev/null || true\n\
          exit $result\n",
         preflight = remote_preflight(),
         lock = remote_lock("\"$base\""),
@@ -799,7 +802,12 @@ pub fn release_checks_remotely(root: &Path, options: &[&str]) -> Result<()> {
             && local_git(root, &["status", "--porcelain"])?.is_empty(),
         "HEAD or the tree changed while the release checks ran on the second machine; nothing was recorded"
     );
-    let records = crate::release::records_to_apply(&printed, &nonce, run.status.success(), None)?;
+    let records = crate::release::records_to_apply(
+        &printed,
+        &nonce,
+        run.status.success(),
+        crate::release::Expect::Planned,
+    )?;
     let applied = crate::release::apply_records(root, &records)?;
     println!("{applied}");
     ensure!(
@@ -854,8 +862,12 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
             && fingerprint(root, verification)? == checked,
         "{name}: HEAD or the covered code changed while the check ran; nothing was synced"
     );
-    let records =
-        crate::release::records_to_apply(&printed, &nonce, run.status.success(), Some(name))?;
+    let records = crate::release::records_to_apply(
+        &printed,
+        &nonce,
+        run.status.success(),
+        crate::release::Expect::Only(name),
+    )?;
     write_fingerprint(root, name, &checked)?;
     let applied = crate::release::apply_records(root, &records)?;
     println!("{name}: synced at fingerprint {checked}, checked on a second machine; {applied}");
@@ -1018,10 +1030,21 @@ mod tests {
         );
         assert!(script.contains(r"cd '/a b/it'\''s'"));
         assert!(
-            script
-                .contains("cargo xtask 'verify-sync' 'zip-crypto' --record-file \"$run/records\")")
+            script.contains("cargo xtask 'verify-sync' 'zip-crypto' --record-file \"$records\")")
         );
-        assert!(script.contains(&records_printout("n0nce")));
+        assert!(script.contains(RECORDS_SETUP));
+        let printout = script.find(&records_printout("n0nce")).unwrap();
+        for cleanup in [
+            "git -C \"$run/tree\" checkout -q -- . ||",
+            "git worktree remove \"$run/tree\" ||",
+            "rmdir \"$run\" 2>/dev/null || true",
+        ] {
+            let at = script.find(cleanup).expect(cleanup);
+            assert!(
+                printout < at,
+                "the records print before `{cleanup}`, which cannot fail the run"
+            );
+        }
         let gate = remote_script("/d", "b", "h", &["gate", "fast"], &Records::None);
         assert!(!gate.contains("--record-file") && !gate.contains("records"));
         assert!(script.contains("mktemp -d \"$base/target/remote-sync.XXXXXX\""));
@@ -1033,34 +1056,82 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn only_the_record_file_reaches_the_record_and_never_a_line_a_check_printed() {
-        let run = tempfile::tempdir().unwrap();
+    fn a_check_that_writes_record_lines_beside_its_tree_records_nothing() {
+        let base = tempfile::tempdir().unwrap();
+        let tree = base.path().join("target/remote-sync.x/tree");
+        fs::create_dir_all(&tree).unwrap();
         let line = |name: &str| crate::release::printed_line(name, "00ff", "12 | rustc 1");
-        fs::write(run.path().join("records"), format!("{}\n", line("asked"))).unwrap();
-        let script = format!(
-            "echo '{forged}'\necho 'n0nce {forged}'\n{printout}",
-            forged = line("forged"),
-            printout = records_printout("n0nce"),
+        let plan = crate::release::plan_line(&["asked".to_owned()]);
+        let honest = format!(
+            "echo '{plan}' >> \"$records\"; echo '{}' >> \"$records\"",
+            line("asked")
         );
-        let output = Command::new("/bin/sh")
-            .arg("-c")
-            .arg(script)
-            .env("run", run.path())
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        let printed = String::from_utf8(output.stdout).unwrap();
-        let checked =
-            crate::release::records_to_apply(&printed, "n0nce", true, Some("asked")).unwrap();
-        assert_eq!(checked.len(), 1);
+        let run = |check: &str| -> (bool, String) {
+            let script = format!(
+                "set -e\nbase=\"$1\"\nrun=\"$base/target/remote-sync.x\"\n{RECORDS_SETUP}                 (cd \"$run/tree\" && {check}; {honest})\n{printout}",
+                printout = records_printout("n0nce"),
+            );
+            let output = Command::new("/bin/sh")
+                .arg("-c")
+                .arg(script)
+                .arg("sh")
+                .arg(base.path())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let printed = String::from_utf8(output.stdout).unwrap();
+            let names = crate::release::records_to_apply(
+                &printed,
+                "n0nce",
+                true,
+                crate::release::Expect::Planned,
+            )
+            .map(|checked| {
+                checked
+                    .into_iter()
+                    .map(|(name, _, _)| name)
+                    .collect::<Vec<_>>()
+            });
+            (names.is_ok_and(|names| names == ["asked"]), printed)
+        };
+        let forged = line("b");
+        for check in [
+            format!("echo '{forged}'"),
+            format!("echo '{forged}' >> ../records"),
+            format!("echo '{forged}' >> ../../records"),
+            format!("echo '{forged}' >> ../../remote-records"),
+        ] {
+            let (asked_only, printed) = run(&check);
+            assert!(
+                asked_only,
+                "`{check}` recorded more than its section: {printed}"
+            );
+        }
+        for check in [
+            format!("for file in ../../remote-records.*; do echo '{forged}' >> \"$file\"; done"),
+            format!(
+                "for file in ../../remote-records.*; do echo '{}' >> \"$file\"; done",
+                line("asked")
+            ),
+        ] {
+            let (asked_only, printed) = run(&check);
+            assert!(
+                !asked_only,
+                "`{check}` wrote into the record file and must refuse it: {printed}"
+            );
+        }
+        let left: Vec<_> = fs::read_dir(base.path().join("target"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().starts_with("remote-records."))
+            .collect();
         assert!(
-            !run.path().join("records").exists(),
-            "the printout removes the file"
-        );
-        assert!(
-            crate::release::records_to_apply(&printed, "other-nonce", true, None)
-                .unwrap()
-                .is_empty()
+            left.is_empty(),
+            "the printout removes the record file: {left:?}"
         );
     }
 

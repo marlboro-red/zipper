@@ -17,6 +17,7 @@ const RECORD_HEADER: &str = "\
 # plus the section's own lines in verification/coverage.txt, and the tools its full checks passed on.
 ";
 const PRINTED: &str = "release record: ";
+const PLANNED: &str = "release plan:";
 const TOOLS_AFTER: &str = " | ";
 pub(crate) const DEFAULT_JOBS: usize = 3;
 
@@ -611,6 +612,8 @@ pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> 
             "xtask: release check {name}: no full check; the gate's verify step keeps it in step with its skill"
         );
     }
+    let running: Vec<String> = plan.run.iter().map(|job| job.section.clone()).collect();
+    emit_record(&plan_line(&running), options.record_file.as_deref())?;
     for name in &plan.skipped {
         println!(
             "xtask: release check {name}: skipped, since its full checks passed on this code with these tools"
@@ -688,24 +691,66 @@ fn parse_printed(printed: &str, nonce: &str) -> Result<Vec<Checked>> {
     Ok(checked)
 }
 
+pub(crate) fn plan_line(names: &[String]) -> String {
+    let mut line = PLANNED.to_owned();
+    for name in names {
+        line.push(' ');
+        line.push_str(name);
+    }
+    line
+}
+
+pub(crate) enum Expect<'a> {
+    Planned,
+    Only(&'a str),
+}
+
+fn planned_names(printed: &str, nonce: &str) -> Result<Vec<String>> {
+    let first = printed
+        .lines()
+        .find_map(|line| line.strip_prefix(nonce)?.strip_prefix(' '))
+        .context("the second machine wrote no record lines; nothing was recorded")?;
+    let names = first.strip_prefix(PLANNED).with_context(|| {
+        format!(
+            "the second machine's first record line is not its plan: {first}; nothing was recorded"
+        )
+    })?;
+    let plans = printed
+        .lines()
+        .filter(|line| line.starts_with(&format!("{nonce} {PLANNED}")))
+        .count();
+    ensure!(
+        plans == 1,
+        "the second machine wrote {plans} plans; nothing was recorded"
+    );
+    Ok(names.split_whitespace().map(str::to_owned).collect())
+}
+
 pub(crate) fn records_to_apply(
     printed: &str,
     nonce: &str,
     passed: bool,
-    only: Option<&str>,
+    expect: Expect,
 ) -> Result<Vec<Checked>> {
     if !passed {
         return Ok(Vec::new());
     }
     let mut checked = parse_printed(printed, nonce)?;
-    if let Some(only) = only {
-        checked.retain(|(name, _, _)| name == only);
-        ensure!(
-            checked.len() == 1,
-            "{only}: the second machine wrote {} record(s) for it, not one; nothing was recorded",
-            checked.len()
-        );
-    }
+    let expected = match expect {
+        Expect::Only(only) => {
+            checked.retain(|(name, _, _)| name == only);
+            vec![only.to_owned()]
+        }
+        Expect::Planned => planned_names(printed, nonce)?,
+    };
+    let mut names: Vec<&str> = checked.iter().map(|(name, _, _)| name.as_str()).collect();
+    names.sort_unstable();
+    let mut wanted: Vec<&str> = expected.iter().map(String::as_str).collect();
+    wanted.sort_unstable();
+    ensure!(
+        names == wanted,
+        "the second machine recorded {names:?}, not exactly once each of {wanted:?}; nothing was recorded"
+    );
     Ok(checked)
 }
 
@@ -945,43 +990,99 @@ mod tests {
     }
 
     #[test]
-    fn only_record_lines_with_the_runs_nonce_count_and_only_for_the_section_asked() {
+    fn only_the_planned_sections_record_each_once_from_lines_with_the_runs_nonce() {
         let line =
             |name: &str| printed_line(name, "00ff", "1234 | rustc 1.99.1 (abc); cargo-kani 0.66.0");
-        let printed = format!(
-            "{child}\n[lzma] n0nce {child}\nother {forged}\nn0nce {lzma}\nn0nce {forged}\n",
-            child = line("forged-by-a-child"),
-            forged = line("zip-crypto"),
-            lzma = line("lzma"),
-        );
+        let plan = |names: &[&str]| {
+            plan_line(
+                &names
+                    .iter()
+                    .map(|name| (*name).to_owned())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let run = |lines: &[String]| -> String {
+            lines.iter().map(|line| format!("n0nce {line}\n")).collect()
+        };
         let names = |checked: Vec<Checked>| -> Vec<String> {
             checked.into_iter().map(|(name, _, _)| name).collect()
         };
+        let child = format!(
+            "{}\n[lzma] n0nce {}\nother {}\n",
+            line("b"),
+            line("b"),
+            line("b")
+        );
+        let passed = format!(
+            "{child}{}",
+            run(&[plan(&["lzma", "zip"]), line("lzma"), line("zip")])
+        );
         assert_eq!(
-            names(records_to_apply(&printed, "n0nce", true, None).unwrap()),
-            ["lzma", "zip-crypto"]
+            names(records_to_apply(&passed, "n0nce", true, Expect::Planned).unwrap()),
+            ["lzma", "zip"]
         );
-        let lzma = records_to_apply(&printed, "n0nce", true, Some("lzma")).unwrap();
-        assert_eq!(
-            lzma,
-            [(
-                "lzma".to_owned(),
-                "00ff".to_owned(),
-                "1234 | rustc 1.99.1 (abc); cargo-kani 0.66.0".to_owned()
-            )]
-        );
+        for (forged, why) in [
+            (
+                run(&[plan(&["lzma"]), line("lzma"), line("b")]),
+                "an unplanned section",
+            ),
+            (
+                run(&[plan(&["lzma"]), line("lzma"), line("lzma")]),
+                "a section twice",
+            ),
+            (
+                run(&[plan(&["lzma", "zip"]), line("lzma")]),
+                "a planned section missing",
+            ),
+            (
+                run(&[line("lzma"), plan(&["lzma"])]),
+                "a line before the plan",
+            ),
+            (
+                run(&[
+                    plan(&["lzma"]),
+                    plan(&["lzma", "b"]),
+                    line("lzma"),
+                    line("b"),
+                ]),
+                "a second plan",
+            ),
+            (run(&[line("lzma")]), "no plan"),
+        ] {
+            assert!(
+                records_to_apply(&forged, "n0nce", true, Expect::Planned).is_err(),
+                "{why} must refuse the whole record"
+            );
+        }
         assert!(
-            records_to_apply(&printed, "n0nce", true, Some("forged-by-a-child")).is_err(),
-            "a line a child printed without the nonce records nothing"
-        );
-        assert!(
-            records_to_apply(&printed, "n0nce", false, None)
+            records_to_apply(&passed, "n0nce", false, Expect::Planned)
                 .unwrap()
                 .is_empty(),
             "a failed run records nothing"
         );
+        let synced = format!("{child}{}", run(&[line("lzma"), line("zip")]));
+        assert_eq!(
+            names(records_to_apply(&synced, "n0nce", true, Expect::Only("lzma")).unwrap()),
+            ["lzma"]
+        );
+        assert!(records_to_apply(&synced, "n0nce", true, Expect::Only("b")).is_err());
         assert!(
-            records_to_apply("n0nce release record: checked a b c\n", "n0nce", true, None).is_err()
+            records_to_apply(
+                &run(&[line("lzma"), line("lzma")]),
+                "n0nce",
+                true,
+                Expect::Only("lzma")
+            )
+            .is_err()
+        );
+        assert!(
+            records_to_apply(
+                "n0nce release record: checked a b c\n",
+                "n0nce",
+                true,
+                Expect::Planned
+            )
+            .is_err()
         );
     }
 
