@@ -40,7 +40,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M25. A release build without C](roadmap/m25-a-release-build-without-c.md) | Done | M22 |
 | [M26. Cargo features for each format](roadmap/m26-cargo-features-for-each-format.md) | Done | M25 |
 | [M27. LZ4 and `compress` at the reference speed](roadmap/m27-lz4-and-compress-at-the-reference-speed.md) | Planned | M25 |
-| [M28. Clean failure everywhere](roadmap/m28-clean-failure-everywhere.md) | In progress | M8 |
+| [M28. Clean failure everywhere](roadmap/m28-clean-failure-everywhere.md) | Done | M8 |
 | [M29. Overwrite at the speed of a fresh extraction](roadmap/m29-overwrite-at-the-speed-of-a-fresh-extraction.md) | Done | M8 |
 | [M30. gzip end to end at libdeflate's speed](roadmap/m30-gzip-end-to-end-at-libdeflates-speed.md) | Done | M25 |
 | [M31. A release case for each decoder](roadmap/m31-a-release-case-for-each-decoder.md) | Planned | M25 |
@@ -63,6 +63,8 @@ M24 closed on 14 November 2026. Every idea of the research report on ZIP and 7z 
 
 M29 closed on 13 November 2026. `--overwrite` into a folder that holds every file of the 28,000-file archive takes 1.80 times as long as into an empty one, down from 5.19 times, as the [full-folder record](../benchmarks/overwrite/full-folder/README.md) shows. The removal of the old files on APFS keeps it above 1.5 times. `e2dc81e` synced the exhaustive overwrite and cancel checks on the final code, after the Windows changes to `src/staging.rs`.
 M17, M19, M26 and M32 closed on 14 November 2026. M17 reads ISO 9660, UDF and WIM in process and refuses the other images for licence reasons. The hosted Windows release candidate run on `0824bf1` passed the tests that write a WIM's named streams as NTFS streams. M19 closed when the parity matrix marked `Nsis` dropped, since its unshipped reader was a port of LGPL code. M26 closed when `954d0f7` ran the RAR tests in a build with only `rar` and made `cargo xtask format-tests` refuse a format feature with no tests. M32 closed on the same `Nsis` row and on `v0.1.0-alpha.3`, cut at `5d70a20` after the second audit.
+
+M28 closed on 14 November 2026. A failed or cancelled extraction leaves the destination as it was on Linux, macOS and Windows, in `--flat` mode too. On Windows, Ctrl-C and Ctrl-Break cancel and roll back as SIGINT does on Unix, and `tests/console_cancel.rs` sends each during a run on the Windows check. A cancel that meets a failing rename returns `Cancelled`. Closing the Windows console window still ends a run partway.
 
 ## Close a milestone
 
