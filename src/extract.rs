@@ -718,3 +718,35 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_cancel_during_a_failing_flat_rename_returns_cancelled_and_moves_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+        let set_mode = |path: &Path, mode| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+        };
+        for cancel_during_the_rename in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let (tree, into) = (root.path().join("tree"), root.path().join("into"));
+            std::fs::create_dir_all(tree.join("locked")).unwrap();
+            std::fs::create_dir(&into).unwrap();
+            std::fs::write(tree.join("locked/file"), b"written").unwrap();
+            set_mode(&tree.join("locked"), 0o555);
+            let cancel = std::sync::atomic::AtomicBool::new(cancel_during_the_rename);
+            let error = flatten(&tree, &into, &tree, Existing::Refuse, Some(&cancel)).unwrap_err();
+            set_mode(&tree.join("locked"), 0o755);
+            assert_eq!(
+                error.is::<crate::Cancelled>(),
+                cancel_during_the_rename,
+                "{error:#}"
+            );
+            assert_eq!(std::fs::read_dir(&into).unwrap().count(), 0);
+            assert_eq!(std::fs::read(tree.join("locked/file")).unwrap(), b"written");
+        }
+    }
+}

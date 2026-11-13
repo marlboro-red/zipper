@@ -957,6 +957,43 @@ mod tests {
         drop(held);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_cancel_during_a_failing_publish_rename_returns_cancelled_and_publishes_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+        let set_mode = |path: &Path, mode| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+        };
+        for cancel_during_the_rename in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let (staging, parent) = (root.path().join("staging"), root.path().join("parent"));
+            let destination = parent.join("out");
+            std::fs::create_dir(&staging).unwrap();
+            std::fs::create_dir(&parent).unwrap();
+            std::fs::write(staging.join("new.txt"), b"written").unwrap();
+            set_mode(&parent, 0o555);
+            let mut checks = 0;
+            let error = publish(&staging, &destination, &[], || {
+                checks += 1;
+                match checks {
+                    1 => Ok(()),
+                    _ if cancel_during_the_rename => Err(Cancelled.into()),
+                    _ => Ok(()),
+                }
+            })
+            .unwrap_err();
+            set_mode(&parent, 0o755);
+            assert_eq!(
+                error.is::<Cancelled>(),
+                cancel_during_the_rename,
+                "{error:#}"
+            );
+            assert_eq!(checks, 2);
+            assert!(!destination.exists());
+            assert_eq!(std::fs::read(staging.join("new.txt")).unwrap(), b"written");
+        }
+    }
+
     #[test]
     fn an_error_windows_does_not_clear_by_itself_is_returned_without_waiting() {
         let root = tempfile::tempdir().unwrap();

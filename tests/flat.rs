@@ -139,3 +139,102 @@ fn archives_with_links_are_refused() {
     assert!(!destination.exists());
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 }
+
+#[cfg(unix)]
+fn everything_under(root: &Path) -> Vec<(String, String)> {
+    walkdir::WalkDir::new(root)
+        .min_depth(1)
+        .sort_by_file_name()
+        .into_iter()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            let kind = match entry.file_type().is_dir() {
+                true => "dir".to_owned(),
+                false => fs::read_to_string(entry.path()).unwrap(),
+            };
+            let relative = entry.path().strip_prefix(root).unwrap();
+            (relative.to_string_lossy().into_owned(), kind)
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn unlock(root: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    for entry in walkdir::WalkDir::new(root) {
+        let entry = entry.unwrap();
+        if entry.file_type().is_dir() {
+            fs::set_permissions(entry.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+}
+
+#[cfg(unix)]
+const NESTED_FOLDERS: [&str; 5] = ["top/", "top/mid/", "top/mid/deep/", "top/empty/", "side/"];
+
+#[cfg(unix)]
+const NESTED_FILES: [(&str, &str); 4] = [
+    ("top/mid/deep/w.txt", "w"),
+    ("top/mid/x.txt", "x"),
+    ("top/y.txt", "y"),
+    ("side/z.txt", "z"),
+];
+
+#[cfg(unix)]
+fn zip_with_read_only(path: &Path, read_only: &str) {
+    use zip::write::SimpleFileOptions;
+    let mut writer = zip::ZipWriter::new(fs::File::create(path).unwrap());
+    for folder in NESTED_FOLDERS {
+        let mode = if folder == read_only { 0o555 } else { 0o755 };
+        writer
+            .add_directory(folder, SimpleFileOptions::default().unix_permissions(mode))
+            .unwrap();
+    }
+    for (name, data) in NESTED_FILES {
+        writer
+            .start_file(name, SimpleFileOptions::default().unix_permissions(0o644))
+            .unwrap();
+        writer.write_all(data.as_bytes()).unwrap();
+    }
+    writer.finish().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_read_only_folder_in_any_place_leaves_the_output_and_its_parent_as_they_were() {
+    let archives = tempfile::tempdir().unwrap();
+    let mut failures = 0;
+    for read_only in NESTED_FOLDERS {
+        let archive = archives
+            .path()
+            .join(format!("{}.zip", read_only.replace('/', "_")));
+        zip_with_read_only(&archive, read_only);
+        for existing in [Existing::Refuse, Existing::Overwrite] {
+            let root = tempfile::tempdir().unwrap();
+            let destination = root.path().join("out");
+            let mut expected = vec![("out".to_owned(), "dir".to_owned())];
+            if existing == Existing::Overwrite {
+                fs::create_dir(&destination).unwrap();
+                fs::write(destination.join("kept.txt"), "kept").unwrap();
+                expected.push(("out/kept.txt".to_owned(), "kept".to_owned()));
+            }
+            let before = everything_under(root.path());
+            let result = extract_archive(&archive, &destination, flat(existing));
+            let after = everything_under(root.path());
+            unlock(root.path());
+            let case = format!("{read_only} read-only, {existing:?}: {result:?}");
+            if result.is_err() {
+                failures += 1;
+                assert_eq!(after, before, "{case}");
+                continue;
+            }
+            expected.extend(NESTED_FILES.iter().map(|(path, data)| {
+                let name = path.rsplit('/').next().unwrap();
+                (format!("out/{name}"), (*data).to_owned())
+            }));
+            expected.sort();
+            assert_eq!(after, expected, "{case}");
+        }
+    }
+    assert!(failures > 0, "no read-only folder made the extraction fail");
+}
