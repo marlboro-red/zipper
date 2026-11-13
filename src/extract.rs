@@ -405,6 +405,12 @@ fn flatten(
     Ok(())
 }
 
+fn removed_with_its_folders(tree: tempfile::TempDir) -> std::io::Result<()> {
+    #[cfg(unix)]
+    crate::unix_modes::unlock_tree_for_cleanup(tree.path());
+    tree.close()
+}
+
 /// Extract any archive Zipper reads into `destination`, choosing the reader
 /// as `zipper extract` does. When it returns, after success, failure or a
 /// cancel, no handle to the destination or the archive stays open and every
@@ -416,7 +422,7 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
             crate::staging::stage(archive, destination, options.existing, options.metadata)?;
         let tree = tempfile::tempdir_in(staging.path())?;
         let nested = tree.path().join("archive");
-        extract_archive(
+        let flattened = extract_archive(
             archive,
             &nested,
             ExtractOptions {
@@ -424,15 +430,19 @@ pub fn extract_archive(archive: &Path, destination: &Path, options: ExtractOptio
                 existing: Existing::Refuse,
                 ..options
             },
-        )?;
-        flatten(
-            &nested,
-            staging.path(),
-            tree.path(),
-            options.existing,
-            options.control.cancel,
-        )?;
-        drop(tree);
+        )
+        .and_then(|()| {
+            flatten(
+                &nested,
+                staging.path(),
+                tree.path(),
+                options.existing,
+                options.control.cancel,
+            )
+        });
+        let removed = removed_with_its_folders(tree);
+        flattened?;
+        removed?;
         return staging.publish(&[], options.control.cancel);
     }
     ensure!(
