@@ -1,0 +1,1290 @@
+run dependencies.zip auto 1
+phase start 0.000
+phase open-and-plan 9.777
+phase stage-and-folders 54.111
+phase files-and-links 166.944
+phase folder-times 14.416
+phase folder-modes 0.034
+phase rename 0.131
+phase after-publish 0.154
+run dependencies.zip auto 2
+phase start 0.000
+phase open-and-plan 2.827
+phase stage-and-folders 27.845
+phase files-and-links 169.378
+phase folder-times 14.783
+phase folder-modes 0.034
+phase rename 0.130
+phase after-publish 0.115
+run dependencies.zip auto 3
+phase start 0.000
+phase open-and-plan 2.818
+phase stage-and-folders 27.877
+phase files-and-links 162.055
+phase folder-times 15.245
+phase folder-modes 0.033
+phase rename 0.130
+phase after-publish 0.114
+run dependencies.zip auto 4
+phase start 0.000
+phase open-and-plan 2.816
+phase stage-and-folders 27.709
+phase files-and-links 161.811
+phase folder-times 13.760
+phase folder-modes 0.030
+phase rename 0.159
+phase after-publish 0.113
+run dependencies.zip auto 5
+phase start 0.000
+phase open-and-plan 2.854
+phase stage-and-folders 27.762
+phase files-and-links 154.757
+phase folder-times 13.164
+phase folder-modes 0.035
+phase rename 0.130
+phase after-publish 0.114
+run dependencies.zip 1 1
+phase start 0.000
+phase open-and-plan 2.854
+phase stage-and-folders 27.638
+phase files-and-links 285.133
+phase folder-times 17.391
+phase folder-modes 0.028
+phase rename 0.104
+phase after-publish 0.097
+run dependencies.zip 1 2
+phase start 0.000
+phase open-and-plan 2.828
+phase stage-and-folders 27.422
+phase files-and-links 315.390
+phase folder-times 17.385
+phase folder-modes 0.028
+phase rename 0.111
+phase after-publish 0.098
+run dependencies.zip 1 3
+phase start 0.000
+phase open-and-plan 2.879
+phase stage-and-folders 27.469
+phase files-and-links 294.294
+phase folder-times 17.396
+phase folder-modes 0.030
+phase rename 0.109
+phase after-publish 0.101
+run dependencies.zip 1 4
+phase start 0.000
+phase open-and-plan 2.797
+phase stage-and-folders 27.948
+phase files-and-links 300.519
+phase folder-times 17.457
+phase folder-modes 0.028
+phase rename 0.107
+phase after-publish 0.102
+run dependencies.zip 1 5
+phase start 0.000
+phase open-and-plan 2.901
+phase stage-and-folders 27.403
+phase files-and-links 289.490
+phase folder-times 17.445
+phase folder-modes 0.026
+phase rename 0.100
+phase after-publish 0.098
+run dependencies.tar auto 1
+phase start 0.000
+phase open-and-plan 0.631
+phase files-and-links 176.788
+phase folder-times 13.390
+phase folder-modes 0.032
+phase rename 0.145
+phase after-publish 2.962
+run dependencies.tar auto 2
+phase start 0.000
+phase open-and-plan 0.233
+phase files-and-links 154.951
+phase folder-times 15.800
+phase folder-modes 0.046
+phase rename 0.142
+phase after-publish 0.265
+run dependencies.tar auto 3
+phase start 0.000
+phase open-and-plan 0.248
+phase files-and-links 167.027
+phase folder-times 14.055
+phase folder-modes 0.037
+phase rename 0.151
+phase after-publish 0.253
+run dependencies.tar auto 4
+phase start 0.000
+phase open-and-plan 0.253
+phase files-and-links 164.422
+phase folder-times 13.512
+phase folder-modes 0.038
+phase rename 0.163
+phase after-publish 0.234
+run dependencies.tar auto 5
+phase start 0.000
+phase open-and-plan 0.230
+phase files-and-links 164.925
+phase folder-times 13.594
+phase folder-modes 0.029
+phase rename 0.130
+phase after-publish 0.242
+run dependencies.tar 1 1
+phase start 0.000
+phase open-and-plan 0.277
+phase files-and-links 249.851
+phase folder-times 17.017
+phase folder-modes 0.027
+phase rename 0.101
+phase after-publish 0.207
+run dependencies.tar 1 2
+phase start 0.000
+phase open-and-plan 0.273
+phase files-and-links 259.929
+phase folder-times 19.975
+phase folder-modes 0.037
+phase rename 0.125
+phase after-publish 0.259
+run dependencies.tar 1 3
+phase start 0.000
+phase open-and-plan 0.271
+phase files-and-links 266.698
+phase folder-times 17.866
+phase folder-modes 0.029
+phase rename 0.102
+phase after-publish 0.208
+run dependencies.tar 1 4
+phase start 0.000
+phase open-and-plan 0.278
+phase files-and-links 269.545
+phase folder-times 17.254
+phase folder-modes 0.030
+phase rename 0.127
+phase after-publish 0.259
+run dependencies.tar 1 5
+phase start 0.000
+phase open-and-plan 0.285
+phase files-and-links 263.430
+phase folder-times 18.425
+phase folder-modes 0.023
+phase rename 0.104
+phase after-publish 0.204
+run dependencies.tar.gz auto 1
+phase start 0.000
+phase open-and-plan 1.400
+phase files-and-links 178.411
+phase folder-times 13.667
+phase folder-modes 0.039
+phase rename 0.142
+phase after-publish 0.245
+run dependencies.tar.gz auto 2
+phase start 0.000
+phase open-and-plan 0.308
+phase files-and-links 173.165
+phase folder-times 13.824
+phase folder-modes 0.029
+phase rename 0.156
+phase after-publish 0.245
+run dependencies.tar.gz auto 3
+phase start 0.000
+phase open-and-plan 0.298
+phase files-and-links 174.753
+phase folder-times 13.404
+phase folder-modes 0.040
+phase rename 0.134
+phase after-publish 0.248
+run dependencies.tar.gz auto 4
+phase start 0.000
+phase open-and-plan 0.297
+phase files-and-links 171.396
+phase folder-times 13.541
+phase folder-modes 0.040
+phase rename 0.135
+phase after-publish 0.248
+run dependencies.tar.gz auto 5
+phase start 0.000
+phase open-and-plan 0.302
+phase files-and-links 174.834
+phase folder-times 13.451
+phase folder-modes 0.033
+phase rename 0.160
+phase after-publish 0.233
+run dependencies.tar.gz 1 1
+phase start 0.000
+phase open-and-plan 0.354
+phase files-and-links 256.533
+phase folder-times 20.458
+phase folder-modes 0.028
+phase rename 0.108
+phase after-publish 0.222
+run dependencies.tar.gz 1 2
+phase start 0.000
+phase open-and-plan 0.348
+phase files-and-links 252.990
+phase folder-times 19.789
+phase folder-modes 0.038
+phase rename 0.125
+phase after-publish 0.253
+run dependencies.tar.gz 1 3
+phase start 0.000
+phase open-and-plan 0.344
+phase files-and-links 255.270
+phase folder-times 19.962
+phase folder-modes 0.036
+phase rename 0.128
+phase after-publish 0.257
+run dependencies.tar.gz 1 4
+phase start 0.000
+phase open-and-plan 0.357
+phase files-and-links 255.237
+phase folder-times 20.723
+phase folder-modes 0.036
+phase rename 0.124
+phase after-publish 0.259
+run dependencies.tar.gz 1 5
+phase start 0.000
+phase open-and-plan 0.365
+phase files-and-links 253.696
+phase folder-times 20.619
+phase folder-modes 0.034
+phase rename 0.126
+phase after-publish 0.236
+run dependencies.7z auto 1
+phase start 0.000
+phase open-and-plan 5.583
+phase stage-and-folders 32.547
+phase files-and-links 249.504
+phase folder-times 13.631
+phase folder-modes 0.034
+phase rename 0.148
+phase after-publish 0.132
+run dependencies.7z auto 2
+phase start 0.000
+phase open-and-plan 4.915
+phase stage-and-folders 26.288
+phase files-and-links 237.793
+phase folder-times 13.525
+phase folder-modes 0.036
+phase rename 0.126
+phase after-publish 0.138
+run dependencies.7z auto 3
+phase start 0.000
+phase open-and-plan 4.877
+phase stage-and-folders 26.467
+phase files-and-links 247.668
+phase folder-times 13.884
+phase folder-modes 0.041
+phase rename 0.151
+phase after-publish 0.137
+run dependencies.7z auto 4
+phase start 0.000
+phase open-and-plan 4.922
+phase stage-and-folders 26.240
+phase files-and-links 262.810
+phase folder-times 14.081
+phase folder-modes 0.031
+phase rename 0.138
+phase after-publish 0.139
+run dependencies.7z auto 5
+phase start 0.000
+phase open-and-plan 4.852
+phase stage-and-folders 26.397
+phase files-and-links 236.029
+phase folder-times 13.974
+phase folder-modes 0.035
+phase rename 0.126
+phase after-publish 0.133
+run dependencies.7z 1 1
+phase start 0.000
+phase open-and-plan 4.906
+phase stage-and-folders 26.214
+phase files-and-links 405.898
+phase folder-times 17.396
+phase folder-modes 0.028
+phase rename 0.100
+phase after-publish 0.132
+run dependencies.7z 1 2
+phase start 0.000
+phase open-and-plan 4.957
+phase stage-and-folders 26.618
+phase files-and-links 431.311
+phase folder-times 17.379
+phase folder-modes 0.031
+phase rename 0.118
+phase after-publish 0.152
+run dependencies.7z 1 3
+phase start 0.000
+phase open-and-plan 4.894
+phase stage-and-folders 26.065
+phase files-and-links 437.500
+phase folder-times 17.335
+phase folder-modes 0.027
+phase rename 0.104
+phase after-publish 0.143
+run dependencies.7z 1 4
+phase start 0.000
+phase open-and-plan 4.911
+phase stage-and-folders 26.092
+phase files-and-links 401.678
+phase folder-times 17.639
+phase folder-modes 0.026
+phase rename 0.096
+phase after-publish 0.143
+run dependencies.7z 1 5
+phase start 0.000
+phase open-and-plan 4.892
+phase stage-and-folders 25.964
+phase files-and-links 426.251
+phase folder-times 17.444
+phase folder-modes 0.029
+phase rename 0.101
+phase after-publish 0.131
+run dependencies.nonsolid.7z auto 1
+phase start 0.000
+phase open-and-plan 7.093
+phase stage-and-folders 26.127
+phase files-and-links 247.672
+phase folder-times 13.566
+phase folder-modes 0.036
+phase rename 0.134
+phase after-publish 0.260
+run dependencies.nonsolid.7z auto 2
+phase start 0.000
+phase open-and-plan 6.429
+phase stage-and-folders 26.677
+phase files-and-links 216.681
+phase folder-times 14.087
+phase folder-modes 0.031
+phase rename 0.165
+phase after-publish 0.278
+run dependencies.nonsolid.7z auto 3
+phase start 0.000
+phase open-and-plan 6.448
+phase stage-and-folders 27.209
+phase files-and-links 217.418
+phase folder-times 13.533
+phase folder-modes 0.032
+phase rename 0.177
+phase after-publish 0.260
+run dependencies.nonsolid.7z auto 4
+phase start 0.000
+phase open-and-plan 6.434
+phase stage-and-folders 26.780
+phase files-and-links 212.563
+phase folder-times 13.588
+phase folder-modes 0.031
+phase rename 0.173
+phase after-publish 0.278
+run dependencies.nonsolid.7z auto 5
+phase start 0.000
+phase open-and-plan 6.409
+phase stage-and-folders 27.004
+phase files-and-links 208.359
+phase folder-times 13.451
+phase folder-modes 0.035
+phase rename 0.172
+phase after-publish 0.270
+run dependencies.nonsolid.7z 1 1
+phase start 0.000
+phase open-and-plan 6.451
+phase stage-and-folders 26.920
+phase files-and-links 677.115
+phase folder-times 17.250
+phase folder-modes 0.027
+phase rename 0.110
+phase after-publish 0.263
+run dependencies.nonsolid.7z 1 2
+phase start 0.000
+phase open-and-plan 6.436
+phase stage-and-folders 26.292
+phase files-and-links 700.629
+phase folder-times 17.933
+phase folder-modes 0.030
+phase rename 0.115
+phase after-publish 0.286
+run dependencies.nonsolid.7z 1 3
+phase start 0.000
+phase open-and-plan 6.503
+phase stage-and-folders 26.458
+phase files-and-links 677.691
+phase folder-times 17.251
+phase folder-modes 0.026
+phase rename 0.103
+phase after-publish 0.265
+run dependencies.nonsolid.7z 1 4
+phase start 0.000
+phase open-and-plan 6.451
+phase stage-and-folders 26.153
+phase files-and-links 704.659
+phase folder-times 17.095
+phase folder-modes 0.027
+phase rename 0.102
+phase after-publish 0.260
+run dependencies.nonsolid.7z 1 5
+phase start 0.000
+phase open-and-plan 6.461
+phase stage-and-folders 26.309
+phase files-and-links 681.138
+phase folder-times 17.299
+phase folder-modes 0.027
+phase rename 0.104
+phase after-publish 0.261
+run flat-tiny.zip auto 1
+phase start 0.000
+phase open-and-plan 4.251
+phase stage-and-folders 2.173
+phase files-and-links 285.258
+phase folder-times 0.065
+phase folder-modes 0.020
+phase rename 0.145
+phase after-publish 0.123
+run flat-tiny.zip auto 2
+phase start 0.000
+phase open-and-plan 3.313
+phase stage-and-folders 2.095
+phase files-and-links 283.542
+phase folder-times 0.062
+phase folder-modes 0.020
+phase rename 0.121
+phase after-publish 0.125
+run flat-tiny.zip auto 3
+phase start 0.000
+phase open-and-plan 3.257
+phase stage-and-folders 2.169
+phase files-and-links 288.306
+phase folder-times 0.062
+phase folder-modes 0.020
+phase rename 0.131
+phase after-publish 0.128
+run flat-tiny.zip auto 4
+phase start 0.000
+phase open-and-plan 3.305
+phase stage-and-folders 2.109
+phase files-and-links 285.714
+phase folder-times 0.068
+phase folder-modes 0.023
+phase rename 0.150
+phase after-publish 0.127
+run flat-tiny.zip auto 5
+phase start 0.000
+phase open-and-plan 3.215
+phase stage-and-folders 2.091
+phase files-and-links 281.172
+phase folder-times 0.064
+phase folder-modes 0.018
+phase rename 0.136
+phase after-publish 0.133
+run flat-tiny.zip 1 1
+phase start 0.000
+phase open-and-plan 3.368
+phase stage-and-folders 2.101
+phase files-and-links 468.658
+phase folder-times 0.063
+phase folder-modes 0.018
+phase rename 0.117
+phase after-publish 0.135
+run flat-tiny.zip 1 2
+phase start 0.000
+phase open-and-plan 3.308
+phase stage-and-folders 2.076
+phase files-and-links 461.496
+phase folder-times 0.052
+phase folder-modes 0.014
+phase rename 0.093
+phase after-publish 0.123
+run flat-tiny.zip 1 3
+phase start 0.000
+phase open-and-plan 3.187
+phase stage-and-folders 2.112
+phase files-and-links 460.716
+phase folder-times 0.061
+phase folder-modes 0.020
+phase rename 0.103
+phase after-publish 0.126
+run flat-tiny.zip 1 4
+phase start 0.000
+phase open-and-plan 3.292
+phase stage-and-folders 2.147
+phase files-and-links 460.146
+phase folder-times 0.056
+phase folder-modes 0.018
+phase rename 0.098
+phase after-publish 0.128
+run flat-tiny.zip 1 5
+phase start 0.000
+phase open-and-plan 3.288
+phase stage-and-folders 2.098
+phase files-and-links 461.535
+phase folder-times 0.081
+phase folder-modes 0.019
+phase rename 0.138
+phase after-publish 0.143
+run flat-tiny.tar auto 1
+phase start 0.000
+phase open-and-plan 0.465
+phase files-and-links 282.556
+phase folder-times 0.183
+phase folder-modes 0.018
+phase rename 0.136
+phase after-publish 0.235
+run flat-tiny.tar auto 2
+phase start 0.000
+phase open-and-plan 0.249
+phase files-and-links 278.875
+phase folder-times 0.206
+phase folder-modes 0.035
+phase rename 0.156
+phase after-publish 0.247
+run flat-tiny.tar auto 3
+phase start 0.000
+phase open-and-plan 0.231
+phase files-and-links 280.043
+phase folder-times 0.194
+phase folder-modes 0.044
+phase rename 0.187
+phase after-publish 0.254
+run flat-tiny.tar auto 4
+phase start 0.000
+phase open-and-plan 0.232
+phase files-and-links 280.425
+phase folder-times 0.184
+phase folder-modes 0.019
+phase rename 0.119
+phase after-publish 0.242
+run flat-tiny.tar auto 5
+phase start 0.000
+phase open-and-plan 0.230
+phase files-and-links 281.532
+phase folder-times 0.165
+phase folder-modes 0.019
+phase rename 0.140
+phase after-publish 0.210
+run flat-tiny.tar 1 1
+phase start 0.000
+phase open-and-plan 0.276
+phase files-and-links 484.230
+phase folder-times 0.058
+phase folder-modes 0.020
+phase rename 0.101
+phase after-publish 0.190
+run flat-tiny.tar 1 2
+phase start 0.000
+phase open-and-plan 0.282
+phase files-and-links 471.115
+phase folder-times 0.067
+phase folder-modes 0.022
+phase rename 0.104
+phase after-publish 0.193
+run flat-tiny.tar 1 3
+phase start 0.000
+phase open-and-plan 0.280
+phase files-and-links 463.382
+phase folder-times 0.064
+phase folder-modes 0.019
+phase rename 0.102
+phase after-publish 0.195
+run flat-tiny.tar 1 4
+phase start 0.000
+phase open-and-plan 0.275
+phase files-and-links 489.227
+phase folder-times 0.066
+phase folder-modes 0.020
+phase rename 0.098
+phase after-publish 0.198
+run flat-tiny.tar 1 5
+phase start 0.000
+phase open-and-plan 0.278
+phase files-and-links 471.040
+phase folder-times 0.072
+phase folder-modes 0.023
+phase rename 0.119
+phase after-publish 0.209
+run flat-tiny.tar.gz auto 1
+phase start 0.000
+phase open-and-plan 0.515
+phase files-and-links 281.429
+phase folder-times 0.173
+phase folder-modes 0.019
+phase rename 0.137
+phase after-publish 0.252
+run flat-tiny.tar.gz auto 2
+phase start 0.000
+phase open-and-plan 0.291
+phase files-and-links 281.769
+phase folder-times 0.177
+phase folder-modes 0.019
+phase rename 0.135
+phase after-publish 0.231
+run flat-tiny.tar.gz auto 3
+phase start 0.000
+phase open-and-plan 0.288
+phase files-and-links 283.352
+phase folder-times 0.174
+phase folder-modes 0.018
+phase rename 0.131
+phase after-publish 0.228
+run flat-tiny.tar.gz auto 4
+phase start 0.000
+phase open-and-plan 0.286
+phase files-and-links 283.224
+phase folder-times 0.168
+phase folder-modes 0.018
+phase rename 0.144
+phase after-publish 0.227
+run flat-tiny.tar.gz auto 5
+phase start 0.000
+phase open-and-plan 0.283
+phase files-and-links 281.435
+phase folder-times 0.266
+phase folder-modes 0.028
+phase rename 0.138
+phase after-publish 0.242
+run flat-tiny.tar.gz 1 1
+phase start 0.000
+phase open-and-plan 0.362
+phase files-and-links 482.854
+phase folder-times 0.072
+phase folder-modes 0.020
+phase rename 0.105
+phase after-publish 0.197
+run flat-tiny.tar.gz 1 2
+phase start 0.000
+phase open-and-plan 0.341
+phase files-and-links 506.433
+phase folder-times 0.070
+phase folder-modes 0.025
+phase rename 0.128
+phase after-publish 0.226
+run flat-tiny.tar.gz 1 3
+phase start 0.000
+phase open-and-plan 0.351
+phase files-and-links 478.996
+phase folder-times 0.061
+phase folder-modes 0.020
+phase rename 0.099
+phase after-publish 0.191
+run flat-tiny.tar.gz 1 4
+phase start 0.000
+phase open-and-plan 0.348
+phase files-and-links 476.239
+phase folder-times 0.068
+phase folder-modes 0.020
+phase rename 0.101
+phase after-publish 0.190
+run flat-tiny.tar.gz 1 5
+phase start 0.000
+phase open-and-plan 0.346
+phase files-and-links 479.606
+phase folder-times 0.063
+phase folder-modes 0.020
+phase rename 0.104
+phase after-publish 0.189
+run flat-tiny.7z auto 1
+phase start 0.000
+phase open-and-plan 5.662
+phase stage-and-folders 1.914
+phase files-and-links 312.249
+phase folder-times 0.060
+phase folder-modes 0.018
+phase rename 0.116
+phase after-publish 0.176
+run flat-tiny.7z auto 2
+phase start 0.000
+phase open-and-plan 5.216
+phase stage-and-folders 1.893
+phase files-and-links 310.742
+phase folder-times 0.067
+phase folder-modes 0.021
+phase rename 0.121
+phase after-publish 0.171
+run flat-tiny.7z auto 3
+phase start 0.000
+phase open-and-plan 5.191
+phase stage-and-folders 1.921
+phase files-and-links 312.122
+phase folder-times 0.063
+phase folder-modes 0.019
+phase rename 0.117
+phase after-publish 0.187
+run flat-tiny.7z auto 4
+phase start 0.000
+phase open-and-plan 5.118
+phase stage-and-folders 1.930
+phase files-and-links 311.520
+phase folder-times 0.061
+phase folder-modes 0.018
+phase rename 0.107
+phase after-publish 0.173
+run flat-tiny.7z auto 5
+phase start 0.000
+phase open-and-plan 5.168
+phase stage-and-folders 1.919
+phase files-and-links 309.518
+phase folder-times 0.064
+phase folder-modes 0.018
+phase rename 0.116
+phase after-publish 0.172
+run flat-tiny.7z 1 1
+phase start 0.000
+phase open-and-plan 5.189
+phase stage-and-folders 1.899
+phase files-and-links 483.815
+phase folder-times 0.070
+phase folder-modes 0.024
+phase rename 0.121
+phase after-publish 0.208
+run flat-tiny.7z 1 2
+phase start 0.000
+phase open-and-plan 5.257
+phase stage-and-folders 1.908
+phase files-and-links 478.851
+phase folder-times 0.058
+phase folder-modes 0.021
+phase rename 0.103
+phase after-publish 0.204
+run flat-tiny.7z 1 3
+phase start 0.000
+phase open-and-plan 5.238
+phase stage-and-folders 1.912
+phase files-and-links 483.437
+phase folder-times 0.059
+phase folder-modes 0.019
+phase rename 0.105
+phase after-publish 0.198
+run flat-tiny.7z 1 4
+phase start 0.000
+phase open-and-plan 5.229
+phase stage-and-folders 1.901
+phase files-and-links 484.079
+phase folder-times 0.056
+phase folder-modes 0.018
+phase rename 0.099
+phase after-publish 0.193
+run flat-tiny.7z 1 5
+phase start 0.000
+phase open-and-plan 5.198
+phase stage-and-folders 1.893
+phase files-and-links 494.862
+phase folder-times 0.064
+phase folder-modes 0.018
+phase rename 0.110
+phase after-publish 0.197
+run flat-tiny.nonsolid.7z auto 1
+phase start 0.000
+phase open-and-plan 8.276
+phase stage-and-folders 1.903
+phase files-and-links 490.431
+phase folder-times 0.057
+phase folder-modes 0.024
+phase rename 0.127
+phase after-publish 0.470
+run flat-tiny.nonsolid.7z auto 2
+phase start 0.000
+phase open-and-plan 7.788
+phase stage-and-folders 1.902
+phase files-and-links 489.680
+phase folder-times 0.056
+phase folder-modes 0.018
+phase rename 0.111
+phase after-publish 0.420
+run flat-tiny.nonsolid.7z auto 3
+phase start 0.000
+phase open-and-plan 7.674
+phase stage-and-folders 1.888
+phase files-and-links 501.475
+phase folder-times 0.064
+phase folder-modes 0.020
+phase rename 0.111
+phase after-publish 0.455
+run flat-tiny.nonsolid.7z auto 4
+phase start 0.000
+phase open-and-plan 7.670
+phase stage-and-folders 2.044
+phase files-and-links 502.426
+phase folder-times 0.055
+phase folder-modes 0.018
+phase rename 0.109
+phase after-publish 0.425
+run flat-tiny.nonsolid.7z auto 5
+phase start 0.000
+phase open-and-plan 7.754
+phase stage-and-folders 1.928
+phase files-and-links 504.032
+phase folder-times 0.059
+phase folder-modes 0.019
+phase rename 0.098
+phase after-publish 0.433
+run flat-tiny.nonsolid.7z 1 1
+phase start 0.000
+phase open-and-plan 7.643
+phase stage-and-folders 1.907
+phase files-and-links 565.892
+phase folder-times 0.071
+phase folder-modes 0.025
+phase rename 0.119
+phase after-publish 0.468
+run flat-tiny.nonsolid.7z 1 2
+phase start 0.000
+phase open-and-plan 7.788
+phase stage-and-folders 1.926
+phase files-and-links 566.479
+phase folder-times 0.050
+phase folder-modes 0.018
+phase rename 0.097
+phase after-publish 0.410
+run flat-tiny.nonsolid.7z 1 3
+phase start 0.000
+phase open-and-plan 7.755
+phase stage-and-folders 1.928
+phase files-and-links 563.381
+phase folder-times 0.054
+phase folder-modes 0.018
+phase rename 0.098
+phase after-publish 0.410
+run flat-tiny.nonsolid.7z 1 4
+phase start 0.000
+phase open-and-plan 7.778
+phase stage-and-folders 1.890
+phase files-and-links 564.283
+phase folder-times 0.054
+phase folder-modes 0.021
+phase rename 0.104
+phase after-publish 0.463
+run flat-tiny.nonsolid.7z 1 5
+phase start 0.000
+phase open-and-plan 7.850
+phase stage-and-folders 1.899
+phase files-and-links 565.540
+phase folder-times 0.067
+phase folder-modes 0.022
+phase rename 0.115
+phase after-publish 0.418
+run silesia.zip auto 1
+phase start 0.000
+phase open-and-plan 1.141
+phase stage-and-folders 0.134
+phase files-and-links 97.896
+phase folder-times 0.096
+phase folder-modes 0.025
+phase rename 0.125
+phase after-publish 0.037
+run silesia.zip auto 2
+phase start 0.000
+phase open-and-plan 0.526
+phase stage-and-folders 0.143
+phase files-and-links 82.001
+phase folder-times 0.091
+phase folder-modes 0.020
+phase rename 0.125
+phase after-publish 0.044
+run silesia.zip auto 3
+phase start 0.000
+phase open-and-plan 0.556
+phase stage-and-folders 0.236
+phase files-and-links 81.192
+phase folder-times 0.092
+phase folder-modes 0.019
+phase rename 0.113
+phase after-publish 0.039
+run silesia.zip auto 4
+phase start 0.000
+phase open-and-plan 0.527
+phase stage-and-folders 0.154
+phase files-and-links 80.951
+phase folder-times 0.087
+phase folder-modes 0.020
+phase rename 0.119
+phase after-publish 0.045
+run silesia.zip auto 5
+phase start 0.000
+phase open-and-plan 0.602
+phase stage-and-folders 0.141
+phase files-and-links 76.969
+phase folder-times 0.089
+phase folder-modes 0.019
+phase rename 0.114
+phase after-publish 0.035
+run silesia.zip 1 1
+phase start 0.000
+phase open-and-plan 0.546
+phase stage-and-folders 0.124
+phase files-and-links 229.148
+phase folder-times 0.076
+phase folder-modes 0.022
+phase rename 0.102
+phase after-publish 0.031
+run silesia.zip 1 2
+phase start 0.000
+phase open-and-plan 0.548
+phase stage-and-folders 0.126
+phase files-and-links 227.213
+phase folder-times 0.062
+phase folder-modes 0.018
+phase rename 0.105
+phase after-publish 0.031
+run silesia.zip 1 3
+phase start 0.000
+phase open-and-plan 0.545
+phase stage-and-folders 0.116
+phase files-and-links 227.852
+phase folder-times 0.069
+phase folder-modes 0.020
+phase rename 0.109
+phase after-publish 0.032
+run silesia.zip 1 4
+phase start 0.000
+phase open-and-plan 0.569
+phase stage-and-folders 0.129
+phase files-and-links 229.381
+phase folder-times 0.072
+phase folder-modes 0.020
+phase rename 0.110
+phase after-publish 0.034
+run silesia.zip 1 5
+phase start 0.000
+phase open-and-plan 0.587
+phase stage-and-folders 0.143
+phase files-and-links 228.426
+phase folder-times 0.070
+phase folder-modes 0.021
+phase rename 0.117
+phase after-publish 0.036
+run silesia.tar auto 1
+phase start 0.000
+phase open-and-plan 0.627
+phase files-and-links 80.173
+phase folder-times 0.230
+phase folder-modes 0.020
+phase rename 0.109
+phase after-publish 0.028
+run silesia.tar auto 2
+phase start 0.000
+phase open-and-plan 0.212
+phase files-and-links 45.999
+phase folder-times 0.196
+phase folder-modes 0.019
+phase rename 0.113
+phase after-publish 0.032
+run silesia.tar auto 3
+phase start 0.000
+phase open-and-plan 0.239
+phase files-and-links 42.481
+phase folder-times 0.201
+phase folder-modes 0.019
+phase rename 0.114
+phase after-publish 0.032
+run silesia.tar auto 4
+phase start 0.000
+phase open-and-plan 0.272
+phase files-and-links 42.301
+phase folder-times 0.206
+phase folder-modes 0.019
+phase rename 0.114
+phase after-publish 0.034
+run silesia.tar auto 5
+phase start 0.000
+phase open-and-plan 0.223
+phase files-and-links 55.242
+phase folder-times 0.200
+phase folder-modes 0.022
+phase rename 0.114
+phase after-publish 0.030
+run silesia.tar 1 1
+phase start 0.000
+phase open-and-plan 0.309
+phase files-and-links 51.441
+phase folder-times 0.072
+phase folder-modes 0.020
+phase rename 0.111
+phase after-publish 0.030
+run silesia.tar 1 2
+phase start 0.000
+phase open-and-plan 0.283
+phase files-and-links 55.538
+phase folder-times 0.074
+phase folder-modes 0.025
+phase rename 0.118
+phase after-publish 0.034
+run silesia.tar 1 3
+phase start 0.000
+phase open-and-plan 0.302
+phase files-and-links 139.402
+phase folder-times 0.103
+phase folder-modes 0.037
+phase rename 0.166
+phase after-publish 0.060
+run silesia.tar 1 4
+phase start 0.000
+phase open-and-plan 0.299
+phase files-and-links 51.210
+phase folder-times 0.068
+phase folder-modes 0.021
+phase rename 0.112
+phase after-publish 0.030
+run silesia.tar 1 5
+phase start 0.000
+phase open-and-plan 0.254
+phase files-and-links 60.718
+phase folder-times 0.065
+phase folder-modes 0.018
+phase rename 0.106
+phase after-publish 0.028
+run silesia.tar.gz auto 1
+phase start 0.000
+phase open-and-plan 0.777
+phase files-and-links 195.726
+phase folder-times 0.218
+phase folder-modes 0.019
+phase rename 0.114
+phase after-publish 0.029
+run silesia.tar.gz auto 2
+phase start 0.000
+phase open-and-plan 0.317
+phase files-and-links 192.072
+phase folder-times 0.207
+phase folder-modes 0.022
+phase rename 0.114
+phase after-publish 0.026
+run silesia.tar.gz auto 3
+phase start 0.000
+phase open-and-plan 0.298
+phase files-and-links 192.635
+phase folder-times 0.198
+phase folder-modes 0.021
+phase rename 0.118
+phase after-publish 0.030
+run silesia.tar.gz auto 4
+phase start 0.000
+phase open-and-plan 0.304
+phase files-and-links 191.461
+phase folder-times 0.202
+phase folder-modes 0.021
+phase rename 0.116
+phase after-publish 0.030
+run silesia.tar.gz auto 5
+phase start 0.000
+phase open-and-plan 0.297
+phase files-and-links 191.241
+phase folder-times 0.206
+phase folder-modes 0.020
+phase rename 0.121
+phase after-publish 0.030
+run silesia.tar.gz 1 1
+phase start 0.000
+phase open-and-plan 0.337
+phase files-and-links 191.374
+phase folder-times 0.071
+phase folder-modes 0.021
+phase rename 0.114
+phase after-publish 0.030
+run silesia.tar.gz 1 2
+phase start 0.000
+phase open-and-plan 0.344
+phase files-and-links 191.356
+phase folder-times 0.075
+phase folder-modes 0.022
+phase rename 0.113
+phase after-publish 0.030
+run silesia.tar.gz 1 3
+phase start 0.000
+phase open-and-plan 0.334
+phase files-and-links 191.329
+phase folder-times 0.082
+phase folder-modes 0.024
+phase rename 0.105
+phase after-publish 0.026
+run silesia.tar.gz 1 4
+phase start 0.000
+phase open-and-plan 0.378
+phase files-and-links 893.219
+phase folder-times 0.072
+phase folder-modes 0.019
+phase rename 0.111
+phase after-publish 0.029
+run silesia.tar.gz 1 5
+phase start 0.000
+phase open-and-plan 0.354
+phase files-and-links 191.252
+phase folder-times 0.068
+phase folder-modes 0.024
+phase rename 0.113
+phase after-publish 0.028
+run silesia.7z auto 1
+phase start 0.000
+phase open-and-plan 3.354
+phase stage-and-folders 0.123
+phase files-and-links 1486.534
+phase folder-times 0.077
+phase folder-modes 0.021
+phase rename 0.132
+phase after-publish 0.029
+run silesia.7z auto 2
+phase start 0.000
+phase open-and-plan 0.405
+phase stage-and-folders 0.110
+phase files-and-links 939.504
+phase folder-times 0.068
+phase folder-modes 0.021
+phase rename 0.124
+phase after-publish 0.028
+run silesia.7z auto 3
+phase start 0.000
+phase open-and-plan 0.582
+phase stage-and-folders 0.165
+phase files-and-links 940.722
+phase folder-times 0.065
+phase folder-modes 0.020
+phase rename 0.113
+phase after-publish 0.030
+run silesia.7z auto 4
+phase start 0.000
+phase open-and-plan 0.407
+phase stage-and-folders 0.139
+phase files-and-links 938.507
+phase folder-times 0.074
+phase folder-modes 0.023
+phase rename 0.115
+phase after-publish 0.028
+run silesia.7z auto 5
+phase start 0.000
+phase open-and-plan 0.428
+phase stage-and-folders 0.139
+phase files-and-links 939.516
+phase folder-times 0.083
+phase folder-modes 0.021
+phase rename 0.126
+phase after-publish 0.027
+run silesia.7z 1 1
+phase start 0.000
+phase open-and-plan 0.463
+phase stage-and-folders 0.304
+phase files-and-links 1456.029
+phase folder-times 0.074
+phase folder-modes 0.014
+phase rename 0.114
+phase after-publish 0.028
+run silesia.7z 1 2
+phase start 0.000
+phase open-and-plan 0.479
+phase stage-and-folders 0.115
+phase files-and-links 1453.390
+phase folder-times 0.080
+phase folder-modes 0.023
+phase rename 0.116
+phase after-publish 0.031
+run silesia.7z 1 3
+phase start 0.000
+phase open-and-plan 0.441
+phase stage-and-folders 0.484
+phase files-and-links 1451.159
+phase folder-times 0.079
+phase folder-modes 0.020
+phase rename 0.105
+phase after-publish 0.029
+run silesia.7z 1 4
+phase start 0.000
+phase open-and-plan 0.477
+phase stage-and-folders 0.145
+phase files-and-links 1451.735
+phase folder-times 0.074
+phase folder-modes 0.023
+phase rename 0.109
+phase after-publish 0.031
+run silesia.7z 1 5
+phase start 0.000
+phase open-and-plan 0.453
+phase stage-and-folders 0.154
+phase files-and-links 1457.347
+phase folder-times 0.082
+phase folder-modes 0.022
+phase rename 0.111
+phase after-publish 0.028
+run silesia.nonsolid.7z auto 1
+phase start 0.000
+phase open-and-plan 5.814
+phase stage-and-folders 1.147
+phase files-and-links 613.193
+phase folder-times 0.080
+phase folder-modes 0.022
+phase rename 0.137
+phase after-publish 0.039
+run silesia.nonsolid.7z auto 2
+phase start 0.000
+phase open-and-plan 0.450
+phase stage-and-folders 0.125
+phase files-and-links 495.339
+phase folder-times 0.084
+phase folder-modes 0.023
+phase rename 0.133
+phase after-publish 0.037
+run silesia.nonsolid.7z auto 3
+phase start 0.000
+phase open-and-plan 0.429
+phase stage-and-folders 0.740
+phase files-and-links 475.279
+phase folder-times 0.087
+phase folder-modes 0.021
+phase rename 0.122
+phase after-publish 0.035
+run silesia.nonsolid.7z auto 4
+phase start 0.000
+phase open-and-plan 3.404
+phase stage-and-folders 0.129
+phase files-and-links 513.562
+phase folder-times 0.074
+phase folder-modes 0.022
+phase rename 0.124
+phase after-publish 0.037
+run silesia.nonsolid.7z auto 5
+phase start 0.000
+phase open-and-plan 0.419
+phase stage-and-folders 0.218
+phase files-and-links 478.489
+phase folder-times 0.086
+phase folder-modes 0.023
+phase rename 0.125
+phase after-publish 0.039
+run silesia.nonsolid.7z 1 1
+phase start 0.000
+phase open-and-plan 0.510
+phase stage-and-folders 0.150
+phase files-and-links 1452.550
+phase folder-times 0.071
+phase folder-modes 0.019
+phase rename 0.137
+phase after-publish 0.033
+run silesia.nonsolid.7z 1 2
+phase start 0.000
+phase open-and-plan 0.515
+phase stage-and-folders 0.128
+phase files-and-links 1455.271
+phase folder-times 0.069
+phase folder-modes 0.023
+phase rename 0.120
+phase after-publish 0.028
+run silesia.nonsolid.7z 1 3
+phase start 0.000
+phase open-and-plan 0.504
+phase stage-and-folders 0.123
+phase files-and-links 1453.033
+phase folder-times 0.066
+phase folder-modes 0.022
+phase rename 0.106
+phase after-publish 0.027
+run silesia.nonsolid.7z 1 4
+phase start 0.000
+phase open-and-plan 1.904
+phase stage-and-folders 0.136
+phase files-and-links 1459.743
+phase folder-times 0.072
+phase folder-modes 0.021
+phase rename 0.123
+phase after-publish 0.030
+run silesia.nonsolid.7z 1 5
+phase start 0.000
+phase open-and-plan 0.454
+phase stage-and-folders 0.111
+phase files-and-links 1456.175
+phase folder-times 0.072
+phase folder-modes 0.020
+phase rename 0.126
+phase after-publish 0.031

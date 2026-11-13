@@ -1,0 +1,105 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index fd81606..24b98b4 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -376,6 +376,18 @@ fn windows_attributes(dos: u32, mode: Option<u32>) -> u32 {
+     dos & (DOS_READ_ONLY | DOS_HIDDEN | DOS_SYSTEM) | if unwritable { DOS_READ_ONLY } else { 0 }
+ }
+ 
++#[doc(hidden)]
++pub fn phase(name: &str) {
++    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
++    static LAST: std::sync::Mutex<f64> = std::sync::Mutex::new(0.0);
++    let now = START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64() * 1e3;
++    let mut last = LAST.lock().unwrap();
++    if std::env::var_os("ZIPPER_PHASES").is_some() {
++        eprintln!("phase {name} {:.3}", now - *last);
++    }
++    *last = now;
++}
++
+ fn create_new_file(
+     path: &Path,
+     mode_masked_by_umask: u32,
+@@ -641,6 +653,7 @@ pub(crate) fn publish(
+         unix_modes::apply(staging, directories)?;
+         #[cfg(windows)]
+         restore_directory_times(staging, directories);
++        phase("folder-modes");
+         check()?;
+         let renamed = retried_while_windows_holds_it(
+             || {
+@@ -661,6 +674,7 @@ pub(crate) fn publish(
+             anyhow::bail!("destination appeared during extraction");
+         }
+         renamed?;
++        phase("rename");
+         anyhow::Ok(())
+     })();
+     if published.is_err() {
+@@ -714,6 +728,7 @@ pub(crate) mod unix_modes {
+         let mut ordered: Vec<&Directory> = directories.iter().collect();
+         ordered.sort_by_key(|directory| std::cmp::Reverse(directory.name.matches('/').count()));
+         restore_times(staging, &ordered)?;
++        crate::phase("folder-times");
+         restore_modes_deepest_first(staging, &ordered, default)
+     }
+ 
+diff --git a/src/main.rs b/src/main.rs
+index f7d485d..0767f43 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -761,7 +761,9 @@ fn says_more_than_cancelled(error: &anyhow::Error) -> bool {
+ }
+ 
+ fn main() -> std::process::ExitCode {
++    zipper::phase("start");
+     let ran = run();
++    zipper::phase("after-publish");
+     let printed_first = ran.as_ref().is_err_and(says_more_than_cancelled);
+     if let Err(error) = &ran
+         && printed_first
+diff --git a/src/native_7z.rs b/src/native_7z.rs
+index f9c2630..6d14269 100644
+--- a/src/native_7z.rs
++++ b/src/native_7z.rs
+@@ -2574,6 +2574,7 @@ pub fn read_archive(
+             }
+         }
+     }
++    crate::phase("stage-and-folders");
+     let mut by_folder: Vec<Vec<usize>> = vec![Vec::new(); archive.folders.len()];
+     for (index, item) in archive.items.iter().enumerate() {
+         if let Some((folder, _)) = item.stream {
+diff --git a/src/native_zip.rs b/src/native_zip.rs
+index a031ac2..3b1a315 100644
+--- a/src/native_zip.rs
++++ b/src/native_zip.rs
+@@ -1659,6 +1659,7 @@ pub fn read_archive_with_options(
+         }
+         None => Ok(HashSet::new()),
+     })?;
++    crate::phase("stage-and-folders");
+     let mut largest_first: Vec<_> = (0..items.len()).collect();
+     largest_first.sort_unstable_by_key(|&index| std::cmp::Reverse(items[index].entry.size));
+     let files: Vec<u64> = items
+diff --git a/src/staging.rs b/src/staging.rs
+index 75dbea2..432fed5 100644
+--- a/src/staging.rs
++++ b/src/staging.rs
+@@ -442,6 +442,7 @@ pub(crate) fn stage(
+     existing: Existing,
+     metadata: crate::Metadata,
+ ) -> Result<Staging> {
++    crate::phase("open-and-plan");
+     let refused = |message: String| crate::DestinationRefused(message);
+     let merge = match fs::metadata(destination) {
+         Ok(metadata) if existing != Existing::Refuse => {
+@@ -560,6 +561,7 @@ impl Staging {
+         directories: &[Directory],
+         cancel: Option<&AtomicBool>,
+     ) -> Result<()> {
++        crate::phase("files-and-links");
+         self.publish_checking(directories, || match cancel {
+             Some(flag) if flag.load(Ordering::Relaxed) => Err(crate::Cancelled.into()),
+             _ => Ok(()),
