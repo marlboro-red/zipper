@@ -53,9 +53,9 @@ The `lp`, `uefic`, `uefif` and `ihex` rows of `ROUTED_TYPES` each had a reader a
 3. `scripts/package_windows.py` packages `zipper.exe` with no 7-Zip, and its `BUILD.json` says so.
 4. The release checks run the full M10 corpus on all three operating systems, on machines with no 7-Zip installed.
 
-## Done so far, by 13 November 2026
+## Closed on 14 November 2026
 
-- Exit checks 1 to 3 pass on the branch that removed the backend.
-- `tests/refused.rs`, `tests/parity.rs` and `tests/cli.rs` test the one reader each file gets, with no engine to choose.
-- Error messages no longer suggest `--zip-engine backend`.
-- Exit check 4 remains. It needs the release checks run on Linux and Windows machines without 7-Zip.
+- `50cde4b` removed the backend, and `ce97e8e` and `0824bf1` synced every formal check it made stale. `cargo xtask verify --owed` lists none.
+- Exit checks 1 to 3 pass in `cargo xtask gate full` on CI, which runs on Linux with no 7-Zip installed.
+- For exit check 4, the hosted `Windows release candidate` run on `0824bf1` passed every test of the release build and packaged `zipper.exe`. The second machine passed `cargo xtask gate fast` on macOS.
+- The Windows runner and the second machine have 7-Zip installed, as a test oracle. `tests/no_7zip.rs` passed on both, so a 7-Zip on `PATH` never starts.
