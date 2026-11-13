@@ -883,22 +883,51 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cut_and_flipped_streams_give_the_serial_bytes_or_are_refused_as_it_refuses() {
+    #[derive(Clone, Copy)]
+    enum Joined {
+        One,
+        Three,
+    }
+
+    struct DamagedStream {
+        stream: Vec<u8>,
+        flips: Vec<usize>,
+    }
+
+    fn damaged_stream(joined: Joined) -> DamagedStream {
         let mut noise = Noise(24);
         let data = sample(1, 250_000, &mut noise);
-        for stream in [
-            compress(&data, 1),
-            data.chunks(90_000)
-                .flat_map(|part| compress(part, 1))
-                .collect(),
-        ] {
-            cut_and_flipped(&stream, &mut noise);
+        let one = compress(&data, 1);
+        let one_flips = flipped_bits(&one, &mut noise);
+        match joined {
+            Joined::One => DamagedStream {
+                stream: one,
+                flips: one_flips,
+            },
+            Joined::Three => {
+                let stream: Vec<u8> = data
+                    .chunks(90_000)
+                    .flat_map(|part| compress(part, 1))
+                    .collect();
+                let flips = flipped_bits(&stream, &mut noise);
+                DamagedStream { stream, flips }
+            }
         }
     }
 
-    fn cut_and_flipped(stream: &[u8], noise: &mut Noise) {
-        let stream = stream.to_vec();
+    fn flipped_bits(stream: &[u8], noise: &mut Noise) -> Vec<usize> {
+        let stream_ends = (1..stream.len() - 4)
+            .filter(|&byte| stream[byte..].starts_with(b"BZh1"))
+            .chain([stream.len()])
+            .flat_map(|byte| byte * 8 - 100..(byte * 8 + 100).min(stream.len() * 8));
+        (0..2400)
+            .chain(stream_ends)
+            .chain((0..3000).map(|_| noise.below(stream.len() * 8)))
+            .collect()
+    }
+
+    fn cuts_are_refused_serially_and_in_parallel(joined: Joined) {
+        let DamagedStream { stream, .. } = damaged_stream(joined);
         let cuts = (0..stream.len())
             .filter(|cut| *cut < 400 || *cut + 400 > stream.len() || cut % 37 == 0);
         for cut in cuts {
@@ -908,15 +937,30 @@ mod tests {
                 assert!(decoded.is_err(), "cut {cut} workers {workers}");
             }
         }
-        let stream_ends = (1..stream.len() - 4)
-            .filter(|&byte| stream[byte..].starts_with(b"BZh1"))
-            .chain([stream.len()])
-            .flat_map(|byte| byte * 8 - 100..(byte * 8 + 100).min(stream.len() * 8));
-        let flips = (0..2400)
-            .chain(stream_ends)
-            .chain((0..3000).map(|_| noise.below(stream.len() * 8)))
-            .collect::<Vec<_>>();
-        for bit in flips {
+    }
+
+    const FLIP_PARTS: usize = 3;
+
+    fn flip_part(flips: usize, part: usize) -> impl Iterator<Item = usize> {
+        (part..flips).step_by(FLIP_PARTS)
+    }
+
+    #[test]
+    fn the_flip_parts_hold_every_flip_of_both_streams_once() {
+        for joined in [Joined::One, Joined::Three] {
+            let flips = damaged_stream(joined).flips.len();
+            let mut held: Vec<usize> = (0..FLIP_PARTS)
+                .flat_map(|part| flip_part(flips, part))
+                .collect();
+            held.sort_unstable();
+            assert_eq!(held, (0..flips).collect::<Vec<_>>());
+        }
+    }
+
+    fn flips_give_the_serial_bytes_or_are_refused_as_it_refuses(joined: Joined, part: usize) {
+        let DamagedStream { stream, flips } = damaged_stream(joined);
+        for index in flip_part(flips.len(), part) {
+            let bit = flips[index];
             let mut flipped = stream.clone();
             flipped[bit / 8] ^= 0x80 >> (bit % 8);
             let expected = serial(&flipped);
@@ -928,6 +972,46 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn cuts_of_one_stream_are_refused_serially_and_in_parallel() {
+        cuts_are_refused_serially_and_in_parallel(Joined::One);
+    }
+
+    #[test]
+    fn cuts_of_three_joined_streams_are_refused_serially_and_in_parallel() {
+        cuts_are_refused_serially_and_in_parallel(Joined::Three);
+    }
+
+    #[test]
+    fn every_third_flip_from_the_first_in_one_stream_gives_the_serial_bytes_or_is_refused() {
+        flips_give_the_serial_bytes_or_are_refused_as_it_refuses(Joined::One, 0);
+    }
+
+    #[test]
+    fn every_third_flip_from_the_second_in_one_stream_gives_the_serial_bytes_or_is_refused() {
+        flips_give_the_serial_bytes_or_are_refused_as_it_refuses(Joined::One, 1);
+    }
+
+    #[test]
+    fn every_third_flip_from_the_third_in_one_stream_gives_the_serial_bytes_or_is_refused() {
+        flips_give_the_serial_bytes_or_are_refused_as_it_refuses(Joined::One, 2);
+    }
+
+    #[test]
+    fn every_third_flip_from_the_first_in_three_streams_gives_the_serial_bytes_or_is_refused() {
+        flips_give_the_serial_bytes_or_are_refused_as_it_refuses(Joined::Three, 0);
+    }
+
+    #[test]
+    fn every_third_flip_from_the_second_in_three_streams_gives_the_serial_bytes_or_is_refused() {
+        flips_give_the_serial_bytes_or_are_refused_as_it_refuses(Joined::Three, 1);
+    }
+
+    #[test]
+    fn every_third_flip_from_the_third_in_three_streams_gives_the_serial_bytes_or_is_refused() {
+        flips_give_the_serial_bytes_or_are_refused_as_it_refuses(Joined::Three, 2);
     }
 
     #[test]

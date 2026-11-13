@@ -1913,54 +1913,209 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
-    fn bit_flips_and_random_bytes_decode_or_fail_as_zlib_does() {
+    const FLIP_ROUNDS: usize = 60;
+    const FLIPPED_LEVELS: [u32; 3] = [1, 6, 9];
+    const NOISE_ROUNDS: usize = 20_000;
+
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    struct Tally {
+        decoded: usize,
+        refused: usize,
+    }
+
+    impl Tally {
+        fn count(&mut self, outcome: Outcome) {
+            match outcome {
+                Outcome::Decoded { .. } => self.decoded += 1,
+                Outcome::Refused => self.refused += 1,
+            }
+        }
+    }
+
+    struct FlipRound {
+        stream: Vec<u8>,
+        flip_sets: Vec<Vec<usize>>,
+    }
+
+    struct DamagedInputs {
+        rounds: Vec<FlipRound>,
+        noise: Vec<Vec<u8>>,
+    }
+
+    fn damaged_inputs() -> DamagedInputs {
         let mut random = Random(4242);
-        let (mut decoded, mut refused) = (0, 0);
-        let mut count = |outcome: Outcome| match outcome {
-            Outcome::Decoded { .. } => decoded += 1,
-            Outcome::Refused => refused += 1,
-        };
-        for round in 0..60 {
-            let (stream, _) = random_stream(&mut random, 2);
-            for bit in 0..stream.len().min(400) * 8 {
-                let mut flipped = stream.clone();
-                flipped[bit / 8] ^= 1 << (bit % 8);
-                count(agrees_with_zlib(
-                    &flipped,
-                    &format!("round {round} bit {bit}"),
-                ));
-            }
-            for _ in 0..200 {
-                let mut flipped = stream.clone();
-                for _ in 0..1 + random.below(3) {
-                    let bit = random.below(stream.len() * 8);
-                    flipped[bit / 8] ^= 1 << (bit % 8);
+        let rounds = (0..FLIP_ROUNDS)
+            .map(|_| {
+                let (stream, _) = random_stream(&mut random, 2);
+                let flip_sets = (0..200)
+                    .map(|_| {
+                        (0..1 + random.below(3))
+                            .map(|_| random.below(stream.len() * 8))
+                            .collect()
+                    })
+                    .collect();
+                FlipRound { stream, flip_sets }
+            })
+            .collect();
+        let noise = (0..NOISE_ROUNDS)
+            .map(|_| {
+                let mut noise: Vec<u8> = (0..random.below(300))
+                    .map(|_| random.next() as u8)
+                    .collect();
+                if let Some(first) = noise.first_mut() {
+                    *first = (*first & !6) | [2, 4, 4, 4][random.below(4)];
                 }
-                count(agrees_with_zlib(&flipped, &format!("round {round} flips")));
+                noise
+            })
+            .collect();
+        DamagedInputs { rounds, noise }
+    }
+
+    fn with_bits_flipped(stream: &[u8], bits: &[usize]) -> Vec<u8> {
+        let mut flipped = stream.to_vec();
+        for &bit in bits {
+            flipped[bit / 8] ^= 1 << (bit % 8);
+        }
+        flipped
+    }
+
+    fn flippable_bits(stream: &[u8], most_bytes: usize) -> usize {
+        stream.len().min(most_bytes) * 8
+    }
+
+    enum Damage {
+        RandomStreams(std::ops::Range<usize>),
+        DeflatedSamples(&'static [u32]),
+        Noise(std::ops::Range<usize>),
+    }
+
+    const WHOLE_RUN_MORE_THAN: Tally = more_than(1000, 10_000);
+
+    const fn more_than(decoded: usize, refused: usize) -> Tally {
+        Tally { decoded, refused }
+    }
+
+    const DAMAGED_PARTS: [(Damage, Tally); 8] = [
+        (Damage::RandomStreams(0..20), more_than(150, 1000)),
+        (Damage::RandomStreams(20..27), more_than(150, 1000)),
+        (Damage::RandomStreams(27..36), more_than(150, 1000)),
+        (Damage::RandomStreams(36..48), more_than(150, 1000)),
+        (Damage::RandomStreams(48..60), more_than(150, 1000)),
+        (Damage::DeflatedSamples(&[1]), more_than(150, 1000)),
+        (Damage::DeflatedSamples(&[6, 9]), more_than(150, 1000)),
+        (Damage::Noise(0..NOISE_ROUNDS), more_than(20, 10_000)),
+    ];
+
+    fn each_damaged_input(damage: &Damage, mut visit: impl FnMut(&[u8], &str)) {
+        match damage {
+            Damage::RandomStreams(rounds) => {
+                let inputs = damaged_inputs();
+                for round in rounds.clone() {
+                    let FlipRound { stream, flip_sets } = &inputs.rounds[round];
+                    for bit in 0..flippable_bits(stream, 400) {
+                        visit(
+                            &with_bits_flipped(stream, &[bit]),
+                            &format!("round {round} bit {bit}"),
+                        );
+                    }
+                    for bits in flip_sets {
+                        visit(
+                            &with_bits_flipped(stream, bits),
+                            &format!("round {round} flips"),
+                        );
+                    }
+                }
+            }
+            Damage::DeflatedSamples(levels) => {
+                for &level in *levels {
+                    let stream = deflated(&sample(level.into(), 30_000), level);
+                    for bit in 0..flippable_bits(&stream, 1500) {
+                        visit(
+                            &with_bits_flipped(&stream, &[bit]),
+                            &format!("level {level} bit {bit}"),
+                        );
+                    }
+                }
+            }
+            Damage::Noise(rounds) => {
+                let inputs = damaged_inputs();
+                for round in rounds.clone() {
+                    visit(&inputs.noise[round], &format!("noise round {round}"));
+                }
             }
         }
-        for level in [1, 6, 9] {
-            let stream = deflated(&sample(level.into(), 30_000), level);
-            for bit in 0..stream.len().min(1500) * 8 {
-                let mut flipped = stream.clone();
-                flipped[bit / 8] ^= 1 << (bit % 8);
-                count(agrees_with_zlib(
-                    &flipped,
-                    &format!("level {level} bit {bit}"),
-                ));
+    }
+
+    fn damaged_part_decodes_or_fails_as_zlib_does(part: usize) {
+        let (damage, floor) = &DAMAGED_PARTS[part];
+        let mut tally = Tally::default();
+        each_damaged_input(damage, |input, label| {
+            tally.count(agrees_with_zlib(input, label));
+        });
+        assert!(
+            tally.decoded > floor.decoded && tally.refused > floor.refused,
+            "part {part}: {tally:?}"
+        );
+    }
+
+    #[test]
+    fn the_damaged_parts_hold_every_input_once_and_their_floors_add_up() {
+        let (mut rounds, mut levels, mut noise) = (Vec::new(), Vec::new(), Vec::new());
+        let mut least = Tally::default();
+        for (damage, floor) in &DAMAGED_PARTS {
+            match damage {
+                Damage::RandomStreams(part) => rounds.extend(part.clone()),
+                Damage::DeflatedSamples(part) => levels.extend_from_slice(part),
+                Damage::Noise(part) => noise.extend(part.clone()),
             }
+            least.decoded += floor.decoded + 1;
+            least.refused += floor.refused + 1;
         }
-        for round in 0..20_000 {
-            let mut noise: Vec<u8> = (0..random.below(300))
-                .map(|_| random.next() as u8)
-                .collect();
-            if let Some(first) = noise.first_mut() {
-                *first = (*first & !6) | [2, 4, 4, 4][random.below(4)];
-            }
-            count(agrees_with_zlib(&noise, &format!("noise round {round}")));
-        }
-        assert!(decoded > 1000 && refused > 10_000, "{decoded} {refused}");
+        assert_eq!(rounds, (0..FLIP_ROUNDS).collect::<Vec<_>>());
+        assert_eq!(levels, FLIPPED_LEVELS);
+        assert_eq!(noise, (0..NOISE_ROUNDS).collect::<Vec<_>>());
+        assert!(least.decoded > WHOLE_RUN_MORE_THAN.decoded);
+        assert!(least.refused > WHOLE_RUN_MORE_THAN.refused);
+    }
+
+    #[test]
+    fn bit_flips_in_random_streams_0_to_19_decode_or_fail_as_zlib_does() {
+        damaged_part_decodes_or_fails_as_zlib_does(0);
+    }
+
+    #[test]
+    fn bit_flips_in_random_streams_20_to_26_decode_or_fail_as_zlib_does() {
+        damaged_part_decodes_or_fails_as_zlib_does(1);
+    }
+
+    #[test]
+    fn bit_flips_in_random_streams_27_to_35_decode_or_fail_as_zlib_does() {
+        damaged_part_decodes_or_fails_as_zlib_does(2);
+    }
+
+    #[test]
+    fn bit_flips_in_random_streams_36_to_47_decode_or_fail_as_zlib_does() {
+        damaged_part_decodes_or_fails_as_zlib_does(3);
+    }
+
+    #[test]
+    fn bit_flips_in_random_streams_48_to_59_decode_or_fail_as_zlib_does() {
+        damaged_part_decodes_or_fails_as_zlib_does(4);
+    }
+
+    #[test]
+    fn bit_flips_in_a_level_1_deflated_sample_decode_or_fail_as_zlib_does() {
+        damaged_part_decodes_or_fails_as_zlib_does(5);
+    }
+
+    #[test]
+    fn bit_flips_in_level_6_and_9_deflated_samples_decode_or_fail_as_zlib_does() {
+        damaged_part_decodes_or_fails_as_zlib_does(6);
+    }
+
+    #[test]
+    fn random_bytes_decode_or_fail_as_zlib_does() {
+        damaged_part_decodes_or_fails_as_zlib_does(7);
     }
 
     #[test]

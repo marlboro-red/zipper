@@ -131,7 +131,7 @@ Zipper's own BZip2 block decoder in `src/bzip2.rs` and the reader that decodes b
 - `bits_between_a_block_and_the_next_magic_are_refused` puts 1 to 4,000 bits after each block, which the one-thread reader refuses too.
 - `randomised_blocks_decode_as_the_bzip2_crate_does` sets the randomised bit, which no writer has set since bzip2 0.9.5, and repairs both CRCs from the crate's own output.
 - `a_magic_inside_a_block_does_not_end_it` plants each magic in spare selectors of each block. `a_magic_planted_inside_any_block_is_passed_over_by_decoding_on` and `a_planted_stream_end_and_header_inside_a_block_start_no_stream` run those streams through the reader at 1 to 4 block threads.
-- `cut_and_flipped_streams_give_the_serial_bytes_or_are_refused_as_it_refuses` compares the reader with the one-thread reader on cuts and flips of one stream of three blocks and of three streams in a row.
+- The `cuts_of_*` and `every_third_flip_*` tests compare the reader with the one-thread reader on cuts and flips of one stream of three blocks and of three streams in a row. Every third flip of each stream is its own test, so CI's test partitions can spread them.
 - `a_block_may_fill_the_longest_block_and_one_bit_more_is_refused` pads a block's first code length with steps up and down to exactly 4 MiB and to 4 bits more.
 - `one_stream_alone_refuses_or_leaves_what_follows_it_as_the_bzip2_crate_does` covers the two single-stream modes. ZIP refuses data after the stream, and xar leaves it.
 - `blocks_in_flight_stay_within_the_workers_and_their_memory` counts queued blocks and their charge after every read.
@@ -347,7 +347,7 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | The gzip extra length is read big-endian | the same proof fails |
 | The zlib header allows a window of 64 KiB or a preset dictionary | `every_zlib_header_is_accepted_exactly_when_zlib_accepts_it` fails |
 | The gzip header CRC, ISIZE or the zlib Adler-32 goes unchecked | the gzip flag test or the cut and flipped reader and block tests fail |
-| The gzip reader stops after one member | `gzip_fixtures_read_as_flate2_reads_them_whole_cut_and_flipped` fails |
+| The gzip reader stops after one member | `python_gzip_members_read_as_flate2_reads_them_whole_cut_and_flipped` fails |
 | A gzip trailer is gathered again after an interrupted read | `an_interrupted_read_at_any_byte_is_retried_without_losing_a_member` fails |
 | A failed reader reads on | `a_failed_trailer_stays_failed_when_the_right_trailer_follows` fails |
 | An error that follows decoded bytes in one read is dropped | `an_error_after_decoded_bytes_reaches_the_next_read_with_its_own_message` fails |
@@ -379,7 +379,7 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | `liblzma_dictionary` does not round up to 16 bytes | the same proof fails |
 | `next_magic` tries only 7 of the 8 bit shifts of a byte | `the_scanner_finds_the_first_magic_a_bit_at_a_time_search_finds` fails |
 | `decode_block` no longer reports a block that runs past its cut | `a_magic_planted_inside_any_block_is_passed_over_by_decoding_on` fails |
-| The block reader skips a block CRC, a stream CRC before another stream, or the last stream CRC | `cut_and_flipped_streams_give_the_serial_bytes_or_are_refused_as_it_refuses` fails, each time |
+| The block reader skips a block CRC, a stream CRC before another stream, or the last stream CRC | an `every_third_flip_*` test of `bzip2_streams` fails, each time |
 | The block reader takes the newest queued block, not the oldest | `blocks_come_out_in_order_for_every_worker_count_input_step_and_read_size` fails |
 | The block reader accepts a block that ends before its cut | `bits_between_a_block_and_the_next_magic_are_refused` fails |
 | The block reader drops the 4,096 bytes a further stream must bring | `concatenated_streams_decode_or_are_refused_as_the_serial_reader_does` fails |

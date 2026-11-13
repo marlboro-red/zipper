@@ -267,16 +267,55 @@ fn every_cut_frame_is_refused_as_libzstd_refuses_it() {
     }
 }
 
-#[test]
-fn every_flipped_bit_decodes_or_is_refused_as_libzstd_does() {
-    for (name, frame, decoded) in shapes() {
+const FLIP_PARTS: usize = 3;
+
+fn every_flip_of_every_shape(shapes: &[(String, Vec<u8>, usize)]) -> Vec<(usize, usize)> {
+    shapes
+        .iter()
+        .enumerate()
+        .flat_map(|(shape, (_, frame, _))| (0..frame.len() * 8).map(move |bit| (shape, bit)))
+        .collect()
+}
+
+fn flip_part(flips: usize, part: usize) -> impl Iterator<Item = usize> {
+    (part..flips).step_by(FLIP_PARTS)
+}
+
+fn flipped_bits_decode_or_are_refused_as_libzstd_does(part: usize) {
+    let shapes = shapes();
+    let flips = every_flip_of_every_shape(&shapes);
+    for index in flip_part(flips.len(), part) {
+        let (shape, bit) = flips[index];
+        let (name, frame, decoded) = &shapes[shape];
         let mut damaged = frame.clone();
-        for bit in 0..frame.len() * 8 {
-            damaged[bit / 8] ^= 1 << (bit % 8);
-            same_outcome(&damaged, decoded + 4096, &|| format!("{name} bit {bit}"));
-            damaged[bit / 8] ^= 1 << (bit % 8);
-        }
+        damaged[bit / 8] ^= 1 << (bit % 8);
+        same_outcome(&damaged, decoded + 4096, &|| format!("{name} bit {bit}"));
     }
+}
+
+#[test]
+fn the_flip_parts_hold_every_flip_once() {
+    let flips = every_flip_of_every_shape(&shapes()).len();
+    let mut held: Vec<usize> = (0..FLIP_PARTS)
+        .flat_map(|part| flip_part(flips, part))
+        .collect();
+    held.sort_unstable();
+    assert_eq!(held, (0..flips).collect::<Vec<_>>());
+}
+
+#[test]
+fn every_third_flip_from_the_first_decodes_or_is_refused_as_libzstd_does() {
+    flipped_bits_decode_or_are_refused_as_libzstd_does(0);
+}
+
+#[test]
+fn every_third_flip_from_the_second_decodes_or_is_refused_as_libzstd_does() {
+    flipped_bits_decode_or_are_refused_as_libzstd_does(1);
+}
+
+#[test]
+fn every_third_flip_from_the_third_decodes_or_is_refused_as_libzstd_does() {
+    flipped_bits_decode_or_are_refused_as_libzstd_does(2);
 }
 
 #[test]

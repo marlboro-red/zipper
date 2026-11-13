@@ -1148,26 +1148,53 @@ mod tests {
         }
     }
 
+    fn gzip_fixture_reads_as_flate2_reads_it_whole_cut_and_flipped(fixture: &str) {
+        let stream = std::fs::read(fixture).unwrap();
+        let whole = agrees(&stream, "gzip", fixture);
+        assert!(matches!(whole, Outcome::Decoded { .. }), "{fixture}");
+        for at in 0..stream.len() {
+            agrees(&stream[..at], "gzip", fixture);
+            let mut flipped = stream.clone();
+            flipped[at] ^= 1 << (at % 8);
+            agrees(&flipped, "gzip", fixture);
+        }
+    }
+
     #[test]
-    fn gzip_fixtures_read_as_flate2_reads_them_whole_cut_and_flipped() {
-        let fixtures = [
+    fn gnu_tar_gzip_reads_as_flate2_reads_it_whole_cut_and_flipped() {
+        gzip_fixture_reads_as_flate2_reads_it_whole_cut_and_flipped(
             "tests/data/tar-corpus/gnutar-gnu-gzip.tar.gz",
+        );
+    }
+
+    #[test]
+    fn python_pax_gzip_reads_as_flate2_reads_it_whole_cut_and_flipped() {
+        gzip_fixture_reads_as_flate2_reads_it_whole_cut_and_flipped(
             "tests/data/tar-corpus/python-pax-gzip.tar.gz",
+        );
+    }
+
+    #[test]
+    fn bsdtar_pax_gzip_reads_as_flate2_reads_it_whole_cut_and_flipped() {
+        gzip_fixture_reads_as_flate2_reads_it_whole_cut_and_flipped(
             "tests/data/tar-corpus/bsdtar-pax-gzip.tgz",
+        );
+    }
+
+    #[test]
+    fn python_gzip_members_read_as_flate2_reads_them_whole_cut_and_flipped() {
+        gzip_fixture_reads_as_flate2_reads_it_whole_cut_and_flipped(
             "tests/data/tar-corpus/python-gnu-gzip-members.tar.gz",
+        );
+    }
+
+    #[test]
+    fn small_parity_gzips_read_as_flate2_reads_them_whole_cut_and_flipped() {
+        for fixture in [
             "tests/data/parity/archives/tar.tar.gz",
             "tests/data/parity/archives/hello.txt.gz",
-        ];
-        for fixture in fixtures {
-            let stream = std::fs::read(fixture).unwrap();
-            let whole = agrees(&stream, "gzip", fixture);
-            assert!(matches!(whole, Outcome::Decoded { .. }), "{fixture}");
-            for at in 0..stream.len() {
-                agrees(&stream[..at], "gzip", fixture);
-                let mut flipped = stream.clone();
-                flipped[at] ^= 1 << (at % 8);
-                agrees(&flipped, "gzip", fixture);
-            }
+        ] {
+            gzip_fixture_reads_as_flate2_reads_it_whole_cut_and_flipped(fixture);
         }
     }
 
