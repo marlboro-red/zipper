@@ -63,7 +63,7 @@ The [ZIP](docs/reference/zip-reader.md), [tar](docs/reference/tar-reader.md) and
 ## Development
 
 Run `cargo xtask gate fast` before pushing, or run `cargo xtask install-hooks` once so pre-push runs it.
-CI runs `cargo xtask gate full`.
+CI runs `cargo xtask gate full` as three parallel jobs, one per shard of its steps.
 [AGENTS.md](AGENTS.md) lists the rules for working in this repository.
 
 ## Licence

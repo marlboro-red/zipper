@@ -8,12 +8,14 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  gate:
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+    name: gate ${{ matrix.shard }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
+        shard: [lints, tests, builds]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -30,8 +32,8 @@ jobs:
           prefix-key: rust-1.99.1
           shared-key: gate
           save-if: false
-      - name: Gate (format, lint, tests, release round trip)
-        run: cargo +1.99.1 xtask gate full
+      - name: Gate shard (cargo xtask gate full runs every shard)
+        run: cargo +1.99.1 xtask gate full --shard ${{ matrix.shard }}
 
   warm-cache:
     name: Refresh the build cache for a main that passed the full gate on its ci/ branch

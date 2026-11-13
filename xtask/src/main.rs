@@ -19,7 +19,7 @@ mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | check-minimums | install-hooks | ci-wait | warm-cache | format-tests | consumer-crate | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | gate full --shard lints|tests|builds | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | check-minimums | install-hooks | ci-wait | warm-cache | format-tests | consumer-crate | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -36,6 +36,7 @@ fn main() -> ExitCode {
         ["gate", "fast"] => gate(false),
         ["gate", "full"] => gate(true),
         ["gate", kind @ ("fast" | "full"), "--remote"] => verify::gate_remotely(&root(), kind),
+        ["gate", "full", "--shard", shard] => gate_shards(&[shard]),
         ["lint-docs"] => docs::lint(&root()),
         ["lint-comments"] => comments::lint(&root()),
         ["lint-7zip-lookups"] => sevenzip_lookups::lint(&root()),
@@ -294,27 +295,40 @@ fn ship() -> Result<()> {
         &format!("HEAD:refs/heads/{branch}"),
     ])?;
     let run = ci_run(&head, Some(&pushed_at))?;
-    let checked = watch_ci_run(&run, &head).or_else(|failure| {
-        let host = match env::consts::OS {
-            "macos" => "macos",
-            "linux" => "ubuntu",
-            other => other,
-        };
-        let jobs = github(
-            &["run", "view", &run, "--json", "jobs", "--jq",
-              r#".jobs[] | "\(.name)\t\(.conclusion)\t\(.steps | length)""#],
-        )?;
-        let unstarted_host_job_only = jobs.lines().all(|job| {
-            let fields: Vec<&str> = job.split('\t').collect();
-            fields.get(1) == Some(&"success")
-                || (fields.get(1) == Some(&"cancelled")
-                    && fields.get(2) == Some(&"0")
-                    && fields[0].contains(host))
-        });
-        ensure!(unstarted_host_job_only, failure);
-        println!("xtask: the {host} CI job never got a runner; running the full gate on this {host} host instead");
-        gate(true)
-    });
+    let host = match env::consts::OS {
+        "macos" => "macos",
+        "linux" => "ubuntu",
+        other => other,
+    };
+    let jobs = || {
+        github(&[
+            "run",
+            "view",
+            &run,
+            "--json",
+            "jobs",
+            "--jq",
+            r#".jobs[] | "\(.name)\t\(.conclusion)\t\(.steps | length)""#,
+        ])
+    };
+    let checked = match watch_ci_run(&run, &head) {
+        Ok(()) => shards_not_passed(&jobs()?, host).and_then(|unproven| {
+            ensure!(
+                unproven.is_empty(),
+                "CI run {run} for {head} passed without a passing job for gate shard(s) {unproven:?}"
+            );
+            Ok(())
+        }),
+        Err(failure) => match shards_not_passed(&jobs()?, host) {
+            Ok(unstarted) if !unstarted.is_empty() => {
+                println!(
+                    "xtask: the {host} CI job(s) for gate shard(s) {unstarted:?} never got a runner; running those shards on this {host} host instead"
+                );
+                gate_shards(&unstarted)
+            }
+            _ => Err(failure),
+        },
+    };
     push(&["push", "--quiet", "origin", "--delete", &branch])?;
     checked?;
     push(&[
@@ -696,7 +710,89 @@ fn warm_cache() -> Result<()> {
     cargo(&[COUNTERS_TEST, &["--no-run"]].concat())
 }
 
+const GATE_SHARDS: &[(&str, &[&str])] = &[
+    (
+        "lints",
+        &[
+            "fmt",
+            "docs",
+            "comments",
+            "7-zip lookups",
+            "private paths",
+            "pure rust",
+            "results",
+            "hooks",
+            "verify",
+            "parity",
+            "clippy",
+            "dependency minimums",
+        ],
+    ),
+    ("tests", &["test"]),
+    (
+        "builds",
+        &[
+            "feature subsets",
+            "consumer crate",
+            "windows clippy",
+            "release build",
+            "release round trip",
+            "counters",
+            "benchmark smoke",
+        ],
+    ),
+];
+
 fn gate(full: bool) -> Result<()> {
+    run_gate_steps(gate_steps(full), if full { "full" } else { "fast" })
+}
+
+fn gate_shards(shards: &[&str]) -> Result<()> {
+    let mut chosen = Vec::new();
+    for shard in shards {
+        let (_, names) = GATE_SHARDS
+            .iter()
+            .find(|(name, _)| name == shard)
+            .with_context(|| format!("no gate shard named {shard:?}; {USAGE}"))?;
+        chosen.extend_from_slice(names);
+    }
+    let steps = gate_steps(true)
+        .into_iter()
+        .filter(|(name, _)| chosen.contains(name))
+        .collect();
+    run_gate_steps(steps, &format!("full shard {}", shards.join(", ")))
+}
+
+fn shard_of_job(job: &str) -> Option<&'static str> {
+    let shard = job.strip_prefix("gate ")?.split_once(" (")?.0;
+    GATE_SHARDS
+        .iter()
+        .map(|(name, _)| *name)
+        .find(|name| *name == shard)
+}
+
+fn shards_not_passed(jobs: &str, host: &str) -> Result<Vec<&'static str>> {
+    let mut passed = Vec::new();
+    for job in jobs.lines() {
+        let fields: Vec<&str> = job.split('\t').collect();
+        let [name, conclusion, steps] = fields[..] else {
+            bail!("cannot read CI job {job:?}");
+        };
+        match (conclusion, shard_of_job(name)) {
+            ("success", Some(shard)) => passed.push(shard),
+            ("success" | "skipped", None) => {}
+            ("cancelled", Some(_)) if steps == "0" && name.contains(host) => {}
+            _ => bail!("CI job {name} ended {conclusion}"),
+        }
+    }
+    Ok(GATE_SHARDS
+        .iter()
+        .map(|(name, _)| *name)
+        .filter(|name| !passed.contains(name))
+        .collect())
+}
+
+fn gate_steps(full: bool) -> Vec<(&'static str, Step)> {
     let mut steps: Vec<(&str, Step)> = vec![
         ("fmt", || cargo(&["fmt", "--all", "--check"])),
         ("docs", || docs::lint(&root())),
@@ -736,6 +832,10 @@ fn gate(full: bool) -> Result<()> {
         steps.push(("benchmark smoke", benchmark_smoke));
         steps.push(("dependency minimums", || minimums::check(&root())));
     }
+    steps
+}
+
+fn run_gate_steps(steps: Vec<(&str, Step)>, label: &str) -> Result<()> {
     let mut rows = Vec::new();
     for (name, step) in &steps {
         eprintln!("xtask: gate step {name}");
@@ -752,11 +852,7 @@ fn gate(full: bool) -> Result<()> {
         println!("| {name} | {result} | {seconds:.1} |");
     }
     let failed = rows.iter().filter(|row| !row.1).count();
-    ensure!(
-        failed == 0,
-        "gate {} failed {failed} step(s)",
-        if full { "full" } else { "fast" }
-    );
+    ensure!(failed == 0, "gate {label} failed {failed} step(s)");
     Ok(())
 }
 
@@ -1186,6 +1282,105 @@ mod cargo_command_tests {
             std::ffi::OsStr::new("ZIPPER_X"),
             Some(std::ffi::OsStr::new("1"))
         )));
+    }
+}
+
+#[cfg(test)]
+mod gate_shard_tests {
+    use super::*;
+
+    fn shard_names() -> Vec<&'static str> {
+        GATE_SHARDS.iter().map(|(name, _)| *name).collect()
+    }
+
+    fn shard_holding(step: &str) -> Vec<&'static str> {
+        GATE_SHARDS
+            .iter()
+            .filter(|(_, steps)| steps.contains(&step))
+            .map(|(name, _)| *name)
+            .collect()
+    }
+
+    #[test]
+    fn every_step_of_gate_full_is_in_exactly_one_shard() {
+        let full: Vec<&str> = gate_steps(true).iter().map(|(name, _)| *name).collect();
+        for step in &full {
+            let shards = shard_holding(step);
+            assert_eq!(
+                shards.len(),
+                1,
+                "gate step {step:?} is in shards {shards:?}"
+            );
+        }
+        for (shard, steps) in GATE_SHARDS {
+            assert!(!steps.is_empty(), "shard {shard} runs nothing");
+            for step in *steps {
+                assert!(
+                    full.contains(step),
+                    "shard {shard} names no gate step {step:?}"
+                );
+            }
+        }
+        let mut names = shard_names();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), GATE_SHARDS.len(), "two shards share a name");
+    }
+
+    #[test]
+    fn the_steps_that_run_the_release_binary_share_the_release_build_shard() {
+        let release = shard_holding("release build");
+        for step in ["release round trip", "benchmark smoke"] {
+            assert_eq!(shard_holding(step), release, "{step}");
+        }
+    }
+
+    #[test]
+    fn ci_runs_one_job_per_shard_by_the_name_ship_reads() {
+        let workflow = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+        for line in [
+            format!("shard: [{}]", shard_names().join(", ")),
+            "name: gate ${{ matrix.shard }} (${{ matrix.os }})".to_owned(),
+            "run: cargo +1.99.1 xtask gate full --shard ${{ matrix.shard }}".to_owned(),
+        ] {
+            assert!(
+                workflow.lines().any(|found| found.trim() == line),
+                "ci.yml lacks {line:?}"
+            );
+        }
+        assert!(
+            !workflow.contains("xtask gate full\n"),
+            "ci.yml runs an unsharded gate"
+        );
+    }
+
+    const PASSED: &str = "gate lints (ubuntu-latest)\tsuccess\t9\n\
+                          gate tests (ubuntu-latest)\tsuccess\t9\n\
+                          gate builds (ubuntu-latest)\tsuccess\t9\n\
+                          Refresh the build cache\tskipped\t0";
+
+    #[test]
+    fn ship_runs_here_only_the_shards_whose_job_never_started_on_this_host() {
+        assert!(shards_not_passed(PASSED, "ubuntu").unwrap().is_empty());
+        let unstarted = PASSED.replace(
+            "tests (ubuntu-latest)\tsuccess\t9",
+            "tests (ubuntu-latest)\tcancelled\t0",
+        );
+        assert_eq!(shards_not_passed(&unstarted, "ubuntu").unwrap(), ["tests"]);
+        assert!(shards_not_passed(&unstarted, "macos").is_err());
+        let missing: String = PASSED.lines().skip(1).collect::<Vec<_>>().join("\n");
+        assert_eq!(shards_not_passed(&missing, "ubuntu").unwrap(), ["lints"]);
+        for ended in ["failure\t9", "cancelled\t3", "skipped\t0", "timed_out\t9"] {
+            let failed = PASSED.replace(
+                "builds (ubuntu-latest)\tsuccess\t9",
+                &format!("builds (ubuntu-latest)\t{ended}"),
+            );
+            assert!(shards_not_passed(&failed, "ubuntu").is_err(), "{ended}");
+        }
+        let other_failed = PASSED.replace("skipped", "failure");
+        assert!(shards_not_passed(&other_failed, "ubuntu").is_err());
+        assert_eq!(shard_of_job("gate tests (ubuntu-latest)"), Some("tests"));
+        assert_eq!(shard_of_job("gate test (ubuntu-latest)"), None);
     }
 }
 
