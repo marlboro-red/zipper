@@ -118,7 +118,7 @@ target/release/zipper extract install.wim --output image --alternate-streams
 
 ## Extract without folders, or through pipes
 
-`--flat` puts every file in the output folder itself, without its folders, as `7z e` does. Files that share a name follow `--existing` in path order. The default refuses them, `overwrite` keeps the last, `skip` keeps the first, and the rename modes number the others `name_1.ext` and on. An archive with links is refused, because flattening breaks their targets:
+`--flat` puts every file in the output folder itself, without its folders, as `7z e` does. Files that share a name follow `--existing` in path order. The default refuses them, `overwrite` keeps the last, `skip` keeps the first, and the rename modes number the others `name_1.ext` and on. Names the filesystem takes as one, such as `X.txt` and `x.txt` where case is ignored, also share a name, and follow `--existing` in the byte order of their names. An archive with links is refused, because flattening breaks their targets:
 
 ```sh
 target/release/zipper extract photos.zip --output all-photos --flat --existing rename-new

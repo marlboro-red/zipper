@@ -318,7 +318,8 @@ pub struct ExtractOptions<'a> {
     /// as `7z e` does. Files that share a name follow `existing` in path
     /// order: `Refuse` fails, `Overwrite` keeps the last, `Skip` keeps the
     /// first, and the rename modes number the others `name_1.ext` and on.
-    /// An archive with links is refused.
+    /// Names the filesystem takes as one, such as `X.txt` and `x.txt` where
+    /// case is ignored, share a name. An archive with links is refused.
     pub flat: bool,
     /// Password for ZipCrypto and WinZip AES entries in a ZIP, and for 7z
     /// AES-256. A selected encrypted entry without it fails
@@ -374,28 +375,42 @@ fn flatten(
     let mut taken: std::collections::HashSet<std::ffi::OsString> =
         by_name.keys().cloned().collect();
     taken.extend(holder.file_name().map(ToOwned::to_owned));
+    let occupied = |name: &std::ffi::OsStr| std::fs::symlink_metadata(into.join(name)).is_ok();
+    let renaming = matches!(existing, Existing::RenameNew | Existing::RenameExisting);
     for (name, paths) in &by_name {
         ensure!(
             Some(name.as_os_str()) != holder.file_name(),
             "an archive file has the staging folder's name"
         );
+        let met_a_twin = occupied(name);
         let (kept, others): (&std::path::Path, &[std::path::PathBuf]) = match existing {
-            _ if paths.len() == 1 => (&paths[0], &[]),
+            _ if paths.len() == 1 && !met_a_twin => (&paths[0], &[]),
             Existing::Refuse => bail!(
-                "several archive files are named {}; pass --existing to choose",
-                name.display()
+                "several archive files are named {}{}; pass --existing to choose",
+                name.display(),
+                match met_a_twin {
+                    true => " on this filesystem, which ignores case or Unicode normalization",
+                    false => "",
+                }
             ),
+            Existing::Skip if met_a_twin => continue,
             Existing::Overwrite => (paths.last().unwrap(), &[]),
             Existing::Skip => (&paths[0], &[]),
             Existing::RenameNew | Existing::RenameExisting => (&paths[0], &paths[1..]),
         };
-        moved(kept, into.join(name))?;
+        let numbered_kept = (met_a_twin && renaming).then_some(kept);
+        if numbered_kept.is_none() {
+            moved(kept, into.join(name))?;
+        }
         let mut number = 0;
-        for other in others {
+        for other in numbered_kept
+            .into_iter()
+            .chain(others.iter().map(std::path::PathBuf::as_path))
+        {
             let renamed = loop {
                 number += 1;
                 let candidate = crate::staging::numbered(name, number);
-                if taken.insert(candidate.clone()) {
+                if !occupied(&candidate) && taken.insert(candidate.clone()) {
                     break candidate;
                 }
             };
