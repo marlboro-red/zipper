@@ -177,3 +177,105 @@ fn a_decoded_byte_that_differs_from_the_original_fails_the_sample() {
     assert!(!refused.status.success());
     assert!(stderr.contains("is not the original"), "{stderr}");
 }
+
+fn driver() -> Command {
+    let mut command = Command::new(python());
+    command.arg(repository().join("scripts/m31_decoders.py"));
+    command
+}
+
+fn small_corpus(work: &Path) -> PathBuf {
+    let source = work.join("source").join("silesia");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("sample"), sample()).unwrap();
+    let out = work.join("corpus");
+    run(driver()
+        .args(["corpus", "--harness", BENCH, "--out"])
+        .arg(&out)
+        .arg("--silesia")
+        .arg(&source));
+    out
+}
+
+#[test]
+fn a_failed_extraction_row_is_recorded_and_the_run_keeps_its_other_rows() {
+    let work = tempfile::tempdir().unwrap();
+    let corpus = small_corpus(work.path());
+    let report = work.path().join("all.json");
+    let failed = driver()
+        .args(["all", "--harness", BENCH, "--zipper", BENCH, "--corpus"])
+        .arg(&corpus)
+        .args(["--only", "gzip", "zstd", "--rounds", "1", "--runs", "1"])
+        .args(["--trial", "--allow-busy", "--out"])
+        .arg(&report)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&failed.stderr);
+    assert!(!failed.status.success(), "a run with failed rows passed");
+    assert!(stderr.contains("gzip, zstd"), "{stderr}");
+    let json: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    for codec in ["gzip", "zstd"] {
+        let decoders = json["decode"]["results"][codec].as_object().unwrap();
+        assert!(!decoders.is_empty(), "{codec}");
+        for (decoder, result) in decoders {
+            assert_eq!(
+                result["samples"].as_array().unwrap().len(),
+                1,
+                "{codec} {decoder}"
+            );
+        }
+        let row = &json["extract"]["results"][codec];
+        assert!(row["error"].is_string(), "{codec}: {row}");
+        assert!(
+            row["stderr"].as_str().unwrap().contains("Round 0"),
+            "{codec}: {row}"
+        );
+    }
+    assert_eq!(
+        json["extract"]["failed"],
+        serde_json::json!(["gzip", "zstd"])
+    );
+    assert!(
+        json["extract"]["skipped"]["lzma"]
+            .as_str()
+            .unwrap()
+            .contains("silesia.tar")
+    );
+}
+
+#[test]
+fn corpus_moves_the_fetch_manifest_out_of_the_tree_the_wim_captures() {
+    let work = tempfile::tempdir().unwrap();
+    let out = work.path().join("corpus");
+    let tree = out.join("tree");
+    fs::create_dir_all(tree.join("silesia")).unwrap();
+    fs::write(tree.join("silesia").join("sample"), sample()).unwrap();
+    fs::write(tree.join("silesia.manifest.json"), "{}\n").unwrap();
+    let corpus = || {
+        driver()
+            .args(["corpus", "--harness", BENCH, "--out"])
+            .arg(&out)
+            .output()
+            .unwrap()
+    };
+    let moved = corpus();
+    assert!(
+        moved.status.success(),
+        "{}",
+        String::from_utf8_lossy(&moved.stderr)
+    );
+    let names: Vec<_> = fs::read_dir(&tree)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["silesia"]);
+    assert_eq!(
+        fs::read_to_string(out.join("silesia.manifest.json")).unwrap(),
+        "{}\n"
+    );
+    fs::write(tree.join("stray"), "").unwrap();
+    let refused = corpus();
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "a tree with a stray file passed");
+    assert!(stderr.contains("stray"), "{stderr}");
+}
