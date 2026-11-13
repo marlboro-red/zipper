@@ -372,30 +372,55 @@ where
                 Stream::Err,
             ),
         ];
-        let status = thread::scope(|scope| {
-            for (pipe, stream) in pipes {
-                if let Some(pipe) = pipe {
-                    let sender = sender.clone();
-                    let section = job.section.as_str();
-                    scope.spawn(move || forward_lines(pipe, stream, section, &sender));
-                }
-            }
-            child.wait()
+        let counts_tests = verify::runs_tests(check);
+        let (status, printed) = thread::scope(|scope| {
+            let forwarders: Vec<_> =
+                pipes
+                    .into_iter()
+                    .filter_map(|(pipe, stream)| {
+                        let pipe = pipe?;
+                        let sender = sender.clone();
+                        let section = job.section.as_str();
+                        Some(scope.spawn(move || {
+                            forward_lines(pipe, stream, section, &sender, counts_tests)
+                        }))
+                    })
+                    .collect();
+            let status = child.wait();
+            let printed: String = forwarders
+                .into_iter()
+                .filter_map(|forwarder| forwarder.join().ok())
+                .collect();
+            (status, printed)
         });
         match status {
-            Ok(status) if status.success() => {}
-            Ok(status) => return failed(format!("exited with {status}")),
+            Ok(status) if !status.success() => return failed(format!("exited with {status}")),
+            Ok(_) if counts_tests && verify::ran_no_tests(&printed) => {
+                return failed(verify::RAN_NO_TEST.to_owned());
+            }
+            Ok(_) => {}
             Err(error) => return failed(format!("could not be waited for: {error}")),
         }
     }
     None
 }
 
-fn forward_lines(pipe: impl Read, stream: Stream, section: &str, sender: &mpsc::Sender<Event>) {
+fn forward_lines(
+    pipe: impl Read,
+    stream: Stream,
+    section: &str,
+    sender: &mpsc::Sender<Event>,
+    keep: bool,
+) -> String {
+    let mut kept = String::new();
     for line in BufReader::new(pipe).split(b'\n') {
         let Ok(line) = line else { break };
         let text = String::from_utf8_lossy(&line);
         let text = text.strip_suffix('\r').unwrap_or(&text);
+        if keep {
+            kept.push_str(text);
+            kept.push('\n');
+        }
         if sender
             .send(Event::Line(stream, format!("[{section}] {text}")))
             .is_err()
@@ -403,6 +428,63 @@ fn forward_lines(pipe: impl Read, stream: Stream, section: &str, sender: &mpsc::
             break;
         }
     }
+    kept
+}
+
+pub(crate) fn is_reach_check(check: &str) -> bool {
+    let words: Vec<&str> = check
+        .split_whitespace()
+        .filter(|word| !word.contains('='))
+        .take(3)
+        .collect();
+    words.starts_with(&["cargo", "xtask", "kani-reach"])
+}
+
+fn split_reach_checks(jobs: Vec<Job>) -> (Vec<Job>, Vec<Job>) {
+    let mut reach = Vec::new();
+    let mut rest = Vec::new();
+    for job in jobs {
+        let (reach_checks, other_checks): (Vec<String>, Vec<String>) = job
+            .checks
+            .into_iter()
+            .partition(|check| is_reach_check(check));
+        if !reach_checks.is_empty() {
+            reach.push(Job {
+                section: job.section.clone(),
+                checks: reach_checks,
+            });
+        }
+        rest.push(Job {
+            section: job.section,
+            checks: other_checks,
+        });
+    }
+    (reach, rest)
+}
+
+pub(crate) fn run_reach_first<F>(
+    jobs: Vec<Job>,
+    workers: usize,
+    command_for: F,
+    mut on_event: impl FnMut(Event),
+) -> bool
+where
+    F: Fn(&str, usize) -> Result<Command> + Sync,
+{
+    let (reach, rest) = split_reach_checks(jobs);
+    let mut reached = true;
+    run_jobs(reach, workers, &command_for, |event| match event {
+        Event::Passed(_) => {}
+        Event::Failed(failed) => {
+            reached = false;
+            on_event(Event::Failed(failed));
+        }
+        line => on_event(line),
+    });
+    if reached {
+        run_jobs(rest, workers, command_for, on_event);
+    }
+    reached
 }
 
 fn is_kani_check(check: &str) -> bool {
@@ -480,13 +562,13 @@ pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> 
         );
     }
     println!(
-        "xtask: release checks: running {} section(s) on {} worker(s), skipping {}",
+        "xtask: release checks: running {} section(s) on {} worker(s), each `kani-reach` check first, skipping {}",
         plan.run.len(),
         options.jobs.max(1),
         plan.skipped.len()
     );
     let mut failed = Vec::new();
-    run_jobs(
+    let reached = run_reach_first(
         plan.run,
         options.jobs,
         |check, lane| {
@@ -510,6 +592,11 @@ pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> 
                 failed.push(line);
             }
         },
+    );
+    ensure!(
+        reached,
+        "a `cargo xtask kani-reach` check failed, so the longer full checks did not run:\n  {}",
+        failed.join("\n  ")
     );
     ensure!(
         failed.is_empty(),
@@ -918,6 +1005,176 @@ mod tests {
                 "{met}: each saw the other running"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_test_check_that_ran_no_test_fails_its_section_and_its_lines_still_arrive() {
+        let work = tempfile::tempdir().unwrap();
+        let printing = |check: &str, _: usize| -> Result<Command> {
+            let script = match check {
+                "cargo test --release --test none" => "echo 'test result: ok. 0 passed; 0 failed'",
+                "cargo nextest run --test none" => {
+                    "echo '     Summary [   0.01s] 0 tests run: 0 passed' >&2"
+                }
+                "cargo test --release --test some" => "echo 'test result: ok. 4 passed; 0 failed'",
+                other => other,
+            };
+            let mut command = Command::new("/bin/sh");
+            command.arg("-c").arg(script).current_dir(work.path());
+            Ok(command)
+        };
+        let jobs = vec![
+            Job {
+                section: "empty".to_owned(),
+                checks: vec![
+                    "cargo test --release --test none".to_owned(),
+                    "touch ran-after-empty".to_owned(),
+                ],
+            },
+            Job {
+                section: "empty-nextest".to_owned(),
+                checks: vec!["cargo nextest run --test none".to_owned()],
+            },
+            Job {
+                section: "counted".to_owned(),
+                checks: vec!["cargo test --release --test some".to_owned()],
+            },
+            Job {
+                section: "not-a-test".to_owned(),
+                checks: vec!["echo 'test result: ok. 0 passed'".to_owned()],
+            },
+        ];
+        let mut events = Vec::new();
+        run_jobs(jobs, 2, printing, |event| events.push(event));
+        let mut failed: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Failed(failed) => {
+                    assert!(failed.why.contains(verify::RAN_NO_TEST), "{failed:?}");
+                    Some(failed.section.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        failed.sort();
+        assert_eq!(failed, ["empty", "empty-nextest"], "{events:?}");
+        for passed in ["counted", "not-a-test"] {
+            assert!(
+                events.contains(&Event::Passed(passed.to_owned())),
+                "{events:?}"
+            );
+        }
+        assert!(events.contains(&Event::Line(
+            Stream::Out,
+            "[empty] test result: ok. 0 passed; 0 failed".to_owned()
+        )));
+        assert!(!work.path().join("ran-after-empty").exists());
+    }
+
+    #[cfg(unix)]
+    fn logging_to(log: &Path) -> impl Fn(&str, usize) -> Result<Command> + Sync + '_ {
+        move |check, _| {
+            let mut command = Command::new("/bin/sh");
+            let outcome = if check.ends_with("broken") {
+                "fail"
+            } else {
+                "ok"
+            };
+            command
+                .arg("-c")
+                .arg("echo \"$1\" >> \"$2\"; [ \"$3\" = ok ]")
+                .args(["sh", check])
+                .arg(log)
+                .arg(outcome);
+            Ok(command)
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_kani_reach_check_runs_before_any_other_full_check() {
+        let work = tempfile::tempdir().unwrap();
+        let log = work.path().join("log");
+        let jobs = || {
+            vec![
+                Job {
+                    section: "slow-first".to_owned(),
+                    checks: vec![
+                        "cargo kani --harness long".to_owned(),
+                        "cargo xtask kani-reach slow-first".to_owned(),
+                    ],
+                },
+                Job {
+                    section: "model".to_owned(),
+                    checks: vec!["python3 scripts/check_model.py verification/m".to_owned()],
+                },
+                Job {
+                    section: "reach-only".to_owned(),
+                    checks: vec!["cargo xtask kani-reach reach-only".to_owned()],
+                },
+                Job {
+                    section: "tests".to_owned(),
+                    checks: vec![
+                        "cargo kani --tests --exact --harness t".to_owned(),
+                        "ZIPPER_X=1 cargo xtask kani-reach tests".to_owned(),
+                    ],
+                },
+            ]
+        };
+        for workers in [1, 2, 4] {
+            fs::write(&log, "").unwrap();
+            let mut passed = Vec::new();
+            let reached = run_reach_first(jobs(), workers, logging_to(&log), |event| {
+                if let Event::Passed(name) = event {
+                    passed.push(name);
+                }
+            });
+            assert!(reached);
+            let ran: Vec<String> = fs::read_to_string(&log)
+                .unwrap()
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            assert_eq!(ran.len(), 6, "{ran:?}");
+            let reaches = ran.iter().take_while(|check| is_reach_check(check)).count();
+            assert_eq!(reaches, 3, "with {workers} worker(s) the order was {ran:?}");
+            passed.sort();
+            assert_eq!(passed, ["model", "reach-only", "slow-first", "tests"]);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_kani_reach_check_stops_the_run_before_any_other_full_check() {
+        let work = tempfile::tempdir().unwrap();
+        let log = work.path().join("log");
+        let jobs = vec![
+            Job {
+                section: "sound".to_owned(),
+                checks: vec![
+                    "cargo kani --harness long".to_owned(),
+                    "cargo xtask kani-reach sound".to_owned(),
+                ],
+            },
+            Job {
+                section: "broken".to_owned(),
+                checks: vec!["cargo xtask kani-reach broken".to_owned()],
+            },
+        ];
+        let mut events = Vec::new();
+        let reached = run_reach_first(jobs, 2, logging_to(&log), |event| events.push(event));
+        assert!(!reached);
+        let ran = fs::read_to_string(&log).unwrap();
+        assert!(ran.lines().all(is_reach_check), "{ran}");
+        assert!(
+            !events.iter().any(|event| matches!(event, Event::Passed(_))),
+            "a section passes only once all its checks ran: {events:?}"
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Event::Failed(failed) if failed.section == "broken"
+        )));
     }
 
     #[cfg(unix)]
