@@ -480,6 +480,7 @@ const FORMAT_TESTS: &[(&str, &[&str])] = &[
     ("cab", &["cab_corpus", "cab_sets"]),
     ("lzh", &["lzh_corpus"]),
     ("arj", &["arj_corpus"]),
+    ("rar", &["rar_corpus", "hostile_rar"]),
     ("iso", &["iso_corpus"]),
     ("wim", &["wim_corpus"]),
     ("exe", &["exe_corpus"]),
@@ -699,8 +700,45 @@ fn crates_named_in(tree: &str, names: &[&str]) -> Vec<String> {
     found
 }
 
+const FORMAT_UMBRELLAS: &[&str] = &["all-formats", "more-formats"];
+
+fn umbrella_members(manifest: &str, umbrella: &str) -> Result<Vec<String>> {
+    let prefix = format!("{umbrella} = [");
+    let members = manifest
+        .lines()
+        .find_map(|line| line.trim_end().strip_prefix(prefix.as_str()))
+        .and_then(|rest| rest.strip_suffix(']'))
+        .with_context(|| format!("Cargo.toml has no one-line `{umbrella}` feature"))?;
+    Ok(members
+        .split(',')
+        .map(|member| member.trim().trim_matches('"').to_owned())
+        .filter(|member| !member.is_empty())
+        .collect())
+}
+
+fn formats_without_tests(manifest: &str) -> Result<Vec<String>> {
+    let mut untested = Vec::new();
+    for umbrella in FORMAT_UMBRELLAS {
+        for format in umbrella_members(manifest, umbrella)? {
+            let tested = FORMAT_TESTS
+                .iter()
+                .any(|(features, _)| features.split(',').any(|feature| feature == format));
+            if !tested && !FORMAT_UMBRELLAS.contains(&format.as_str()) {
+                untested.push(format);
+            }
+        }
+    }
+    Ok(untested)
+}
+
 fn format_tests() -> Result<()> {
     ensure_nextest()?;
+    let untested = formats_without_tests(&fs::read_to_string(root().join("Cargo.toml"))?)?;
+    ensure!(
+        untested.is_empty(),
+        "FORMAT_TESTS runs no tests in a build with only {}",
+        untested.join(", ")
+    );
     let formats = cargo_features()?;
     for (features, tests) in FORMAT_TESTS {
         ensure!(
@@ -1365,6 +1403,23 @@ mod zlib_check_tests {
         let unlinked =
             "target/release/zipper:\n\t/usr/lib/libiconv.2.dylib (compatibility version 7.0.0)\n";
         assert!(zlib_libraries_in(unlinked).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod format_tests_tests {
+    use super::*;
+
+    #[test]
+    fn every_format_feature_runs_its_tests_in_a_build_with_only_that_feature() {
+        let manifest = fs::read_to_string(root().join("Cargo.toml")).unwrap();
+        assert_eq!(
+            formats_without_tests(&manifest).unwrap(),
+            Vec::<String>::new()
+        );
+        let added = manifest.replacen("\"rar\", ", "\"rar\", \"newformat\", ", 1);
+        assert_ne!(added, manifest);
+        assert_eq!(formats_without_tests(&added).unwrap(), ["newformat"]);
     }
 }
 
