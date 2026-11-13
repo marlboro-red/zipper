@@ -335,7 +335,7 @@ item = src/bcj2.rs | mod proofs {
 [lz4-blocks]
 speed = slow
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 6574afa11bd8e9e3
+fingerprint = ec75acc107815283
 full-check = cargo xtask kani-reach lz4-blocks
 full-check = cargo kani --harness lz4::proofs::
 item = src/lz4.rs | pub(crate) fn decode_block(
