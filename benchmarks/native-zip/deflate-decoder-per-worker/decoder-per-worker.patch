@@ -1,0 +1,605 @@
+diff --git a/src/inflate.rs b/src/inflate.rs
+index 628d6d4..7d1f466 100644
+--- a/src/inflate.rs
++++ b/src/inflate.rs
+@@ -836,6 +836,52 @@ pub(crate) struct Inflate<W> {
+     total_in: u64,
+ }
+ 
++pub(crate) type Parked = Inflate<()>;
++
++impl Parked {
++    pub(crate) const fn parked() -> Self {
++        Self {
++            window: (),
++            bits: Bits {
++                buffer: 0,
++                count: 0,
++            },
++            state: State::BlockHeader,
++            last_block: false,
++            dynamic: None,
++            uses_dynamic: false,
++            filled: 0,
++            total_in: 0,
++        }
++    }
++
++    pub(crate) fn resume<W: std::ops::DerefMut<Target = [u8]>>(&mut self, window: W) -> Inflate<W> {
++        assert!(window.len() >= SMALLEST_WINDOW);
++        let mut inflate = std::mem::replace(self, Self::parked()).moved_to(window);
++        inflate.restart();
++        inflate
++    }
++}
++
++impl<W> Inflate<W> {
++    fn moved_to<V>(self, window: V) -> Inflate<V> {
++        Inflate {
++            window,
++            bits: self.bits,
++            state: self.state,
++            last_block: self.last_block,
++            dynamic: self.dynamic,
++            uses_dynamic: self.uses_dynamic,
++            filled: self.filled,
++            total_in: self.total_in,
++        }
++    }
++
++    pub(crate) fn park(self) -> Parked {
++        self.moved_to(())
++    }
++}
++
+ impl<W: std::ops::DerefMut<Target = [u8]>> Inflate<W> {
+     pub(crate) fn new(window: W) -> Self {
+         Self::with_history(window, &[])
+@@ -845,14 +891,8 @@ impl<W: std::ops::DerefMut<Target = [u8]>> Inflate<W> {
+         assert!(window.len() >= SMALLEST_WINDOW && history.len() <= HISTORY);
+         window[..history.len()].copy_from_slice(history);
+         Self {
+-            window,
+-            bits: Bits::default(),
+-            state: State::BlockHeader,
+-            last_block: false,
+-            dynamic: None,
+-            uses_dynamic: false,
+             filled: history.len(),
+-            total_in: 0,
++            ..Parked::parked().moved_to(window)
+         }
+     }
+ 
+@@ -1175,7 +1215,20 @@ pub(crate) mod tests {
+ 
+     fn ours(stream: &[u8], piece: usize, window: usize, stored_output: Option<usize>) -> Outcome {
+         let mut window = vec![0xa5u8; window];
+-        let mut inflate = Inflate::new(&mut window[..]);
++        decoded_by(
++            &mut Inflate::new(&mut window[..]),
++            stream,
++            piece,
++            stored_output,
++        )
++    }
++
++    fn decoded_by(
++        inflate: &mut Inflate<&mut [u8]>,
++        stream: &[u8],
++        piece: usize,
++        stored_output: Option<usize>,
++    ) -> Outcome {
+         let mut bytes = Vec::new();
+         let mut output = vec![0x5au8; stored_output.unwrap_or(0)];
+         let mut at = 0usize;
+@@ -1529,11 +1582,10 @@ pub(crate) mod tests {
+         }
+     }
+ 
+-    #[test]
+-    fn every_entry_of_the_zip_test_archives_decodes_as_zlib_does() {
++    fn deflate_entries_of_the_zip_test_archives() -> Vec<(String, Vec<u8>)> {
+         use std::io::Read;
+         let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+-        let (mut decoded, mut refused) = (0, 0);
++        let mut entries = Vec::new();
+         for file in walkdir::WalkDir::new(data).sort_by_file_name() {
+             let path = file.unwrap().into_path();
+             if path.extension().is_none_or(|extension| extension != "zip") {
+@@ -1553,16 +1605,168 @@ pub(crate) mod tests {
+                 if entry.read_to_end(&mut packed).is_err() {
+                     continue;
+                 }
+-                let label = format!("{} entry {index}", path.display());
+-                match agrees_with_zlib(&packed, &label) {
+-                    Outcome::Decoded { .. } => decoded += 1,
+-                    Outcome::Refused => refused += 1,
+-                }
++                entries.push((format!("{} entry {index}", path.display()), packed));
++            }
++        }
++        entries
++    }
++
++    #[test]
++    fn every_entry_of_the_zip_test_archives_decodes_as_zlib_does() {
++        let (mut decoded, mut refused) = (0, 0);
++        for (label, packed) in deflate_entries_of_the_zip_test_archives() {
++            match agrees_with_zlib(&packed, &label) {
++                Outcome::Decoded { .. } => decoded += 1,
++                Outcome::Refused => refused += 1,
+             }
+         }
+         assert!(decoded > 100 && refused > 0, "{decoded} {refused}");
+     }
+ 
++    fn fixed_block(tokens: &[Token]) -> Vec<u8> {
++        let (litlen, distance) = fixed_lengths();
++        let mut writer = BitWriter::default();
++        writer.put(0b011, 3);
++        put_tokens(&mut writer, tokens, &litlen, &distance);
++        writer.finish()
++    }
++
++    fn a_match_from_before_the_start() -> Vec<u8> {
++        fixed_block(&[Token::Literal(b'x'), match_of(3, 2)])
++    }
++
++    fn literals(bytes: &[u8]) -> Vec<u8> {
++        let tokens: Vec<Token> = bytes.iter().map(|&byte| Token::Literal(byte)).collect();
++        fixed_block(&tokens)
++    }
++
++    fn mutants_of(entries: &[(String, Vec<u8>)], random: &mut Random) -> Vec<(String, Vec<u8>)> {
++        let mut mutants = Vec::new();
++        for (label, packed) in entries.iter().filter(|(_, packed)| !packed.is_empty()) {
++            let cut = random.below(packed.len());
++            mutants.push((format!("{label} cut at {cut}"), packed[..cut].to_vec()));
++            let bit = random.below(packed.len() * 8);
++            mutants.push((
++                format!("{label} bit {bit} flipped"),
++                with_bits_flipped(packed, &[bit]),
++            ));
++            let at = random.below(packed.len());
++            let mut inserted = packed.clone();
++            let noise: Vec<u8> = (0..1 + random.below(16))
++                .map(|_| random.next() as u8)
++                .collect();
++            inserted.splice(at..at, noise);
++            mutants.push((format!("{label} bytes inserted at {at}"), inserted));
++        }
++        mutants
++    }
++
++    fn resumed(
++        parked: &mut Parked,
++        window: &mut [u8],
++        stream: &[u8],
++        piece: usize,
++        stored_output: Option<usize>,
++    ) -> Outcome {
++        let mut inflate = parked.resume(window);
++        let outcome = decoded_by(&mut inflate, stream, piece, stored_output);
++        *parked = inflate.park();
++        outcome
++    }
++
++    #[test]
++    fn one_resumed_decoder_decodes_each_corpus_entry_and_mutant_as_a_fresh_decoder_does() {
++        let corpus = deflate_entries_of_the_zip_test_archives();
++        let mut random = Random(2024);
++        let mut inputs = mutants_of(&corpus, &mut random);
++        inputs.extend(corpus);
++        let damaged = damaged_inputs();
++        for (round, FlipRound { stream, flip_sets }) in damaged.rounds.iter().take(6).enumerate() {
++            for bits in flip_sets {
++                inputs.push((
++                    format!("round {round} flips"),
++                    with_bits_flipped(stream, bits),
++                ));
++            }
++        }
++        for (round, noise) in damaged.noise.iter().take(2000).enumerate() {
++            inputs.push((format!("noise round {round}"), noise.clone()));
++        }
++        let probes = [
++            (
++                "a match from before the start",
++                a_match_from_before_the_start(),
++            ),
++            ("literals", literals(b"fresh bytes")),
++        ];
++        let window_size = WINDOWS[2];
++        let mut window = vec![0xa5u8; window_size];
++        let mut parked = Parked::parked();
++        let (mut decoded, mut refused) = (0, 0);
++        for (index, (label, stream)) in inputs.iter().enumerate() {
++            let piece = PIECES[index % PIECES.len()];
++            let stored_output = (index % 3 == 0).then(|| STORED_OUTPUTS[index / 3 % 4].1);
++            let fresh = ours(stream, piece, window_size, stored_output);
++            let reused = resumed(&mut parked, &mut window, stream, piece, stored_output);
++            assert!(
++                reused == fresh,
++                "{label}: a resumed decoder differs from a fresh one"
++            );
++            match fresh {
++                Outcome::Decoded { .. } => decoded += 1,
++                Outcome::Refused => refused += 1,
++            }
++            for (probe, stream) in &probes {
++                let fresh = ours(stream, piece, window_size, None);
++                let reused = resumed(&mut parked, &mut window, stream, piece, None);
++                assert!(
++                    reused == fresh,
++                    "{probe} after {label} differs from a fresh decoder"
++                );
++            }
++        }
++        assert!(decoded > 300 && refused > 2000, "{decoded} {refused}");
++    }
++
++    #[test]
++    fn a_resumed_decoder_forgets_a_long_history_and_a_stream_cut_mid_block() {
++        let data = sample(11, 300_000);
++        let long = deflated(&data, 6);
++        let mut window = vec![0u8; WINDOWS[2]];
++        let mut parked = Parked::parked();
++        let whole = Outcome::Decoded {
++            bytes: data,
++            consumed: long.len() as u64,
++        };
++        let exact = Outcome::Decoded {
++            bytes: b"fresh bytes".to_vec(),
++            consumed: literals(b"fresh bytes").len() as u64,
++        };
++        for piece in [1, 33, usize::MAX] {
++            assert!(resumed(&mut parked, &mut window, &long, piece, None) == whole);
++            let reaching = a_match_from_before_the_start();
++            assert_eq!(
++                resumed(&mut parked, &mut window, &reaching, piece, None),
++                Outcome::Refused
++            );
++            let cut = &long[..long.len() / 2];
++            assert_eq!(
++                resumed(&mut parked, &mut window, cut, piece, None),
++                Outcome::Refused
++            );
++            assert_eq!(
++                resumed(
++                    &mut parked,
++                    &mut window,
++                    &literals(b"fresh bytes"),
++                    piece,
++                    None
++                ),
++                exact
++            );
++        }
++    }
++
+     #[test]
+     fn the_silesia_files_at_three_levels_decode_as_zlib_does() {
+         let Some(folder) = std::env::var_os("ZIPPER_SILESIA") else {
+diff --git a/src/native_zip.rs b/src/native_zip.rs
+index 2ff01ad..046ad91 100644
+--- a/src/native_zip.rs
++++ b/src/native_zip.rs
+@@ -241,7 +241,21 @@ impl<T> Drop for Recycled<'_, T> {
+ }
+ 
+ type ExtractEntry<'a> =
+-    dyn Fn(&mut crate::zip_reader::Reader, &mut [u8], usize) -> Result<()> + Sync + 'a;
++    dyn Fn(&mut crate::zip_reader::Reader, &mut Scratch, usize) -> Result<()> + Sync + 'a;
++
++struct Scratch {
++    buffer: Vec<u8>,
++    inflate: crate::inflate::Parked,
++}
++
++impl Scratch {
++    fn new() -> Self {
++        Self {
++            buffer: vec![0; WORKER_BUFFER],
++            inflate: crate::inflate::Parked::parked(),
++        }
++    }
++}
+ 
+ #[cfg_attr(test, derive(Debug, PartialEq))]
+ pub(crate) struct EntryTime {
+@@ -1261,9 +1275,10 @@ fn stream_entry(
+     input: &mut impl Read,
+     item: &Item,
+     descriptor: bool,
+-    buffer: &mut [u8],
++    scratch: &mut Scratch,
+     mut sink: impl FnMut(&[u8]) -> Result<()>,
+ ) -> Result<()> {
++    let buffer = &mut scratch.buffer[..];
+     let mut crc = crc32fast::Hasher::new();
+     let mut written = 0u64;
+     let mut emit = |bytes: &[u8]| -> Result<()> {
+@@ -1315,27 +1330,10 @@ fn stream_entry(
+         );
+     } else {
+         let (input_buffer, window) = buffer.split_at_mut(DEFLATE_INPUT);
+-        let mut inflate = crate::inflate::Inflate::new(window);
+-        let (mut start, mut end) = (0, 0);
+-        loop {
+-            if start == end {
+-                end = input.read(input_buffer)?;
+-                start = 0;
+-            }
+-            let step = counters::time(Counter::DecodeNanos, || {
+-                inflate.decode(&input_buffer[start..end])
+-            })?;
+-            start += step.consumed;
+-            emit(step.output)?;
+-            if step.finished {
+-                break;
+-            }
+-            ensure!(!step.needs_input(), "truncated ZIP Deflate stream");
+-        }
+-        ensure!(
+-            inflate.total_in() == item.packed(),
+-            "ZIP Deflate stream ends before its compressed size"
+-        );
++        let mut inflate = scratch.inflate.resume(window);
++        let inflated = inflate_entry(input, item, input_buffer, &mut inflate, &mut emit);
++        scratch.inflate = inflate.park();
++        inflated?;
+     }
+     ensure!(written == item.entry.size, "ZIP decoded size mismatch");
+     ensure!(
+@@ -1345,6 +1343,36 @@ fn stream_entry(
+     Ok(())
+ }
+ 
++fn inflate_entry(
++    input: &mut impl Read,
++    item: &Item,
++    input_buffer: &mut [u8],
++    inflate: &mut crate::inflate::Inflate<&mut [u8]>,
++    mut emit: impl FnMut(&[u8]) -> Result<()>,
++) -> Result<()> {
++    let (mut start, mut end) = (0, 0);
++    loop {
++        if start == end {
++            end = input.read(input_buffer)?;
++            start = 0;
++        }
++        let step = counters::time(Counter::DecodeNanos, || {
++            inflate.decode(&input_buffer[start..end])
++        })?;
++        start += step.consumed;
++        emit(step.output)?;
++        if step.finished {
++            break;
++        }
++        ensure!(!step.needs_input(), "truncated ZIP Deflate stream");
++    }
++    ensure!(
++        inflate.total_in() == item.packed(),
++        "ZIP Deflate stream ends before its compressed size"
++    );
++    Ok(())
++}
++
+ struct Payload<R> {
+     data: std::io::Take<R>,
+     decryptor: Option<Decryptor>,
+@@ -1401,11 +1429,11 @@ impl<R: Read> Payload<R> {
+         self,
+         item: &Item,
+         descriptor: bool,
+-        buffer: &mut [u8],
++        scratch: &mut Scratch,
+         sink: impl FnMut(&[u8]) -> Result<()>,
+     ) -> Result<()> {
+         let encrypted = self.decryptor.is_some();
+-        let streamed = self.decrypt_and_check(item, descriptor, buffer, sink);
++        let streamed = self.decrypt_and_check(item, descriptor, scratch, sink);
+         if encrypted {
+             crate::scrub::scrub_stack();
+         }
+@@ -1417,11 +1445,11 @@ impl<R: Read> Payload<R> {
+         mut self,
+         item: &Item,
+         descriptor: bool,
+-        buffer: &mut [u8],
++        scratch: &mut Scratch,
+         mut sink: impl FnMut(&[u8]) -> Result<()>,
+     ) -> Result<()> {
+         let mut sink_failed = false;
+-        let streamed = stream_entry(&mut self, item, descriptor, buffer, |bytes| {
++        let streamed = stream_entry(&mut self, item, descriptor, scratch, |bytes| {
+             sink(bytes).inspect_err(|_| sink_failed = true)
+         });
+         let Some(encryption) = item.encryption.filter(|_| !sink_failed) else {
+@@ -1661,7 +1689,7 @@ pub fn read_archive_with_options(
+     let targets = std::sync::Mutex::new(Vec::new());
+     let for_the_next_pass = std::sync::Mutex::new(Vec::new());
+     let idle_workspaces = std::sync::Mutex::new(Vec::new());
+-    let extract_entry: &ExtractEntry = &|raw, buffer, index| -> Result<()> {
++    let extract_entry: &ExtractEntry = &|raw, scratch, index| -> Result<()> {
+         tracker.check()?;
+         let item = &items[index];
+         let _decoder = match decoder_need(item) {
+@@ -1683,7 +1711,7 @@ pub fn read_archive_with_options(
+         let payload = Payload::open(&mut *raw, item, &local, options.password)?;
+         if item.symlink {
+             let mut target = Vec::new();
+-            payload.stream(item, descriptor, buffer, |bytes| {
++            payload.stream(item, descriptor, scratch, |bytes| {
+                 target.extend_from_slice(bytes);
+                 Ok(())
+             })?;
+@@ -1719,7 +1747,7 @@ pub fn read_archive_with_options(
+         {
+             let report_written = |bytes| tracker.count_bytes(bytes);
+             let (mut written, held) = write_behind(unwritten, &report_written, |sink| {
+-                payload.stream(item, descriptor, buffer, |bytes| {
++                payload.stream(item, descriptor, scratch, |bytes| {
+                     tracker.report()?;
+                     sink(bytes)
+                 })
+@@ -1731,7 +1759,7 @@ pub fn read_archive_with_options(
+             return finished(item);
+         }
+         let mut held = 0;
+-        payload.stream(item, descriptor, buffer, |bytes| {
++        payload.stream(item, descriptor, scratch, |bytes| {
+             if bytes.is_empty() {
+                 return Ok(());
+             }
+@@ -1751,15 +1779,11 @@ pub fn read_archive_with_options(
+         // RECORD(benchmarks/native-zip/one-entry-per-task/README.md): split to single entries,
+         // and reuse each task's reader and buffer, which tiny entries cannot afford per task.
+         entries.par_iter().with_max_len(1).try_for_each_init(
+-            || {
+-                Recycled::take(&idle_workspaces, || {
+-                    (reader.clone(), vec![0u8; WORKER_BUFFER])
+-                })
+-            },
++            || Recycled::take(&idle_workspaces, || (reader.clone(), Scratch::new())),
+             |workspace, &index| match EntryOnThisThread::enter(&for_the_next_pass) {
+                 Some(_entry) => {
+-                    let (raw, buffer) = &mut **workspace;
+-                    extract_entry(raw, buffer, index)
++                    let (raw, scratch) = &mut **workspace;
++                    extract_entry(raw, scratch, index)
+                 }
+                 None => {
+                     for_the_next_pass
+diff --git a/tests/hostile_zip.rs b/tests/hostile_zip.rs
+index c2e1e5c..cac6624 100644
+--- a/tests/hostile_zip.rs
++++ b/tests/hostile_zip.rs
+@@ -1760,3 +1760,126 @@ mod folder_spellings {
+         }
+     }
+ }
++
++#[derive(Default)]
++struct FixedBlock {
++    bytes: Vec<u8>,
++    buffer: u32,
++    count: u32,
++}
++
++impl FixedBlock {
++    fn put(&mut self, value: u32, count: u32) {
++        self.buffer |= value << self.count;
++        self.count += count;
++        while self.count >= 8 {
++            self.bytes.push(self.buffer as u8);
++            self.buffer >>= 8;
++            self.count -= 8;
++        }
++    }
++
++    // SPEC(RFC 1951 3.1.1): Huffman codes are packed starting with their most significant bit.
++    fn code(&mut self, (code, length): (u32, u32)) {
++        for bit in (0..length).rev() {
++            self.put((code >> bit) & 1, 1);
++        }
++    }
++
++    // SPEC(RFC 1951 3.2.6): the fixed code gives literals 0 to 143 the 8-bit codes from 0x30,
++    // length symbols 256 to 279 the 7-bit codes from 0, and distances 5-bit codes.
++    fn final_block(literals: &[u8], then_three_from_four_back: bool) -> Vec<u8> {
++        const END_OF_BLOCK: (u32, u32) = (0, 7);
++        const LENGTH_3: (u32, u32) = (1, 7);
++        const DISTANCE_4: (u32, u32) = (3, 5);
++        let mut block = Self::default();
++        block.put(0b011, 3);
++        for &byte in literals {
++            assert!(byte < 144);
++            block.code((0x30 + u32::from(byte), 8));
++        }
++        if then_three_from_four_back {
++            block.code(LENGTH_3);
++            block.code(DISTANCE_4);
++        }
++        block.code(END_OF_BLOCK);
++        if block.count > 0 {
++            block.put(0, 8 - block.count);
++        }
++        block.bytes
++    }
++}
++
++fn long_history() -> Vec<u8> {
++    (0..300_000u32).map(|n| b'a' + (n * 7 % 26) as u8).collect()
++}
++
++fn extracted_on_one_worker(entries: &[Raw]) -> (tempfile::TempDir, anyhow::Result<()>) {
++    use zipper::native_zip::{ReadOptions, read_archive_with_options};
++    let root = tempfile::tempdir().unwrap();
++    let archive = root.path().join("case.zip");
++    write_zip(&archive, entries);
++    let options = || ReadOptions {
++        threads: Some(1),
++        ..ReadOptions::default()
++    };
++    let verified = read_archive_with_options(&archive, None, options());
++    let extracted = read_archive_with_options(&archive, Some(&root.path().join("out")), options());
++    assert_eq!(verified.is_ok(), extracted.is_ok());
++    (root, extracted.map(drop))
++}
++
++#[test]
++fn an_entry_after_a_long_one_on_the_same_worker_decodes_as_if_alone() {
++    let history = long_history();
++    let fresh = b"fresh bytes";
++    let entries = [
++        compressed(
++            "long",
++            &history,
++            DEFLATED,
++            FixedBlock::final_block(&history, false),
++        ),
++        compressed(
++            "short",
++            fresh,
++            DEFLATED,
++            FixedBlock::final_block(fresh, false),
++        ),
++    ];
++    let (root, extracted) = extracted_on_one_worker(&entries);
++    extracted.unwrap();
++    assert_eq!(fs::read(root.path().join("out/long")).unwrap(), history);
++    assert_eq!(fs::read(root.path().join("out/short")).unwrap(), fresh);
++}
++
++#[test]
++fn an_entry_cannot_reach_back_into_the_entry_before_it_on_the_same_worker() {
++    let history = long_history();
++    let mut through_the_entry_before = vec![b'x'];
++    through_the_entry_before.extend_from_slice(&history[history.len() - 3..]);
++    let entries = [
++        compressed(
++            "long",
++            &history,
++            DEFLATED,
++            FixedBlock::final_block(&history, false),
++        ),
++        compressed(
++            "reaching",
++            &through_the_entry_before,
++            DEFLATED,
++            FixedBlock::final_block(b"x", true),
++        ),
++    ];
++    let (root, extracted) = extracted_on_one_worker(&entries);
++    let error = extracted.expect_err("an entry read the entry before it");
++    assert!(
++        format!("{error:#}").contains("before the start of the data"),
++        "{error:#}"
++    );
++    assert!(
++        leftovers(root.path()).is_empty(),
++        "a refused extraction left output"
++    );
++}

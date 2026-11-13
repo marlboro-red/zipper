@@ -69,6 +69,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-14 | [One Deflate decoder per ZIP worker](native-zip/deflate-decoder-per-worker/README.md) | Reverted. Reusing each worker's decoder across its entries left the dependency sources and 10,000 flat tiny files unchanged at default threads and at one thread, with every range overlapping. |
 | 2026-11-11 | [A last pass over Deflate ZIP extraction](deflate/last-pass/README.md) | Kept two changes of seventeen experiments. The decoder takes 1.2% less time on Silesia, and a read of stored blocks reaches the file in one write instead of two. No wall-time row moves beyond its range. The decoder already takes 0.975 times libdeflate's cycles. |
 | 2026-11-11 | [ZIP folders made in parallel before the workers start](native-zip/parallel-folders/README.md) | Reverted. On APFS making folders does not get faster with more threads, and the setup moved from 53.8 to 46.4 ms at four threads with ranges overlapping. Three folder-spelling tests are kept. |
 | 2026-11-11 | [ZIP workers read the archive without a lock](native-zip/lock-free-reads/README.md) | Kept. 512 MiB of stored entries extract 1.18 times faster at 64 threads, and other rows are unchanged. The serial folder setup is about 20% of four-thread extraction on the dependency sources. |
