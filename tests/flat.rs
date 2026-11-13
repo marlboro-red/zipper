@@ -253,6 +253,9 @@ fn names_that_differ_only_in_case_or_normalization_are_one_name_where_the_filesy
         eprintln!("skipped: this filesystem tells names apart by case");
         return;
     }
+    let probe = tempfile::tempdir().unwrap();
+    fs::write(probe.path().join("\u{e9}"), "").unwrap();
+    let ignores_normalization = probe.path().join("e\u{301}").exists();
     let case = root.path().join("case.zip");
     zip(&case, &[("a/X.txt", "upper"), ("b/x.txt", "lower")]);
     let normalization = root.path().join("normalization.zip");
@@ -275,7 +278,12 @@ fn names_that_differ_only_in_case_or_normalization_are_one_name_where_the_filesy
         ));
         extract_archive(archive, &destination, flat(existing)).map(|()| contents(&destination))
     };
-    for archive in [&case, &normalization] {
+    let twins: &[&Path] = if ignores_normalization {
+        &[&case, &normalization]
+    } else {
+        &[&case]
+    };
+    for archive in twins {
         let error = format!("{:#}", run(archive, Existing::Refuse).unwrap_err());
         assert!(error.contains("several archive files are named"), "{error}");
         let parent: Vec<_> = fs::read_dir(root.path())
@@ -287,10 +295,12 @@ fn names_that_differ_only_in_case_or_normalization_are_one_name_where_the_filesy
     assert_eq!(run(&case, Existing::Skip).unwrap(), ["upper"]);
     assert_eq!(run(&case, Existing::Overwrite).unwrap(), ["lower"]);
     assert_eq!(run(&case, Existing::RenameNew).unwrap(), ["lower", "upper"]);
-    assert_eq!(
-        run(&normalization, Existing::RenameExisting).unwrap(),
-        ["composed", "decomposed"]
-    );
+    if ignores_normalization {
+        assert_eq!(
+            run(&normalization, Existing::RenameExisting).unwrap(),
+            ["composed", "decomposed"]
+        );
+    }
     assert_eq!(
         run(&numbered, Existing::RenameNew).unwrap(),
         ["a", "b", "c"]
