@@ -36,7 +36,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M20. Zipper without 7-Zip](roadmap/m20-zipper-without-7-zip.md) | Done | M11 to M19, M21 |
 | [M22. Zipper's own ZIP directory reader](roadmap/m22-zippers-own-zip-directory-reader.md) | Done | M21 |
 | [M23. The LZMA decoder as its own crate](roadmap/m23-the-lzma-decoder-as-its-own-crate.md) | Planned | M21, M31 |
-| [M24. ZIP and 7z throughput from the research report](roadmap/m24-zip-and-7z-throughput-from-the-research-report.md) | In progress | M22 |
+| [M24. ZIP and 7z throughput from the research report](roadmap/m24-zip-and-7z-throughput-from-the-research-report.md) | Done | M22 |
 | [M25. A release build without C](roadmap/m25-a-release-build-without-c.md) | Done | M22 |
 | [M26. Cargo features for each format](roadmap/m26-cargo-features-for-each-format.md) | Done | M25 |
 | [M27. LZ4 and `compress` at the reference speed](roadmap/m27-lz4-and-compress-at-the-reference-speed.md) | Planned | M25 |
@@ -58,6 +58,8 @@ M21, M14, M15, M16 and M22 closed on 8 November 2026. M21 closed by the user's d
 M30 closed on 13 November 2026. On one Apple M2 Max, `zipper extract` of a 212 MB gzip file takes 209.5 ms against 218.7 ms for `libdeflate-gunzip`, with the ranges apart, as the [gzip file record](../benchmarks/deflate/gzip-file/README.md) shows. It was measured on one machine and one corpus.
 
 M20 closed on 14 November 2026. No code path in the library or the CLI runs 7-Zip. A format with a reader goes to it, and one without fails with `zipper::Refused`. `50cde4b` removed the backend, and `tests/no_7zip.rs` checks that a 7-Zip on `PATH` never starts for any file in `tests/data`.
+
+M24 closed on 14 November 2026. Every idea of the research report on ZIP and 7z extraction has a record or a reason on its page. The kept changes include [buffered BCJ2 branch streams](../benchmarks/native-7z/bcj2-buffered-branches/README.md), [the doubling copy for short LZMA matches](../benchmarks/lzma/repeating-copy/README.md), [the 7z solid-folder writer pool](../benchmarks/native-7z/solid-writer-pool/README.md) and [parallel BZip2 blocks](../benchmarks/bzip2/block-parallel/README.md). Two ideas were declined. Detecting folder merges from `mkdir` results could save at most 1.8 traced ms of `stat` calls on the dependency sources. The LZMA literal path is left with a gap to 7-Zip that only its hand-written arm64 loop is shown to close, and Zipper stays pure Rust.
 
 M29 closed on 13 November 2026. `--overwrite` into a folder that holds every file of the 28,000-file archive takes 1.80 times as long as into an empty one, down from 5.19 times, as the [full-folder record](../benchmarks/overwrite/full-folder/README.md) shows. The removal of the old files on APFS keeps it above 1.5 times. `e2dc81e` synced the exhaustive overwrite and cancel checks on the final code, after the Windows changes to `src/staging.rs`.
 M17, M19, M26 and M32 closed on 14 November 2026. M17 reads ISO 9660, UDF and WIM in process and refuses the other images for licence reasons. The hosted Windows release candidate run on `0824bf1` passed the tests that write a WIM's named streams as NTFS streams. M19 closed when the parity matrix marked `Nsis` dropped, since its unshipped reader was a port of LGPL code. M26 closed when `954d0f7` ran the RAR tests in a build with only `rar` and made `cargo xtask format-tests` refuse a format feature with no tests. M32 closed on the same `Nsis` row and on `v0.1.0-alpha.3`, cut at `5d70a20` after the second audit.
