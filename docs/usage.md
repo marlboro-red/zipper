@@ -299,6 +299,8 @@ During the prompt Zipper catches SIGALRM, SIGCONT, SIGHUP, SIGINT, SIGPIPE, SIGQ
 
 While `extract` runs, Zipper also catches SIGINT, SIGTERM, SIGHUP and SIGQUIT, unless they are ignored. The signal stops the extraction through its cancel check, and the staging folder and any decrypted bytes in it are removed. With `--stdout`, the signal also stops the copy to standard output, even while a full pipe blocks it, and the temporary folder is removed. A signal after the last byte was copied leaves the output whole, and Zipper exits with success. While Zipper copies an archive read from `-` into its spool file, the signal stops the copy and the spool is removed. Zipper then ends by the same signal. A signal while files move into the destination undoes the moves made so far, as a cancel does [from Rust](#extract-from-rust). If that undo fails, Zipper prints the error, which names each path left changed, before it ends by the signal. A signal that arrives after the last move does not undo it, and Zipper exits with success.
 
+On Windows, `extract` catches Ctrl-C and Ctrl-Break in the same way, and they stop the extraction, the copies and the moves as SIGINT does. Zipper then exits with `STATUS_CONTROL_C_EXIT`, the code of a console program that Ctrl-C ends, so a calling script stops too. A program started in a new process group ignores Ctrl-C, as Windows arranges, and only Ctrl-Break reaches it. Closing the console window, logging off and shutting down are not caught.
+
 To give the password without a prompt, as a script must, pass `--password`. It takes any bytes on Unix, including ones that are not UTF-8. Other users on the machine can read it in the process list:
 
 ```sh
