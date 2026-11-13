@@ -13,7 +13,7 @@ use zipper::Reader;
     about = "Zipper: fast, safe extraction of ZIP, tar, 7z, RAR, cpio, ar, RPM, xar, CAB, LZH, ARJ, ISO and WIM archives, compressed files, file system images, executables, firmware and Flash files"
 )]
 struct Cli {
-    /// Maximum worker threads (defaults to available CPUs; on macOS many small files use at most 4 in a ZIP or in a 7z with one file per folder, and on Windows tiny ZIP files crowded in one folder use 1; tar uses 4 writers, and a solid 7z up to 4 writers beside its decoders).
+    /// Maximum worker threads (defaults to available CPUs; on macOS many small files use at most 4 in a ZIP and 6 folder workers in a 7z with one file per folder, and on Windows tiny ZIP files crowded in one folder use 1; tar uses 4 writers, and a solid 7z up to 4 writers beside its decoders).
     #[arg(long, global = true)]
     threads: Option<usize>,
     /// Password for encrypted ZIP entries and 7z archives in extract and test, and for a 7z header in list.

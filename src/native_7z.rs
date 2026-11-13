@@ -1,7 +1,7 @@
 //! In-process extraction of 7z archives whose folders use Copy, LZMA, LZMA2,
 //! Deflate and the 7-Zip branch and delta filters. See
 //! `docs/reference/7z-reader.md` for what it accepts and restores.
-use crate::creation_bound::{CREATION_BOUND_WORKERS, CreationBound};
+use crate::creation_bound::CreationBound;
 use crate::sevenz_crypto::{self, AES_BUFFER, AES_METHOD, BLOCK, CbcReader, KeyError, Keys};
 use crate::writer_pool::{self, CHUNK, ClosesOnDrop, InFlight, Job, Writers, Written};
 use crate::xz_filters::{self, BRANCH_BUFFER, DELTA_HISTORY, DeltaDecoder, Filter, read_through};
@@ -2870,6 +2870,9 @@ fn creation_bound(
     CreationBound::SmallMean.holds(&sizes)
 }
 
+// RECORD(benchmarks/native-7z/nonsolid-worker-cap/README.md): six workers beat the default and four on both trees.
+const CREATION_BOUND_FOLDER_WORKERS: usize = 6;
+
 fn folder_workers(
     threads: Option<usize>,
     available: usize,
@@ -2877,7 +2880,7 @@ fn folder_workers(
     folders: usize,
 ) -> usize {
     let automatic = if creation_bound && cfg!(target_os = "macos") {
-        available.min(CREATION_BOUND_WORKERS)
+        available.min(CREATION_BOUND_FOLDER_WORKERS)
     } else {
         available
     };
@@ -3033,12 +3036,9 @@ mod folder_worker_tests {
 
     #[test]
     fn only_the_automatic_count_is_capped_and_only_on_macos() {
-        let capped = if cfg!(target_os = "macos") {
-            CREATION_BOUND_WORKERS
-        } else {
-            10
-        };
+        let capped = if cfg!(target_os = "macos") { 6 } else { 10 };
         assert_eq!(folder_workers(None, 10, true, 5000), capped);
+        assert_eq!(folder_workers(None, 7, true, 5000), capped.min(7));
         assert_eq!(folder_workers(None, 10, false, 5000), 10);
         assert_eq!(folder_workers(None, 2, true, 5000), 2);
         for threads in [1, 10, 64] {
