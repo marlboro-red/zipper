@@ -41,3 +41,10 @@ Left, on 12 November 2026:
 Checked on 14 November 2026:
 
 - The `Windows release candidate` workflow runs `cargo test --release` on every test, these included. The [M20 close](m20-zipper-without-7-zip.md#closed-on-14-november-2026) records that its run on `0824bf1` passed. No line on this page yet confirms exit check 2, so the milestone stays in progress.
+
+## Closed on 14 November 2026
+
+- Exit check 1 is met. In the [parity matrix](../reference/parity.md), the `Iso`, `Udf` and `wim` rows read native. The `APFS`, `APM`, `Dmg`, `FAT`, `GPT`, `HFS`, `MBR`, `NTFS`, `QCOW`, `Sparse`, `VDI`, `VHD`, `VHDX` and `VMDK` rows read `refused`, each with its licence reason. The `-sns` row now reads `partial`, since `--alternate-streams` writes the named streams of a WIM on Windows.
+- Exit check 2 is met by the two image readers left. The ISO and UDF reader keeps one node for each entry and reads one folder at a time. The [ISO reader limits](../reference/iso-reader.md#limits) record its peaks on images of 998,000 and 99,900 entries. The WIM reader parses metadata through a 1 MiB window and decodes one chunk of at most 64 KiB at a time. The [WIM reader limits](../reference/wim-reader.md#limits) record its peaks on the images that `write_wims_at_the_documented_limits` in `tests/hostile_wim.rs` fills to each limit.
+- The item left on 12 November is done. The hosted `Windows release candidate` run on `0824bf1` ran `cargo test --release` on every test, the `on_windows` tests of `tests/wim_streams.rs` among them, and passed, as the [M20 close](m20-zipper-without-7-zip.md#closed-on-14-november-2026) records. No commit since `0824bf1` changed `src/native_wim.rs`, `src/ntfs_streams.rs` or `tests/wim_streams.rs`.
+- `cargo xtask verify --owed` lists no owed section.

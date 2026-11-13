@@ -236,8 +236,8 @@
       ]
     },
     "Nsis": {
-      "status": "missing",
-      "note": "An NSIS installer reads as the PE file it is. Zipper does not unpack the files the installer holds."
+      "status": "dropped",
+      "note": "Dropped on 12 November 2026, since the NSIS reader written for it was a port of 7-Zip's LGPL code and never shipped. An NSIS installer reads as the PE file it is. Zipper does not unpack the files the installer holds."
     },
     "PE": {
       "status": "native",
@@ -658,8 +658,13 @@
       "status": "missing"
     },
     "-sns": {
-      "status": "missing",
-      "note": "7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader refuses them, because the shared name check refuses `:`."
+      "status": "partial",
+      "note": "7-Zip stores NTFS streams in WIM, not in 7z. On Windows, `--alternate-streams` writes each named stream of a WIM file as an NTFS stream. Without the option, and off Windows, a WIM with a named stream is refused.",
+      "tests": [
+        "tests/wim_streams.rs::every_stream_is_written_after_its_file_and_reads_back_byte_for_byte",
+        "tests/wim_streams.rs::without_the_option_a_named_stream_is_refused_and_the_error_names_the_option",
+        "tests/wim_streams.rs::off_windows_extraction_with_the_option_is_refused_and_publishes_nothing"
+      ]
     },
     "-snz": {
       "status": "native",

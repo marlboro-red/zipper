@@ -37,3 +37,10 @@ Done so far, by 12 November 2026:
 Left, on 13 November 2026:
 
 - Exit check 1 is not settled by one row. Since M20 removed the backend, no row of the [parity matrix](../reference/parity.md) can read backend, and `Nsis` reads `missing`. [M32](m32-every-reader-under-zippers-licence.md) drops the unshipped NSIS reader, so the row is to be marked dropped with that reason.
+
+## Closed on 14 November 2026
+
+- Exit check 1 is met. No row of the [parity matrix](../reference/parity.md) reads backend, and its legend has no such status since [M20](m20-zipper-without-7-zip.md) removed the backend.
+- The `Nsis` row now reads `dropped`, with the reason [M32](m32-every-reader-under-zippers-licence.md) gives. The NSIS reader written on 12 November 2026 was a port of 7-Zip's LGPL code and never shipped. An NSIS installer still reads as the PE file it is.
+- Two rows still read `missing`. `AES256CBC` is a codec no 7z archive uses, and `-sni` is a switch. Neither is a format this milestone covers.
+- `cargo xtask verify --owed` lists no owed section.

@@ -17,12 +17,12 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | Status | Rows |
 | --- | ---: |
 | `native` | 87 |
-| `partial` | 1 |
-| `missing` | 4 |
-| `dropped` | 2 |
+| `partial` | 2 |
+| `missing` | 2 |
+| `dropped` | 3 |
 | `refused` | 18 |
 
-5 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
+4 rows have no proof yet. The milestone that moves a row adds a corpus archive for it, or a test when the row is a switch.
 
 ## Formats
 
@@ -57,7 +57,7 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `MsLZ` | `native` | SZDD files read in process, named as 7-Zip 26.05 names them. Files come from Zipper's own encoder, since no permissively licensed file from Microsoft's `compress.exe` was found. | `generated_szdd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_szdd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs`, `szdd_names_follow_7zip_and_stay_safe` in `tests/legacy_streams.rs` |
 | `Mub` | `native` | Mach-O universal files read in process, each slice named as 7-Zip names it. A file with the `B9 FA F1 0E` signature is refused. The corpus comes from lipo. | `every_corpus_executable_extracts_the_tree_7zip_extracts` in `tests/exe_corpus.rs`, `generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/exe_corpus.rs`, `damaged_executables_are_refused_exactly_when_7zip_refuses_them` in `tests/hostile_exe.rs` |
 | `NTFS` | `refused` | Refused. The reader was removed on 12 November 2026 for licence reasons. | `every_refused_format_is_refused_with_nothing_written` in `tests/refused.rs`, `no_refused_format_reaches_a_fake_7zip_on_path` in `tests/refused.rs` |
-| `Nsis` | `missing` | An NSIS installer reads as the PE file it is. Zipper does not unpack the files the installer holds. | No proof yet. |
+| `Nsis` | `dropped` | Dropped on 12 November 2026, since the NSIS reader written for it was a port of 7-Zip's LGPL code and never shipped. An NSIS installer reads as the PE file it is. Zipper does not unpack the files the installer holds. | No proof yet. |
 | `PE` | `native` | Sections, the certificate, debug data, COFF symbols and resources read in process, with icons, bitmaps, string tables and version resources converted as 7-Zip converts them. The corpus comes from LLVM clang, lld and llvm-rc, since no Microsoft linker runs here. | `every_corpus_executable_extracts_the_tree_7zip_extracts` in `tests/exe_corpus.rs`, `generated_executables_extract_byte_for_byte_and_exactly_as_7zip_extracts_them` in `tests/exe_corpus.rs`, `damaged_executables_are_refused_exactly_when_7zip_refuses_them` in `tests/hostile_exe.rs` |
 | `Ppmd` | `native` | var.H and var.I files read in process. Files come from the `ppmd-rust` encoders. A file with data after its end marker is refused, where 7-Zip ignores the rest. | `generated_pmd_files_extract_exactly_as_7zip_extracts_them` in `tests/legacy_streams.rs`, `damaged_pmd_files_are_refused_exactly_when_7zip_refuses_them` in `tests/legacy_streams.rs` |
 | `QCOW` | `refused` | QCOW images of every version are refused. The disk image reader was removed on 12 November 2026 for licence reasons, and M33 tracks a clean rewrite. | `every_refused_format_is_refused_with_nothing_written` in `tests/refused.rs`, `no_refused_format_reaches_a_fake_7zip_on_path` in `tests/refused.rs` |
@@ -152,6 +152,6 @@ A proof is a corpus archive or a test. `tests/parity.rs` extracts every corpus a
 | `-snl` | `native` | Links that stay inside the destination are created. Windows needs Developer Mode or administrator rights. | `symlinks_inside_the_destination_are_created_after_files` in `tests/hostile_zip.rs`, `symlinks_must_stay_inside_the_destination` in `tests/hostile_zip.rs` |
 | `-snh` | `partial` | Tar and WIM hard links are created. The other native readers meet none. | `links_stay_inside_and_never_carry_writes` in `tests/hostile_tar.rs`, `hard_links_stay_linked_as_7zip_links_them` in `tests/wim_corpus.rs` |
 | `-sni` | `missing` |  | No proof yet. |
-| `-sns` | `missing` | 7-Zip stores NTFS streams in WIM, not in 7z. The WIM reader refuses them, because the shared name check refuses `:`. | No proof yet. |
+| `-sns` | `partial` | 7-Zip stores NTFS streams in WIM, not in 7z. On Windows, `--alternate-streams` writes each named stream of a WIM file as an NTFS stream. Without the option, and off Windows, a WIM with a named stream is refused. | `every_stream_is_written_after_its_file_and_reads_back_byte_for_byte` in `tests/wim_streams.rs`, `without_the_option_a_named_stream_is_refused_and_the_error_names_the_option` in `tests/wim_streams.rs`, `off_windows_extraction_with_the_option_is_refused_and_publishes_nothing` in `tests/wim_streams.rs` |
 | `-snz` | `native` | On Windows, every reader copies the archive's mark onto each extracted file. | `extracted_files_carry_the_archives_mark_of_the_web` in `tests/zone.rs` |
 | `-spf` | `dropped` | Absolute paths are refused, because they write outside the destination. | `unsafe_names_never_escape` in `tests/hostile_zip.rs` |

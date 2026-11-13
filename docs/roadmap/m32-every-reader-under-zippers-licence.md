@@ -33,3 +33,11 @@ Done so far, by 12 November 2026:
 - The parity matrix marks each removed row `refused` with a note, and `tests/parity.rs` refuses its corpus archives in every engine.
 
 Exit checks 1 to 3 pass. Check 1 rests on `tests/refused.rs`, from `09bc152`, `e681602`, `de29b57` and `64f3dd1`. Check 2 rests on the `refused` rows those commits set. Check 3 is the audit recorded in `bc39092`, whose disk image finding `de29b57` removed. No tag has been cut since `v0.1.0-alpha.2`, which predates the audit. The NSIS drop and the tag remain. The NSIS reader never reached main, and its `Nsis` row reads `missing` since M20 removed the backend.
+
+## Closed on 14 November 2026
+
+- Exit checks 1 to 3 pass, as above.
+- The NSIS drop is recorded. The `Nsis` row of the [parity matrix](../reference/parity.md) reads `dropped`, with the reason that the reader was a port and never shipped.
+- Parity with 7-Zip stays set aside after this close, as the [roadmap](../roadmap.md) says.
+- Exit check 4 is met. `v0.1.0-alpha.3` was cut on 13 November 2026 at `5d70a20`, whose history holds the second audit's record in `bc39092`.
+- `cargo xtask verify --owed` lists no owed section.

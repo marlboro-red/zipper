@@ -30,21 +30,21 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M14. Encrypted archives](roadmap/m14-encrypted-archives.md) | Done | M13 |
 | [M15. Split, spanned and self-extracting archives](roadmap/m15-split-spanned-and-self-extracting-archives.md) | Done | M13 |
 | [M16. Package formats](roadmap/m16-package-formats.md) | Done | M13 |
-| [M17. Disc and disk images](roadmap/m17-disc-and-disk-images.md) | In progress | M16 |
+| [M17. Disc and disk images](roadmap/m17-disc-and-disk-images.md) | Done | M16 |
 | [M18. RAR](roadmap/m18-rar.md) | In progress | M14, M15 |
-| [M19. Legacy formats](roadmap/m19-legacy-formats.md) | In progress | M13 |
+| [M19. Legacy formats](roadmap/m19-legacy-formats.md) | Done | M13 |
 | [M20. Zipper without 7-Zip](roadmap/m20-zipper-without-7-zip.md) | Done | M11 to M19, M21 |
 | [M22. Zipper's own ZIP directory reader](roadmap/m22-zippers-own-zip-directory-reader.md) | Done | M21 |
 | [M23. The LZMA decoder as its own crate](roadmap/m23-the-lzma-decoder-as-its-own-crate.md) | Planned | M21, M31 |
 | [M24. ZIP and 7z throughput from the research report](roadmap/m24-zip-and-7z-throughput-from-the-research-report.md) | In progress | M22 |
 | [M25. A release build without C](roadmap/m25-a-release-build-without-c.md) | Done | M22 |
-| [M26. Cargo features for each format](roadmap/m26-cargo-features-for-each-format.md) | In progress | M25 |
+| [M26. Cargo features for each format](roadmap/m26-cargo-features-for-each-format.md) | Done | M25 |
 | [M27. LZ4 and `compress` at the reference speed](roadmap/m27-lz4-and-compress-at-the-reference-speed.md) | Planned | M25 |
 | [M28. Clean failure everywhere](roadmap/m28-clean-failure-everywhere.md) | In progress | M8 |
 | [M29. Overwrite at the speed of a fresh extraction](roadmap/m29-overwrite-at-the-speed-of-a-fresh-extraction.md) | Done | M8 |
 | [M30. gzip end to end at libdeflate's speed](roadmap/m30-gzip-end-to-end-at-libdeflates-speed.md) | Done | M25 |
 | [M31. A release case for each decoder](roadmap/m31-a-release-case-for-each-decoder.md) | Planned | M25 |
-| [M32. Every reader under Zipper's licence](roadmap/m32-every-reader-under-zippers-licence.md) | In progress | M25 |
+| [M32. Every reader under Zipper's licence](roadmap/m32-every-reader-under-zippers-licence.md) | Done | M25 |
 | [M33. Clean rewrites of the copied checks](roadmap/m33-clean-rewrites-of-the-copied-checks.md) | Planned | M32 |
 
 M0 was done when the roadmap began on 1 November 2026. M1 closed the same day, with the reference corpus, the hostile tests and mutation testing of the ZIP reader. A run of 300,000 mutation cases found no failure, as [mutation testing](reference/zip-reader.md#mutation-testing) records. M2 closed on 2 November 2026, with Unix permissions, modification times and links that stay inside restored as the [ZIP reader reference](reference/zip-reader.md) lists. M3 closed the same day. `cargo xtask bench` regenerates every number in [Results](results.md), and the gate fails when the page differs from the committed JSON.
@@ -60,6 +60,7 @@ M30 closed on 13 November 2026. On one Apple M2 Max, `zipper extract` of a 212 M
 M20 closed on 14 November 2026. No code path in the library or the CLI runs 7-Zip. A format with a reader goes to it, and one without fails with `zipper::Refused`. `50cde4b` removed the backend, and `tests/no_7zip.rs` checks that a 7-Zip on `PATH` never starts for any file in `tests/data`.
 
 M29 closed on 13 November 2026. `--overwrite` into a folder that holds every file of the 28,000-file archive takes 1.80 times as long as into an empty one, down from 5.19 times, as the [full-folder record](../benchmarks/overwrite/full-folder/README.md) shows. The removal of the old files on APFS keeps it above 1.5 times. `e2dc81e` synced the exhaustive overwrite and cancel checks on the final code, after the Windows changes to `src/staging.rs`.
+M17, M19, M26 and M32 closed on 14 November 2026. M17 reads ISO 9660, UDF and WIM in process and refuses the other images for licence reasons. The hosted Windows release candidate run on `0824bf1` passed the tests that write a WIM's named streams as NTFS streams. M19 closed when the parity matrix marked `Nsis` dropped, since its unshipped reader was a port of LGPL code. M26 closed when `954d0f7` ran the RAR tests in a build with only `rar` and made `cargo xtask format-tests` refuse a format feature with no tests. M32 closed on the same `Nsis` row and on `v0.1.0-alpha.3`, cut at `5d70a20` after the second audit.
 
 ## Close a milestone
 
