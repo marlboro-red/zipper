@@ -937,18 +937,18 @@ fn finish(output: &mut BufWriter<OutputFile>, item: &Item) -> Result<()> {
 }
 
 const CREATION_BOUND_FILES: usize = 1024;
-const CREATION_BOUND_WORKERS: usize = 4;
+pub(crate) const CREATION_BOUND_WORKERS: usize = 4;
 const TINY_FILE: u64 = 16 * 1024;
 const SMALL_MEAN_FILE: u64 = 64 * 1024;
 
 #[derive(Clone, Copy)]
-enum CreationBound {
+pub(crate) enum CreationBound {
     Tiny,
     SmallMean,
 }
 
 impl CreationBound {
-    fn holds(self, file_sizes: &[u64]) -> bool {
+    pub(crate) fn holds(self, file_sizes: &[u64]) -> bool {
         if file_sizes.len() < CREATION_BOUND_FILES {
             return false;
         }

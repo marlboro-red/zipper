@@ -1,6 +1,7 @@
 //! In-process extraction of 7z archives whose folders use Copy, LZMA, LZMA2,
 //! Deflate and the 7-Zip branch and delta filters. See
 //! `docs/reference/7z-reader.md` for what it accepts and restores.
+use crate::native_zip::{CREATION_BOUND_WORKERS, CreationBound};
 use crate::sevenz_crypto::{self, AES_BUFFER, AES_METHOD, BLOCK, CbcReader, KeyError, Keys};
 use crate::writer_pool::{self, CHUNK, ClosesOnDrop, InFlight, Job, Writers, Written};
 use crate::xz_filters::{self, BRANCH_BUFFER, DELTA_HISTORY, DeltaDecoder, Filter, read_through};
@@ -2588,10 +2589,12 @@ pub fn read_archive(
     wanted.sort_unstable_by_key(|&folder| std::cmp::Reverse(archive.folders[folder].size));
     let memory = crate::memory::Memory::new(DECODER_MEMORY);
     let targets = Mutex::new(Vec::new());
-    let threads = options
-        .threads
-        .unwrap_or_else(rayon::current_num_threads)
-        .min(wanted.len());
+    let threads = folder_workers(
+        options.threads,
+        rayon::current_num_threads(),
+        creation_bound(&archive.items, &chosen, &by_folder, &wanted),
+        wanted.len(),
+    );
     let segment_threads =
         options.threads.unwrap_or_else(rayon::current_num_threads) / threads.max(1);
     let flight = InFlight::default();
@@ -2849,6 +2852,38 @@ pub fn read_archive(
     Ok(entries)
 }
 
+fn creation_bound(
+    items: &[Item],
+    chosen: &[bool],
+    by_folder: &[Vec<usize>],
+    wanted: &[usize],
+) -> bool {
+    let in_wanted = || wanted.iter().map(|&folder| &by_folder[folder]);
+    if in_wanted().any(|files| files.len() > 1) {
+        return false;
+    }
+    let sizes: Vec<u64> = in_wanted()
+        .flatten()
+        .filter(|&&index| chosen[index] && items[index].kind == Kind::File)
+        .map(|&index| items[index].size)
+        .collect();
+    CreationBound::SmallMean.holds(&sizes)
+}
+
+fn folder_workers(
+    threads: Option<usize>,
+    available: usize,
+    creation_bound: bool,
+    folders: usize,
+) -> usize {
+    let automatic = if creation_bound && cfg!(target_os = "macos") {
+        available.min(CREATION_BOUND_WORKERS)
+    } else {
+        available
+    };
+    threads.unwrap_or(automatic).min(folders)
+}
+
 fn file_writers(
     writes: bool,
     threads: Option<usize>,
@@ -2883,6 +2918,135 @@ fn create_links(root: &Path, items: &[Item], targets: Vec<(usize, Vec<u8>)>) -> 
 /// ZIP.
 pub fn sniff(path: &Path) -> Result<bool> {
     Ok(archive_start(&crate::volumes::open(path)?)?.is_some())
+}
+
+#[cfg(test)]
+mod folder_worker_tests {
+    use super::*;
+
+    const SMALL_MEAN: u64 = 64 * 1024;
+
+    fn item(kind: Kind, stream: Option<(usize, usize)>, size: u64) -> Item {
+        Item {
+            name: String::new(),
+            kind,
+            mode: None,
+            windows_attributes: 0,
+            modified: None,
+            stream,
+            size,
+            crc: None,
+        }
+    }
+
+    struct Layout {
+        items: Vec<Item>,
+        by_folder: Vec<Vec<usize>>,
+    }
+
+    impl Layout {
+        fn one_file_per_folder(sizes: &[u64]) -> Self {
+            let mut layout = Layout {
+                items: Vec::new(),
+                by_folder: Vec::new(),
+            };
+            for &size in sizes {
+                layout.add_stream(Kind::File, size);
+            }
+            layout
+        }
+
+        fn add_stream(&mut self, kind: Kind, size: u64) {
+            let folder = self.by_folder.len();
+            self.by_folder.push(vec![self.items.len()]);
+            self.items.push(item(kind, Some((folder, 0)), size));
+        }
+
+        fn creation_bound(&self, chosen: &[bool]) -> bool {
+            let wanted: Vec<usize> = (0..self.by_folder.len())
+                .filter(|&folder| self.by_folder[folder].iter().any(|&index| chosen[index]))
+                .collect();
+            creation_bound(&self.items, chosen, &self.by_folder, &wanted)
+        }
+
+        fn all_chosen(&self) -> bool {
+            self.creation_bound(&vec![true; self.items.len()])
+        }
+    }
+
+    #[test]
+    fn a_thousand_and_twenty_four_files_are_creation_bound_and_one_fewer_is_not() {
+        assert!(Layout::one_file_per_folder(&[200; 1024]).all_chosen());
+        assert!(!Layout::one_file_per_folder(&[200; 1023]).all_chosen());
+    }
+
+    #[test]
+    fn a_mean_of_64_kib_is_creation_bound_and_one_byte_more_is_not() {
+        let mut sizes = vec![SMALL_MEAN; 1024];
+        assert!(Layout::one_file_per_folder(&sizes).all_chosen());
+        sizes[0] += 1024;
+        assert!(!Layout::one_file_per_folder(&sizes).all_chosen());
+        let mut one_huge = vec![1; 1024];
+        one_huge[0] = u64::MAX;
+        assert!(!Layout::one_file_per_folder(&one_huge).all_chosen());
+    }
+
+    #[test]
+    fn empty_files_do_not_count_because_the_caller_creates_them() {
+        let mut layout = Layout::one_file_per_folder(&[1 << 20; 3]);
+        layout
+            .items
+            .extend((0..1024).map(|_| item(Kind::File, None, 0)));
+        assert!(!layout.all_chosen());
+    }
+
+    #[test]
+    fn files_outside_the_selection_do_not_count() {
+        let layout = Layout::one_file_per_folder(&[200; 2048]);
+        let every_folder_as_in_test: Vec<usize> = (0..2048).collect();
+        let test_mode = |chosen: &[bool]| {
+            creation_bound(
+                &layout.items,
+                chosen,
+                &layout.by_folder,
+                &every_folder_as_in_test,
+            )
+        };
+        let mut chosen = vec![false; 2048];
+        chosen[..1023].fill(true);
+        assert!(!layout.creation_bound(&chosen));
+        assert!(!test_mode(&chosen));
+        chosen[1023] = true;
+        assert!(layout.creation_bound(&chosen));
+        assert!(test_mode(&chosen));
+    }
+
+    #[test]
+    fn links_and_solid_folders_do_not_count() {
+        let mut links = Layout::one_file_per_folder(&[200; 1023]);
+        links.add_stream(Kind::Symlink, 1);
+        assert!(!links.all_chosen());
+        let mut solid = Layout::one_file_per_folder(&[200; 1024]);
+        solid.by_folder[0].push(1);
+        assert!(!solid.all_chosen());
+    }
+
+    #[test]
+    fn only_the_automatic_count_is_capped_and_only_on_macos() {
+        let capped = if cfg!(target_os = "macos") {
+            CREATION_BOUND_WORKERS
+        } else {
+            10
+        };
+        assert_eq!(folder_workers(None, 10, true, 5000), capped);
+        assert_eq!(folder_workers(None, 10, false, 5000), 10);
+        assert_eq!(folder_workers(None, 2, true, 5000), 2);
+        for threads in [1, 10, 64] {
+            assert_eq!(folder_workers(Some(threads), 10, true, 5000), threads);
+        }
+        assert_eq!(folder_workers(Some(64), 10, true, 3), 3);
+        assert_eq!(folder_workers(None, 10, true, 0), 0);
+    }
 }
 
 #[cfg(test)]

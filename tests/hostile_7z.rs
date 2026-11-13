@@ -212,6 +212,64 @@ fn the_builder_writes_archives_7zip_reads() {
 }
 
 #[test]
+fn a_creation_bound_non_solid_archive_extracts_the_same_bytes_at_every_thread_count() {
+    let mut members: Vec<Member> = (0..1100)
+        .map(|index| {
+            let data: Vec<u8> = format!("file {index} ").bytes().cycle().take(200).collect();
+            file(&format!("d{}/f{index:05}", index % 7), &data)
+        })
+        .collect();
+    members.extend((0..30).map(|index| file(&format!("empty{index}"), b"")));
+    members.push(directory("d0"));
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("a.7z");
+    fs::write(
+        &archive,
+        copy_folder_archive(&members, HeaderDamage::default()),
+    )
+    .unwrap();
+    let selected = ["d3".to_owned()];
+    for (paths, threads) in [
+        (&[][..], None),
+        (&[][..], Some(1)),
+        (&[][..], Some(10)),
+        (&[][..], Some(64)),
+        (&selected[..], None),
+    ] {
+        let destination = root.path().join(format!("out-{}-{threads:?}", paths.len()));
+        read_archive(
+            &archive,
+            Some(&destination),
+            ReadOptions {
+                threads,
+                paths,
+                ..ReadOptions::default()
+            },
+        )
+        .unwrap_or_else(|error| panic!("{threads:?} threads: {error:#}"));
+        let mut written = 0;
+        for member in &members {
+            let path = destination.join(&member.name);
+            let chosen = paths.is_empty() || member.name.starts_with("d3/");
+            match (&member.data, chosen) {
+                (Some(data), true) => {
+                    assert!(
+                        fs::read(&path).unwrap() == *data,
+                        "{} at {threads:?}",
+                        member.name
+                    );
+                    written += 1;
+                }
+                (Some(_), false) => assert!(!path.exists(), "{} at {threads:?}", member.name),
+                (None, _) => {}
+            }
+        }
+        let expected = if paths.is_empty() { 1130 } else { 157 };
+        assert_eq!(written, expected, "{paths:?} at {threads:?}");
+    }
+}
+
+#[test]
 fn unsafe_names_never_escape() {
     for name in [
         "../escape",
