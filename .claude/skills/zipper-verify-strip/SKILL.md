@@ -13,7 +13,7 @@ A strip renames every entry before it is written. A wrong rename writes a file t
 | --- | --- |
 | `every_short_path_lands_where_its_strip_says` in src/placement.rs | On every path of up to 4 segments over `a`, `b` and `ab`, each count from 0 to 5 and each prefix gives the path that a plain split by `/` gives. A prefix match always rebuilds the full path. |
 | `placed_names_fit_exactly_when_no_file_is_doubled_or_used_as_a_folder` | On every set of 3 entries over 2 segments, the collision check refuses exactly the sets with two files at one path or a file under a path another entry needs as a folder |
-| `every_corpus_archive_strips_to_its_manifest_without_the_leading_folders` in tests/strip.rs | Every ZIP, tar and 7z corpus archive, on both ZIP engines, stripped by each of its folders and by 1 to 3 segments, gives the manifest's tree re-placed by path segments alone. Where that tree holds a collision or a link that leaves the destination, the extraction fails and publishes nothing. |
+| `every_corpus_archive_strips_to_its_manifest_without_the_leading_folders` in tests/strip.rs | Every ZIP, tar and 7z corpus archive, stripped by each of its folders and by 1 to 3 segments, gives the manifest's tree re-placed by path segments alone. Where that tree holds a collision or a link that leaves the destination, the extraction fails and publishes nothing. |
 
 ## Run them
 

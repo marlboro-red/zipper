@@ -23,4 +23,4 @@ Left, on 13 November 2026:
 
 - Exit check 1 is not met. No corpus written by WinRAR is in the repository, and no test compares with `unrar`.
 - Exit check 2 is partly met. The hostile tests cover the container, and the review archives include filter cases. No recorded review names each RAR 4 filter on its own.
-- RAR AES encryption, RAR volumes and RAR 4 solid archives still go to 7-Zip under the default engine.
+- RAR AES encryption, RAR volumes and RAR 4 solid archives are not read. They went to 7-Zip until [M20](m20-zipper-without-7-zip.md) removed the backend, and the RAR reader now refuses each by name.

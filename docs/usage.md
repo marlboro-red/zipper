@@ -52,7 +52,7 @@ Zipper never writes through a link that is already in the destination. With `ove
 
 ## Extract selected paths
 
-To extract part of a ZIP, tar or 7z archive read in process, pass `--path` with an exact path or a folder. Repeat it to select more:
+To extract part of an archive, pass `--path` with an exact path or a folder. Repeat it to select more:
 
 ```sh
 target/release/zipper extract bundle.zip --output selected --path assets/icons --path readme.txt
@@ -221,7 +221,7 @@ That build leaves out the 12 packages that only encryption, Deflate64 and PPMd n
 
 The `Reader` enum keeps every variant in every build. An archive in a format that the build does not read fails with `zipper::NotBuilt`, which names the format, such as `tar`, `gzip` or `7z`, and writes nothing. No build starts 7-Zip. An archive with no known signature goes to the ZIP reader, as in every build, so a build without `zip` refuses it as `zip`.
 
-`cargo xtask gate` lints every feature on its own with `unused_crate_dependencies` denied, so no feature builds a crate its readers do not use. It runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build, and `tests/zip_method_features.rs` and `tests/zstd_feature.rs` in a `zip-deflate` build. It also runs `tests/consumer`, a crate that depends on Zipper with only `zip` and `7z`, and checks that it extracts a corpus ZIP and 7z in process to the trees their manifests record. Built without its default features, the same crate depends on Zipper with only `zip-deflate` and extracts a stored and a Deflate corpus ZIP. The gate also fails when a `zip-deflate` build depends on a crate that only encryption, Deflate64 or PPMd needs. `cargo xtask format-tests` runs each format's corpus or hostile tests in a build with only that format's feature, and `cargo xtask release-checks` runs it too. The `ext` and `squashfs` tests also wrap their images in disk images, so they run with `disk`.
+`cargo xtask gate` lints every feature on its own with `unused_crate_dependencies` denied, so no feature builds a crate its readers do not use. It runs `tests/feature_subset.rs` and the ZIP and 7z corpus tests in a `zip` and `7z` build, and `tests/zip_method_features.rs` and `tests/zstd_feature.rs` in a `zip-deflate` build. It also runs `tests/consumer`, a crate that depends on Zipper with only `zip` and `7z`, and checks that it extracts a corpus ZIP and 7z in process to the trees their manifests record. Built without its default features, the same crate depends on Zipper with only `zip-deflate` and extracts a stored and a Deflate corpus ZIP. The gate also fails when a `zip-deflate` build depends on a crate that only encryption, Deflate64 or PPMd needs. `cargo xtask format-tests` runs each format's corpus or hostile tests in a build with only that format's feature, and `cargo xtask release-checks` runs it too. It runs no RAR tests yet, as [M26](roadmap/m26-cargo-features-for-each-format.md) records.
 
 When `extract_archive` or a reader returns, after success, failure or a cancel, Zipper holds no handle to the destination or the archive, and every thread it started has exited. You can rename, move or delete the destination at once. The shared Rayon pool keeps its idle threads between calls, and they hold nothing from the extraction. `tests/handles.rs` checks this after every reader on Unix by counting open descriptors and threads, and on Windows by renaming and deleting the destination of archives that carry a zone mark.
 
@@ -262,7 +262,7 @@ Before 13 November 2026 Zipper handed some of these files to 7-Zip. The `--zip-e
 
 ## Read ZIP archives in process
 
-ZIP archives use the in-process `native` reader by default, with no flag:
+Zipper reads every ZIP archive with its own reader, in process, with no flag:
 
 ```sh
 zipper --threads 4 extract files.zip -o restored
@@ -271,7 +271,7 @@ zipper test files.zip
 
 If the archive uses another compression method, PKWARE strong encryption or more than one disk, the error says so.
 
-The `native` reader streams every entry, so its memory stays bounded by the worker count, not by file sizes. The [scoreboard](results.md) records its peak memory on each workload.
+The ZIP reader streams every entry, so its memory stays bounded by the worker count, not by file sizes. The [scoreboard](results.md) records its peak memory on each workload.
 The [ZIP reader reference](reference/zip-reader.md) lists supported features, limits and budgets.
 
 ### Extract an encrypted ZIP
@@ -309,7 +309,7 @@ When standard input is not a terminal and no password was given, Zipper refuses.
 
 ## Read tar archives in process
 
-Plain tar, and tar inside gzip, zstd, xz or bzip2, use the in-process tar reader by default:
+Plain tar, and tar inside gzip, zstd, xz or bzip2, go to the tar reader, in process:
 
 ```sh
 zipper extract source.tar.gz -o restored
@@ -328,7 +328,7 @@ The reader recognizes a tar by its first header, not by its file name. A compres
 
 Memory stays within each reader's budgets, which the reader references list.
 
-For native ZIP extraction on macOS, Zipper picks a smaller worker count for small-file archives.
+For ZIP extraction on macOS, Zipper picks a smaller worker count for small-file archives.
 Pass an explicit `--threads N` to override it.
 The [ZIP reader reference](reference/zip-reader.md#concurrency) gives the exact rule.
 

@@ -9,7 +9,7 @@ The author always finds a reason the code is safe. A reviewer who has not seen t
 
 ## Run a review
 
-1. Spawn the `zipper-adversary` agent defined in `.claude/agents/zipper-adversary.md`. It has no edit tools and fixes the scratch directory, both engines and the report shape. Its brief names the scope, the diff command and a review name. Do not give it your conclusion.
+1. Spawn the `zipper-adversary` agent defined in `.claude/agents/zipper-adversary.md`. It has no edit tools and fixes the scratch directory, the binary it drives and the report shape. Its brief names the scope, the diff command and a review name. Do not give it your conclusion.
 2. Each finding comes back CONFIRMED with a crafted archive or a failing run, or PLAUSIBLE with the missing proof named.
 3. Fix every CONFIRMED finding in the same change, with a test that fails before the fix.
 4. Write the test before the fix, and run it to see it fail.

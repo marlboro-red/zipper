@@ -25,7 +25,7 @@ A name may use `/` or `\` between folders. ARJ for MS-DOS writes `\`, and ARJ wr
 ## Metadata
 
 - A file gets its DOS time, read as local time, in two-second steps. A date or time that is out of range leaves the file's time as it was written. A folder gets its time after all files are written.
-- A file written on MS-DOS or Windows with the read-only attribute gets mode `0o444`, and every other file `0o644`. A folder's read-only attribute is ignored, as Windows ignores it. An entry written on Unix gets the permission bits of its access mode. A folder gets `0o755` unless a Unix access mode gives another. The umask limits all of them.
+- A file whose header names MS-DOS or Windows 95 as its host, host 0 or 10, and sets the read-only attribute gets mode `0o444`, and every other file `0o644`. A folder's read-only attribute is ignored, as Windows ignores it. An entry written on Unix gets the permission bits of its access mode. A folder gets `0o755` unless a Unix access mode gives another. The umask limits all of them.
 
 The reader never restores owners or the hidden, system or archive attributes.
 
@@ -78,4 +78,4 @@ Kani proves that the header reader never panics on any header of up to 34 bytes.
 
 `tests/hostile_arj.rs` holds one case per refused layout. Each case must fail and leave nothing in the destination's parent, both when extracting and when only verifying. It cuts an archive of every method at every byte, and each cut must be refused. It flips one bit in every byte and decodes 5,000 random streams without a panic.
 
-An adversarial review built its LZH and ARJ archives in Rust and ran them against both engines. It tried link escapes, unsafe names, sizes and CRCs that lie, every truncation, 60,000 mutations and 100,000 random streams, and found nothing that escaped, panicked or was left behind. It found one problem. A read-only MS-DOS ARJ folder got mode `0o444`, so its files could not be read, and a test now covers the fix. It also measured peak memory against `7zz` on archives at the entry and name limits. The shared tree costs 1.4 to 1.9 times as much as 7-Zip there, as the limits section notes.
+An adversarial review built its LZH and ARJ archives in Rust and ran them against both engines Zipper had then. It tried link escapes, unsafe names, sizes and CRCs that lie, every truncation, 60,000 mutations and 100,000 random streams, and found nothing that escaped, panicked or was left behind. It found one problem. A read-only MS-DOS ARJ folder got mode `0o444`, so its files could not be read, and a test now covers the fix. It also measured peak memory against `7zz` on archives at the entry and name limits. The shared tree costs 1.4 to 1.9 times as much as 7-Zip there, as the limits section notes.

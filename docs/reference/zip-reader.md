@@ -10,7 +10,7 @@ The [usage guide](../usage.md#read-zip-archives-in-process) shows the commands.
 
 The reader supports these features:
 
-- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Deflate decodes with Zipper's own decoder in `src/inflate.rs`, which accepts and refuses the streams zlib does. XZ and LZMA decode with Zipper's own decoder in `src/lzma.rs`, the readers [tar](tar-reader.md#supported-archives) uses. Zstandard decodes with Zipper's own decoder in `src/zstandard.rs`, under the [tar reader's window limit](tar-reader.md#limits), and only the entry's first frame is read. An LZMA entry may end with an end marker or without one, and as in liblzma, `lc` plus `lp` above 4 is refused. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. BZip2 decodes with Zipper's own decoder in `src/bzip2.rs`, one block at a time on the entry's thread. It accepts the padded code tables that libbzip2 accepts and the `bzip2` crate refused, up to the limit of 4 MiB of compressed bytes in a block. Each BZip2 entry reserves 13.7 MiB of the decoder budget while it decodes, or 17.1 MiB when at most four entries decode at once.
+- Stored and Deflate entries, and Deflate64, BZip2, LZMA, Zstandard, XZ and PPMd entries. A PPMd entry must end with the end marker 7-Zip writes. Deflate decodes with Zipper's own decoder in `src/inflate.rs`, which accepts and refuses the streams zlib does. XZ and LZMA decode with Zipper's own decoder in `src/lzma.rs`, the readers [tar](tar-reader.md#supported-archives) uses. Zstandard decodes with Zipper's own decoder in `src/zstandard.rs`, under the [tar reader's window limit](tar-reader.md#limits), and only the entry's first frame is read. An LZMA entry may end with an end marker or without one, and as in liblzma, `lc` plus `lp` above 4 is refused. Every method decodes to exactly its declared size, with its CRC checked and every compressed byte used. BZip2 decodes with Zipper's own decoder in `src/bzip2.rs`, one block at a time on the entry's thread. It accepts the padded code tables that libbzip2 accepts and the `bzip2` crate refused, up to the limit of 4 MiB of compressed bytes in a block. Each BZip2 entry reserves 13.7 MiB of the decoder budget while it decodes, or 17.1 MiB when the reader runs on at most four threads, so that at most four entries decode at once.
 - Shrink (method 1) and Implode (method 6) entries, which PKZIP 1.x wrote. [Legacy methods](#legacy-methods) gives their rules.
 - XZ entries decode with Zipper's own xz reader, as [tar's xz](tar-reader.md#supported-archives) does. An entry holds exactly one xz stream, so stream padding or a second stream after it is refused.
 - Split sets, `name.z01` and on with `name.zip` last, as [ZIP split sets](#zip-split-sets) describes, and an archive that starts with the spanning signature, as Info-ZIP `zip -s` writes one that fits in one piece.
@@ -108,7 +108,7 @@ The library keeps no copy of the password. The keys live in one heap allocation 
 - The PBKDF2 output.
 - The AES key schedule and the HMAC-SHA1 state.
 
-Building and using them leaves copies on the worker's stack, so after key setup and again after each encrypted entry the reader overwrites 64 KiB of the stack below its own frame. Core dumps were taken while the rest of the archive was still extracting, on both engines and at 1 to 8 threads. They held none of the AES-256 round keys, the HMAC inner and outer states, the HMAC key or the PBKDF2 output. That is a check of this build on macOS, not a guarantee. A compiler that inlines differently or spills to another place could leave a copy the overwrite misses.
+Building and using them leaves copies on the worker's stack, so after key setup and again after each encrypted entry the reader overwrites 64 KiB of the stack below its own frame. Core dumps were taken while the rest of the archive was still extracting, on the two ZIP engines Zipper had then and at 1 to 8 threads. They held none of the AES-256 round keys, the HMAC inner and outer states, the HMAC key or the PBKDF2 output. That is a check of this build on macOS, not a guarantee. A compiler that inlines differently or spills to another place could leave a copy the overwrite misses.
 
 The command line holds the password in a buffer that is zeroed on exit. A typed password is read from the terminal one byte at a time, into a buffer that never grows. A password given with `--password` stays in the process arguments, where other users can see it and Zipper cannot clear it, and argument parsing may leave copies in freed memory. Errors and progress reports never contain the password, and `--password` takes values that start with a hyphen, so they never reach a usage error.
 
@@ -134,7 +134,7 @@ An Implode entry reads its two or three Shannon-Fano trees, as general purpose b
 
 ## Integrity checks
 
-Both native ZIP modes run these checks before publishing any output:
+The ZIP reader runs these checks before publishing any output:
 
 - Decoded lengths and CRCs match the central directory.
 - Each local header's name, method, CRC and sizes match its central-directory entry. For Implode, so do the general purpose bits that choose the window and the tree count, which `unzip` and 7-Zip read from the local header. With a data descriptor, a local CRC or size may be zero or `0xFFFFFFFF` instead.
@@ -180,7 +180,7 @@ The reader reads the end record, the ZIP64 end record and locator and the centra
 
 ## Mutation testing
 
-`tests/zip_fuzz.rs` mutates corpus archives with seeded bit flips, truncations, insertions and edge values written into header fields. Both engines extract every mutant. Each case must either fail and leave nothing in the destination's parent, or succeed with verification agreeing and exactly the declared bytes written. A panic fails the test.
+`tests/zip_fuzz.rs` mutates corpus archives with seeded bit flips, truncations, insertions and edge values written into header fields. The ZIP reader extracts every mutant, then verifies it without extracting. Each case must either fail and leave nothing in the destination's parent, or succeed with verification agreeing and exactly the declared bytes written. A panic fails the test.
 
 The gate runs 1,000 cases. To run more, or to replay a reported failure:
 
@@ -189,7 +189,7 @@ ZIPPER_FUZZ_CASES=300000 cargo test --release --test zip_fuzz
 ZIPPER_FUZZ_SEED=303 ZIPPER_FUZZ_CASES=1 cargo test --release --test zip_fuzz
 ```
 
-A run of 300,000 cases on 2026-11-01 at this revision found no failure. In a 20,000-case sample, 3,588 of 40,000 extractions accepted their mutant, mostly through changed timestamps, attributes or comments. The rest were rejected. This is random mutation, not coverage-guided fuzzing. A coverage-guided `cargo fuzz` target needs a nightly toolchain and is not set up.
+A run of 300,000 cases on 2026-11-01 at this revision found no failure. In a 20,000-case sample, 3,588 of 40,000 extractions, on the two ZIP engines Zipper had then, accepted their mutant, mostly through changed timestamps, attributes or comments. The rest were rejected. This is random mutation, not coverage-guided fuzzing. A coverage-guided `cargo fuzz` target needs a nightly toolchain and is not set up.
 
 ## Split volumes
 

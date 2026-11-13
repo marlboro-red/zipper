@@ -12,7 +12,7 @@ Exit checks:
 
 1. No row in the M10 matrix reads backend.
 
-On 12 November 2026 the CHM and Base64 readers were removed for licence reasons, as [M32](m32-every-reader-under-zippers-licence.md) records. Zipper now refuses CHM, Help 2 and Base64 files. The disk image reader was removed the same day, so the ext, SquashFS and CramFS readers no longer read a lone disk partition, only raw volumes. The history below stays as it was.
+On 12 November 2026 the CHM and Base64 readers were removed for licence reasons, as [M32](m32-every-reader-under-zippers-licence.md) records. Zipper now refuses CHM, Help 2 and Base64 files. The disk image reader was removed the same day, so the ext, SquashFS and CramFS readers no longer read a lone disk partition, only raw volumes. [M20](m20-zipper-without-7-zip.md) removed the 7-Zip backend on 13 November 2026, so each volume, image or name below that went to 7-Zip is now refused by its reader or with `zipper::Refused`. The history below stays as it was.
 
 Decided, on 8 November 2026, and reversed on 12 November 2026:
 
@@ -36,4 +36,4 @@ Done so far, by 12 November 2026:
 
 Left, on 13 November 2026:
 
-- Exit check 1 is not met by one row. `Nsis` still reads backend in the [parity matrix](../reference/parity.md). [M32](m32-every-reader-under-zippers-licence.md) drops the unshipped NSIS reader, so the row is to be marked dropped with that reason.
+- Exit check 1 is not settled by one row. Since M20 removed the backend, no row of the [parity matrix](../reference/parity.md) can read backend, and `Nsis` reads `missing`. [M32](m32-every-reader-under-zippers-licence.md) drops the unshipped NSIS reader, so the row is to be marked dropped with that reason.

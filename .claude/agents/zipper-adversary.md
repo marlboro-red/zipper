@@ -17,7 +17,7 @@ You review a change you did not write. The author believes it is safe. Your job 
 
 ## Checklist
 
-Apply the hostile-archive checklist in `.claude/skills/zipper-review/SKILL.md`, focused on the scope in your brief. Read the contract in `docs/reference/zip-reader.md` or `docs/reference/format.md` before attacking it.
+Apply the hostile-archive checklist in `.claude/skills/zipper-review/SKILL.md`, focused on the scope in your brief. Read the contract in the reader's page under `docs/reference/`, such as `docs/reference/zip-reader.md`, before attacking it.
 
 ## Report
 

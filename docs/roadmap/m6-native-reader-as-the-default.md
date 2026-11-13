@@ -13,3 +13,5 @@ Exit checks:
 1. Default ZIP extraction runs in-process on all three operating systems in CI.
 2. The M1 and M2 checks pass on all three operating systems.
 3. `docs/usage.md` and `docs/reference/zip-reader.md` describe the new default.
+
+[M25](m25-a-release-build-without-c.md) retired `native-fast`, and [M20](m20-zipper-without-7-zip.md) removed `--zip-engine` with the 7-Zip backend on 13 November 2026. Every format now goes to Zipper's own reader, with no engine to choose.

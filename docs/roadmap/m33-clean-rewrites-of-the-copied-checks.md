@@ -10,7 +10,7 @@ Scope:
 
 - Rewrite each piece from the format's specification or observed behaviour, by an author who has not read 7-Zip's source or the audit.
 - Keep each reader's tests, corpus and hostile checks as the acceptance tests.
-- Write a new disk image reader for MBR and GPT disks and VHD, VHDX, QCOW, VDI, VMDK and Android sparse images, in a clean room from their specifications. The old reader was a port of 7-Zip's LGPL handlers and was removed on 12 November 2026. Until the rewrite lands, every engine refuses these images, as the [refused formats page](../reference/refused.md#disk-images) describes.
+- Write a new disk image reader for MBR and GPT disks and VHD, VHDX, QCOW, VDI, VMDK and Android sparse images, in a clean room from their specifications. The old reader was a port of 7-Zip's LGPL handlers and was removed on 12 November 2026. Until the rewrite lands, Zipper refuses these images, as the [refused formats page](../reference/refused.md#disk-images) describes.
 - Replace the 7z AES test oracle with a comparison against `7zz` itself.
 
 Exit checks:
