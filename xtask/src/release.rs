@@ -1,7 +1,7 @@
 use crate::verify::{self, Verification};
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, VecDeque},
     fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -13,10 +13,11 @@ use std::{
 pub(crate) const RECORD: &str = "verification/release-checks.txt";
 const RECORD_HEADER: &str = "\
 # Written by `cargo xtask release-checks` and `cargo xtask verify-sync`; do not edit by hand.
-# toolchain, rust-version and kani name what the last passing `release-checks --all` ran on.
-# Each `checked` line names a section and the key of the code and check inputs its full checks last passed on.
+# Each `checked` line names a section, the key of every tracked file but docs and these records
+# plus the section's own lines in verification/coverage.txt, and the tools its full checks passed on.
 ";
 const PRINTED: &str = "release record: ";
+const TOOLS_AFTER: &str = " | ";
 pub(crate) const DEFAULT_JOBS: usize = 3;
 
 pub(crate) struct Options {
@@ -24,68 +25,44 @@ pub(crate) struct Options {
     pub(crate) jobs: usize,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Toolchain {
-    pub(crate) channel: String,
-    pub(crate) rust_version: String,
-    pub(crate) kani: String,
-}
-
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Record {
-    pub(crate) toolchain: Option<Toolchain>,
     pub(crate) checked: BTreeMap<String, String>,
 }
 
 impl Record {
     fn parse(text: &str) -> Result<Self> {
-        let mut fields: BTreeMap<&str, String> = BTreeMap::new();
         let mut checked = BTreeMap::new();
         for (index, line) in text.lines().enumerate() {
             if line.trim().is_empty() || line.starts_with('#') {
                 continue;
             }
-            let (key, value) = line
-                .split_once(" = ")
-                .with_context(|| format!("{RECORD}:{}: expected `key = value`", index + 1))?;
-            match key {
-                "toolchain" | "rust-version" | "kani" => {
-                    fields.insert(key, value.to_owned());
-                }
-                "checked" => {
-                    let (name, hash) = value.split_once(' ').with_context(|| {
-                        format!("{RECORD}:{}: expected `checked = NAME KEY`", index + 1)
-                    })?;
-                    checked.insert(name.to_owned(), hash.to_owned());
-                }
-                other => bail!("{RECORD}:{}: unknown key {other:?}", index + 1),
-            }
+            let entry = line.strip_prefix("checked = ").with_context(|| {
+                format!(
+                    "{RECORD}:{}: expected `checked = NAME KEY | TOOLS`",
+                    index + 1
+                )
+            })?;
+            let (name, passed_on) = entry.split_once(' ').with_context(|| {
+                format!(
+                    "{RECORD}:{}: expected `checked = NAME KEY | TOOLS`",
+                    index + 1
+                )
+            })?;
+            ensure!(
+                passed_on.contains(TOOLS_AFTER),
+                "{RECORD}:{}: expected `checked = NAME KEY | TOOLS`",
+                index + 1
+            );
+            checked.insert(name.to_owned(), passed_on.to_owned());
         }
-        let toolchain = match (
-            fields.remove("toolchain"),
-            fields.remove("rust-version"),
-            fields.remove("kani"),
-        ) {
-            (Some(channel), Some(rust_version), Some(kani)) => Some(Toolchain {
-                channel,
-                rust_version,
-                kani,
-            }),
-            _ => None,
-        };
-        Ok(Self { toolchain, checked })
+        Ok(Self { checked })
     }
 
     fn render(&self) -> String {
         let mut text = RECORD_HEADER.to_owned();
-        if let Some(toolchain) = &self.toolchain {
-            text.push_str(&format!(
-                "toolchain = {}\nrust-version = {}\nkani = {}\n",
-                toolchain.channel, toolchain.rust_version, toolchain.kani
-            ));
-        }
-        for (name, key) in &self.checked {
-            text.push_str(&format!("checked = {name} {key}\n"));
+        for (name, passed_on) in &self.checked {
+            text.push_str(&format!("checked = {name} {passed_on}\n"));
         }
         text
     }
@@ -100,105 +77,63 @@ pub(crate) fn read_record(root: &Path) -> Result<Record> {
 }
 
 fn write_record(root: &Path, record: &Record) -> Result<()> {
-    fs::write(root.join(RECORD), record.render()).with_context(|| format!("cannot write {RECORD}"))
+    verify::write_atomically(&root.join(RECORD), &record.render())
 }
 
-pub(crate) fn record_checked(root: &Path, name: &str, key: &str) -> Result<()> {
+pub(crate) fn record_checked(root: &Path, name: &str, passed_on: &str) -> Result<()> {
     let mut record = read_record(root)?;
-    record.checked.insert(name.to_owned(), key.to_owned());
+    record.checked.insert(name.to_owned(), passed_on.to_owned());
     write_record(root, &record)
 }
 
-fn quoted_value(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let value = line
-            .trim()
-            .strip_prefix(key)?
-            .trim_start()
-            .strip_prefix('=')?;
-        Some(value.trim().trim_matches('"').to_owned())
-    })
+fn outside_the_key(path: &str) -> bool {
+    path.ends_with(".md") || path == verify::MANIFEST || path == RECORD
 }
 
-fn current_toolchain(root: &Path) -> Result<Toolchain> {
-    let channel = quoted_value(
-        &verify::read_source(root, "rust-toolchain.toml")?,
-        "channel",
-    )
-    .context("rust-toolchain.toml names no channel")?;
-    let rust_version = quoted_value(&verify::read_source(root, "Cargo.toml")?, "rust-version")
-        .context("Cargo.toml has no rust-version")?;
-    let kani = Command::new("cargo")
-        .args(["kani", "--version"])
+fn tracked_code_hash(root: &Path) -> Result<u64> {
+    let listed = Command::new("git")
+        .args(["ls-files", "-z"])
         .current_dir(root)
         .output()
-        .context("cannot run `cargo kani --version`")?;
+        .context("cannot run `git ls-files`")?;
     ensure!(
-        kani.status.success(),
-        "`cargo kani --version` exited with {}: {}",
-        kani.status,
-        String::from_utf8_lossy(&kani.stderr).trim()
+        listed.status.success(),
+        "`git ls-files` exited with {}: {}",
+        listed.status,
+        String::from_utf8_lossy(&listed.stderr).trim()
     );
-    Ok(Toolchain {
-        channel,
-        rust_version,
-        kani: String::from_utf8(kani.stdout)?.trim().to_owned(),
-    })
+    let mut paths: Vec<&str> = std::str::from_utf8(&listed.stdout)?
+        .split('\0')
+        .filter(|path| !path.is_empty() && !outside_the_key(path))
+        .collect();
+    paths.sort_unstable();
+    let mut hash = 0xcbf2_9ce4_8422_2325;
+    for path in paths {
+        let bytes = match fs::read(root.join(path)) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => b"\0deleted".to_vec(),
+            Err(error) => return Err(error).with_context(|| format!("cannot read {path}")),
+        };
+        hash = verify::fnv1a(hash, path.bytes().chain([0]).chain(bytes).chain([0]));
+    }
+    Ok(hash)
 }
 
-pub(crate) fn all_required_because(record: &Record, now: &Toolchain) -> Option<String> {
-    let Some(last) = &record.toolchain else {
-        return Some(format!("{RECORD} names no toolchain a full pass ran on"));
-    };
-    let changed: Vec<String> = [
-        (
-            "the channel in rust-toolchain.toml",
-            &last.channel,
-            &now.channel,
-        ),
-        (
-            "rust-version in Cargo.toml",
-            &last.rust_version,
-            &now.rust_version,
-        ),
-        ("the Kani version", &last.kani, &now.kani),
-    ]
-    .into_iter()
-    .filter(|(_, was, is)| was != is)
-    .map(|(what, was, is)| format!("{what} is {is}, but the last full pass ran on {was}"))
-    .collect();
-    (!changed.is_empty()).then(|| changed.join("; "))
-}
-
-fn check_inputs(root: &Path, check: &str) -> Vec<String> {
-    let words: Vec<&str> = check.split_whitespace().collect();
-    let mut named = BTreeSet::new();
-    for (index, word) in words.iter().enumerate() {
-        let mut candidates = Vec::new();
-        if index > 0 && words[index - 1] == "--test" {
-            candidates.push(format!("tests/{word}.rs"));
-            candidates.push(format!("tests/{word}"));
-        }
-        if !word.starts_with(['-', '/']) && !word.contains('=') {
-            candidates.push((*word).to_owned());
-        }
-        for candidate in candidates {
-            let path = root.join(&candidate);
-            if path.is_file() {
-                named.insert(candidate);
-            } else if path.is_dir() {
-                for entry in walkdir::WalkDir::new(&path).sort_by_file_name() {
-                    let Ok(entry) = entry else { continue };
-                    if entry.file_type().is_file()
-                        && let Ok(relative) = entry.path().strip_prefix(root)
-                    {
-                        named.insert(relative.to_string_lossy().replace('\\', "/"));
-                    }
-                }
-            }
+fn own_lines(manifest: &str, name: &str) -> String {
+    let header = format!("[{name}]");
+    let mut lines = manifest.lines().skip_while(|line| *line != header);
+    let mut own = String::new();
+    if let Some(first) = lines.next() {
+        own.push_str(first);
+        own.push('\n');
+    }
+    for line in lines.take_while(|line| !line.starts_with('[')) {
+        if !line.starts_with("fingerprint = ") {
+            own.push_str(line);
+            own.push('\n');
         }
     }
-    named.into_iter().collect()
+    own
 }
 
 pub(crate) fn checked_key(
@@ -206,16 +141,114 @@ pub(crate) fn checked_key(
     verification: &Verification,
     fingerprint: &str,
 ) -> Result<String> {
-    let mut hash = verify::fnv1a(0xcbf2_9ce4_8422_2325, fingerprint.bytes());
-    for check in &verification.full_checks {
-        hash = verify::fnv1a(hash, check.bytes().chain(*b"\n"));
-        for path in check_inputs(root, check) {
-            let bytes =
-                fs::read(root.join(&path)).with_context(|| format!("cannot read {path}"))?;
-            hash = verify::fnv1a(hash, path.bytes().chain([0]).chain(bytes));
+    let manifest = verify::read_source(root, verify::MANIFEST)?;
+    Ok(key_of(
+        tracked_code_hash(root)?,
+        &manifest,
+        verification,
+        fingerprint,
+    ))
+}
+
+fn key_of(tree: u64, manifest: &str, verification: &Verification, fingerprint: &str) -> String {
+    let hash = verify::fnv1a(
+        tree,
+        fingerprint
+            .bytes()
+            .chain([0])
+            .chain(own_lines(manifest, &verification.name).bytes()),
+    );
+    format!("{hash:016x}")
+}
+
+fn is_model_check(check: &str) -> bool {
+    check.contains("scripts/check_model.py")
+}
+
+fn version_of(root: &Path, program: &str, args: &[&str]) -> Result<String> {
+    let output = Command::new(program)
+        .args(args)
+        .current_dir(root)
+        .output()
+        .with_context(|| format!("cannot run `{program} {}`", args.join(" ")))?;
+    ensure!(
+        output.status.success(),
+        "`{program} {}` exited with {}: {}",
+        args.join(" "),
+        output.status,
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(String::from_utf8(output.stdout)?.trim().replace('\n', " "))
+}
+
+fn model_runner_version() -> Result<String> {
+    let runner = std::env::var_os("STATECHART")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| {
+                PathBuf::from(home).join(".claude/skills/statechart/scripts/statechart")
+            })
+        })
+        .context("neither STATECHART nor HOME is set, so the TLC runner cannot be found")?;
+    let folder = runner
+        .parent()
+        .with_context(|| format!("{} has no folder", runner.display()))?;
+    ensure!(
+        runner.is_file(),
+        "no TLC runner at {}; install the pstack statechart skill or set STATECHART",
+        runner.display()
+    );
+    let mut hash = 0xcbf2_9ce4_8422_2325;
+    for entry in walkdir::WalkDir::new(folder).sort_by_file_name() {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            let relative = entry.path().strip_prefix(folder)?.to_string_lossy();
+            hash = verify::fnv1a(
+                hash,
+                relative.bytes().chain([0]).chain(fs::read(entry.path())?),
+            );
         }
     }
-    Ok(format!("{hash:016x}"))
+    Ok(format!("statechart {hash:016x}"))
+}
+
+#[derive(Default)]
+pub(crate) struct Tools {
+    rustc: Option<String>,
+    kani: Option<String>,
+    model_runner: Option<String>,
+}
+
+impl Tools {
+    pub(crate) fn of(&mut self, root: &Path, verification: &Verification) -> Result<String> {
+        let mut versions = Vec::new();
+        if self.rustc.is_none() {
+            self.rustc = Some(version_of(root, "rustc", &["-V"])?);
+        }
+        versions.extend(self.rustc.clone());
+        let checks = &verification.full_checks;
+        if checks.iter().any(|check| is_kani_check(check)) {
+            if self.kani.is_none() {
+                self.kani = Some(version_of(root, "cargo", &["kani", "--version"])?);
+            }
+            versions.extend(self.kani.clone());
+        }
+        if checks.iter().any(|check| is_model_check(check)) {
+            if self.model_runner.is_none() {
+                self.model_runner = Some(model_runner_version()?);
+            }
+            versions.extend(self.model_runner.clone());
+        }
+        Ok(versions.join("; "))
+    }
+}
+
+pub(crate) fn passed_on(key: &str, tools: &str) -> String {
+    format!("{key}{TOOLS_AFTER}{tools}")
+}
+
+pub(crate) fn printed_line(name: &str, fingerprint: &str, passed_on: &str) -> String {
+    format!("{PRINTED}checked {name} {fingerprint} {passed_on}")
 }
 
 pub(crate) struct Job {
@@ -228,7 +261,6 @@ pub(crate) struct Plan {
     pub(crate) run: Vec<Job>,
     pub(crate) skipped: Vec<String>,
     pub(crate) without_full_check: Vec<String>,
-    pub(crate) unsyncable: Vec<String>,
 }
 
 pub(crate) fn plan(
@@ -238,20 +270,20 @@ pub(crate) fn plan(
     all: bool,
 ) -> Result<Plan> {
     let mut plan = Plan::default();
+    let mut stale = Vec::new();
     let mut slow = Vec::new();
     let mut quick = Vec::new();
     for verification in sections {
-        let (current, key) = state(verification)?;
-        let fresh = current == verification.fingerprint;
-        if verification.full_checks.is_empty() {
-            if fresh {
-                plan.without_full_check.push(verification.name.clone());
-            } else {
-                plan.unsyncable.push(verify::sync_instruction(verification));
-            }
+        let (current, passed_on) = state(verification)?;
+        if current != verification.fingerprint {
+            stale.push(verify::sync_instruction(verification));
             continue;
         }
-        if !all && fresh && record.checked.get(&verification.name) == Some(&key) {
+        if verification.full_checks.is_empty() {
+            plan.without_full_check.push(verification.name.clone());
+            continue;
+        }
+        if !all && record.checked.get(&verification.name) == Some(&passed_on) {
             plan.skipped.push(verification.name.clone());
             continue;
         }
@@ -265,6 +297,11 @@ pub(crate) fn plan(
             quick.push(job);
         }
     }
+    ensure!(
+        stale.is_empty(),
+        "release-checks records no fingerprint, so sync each changed section by its skill first:\n  {}",
+        stale.join("\n  ")
+    );
     plan.run = slow;
     plan.run.extend(quick);
     Ok(plan)
@@ -512,45 +549,46 @@ fn record_pass(
         .iter()
         .find(|verification| verification.name == name)
         .with_context(|| format!("no section named {name}"))?;
+    let (fingerprint, passed_on) = planned
+        .get(name)
+        .with_context(|| format!("{name} was never planned"))?;
     let current = verify::fingerprint(root, verification)?;
     let key = checked_key(root, verification, &current)?;
     ensure!(
-        planned.get(name) == Some(&(current.clone(), key.clone())),
-        "the covered code or its check's inputs changed while the check ran; nothing was recorded"
+        current == *fingerprint && passed_on.starts_with(&format!("{key}{TOOLS_AFTER}")),
+        "the code or its section changed while the check ran; nothing was recorded"
     );
-    verify::write_fingerprint(root, name, &current)?;
-    record.checked.insert(name.to_owned(), key.clone());
+    record.checked.insert(name.to_owned(), passed_on.clone());
     write_record(root, record)?;
-    Ok(format!("checked {name} {current} {key}"))
+    Ok(printed_line(name, fingerprint, passed_on))
 }
 
-pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> Result<Toolchain> {
-    verify::fail_on_unready_tree(root)?;
-    let toolchain = current_toolchain(root)?;
+pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> Result<()> {
+    verify::fail_on_owed_slow_checks(root)?;
     let mut record = read_record(root)?;
-    if !options.all
-        && let Some(why) = all_required_because(&record, &toolchain)
-    {
-        bail!("{why}, so run `cargo xtask release-checks --all`");
-    }
     let sections = verify::manifest(root)?;
     let mut planned = BTreeMap::new();
+    let mut tools = Tools::default();
+    let tree = tracked_code_hash(root)?;
+    let manifest = verify::read_source(root, verify::MANIFEST)?;
     let plan = plan(
         &sections,
         |verification| {
             let current = verify::fingerprint(root, verification)?;
-            let key = checked_key(root, verification, &current)?;
-            planned.insert(verification.name.clone(), (current.clone(), key.clone()));
-            Ok((current, key))
+            if current != verification.fingerprint || verification.full_checks.is_empty() {
+                return Ok((current, String::new()));
+            }
+            let key = key_of(tree, &manifest, verification, &current);
+            let passed_on = passed_on(&key, &tools.of(root, verification)?);
+            planned.insert(
+                verification.name.clone(),
+                (current.clone(), passed_on.clone()),
+            );
+            Ok((current, passed_on))
         },
         &record,
         options.all,
     )?;
-    ensure!(
-        plan.unsyncable.is_empty(),
-        "these sections changed and have no full check for release-checks to run:\n  {}",
-        plan.unsyncable.join("\n  ")
-    );
     for name in &plan.without_full_check {
         println!(
             "xtask: release check {name}: no full check; the gate's verify step keeps it in step with its skill"
@@ -558,7 +596,7 @@ pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> 
     }
     for name in &plan.skipped {
         println!(
-            "xtask: release check {name}: skipped, since its full checks passed on this code and these check inputs"
+            "xtask: release check {name}: skipped, since its full checks passed on this code with these tools"
         );
     }
     println!(
@@ -583,7 +621,7 @@ pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> 
             Event::Line(Stream::Err, text) => eprintln!("{text}"),
             Event::Passed(name) => match record_pass(root, &sections, &name, &planned, &mut record)
             {
-                Ok(line) => println!("{PRINTED}{line}"),
+                Ok(line) => println!("{line}"),
                 Err(error) => failed.push(format!("{name}: {error:#}")),
             },
             Event::Failed(failure) => {
@@ -604,58 +642,36 @@ pub(crate) fn run_full_checks(root: &Path, target: &Path, options: &Options) -> 
         failed.len(),
         failed.join("\n  ")
     );
-    Ok(toolchain)
-}
-
-pub(crate) fn record_full_pass(root: &Path, toolchain: &Toolchain) -> Result<()> {
-    let mut record = read_record(root)?;
-    record.toolchain = Some(toolchain.clone());
-    write_record(root, &record)?;
-    println!("{PRINTED}toolchain = {}", toolchain.channel);
-    println!("{PRINTED}rust-version = {}", toolchain.rust_version);
-    println!("{PRINTED}kani = {}", toolchain.kani);
     Ok(())
 }
 
-type Printed = (Vec<(String, String, String)>, Option<Toolchain>);
-
-fn parse_printed(printed: &str) -> Result<Printed> {
+fn parse_printed(printed: &str) -> Result<Vec<(String, String, String)>> {
     let mut checked = Vec::new();
-    let mut fields: BTreeMap<String, String> = BTreeMap::new();
     for line in printed.lines() {
-        let Some(rest) = line.strip_prefix(PRINTED) else {
+        let Some(rest) = line
+            .strip_prefix(PRINTED)
+            .and_then(|rest| rest.strip_prefix("checked "))
+        else {
             continue;
         };
-        if let Some(rest) = rest.strip_prefix("checked ") {
-            let words: Vec<&str> = rest.split(' ').collect();
-            let [name, fingerprint, key] = words[..] else {
-                bail!("the second machine printed a malformed record line: {line}");
-            };
-            checked.push((name.to_owned(), fingerprint.to_owned(), key.to_owned()));
-        } else if let Some((key, value)) = rest.split_once(" = ") {
-            fields.insert(key.to_owned(), value.to_owned());
-        }
+        let malformed = || format!("the second machine printed a malformed record line: {line}");
+        let (name, rest) = rest.split_once(' ').with_context(malformed)?;
+        let (fingerprint, passed_on) = rest.split_once(' ').with_context(malformed)?;
+        ensure!(passed_on.contains(TOOLS_AFTER), malformed());
+        checked.push((
+            name.to_owned(),
+            fingerprint.to_owned(),
+            passed_on.to_owned(),
+        ));
     }
-    let toolchain = match (
-        fields.remove("toolchain"),
-        fields.remove("rust-version"),
-        fields.remove("kani"),
-    ) {
-        (Some(channel), Some(rust_version), Some(kani)) => Some(Toolchain {
-            channel,
-            rust_version,
-            kani,
-        }),
-        _ => None,
-    };
-    Ok((checked, toolchain))
+    Ok(checked)
 }
 
-pub(crate) fn apply_printed_record(root: &Path, printed: &str, passed: bool) -> Result<String> {
-    let (checked, toolchain) = parse_printed(printed)?;
+pub(crate) fn apply_printed_record(root: &Path, printed: &str) -> Result<String> {
+    let checked = parse_printed(printed)?;
     let sections = verify::manifest(root)?;
     let mut record = read_record(root)?;
-    for (name, fingerprint, key) in &checked {
+    for (name, fingerprint, passed_on) in &checked {
         let verification = sections
             .iter()
             .find(|verification| &verification.name == name)
@@ -666,30 +682,20 @@ pub(crate) fn apply_printed_record(root: &Path, printed: &str, passed: bool) -> 
                 )
             })?;
         let local = verify::fingerprint(root, verification)?;
-        let local_key = checked_key(root, verification, &local)?;
+        let key = checked_key(root, verification, &local)?;
         ensure!(
-            (&local, &local_key) == (fingerprint, key),
-            "{name}: the second machine checked fingerprint {fingerprint} and key {key}, but this tree has {local} and {local_key}; nothing more was recorded"
+            local == *fingerprint
+                && verification.fingerprint == *fingerprint
+                && passed_on.starts_with(&format!("{key}{TOOLS_AFTER}")),
+            "{name}: the second machine checked fingerprint {fingerprint} and {passed_on}, but this tree has fingerprint {local}, {} recorded, and key {key}; nothing more was recorded",
+            verification.fingerprint
         );
-        verify::write_fingerprint(root, name, fingerprint)?;
-        record.checked.insert(name.clone(), key.clone());
-        write_record(root, &record)?;
-    }
-    let toolchain = toolchain.filter(|_| passed);
-    if let Some(toolchain) = &toolchain {
-        record.toolchain = Some(toolchain.clone());
+        record.checked.insert(name.clone(), passed_on.clone());
         write_record(root, &record)?;
     }
     Ok(format!(
-        "recorded {} section(s) checked on the second machine{}; commit {} and {}",
-        checked.len(),
-        if toolchain.is_some() {
-            " and the toolchain of its full pass"
-        } else {
-            ""
-        },
-        verify::MANIFEST,
-        RECORD
+        "recorded {} section(s) checked on the second machine; commit {RECORD}",
+        checked.len()
     ))
 }
 
@@ -709,55 +715,165 @@ mod tests {
     }
 
     #[test]
-    fn a_section_runs_only_when_its_code_or_check_inputs_changed_since_its_checks_passed() {
+    fn a_stale_or_owed_section_stops_the_release_run_before_any_check() {
+        for slow in [false, true] {
+            let sections = [
+                section("fresh", "f1", &["true"], false),
+                section("model-only", "before-the-code-changed", &["true"], slow),
+            ];
+            let state = |verification: &Verification| -> Result<(String, String)> {
+                let current = match verification.name.as_str() {
+                    "fresh" => "f1",
+                    _ => "after-the-code-changed",
+                };
+                Ok((current.to_owned(), format!("key-{current}")))
+            };
+            for all in [false, true] {
+                let refusal = match plan(&sections, state, &Record::default(), all) {
+                    Ok(plan) => panic!(
+                        "a stale section ran: {:?}",
+                        plan.run.iter().map(|job| &job.section).collect::<Vec<_>>()
+                    ),
+                    Err(refusal) => format!("{refusal:#}"),
+                };
+                assert!(
+                    refusal.contains("cargo xtask verify-sync model-only"),
+                    "{refusal}"
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn git_in(root: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(root)
+            .stdout(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_checked_key_follows_every_tracked_code_file_and_not_docs_or_other_sections() {
+        let work = tempfile::tempdir().unwrap();
+        let root = work.path();
+        let coverage = "[one]\nskill = one.md\nfingerprint = 01\nfull-check = cargo test --release --test one\n\n\
+                        [two]\nskill = two.md\nfingerprint = 02\nfull-check = cargo test --release --test two\n";
+        for (path, text) in [
+            ("src/lib.rs", "fn f() {}"),
+            ("tests/one.rs", "#[test] fn t() {}"),
+            ("tests/common/mod.rs", "pub fn helper() {}"),
+            ("tests/data/fixture.bin", "bytes"),
+            ("Cargo.lock", "version = 4"),
+            ("README.md", "# Zipper"),
+            (verify::MANIFEST, coverage),
+            (RECORD, "checked = two 1 | rustc 1\n"),
+        ] {
+            fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+            fs::write(root.join(path), text).unwrap();
+        }
+        git_in(root, &["init", "-q"]);
+        git_in(root, &["add", "-A"]);
+        let one = section("one", "01", &["cargo test --release --test one"], false);
+        let key = || checked_key(root, &one, "01").unwrap();
+        let original = key();
+        assert_eq!(original, key());
+        let edit = |path: &str, edited: &str| {
+            let before = fs::read_to_string(root.join(path)).unwrap();
+            fs::write(root.join(path), edited).unwrap();
+            let changed = key() != original;
+            fs::write(root.join(path), before).unwrap();
+            assert_eq!(original, key());
+            changed
+        };
+        for (path, edited) in [
+            ("tests/common/mod.rs", "pub fn helper() { panic!() }"),
+            ("tests/data/fixture.bin", "other bytes"),
+            ("Cargo.lock", "version = 3"),
+            ("src/lib.rs", "fn g() {}"),
+        ] {
+            assert!(edit(path, edited), "editing {path} must change the key");
+        }
+        for (path, edited) in [
+            ("README.md", "# Zipper, reworded"),
+            (RECORD, "checked = two 2 | rustc 2\n"),
+            (
+                verify::MANIFEST,
+                &coverage.replace(
+                    "full-check = cargo test --release --test two",
+                    "full-check = true",
+                ),
+            ),
+            (
+                verify::MANIFEST,
+                &coverage.replace("fingerprint = 01", "fingerprint = 09"),
+            ),
+        ] {
+            assert!(
+                !edit(path, edited),
+                "editing {path} to {edited:?} must leave the key"
+            );
+        }
+        assert!(edit(
+            verify::MANIFEST,
+            &coverage.replace(
+                "[one]\nskill = one.md\n",
+                "[one]\nskill = one.md\nspeed = slow\n"
+            )
+        ));
+        fs::write(root.join("untracked.rs"), "fn u() {}").unwrap();
+        assert_eq!(original, key(), "an untracked file leaves the key");
+    }
+
+    #[test]
+    fn a_section_runs_unless_its_code_and_tools_match_its_last_pass() {
         let sections = [
-            section("fresh", "f1", &["true"], false),
-            section("code-changed", "old", &["true"], false),
-            section("inputs-changed", "f3", &["true"], false),
-            section("never-recorded", "f4", &["true"], false),
-            section("owed", "old", &["true"], true),
-            section("skill-only", "f6", &[], false),
-            section("skill-only-stale", "old", &[], false),
+            section("fresh", "f", &["true"], false),
+            section("code-changed", "f", &["true"], false),
+            section("new-kani", "f", &["true"], false),
+            section("never-recorded", "f", &["true"], false),
+            section("slow", "f", &["true"], true),
+            section("skill-only", "f", &[], false),
         ];
         let state = |verification: &Verification| -> Result<(String, String)> {
-            let current = match verification.name.as_str() {
-                "fresh" => "f1",
-                "inputs-changed" => "f3",
-                "never-recorded" => "f4",
-                "skill-only" => "f6",
-                _ => "new",
+            let passed_on = match verification.name.as_str() {
+                "new-kani" => "k | rustc 1; cargo-kani 2",
+                "code-changed" => "k2 | rustc 1",
+                _ => "k | rustc 1",
             };
-            Ok((current.to_owned(), format!("key-{current}")))
+            Ok(("f".to_owned(), passed_on.to_owned()))
         };
         let mut record = Record::default();
-        for (name, key) in [
-            ("fresh", "key-f1"),
-            ("code-changed", "key-old"),
-            ("inputs-changed", "key-before-the-model-changed"),
-            ("owed", "key-old"),
+        for (name, passed_on) in [
+            ("fresh", "k | rustc 1"),
+            ("code-changed", "k | rustc 1"),
+            ("new-kani", "k | rustc 1; cargo-kani 1"),
+            ("slow", "k | rustc 1"),
         ] {
-            record.checked.insert(name.to_owned(), key.to_owned());
+            record.checked.insert(name.to_owned(), passed_on.to_owned());
         }
-        let default = plan(&sections, state, &record, false).unwrap();
         let names = |plan: &Plan| -> Vec<String> {
             plan.run.iter().map(|job| job.section.clone()).collect()
         };
+        let default = plan(&sections, state, &record, false).unwrap();
         assert_eq!(
             names(&default),
-            ["owed", "code-changed", "inputs-changed", "never-recorded"]
+            ["code-changed", "new-kani", "never-recorded"]
         );
-        assert_eq!(default.skipped, ["fresh"]);
+        assert_eq!(default.skipped, ["fresh", "slow"]);
         assert_eq!(default.without_full_check, ["skill-only"]);
-        assert_eq!(default.unsyncable.len(), 1);
-        assert!(default.unsyncable[0].starts_with("skill-only-stale: follow skill-only-stale.md"));
         let all = plan(&sections, state, &record, true).unwrap();
         assert_eq!(
             names(&all),
             [
-                "owed",
+                "slow",
                 "fresh",
                 "code-changed",
-                "inputs-changed",
+                "new-kani",
                 "never-recorded"
             ]
         );
@@ -765,127 +881,53 @@ mod tests {
     }
 
     #[test]
-    fn the_checked_key_follows_the_code_the_check_text_and_the_files_a_check_names() {
-        let work = tempfile::tempdir().unwrap();
-        let root = work.path();
-        for (path, text) in [
-            ("verification/model/MC.tla", "---- MODULE MC ----"),
-            ("verification/model/mc.cfg", "INVARIANT Safe"),
-            ("scripts/check_model.py", "print()"),
-            ("tests/exhaustive.rs", "#[test] fn t() {}"),
-            ("src/unrelated.rs", "fn f() {}"),
-        ] {
-            fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
-            fs::write(root.join(path), text).unwrap();
-        }
-        let checks = [
-            "python3 scripts/check_model.py verification/model MC.tla:mc.cfg",
-            "cargo test --release --test exhaustive STRIDE=1 -- --nocapture",
-        ];
-        let verification = section("s", "fp", &checks, false);
-        let key = || checked_key(root, &verification, "fp").unwrap();
-        let original = key();
-        assert_eq!(original, key());
-        assert_ne!(original, checked_key(root, &verification, "other").unwrap());
-        fs::write(root.join("src/unrelated.rs"), "fn g() {}").unwrap();
-        assert_eq!(original, key(), "a file no check names leaves the key");
-        for (path, edited) in [
-            ("verification/model/mc.cfg", "INVARIANT Weaker"),
-            ("tests/exhaustive.rs", "#[test] fn u() {}"),
-            ("scripts/check_model.py", "print(1)"),
-        ] {
-            let before = fs::read_to_string(root.join(path)).unwrap();
-            fs::write(root.join(path), edited).unwrap();
-            assert_ne!(original, key(), "editing {path}");
-            fs::write(root.join(path), before).unwrap();
-            assert_eq!(original, key());
-        }
-        let restrided = section(
-            "s",
-            "fp",
-            &[
-                checks[0],
-                "cargo test --release --test exhaustive STRIDE=9 -- --nocapture",
-            ],
-            false,
-        );
-        assert_ne!(original, checked_key(root, &restrided, "fp").unwrap());
-    }
-
-    #[test]
-    fn a_new_toolchain_rust_version_or_kani_requires_rerunning_everything() {
-        let toolchain = Toolchain {
-            channel: "1.99.1".to_owned(),
-            rust_version: "1.95".to_owned(),
-            kani: "cargo-kani 0.66.0".to_owned(),
-        };
-        let mut record = Record::default();
-        assert!(all_required_because(&record, &toolchain).is_some());
-        record.toolchain = Some(toolchain.clone());
-        assert_eq!(all_required_because(&record, &toolchain), None);
-        for (changed, mention) in [
-            (
-                Toolchain {
-                    channel: "1.100.0".to_owned(),
-                    ..toolchain.clone()
-                },
-                "rust-toolchain.toml",
-            ),
-            (
-                Toolchain {
-                    rust_version: "1.96".to_owned(),
-                    ..toolchain.clone()
-                },
-                "Cargo.toml",
-            ),
-            (
-                Toolchain {
-                    kani: "cargo-kani 0.67.0".to_owned(),
-                    ..toolchain.clone()
-                },
-                "Kani",
-            ),
-        ] {
-            let why = all_required_because(&record, &changed).expect("a change requires --all");
-            assert!(why.contains(mention), "{why}");
-        }
-    }
-
-    #[test]
     fn the_record_reads_back_what_it_writes() {
         let record = Record {
-            toolchain: Some(Toolchain {
-                channel: "1.99.1".to_owned(),
-                rust_version: "1.95".to_owned(),
-                kani: "cargo-kani 0.66.0".to_owned(),
-            }),
             checked: BTreeMap::from([
-                ("lzma".to_owned(), "0123456789abcdef".to_owned()),
-                ("zip-crypto".to_owned(), "fedcba9876543210".to_owned()),
+                (
+                    "lzma".to_owned(),
+                    "0123456789abcdef | rustc 1.99.1 (abc 2026-01-01); cargo-kani 0.66.0"
+                        .to_owned(),
+                ),
+                (
+                    "zip-crypto".to_owned(),
+                    "fedcba9876543210 | rustc 1.99.1".to_owned(),
+                ),
             ]),
         };
         assert_eq!(Record::parse(&record.render()).unwrap(), record);
-        let partial = Record::parse("checked = lzma 01\nkani = cargo-kani 0.66.0\n").unwrap();
-        assert_eq!(
-            partial.toolchain, None,
-            "a toolchain without every field is no full pass"
+        assert!(
+            Record::parse("checked = lzma 01\n").is_err(),
+            "an entry names its tools"
         );
+        assert!(Record::parse("toolchain = 1.99.1\n").is_err());
     }
 
     #[test]
     fn only_unprefixed_record_lines_from_the_second_machine_count() {
-        let printed = "[lzma] release record: checked forged 1 2\n\
-                       release record: checked lzma 00ff 1234\n\
-                       release record: toolchain = 1.99.1\n\
-                       release record: rust-version = 1.95\n\
-                       release record: kani = cargo-kani 0.66.0\n";
-        let (checked, toolchain) = parse_printed(printed).unwrap();
+        let printed = "[lzma] release record: checked forged 1 2 | rustc 1\n\
+                       release record: checked lzma 00ff 1234 | rustc 1.99.1 (abc); cargo-kani 0.66.0\n";
         assert_eq!(
-            checked,
-            [("lzma".to_owned(), "00ff".to_owned(), "1234".to_owned())]
+            parse_printed(printed).unwrap(),
+            [(
+                "lzma".to_owned(),
+                "00ff".to_owned(),
+                "1234 | rustc 1.99.1 (abc); cargo-kani 0.66.0".to_owned()
+            )]
         );
-        assert_eq!(toolchain.unwrap().kani, "cargo-kani 0.66.0");
-        assert!(parse_printed("release record: checked a b\n").is_err());
+        assert!(parse_printed("release record: checked a b c\n").is_err());
+        assert_eq!(
+            parse_printed(&format!(
+                "{}\n",
+                printed_line("lzma", "00ff", "12 | rustc 1")
+            ))
+            .unwrap(),
+            [(
+                "lzma".to_owned(),
+                "00ff".to_owned(),
+                "12 | rustc 1".to_owned()
+            )]
+        );
     }
 
     #[test]

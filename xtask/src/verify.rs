@@ -29,6 +29,10 @@ pub(crate) fn manifest(root: &Path) -> Result<Vec<Verification>> {
             .strip_prefix('[')
             .and_then(|rest| rest.strip_suffix(']'))
         {
+            ensure!(
+                !name.is_empty() && !name.contains(char::is_whitespace),
+                "{MANIFEST}:{number}: a section name is one word, not {name:?}"
+            );
             all.push(Verification {
                 name: name.to_owned(),
                 skill: String::new(),
@@ -382,10 +386,29 @@ fn variable(word: &str) -> Option<(&str, &str)> {
     })
 }
 
-pub(crate) fn write_fingerprint(root: &Path, name: &str, current: &str) -> Result<()> {
+fn write_fingerprint(root: &Path, name: &str, current: &str) -> Result<()> {
     let text = fs::read_to_string(root.join(MANIFEST))?;
-    fs::write(root.join(MANIFEST), with_fingerprint(&text, name, current))?;
-    Ok(())
+    write_atomically(
+        &root.join(MANIFEST),
+        &with_fingerprint(&text, name, current),
+    )
+}
+
+pub(crate) fn write_atomically(path: &Path, text: &str) -> Result<()> {
+    let name = path
+        .file_name()
+        .with_context(|| format!("{} names no file", path.display()))?;
+    let mut temporary = name.to_owned();
+    temporary.push(".writing");
+    let temporary = path.with_file_name(temporary);
+    fs::write(&temporary, text).with_context(|| format!("cannot write {}", temporary.display()))?;
+    fs::rename(&temporary, path).with_context(|| {
+        format!(
+            "cannot replace {} with {}",
+            path.display(),
+            temporary.display()
+        )
+    })
 }
 
 pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
@@ -396,6 +419,7 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
     let checked = fingerprint(root, verification)?;
     let key = crate::release::checked_key(root, verification, &checked)?;
+    let tools = crate::release::Tools::default().of(root, verification)?;
     for check in &verification.full_checks {
         ensure!(
             run_full_check(root, check)?,
@@ -414,8 +438,13 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         "{name}: the covered code or its check's inputs changed while the check ran; nothing was synced"
     );
     write_fingerprint(root, name, &current)?;
-    crate::release::record_checked(root, name, &key)?;
+    let passed_on = crate::release::passed_on(&key, &tools);
+    crate::release::record_checked(root, name, &passed_on)?;
     println!("{name}: synced at fingerprint {current}");
+    println!(
+        "{}",
+        crate::release::printed_line(name, &current, &passed_on)
+    );
     Ok(())
 }
 
@@ -713,6 +742,7 @@ pub fn gate_remotely(root: &Path, kind: &str) -> Result<()> {
 }
 
 pub fn release_checks_remotely(root: &Path, options: &[&str]) -> Result<()> {
+    fail_on_owed_slow_checks(root)?;
     ensure_committed(root)?;
     let head = local_git(root, &["rev-parse", "HEAD"])?;
     let mut xtask = vec!["release-checks"];
@@ -724,7 +754,7 @@ pub fn release_checks_remotely(root: &Path, options: &[&str]) -> Result<()> {
             && local_git(root, &["status", "--porcelain"])?.is_empty(),
         "HEAD or the tree changed while the release checks ran on the second machine; nothing was recorded"
     );
-    let applied = crate::release::apply_printed_record(root, &printed, run.status.success())?;
+    let applied = crate::release::apply_printed_record(root, &printed)?;
     println!("{applied}");
     ensure!(
         run.status.success(),
@@ -772,12 +802,8 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
         "{name}: HEAD or the covered code changed while the check ran; nothing was synced"
     );
     write_fingerprint(root, name, &checked)?;
-    crate::release::record_checked(
-        root,
-        name,
-        &crate::release::checked_key(root, verification, &checked)?,
-    )?;
-    println!("{name}: synced at fingerprint {checked}, checked on a second machine");
+    let applied = crate::release::apply_printed_record(root, &printed)?;
+    println!("{name}: synced at fingerprint {checked}, checked on a second machine; {applied}");
     Ok(())
 }
 
@@ -940,6 +966,24 @@ mod tests {
         assert!(script.contains("--detach \"$run/tree\" '0123abcd'"));
         let wrapped = shell_quoted(&script);
         assert!(wrapped.starts_with('\'') && wrapped.ends_with('\''));
+    }
+
+    #[test]
+    fn a_section_name_is_one_word_so_its_record_line_reads_back() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("verification")).unwrap();
+        for (header, parses) in [
+            ("[link-escape]", true),
+            ("[link escape]", false),
+            ("[]", false),
+        ] {
+            fs::write(
+                root.path().join(MANIFEST),
+                format!("{header}\nskill = s.md\nfingerprint = 01\n"),
+            )
+            .unwrap();
+            assert_eq!(manifest(root.path()).is_ok(), parses, "{header}");
+        }
     }
 
     #[test]

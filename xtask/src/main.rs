@@ -286,14 +286,10 @@ fn release_checks(words: &[&str]) -> Result<()> {
         let passed_on: Vec<&str> = passed_on.iter().map(String::as_str).collect();
         return verify::release_checks_remotely(&root(), &passed_on);
     }
-    let toolchain = release::run_full_checks(&root(), &target_dir(), &options)?;
+    release::run_full_checks(&root(), &target_dir(), &options)?;
     kani::fail_on_kani_list_mismatch(&root())?;
     format_tests()?;
-    gate(true)?;
-    if options.all {
-        release::record_full_pass(&root(), &toolchain)?;
-    }
-    Ok(())
+    gate(true)
 }
 
 fn ship() -> Result<()> {
