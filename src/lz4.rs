@@ -151,30 +151,49 @@ fn decode_block_copying<const WILD: usize>(
 }
 
 const WILD: usize = 16;
+pub(crate) const DECODE_SPARE: usize = WILD;
 const MOST_OUTPUT_PER_INPUT_BYTE: usize = 255;
 
 fn decoded_bound(block: usize, limit: usize) -> usize {
     block.saturating_mul(MOST_OUTPUT_PER_INPUT_BYTE).min(limit)
 }
 
+#[derive(Clone, Copy)]
+struct Resume {
+    index: usize,
+    out: usize,
+}
+
+enum Decoded {
+    Ends(usize),
+    Full(Resume),
+}
+
 fn decode_into<const WILD: usize>(block: &[u8], window: &mut [u8], start: usize) -> Option<usize> {
-    decode_following::<WILD>(block, window, start, |_, _| {})
+    let from = Resume {
+        index: 0,
+        out: start,
+    };
+    match decode_following::<WILD>(block, window, from, &mut |_, _| {})? {
+        Decoded::Ends(end) => Some(end),
+        Decoded::Full(_) => None,
+    }
 }
 
 fn decode_following<const WILD: usize>(
     block: &[u8],
     window: &mut [u8],
-    start: usize,
-    mut follow: impl FnMut(&[u8], usize),
-) -> Option<usize> {
+    from: Resume,
+    follow: &mut impl FnMut(&[u8], usize),
+) -> Option<Decoded> {
     let end = window.len().checked_sub(WILD)?;
-    if start > end {
+    let Resume { mut index, mut out } = from;
+    if out > end {
         return None;
     }
-    let mut out = start;
-    let mut index = 0;
     loop {
         follow(window, out);
+        let at = Resume { index, out };
         let token = *block.get(index)?;
         if let Some(input) = block.get(index..index + WILD + 3)
             && end - out >= 3 * WILD
@@ -206,18 +225,21 @@ fn decode_following<const WILD: usize>(
         }
         index += 1;
         let literals = length(block, &mut index, usize::from(token >> 4))?;
-        if literals > end - out {
+        if literals > block.len() - index {
             return None;
+        }
+        if literals > end - out {
+            return Some(Decoded::Full(at));
         }
         if literals <= WILD && block.len() - index >= WILD {
             window[out..out + WILD].copy_from_slice(&block[index..index + WILD]);
         } else {
-            window[out..out + literals].copy_from_slice(block.get(index..index + literals)?);
+            window[out..out + literals].copy_from_slice(&block[index..index + literals]);
         }
         out += literals;
         index += literals;
         if index == block.len() {
-            return Some(out);
+            return Some(Decoded::Ends(out));
         }
         let offset = usize::from(u16::from_le_bytes([
             *block.get(index)?,
@@ -226,8 +248,11 @@ fn decode_following<const WILD: usize>(
         index += 2;
         let matched =
             length(block, &mut index, usize::from(token & 0x0F))?.checked_add(MIN_MATCH)?;
-        if offset == 0 || offset > out || matched > end - out {
+        if offset == 0 || offset > out {
             return None;
+        }
+        if matched > end - out {
+            return Some(Decoded::Full(at));
         }
         copy_match::<WILD>(window, out - offset, out, matched);
         out += matched;
@@ -420,7 +445,9 @@ impl<R: BufRead> Lz4Frames<R> {
         }
         if frame.independent {
             self.filled = 0;
-        } else if self.filled > HISTORY_HELD {
+        } else if self.filled > HISTORY_HELD
+            || (self.filled > WINDOW && self.filled + first_room(stored) > self.window.len())
+        {
             self.window
                 .copy_within(self.filled - WINDOW..self.filled, 0);
             self.filled = WINDOW;
@@ -438,32 +465,27 @@ impl<R: BufRead> Lz4Frames<R> {
             if stored > limit {
                 return Err(data_error("LZ4 frame decodes past its content size"));
             }
-            if self.window.len() < keep + stored {
-                self.window.resize(keep + stored, 0);
-            }
+            grow(&mut self.window, keep, keep + stored);
             self.window[keep..keep + stored].copy_from_slice(data);
             self.filled = keep + stored;
         } else {
-            let room = keep + decoded_bound(stored, limit) + WILD;
-            if self.window.len() < room {
-                self.window.resize(room, 0);
-            }
+            let most = keep + decoded_bound(stored, limit) + WILD;
             let lanes = frame
                 .hash
                 .lanes_between_stripes()
                 .filter(|_| frame.content_checksum);
-            let window = &mut self.window[..room];
             let decoded = if let Some(mut lanes) = lanes {
-                let decoded = decode_following::<WILD>(data, window, keep, |window, out| {
-                    if let Some(stripe) = window[hashed_to..out].first_chunk::<STRIPE>() {
-                        Xxh32::stripe_into(&mut lanes, stripe);
-                        hashed_to += STRIPE;
-                    }
-                });
+                let decoded =
+                    decode_growing(&mut self.window, data, keep, most, &mut |window, out| {
+                        if let Some(stripe) = window[hashed_to..out].first_chunk::<STRIPE>() {
+                            Xxh32::stripe_into(&mut lanes, stripe);
+                            hashed_to += STRIPE;
+                        }
+                    });
                 frame.hash.add_stripes(lanes, &self.window[keep..hashed_to]);
                 decoded
             } else {
-                decode_into::<WILD>(data, window, keep)
+                decode_growing(&mut self.window, data, keep, most, &mut |_, _| {})
             };
             self.filled = decoded.ok_or_else(|| {
                 data_error("LZ4 block is malformed or passes its frame's content size")
@@ -475,6 +497,49 @@ impl<R: BufRead> Lz4Frames<R> {
         frame.produced += (self.filled - keep) as u64;
         self.frame = Some(frame);
         Ok(())
+    }
+}
+
+const FIRST_ROOM: usize = 64 * 1024;
+const FIRST_ROOM_PER_INPUT_BYTE: usize = 4;
+const ROOM_GROWTH: usize = 4;
+
+fn first_room(stored: usize) -> usize {
+    WILD + FIRST_ROOM.max(stored.saturating_mul(FIRST_ROOM_PER_INPUT_BYTE))
+}
+
+fn decode_growing(
+    window: &mut Vec<u8>,
+    block: &[u8],
+    keep: usize,
+    most: usize,
+    follow: &mut impl FnMut(&[u8], usize),
+) -> Option<usize> {
+    let first = keep + first_room(block.len());
+    let mut room = most.min(window.len().max(first));
+    grow(window, keep, room);
+    let mut from = Resume {
+        index: 0,
+        out: keep,
+    };
+    loop {
+        match decode_following::<WILD>(block, &mut window[..room], from, follow)? {
+            Decoded::Ends(end) => return Some(end),
+            Decoded::Full(_) if room == most => return None,
+            Decoded::Full(at) => {
+                from = at;
+                room = most.min(room.saturating_mul(ROOM_GROWTH));
+                grow(window, at.out, room);
+            }
+        }
+    }
+}
+
+fn grow(window: &mut Vec<u8>, keep: usize, len: usize) {
+    if window.len() < len {
+        let mut grown = vec![0; len];
+        grown[..keep].copy_from_slice(&window[..keep]);
+        *window = grown;
     }
 }
 
@@ -540,7 +605,7 @@ mod tests {
 
     #[test]
     fn every_short_block_decodes_as_the_reference_does() {
-        let alphabet = [0x00, 0x01, 0x04, 0x10, 0x1F, 0x41, 0xF0, 0xFF];
+        let alphabet = [0x00, 0x01, 0x04, 0x10, 0x1F, 0x20, 0x41, 0xF0, 0xFF];
         let mut blocks = vec![Vec::new()];
         let mut checked = 0;
         for _ in 0..5 {
@@ -556,7 +621,7 @@ mod tests {
                 .collect();
             for block in &blocks {
                 for history in [&b""[..], b"a", b"abc", b"abcdefgh"] {
-                    for limit in [3, 64] {
+                    for limit in [3, 4, 5, 6, 64] {
                         for (wild, decoder) in [
                             (WILD, decode_block as fn(&[u8], &mut Vec<u8>, usize) -> _),
                             (1, decode_block_copying::<1>),
@@ -575,7 +640,7 @@ mod tests {
                 }
             }
         }
-        assert!(checked > 800_000, "{checked}");
+        assert!(checked > 3_000_000, "{checked}");
     }
 
     struct Random(u64);
@@ -608,7 +673,7 @@ mod tests {
         }
     }
 
-    fn random_block(random: &mut Random, history: usize) -> Vec<u8> {
+    fn random_block(random: &mut Random, history: usize, long_match: usize) -> Vec<u8> {
         let mut block = Vec::new();
         let mut produced = history;
         for _ in 0..random.below(12) {
@@ -622,7 +687,7 @@ mod tests {
             } else {
                 random.below(reach)
             };
-            let matched = random.length(24, 2000);
+            let matched = random.length(24, long_match);
             block.push((literals.min(15) as u8) << 4 | matched.min(15) as u8);
             push_length(&mut block, literals);
             block.extend((0..literals).map(|_| random.below(256) as u8));
@@ -644,7 +709,7 @@ mod tests {
             let history: Vec<u8> = (0..random.length(40, 70_000))
                 .map(|_| random.below(256) as u8)
                 .collect();
-            let mut block = random_block(&mut random, history.len());
+            let mut block = random_block(&mut random, history.len(), 2000);
             let whole = reference_block(&block, &history, usize::MAX)
                 .expect("a generated block is well formed")
                 .len()
@@ -659,27 +724,71 @@ mod tests {
                 block.truncate(random.below(block.len() + 1));
             }
             for limit in [whole, whole.saturating_sub(1), whole + 1, whole + 100] {
-                let mut output = history.clone();
-                let decoded = decode_block(&block, &mut output, limit).map(|()| output);
-                assert_eq!(
-                    decoded,
-                    reference_block(&block, &history, limit),
-                    "round {round} within {limit} after {} bytes",
-                    history.len()
-                );
+                let expected = reference_block(&block, &history, limit);
+                for decoder in [
+                    decode_block as fn(&[u8], &mut Vec<u8>, usize) -> _,
+                    decode_block_copying::<2>,
+                ] {
+                    let mut output = history.clone();
+                    let decoded = decoder(&block, &mut output, limit).map(|()| output);
+                    assert!(
+                        decoded == expected,
+                        "round {round} within {limit} after {} bytes",
+                        history.len()
+                    );
+                }
             }
+        }
+    }
+
+    #[test]
+    fn blocks_that_outgrow_their_first_room_decode_as_the_reference_does() {
+        let mut random = Random(0xD1B5_4A32_D192_ED03);
+        for flags in [0x04, 0x20 | 0x04, 0x00] {
+            let descriptor = [0x40 | flags, 0x70];
+            let mut frame = FRAME_MAGIC.to_le_bytes().to_vec();
+            frame.extend_from_slice(&descriptor);
+            frame.push((xxh32(&descriptor) >> 8) as u8);
+            let mut content = Vec::new();
+            for _ in 0..40 {
+                let history = if flags & 0x20 == 0 {
+                    &content[content.len().saturating_sub(WINDOW)..]
+                } else {
+                    &[][..]
+                };
+                let block = random_block(&mut random, history.len(), 200_000);
+                let decoded = reference_block(&block, history, LARGEST_BLOCK)
+                    .expect("a generated block is well formed")[history.len()..]
+                    .to_vec();
+                frame.extend_from_slice(&(block.len() as u32).to_le_bytes());
+                frame.extend_from_slice(&block);
+                content.extend_from_slice(&decoded);
+            }
+            frame.extend_from_slice(&0u32.to_le_bytes());
+            if flags & 0x04 != 0 {
+                frame.extend_from_slice(&xxh32(&content).to_le_bytes());
+            }
+            assert!(decode(&frame).unwrap() == content, "flags {flags:02x}");
         }
     }
 
     #[test]
     fn a_block_at_its_largest_expansion_decodes() {
         let mut block = vec![0x1F, b'a', 1, 0];
-        block.extend(std::iter::repeat_n(255, 50));
-        block.extend_from_slice(&[255, 0, 0x00]);
-        let expected = 1 + 15 + MIN_MATCH + 255 * 51;
+        block.extend(std::iter::repeat_n(255, 1300));
+        block.extend_from_slice(&[254, 0x00]);
+        let expected = 1 + 15 + MIN_MATCH + 255 * 1300 + 254;
+        assert!(expected > (MOST_OUTPUT_PER_INPUT_BYTE - 1) * block.len());
         let mut output = Vec::new();
         assert_eq!(decode_block(&block, &mut output, expected), Some(()));
         assert_eq!(output, vec![b'a'; expected]);
+    }
+
+    #[test]
+    fn a_start_past_the_room_is_refused() {
+        for start in [5, 10, 19] {
+            assert_eq!(decode_into::<WILD>(&[0x00], &mut [0; 20], start), None);
+        }
     }
 
     #[test]
@@ -961,7 +1070,7 @@ mod proofs {
         let start = usize::from(kani::any::<bool>());
         let limit: usize = kani::any();
         kani::assume(limit <= 4);
-        let mut window: [u8; 1 + 4 + WILD] = kani::any();
+        let mut window = [0u8; 1 + 4 + WILD];
         let size = start + decoded_bound(length, limit) + WILD;
         if let Some(end) = decode_into::<WILD>(&block[..length], &mut window[..size], start) {
             assert!(start <= end && end <= start + limit);
@@ -975,8 +1084,8 @@ mod proofs {
         let block: [u8; 5] = kani::any();
         let length: usize = kani::any();
         kani::assume(length <= block.len());
-        let mut window: [u8; 8] = kani::any();
-        let history = window;
+        let history = [1, 2, 3, 4, 5, 6, 7, 8];
+        let mut window = history;
         let start: usize = kani::any();
         kani::assume(start <= window.len());
         if let Some(end) = decode_into::<NARROW>(&block[..length], &mut window, start) {

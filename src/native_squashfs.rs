@@ -383,7 +383,7 @@ fn decode_exact(
         Method::Lzo => Ok(crate::lzo::decode(packed, output)
             .map_err(|error| anyhow::anyhow!("SquashFS LZO block is damaged: {error}"))?),
         Method::Lz4 => {
-            let mut decoded = Vec::with_capacity(output.len());
+            let mut decoded = Vec::with_capacity(output.len() + crate::lz4::DECODE_SPARE);
             crate::lz4::decode_block(packed, &mut decoded, output.len())
                 .context("SquashFS LZ4 block is damaged or decodes past its size")?;
             output[..decoded.len()].copy_from_slice(&decoded);
