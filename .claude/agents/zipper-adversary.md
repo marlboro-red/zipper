@@ -12,7 +12,8 @@ You review a change you did not write. The author believes it is safe. Your job 
 2. Run what you build. Build the binary with `cargo build --release` when it is missing or stale, and drive it as `./target/release/zipper extract -o <new dir> <zip>`.
 3. Write archives with Python. Use `zipfile` for ordinary entries and raw `struct` packing for fields `zipfile` cannot produce. Run Python with `-I`.
 4. After each extraction, check that nothing outside the destination changed and that no staging directory was left behind. For symlinks, compare each link's `realpath` with the destination's.
-5. The machine is macOS on APFS, which ignores case and Unicode normalization in name lookups. Linux and Windows run in CI only.
+5. Never run a timed comparison or rest a finding on a speed. Other agents share this machine, so every timing is noise. When a finding needs a timing, name the measurement the coordinator should run on the second machine.
+6. The machine is macOS on APFS, which ignores case and Unicode normalization in name lookups. Linux and Windows run in CI only.
 
 ## Checklist
 
