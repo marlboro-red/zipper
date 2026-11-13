@@ -300,8 +300,8 @@ fn ship() -> Result<()> {
         "linux" => "ubuntu",
         other => other,
     };
-    let jobs = || {
-        github(&[
+    let shards_to_prove = || {
+        let jobs = github(&[
             "run",
             "view",
             &run,
@@ -309,17 +309,18 @@ fn ship() -> Result<()> {
             "jobs",
             "--jq",
             r#".jobs[] | "\(.name)\t\(.conclusion)\t\(.steps | length)""#,
-        ])
+        ])?;
+        shards_not_passed(&jobs, host)
     };
     let checked = match watch_ci_run(&run, &head) {
-        Ok(()) => shards_not_passed(&jobs()?, host).and_then(|unproven| {
+        Ok(()) => shards_to_prove().and_then(|unproven| {
             ensure!(
                 unproven.is_empty(),
                 "CI run {run} for {head} passed without a passing job for gate shard(s) {unproven:?}"
             );
             Ok(())
         }),
-        Err(failure) => match shards_not_passed(&jobs()?, host) {
+        Err(failure) => match shards_to_prove() {
             Ok(unstarted) if !unstarted.is_empty() => {
                 println!(
                     "xtask: the {host} CI job(s) for gate shard(s) {unstarted:?} never got a runner; running those shards on this {host} host instead"
