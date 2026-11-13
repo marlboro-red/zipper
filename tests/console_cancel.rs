@@ -1,8 +1,6 @@
 //! Ctrl-C and Ctrl-Break sent to the Windows command line cancel the
 //! extraction as SIGINT does on Unix: the run ends as an interrupted console
-//! program does, nothing is published and no staging folder is left. Ctrl-C
-//! cannot reach a process group of its own, so its test runs a helper in a
-//! console of its own that sends Ctrl-C to every process on it.
+//! program does, nothing is published and no staging folder is left.
 #![cfg(windows)]
 
 use std::{
@@ -182,6 +180,8 @@ fn ctrl_break_during_extraction_into_a_new_folder_publishes_nothing() {
     assert_cancelled_and_unchanged(zipper, &parent, &BTreeMap::new());
 }
 
+// EXTERNAL(Windows): GenerateConsoleCtrlEvent cannot send CTRL_C_EVENT to a process group,
+// so a helper on a console of its own sends it to every process there.
 #[test]
 fn ctrl_c_during_publication_into_a_folder_rolls_every_move_back() {
     let helper = Command::new(std::env::current_exe().unwrap())
