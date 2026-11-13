@@ -6,9 +6,9 @@ const UNCOVERED: &str = "verification/uncovered.txt";
 
 pub(crate) struct Verification {
     pub(crate) name: String,
-    skill: String,
-    fingerprint: String,
-    slow: bool,
+    pub(crate) skill: String,
+    pub(crate) fingerprint: String,
+    pub(crate) slow: bool,
     pub(crate) full_checks: Vec<String>,
     pub(crate) items: Vec<(String, String)>,
 }
@@ -150,7 +150,7 @@ pub(crate) fn fnv1a(mut hash: u64, bytes: impl Iterator<Item = u8>) -> u64 {
     hash
 }
 
-fn fingerprint(root: &Path, verification: &Verification) -> Result<String> {
+pub(crate) fn fingerprint(root: &Path, verification: &Verification) -> Result<String> {
     fingerprint_of(verification, |path| {
         fs::read_to_string(root.join(path)).with_context(|| format!("cannot read {path}"))
     })
@@ -257,30 +257,45 @@ enum Owed {
     Refused,
 }
 
-fn fail_on_stale(root: &Path, owed: Owed) -> Result<()> {
+pub(crate) fn fail_on_unready_tree(root: &Path) -> Result<()> {
     fail_on_interrupted_plants(root)?;
     fail_on_unclassified_sources(root)?;
     crate::kani::fail_on_harnesses_not_run_as_listed(root)?;
-    let mut stale = Vec::new();
+    let mut missing_items = Vec::new();
     for verification in manifest(root)? {
-        let missing = missing_shared_items(&verification, |path| {
-            fs::read_to_string(root.join(path)).with_context(|| format!("cannot read {path}"))
-        })?;
+        let missing = missing_shared_items(&verification, |path| read_source(root, path))?;
         if !missing.is_empty() {
-            stale.push(format!(
+            missing_items.push(format!(
                 "{}: its items call the shared field check, so add to {MANIFEST}: {}",
                 verification.name,
                 missing.join(", ")
             ));
         }
+    }
+    ensure!(
+        missing_items.is_empty(),
+        "code covered by a formal check changed since the check last passed:\n  {}",
+        missing_items.join("\n  ")
+    );
+    Ok(())
+}
+
+pub(crate) fn sync_instruction(verification: &Verification) -> String {
+    format!(
+        "{}: follow {}, then run `cargo xtask verify-sync {}`",
+        verification.name, verification.skill, verification.name
+    )
+}
+
+fn fail_on_stale(root: &Path, owed: Owed) -> Result<()> {
+    fail_on_unready_tree(root)?;
+    let mut stale = Vec::new();
+    for verification in manifest(root)? {
         let current = fingerprint(root, &verification)?;
         if current == verification.fingerprint {
             continue;
         }
-        let instruction = format!(
-            "{}: follow {}, then run `cargo xtask verify-sync {}`",
-            verification.name, verification.skill, verification.name
-        );
+        let instruction = sync_instruction(&verification);
         if verification.slow && owed == Owed::Allowed {
             eprintln!("owed before a release or milestone close: {instruction}");
         } else {
@@ -295,11 +310,9 @@ fn fail_on_stale(root: &Path, owed: Owed) -> Result<()> {
     Ok(())
 }
 
-fn run_full_check(root: &Path, check: &str) -> Result<bool> {
+pub(crate) fn full_check_command(root: &Path, check: &str) -> Result<Command> {
     let mut words = check.split_whitespace();
-    let program = words.next().context("empty full-check")?;
-    let mut command = Command::new(program);
-    let mut arguments = Vec::new();
+    let mut command = Command::new(words.next().context("empty full-check")?);
     for word in words {
         match variable(word) {
             Some((key, value)) => {
@@ -307,13 +320,23 @@ fn run_full_check(root: &Path, check: &str) -> Result<bool> {
             }
             None => {
                 command.arg(word);
-                arguments.push(word);
             }
         }
     }
     command.current_dir(root);
-    let runs_tests = program == "cargo" && matches!(arguments.first(), Some(&"test" | &"nextest"));
-    if !runs_tests {
+    Ok(command)
+}
+
+pub(crate) fn runs_tests(check: &str) -> bool {
+    let mut words = check.split_whitespace();
+    let program = words.next();
+    let mut arguments = words.filter(|word| variable(word).is_none());
+    program == Some("cargo") && matches!(arguments.next(), Some("test" | "nextest"))
+}
+
+fn run_full_check(root: &Path, check: &str) -> Result<bool> {
+    let mut command = full_check_command(root, check)?;
+    if !runs_tests(check) {
         return Ok(command.status()?.success());
     }
     let output = teed(&mut command)?;
@@ -323,13 +346,15 @@ fn run_full_check(root: &Path, check: &str) -> Result<bool> {
         String::from_utf8_lossy(&output.stderr)
     );
     if output.status.success() && ran_no_tests(&printed) {
-        eprintln!("xtask: `{check}` ran no test, so it checked nothing");
+        eprintln!("xtask: `{check}` {RAN_NO_TEST}");
         return Ok(false);
     }
     Ok(output.status.success())
 }
 
-fn ran_no_tests(output: &str) -> bool {
+pub(crate) const RAN_NO_TEST: &str = "ran no test, so it checked nothing";
+
+pub(crate) fn ran_no_tests(output: &str) -> bool {
     let passed = |line: &str| {
         line.split_once("test result: ")
             .and_then(|(_, result)| result.split_once(" passed"))
@@ -357,27 +382,9 @@ fn variable(word: &str) -> Option<(&str, &str)> {
     })
 }
 
-pub fn run_every_full_check(root: &Path) -> Result<()> {
-    let mut failed = Vec::new();
-    for verification in manifest(root)? {
-        if verification.full_checks.is_empty() {
-            println!(
-                "xtask: release check {}: no full check; the gate's verify step keeps it in step with {}",
-                verification.name, verification.skill
-            );
-        }
-        for check in &verification.full_checks {
-            println!("xtask: release check {}: {check}", verification.name);
-            if !run_full_check(root, check)? {
-                failed.push(verification.name.clone());
-            }
-        }
-    }
-    ensure!(
-        failed.is_empty(),
-        "release checks failed: {}",
-        failed.join(", ")
-    );
+pub(crate) fn write_fingerprint(root: &Path, name: &str, current: &str) -> Result<()> {
+    let text = fs::read_to_string(root.join(MANIFEST))?;
+    fs::write(root.join(MANIFEST), with_fingerprint(&text, name, current))?;
     Ok(())
 }
 
@@ -388,6 +395,7 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
         .find(|verification| verification.name == name)
         .with_context(|| format!("no verification named {name:?} in {MANIFEST}"))?;
     let checked = fingerprint(root, verification)?;
+    let key = crate::release::checked_key(root, verification, &checked)?;
     for check in &verification.full_checks {
         ensure!(
             run_full_check(root, check)?,
@@ -402,11 +410,11 @@ pub fn record_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
     }
     let current = fingerprint(root, verification)?;
     ensure!(
-        current == checked,
-        "{name}: the covered code changed while the check ran; nothing was synced"
+        current == checked && crate::release::checked_key(root, verification, &checked)? == key,
+        "{name}: the covered code or its check's inputs changed while the check ran; nothing was synced"
     );
-    let text = fs::read_to_string(root.join(MANIFEST))?;
-    fs::write(root.join(MANIFEST), with_fingerprint(&text, name, &current))?;
+    write_fingerprint(root, name, &current)?;
+    crate::release::record_checked(root, name, &key)?;
     println!("{name}: synced at fingerprint {current}");
     Ok(())
 }
@@ -704,6 +712,33 @@ pub fn gate_remotely(root: &Path, kind: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn release_checks_remotely(root: &Path, options: &[&str]) -> Result<()> {
+    ensure_committed(root)?;
+    let head = local_git(root, &["rev-parse", "HEAD"])?;
+    let mut xtask = vec!["release-checks"];
+    xtask.extend_from_slice(options);
+    let run = run_at_head_remotely(root, &head, "release", &xtask)?;
+    let printed = String::from_utf8_lossy(&run.stdout);
+    ensure!(
+        local_git(root, &["rev-parse", "HEAD"])? == head
+            && local_git(root, &["status", "--porcelain"])?.is_empty(),
+        "HEAD or the tree changed while the release checks ran on the second machine; nothing was recorded"
+    );
+    let applied = crate::release::apply_printed_record(root, &printed, run.status.success())?;
+    println!("{applied}");
+    ensure!(
+        run.status.success(),
+        "release checks on the second machine at {} exited with {}",
+        &head[..12],
+        run.status
+    );
+    println!(
+        "release checks passed on a second machine at {}",
+        &head[..12]
+    );
+    Ok(())
+}
+
 pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()> {
     let all = manifest(root)?;
     let verification = all
@@ -732,11 +767,16 @@ pub fn record_remotely_checked_fingerprint(root: &Path, name: &str) -> Result<()
     );
     ensure!(
         local_git(root, &["rev-parse", "HEAD"])? == head
+            && local_git(root, &["status", "--porcelain"])?.is_empty()
             && fingerprint(root, verification)? == checked,
         "{name}: HEAD or the covered code changed while the check ran; nothing was synced"
     );
-    let text = fs::read_to_string(root.join(MANIFEST))?;
-    fs::write(root.join(MANIFEST), with_fingerprint(&text, name, &checked))?;
+    write_fingerprint(root, name, &checked)?;
+    crate::release::record_checked(
+        root,
+        name,
+        &crate::release::checked_key(root, verification, &checked)?,
+    )?;
     println!("{name}: synced at fingerprint {checked}, checked on a second machine");
     Ok(())
 }

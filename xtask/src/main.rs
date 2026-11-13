@@ -14,12 +14,13 @@ mod kani;
 mod minimums;
 mod private_paths;
 mod pure_rust;
+mod release;
 mod sevenzip_lookups;
 mod verify;
 
 use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
-const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | gate full --shard lints|tests|tests-1..3|builds | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | check-minimums | install-hooks | ci-wait | warm-cache | format-tests | consumer-crate | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
+const USAGE: &str = "usage: cargo xtask gate fast|full [--remote] | gate full --shard lints|tests|tests-1..3|builds | lint-docs | lint-comments | lint-7zip-lookups | lint-private-paths | lint-pure-rust | check-minimums | install-hooks | ci-wait | warm-cache | release-checks [--all] [--jobs N] [--remote] | format-tests | consumer-crate | lint-commit-msg FILE | lint-commits | verify [--owed] | verify-sync NAME [--remote] | kani-reach NAME | bench [scoreboard.py run options]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -47,7 +48,7 @@ fn main() -> ExitCode {
         ["ci-wait"] => ci_wait(),
         ["ship"] => ship(),
         ["warm-cache"] => warm_cache(),
-        ["release-checks"] => release_checks(),
+        ["release-checks", ref options @ ..] => release_checks(options),
         ["format-tests"] => format_tests(),
         ["consumer-crate"] => consumer_crate(),
         ["lint-commit-msg", file] => commits::lint_message_file(&root(), Path::new(file)),
@@ -252,12 +253,47 @@ fn watch_ci_run(run: &str, head: &str) -> Result<()> {
     bail!("CI run {run} for {head} did not complete while watched {NETWORK_ATTEMPTS} times")
 }
 
-fn release_checks() -> Result<()> {
-    verify::fail_on_owed_slow_checks(&root())?;
-    verify::run_every_full_check(&root())?;
+fn release_checks(words: &[&str]) -> Result<()> {
+    let mut options = release::Options {
+        all: false,
+        jobs: release::DEFAULT_JOBS,
+    };
+    let mut remote = false;
+    let mut passed_on = Vec::new();
+    let mut words = words.iter();
+    while let Some(&word) = words.next() {
+        match word {
+            "--all" => {
+                options.all = true;
+                passed_on.push(word.to_owned());
+            }
+            "--remote" => remote = true,
+            "--jobs" => {
+                let jobs = words.next().context("--jobs takes a number")?;
+                options.jobs = jobs
+                    .parse()
+                    .ok()
+                    .filter(|&jobs| jobs >= 1)
+                    .with_context(|| {
+                        format!("--jobs takes a number of at least 1, not {jobs:?}")
+                    })?;
+                passed_on.extend(["--jobs".to_owned(), options.jobs.to_string()]);
+            }
+            other => bail!("release-checks takes --all, --jobs N and --remote, not {other:?}"),
+        }
+    }
+    if remote {
+        let passed_on: Vec<&str> = passed_on.iter().map(String::as_str).collect();
+        return verify::release_checks_remotely(&root(), &passed_on);
+    }
+    let toolchain = release::run_full_checks(&root(), &target_dir(), &options)?;
     kani::fail_on_kani_list_mismatch(&root())?;
     format_tests()?;
-    gate(true)
+    gate(true)?;
+    if options.all {
+        release::record_full_pass(&root(), &toolchain)?;
+    }
+    Ok(())
 }
 
 fn ship() -> Result<()> {
