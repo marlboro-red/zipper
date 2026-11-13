@@ -132,7 +132,7 @@ Nothing is changed. The findings, in the order of what they are worth:
 - **Already done.** Zipper already writes in parallel while it decodes. The tar reader and solid 7z folders hand files to a pool of four writers. ZIP workers each decode and write one entry, capped at four when small files dominate, and a large ZIP entry writes behind its decoder. The mode is set by `open`, so each file costs four calls, which are create, write, `futimens` and close.
 - **Worth building.** A non-solid 7z of small files should send its small files to the writer pool, as a solid folder does. The six-thread rows put the gain at 13% on the dependency sources and 35% on the flat tiny files, with CPU time halved or better.
 - **Not supported.** A fixed count of three writers wins 17% on the flat tiny files on one volume and loses 8% on the dependency sources on another. A count that adapts at run time could take that gain, and it needs a design review before any build.
-- **Rejected by the probe.** `openat`, preallocation, closing on another thread, setting times in a later pass and writing the largest files first show no gain on small files.
+- **Rejected by the probe.** `openat`, preallocation, closing on another thread, setting times in a second pass and writing the largest files first show no gain on small files.
 - **Not possible.** `clonefile` copies an existing file and extraction has none. macOS has no call that creates several files at once.
 
 ## Limits
