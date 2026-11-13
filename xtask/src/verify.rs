@@ -576,7 +576,7 @@ fn remote_preflight() -> String {
 fn remote_lock(base: &str) -> String {
     format!(
         "until mkdir {base}/target/remote-run.lock 2>/dev/null; do\n\
-         find {base}/target/remote-run.lock -maxdepth 0 -mmin +180 -exec rmdir {{}} \\; 2>/dev/null\n\
+         find {base}/target/remote-run.lock -maxdepth 0 -mmin +1440 -exec rmdir {{}} \\; 2>/dev/null\n\
          sleep 5\n\
          done\n\
          trap 'rmdir {base}/target/remote-run.lock' EXIT\n"
@@ -886,6 +886,44 @@ mod tests {
             "first\ntest result: ok. 0 passed\n"
         );
         assert_eq!(String::from_utf8(run.stderr).unwrap(), "progress\n");
+    }
+
+    #[cfg(unix)]
+    fn lock_left_after_one_wait(age_in_hours: u64) -> bool {
+        let base = tempfile::tempdir().unwrap();
+        let lock = base.path().join("target/remote-run.lock");
+        fs::create_dir_all(&lock).unwrap();
+        fs::File::open(&lock)
+            .unwrap()
+            .set_modified(
+                std::time::SystemTime::now() - std::time::Duration::from_secs(age_in_hours * 3600),
+            )
+            .unwrap();
+        let mut waiter = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("{}exit 0\n", remote_lock("\"$1\"")))
+            .arg("sh")
+            .arg(base.path())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let left = lock.is_dir();
+        let _ = waiter.kill();
+        let _ = waiter.wait();
+        left
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_waiting_run_keeps_the_lock_of_a_release_run_hours_in_and_clears_one_a_day_old() {
+        assert!(
+            lock_left_after_one_wait(5),
+            "a release-checks run five hours in still holds the lock"
+        );
+        assert!(
+            !lock_left_after_one_wait(25),
+            "a lock older than a day is cleared"
+        );
     }
 
     #[test]
