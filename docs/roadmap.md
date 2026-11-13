@@ -41,7 +41,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M26. Cargo features for each format](roadmap/m26-cargo-features-for-each-format.md) | In progress | M25 |
 | [M27. LZ4 and `compress` at the reference speed](roadmap/m27-lz4-and-compress-at-the-reference-speed.md) | Planned | M25 |
 | [M28. Clean failure everywhere](roadmap/m28-clean-failure-everywhere.md) | In progress | M8 |
-| [M29. Overwrite at the speed of a fresh extraction](roadmap/m29-overwrite-at-the-speed-of-a-fresh-extraction.md) | In progress | M8 |
+| [M29. Overwrite at the speed of a fresh extraction](roadmap/m29-overwrite-at-the-speed-of-a-fresh-extraction.md) | Done | M8 |
 | [M30. gzip end to end at libdeflate's speed](roadmap/m30-gzip-end-to-end-at-libdeflates-speed.md) | Done | M25 |
 | [M31. A release case for each decoder](roadmap/m31-a-release-case-for-each-decoder.md) | Planned | M25 |
 | [M32. Every reader under Zipper's licence](roadmap/m32-every-reader-under-zippers-licence.md) | In progress | M25 |
@@ -52,6 +52,8 @@ M4, M5 and M6 closed on 2 November 2026. The [Linux and Windows scoreboard](../b
 M13 closed on 5 November 2026. Every ZIP method, 7z codec and compressed tar in the M10 matrix reads in process, except ZIP's Shrink and Implode, which moved to M19, and encryption, which is M14. The Codecs section of [Results](results.md) extracts one Silesia archive per codec at one thread. Zipper beats 7-Zip on 7z Deflate64 by 1.31× and bsdtar on lzip by 1.11×, and matches 7-Zip on PPMd. It is slower on the rest. 7z BCJ2 takes 4.44 times 7-Zip's time, LZ4 tar 3.26 times bsdtar's and `compress` tar 2.71 times 7-Zip's. BZip2 takes 1.39 to 1.40 times, ZIP Deflate64 1.46 times, because it runs two decoders to refuse trailing data, and LZMA, xz and Swap4 1.24 to 1.31 times. Records since then changed most of these rows. Two BCJ2 records, [buffered branches](../benchmarks/native-7z/bcj2-buffered-branches/README.md) and [the slice scan](../benchmarks/native-7z/bcj2-slice-scan/README.md), made BCJ2 faster, and 7-Zip is still faster at one thread. ZIP Deflate64 [decodes each entry once](../benchmarks/native-zip/deflate64-one-inflater/README.md) and beats 7-Zip. [Zipper's own BZip2 decoder](../benchmarks/bzip2/own-decoder-one-thread/README.md) beats 7-Zip 26.06 at one thread. M21 replaced liblzma, and [M27](roadmap/m27-lz4-and-compress-at-the-reference-speed.md) holds the LZ4 and `compress` gaps. Building the rows found that a `.tar.lz4` whose first block was over 1 MiB extracted as one file, fixed in `39712da`.
 
 M30 closed on 13 November 2026. On one Apple M2 Max, `zipper extract` of a 212 MB gzip file takes 209.5 ms against 218.7 ms for `libdeflate-gunzip`, with the ranges apart, as the [gzip file record](../benchmarks/deflate/gzip-file/README.md) shows. It was measured on one machine and one corpus.
+
+M29 closed on 13 November 2026. `--overwrite` into a folder that holds every file of the 28,000-file archive takes 1.80 times as long as into an empty one, down from 5.19 times, as the [full-folder record](../benchmarks/overwrite/full-folder/README.md) shows. The removal of the old files on APFS keeps it above 1.5 times. `e2dc81e` synced the exhaustive overwrite and cancel checks on the final code, after the Windows changes to `src/staging.rs`.
 
 ## Close a milestone
 

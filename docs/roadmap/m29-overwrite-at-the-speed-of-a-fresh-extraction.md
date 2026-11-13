@@ -24,6 +24,6 @@ Met on 12 November 2026:
 
 `91653bc` synced `[overwrite]` on that code, and `cccbdcd` again after the rebase onto main.
 
-Left, on 13 November 2026:
+Closed on 13 November 2026:
 
-- `f28c68c` and `89c91f2` changed `src/staging.rs` for Windows after the last sync, so `cargo xtask verify --owed` lists `[overwrite]` as owed. Exit check 2 holds on the final code only once `cargo xtask verify-sync overwrite` passes again. M29 closes then.
+- `f28c68c`, `89c91f2` and `212efac` changed `src/staging.rs` for Windows. `e2dc81e` synced `[overwrite]` on that code, `cargo xtask release-checks` ran it again, and the hosted Windows release candidate run passed the concurrent-overwrite tests.
