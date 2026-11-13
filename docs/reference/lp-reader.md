@@ -1,6 +1,6 @@
 # In-process LP reader
 
-Zipper reads Android logical partition images, the `super.img` of dynamic partitions, with its own Rust reader, in the tree `7zz x` writes. Zipper sends a file here when its LP geometry magic sits at byte 4096. A file that a ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound file, WIM, CHM or 7z reader claims goes there first. An Android sparse image of a `super.img` is refused, as the [refused formats page](refused.md#disk-images) describes.
+Zipper reads Android logical partition images, the `super.img` of dynamic partitions, with its own Rust reader, in the tree `7zz x` writes. Zipper sends a file here when its LP geometry magic sits at byte 4096. A file that the ZIP, executable, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, RAR, WIM or 7z reader claims goes there first, and a compound file or CHM file is refused first. An Android sparse image of a `super.img` is refused, as the [refused formats page](refused.md#disk-images) describes.
 
 ## What it writes
 

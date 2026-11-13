@@ -1,6 +1,6 @@
 # In-process ISO and UDF reader
 
-Zipper extracts disc images with its own Rust reader, in the tree `7zz x` writes. It reads ISO 9660 with Joliet, Rock Ridge and El Torito boot images, and UDF 1.02 to 2.60 with metadata partitions. Zipper sends a file here when sector 16 holds a well-formed volume descriptor, or a UDF anchor at sector 256 of 2048 or 512 bytes. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB, compound file or 7z signature goes to that reader first.
+Zipper extracts disc images with its own Rust reader, in the tree `7zz x` writes. It reads ISO 9660 with Joliet, Rock Ridge and El Torito boot images, and UDF 1.02 to 2.60 with metadata partitions. Zipper sends a file here when sector 16 holds a well-formed volume descriptor, or a UDF anchor at sector 256 of 2048 or 512 bytes. A file that starts with a ZIP, tar, cpio, `ar`, RPM, xar, CAB or 7z signature goes to that reader first, and a compound file is refused first.
 
 ## Which tree a disc gives
 

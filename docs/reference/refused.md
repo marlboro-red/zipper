@@ -53,7 +53,7 @@ Every ESD file, and every solid WIM that wimlib writes with its default compress
 
 Zipper refuses disk images whole, whatever they hold. That covers raw MBR and GPT disks and VHD, VHDX, QCOW, VDI, VMDK and Android sparse images. No partition is read, so no file system inside is decoded, and no image goes to 7-Zip.
 
-- The container signatures at offset 0 are checked before the WIM, 7z, executable, disc and file system readers sniff the file. Only a ZIP, executable, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ or RAR signature wins over them.
+- The container signatures at offset 0 are checked before the WIM, 7z, disc and file system readers sniff the file, and before the check for a damaged executable. Only a ZIP, executable, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ or RAR signature wins over them.
 - A VHD footer at the end, a FAT boot sector, a GPT header and an MBR table are checked after the 7z, WIM, executable, LP, UEFI, disc, SquashFS, CramFS and ext readers. So an ISO 9660 or UDF disc with a hybrid MBR still reads as a disc. An ext volume keeps its boot block, which may hold an old MBR. So an MBR table is not refused when the ext reader's superblock checks accept the superblock at offset 1024.
 - A fixed VHD that holds an ext, SquashFS or CramFS volume with no partition table reads as that volume, since its bytes are the volume followed by a footer. No disk code reads it.
 - An archive that holds a disk image, such as a tar, extracts the image as one file.
@@ -77,7 +77,7 @@ The disk image signatures come from these specifications. No code was copied fro
 
 ## Proof
 
-- `every_refused_format_is_refused_with_nothing_written` in `tests/refused.rs` runs every format and method above through the CLI's `extract`, `list` and `test`, `zipper::extract_archive` and `zipper::choose_reader`.
+- `every_refused_format_is_refused_with_nothing_written` in `tests/refused.rs` runs every format and method above but the last two formats through the CLI's `extract`, `list` and `test` and `zipper::extract_archive`. It runs each of those formats through `zipper::choose_reader` too.
 - `no_refused_format_reaches_a_fake_7zip_on_path` in the same file puts a fake `7zz` first on `PATH` and checks that none of these files starts it.
 - `crafted_refused_files_never_open_in_process_or_start_7zip` runs files an adversarial review crafted. They hold a prefix before a refused file, a Mach-O or Mach-O universal header before one, a FAT boot sector with an odd media byte, a planted disc descriptor or a split Base64 file. Some hold a VHD, VHDX, QCOW or GPT disk. None may be read, and none may start 7-Zip.
 - `tests/no_7zip.rs` refuses the two rows Zipper once sent to 7-Zip. It also checks that a fake 7-Zip never starts for any file in `tests/data`.

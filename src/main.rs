@@ -10,7 +10,7 @@ use zipper::Reader;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Zipper — fast, safe extraction of ZIP, tar, 7z, cpio, ar, RPM, xar, CAB, ISO and WIM archives, executables and Flash files"
+    about = "Zipper: fast, safe extraction of ZIP, tar, 7z, RAR, cpio, ar, RPM, xar, CAB, LZH, ARJ, ISO and WIM archives, compressed files, file system images, executables, firmware and Flash files"
 )]
 struct Cli {
     /// Maximum worker threads (defaults to available CPUs; tiny ZIPs may use fewer; tar uses 4 writers, and a solid 7z up to 4 writers beside its decoders).
@@ -94,7 +94,7 @@ enum Command {
         #[arg(long, value_name = "N")]
         strip_components: Option<usize>,
         /// Write file contents only: no modification times, no Windows
-        /// attributes, no extended attributes and no Mark of the Web. Files
+        /// attributes and no Mark of the Web. Files
         /// keep only the execute bit, and folders get the default mode.
         #[arg(long)]
         content_only: bool,

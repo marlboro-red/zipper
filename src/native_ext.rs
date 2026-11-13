@@ -2155,10 +2155,10 @@ pub fn sniff(path: &Path) -> Result<bool> {
 }
 
 /// Verify and optionally extract an ext2, ext3 or ext4 volume held in a
-/// bounded view, such as one partition, into a new directory, in the tree
-/// `7zz x` writes, with `[SYS]` and `[UNKNOWN]` folders for the inodes no
-/// folder names. Every check of `docs/reference/ext-reader.md` holds before
-/// anything is published.
+/// bounded view into a new directory, in the tree `7zz x` writes, with
+/// `[SYS]` and `[UNKNOWN]` folders for the inodes no folder names. Every
+/// check of `docs/reference/ext-reader.md` holds before anything is
+/// published.
 pub fn read_volume<V: Read + Seek>(
     mut volume: V,
     archive: &Path,

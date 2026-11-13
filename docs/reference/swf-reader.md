@@ -1,6 +1,6 @@
 # In-process FLV and SWF reader
 
-Zipper reads Flash Video (FLV) files and SWF files with its own Rust reader, in the tree `7zz x` writes. Zipper sends a file here when it starts with `FLV` and the version byte 1, or with `FWS`, `CWS` or `ZWS` and a version byte below 64. A file that a ZIP, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, compound file, WIM, CHM, 7z, NTFS, disc or disk reader claims goes there first.
+Zipper reads Flash Video (FLV) files and SWF files with its own Rust reader, in the tree `7zz x` writes. Zipper sends a file here when it starts with `FLV` and the version byte 1, or with `FWS`, `CWS` or `ZWS` and a version byte below 64. A file that the ZIP, executable, tar, cpio, `ar`, RPM, xar, CAB, LZH, ARJ, RAR, WIM, 7z, LP, UEFI, disc, SquashFS, CramFS or ext reader claims goes there first. So does a format the [refused formats page](refused.md) lists, which is refused.
 
 ## FLV files
 

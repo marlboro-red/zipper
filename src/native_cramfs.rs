@@ -504,10 +504,9 @@ pub fn sniff(path: &Path) -> Result<bool> {
     Ok(volume.read_exact_at(0, &mut start).is_ok() && is_image(&start))
 }
 
-/// Verify and optionally extract a CramFS image held in a bounded view,
-/// such as one GPT partition, into a new directory, in the tree `7zz x`
-/// writes. Every check of `docs/reference/squashfs-reader.md` holds before
-/// anything is published.
+/// Verify and optionally extract a CramFS image held in a bounded view
+/// into a new directory, in the tree `7zz x` writes. Every check of
+/// `docs/reference/squashfs-reader.md` holds before anything is published.
 pub fn read_volume<V: Read + Seek>(
     mut volume: V,
     archive: &Path,

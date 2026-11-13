@@ -1421,9 +1421,8 @@ pub(crate) fn other_version(path: &Path) -> Result<bool> {
 }
 
 /// Verify and optionally extract a SquashFS 4.0 image held in a bounded
-/// view, such as one GPT partition, into a new directory, in the tree
-/// `7zz x` writes. Every check of `docs/reference/squashfs-reader.md` holds
-/// before anything is published.
+/// view into a new directory, in the tree `7zz x` writes. Every check of
+/// `docs/reference/squashfs-reader.md` holds before anything is published.
 pub fn read_volume<V: Read + Seek>(
     mut volume: V,
     archive: &Path,

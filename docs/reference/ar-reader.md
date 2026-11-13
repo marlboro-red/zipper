@@ -55,7 +55,7 @@ An `ar` archive has no end marker. A file cut exactly between two members, or ju
 | One GNU or BSD name | at most 8,192 bytes |
 | Total expanded size | must fit in free space, or `--max-extracted-bytes` |
 
-The reader passes over the archive twice. The first pass reads only the headers and the long name table, to decide whether the file is a Debian package. Both passes check the cancel flag at every member, and both step through the file within its read buffer, so a run of empty members costs no seek. The second pass extracts. One thread writes each member in archive order through a 1 MiB buffer. `--threads` has no effect on `ar`, but a package's tar uses the tar reader's writer threads.
+The reader passes over the archive twice. The first pass reads only the headers and the long name table, to decide whether the file is a Debian package. Both passes check the cancel flag at every member, and both step through the file within its read buffer, so a run of empty members costs no seek. The second pass extracts. One thread writes each member in archive order through a 1 MiB buffer. `--threads` has no effect on `ar` itself. A package's tar uses the tar reader's writer threads, and a bzip2 tar decodes its blocks on up to one thread fewer than `--threads`.
 
 ## Differences from 7-Zip
 

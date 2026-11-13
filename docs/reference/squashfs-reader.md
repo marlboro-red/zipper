@@ -64,7 +64,7 @@ The SquashFS reader never holds a table whole. It reads metadata through a cache
 
 ## Differences from 7-Zip
 
-`tests/squashfs_corpus.rs` requires every image in `tests/data/squashfs-corpus` to extract to the tree recorded when it was written, and to the tree 7-Zip extracts where it is installed, with modes and SquashFS times. It does the same for images that `mksquashfs` writes of every compressor at block sizes of 4 KiB, 64 KiB and 1 MiB. It also covers nine table and compressor options, and `mkfs.cramfs` images of both byte orders. Each is also checked raw, in a GPT partition, and against the files it was written from. The readers differ from 7-Zip 26.05 on purpose in these cases:
+`tests/squashfs_corpus.rs` requires every image in `tests/data/squashfs-corpus` to extract to the tree recorded when it was written, and to the tree 7-Zip extracts where it is installed, with modes and SquashFS times. It does the same for images that `mksquashfs` writes of every compressor at block sizes of 4 KiB, 64 KiB and 1 MiB. It also covers nine table and compressor options, and `mkfs.cramfs` images of both byte orders. Each is also checked raw and against the files it was written from. The readers differ from 7-Zip 26.05 on purpose in these cases:
 
 - 7-Zip does not open SquashFS images compressed with LZ4 and reports that the method is not implemented. Zipper reads them, and the tests check them against `unsquashfs` and against the files they were written from.
 - 7-Zip writes each name of a SquashFS hard link as a copy of its data. Zipper writes hard links to one copy.

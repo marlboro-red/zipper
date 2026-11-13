@@ -1,6 +1,6 @@
 # In-process executable reader
 
-Zipper extracts executables and object files with its own Rust reader, in the tree `7zz x` writes. It reads PE images, COFF objects, UEFI TE images, ELF files of both classes and byte orders, Mach-O files and Mach-O universal (`Mub`) files. Zipper sends a file here when it starts with `MZ`, `VZ`, `\x7FELF`, a Mach-O magic or `CA FE BA BE 00 00 00` and parses whole with no data after it. A COFF object has no signature, so it is tried last, after every other format.
+Zipper extracts executables and object files with its own Rust reader, in the tree `7zz x` writes. It reads PE images, COFF objects, UEFI TE images, ELF files of both classes and byte orders, Mach-O files and Mach-O universal (`Mub`) files. Zipper sends a file here when it starts with `MZ`, `VZ`, `\x7FELF`, a Mach-O magic or `CA FE BA BE 00 00 00` and parses whole with no data after it. A COFF object has no signature, so it is tried after every other format's signature. Only the checks for a UEFI volume further into the file and for Intel HEX run after it.
 
 ## Routing
 
