@@ -3,4 +3,5 @@
 # plus the section's own lines in verification/coverage.txt, and the tools its full checks passed on.
 checked = 7z-folder-workers b138deba76de3f6c | rustc 1.99.1 (58cf8f9c3 2026-10-13); statechart f1fe9f6646177927
 checked = 7z-writer-pool 49607b713f4db688 | rustc 1.99.1 (58cf8f9c3 2026-10-13); statechart f1fe9f6646177927
+checked = rar4-lz d837ea9b751745d2 | rustc 1.99.1 (58cf8f9c3 2026-10-13)
 checked = zip-directory 9efd668ae1811327 | rustc 1.99.1 (58cf8f9c3 2026-10-13); Kani Rust Verifier 0.68.0 (cargo plugin) CBMC 6.11.0

@@ -2743,7 +2743,7 @@ item = src/native_rar.rs | struct Reader {
 item = src/native_rar.rs | impl Reader {
 
 [rar4-lz]
-fingerprint = 5275d4de7a74e1b1
+fingerprint = 639f43331c6fecb1
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo test --release --lib rar4
 full-check = cargo test --release --test rar_corpus
