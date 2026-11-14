@@ -762,7 +762,7 @@ fn format_tests() -> Result<()> {
         for test in *tests {
             args.extend(["--test", test]);
         }
-        cargo_with(&args, &required_7zip_comparisons_outside_ci())?;
+        cargo_with(&args, &required_comparisons_outside_ci())?;
     }
     Ok(())
 }
@@ -909,7 +909,7 @@ fn run_tests(partition: Option<u32>) -> Result<()> {
     ensure_nextest()?;
     let args = test_args(partition);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    cargo_with(&args, &required_7zip_comparisons_outside_ci())
+    cargo_with(&args, &required_comparisons_outside_ci())
 }
 
 fn shard_of_job(job: &str) -> Option<String> {
@@ -998,14 +998,17 @@ fn run_gate_steps(steps: Vec<(&str, BoxedStep)>, label: &str) -> Result<()> {
     Ok(())
 }
 
-const REQUIRE_7Z: &str = "ZIPPER_PARITY_REQUIRE_7Z";
+const REQUIRED_COMPARISONS: [&str; 2] = ["ZIPPER_PARITY_REQUIRE_7Z", "ZIPPER_PARITY_REQUIRE_UNRAR"];
 
-fn required_7zip_comparisons_outside_ci() -> Vec<(&'static str, &'static str)> {
-    if env::var_os("GITHUB_ACTIONS").is_some() || env::var_os(REQUIRE_7Z).is_some() {
-        Vec::new()
-    } else {
-        vec![(REQUIRE_7Z, "1")]
+fn required_comparisons_outside_ci() -> Vec<(&'static str, &'static str)> {
+    if env::var_os("GITHUB_ACTIONS").is_some() {
+        return Vec::new();
     }
+    REQUIRED_COMPARISONS
+        .into_iter()
+        .filter(|flag| env::var_os(flag).is_none())
+        .map(|flag| (flag, "1"))
+        .collect()
 }
 
 const NEXTEST_INSTALL: &str = "cargo install cargo-nextest --locked";

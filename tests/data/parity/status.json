@@ -270,6 +270,8 @@
       "tests": [
         "tests/rar_corpus.rs::every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/rar_corpus.rs::every_damaged_or_unsupported_corpus_archive_is_refused_and_leaves_nothing",
+        "tests/rar_written.rs::every_archive_rar_wrote_extracts_its_source_tree",
+        "tests/rar_written.rs::every_archive_with_a_feature_zipper_refuses_is_refused_by_name_and_leaves_nothing",
         "tests/hostile_rar.rs::every_rar4_cut_is_refused_or_extracts_entries_of_the_original_tree",
         "tests/hostile_rar.rs::every_rar4_bit_flip_is_refused_or_extracts_the_original_tree",
         "tests/hostile_rar.rs::each_hostile_rar4_layout_is_refused_and_leaves_nothing"
@@ -281,6 +283,8 @@
       "tests": [
         "tests/rar_corpus.rs::every_readable_corpus_archive_extracts_the_recorded_tree_and_the_tree_7zip_extracts",
         "tests/rar_corpus.rs::every_damaged_or_unsupported_corpus_archive_is_refused_and_leaves_nothing",
+        "tests/rar_written.rs::every_archive_rar_wrote_extracts_its_source_tree",
+        "tests/rar_written.rs::every_archive_with_a_feature_zipper_refuses_is_refused_by_name_and_leaves_nothing",
         "tests/rar_corpus.rs::a_selected_path_extracts_only_its_entries_with_the_recorded_bytes_even_late_in_a_solid_stream",
         "tests/hostile_rar.rs::every_cut_of_every_corpus_archive_is_refused",
         "tests/hostile_rar.rs::every_bit_flip_is_refused_or_extracts_the_original_tree",
