@@ -536,10 +536,17 @@ fn decode_growing(
 }
 
 fn grow(window: &mut Vec<u8>, keep: usize, len: usize) {
-    if window.len() < len {
+    if window.len() >= len {
+        return;
+    }
+    if window.len() < len / 2 {
         let mut grown = vec![0; len];
         grown[..keep].copy_from_slice(&window[..keep]);
         *window = grown;
+    } else {
+        window.truncate(keep);
+        window.reserve_exact(len - keep);
+        window.resize(len, 0);
     }
 }
 
