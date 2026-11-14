@@ -206,6 +206,10 @@ mod tests {
     use super::*;
 
     fn reference(data: &[u8]) -> Option<Vec<u8>> {
+        reference_noting_clears(data, &mut Vec::new())
+    }
+
+    fn reference_noting_clears(data: &[u8], clear_widths: &mut Vec<usize>) -> Option<Vec<u8>> {
         if data.len() < 3 || data[..2] != MAGIC || data[2] & RESERVED != 0 {
             return None;
         }
@@ -258,6 +262,7 @@ mod tests {
                 continue;
             };
             if block_mode && code == 256 {
+                clear_widths.push(bits);
                 position = round_up(position, group_start, bits);
                 group_start = position;
                 bits = 9;
@@ -413,6 +418,105 @@ mod tests {
             );
             assert_eq!(decode(&compressed).unwrap(), text, "{max_bits} bits");
         }
+    }
+
+    fn run_tool(program: &str, args: &[&str], input: &[u8]) -> std::process::Output {
+        use std::io::Write;
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let input = input.to_vec();
+        let feeder = std::thread::spawn(move || stdin.write_all(&input));
+        let output = child.wait_with_output().unwrap();
+        let _ = feeder.join().unwrap();
+        output
+    }
+
+    fn mixed_entropy_text(length: usize, seed: u32) -> Vec<u8> {
+        let mut state = seed;
+        let mut next = move || {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            state >> 8
+        };
+        let mut text = Vec::with_capacity(length);
+        while text.len() < length {
+            let run = (next() % 20_000) as usize + 1;
+            match next() % 4 {
+                0 => text.extend(std::iter::repeat_n(next() as u8, run)),
+                1 => {
+                    let letters = next() % 12 + 2;
+                    text.extend((0..run).map(|_| b'a' + (next() % letters) as u8));
+                }
+                2 => text.extend((0..run).map(|_| next() as u8)),
+                _ if !text.is_empty() => {
+                    let from = next() as usize % text.len();
+                    let end = text.len().min(from + run);
+                    text.extend_from_within(from..end);
+                }
+                _ => {}
+            }
+        }
+        text.truncate(length);
+        text
+    }
+
+    #[test]
+    fn system_compress_output_decodes_alike_in_zipper_uncompress_and_gzip() {
+        if std::process::Command::new("compress")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let mut clear_widths = std::collections::BTreeSet::new();
+        let mut seed = 7u32;
+        for bits in 9..=16u32 {
+            let long = 600_000 >> (16 - bits).min(3);
+            let lengths = [0, 1, 2, 3, 17, 255, 1_000, long / 3, long, long + 4_099];
+            for length in lengths {
+                seed = seed.wrapping_add(0x9E37_79B9);
+                let text = mixed_entropy_text(length, seed);
+                let compressed = run_tool("compress", &["-c", "-f", &format!("-b{bits}")], &text);
+                if text.is_empty() {
+                    continue;
+                }
+                assert_eq!(compressed.stdout[2] & MAX_BITS_MASK, bits as u8);
+                let mut widths = Vec::new();
+                let expected = reference_noting_clears(&compressed.stdout, &mut widths);
+                clear_widths.extend(widths);
+                assert_eq!(
+                    expected.as_deref(),
+                    Some(&text[..]),
+                    "reference, {bits} bits"
+                );
+                // EXTERNAL(macOS uncompress and gzip): both refuse a stream whose largest width is under 12 bits.
+                let tools = if bits >= 12 {
+                    [("uncompress", "-c"), ("gzip", "-dc")].as_slice()
+                } else {
+                    &[]
+                };
+                for &(tool, arg) in tools {
+                    let other = run_tool(tool, &[arg], &compressed.stdout);
+                    assert_eq!(other.stdout, text, "{tool}, {bits} bits, {length} bytes");
+                }
+                assert_eq!(
+                    decode(&compressed.stdout).unwrap(),
+                    text,
+                    "{bits} bits, {length} bytes"
+                );
+            }
+        }
+        assert_eq!(
+            clear_widths.into_iter().collect::<Vec<_>>(),
+            (10..=16).collect::<Vec<_>>(),
+            "the streams clear a full table at every width, and a 9-bit table fills at 10 bits"
+        );
     }
 
     #[test]
