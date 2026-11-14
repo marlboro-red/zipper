@@ -47,6 +47,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M32. Every reader under Zipper's licence](roadmap/m32-every-reader-under-zippers-licence.md) | Done | M25 |
 | [M33. Clean rewrites of the copied checks](roadmap/m33-clean-rewrites-of-the-copied-checks.md) | Planned | M32 |
 | [M34. Decoder cases on Windows](roadmap/m34-decoder-cases-on-windows.md) | Planned | M31 |
+| [M35. Zstandard and LZMA at C speed on x86-64](roadmap/m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) | Planned | M31 |
 
 M0 was done when the roadmap began on 1 November 2026. M1 closed the same day, with the reference corpus, the hostile tests and mutation testing of the ZIP reader. A run of 300,000 mutation cases found no failure, as [mutation testing](reference/zip-reader.md#mutation-testing) records. M2 closed on 2 November 2026, with Unix permissions, modification times and links that stay inside restored as the [ZIP reader reference](reference/zip-reader.md) lists. M3 closed the same day. `cargo xtask bench` regenerates every number in [Results](results.md), and the gate fails when the page differs from the committed JSON.
 

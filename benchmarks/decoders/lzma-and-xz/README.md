@@ -1,6 +1,6 @@
 # Zipper's LZMA and xz decoder against lzma-rs, lzma-rust2 and liblzma
 
-Stays inside Zipper, so M23 does not start. Zipper trails liblzma on x86-64 Linux by 1.09 to 1.20 times on both corpora and both streams, with ranges apart. It decodes xz in 0.61 to 0.75 times `lzma-rust2`'s time and LZMA in 0.82 to 0.89 times in every run.
+Not ready yet, so M23 does not start until [M35](../../../docs/roadmap/m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) closes the Linux gap. Zipper trails liblzma on x86-64 Linux by 1.09 to 1.20 times on both corpora and both streams, with ranges apart. It decodes xz in 0.61 to 0.75 times `lzma-rust2`'s time and LZMA in 0.82 to 0.89 times in every run.
 
 ## Question
 
@@ -198,11 +198,11 @@ Extraction of the `xz` row, 8,762,484 bytes into 85,944,317, median wall ms with
 
 ## Decision
 
-The verdict is that it stays inside Zipper.
+The verdict is that it is not ready yet. On 14 November 2026 the user chose this over keeping it inside Zipper, since it is the fastest pure-Rust LZMA decoder in every run and leads liblzma on the M2 Max. [M35](../../../docs/roadmap/m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) tries to close the Linux gap.
 
 - liblzma through the `liblzma` crate is the best alternative, and Zipper trails it on x86-64 Linux on both corpora and both streams with ranges apart.
 - The lead over both pure-Rust crates holds in every run, but the rule counts the C-wrapping crate too.
-- M23 publishes this decoder as a crate and starts only if this verdict is a crate, so M23 does not start.
+- M23 publishes this decoder as a crate and starts only if this verdict is a crate, so M23 does not start before M35 closes.
 - No profile on x86-64 Linux shows where the gap comes from, so this record does not call it closable.
 
 ## Limits

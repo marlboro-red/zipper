@@ -1,6 +1,6 @@
 # Zipper's Zstandard decoder against ruzstd and libzstd
 
-Stays inside Zipper. Zipper trails libzstd on x86-64 Linux by 1.34 times on both corpora, with ranges apart, though it leads libzstd on an Apple M2 Max. It decodes in 0.29 to 0.45 times `ruzstd`'s time in every run.
+Not ready yet. [M35](../../../docs/roadmap/m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) works on the gap. Zipper trails libzstd on x86-64 Linux by 1.34 times on both corpora, with ranges apart, though it leads libzstd on an Apple M2 Max. It decodes in 0.29 to 0.45 times `ruzstd`'s time in every run.
 
 ## Question
 
@@ -135,7 +135,7 @@ Extraction of the `zstd` row, 12,598,289 bytes into 85,944,317, median wall ms w
 
 ## Decision
 
-The verdict is that it stays inside Zipper.
+The verdict is that it is not ready yet. On 14 November 2026 the user chose this over keeping it inside Zipper, since it is the fastest pure-Rust Zstandard decoder in every run and leads libzstd on the M2 Max. [M35](../../../docs/roadmap/m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) tries to close the Linux gap.
 
 - libzstd through the `zstd` crate is the best alternative, and Zipper trails it on x86-64 Linux on both corpora with ranges apart.
 - The lead over `ruzstd`, the best pure-Rust decoder, holds in every run, but the rule counts the C-wrapping crate too.

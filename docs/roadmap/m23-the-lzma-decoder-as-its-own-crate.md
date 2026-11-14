@@ -4,7 +4,7 @@ Zipper's LZMA, LZMA2 and xz decoder is published on crates.io as a crate of its 
 
 The [tree-preload record](../../benchmarks/lzma/tree-preload/README.md) shows the decoder taking 350.0 ms on the probe stream against 398.4 ms for liblzma in the same runs. That is one Mac and one stream. The crate is worth publishing only if the speed holds on other machines and every use M21 covers.
 
-M31 found that it does not. Zipper's decoder trails liblzma on x86-64 Linux by 1.09 to 1.20 times on Silesia and the dependency sources, as the [LZMA and xz record](../../benchmarks/decoders/lzma-and-xz/README.md) shows, so this milestone does not start.
+M31 found that it does not. Zipper's decoder trails liblzma on x86-64 Linux by 1.09 to 1.20 times on Silesia and the dependency sources, as the [LZMA and xz record](../../benchmarks/decoders/lzma-and-xz/README.md) shows, so this milestone waits for [M35](m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) to close that gap.
 
 Scope:
 
