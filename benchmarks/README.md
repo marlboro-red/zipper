@@ -106,6 +106,18 @@ All records are local measurements. Each one names its machine, revision, run co
 | 2026-10-29 | [Buffered central-directory preflight](native-zip/preflight.md) | Kept. Listing is about 18% faster. Extraction ranges overlap. |
 | 2026-10-29 | [Native ZIP baseline](native-zip/README.md) | About twice as fast as direct 7-Zip with four native workers. No one-worker or CPU data. |
 
+## Release cases for each decoder
+
+These records answer [M31](../docs/roadmap/m31-a-release-case-for-each-decoder.md). Each compares one of Zipper's decoders with the Rust crates and C libraries a program can use, on an Apple M2 Max and a hosted x86-64 Linux runner, on Silesia only.
+
+| Date | Experiment | Verdict |
+| --- | --- | --- |
+| 2026-11-14 | [Zipper's Zstandard decoder against ruzstd and libzstd](decoders/zstandard/README.md) | Becomes a crate, once a second corpus repeats the lead. It decodes in 0.29 times `ruzstd`'s time on the M2 Max and 0.33 times on Linux, ranges apart. It leads libzstd on the M2 Max only. |
+| 2026-11-14 | [Zipper's Deflate and gzip decoder against zlib-rs, miniz_oxide and libdeflate](decoders/deflate-and-gzip/README.md) | Stays inside Zipper. It decodes in 0.72 times `zlib-rs`'s time on the M2 Max but ties it on Linux, and trails libdeflate there. |
+| 2026-11-14 | [Zipper's LZMA and xz decoder against lzma-rs, lzma-rust2 and liblzma](decoders/lzma-and-xz/README.md) | Becomes a crate, once a second corpus repeats the lead. It decodes xz in 0.69 times `lzma-rust2`'s time on the M2 Max and 0.72 times on Linux, ranges apart. It ties or trails liblzma on Linux. |
+| 2026-11-14 | [Zipper's BZip2 decoder against libbz2-rs-sys and libbzip2](decoders/bzip2/README.md) | Becomes a crate, once a second corpus repeats the lead. At one thread it decodes in 0.61 to 0.66 times the time of `libbz2-rs-sys` and libbzip2 on both machines, ranges apart. |
+| 2026-11-14 | [Zipper's XPRESS decoder against xpress-huffman](decoders/xpress/README.md) | Not ready yet. It decodes in 0.33 times `xpress-huffman`'s time on the M2 Max and 0.31 times on Linux, but the M2 Max has no WIM extraction row. |
+
 ## Comparisons with other tools
 
 | Date | Experiment | Verdict |

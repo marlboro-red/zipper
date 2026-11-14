@@ -43,7 +43,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M28. Clean failure everywhere](roadmap/m28-clean-failure-everywhere.md) | Done | M8 |
 | [M29. Overwrite at the speed of a fresh extraction](roadmap/m29-overwrite-at-the-speed-of-a-fresh-extraction.md) | Done | M8 |
 | [M30. gzip end to end at libdeflate's speed](roadmap/m30-gzip-end-to-end-at-libdeflates-speed.md) | Done | M25 |
-| [M31. A release case for each decoder](roadmap/m31-a-release-case-for-each-decoder.md) | Planned | M25 |
+| [M31. A release case for each decoder](roadmap/m31-a-release-case-for-each-decoder.md) | In progress | M25 |
 | [M32. Every reader under Zipper's licence](roadmap/m32-every-reader-under-zippers-licence.md) | Done | M25 |
 | [M33. Clean rewrites of the copied checks](roadmap/m33-clean-rewrites-of-the-copied-checks.md) | Planned | M32 |
 

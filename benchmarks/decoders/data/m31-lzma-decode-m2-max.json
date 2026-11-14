@@ -1,0 +1,639 @@
+{
+  "schema": "m31-decoders/1",
+  "recorded": "2026-11-13T23:13:40+00:00",
+  "trial": false,
+  "machine": {
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpu": "Apple M2 Max",
+    "cpu_count": 12,
+    "memory_bytes": 68719476736,
+    "runner": null,
+    "runner_environment": null
+  },
+  "revision": {
+    "commit": "49f68e306999365d334354a56253025217a6c784",
+    "tree_clean": true
+  },
+  "toolchain": {
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "rustflags": null,
+    "python": "3.14.3"
+  },
+  "load_average_start": [
+    5.4384765625,
+    9.94873046875,
+    9.0517578125
+  ],
+  "busy_processes": [],
+  "decode": {
+    "rounds": 11,
+    "warmup_rounds": 1,
+    "order_seed": 20261114,
+    "order_including_warmup": [
+      [
+        "lzma lzma-rust2",
+        "lzma lzma-rs",
+        "lzma liblzma",
+        "lzma zipper"
+      ],
+      [
+        "lzma lzma-rust2",
+        "lzma zipper",
+        "lzma liblzma",
+        "lzma lzma-rs"
+      ],
+      [
+        "lzma lzma-rust2",
+        "lzma lzma-rs",
+        "lzma zipper",
+        "lzma liblzma"
+      ],
+      [
+        "lzma lzma-rust2",
+        "lzma liblzma",
+        "lzma zipper",
+        "lzma lzma-rs"
+      ],
+      [
+        "lzma zipper",
+        "lzma lzma-rust2",
+        "lzma lzma-rs",
+        "lzma liblzma"
+      ],
+      [
+        "lzma lzma-rust2",
+        "lzma liblzma",
+        "lzma zipper",
+        "lzma lzma-rs"
+      ],
+      [
+        "lzma liblzma",
+        "lzma zipper",
+        "lzma lzma-rust2",
+        "lzma lzma-rs"
+      ],
+      [
+        "lzma liblzma",
+        "lzma lzma-rs",
+        "lzma zipper",
+        "lzma lzma-rust2"
+      ],
+      [
+        "lzma lzma-rust2",
+        "lzma zipper",
+        "lzma lzma-rs",
+        "lzma liblzma"
+      ],
+      [
+        "lzma zipper",
+        "lzma liblzma",
+        "lzma lzma-rust2",
+        "lzma lzma-rs"
+      ],
+      [
+        "lzma zipper",
+        "lzma lzma-rust2",
+        "lzma liblzma",
+        "lzma lzma-rs"
+      ],
+      [
+        "lzma liblzma",
+        "lzma zipper",
+        "lzma lzma-rust2",
+        "lzma lzma-rs"
+      ]
+    ],
+    "timed": "the decode call alone, inside its process, into an output buffer written before timing",
+    "verification": "every decoded byte against the original, after timing",
+    "results": {
+      "lzma": {
+        "zipper": {
+          "crates": {
+            "zipper": "0.1.0-alpha.3"
+          },
+          "api": "std::io::Read into the output",
+          "samples": [
+            {
+              "seconds": 1.5732495420000001,
+              "cpu_seconds": 1.573225,
+              "process_seconds": 1.6173817089875229,
+              "process_cpu_seconds": 1.616312,
+              "peak_rss_bytes": 323059712,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.555171209,
+              "cpu_seconds": 1.555138,
+              "process_seconds": 1.5996418750146404,
+              "process_cpu_seconds": 1.596897,
+              "peak_rss_bytes": 323043328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.5472514579999999,
+              "cpu_seconds": 1.5472469999999998,
+              "process_seconds": 1.5912538750562817,
+              "process_cpu_seconds": 1.588822,
+              "peak_rss_bytes": 323059712,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.494271125,
+              "cpu_seconds": 1.4942739999999999,
+              "process_seconds": 1.5369211669894867,
+              "process_cpu_seconds": 1.535114,
+              "peak_rss_bytes": 322912256,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.478769167,
+              "cpu_seconds": 1.478774,
+              "process_seconds": 1.521633333992213,
+              "process_cpu_seconds": 1.51947,
+              "peak_rss_bytes": 322928640,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.5616489580000001,
+              "cpu_seconds": 1.561627,
+              "process_seconds": 1.606315542012453,
+              "process_cpu_seconds": 1.603829,
+              "peak_rss_bytes": 323043328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.554140917,
+              "cpu_seconds": 1.554115,
+              "process_seconds": 1.598656290967483,
+              "process_cpu_seconds": 1.597127,
+              "peak_rss_bytes": 323059712,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.568344333,
+              "cpu_seconds": 1.56835,
+              "process_seconds": 1.6129294999991544,
+              "process_cpu_seconds": 1.6112849999999999,
+              "peak_rss_bytes": 322928640,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.54603775,
+              "cpu_seconds": 1.546032,
+              "process_seconds": 1.5904695419594646,
+              "process_cpu_seconds": 1.5880750000000001,
+              "peak_rss_bytes": 323043328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.5487965830000001,
+              "cpu_seconds": 1.548785,
+              "process_seconds": 1.593264416034799,
+              "process_cpu_seconds": 1.590773,
+              "peak_rss_bytes": 322961408,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.56904325,
+              "cpu_seconds": 1.5690279999999999,
+              "process_seconds": 1.6137504579965025,
+              "process_cpu_seconds": 1.611986,
+              "peak_rss_bytes": 323059712,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            }
+          ],
+          "median_seconds": 1.554140917,
+          "min_seconds": 1.478769167,
+          "max_seconds": 1.5732495420000001,
+          "median_cpu_seconds": 1.554115,
+          "min_cpu_seconds": 1.478774,
+          "max_cpu_seconds": 1.573225,
+          "cpu_per_wall": 0.9999833239060135,
+          "mib_s": 130.06457114918106,
+          "peak_rss_bytes": 323059712
+        },
+        "lzma-rs": {
+          "crates": {
+            "lzma-rs": "0.3.0"
+          },
+          "api": "lzma_rs::lzma_decompress into the output",
+          "samples": [
+            {
+              "seconds": 3.306427292,
+              "cpu_seconds": 3.306423,
+              "process_seconds": 3.350940916046966,
+              "process_cpu_seconds": 3.348817,
+              "peak_rss_bytes": 325091328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.292131875,
+              "cpu_seconds": 3.2921199999999997,
+              "process_seconds": 3.336329084006138,
+              "process_cpu_seconds": 3.334304,
+              "peak_rss_bytes": 323846144,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.194729834,
+              "cpu_seconds": 3.194734,
+              "process_seconds": 3.2382082089898176,
+              "process_cpu_seconds": 3.2362290000000002,
+              "peak_rss_bytes": 323846144,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.194365041,
+              "cpu_seconds": 3.194353,
+              "process_seconds": 3.2383279579808004,
+              "process_cpu_seconds": 3.236116,
+              "peak_rss_bytes": 325058560,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.182073792,
+              "cpu_seconds": 3.182069,
+              "process_seconds": 3.224742749996949,
+              "process_cpu_seconds": 3.2223640000000002,
+              "peak_rss_bytes": 323829760,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.2993535,
+              "cpu_seconds": 3.299339,
+              "process_seconds": 3.34391733398661,
+              "process_cpu_seconds": 3.341923,
+              "peak_rss_bytes": 325091328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.316421375,
+              "cpu_seconds": 3.31642,
+              "process_seconds": 3.361394499952439,
+              "process_cpu_seconds": 3.360764,
+              "peak_rss_bytes": 323862528,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.3032787089999998,
+              "cpu_seconds": 3.3032369999999998,
+              "process_seconds": 3.3473909580498002,
+              "process_cpu_seconds": 3.34603,
+              "peak_rss_bytes": 325058560,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.299440208,
+              "cpu_seconds": 3.299408,
+              "process_seconds": 3.343795749999117,
+              "process_cpu_seconds": 3.341321,
+              "peak_rss_bytes": 325074944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.314737375,
+              "cpu_seconds": 3.3147309999999996,
+              "process_seconds": 3.3596371249877848,
+              "process_cpu_seconds": 3.357847,
+              "peak_rss_bytes": 325074944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 3.293412875,
+              "cpu_seconds": 3.293391,
+              "process_seconds": 3.3375544999726117,
+              "process_cpu_seconds": 3.3359699999999997,
+              "peak_rss_bytes": 325074944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            }
+          ],
+          "median_seconds": 3.2993535,
+          "min_seconds": 3.182073792,
+          "max_seconds": 3.316421375,
+          "median_cpu_seconds": 3.299339,
+          "min_cpu_seconds": 3.182069,
+          "max_cpu_seconds": 3.31642,
+          "cpu_per_wall": 0.9999956051996246,
+          "mib_s": 61.26614558730976,
+          "peak_rss_bytes": 325091328
+        },
+        "lzma-rust2": {
+          "crates": {
+            "lzma-rust2": "0.23.0"
+          },
+          "api": "lzma_rust2::LzmaReader, read into the output",
+          "samples": [
+            {
+              "seconds": 1.899108542,
+              "cpu_seconds": 1.899105,
+              "process_seconds": 1.943169875012245,
+              "process_cpu_seconds": 1.9413909999999999,
+              "peak_rss_bytes": 322928640,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.915288083,
+              "cpu_seconds": 1.9152409999999997,
+              "process_seconds": 1.9605178749770857,
+              "process_cpu_seconds": 1.9602709999999999,
+              "peak_rss_bytes": 322961408,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.903226959,
+              "cpu_seconds": 1.903219,
+              "process_seconds": 1.9474457089672796,
+              "process_cpu_seconds": 1.9455669999999998,
+              "peak_rss_bytes": 323026944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.783850917,
+              "cpu_seconds": 1.7838559999999999,
+              "process_seconds": 1.8273198339738883,
+              "process_cpu_seconds": 1.8250629999999999,
+              "peak_rss_bytes": 322945024,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.781069666,
+              "cpu_seconds": 1.7810730000000001,
+              "process_seconds": 1.8242067079991102,
+              "process_cpu_seconds": 1.8217469999999998,
+              "peak_rss_bytes": 322928640,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.900391916,
+              "cpu_seconds": 1.90039,
+              "process_seconds": 1.9449772499501705,
+              "process_cpu_seconds": 1.94257,
+              "peak_rss_bytes": 322912256,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.9075294170000001,
+              "cpu_seconds": 1.907521,
+              "process_seconds": 1.9511890420108102,
+              "process_cpu_seconds": 1.9493489999999998,
+              "peak_rss_bytes": 322945024,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.898218,
+              "cpu_seconds": 1.898201,
+              "process_seconds": 1.942750583984889,
+              "process_cpu_seconds": 1.940949,
+              "peak_rss_bytes": 323026944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.914905417,
+              "cpu_seconds": 1.9148749999999999,
+              "process_seconds": 1.959395499958191,
+              "process_cpu_seconds": 1.957128,
+              "peak_rss_bytes": 323043328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.9129489579999999,
+              "cpu_seconds": 1.9129330000000002,
+              "process_seconds": 1.9576599579886533,
+              "process_cpu_seconds": 1.956246,
+              "peak_rss_bytes": 323043328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.915653791,
+              "cpu_seconds": 1.915656,
+              "process_seconds": 1.9605742080020718,
+              "process_cpu_seconds": 1.9612049999999999,
+              "peak_rss_bytes": 322961408,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            }
+          ],
+          "median_seconds": 1.903226959,
+          "min_seconds": 1.781069666,
+          "max_seconds": 1.915653791,
+          "median_cpu_seconds": 1.903219,
+          "min_cpu_seconds": 1.7810730000000001,
+          "max_cpu_seconds": 1.915656,
+          "cpu_per_wall": 0.9999958181550749,
+          "mib_s": 106.20839039670203,
+          "peak_rss_bytes": 323043328
+        },
+        "liblzma": {
+          "crates": {
+            "liblzma": "0.4.9",
+            "liblzma-sys": "0.4.9"
+          },
+          "api": "liblzma::bufread::XzDecoder over an LZMA-alone stream",
+          "samples": [
+            {
+              "seconds": 1.7944700409999998,
+              "cpu_seconds": 1.794472,
+              "process_seconds": 1.8395271669724025,
+              "process_cpu_seconds": 1.83734,
+              "peak_rss_bytes": 323026944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.790611334,
+              "cpu_seconds": 1.7906170000000001,
+              "process_seconds": 1.835237999970559,
+              "process_cpu_seconds": 1.8331600000000001,
+              "peak_rss_bytes": 322994176,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.790402083,
+              "cpu_seconds": 1.7903769999999999,
+              "process_seconds": 1.834820749994833,
+              "process_cpu_seconds": 1.832862,
+              "peak_rss_bytes": 323010560,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.677702917,
+              "cpu_seconds": 1.677708,
+              "process_seconds": 1.721518374979496,
+              "process_cpu_seconds": 1.7193100000000001,
+              "peak_rss_bytes": 323010560,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.679897042,
+              "cpu_seconds": 1.679884,
+              "process_seconds": 1.7237022079643793,
+              "process_cpu_seconds": 1.721504,
+              "peak_rss_bytes": 323043328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.727124625,
+              "cpu_seconds": 1.727006,
+              "process_seconds": 1.7704161670408212,
+              "process_cpu_seconds": 1.768745,
+              "peak_rss_bytes": 323010560,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.7771372090000002,
+              "cpu_seconds": 1.777123,
+              "process_seconds": 1.821767750021536,
+              "process_cpu_seconds": 1.8190689999999998,
+              "peak_rss_bytes": 323026944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.761178833,
+              "cpu_seconds": 1.76118,
+              "process_seconds": 1.805836332961917,
+              "process_cpu_seconds": 1.803877,
+              "peak_rss_bytes": 323026944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.781577083,
+              "cpu_seconds": 1.781578,
+              "process_seconds": 1.8265079999691807,
+              "process_cpu_seconds": 1.823892,
+              "peak_rss_bytes": 323026944,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.788975417,
+              "cpu_seconds": 1.7889789999999999,
+              "process_seconds": 1.8339392499765381,
+              "process_cpu_seconds": 1.832263,
+              "peak_rss_bytes": 323043328,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            },
+            {
+              "seconds": 1.7865579999999999,
+              "cpu_seconds": 1.786563,
+              "process_seconds": 1.8311936669633724,
+              "process_cpu_seconds": 1.828725,
+              "peak_rss_bytes": 322994176,
+              "verified_bytes": 211957760,
+              "rayon_threads": 12
+            }
+          ],
+          "median_seconds": 1.781577083,
+          "min_seconds": 1.677702917,
+          "max_seconds": 1.7944700409999998,
+          "median_cpu_seconds": 1.781578,
+          "min_cpu_seconds": 1.677708,
+          "max_cpu_seconds": 1.794472,
+          "cpu_per_wall": 1.0000005147125033,
+          "mib_s": 113.46052539843993,
+          "peak_rss_bytes": 323043328
+        }
+      }
+    }
+  },
+  "corpus": {
+    "original": {
+      "bytes": 211957760,
+      "name": "silesia.tar",
+      "sha256": "1953965768007e9333e4b9718fcfefc422a6503734d58574cdb312bd00484eb2"
+    },
+    "streams": {
+      "bzip2": {
+        "bytes": 54595355,
+        "encoder": "libbz2-rs-sys level 9",
+        "file": "silesia.tar.bz2",
+        "sha256": "6b368f624a44a0c8d4059adadb57ba8af003e76499e4bc0aacbcaf989c417884"
+      },
+      "deflate": {
+        "bytes": 68915303,
+        "encoder": "flate2 with zlib-rs, level 6, raw",
+        "file": "silesia.tar.deflate",
+        "sha256": "e6fc3a4c42b28bde5aa53bfc46aeae5f3bf16b7a948b89a7bf069e78c1f81341"
+      },
+      "gzip": {
+        "bytes": 68915321,
+        "encoder": "flate2 with zlib-rs, level 6",
+        "file": "silesia.tar.gz",
+        "sha256": "39f2d811f2de69c7cec250ab2f967603a499cdd9920dcf5874a0ce7a97f54048"
+      },
+      "lzma": {
+        "bytes": 49212908,
+        "encoder": "liblzma preset 6, LZMA-alone with an end marker",
+        "file": "silesia.tar.lzma",
+        "sha256": "9b9428563d0eac4f1ffad4ea5b11da83c514925d4eccf90f3f6ce41b39f77a7c"
+      },
+      "xpress": {
+        "bytes": 76787818,
+        "encoder": "this bench's greedy encoder, 32 KiB chunks with one code each",
+        "file": "silesia.tar.xpress",
+        "sha256": "ee9d61b928b82602a362d4f92507ac08ebd86dace6f4ae323d3141735104a15e"
+      },
+      "xz": {
+        "bytes": 49218368,
+        "encoder": "liblzma preset 6, one block, CRC-64",
+        "file": "silesia.tar.xz",
+        "sha256": "a5f3a1d2ddb51b2f9900c95e1f06892e171753c972041b5cb1bd6e3d395fa986"
+      },
+      "zstd": {
+        "bytes": 66497280,
+        "encoder": "libzstd level 3, one frame with its checksum",
+        "file": "silesia.tar.zst",
+        "sha256": "ad673085da8cce558680d350cd77ab1809db858ec38da5f849b1a95f9d3fb938"
+      }
+    },
+    "harness": {
+      "path": "<target>/m31/build/release/zipper-decode-bench",
+      "sha256": "f4056ce7598d308227908292d0d7fc0ec7c502c5cb43f60fe9296157a90081d7"
+    }
+  },
+  "load_average_end": [
+    3.1669921875,
+    7.77685546875,
+    8.30078125
+  ]
+}

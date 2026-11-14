@@ -66,3 +66,23 @@ gh run download RUN_ID --name m31-decoders-linux-x86_64 --dir target/m31/linux
 ```
 
 The smoke test in `benchmarks/decoders/decode-bench/tests/smoke.rs` runs every decoder for one round on a 150,000-byte input and checks the JSON, so the gate keeps the bench working.
+
+## Verdicts
+
+The second machine ran at `49f68e30` and the hosted Linux runner at `479b42fd`, with the same decoders and bench code. A lead counts only when the ranges are apart on both machines. The best Rust alternative is the fastest pure-Rust crate, since a program that builds no C, as Zipper does, can use only those.
+
+| Decoder | Verdict | Against the best Rust alternative | Against the C library |
+| --- | --- | --- | --- |
+| [Zstandard](../../benchmarks/decoders/zstandard/README.md) | Becomes a crate, once a second corpus repeats the lead | 0.292 times `ruzstd`'s time on the M2 Max and 0.332 on Linux, ranges apart | Ahead of libzstd on the M2 Max, ranges overlapping on Linux, so no lead |
+| [Deflate and gzip](../../benchmarks/decoders/deflate-and-gzip/README.md) | Stays inside Zipper | 0.720 times `zlib-rs`'s time on the M2 Max, a tie on Linux | Tied with libdeflate on the M2 Max, behind it on Linux |
+| [LZMA and xz](../../benchmarks/decoders/lzma-and-xz/README.md) | Becomes a crate, once a second corpus repeats the lead | 0.690 times `lzma-rust2`'s time on xz on the M2 Max and 0.719 on Linux, ranges apart | Ahead of liblzma on the M2 Max, tied on Linux xz and behind on Linux LZMA, so no lead |
+| [BZip2](../../benchmarks/decoders/bzip2/README.md) | Becomes a crate, once a second corpus repeats the lead | 0.609 times `libbz2-rs-sys`'s time on the M2 Max and 0.651 on Linux, ranges apart | 0.663 times libbzip2's time on the M2 Max and 0.644 on Linux, ranges apart |
+| [XPRESS](../../benchmarks/decoders/xpress/README.md) | Not ready yet | 0.329 times `xpress-huffman`'s time on the M2 Max and 0.314 on Linux, ranges apart | None measured |
+
+Each ratio is Zipper's median decode time over the other's, at one thread. The records give the ranges, the extraction rows and the limits.
+
+## What keeps M31 open
+
+- Exit check 1 is not met for XPRESS. The M2 Max has no WIM extraction row, since `wimlib-imagex` is not installed there. The Linux run found no `7zz`, so its WIM row has no reader beside Zipper.
+- Exit check 3 is not met for any lead. Every row comes from Silesia, and the check lets no lead rest on one corpus. The three crate verdicts stand once a second corpus repeats their leads.
+- M23 should not start yet. LZMA's verdict is a crate only once a second corpus repeats its lead over `lzma-rust2`. M23's own exit check 2 then compares the crate with liblzma, and these rows show Zipper tied with liblzma on Linux xz and behind it on Linux LZMA.
