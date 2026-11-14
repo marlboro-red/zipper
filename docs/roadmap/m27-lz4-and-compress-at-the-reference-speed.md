@@ -15,3 +15,10 @@ Exit checks:
 1. A record for each codec times Zipper against its reference on the second machine, interleaved, with the ranges apart or the verdict stated as a tie.
 2. The codec rows of the scoreboard show each codec level with its reference or faster, or the record names the gap left and why only assembly could close it.
 3. The LZ4 and `compress` parser proofs and tests still pass, and a planted break shows each new check can fail.
+
+Status:
+
+| Codec | Zipper against its reference | Record |
+| --- | --- | --- |
+| LZ4 | 1.09× bsdtar on Silesia `.tar.lz4` at one thread, 114.8 ms against 105.3 ms. bsdtar decodes in a second `lz4` process. Exit checks 1 and 3 are met for LZ4. | [LZ4 block decoder at the reference speed](../../benchmarks/lz4/block-decoder/README.md) |
+| `compress` | Open. 2.7 times 7-Zip, as above. | none yet |

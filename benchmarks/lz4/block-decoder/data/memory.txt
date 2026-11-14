@@ -1,0 +1,40 @@
+zipper --threads 1 extract, maximum resident set size in bytes, three runs interleaved, second machine.
+old is a5cd62f, timed is 17b22c5 (the build the timings measured), final is the branch head with in-place growth.
+mem1 to mem5 come from the first adversary review, the two linked repros from the second.
+
+linked-raw-then-expand (4 MiB raw block, then 3 KiB to 4 MiB, linked)
+  old    15482880 15482880 15482880
+  timed  19841024 19808256 19808256
+  final  15630336 15630336 15630336
+random16-linked (lz4 -B7 -BD of 16 MiB of random bytes)
+  old    14467072 14467072 14467072
+  timed  18743296 18759680 18726912
+  final  14565376 14548992 14532608
+mem1_malformed_4m
+  old     4997120  5029888  5029888
+  timed   5046272  5046272  5046272
+  final   5062656  5046272  5062656
+mem2_valid_small_4m
+  old     5079040  5095424  5046272
+  timed   5160960  5111808  5160960
+  final   5128192  5160960  5144576
+mem3_many_frames
+  old     6127616  6111232  6111232
+  timed   6144000  6160384  6160384
+  final   6176768  6176768  6176768
+mem4_linked_hist_malformed
+  old     8257536  8257536  8257536
+  timed   8273920  8273920  8273920
+  final   8290304  8273920  8273920
+mem5_valid_4m_out
+  old    13516800 13500416 13500416
+  timed  10387456 10387456 10387456
+  final  10387456 10403840 10420224
+many-tiny-frames (20,000 frames of one byte)
+  old     5062656  5062656  5046272
+  timed   5079040  5095424  5095424
+  final   5111808  5111808  5111808
+one-big-block (16 KiB block that decodes to 4 MiB)
+  old    14565376 14548992 14548992
+  timed  11403264 11403264 11419648
+  final  11436032 11452416 11436032
