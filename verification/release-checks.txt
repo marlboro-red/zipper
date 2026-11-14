@@ -6,4 +6,5 @@ checked = 7z-writer-pool 49607b713f4db688 | rustc 1.99.1 (58cf8f9c3 2026-10-13);
 checked = lz4-blocks c67b4aab46455a06 | rustc 1.99.1 (58cf8f9c3 2026-10-13); Kani Rust Verifier 0.68.0 (cargo plugin) CBMC 6.11.0
 checked = lz4-frames 42bf65f85d644d3e | rustc 1.99.1 (58cf8f9c3 2026-10-13)
 checked = rar4-lz d837ea9b751745d2 | rustc 1.99.1 (58cf8f9c3 2026-10-13)
+checked = squashfs-fields 9397364a402df5e2 | rustc 1.99.1 (58cf8f9c3 2026-10-13); Kani Rust Verifier 0.68.0 (cargo plugin) CBMC 6.11.0
 checked = zip-directory 9efd668ae1811327 | rustc 1.99.1 (58cf8f9c3 2026-10-13); Kani Rust Verifier 0.68.0 (cargo plugin) CBMC 6.11.0
