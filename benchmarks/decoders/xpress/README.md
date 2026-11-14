@@ -1,6 +1,6 @@
 # Zipper's XPRESS decoder against xpress-huffman
 
-Becomes a crate. Zipper decodes XPRESS chunks in 0.28 to 0.33 times `xpress-huffman`'s time on both corpora on an Apple M2 Max, on x86-64 Linux and on Windows, with ranges apart in every run. Windows has no WIM extraction row. No crate wraps a C library for XPRESS. Silesia WIM extraction still takes 1.35 times 7-Zip's time on the M2 Max and 1.30 times on Linux.
+Becomes a crate. Zipper decodes XPRESS chunks in 0.28 to 0.33 times `xpress-huffman`'s time on both corpora on an Apple M2 Max, on x86-64 Linux and on Windows, with ranges apart in every run. No crate wraps a C library for XPRESS. Silesia WIM extraction still takes 1.35 times 7-Zip's time on the M2 Max, 1.30 times on Linux and 1.40 times on Windows.
 
 ## Question
 
@@ -33,7 +33,7 @@ Does Zipper's XPRESS Huffman decoder lead `xpress-huffman`, the only Rust crate 
 - The ratio column is Zipper's median time over the other row's. Its range runs from Zipper's fastest over the other's slowest to Zipper's slowest over the other's fastest. "Ranges overlap" means no established difference. A row is compared only with rows of its own run.
 - The streams come from this bench's greedy encoder, written from MS-XCA, in 32 KiB chunks with one code each, as WIM stores them. `silesia.tar.xpress` is 76,787,818 bytes and `dependencies.tar.xpress` 19,402,251 bytes.
 - `xpress-huffman` gets two more zero bytes after each coded chunk, since it stops once its input cursor reaches the end of a chunk.
-- `wimlib-imagex` wrote each WIM with XPRESS chunks for the extraction rows. On Linux they are 74,591,929 bytes for Silesia and 19,023,514 bytes for the dependencies. On the M2 Max wimlib 1.14.5 wrote the Silesia WIM, 74,591,891 bytes, in `m31-wim-m2-max-silesia.json`.
+- `wimlib-imagex` wrote each WIM with XPRESS chunks for the extraction rows. On Linux they are 74,591,929 bytes for Silesia and 19,023,514 bytes for the dependencies. On the M2 Max wimlib 1.14.5 wrote the Silesia WIM, 74,591,891 bytes, in `m31-wim-m2-max-silesia.json`. On Windows wimlib 1.14.5 wrote 74,592,118 bytes for Silesia and 19,059,840 bytes for the dependencies, timed at `3b324db6` on 14 November 2026 with the same binaries as the other Windows extraction rows.
 - No crate that wraps a C library reads XPRESS, so `xpress-huffman` is the best alternative.
 
 ## Results
@@ -42,7 +42,8 @@ Does Zipper's XPRESS Huffman decoder lead `xpress-huffman`, the only Rust crate 
 - `xpress-huffman` peaks at more memory than Zipper in every run, with the same input and output buffers.
 - The Silesia WIM extracts at one thread in 1.348 times 7-Zip's time on the M2 Max (1.144 to 1.577) and 1.304 times on Linux (1.299 to 1.310). All threads change nothing, at 622.8 against 622.0 ms on the M2 Max.
 - On Linux the dependencies WIM extracts in 0.971 times 7-Zip's time (0.941 to 0.980).
-- On the Windows desktop Zipper takes 0.332 and 0.317 times `xpress-huffman`'s time, with ranges apart. Windows has no WIM extraction row, since `wimlib-imagex` is not installed there.
+- On the Windows desktop Zipper takes 0.332 and 0.317 times `xpress-huffman`'s time, with ranges apart.
+- On Windows the Silesia WIM extracts in 1.400 times 7-Zip's time (1.378 to 1.527), and the dependencies WIM in 0.668 times (0.659 to 0.683).
 
 Every decode comparison, Zipper's median time over the other decoder's with its range, in each run:
 
@@ -98,6 +99,7 @@ Extraction of the `xpress` row, 74,591,929 bytes into 211,938,580, median wall m
 ### Silesia on the Windows desktop
 
 - `m34-decode-windows-silesia.json`, revision `5e6dd97b`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
+- `m34-extract-windows-silesia.json`, revision `3b324db6`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
 
 Decode of `xpress`, median wall ms of the decode call with its range, CPU s and peak RSS:
 
@@ -106,7 +108,13 @@ Decode of `xpress`, median wall ms of the decode call with its range, CPU s and 
 | `zipper` | `zipper` 0.1.0-alpha.3 | 412.1 (410.9 to 419.6) | not measured | 281.7 |  |  |
 | `xpress-huffman` | `xpress-huffman` 0.1.3 | 1240.7 (1230.9 to 1254.0) | not measured | 388.1 | 0.332 (0.328 to 0.341) | Zipper ahead |
 
-No extraction row for `xpress` in this run.
+Extraction of the `xpress` row, 74,592,118 bytes into 211,938,580, median wall ms with its range, CPU s and peak RSS:
+
+| Reader | Threads | Wall ms | CPU s | Peak MiB | Zipper one thread over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | 1 | 599.6 (594.7 to 653.3) | 0.594 | 5.6 |  |  |
+| `zipper-all-threads` | all | 596.9 (594.3 to 651.4) | 0.594 | 5.5 |  |  |
+| `7zip` | 1 | 428.3 (427.9 to 431.7) | 0.422 | 7.4 | 1.400 (1.378 to 1.527) | Zipper behind |
 
 ### Dependencies on the Apple M2 Max
 
@@ -143,6 +151,7 @@ Extraction of the `xpress` row, 19,023,514 bytes into 85,944,317, median wall ms
 ### Dependencies on the Windows desktop
 
 - `m34-decode-windows-dependencies.json`, revision `5e6dd97b`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
+- `m34-extract-windows-dependencies.json`, revision `3b324db6`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
 
 Decode of `xpress`, median wall ms of the decode call with its range, CPU s and peak RSS:
 
@@ -151,7 +160,13 @@ Decode of `xpress`, median wall ms of the decode call with its range, CPU s and 
 | `zipper` | `zipper` 0.1.0-alpha.3 | 116.9 (116.5 to 119.9) | not measured | 111.3 |  |  |
 | `xpress-huffman` | `xpress-huffman` 0.1.3 | 368.2 (366.7 to 370.5) | not measured | 143.5 | 0.317 (0.314 to 0.327) | Zipper ahead |
 
-No extraction row for `xpress` in this run.
+Extraction of the `xpress` row, 19,059,840 bytes into 85,944,317, median wall ms with its range, CPU s and peak RSS:
+
+| Reader | Threads | Wall ms | CPU s | Peak MiB | Zipper one thread over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | 1 | 4547.6 (4515.2 to 4633.1) | 3.203 | 8.1 |  |  |
+| `zipper-all-threads` | all | 4544.2 (4512.6 to 4799.5) | 3.156 | 8.0 |  |  |
+| `7zip` | 1 | 6802.7 (6780.2 to 6848.8) | 6.672 | 9.6 | 0.668 (0.659 to 0.683) | Zipper ahead |
 
 ## Decision
 
@@ -160,7 +175,7 @@ The verdict is that it becomes a crate.
 - The decode lead over `xpress-huffman`, the best alternative, holds on both machines and both corpora, with ranges apart in every run.
 - As a finding, Silesia WIM extraction trails 7-Zip on both machines, at 1.348 and 1.304 times its time. The decode bench does not show where that time goes, so the WIM reader around the decoder needs a profile.
 - The extraction rows decode chunks that wimlib wrote, so the case does not rest on the bench's own encoder alone.
-- Windows confirms the decode lead on both corpora. It has no WIM extraction row, which M34's exit check 1 asks for.
+- Windows confirms the decode lead on both corpora, and the Silesia WIM gap to 7-Zip, at 1.400 times its time.
 
 ## Limits
 
@@ -171,9 +186,8 @@ The verdict is that it becomes a crate.
 - The M2 Max WIM row ran on Silesia only, in its own run at `5e6dd97b` with wimlib 1.14.5. The dependencies have no WIM row on the M2 Max.
 - No run has a `.tar.lzma` extraction row. Zipper writes the `.tar.lzma` out as one file, the `.tar`, where bsdtar reads the tar inside, so the trees differ.
 - The three Linux runs each got a different AMD EPYC, so Linux numbers compare only within one run. Linux CPU times for child processes come in steps of 10 ms.
-- Windows has no WIM extraction row, since `wimlib-imagex` is not installed there.
 - The Windows `dependencies.tar` differs in sha256 from the other machines, though it holds the same crates, files and file bytes. Its streams differ by a few kilobytes.
-- On Windows the decode bench reports no CPU time for the decode call, and the driver has no load average. Its 7-Zip rows report the CPU time and peak RSS of the process that pipes 7-Zip's output, not of 7-Zip.
+- On Windows the decode bench reports no CPU time for the decode call, and the driver has no load average. Its 7-Zip tar rows report the CPU time and peak RSS of the process that pipes 7-Zip's output, not of 7-Zip. Its WIM row runs 7-Zip alone.
 - On Windows the dependencies take 4.2 to 7.5 s to extract with every reader, so file creation on NTFS dominates those rows, not the decoder.
 - The C libraries were built by MSVC on Windows and by the system C compiler on the M2 Max and Linux, so a gap to a C library can belong to its compiler.
 - Each machine ran each corpus once, so session to session drift is not measured.

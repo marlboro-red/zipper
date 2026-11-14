@@ -81,7 +81,7 @@ def deterministic_tar(source, archive):
     """A USTAR tar of `source` whose bytes depend only on the names and contents of its files."""
     with tarfile.open(archive, "w", format=tarfile.USTAR_FORMAT) as tar:
         tar.add(source, arcname=source.name, recursive=False, filter=normalised)
-        for path in sorted(source.rglob("*")):
+        for path in sorted(source.rglob("*"), key=lambda path: path.relative_to(source).parts):
             if path.is_symlink():
                 raise ValueError(f"symlink not supported in the corpus: {path}")
             name = f"{source.name}/{path.relative_to(source).as_posix()}"
