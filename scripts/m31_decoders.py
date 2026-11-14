@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Measure M31: each decoder alone in one process, and extraction against references.
 
-`corpus` writes a deterministic Silesia tar and one stream per codec with the decode bench in
-benchmarks/decoders/decode-bench, plus an XPRESS WIM when wimlib-imagex is installed. `decode`
+`corpus` writes a deterministic tar of one source tree and one stream per codec with the decode
+bench in benchmarks/decoders/decode-bench, plus an XPRESS WIM when wimlib-imagex is installed. The
+tree is Silesia, or with `--source dependencies` the crates.io sources Cargo.lock pins, each read
+from the .crate file `cargo fetch --locked` cached once its sha256 matches the lockfile. `decode`
 times every decoder the bench lists, one process per sample, over interleaved rounds after one
 warmup. `extract` runs compare_zip_readers.py on each tar stream and the WIM. `all` runs both and
 writes one JSON.
@@ -22,6 +24,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import unicodedata
 from bench_common import refuse_when_busy
 from process_metrics import timed
 
@@ -29,14 +32,26 @@ ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = "m31-decoders/1"
 MIN_ROUNDS = 7
 ORDER_SEED = 20261114
-SOURCE_NAME = "silesia"
-TAR_NAME = "silesia.tar"
+SOURCES = ("silesia", "dependencies")
+SOURCE_RECORD = "corpus-source.json"
+CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 TAR_STREAMS = {"gzip": "gz", "zstd": "zst", "xz": "xz", "bzip2": "bz2"}
-WIM_NAME = "silesia.wim"
 WIM_CHUNK = 32768
 STDERR_KEPT = 20000
-SKIPPED_ROWS = {"lzma": "no extraction row: Zipper writes silesia.tar.lzma out as one file, silesia.tar, where "
-                        "bsdtar reads the tar inside, so the trees differ; the decode rows still measure LZMA"}
+
+
+def tar_name(source):
+    return f"{source}.tar"
+
+
+def wim_name(source):
+    return f"{source}.wim"
+
+
+def skipped_rows(source):
+    tar = tar_name(source)
+    return {"lzma": f"no extraction row: Zipper writes {tar}.lzma out as one file, {tar}, where bsdtar reads "
+                    "the tar inside, so the trees differ; the decode rows still measure LZMA"}
 
 
 def sha256_file(path):
@@ -76,7 +91,7 @@ def deterministic_tar(source, archive):
 def keep_only_the_source(tree, source, out):
     """wimlib-imagex captures all of `tree`, and compare_zip_readers.py expects it to hold `source`
     alone. fetch_silesia.py writes its manifest beside the folder it fetches, so it moves to `out`."""
-    manifest = tree / f"{SOURCE_NAME}.manifest.json"
+    manifest = tree / f"{source.name}.manifest.json"
     if manifest.exists():
         manifest.replace(out / manifest.name)
     stray = sorted(path.name for path in tree.iterdir() if path != source)
@@ -85,30 +100,142 @@ def keep_only_the_source(tree, source, out):
                          f"it also holds {', '.join(stray)}")
 
 
+def locked_crates(lockfile):
+    """Every crates.io package Cargo.lock names, with the sha256 of its .crate file."""
+    crates = []
+    for block in lockfile.read_text().split("[[package]]")[1:]:
+        fields = dict(re.findall(r'^(name|version|source|checksum) = "([^"]+)"', block, re.M))
+        if fields.get("source") == CRATES_IO:
+            crates.append((fields["name"], fields["version"], fields["checksum"]))
+    return sorted(crates)
+
+
+def cargo_home():
+    return Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo")
+
+
+def crate_file(cache, name, version, checksum):
+    """The cached .crate whose sha256 is the lockfile's checksum, from any registry index folder."""
+    for path in sorted(cache.glob(f"*/{name}-{version}.crate")):
+        if sha256_file(path) == checksum:
+            return path
+    raise SystemExit(f"no {name}-{version}.crate under {cache} has the sha256 Cargo.lock pins; "
+                     "run `cargo fetch --locked`")
+
+
+def folded(relative):
+    """APFS and NTFS treat these names as one, so a pair would leave a different tree there."""
+    return unicodedata.normalize("NFD", relative).casefold()
+
+
+def unpack_crate(crate, prefix, destination, taken, skipped):
+    with tarfile.open(crate, "r:gz") as archive:
+        for member in archive:
+            parts = member.name.split("/")
+            if parts[-1] == "" and member.isdir():
+                parts.pop()
+            if parts[0] != prefix or any(part in ("", ".", "..") for part in parts):
+                raise SystemExit(f"{crate.name}: entry {member.name!r} is outside {prefix}/")
+            relative = "/".join(parts)
+            if member.issym():
+                skipped.append(relative)
+                continue
+            if not (member.isfile() or member.isdir()):
+                raise SystemExit(f"{crate.name}: entry {member.name!r} is neither a file nor a folder")
+            key = folded(relative)
+            if member.isfile() and key in taken:
+                raise SystemExit(f"{relative} and {taken[key]} name one file on a case-insensitive file system")
+            taken[key] = relative
+            target = destination.joinpath(*parts)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.extractfile(member) as data, target.open("xb") as written:
+                shutil.copyfileobj(data, written)
+
+
+def dependency_tree(source, out, lockfile):
+    """The crates.io sources `lockfile` pins, one folder per crate, read from the checksummed .crate
+    files rather than ~/.cargo/registry/src, where Cargo and build scripts write extra files."""
+    provenance = {"cargo_lock_sha256": sha256_file(lockfile), "registry": CRATES_IO}
+    manifest = out / f"{source.name}.manifest.json"
+    if source.exists():
+        built = json.loads(manifest.read_text()) if manifest.exists() else {}
+        if built.get("cargo_lock_sha256") != provenance["cargo_lock_sha256"]:
+            raise SystemExit(f"{source} was built from another Cargo.lock; remove it and run corpus again")
+        return built
+    crates = locked_crates(lockfile)
+    if not crates:
+        raise SystemExit("Cargo.lock names no crates.io package")
+    partial = source.with_name(source.name + ".partial")
+    if partial.exists():
+        raise SystemExit(f"{partial} is left from an interrupted run; remove it and run corpus again")
+    cache = cargo_home() / "registry" / "cache"
+    partial.mkdir(parents=True)
+    taken, skipped = {}, []
+    try:
+        for name, version, checksum in crates:
+            unpack_crate(crate_file(cache, name, version, checksum), f"{name}-{version}", partial, taken, skipped)
+    except BaseException:
+        shutil.rmtree(partial)
+        raise
+    provenance.update({"crates": [{"name": name, "version": version, "sha256": checksum}
+                                  for name, version, checksum in crates],
+                       "skipped_symlinks": skipped})
+    manifest.write_text(json.dumps(provenance, indent=2) + "\n")
+    partial.rename(source)
+    return provenance
+
+
+def silesia_tree(source, copied_from):
+    if not source.exists():
+        if copied_from:
+            shutil.copytree(copied_from.resolve(strict=True), source)
+        else:
+            subprocess.run([sys.executable, str(ROOT / "scripts/fetch_silesia.py"), str(source)], check=True)
+    return {"copied_from": str(copied_from) if copied_from else None}
+
+
 def corpus(args):
     out = args.out.resolve()
     tree = out / "tree"
-    source = tree / SOURCE_NAME
-    if not source.exists():
-        tree.mkdir(parents=True, exist_ok=True)
-        if args.silesia:
-            shutil.copytree(args.silesia.resolve(strict=True), source)
-        else:
-            subprocess.run([sys.executable, str(ROOT / "scripts/fetch_silesia.py"), str(source)], check=True)
+    source = tree / args.source
+    tree.mkdir(parents=True, exist_ok=True)
+    if args.source == "silesia":
+        provenance = silesia_tree(source, args.silesia)
+    else:
+        provenance = dependency_tree(source, out, args.lockfile.resolve(strict=True))
     keep_only_the_source(tree, source, out)
-    archive = out / TAR_NAME
+    archive = out / tar_name(args.source)
     deterministic_tar(source, archive)
+    files = sum(1 for path in source.rglob("*") if path.is_file())
+    record = {"name": args.source, "tar": archive.name, "tar_bytes": archive.stat().st_size,
+              "tar_sha256": sha256_file(archive), "files": files, "provenance": provenance}
+    (out / SOURCE_RECORD).write_text(json.dumps(record, indent=2) + "\n")
     streams = out / "streams"
     subprocess.run([str(args.harness), "corpus", str(archive), str(streams)], check=True)
     wimlib = shutil.which("wimlib-imagex")
-    wim = streams / WIM_NAME
+    wim = streams / wim_name(args.source)
     if wimlib:
         wim.unlink(missing_ok=True)
         subprocess.run([wimlib, "capture", str(tree), str(wim), "--compress=xpress",
                         f"--chunk-size={WIM_CHUNK}"], check=True, stdout=subprocess.DEVNULL)
     else:
         print("wimlib-imagex is not installed; the XPRESS extraction row is skipped", file=sys.stderr)
-    print(f"{archive}: {archive.stat().st_size} bytes, sha256 {sha256_file(archive)}", file=sys.stderr)
+    print(f"{archive}: {record['tar_bytes']} bytes in {files} files, sha256 {record['tar_sha256']}",
+          file=sys.stderr)
+
+
+def built_source(root):
+    """The record `corpus` wrote, which names the tree a corpus folder holds."""
+    path = root / SOURCE_RECORD
+    if not path.exists():
+        raise SystemExit(f"{root} has no {SOURCE_RECORD}; run corpus on it again")
+    record = json.loads(path.read_text())
+    if record.get("name") not in SOURCES:
+        raise SystemExit(f"{path} names no known source")
+    return record
 
 
 def locked_versions():
@@ -259,18 +386,18 @@ def compare(archive, source, archive_format, runs, readers, allow_busy):
     return {"error": failure, "returncode": result.returncode, "stderr": stderr}
 
 
-def extract(zipper, root, runs, allow_busy, only, section, save):
+def extract(zipper, root, name, runs, allow_busy, only, section, save):
     """Fills `section` one row at a time and calls `save` after each, so a failed row is kept as an
     error entry and the rows before it stay on disk."""
     zipper = str(zipper.resolve(strict=True))
     root = root.resolve(strict=True)
-    source = root / "tree" / SOURCE_NAME
+    source = root / "tree" / name
     streams = root / "streams"
-    wim = streams / WIM_NAME
+    wim = streams / wim_name(name)
     seven, bsdtar = shutil.which("7zz"), shutil.which("bsdtar")
-    skipped = dict(SKIPPED_ROWS)
+    skipped = skipped_rows(name)
     if not wim.exists():
-        skipped["xpress"] = "no silesia.wim, since wimlib-imagex was not installed for corpus"
+        skipped["xpress"] = f"no {wim.name}, since wimlib-imagex was not installed for corpus"
     section.update({"runs": runs, "warmup_rounds": 1, "threads": 1,
                     "references_missing": [name for name, path in (("7zz", seven), ("bsdtar", bsdtar)) if not path],
                     "wim": "present" if wim.exists() else "absent, since wimlib-imagex was not installed for corpus",
@@ -285,7 +412,7 @@ def extract(zipper, root, runs, allow_busy, only, section, save):
             readers += ["--reader", "bsdtar", "bsdtar", bsdtar]
         if seven:
             readers += ["--reader", "7zip", "7zip-tar", seven]
-        rows.append((codec, streams / f"{TAR_NAME}.{extension}", "tar", readers))
+        rows.append((codec, streams / f"{tar_name(name)}.{extension}", "tar", readers))
     if wim.exists():
         seven_wim = ["--reader", "7zip", "7zip", seven] if seven else []
         rows.append(("xpress", wim, "native", list(zipper_rows) + seven_wim))
@@ -321,9 +448,13 @@ def check_rounds(parser, args, name):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    built = commands.add_parser("corpus", help="write the Silesia tar, its streams and the WIM")
+    built = commands.add_parser("corpus", help="write the source tree's tar, its streams and the WIM")
     built.add_argument("--harness", type=Path, required=True, help="the zipper-decode-bench binary")
     built.add_argument("--out", type=Path, required=True)
+    built.add_argument("--source", choices=SOURCES, default="silesia",
+                       help="Silesia, or the crates.io sources Cargo.lock pins")
+    built.add_argument("--lockfile", type=Path, default=ROOT / "Cargo.lock",
+                       help="the Cargo.lock whose crates.io sources --source dependencies reads")
     built.add_argument("--silesia", type=Path, help="an existing Silesia folder to copy instead of fetching it")
     for name in ("decode", "extract", "all"):
         command = commands.add_parser(name)
@@ -344,6 +475,8 @@ def main():
         command.add_argument("--out", type=Path)
     args = parser.parse_args()
     if args.command == "corpus":
+        if args.silesia and args.source != "silesia":
+            parser.error("--silesia needs --source silesia")
         corpus(args)
         return
     for name in ("rounds", "runs"):
@@ -353,16 +486,18 @@ def main():
     record["busy_processes"] = refuse_when_busy(args.allow_busy)
     if args.command == "decode":
         record["decode"], record["corpus"] = decode(args.harness, args.corpus, args.original, args.rounds, args.only)
+    if args.command in ("extract", "all"):
+        record["source"] = built_source(args.corpus.resolve(strict=True))
     if args.command == "all":
-        record["decode"], record["corpus"] = decode(args.harness, args.corpus / "streams", args.corpus / TAR_NAME,
-                                                    args.rounds, args.only)
+        record["decode"], record["corpus"] = decode(args.harness, args.corpus / "streams",
+                                                    args.corpus / record["source"]["tar"], args.rounds, args.only)
     if args.command in ("extract", "all"):
         def save():
             if args.out:
                 write(record, args.out)
         save()
         record["extract"] = {}
-        extract(args.zipper, args.corpus, args.runs, args.allow_busy, args.only, record["extract"], save)
+        extract(args.zipper, args.corpus, record["source"]["name"], args.runs, args.allow_busy, args.only, record["extract"], save)
     write(record, args.out)
     failed = record.get("extract", {}).get("failed")
     if failed:

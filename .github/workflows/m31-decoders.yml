@@ -3,6 +3,14 @@ name: M31 decoders
 on:
   workflow_dispatch:
     inputs:
+      corpus:
+        description: The source tree to measure
+        type: choice
+        options:
+          - silesia
+          - dependencies
+        default: silesia
+        required: true
       rounds:
         description: Decode rounds after one warmup, 7 or more
         default: '11'
@@ -15,19 +23,27 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   measure:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
+      CORPUS: ${{ inputs.corpus }}
       ROUNDS: ${{ inputs.rounds }}
       RUNS: ${{ inputs.runs }}
+      SEVEN_ZIP_URL: https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-x64.tar.xz
+      SEVEN_ZIP_SHA256: 2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate inputs
         run: |
           python3 - <<'EOF'
           import os
+          assert os.environ['CORPUS'] in ('silesia', 'dependencies')
           assert 7 <= int(os.environ['ROUNDS']) <= 31
           assert 7 <= int(os.environ['RUNS']) <= 31
           EOF
@@ -37,24 +53,33 @@ jobs:
       - name: Install the reference tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends 7zip libarchive-tools time wimtools
-          7zz | head -3
+          sudo apt-get install -y --no-install-recommends libarchive-tools time wimtools
+          curl -fsSL -o "$RUNNER_TEMP/7zip.tar.xz" "$SEVEN_ZIP_URL"
+          echo "$SEVEN_ZIP_SHA256  $RUNNER_TEMP/7zip.tar.xz" | sha256sum --check
+          sudo tar -xJf "$RUNNER_TEMP/7zip.tar.xz" -C /usr/local/bin 7zz
+          command -v 7zz bsdtar wimlib-imagex
+          7zz | sed -n '1,3p'
           bsdtar --version
-          wimlib-imagex --version | head -1
+          wimlib-imagex --version | sed -n '1p'
       - name: Build release binaries
         run: cargo +1.99.1 build --release --locked --package zipper --package zipper-decode-bench
+      - name: Fetch the locked crates
+        run: cargo +1.99.1 fetch --locked
       - name: Build the corpus
-        run: python3 scripts/m31_decoders.py corpus --harness target/release/zipper-decode-bench --out target/m31/corpus
+        run: |
+          python3 scripts/m31_decoders.py corpus --harness target/release/zipper-decode-bench \
+            --source "$CORPUS" --out "target/m31/corpus-$CORPUS"
       - name: Measure
         run: |
           python3 scripts/m31_decoders.py all --harness target/release/zipper-decode-bench \
-            --zipper target/release/zipper --corpus target/m31/corpus \
-            --rounds "$ROUNDS" --runs "$RUNS" --out target/m31/m31-decoders-linux-x86_64.json
+            --zipper target/release/zipper --corpus "target/m31/corpus-$CORPUS" \
+            --rounds "$ROUNDS" --runs "$RUNS" --out "target/m31/m31-decoders-linux-x86_64-$CORPUS.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           if-no-files-found: warn
-          name: m31-decoders-linux-x86_64
+          name: m31-decoders-linux-x86_64-${{ inputs.corpus }}
           path: |
-            target/m31/m31-decoders-linux-x86_64.json
-            target/m31/corpus/streams/corpus.json
+            target/m31/m31-decoders-linux-x86_64-${{ inputs.corpus }}.json
+            target/m31/corpus-${{ inputs.corpus }}/corpus-source.json
+            target/m31/corpus-${{ inputs.corpus }}/streams/corpus.json

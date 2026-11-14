@@ -22,6 +22,9 @@ Exit checks:
 [`scripts/m31_decoders.py`](../../scripts/m31_decoders.py) drives both measurements. The decode bench in [`benchmarks/decoders/decode-bench`](../../benchmarks/decoders/decode-bench) holds every decoder this page names and is never published.
 
 - `corpus` copies or fetches Silesia and writes `silesia.tar` with fixed owners, modes and times, so its bytes and its sha256 match on every machine. The bench then writes one stream per codec from that tar.
+- `corpus --source dependencies` builds the second corpus, `dependencies.tar`, from the crates.io sources that `Cargo.lock` pins. Each crate comes from the `.crate` file that `cargo fetch --locked` caches, and only when its sha256 matches the checksum in `Cargo.lock`. It does not read `~/.cargo/registry/src`, where Cargo and build scripts can add files.
+- `corpus` refuses a crate entry outside its own folder, and a pair of names that a case-insensitive file system would merge. Either one would leave a different tree on the M2 Max than on Linux. At `86be136f` the corpus holds 114 crates in 5,501 files, and `dependencies.tar` has 90,931,200 bytes with sha256 `b8191b36e54aadd526c311ad00c9099a5bcd7544a18d37afc3b4f798eb7b63e7`. Another `Cargo.lock` gives other bytes.
+- `corpus` writes `corpus-source.json` beside the tar, with the source's name, the tar's size and sha256, and where the tree came from. `extract` and `all` read it to find the tree, the streams and the WIM, and copy it into the JSON as `source`.
 - The streams come from libraries that the lockfile pins. They are raw Deflate and gzip from `zlib-rs` at level 6, Zstandard from libzstd at level 3 with its checksum, and xz and LZMA from liblzma at preset 6. BZip2 comes from `libbz2-rs-sys` at level 9.
 - XPRESS comes from the bench's own greedy encoder, written from [MS-XCA](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-xca/), in 32 KiB chunks as WIM stores them. When `wimlib-imagex` is installed, `corpus` also writes `silesia.wim` with XPRESS chunks for the extraction row.
 - `decode` runs each decoder in its own process for each sample. The process times only the decode call, into an output buffer written beforehand. It then compares every byte with the original and reports wall and CPU time. Its parent records the peak RSS.
@@ -43,7 +46,7 @@ The alternatives are these crates.
 
 Zipper's BZip2 decoder runs twice, on a one-thread Rayon pool and on the global pool. `xpress-huffman` is the only Rust crate under a compatible licence that reads XPRESS with Huffman codes. `rust-lzxpress` reads only plain LZ77 XPRESS, and `ms-compress` and `newtua-mscompress` are LGPL, so they are left out. `xpress-huffman` stops once its input cursor reaches the end of a chunk, so the bench gives each coded chunk two more zero bytes before timing.
 
-On the second machine, in a checkout of the measured commit, build both binaries and smoke one round first.
+On the second machine, in a checkout of the measured commit, build both binaries and smoke one round first. The WIM row needs `wimlib-imagex`, which `brew install wimlib` provides.
 
 ```sh
 cargo build --release --locked --package zipper --package zipper-decode-bench
@@ -57,15 +60,31 @@ python3 scripts/m31_decoders.py all --harness target/release/zipper-decode-bench
   --rounds 11 --runs 7 --out target/m31/m31-decoders-m2-max.json
 ```
 
-On a hosted x86-64 Linux runner, dispatch [`m31-decoders.yml`](../../.github/workflows/m31-decoders.yml). It installs 7-Zip, bsdtar and `wimlib-imagex`, builds the same binaries, builds the corpus and uploads the JSON as the artifact `m31-decoders-linux-x86_64`, also when a step fails. It runs only when dispatched.
+The second corpus runs the same way from its own folder.
 
 ```sh
-gh workflow run m31-decoders.yml --ref main -f rounds=11 -f runs=7
-gh run list --workflow m31-decoders.yml --limit 1
-gh run download RUN_ID --name m31-decoders-linux-x86_64 --dir target/m31/linux
+cargo fetch --locked
+python3 scripts/m31_decoders.py corpus --harness target/release/zipper-decode-bench \
+  --source dependencies --out target/m31/corpus-dependencies
+python3 scripts/m31_decoders.py all --harness target/release/zipper-decode-bench \
+  --zipper target/release/zipper --corpus target/m31/corpus-dependencies \
+  --rounds 1 --runs 1 --trial --allow-busy --out target/m31/smoke-dependencies.json
+python3 scripts/m31_decoders.py all --harness target/release/zipper-decode-bench \
+  --zipper target/release/zipper --corpus target/m31/corpus-dependencies \
+  --rounds 11 --runs 7 --out target/m31/m31-decoders-m2-max-dependencies.json
 ```
 
-The smoke test in `benchmarks/decoders/decode-bench/tests/smoke.rs` runs every decoder for one round on a 150,000-byte input and checks the JSON, so the gate keeps the bench working.
+On a hosted x86-64 Linux runner, dispatch [`m31-decoders.yml`](../../.github/workflows/m31-decoders.yml). Its `corpus` input picks `silesia` or `dependencies`. It installs 7-Zip, bsdtar and `wimlib-imagex`, builds the same binaries, fetches the locked crates and builds the corpus. It uploads the JSON, `corpus-source.json` and the streams' `corpus.json` as the artifact `m31-decoders-linux-x86_64-CORPUS`, also when a step fails. It runs only when dispatched.
+
+```sh
+gh workflow run m31-decoders.yml --ref main -f corpus=dependencies -f rounds=11 -f runs=7
+gh run list --workflow m31-decoders.yml --limit 1
+gh run download RUN_ID --name m31-decoders-linux-x86_64-dependencies --dir target/m31/linux-dependencies
+```
+
+The first Linux run listed `7zz` under `references_missing`. Ubuntu's `7zip` package installs `7z`, `7za` and `7zr` but no `7zz`, which comes in `7zip-standalone`. The step printed the version through a pipe, and the default shell has no `pipefail`, so the missing command did not fail it. The workflow now installs the `7zz` of 7-Zip 26.06 from its release on GitHub, checks the archive's sha256 `2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e`, and fails unless `7zz`, `bsdtar` and `wimlib-imagex` are all on the path. The M2 Max runs 7-Zip 26.06 from Homebrew, so both machines run one version.
+
+The smoke test in `benchmarks/decoders/decode-bench/tests/smoke.rs` runs every decoder for one round on a 150,000-byte input and checks the JSON, so the gate keeps the bench working. Two more build the dependencies corpus from a made-up Cargo home. They check that it takes only the crate whose sha256 the lockfile pins and writes the same tar twice. They also check that it refuses an entry outside its crate's folder, a pair of names that differ only in case, and a crate with another checksum.
 
 ## Verdicts
 
