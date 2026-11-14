@@ -279,3 +279,211 @@ fn corpus_moves_the_fetch_manifest_out_of_the_tree_the_wim_captures() {
     assert!(!refused.status.success(), "a tree with a stray file passed");
     assert!(stderr.contains("stray"), "{stderr}");
 }
+
+const CRATE_WRITER: &str = r#"
+import hashlib, io, sys, tarfile
+crate, entries = sys.argv[1], sys.argv[2:]
+with tarfile.open(crate, "w:gz") as archive:
+    for entry in entries:
+        name, _, text = entry.partition("=")
+        data = text.encode()
+        info = tarfile.TarInfo(name)
+        info.size = len(data)
+        archive.addfile(info, io.BytesIO(data))
+with open(crate, "rb") as written:
+    print(hashlib.sha256(written.read()).hexdigest())
+"#;
+
+struct FakeRegistry {
+    cargo_home: PathBuf,
+    lockfile: PathBuf,
+    packages: String,
+}
+
+impl FakeRegistry {
+    fn new(work: &Path) -> Self {
+        FakeRegistry {
+            cargo_home: work.join("cargo-home"),
+            lockfile: work.join("Cargo.lock"),
+            packages: "version = 4\n\n[[package]]\nname = \"local\"\nversion = \"0.1.0\"\n"
+                .to_owned(),
+        }
+    }
+
+    fn crate_file(&self, index: &str, name: &str, version: &str, entries: &[&str]) -> String {
+        let folder = self.cargo_home.join("registry/cache").join(index);
+        fs::create_dir_all(&folder).unwrap();
+        let path = folder.join(format!("{name}-{version}.crate"));
+        let digest = run(Command::new(python())
+            .args(["-I", "-c", CRATE_WRITER])
+            .arg(&path)
+            .args(entries));
+        String::from_utf8(digest).unwrap().trim().to_owned()
+    }
+
+    fn lock(&mut self, name: &str, version: &str, checksum: &str) {
+        self.packages.push_str(&format!(
+            "\n[[package]]\nname = \"{name}\"\nversion = \"{version}\"\n\
+             source = \"registry+https://github.com/rust-lang/crates.io-index\"\n\
+             checksum = \"{checksum}\"\n"
+        ));
+    }
+
+    fn corpus(&self, out: &Path) -> std::process::Output {
+        fs::write(&self.lockfile, &self.packages).unwrap();
+        driver()
+            .args(["corpus", "--harness", BENCH, "--source", "dependencies"])
+            .arg("--out")
+            .arg(out)
+            .arg("--lockfile")
+            .arg(&self.lockfile)
+            .env("CARGO_HOME", &self.cargo_home)
+            .output()
+            .unwrap()
+    }
+}
+
+#[test]
+fn the_dependency_corpus_holds_each_locked_crate_whose_checksum_matches() {
+    let work = tempfile::tempdir().unwrap();
+    let mut registry = FakeRegistry::new(work.path());
+    let alpha = registry.crate_file(
+        "index.crates.io-test",
+        "alpha",
+        "1.0.0",
+        &[
+            "alpha-1.0.0/src/lib.rs=pub fn alpha() {}\n",
+            "alpha-1.0.0/README=alpha\n",
+        ],
+    );
+    registry.crate_file(
+        "index.crates.io-decoy",
+        "beta",
+        "0.2.0",
+        &["beta-0.2.0/src/lib.rs=a copy the lockfile does not pin\n"],
+    );
+    let beta = registry.crate_file(
+        "index.crates.io-test",
+        "beta",
+        "0.2.0",
+        &["beta-0.2.0/src/lib.rs=pub fn beta() {}\n"],
+    );
+    registry.lock("alpha", "1.0.0", &alpha);
+    registry.lock("beta", "0.2.0", &beta);
+    let out = work.path().join("corpus");
+    let built = registry.corpus(&out);
+    assert!(
+        built.status.success(),
+        "{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+
+    let tree = out.join("tree");
+    let names: Vec<_> = fs::read_dir(&tree)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["dependencies"]);
+    let source = tree.join("dependencies");
+    assert_eq!(
+        fs::read_to_string(source.join("alpha-1.0.0/src/lib.rs")).unwrap(),
+        "pub fn alpha() {}\n"
+    );
+    assert_eq!(
+        fs::read_to_string(source.join("beta-0.2.0/src/lib.rs")).unwrap(),
+        "pub fn beta() {}\n"
+    );
+    assert!(!source.join("local-0.1.0").exists());
+    assert!(out.join("streams/dependencies.tar.gz").is_file());
+    let record: Value =
+        serde_json::from_slice(&fs::read(out.join("corpus-source.json")).unwrap()).unwrap();
+    assert_eq!(record["name"], "dependencies");
+    assert_eq!(record["tar"], "dependencies.tar");
+    assert_eq!(record["files"], 3);
+    assert_eq!(record["tar_sha256"].as_str().unwrap().len(), 64);
+    let crates = record["provenance"]["crates"].as_array().unwrap();
+    assert_eq!(crates.len(), 2);
+    assert_eq!(crates[1]["sha256"], beta.as_str());
+
+    let first = fs::read(out.join("dependencies.tar")).unwrap();
+    let again = registry.corpus(&out);
+    assert!(
+        again.status.success(),
+        "{}",
+        String::from_utf8_lossy(&again.stderr)
+    );
+    assert_eq!(fs::read(out.join("dependencies.tar")).unwrap(), first);
+
+    let report = work.path().join("extract.json");
+    let extracted = driver()
+        .args(["extract", "--zipper", BENCH, "--corpus"])
+        .arg(&out)
+        .args(["--only", "gzip", "--runs", "1", "--trial", "--allow-busy"])
+        .arg("--out")
+        .arg(&report)
+        .output()
+        .unwrap();
+    assert!(!extracted.status.success(), "the bench extracted a tar");
+    let json: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(json["source"]["name"], "dependencies");
+    assert!(json["extract"]["results"]["gzip"]["error"].is_string());
+    assert!(
+        json["extract"]["skipped"]["lzma"]
+            .as_str()
+            .unwrap()
+            .contains("dependencies.tar")
+    );
+}
+
+#[test]
+fn the_dependency_corpus_refuses_a_crate_it_cannot_reproduce_on_every_machine() {
+    let cases: [(&[&str], &str); 3] = [
+        (
+            &["gamma-1.0.0/README=a", "gamma-1.0.0/readme=b"],
+            "case-insensitive",
+        ),
+        (&["gamma-1.0.0/../escape=a"], "outside gamma-1.0.0/"),
+        (&["other-1.0.0/src/lib.rs=a"], "outside gamma-1.0.0/"),
+    ];
+    for (entries, refusal) in cases {
+        let work = tempfile::tempdir().unwrap();
+        let mut registry = FakeRegistry::new(work.path());
+        let gamma = registry.crate_file("index.crates.io-test", "gamma", "1.0.0", entries);
+        registry.lock("gamma", "1.0.0", &gamma);
+        let out = work.path().join("corpus");
+        let refused = registry.corpus(&out);
+        let stderr = String::from_utf8_lossy(&refused.stderr);
+        assert!(!refused.status.success(), "{entries:?} passed");
+        assert!(stderr.contains(refusal), "{entries:?}: {stderr}");
+        assert!(!out.join("tree/dependencies.partial").exists());
+        assert!(!out.join("tree/dependencies").exists());
+    }
+
+    let work = tempfile::tempdir().unwrap();
+    let mut registry = FakeRegistry::new(work.path());
+    registry.crate_file(
+        "index.crates.io-test",
+        "gamma",
+        "1.0.0",
+        &["gamma-1.0.0/src/lib.rs=a"],
+    );
+    registry.lock("gamma", "1.0.0", &"0".repeat(64));
+    let refused = registry.corpus(&work.path().join("corpus"));
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success(),
+        "a crate with another checksum passed"
+    );
+    assert!(stderr.contains("cargo fetch --locked"), "{stderr}");
+
+    let mixed = driver()
+        .args(["corpus", "--harness", BENCH, "--source", "dependencies"])
+        .arg("--out")
+        .arg(work.path().join("mixed"))
+        .arg("--silesia")
+        .arg(work.path())
+        .output()
+        .unwrap();
+    assert!(!mixed.status.success());
+    assert!(String::from_utf8_lossy(&mixed.stderr).contains("--silesia needs --source silesia"));
+}
