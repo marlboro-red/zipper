@@ -10,6 +10,8 @@ const LARGEST_MAX_BITS: u32 = 16;
 const CLEAR: u32 = 256;
 const LITERALS: u32 = 256;
 const CODES: usize = 1 << LARGEST_MAX_BITS;
+const CODES_IN_GROUP: u32 = 8;
+const GROUP_LOAD: usize = LARGEST_MAX_BITS as usize;
 const PIECE: usize = 8;
 const OUTPUT_BATCH: usize = 64 * 1024;
 const PENDING: usize = OUTPUT_BATCH + CODES;
@@ -51,7 +53,9 @@ pub(crate) struct Unlzw<R> {
     max_bits: u32,
     bits: u32,
     largest: u32,
-    group: [u8; LARGEST_MAX_BITS as usize],
+    group: u128,
+    partial_group: [u8; GROUP_LOAD],
+    partial_group_length: usize,
     codes_in_group: u32,
     next_in_group: u32,
     table: Box<[u128; CODES]>,
@@ -77,7 +81,9 @@ impl<R: BufRead> Unlzw<R> {
             max_bits: LARGEST_MAX_BITS,
             bits: INITIAL_BITS,
             largest: (1 << INITIAL_BITS) - 1,
-            group: [0; LARGEST_MAX_BITS as usize],
+            group: 0,
+            partial_group: [0; GROUP_LOAD],
+            partial_group_length: 0,
             codes_in_group: 0,
             next_in_group: 0,
             table,
@@ -136,31 +142,41 @@ impl<R: BufRead> Unlzw<R> {
             self.widen();
             self.next_in_group = self.codes_in_group;
         }
-        if self.next_in_group == self.codes_in_group {
-            let wanted = self.bits as usize;
-            let mut filled = 0;
-            while filled < wanted {
-                let read = self.input.read(&mut self.group[filled..wanted])?;
-                if read == 0 {
-                    break;
-                }
-                filled += read;
-            }
-            self.codes_in_group = (filled as u32 * 8) / self.bits;
-            self.next_in_group = 0;
-            if self.codes_in_group == 0 {
-                return Ok(None);
-            }
+        if self.next_in_group == self.codes_in_group && !self.read_group()? {
+            return Ok(None);
         }
-        let first_bit = self.next_in_group * self.bits;
+        let code = (self.group >> (self.next_in_group * self.bits)) as u32 & ((1 << self.bits) - 1);
         self.next_in_group += 1;
-        let mut code = 0u32;
-        for bit in 0..self.bits {
-            let at = first_bit + bit;
-            let set = self.group[(at / 8) as usize] >> (at % 8) & 1;
-            code |= u32::from(set) << bit;
-        }
         Ok(Some(code))
+    }
+
+    fn read_group(&mut self) -> io::Result<bool> {
+        let wanted = self.bits as usize;
+        if self.partial_group_length == 0 {
+            if let Some(&whole) = self.input.fill_buf()?.first_chunk::<GROUP_LOAD>() {
+                self.input.consume(wanted);
+                self.group = u128::from_le_bytes(whole);
+                self.codes_in_group = CODES_IN_GROUP;
+                self.next_in_group = 0;
+                return Ok(true);
+            }
+        }
+        while self.partial_group_length < wanted {
+            let available = self.input.fill_buf()?;
+            if available.is_empty() {
+                break;
+            }
+            let start = self.partial_group_length;
+            let taken = available.len().min(wanted - start);
+            self.partial_group[start..start + taken].copy_from_slice(&available[..taken]);
+            self.input.consume(taken);
+            self.partial_group_length += taken;
+        }
+        let filled = std::mem::take(&mut self.partial_group_length);
+        self.group = u128::from_le_bytes(std::mem::take(&mut self.partial_group));
+        self.codes_in_group = (filled as u32 * 8) / self.bits;
+        self.next_in_group = 0;
+        Ok(self.codes_in_group != 0)
     }
 
     fn decode_next(&mut self) -> io::Result<bool> {
@@ -447,6 +463,75 @@ mod tests {
             flush(&mut group, bits, &mut out);
         }
         out
+    }
+
+    struct InterruptedOnce<'a> {
+        data: &'a [u8],
+        served_at_once: usize,
+        interrupt_at: usize,
+    }
+
+    impl Read for InterruptedOnce<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let available = self.fill_buf()?;
+            let count = available.len().min(buffer.len());
+            buffer[..count].copy_from_slice(&available[..count]);
+            self.consume(count);
+            Ok(count)
+        }
+    }
+
+    impl BufRead for InterruptedOnce<'_> {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            if self.interrupt_at == 0 {
+                self.interrupt_at = usize::MAX;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            let served = self.data.len().min(self.served_at_once);
+            Ok(&self.data[..served])
+        }
+
+        fn consume(&mut self, count: usize) {
+            self.data = &self.data[count..];
+            self.interrupt_at = self.interrupt_at.saturating_sub(count);
+        }
+    }
+
+    #[test]
+    fn a_string_of_any_length_fits_after_a_nearly_full_batch() {
+        for length in [0, 1, 7, 8, 9, 65_528, 65_529, u16::MAX] {
+            let mut decoder = Unlzw::new(&[][..]);
+            decoder.table[300] = Entry::new(u64::from_le_bytes(*b"abcdefgh"), 0, length).0;
+            decoder.filled = OUTPUT_BATCH - 1;
+            decoder.write(300);
+            assert_eq!(decoder.filled, OUTPUT_BATCH - 1 + usize::from(length));
+        }
+    }
+
+    #[test]
+    fn an_interrupted_input_read_resumes_where_it_stopped() {
+        let text: Vec<u8> = (0..20_000u32)
+            .map(|index| (index.wrapping_mul(2_654_435_761) >> 29) as u8 + b'a')
+            .collect();
+        for max_bits in [12, 16] {
+            let compressed = compress_without_clear(&text, max_bits);
+            for served_at_once in [1, 5, 16, 17, usize::MAX] {
+                for interrupt_at in (0..compressed.len()).step_by(37) {
+                    let input = InterruptedOnce {
+                        data: &compressed,
+                        served_at_once,
+                        interrupt_at,
+                    };
+                    let mut decoder = Unlzw::new(input);
+                    let mut out = Vec::new();
+                    decoder.read_to_end(&mut out).unwrap();
+                    assert_eq!(
+                        out, text,
+                        "{max_bits} bits, {served_at_once} at once, interrupted at {interrupt_at}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
