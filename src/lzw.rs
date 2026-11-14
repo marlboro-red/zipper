@@ -9,9 +9,38 @@ const SMALLEST_MAX_BITS: u32 = 9;
 const LARGEST_MAX_BITS: u32 = 16;
 const CLEAR: u32 = 256;
 const LITERALS: u32 = 256;
+const CODES: usize = 1 << LARGEST_MAX_BITS;
+const PIECE: usize = 8;
+const OUTPUT_BATCH: usize = 64 * 1024;
+const PENDING: usize = OUTPUT_BATCH + CODES;
 
 fn data_error(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
+}
+
+#[derive(Clone, Copy)]
+struct Entry(u128);
+
+impl Entry {
+    fn new(last_piece: u64, rest: u16, length: u16) -> Self {
+        Entry(u128::from(last_piece) | u128::from(rest) << 64 | u128::from(length) << 80)
+    }
+
+    fn last_piece(self) -> u64 {
+        self.0 as u64
+    }
+
+    fn rest(self) -> u16 {
+        (self.0 >> 64) as u16
+    }
+
+    fn length(self) -> u16 {
+        (self.0 >> 80) as u16
+    }
+
+    fn piece_start(self) -> usize {
+        usize::from(self.length().saturating_sub(1)) / PIECE * PIECE
+    }
 }
 
 // LINK: https://github.com/vapier/ncompress/blob/main/compress.c
@@ -25,18 +54,22 @@ pub(crate) struct Unlzw<R> {
     group: [u8; LARGEST_MAX_BITS as usize],
     codes_in_group: u32,
     next_in_group: u32,
-    prefix: Vec<u16>,
-    suffix: Vec<u8>,
+    table: Box<[u128; CODES]>,
     free: u32,
     previous: Option<u32>,
     first_byte: u8,
-    pending: Vec<u8>,
+    pending: Box<[u8; PENDING]>,
+    filled: usize,
     position: usize,
     ended: bool,
 }
 
 impl<R: BufRead> Unlzw<R> {
     pub(crate) fn new(input: R) -> Self {
+        let mut table: Box<[u128; CODES]> = vec![0; CODES].into_boxed_slice().try_into().unwrap();
+        for byte in 0..=u8::MAX {
+            table[usize::from(byte)] = Entry::new(u64::from(byte), 0, 1).0;
+        }
         Unlzw {
             input,
             started: false,
@@ -47,12 +80,12 @@ impl<R: BufRead> Unlzw<R> {
             group: [0; LARGEST_MAX_BITS as usize],
             codes_in_group: 0,
             next_in_group: 0,
-            prefix: vec![0; 1 << LARGEST_MAX_BITS],
-            suffix: vec![0; 1 << LARGEST_MAX_BITS],
+            table,
             free: 0,
             previous: None,
             first_byte: 0,
-            pending: Vec::new(),
+            pending: vec![0; PENDING].into_boxed_slice().try_into().unwrap(),
+            filled: 0,
             position: 0,
             ended: false,
         }
@@ -141,8 +174,7 @@ impl<R: BufRead> Unlzw<R> {
                 ));
             }
             self.previous = Some(code);
-            self.first_byte = code as u8;
-            self.pending.push(code as u8);
+            self.first_byte = self.write(code);
             return Ok(true);
         };
         if self.block_mode && code == CLEAR {
@@ -151,31 +183,59 @@ impl<R: BufRead> Unlzw<R> {
             self.next_in_group = self.codes_in_group;
             return Ok(true);
         }
-        let start = self.pending.len();
-        let mut walk = code;
         if code >= self.free {
             if code > self.free {
                 return Err(data_error(
                     "compress stream names a code it has not defined",
                 ));
             }
-            self.pending.push(self.first_byte);
-            walk = previous;
-        }
-        while walk >= LITERALS {
-            self.pending.push(self.suffix[walk as usize]);
-            walk = u32::from(self.prefix[walk as usize]);
-        }
-        self.first_byte = walk as u8;
-        self.pending.push(self.first_byte);
-        self.pending[start..].reverse();
-        if self.free < 1 << self.max_bits {
-            self.prefix[self.free as usize] = previous as u16;
-            self.suffix[self.free as usize] = self.first_byte;
-            self.free += 1;
+            self.define(previous, self.first_byte);
+            self.first_byte = self.write(code);
+        } else {
+            self.first_byte = self.write(code);
+            if self.free < 1 << self.max_bits {
+                self.define(previous, self.first_byte);
+            }
         }
         self.previous = Some(code);
         Ok(true)
+    }
+
+    fn entry(&self, code: u32) -> Entry {
+        Entry(self.table[code as u16 as usize])
+    }
+
+    fn define(&mut self, previous: u32, byte: u8) {
+        let prefix = self.entry(previous);
+        let in_last_piece = usize::from(prefix.length()) - prefix.piece_start();
+        let length = prefix.length() + 1;
+        let entry = if in_last_piece == PIECE {
+            Entry::new(u64::from(byte), previous as u16, length)
+        } else {
+            let last_piece = prefix.last_piece() | u64::from(byte) << (8 * in_last_piece);
+            Entry::new(last_piece, prefix.rest(), length)
+        };
+        self.table[self.free as u16 as usize] = entry.0;
+        self.free += 1;
+    }
+
+    fn write(&mut self, code: u32) -> u8 {
+        let mut entry = self.entry(code);
+        let length = usize::from(entry.length());
+        let mut at = entry.piece_start();
+        let table = &*self.table;
+        let slot = &mut self.pending[self.filled..self.filled + at + PIECE];
+        loop {
+            slot[at..at + PIECE].copy_from_slice(&entry.last_piece().to_le_bytes());
+            if at == 0 {
+                break;
+            }
+            at -= PIECE;
+            entry = Entry(table[usize::from(entry.rest())]);
+        }
+        let first = slot[0];
+        self.filled += length;
+        first
     }
 }
 
@@ -184,17 +244,17 @@ impl<R: BufRead> Read for Unlzw<R> {
         if !self.started {
             self.start()?;
         }
-        while self.position == self.pending.len() && !self.ended && !buffer.is_empty() {
-            self.pending.clear();
+        while self.position == self.filled && !self.ended && !buffer.is_empty() {
+            self.filled = 0;
             self.position = 0;
-            while self.pending.len() < 64 * 1024 {
+            while self.filled < OUTPUT_BATCH {
                 if !self.decode_next()? {
                     self.ended = true;
                     break;
                 }
             }
         }
-        let count = buffer.len().min(self.pending.len() - self.position);
+        let count = buffer.len().min(self.filled - self.position);
         buffer[..count].copy_from_slice(&self.pending[self.position..self.position + count]);
         self.position += count;
         Ok(count)
