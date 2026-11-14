@@ -11,7 +11,7 @@ Does Zipper's Zstandard decoder lead `ruzstd` in pure Rust and libzstd through t
 - Two corpora, each run on three machines. Every run built with rustc 1.99.1 and no extra `RUSTFLAGS`.
   - `silesia.tar` is 211,957,760 bytes with sha256 prefix `1953965768007e93`. It extracts to 211,938,580 bytes of files.
   - `dependencies.tar` is 90,931,200 bytes with sha256 prefix `b8191b36e54aadd5`. It holds the 114 crates that `Cargo.lock` pins, 5,501 files, and extracts to 85,944,317 bytes of files.
-  - Each tar's sha256 and every stream's sha256 match on the M2 Max and Linux. Silesia matches on Windows too. The Windows `dependencies.tar` has sha256 prefix `18492cd88f9b2021`, with the same 114 crates by sha256, the same 5,501 files and the same 85,944,317 bytes of files.
+  - Each tar's sha256 and every stream's sha256 match on all three machines. Only the WIMs differ, since wimlib writes each one differently.
 - The second machine is an Apple M2 Max with 12 cores and 64 GiB on macOS 27.0.
   - Silesia ran at `49f68e30`, starting at 22:58 UTC on 13 November 2026, and its LZMA decode ran alone at 23:13 UTC.
   - The dependencies ran at `4518a8af`, starting at 01:26 UTC on 14 November 2026.
@@ -24,6 +24,7 @@ Does Zipper's Zstandard decoder lead `ruzstd` in pure Rust and libzstd through t
 - The Windows machine is a Windows 11 desktop, AMD Ryzen 5 5600X, 6 cores and 12 threads, which the user chose over a hosted runner. Its C libraries were built by the MSVC Build Tools.
   - The decode rows ran at `5e6dd97b`, starting at 02:57 UTC on 14 November 2026.
   - The extraction rows ran the same binaries with the driver at `3b324db6`, which pipes 7-Zip's output correctly on Windows. They started at 03:45 UTC.
+  - The dependencies rows, decode and extraction, ran again with the same binaries and the driver at `c16c47c1`, starting at 07:18 UTC on 14 November 2026. Its `corpus` sorts the tar's entries by path parts, so the Windows `dependencies.tar` now has the same sha256 as the other machines. The first Windows tar listed mixed-case names in another order.
   - bsdtar there is the `tar.exe` that Windows ships, libarchive 3.8.9, and 7-Zip is 26.05 x64.
   - Its paths are written as `<scratch>` and `<home>` in the JSON.
 - From `49f68e30` to `4518a8af` only the driver, `scripts/compare_zip_readers.py`, the bench's smoke tests, the workflow and Markdown pages changed. Every run measured the same decoders and the same bench code.
@@ -38,7 +39,7 @@ Does Zipper's Zstandard decoder lead `ruzstd` in pure Rust and libzstd through t
 - Against `ruzstd`, the best pure-Rust decoder, Zipper takes 0.292 and 0.357 times its time on Silesia and the dependencies on the M2 Max, and 0.383 and 0.447 times on Linux. Every range is apart.
 - Against libzstd 1.5.7, Zipper takes 0.913 and 0.926 times its time on the M2 Max, with ranges apart. On Linux it trails, at 1.342 and 1.343 times, with ranges apart.
 - One-thread `.tar.zst` extraction leads bsdtar and 7-Zip in all four runs, with ranges apart. Against 7-Zip it takes 0.739 and 0.771 times its time on the M2 Max and 0.810 and 0.522 times on Linux.
-- On the Windows desktop Zipper takes 0.371 and 0.404 times `ruzstd`'s time, with ranges apart. Against libzstd, built there by MSVC, the ranges overlap on both corpora, at 0.971 (0.945 to 1.059) and 0.980 (0.943 to 1.038).
+- On the Windows desktop Zipper takes 0.371 and 0.405 times `ruzstd`'s time, with ranges apart. Against libzstd, built there by MSVC, the ranges overlap on both corpora, at 0.971 (0.945 to 1.059) and 0.999 (0.952 to 1.015).
 - One-thread `.tar.zst` extraction on Windows leads bsdtar and 7-Zip on both corpora, with ranges apart.
 
 Every decode comparison, Zipper's median time over the other decoder's with its range, in each run:
@@ -57,8 +58,8 @@ Every decode comparison, Zipper's median time over the other decoder's with its 
 | `zstd` | `libzstd` | Dependencies on the Apple M2 Max | 0.926 (0.914 to 0.937) | Zipper ahead |
 | `zstd` | `ruzstd` | Dependencies on hosted Linux | 0.447 (0.440 to 0.460) | Zipper ahead |
 | `zstd` | `libzstd` | Dependencies on hosted Linux | 1.343 (1.308 to 1.393) | Zipper behind |
-| `zstd` | `ruzstd` | Dependencies on the Windows desktop | 0.404 (0.398 to 0.415) | Zipper ahead |
-| `zstd` | `libzstd` | Dependencies on the Windows desktop | 0.980 (0.943 to 1.038) | ranges overlap |
+| `zstd` | `ruzstd` | Dependencies on the Windows desktop | 0.405 (0.397 to 0.408) | Zipper ahead |
+| `zstd` | `libzstd` | Dependencies on the Windows desktop | 0.999 (0.952 to 1.015) | ranges overlap |
 
 ### Silesia on the Apple M2 Max
 
@@ -168,25 +169,25 @@ Extraction of the `zstd` row, 12,598,289 bytes into 85,944,317, median wall ms w
 
 ### Dependencies on the Windows desktop
 
-- `m34-decode-windows-dependencies.json`, revision `5e6dd97b`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
-- `m34-extract-windows-dependencies.json`, revision `3b324db6`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
+- `m34-decode-windows-dependencies.json`, revision `c16c47c1`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
+- `m34-extract-windows-dependencies.json`, revision `c16c47c1`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
 
 Decode of `zstd`, median wall ms of the decode call with its range, CPU s and peak RSS:
 
 | Decoder | Version | Wall ms | CPU s | Peak MiB | Zipper's time over it | Ranges |
 | --- | --- | --- | --- | --- | --- | --- |
-| `zipper` | `zipper` 0.1.0-alpha.3 | 56.1 (55.6 to 57.2) | not measured | 105.4 |  |  |
-| `ruzstd` | `ruzstd` 0.9.1 | 139.0 (137.9 to 139.7) | not measured | 109.3 | 0.404 (0.398 to 0.415) | Zipper ahead |
-| `libzstd` | `zstd` 0.14.3, `zstd-safe` 8.2.0, `zstd-sys` 2.1.2+zstd.1.5.7 | 57.3 (55.1 to 58.9) | not measured | 104.8 | 0.980 (0.943 to 1.038) | ranges overlap |
+| `zipper` | `zipper` 0.1.0-alpha.3 | 56.1 (55.5 to 56.3) | not measured | 105.4 |  |  |
+| `ruzstd` | `ruzstd` 0.9.1 | 138.5 (137.9 to 139.8) | not measured | 109.3 | 0.405 (0.397 to 0.408) | Zipper ahead |
+| `libzstd` | `zstd` 0.14.3, `zstd-safe` 8.2.0, `zstd-sys` 2.1.2+zstd.1.5.7 | 56.2 (55.5 to 58.3) | not measured | 104.8 | 0.999 (0.952 to 1.015) | ranges overlap |
 
-Extraction of the `zstd` row, 12,611,576 bytes into 85,944,317, median wall ms with its range, CPU s and peak RSS:
+Extraction of the `zstd` row, 12,598,289 bytes into 85,944,317, median wall ms with its range, CPU s and peak RSS:
 
 | Reader | Threads | Wall ms | CPU s | Peak MiB | Zipper one thread over it | Ranges |
 | --- | --- | --- | --- | --- | --- | --- |
-| `zipper` | 1 | 4229.2 (4169.0 to 4373.5) | 3.297 | 14.7 |  |  |
-| `zipper-all-threads` | all | 4223.1 (4173.9 to 4268.0) | 3.406 | 14.0 |  |  |
-| `bsdtar` | 1 | 4509.9 (4485.8 to 4554.2) | 3.703 | 8.5 | 0.938 (0.915 to 0.975) | Zipper ahead |
-| `7zip` | 1 | 6657.9 (6581.6 to 6803.6) | 0.016 | 7.7 | 0.635 (0.613 to 0.665) | Zipper ahead |
+| `zipper` | 1 | 4204.8 (4148.3 to 4330.0) | 3.172 | 14.6 |  |  |
+| `zipper-all-threads` | all | 4121.9 (4099.8 to 4215.4) | 3.453 | 14.2 |  |  |
+| `bsdtar` | 1 | 4435.8 (4423.8 to 4480.8) | 3.625 | 8.6 | 0.948 (0.926 to 0.979) | Zipper ahead |
+| `7zip` | 1 | 6612.0 (6593.3 to 6772.1) | 0.016 | 7.7 | 0.636 (0.613 to 0.657) | Zipper ahead |
 
 ## Decision
 
@@ -207,9 +208,8 @@ The verdict is that it is not ready yet. On 14 November 2026 the user chose this
 - No run has a `.tar.lzma` extraction row. Zipper writes the `.tar.lzma` out as one file, the `.tar`, where bsdtar reads the tar inside, so the trees differ.
 - The three Linux runs each got a different AMD EPYC, so Linux numbers compare only within one run. Linux CPU times for child processes come in steps of 10 ms.
 - Windows has no WIM extraction row, since `wimlib-imagex` is not installed there.
-- The Windows `dependencies.tar` differs in sha256 from the other machines, though it holds the same crates, files and file bytes. Its streams differ by a few kilobytes.
 - On Windows the decode bench reports no CPU time for the decode call, and the driver has no load average. Its 7-Zip rows report the CPU time and peak RSS of the process that pipes 7-Zip's output, not of 7-Zip.
-- On Windows the dependencies take 4.2 to 7.5 s to extract with every reader, so file creation on NTFS dominates those rows, not the decoder.
+- On Windows the dependencies take 4.1 to 7.4 s to extract with every reader, so file creation on NTFS dominates those rows, not the decoder.
 - The C libraries were built by MSVC on Windows and by the system C compiler on the M2 Max and Linux, so a gap to a C library can belong to its compiler.
 - Each machine ran each corpus once, so session to session drift is not measured.
 - No profile was taken. The limiter named is decode CPU, read from CPU time matching wall time at one thread.

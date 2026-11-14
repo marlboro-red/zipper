@@ -20,14 +20,18 @@ Exit checks:
 
 ## Measured on 14 November 2026
 
-The machine is a Windows 11 desktop, AMD Ryzen 5 5600X, 6 cores and 12 threads. The decode rows ran at `5e6dd97b`, with the C libraries built by the MSVC Build Tools. The extraction rows ran the same binaries with the driver at `3b324db6`, which pipes 7-Zip's output correctly on Windows. The XPRESS WIM rows ran the same way, with WIMs that wimlib 1.14.5 wrote. bsdtar is the `tar.exe` Windows ships, libarchive 3.8.9, and 7-Zip is 26.05 x64. No process was busy in any run, and no row failed.
+The machine is a Windows 11 desktop, AMD Ryzen 5 5600X, 6 cores and 12 threads. The decode rows ran at `5e6dd97b`, with the C libraries built by the MSVC Build Tools. The extraction rows ran the same binaries with the driver at `3b324db6`, which pipes 7-Zip's output correctly on Windows. The XPRESS WIM rows ran the same way, with WIMs that wimlib 1.14.5 wrote. The dependencies rows ran again with the same binaries at `c16c47c1`, whose `corpus` writes the same tar on every system. bsdtar is the `tar.exe` Windows ships, libarchive 3.8.9, and 7-Zip is 26.05 x64. No process was busy in any run, and no row failed.
 
 - Each [M31 record](m31-a-release-case-for-each-decoder.md#verdicts) has a Windows section for each corpus, with decode rows against every alternative and extraction rows against bsdtar and 7-Zip, all with ranges.
 - The M31 verdict table names whether Windows confirms, overlaps or reverses each verdict. It confirms Deflate, BZip2 and the XPRESS decode lead. It overlaps Zstandard, which is level with libzstd, and reverses the Linux gap for LZMA, which leads liblzma. No verdict changes.
 - BZip2 and XPRESS, the two crate verdicts, lead their best alternative on all three operating systems, so exit check 3 holds.
-- On the dependencies corpus every reader takes 4.2 to 7.5 s, so file creation on NTFS dominates. Zipper is fastest in every row. On Silesia Zipper beats bsdtar in every row. 7-Zip is faster on `.tar.xz`, 1,312.7 against 1,486.0 ms, and on the WIM, which Zipper extracts in 1.400 times its time, as on the other two systems.
+- On the dependencies corpus every reader takes 4.1 to 7.4 s, so file creation on NTFS dominates. Zipper is fastest in every row. On Silesia Zipper beats bsdtar in every row. 7-Zip is faster on `.tar.xz`, 1,312.7 against 1,486.0 ms, and on the WIM, which Zipper extracts in 1.400 times its time, as on the other two systems.
 
-## What keeps M34 open
+## Closed on 14 November 2026
 
-- Exit check 1 holds. Every record, XPRESS included, has extraction rows on Windows for both corpora.
-- The Windows `dependencies.tar` has sha256 `18492cd88f9b2021a2af2b77dbef444996b592f7b38c46dd8a5380dbcabf3715`, not the `b8191b36` of the other machines. It holds the same 114 crates by sha256, the same 5,501 files and the same 85,944,317 bytes of files, so only the order of the entries differs. Windows sorts paths without regard to case, so `corpus` wrote mixed-case names in another order. It now sorts by each path's parts, and a tar of the Windows tree written that way has sha256 prefix `b8191b36e54aadd5`. The dependencies rows on Windows still come from the old tar until a rerun.
+- Exit check 1 passes. Every M31 record has decode and extraction rows from the Windows desktop on both corpora, against every alternative, with ranges. XPRESS has a WIM row on both.
+- Exit check 2 passes. The M31 verdict table names for each decoder whether Windows confirms, overlaps or reverses its verdict.
+- Exit check 3 passes. BZip2 and XPRESS, the two crate verdicts, lead their best alternative with ranges apart on macOS, Linux and Windows.
+- Each tar and every stream now has the same sha256 on all three machines. The first Windows `dependencies.tar` listed mixed-case names in another order, since Windows sorts paths without regard to case. `c16c47c1` sorts by each path's parts. The rerun on that tar moved no ratio by more than 0.02 and changed no verdict.
+- `2eccda4c` added the first Windows rows, and `c16c47c1` added the WIM rows and the sort fix.
+- The machine is a desktop the user owns, not a hosted runner, so Windows rows compare only within that machine.

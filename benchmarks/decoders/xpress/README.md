@@ -11,7 +11,7 @@ Does Zipper's XPRESS Huffman decoder lead `xpress-huffman`, the only Rust crate 
 - Two corpora, each run on three machines. Every run built with rustc 1.99.1 and no extra `RUSTFLAGS`.
   - `silesia.tar` is 211,957,760 bytes with sha256 prefix `1953965768007e93`. It extracts to 211,938,580 bytes of files.
   - `dependencies.tar` is 90,931,200 bytes with sha256 prefix `b8191b36e54aadd5`. It holds the 114 crates that `Cargo.lock` pins, 5,501 files, and extracts to 85,944,317 bytes of files.
-  - Each tar's sha256 and every stream's sha256 match on the M2 Max and Linux. Silesia matches on Windows too. The Windows `dependencies.tar` has sha256 prefix `18492cd88f9b2021`, with the same 114 crates by sha256, the same 5,501 files and the same 85,944,317 bytes of files.
+  - Each tar's sha256 and every stream's sha256 match on all three machines. Only the WIMs differ, since wimlib writes each one differently.
 - The second machine is an Apple M2 Max with 12 cores and 64 GiB on macOS 27.0.
   - Silesia ran at `49f68e30`, starting at 22:58 UTC on 13 November 2026, and its LZMA decode ran alone at 23:13 UTC.
   - The dependencies ran at `4518a8af`, starting at 01:26 UTC on 14 November 2026.
@@ -24,6 +24,7 @@ Does Zipper's XPRESS Huffman decoder lead `xpress-huffman`, the only Rust crate 
 - The Windows machine is a Windows 11 desktop, AMD Ryzen 5 5600X, 6 cores and 12 threads, which the user chose over a hosted runner. Its C libraries were built by the MSVC Build Tools.
   - The decode rows ran at `5e6dd97b`, starting at 02:57 UTC on 14 November 2026.
   - The extraction rows ran the same binaries with the driver at `3b324db6`, which pipes 7-Zip's output correctly on Windows. They started at 03:45 UTC.
+  - The dependencies rows, decode and extraction, ran again with the same binaries and the driver at `c16c47c1`, starting at 07:18 UTC on 14 November 2026. Its `corpus` sorts the tar's entries by path parts, so the Windows `dependencies.tar` now has the same sha256 as the other machines. The first Windows tar listed mixed-case names in another order.
   - bsdtar there is the `tar.exe` that Windows ships, libarchive 3.8.9, and 7-Zip is 26.05 x64.
   - Its paths are written as `<scratch>` and `<home>` in the JSON.
 - From `49f68e30` to `4518a8af` only the driver, `scripts/compare_zip_readers.py`, the bench's smoke tests, the workflow and Markdown pages changed. Every run measured the same decoders and the same bench code.
@@ -42,8 +43,8 @@ Does Zipper's XPRESS Huffman decoder lead `xpress-huffman`, the only Rust crate 
 - `xpress-huffman` peaks at more memory than Zipper in every run, with the same input and output buffers.
 - The Silesia WIM extracts at one thread in 1.348 times 7-Zip's time on the M2 Max (1.144 to 1.577) and 1.304 times on Linux (1.299 to 1.310). All threads change nothing, at 622.8 against 622.0 ms on the M2 Max.
 - On Linux the dependencies WIM extracts in 0.971 times 7-Zip's time (0.941 to 0.980).
-- On the Windows desktop Zipper takes 0.332 and 0.317 times `xpress-huffman`'s time, with ranges apart.
-- On Windows the Silesia WIM extracts in 1.400 times 7-Zip's time (1.378 to 1.527), and the dependencies WIM in 0.668 times (0.659 to 0.683).
+- On the Windows desktop Zipper takes 0.332 and 0.318 times `xpress-huffman`'s time, with ranges apart.
+- On Windows the Silesia WIM extracts in 1.400 times 7-Zip's time (1.378 to 1.527), and the dependencies WIM in 0.666 times (0.655 to 0.685).
 
 Every decode comparison, Zipper's median time over the other decoder's with its range, in each run:
 
@@ -55,7 +56,7 @@ Every decode comparison, Zipper's median time over the other decoder's with its 
 | `xpress` | `xpress-huffman` | Silesia on the Windows desktop | 0.332 (0.328 to 0.341) | Zipper ahead |
 | `xpress` | `xpress-huffman` | Dependencies on the Apple M2 Max | 0.330 (0.327 to 0.334) | Zipper ahead |
 | `xpress` | `xpress-huffman` | Dependencies on hosted Linux | 0.279 (0.272 to 0.291) | Zipper ahead |
-| `xpress` | `xpress-huffman` | Dependencies on the Windows desktop | 0.317 (0.314 to 0.327) | Zipper ahead |
+| `xpress` | `xpress-huffman` | Dependencies on the Windows desktop | 0.318 (0.315 to 0.323) | Zipper ahead |
 
 ### Silesia on the Apple M2 Max
 
@@ -150,23 +151,23 @@ Extraction of the `xpress` row, 19,023,514 bytes into 85,944,317, median wall ms
 
 ### Dependencies on the Windows desktop
 
-- `m34-decode-windows-dependencies.json`, revision `5e6dd97b`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
-- `m34-extract-windows-dependencies.json`, revision `3b324db6`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
+- `m34-decode-windows-dependencies.json`, revision `c16c47c1`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
+- `m34-extract-windows-dependencies.json`, revision `c16c47c1`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
 
 Decode of `xpress`, median wall ms of the decode call with its range, CPU s and peak RSS:
 
 | Decoder | Version | Wall ms | CPU s | Peak MiB | Zipper's time over it | Ranges |
 | --- | --- | --- | --- | --- | --- | --- |
-| `zipper` | `zipper` 0.1.0-alpha.3 | 116.9 (116.5 to 119.9) | not measured | 111.3 |  |  |
-| `xpress-huffman` | `xpress-huffman` 0.1.3 | 368.2 (366.7 to 370.5) | not measured | 143.5 | 0.317 (0.314 to 0.327) | Zipper ahead |
+| `zipper` | `zipper` 0.1.0-alpha.3 | 116.8 (116.4 to 118.7) | not measured | 111.3 |  |  |
+| `xpress-huffman` | `xpress-huffman` 0.1.3 | 367.9 (367.0 to 369.8) | not measured | 143.9 | 0.318 (0.315 to 0.323) | Zipper ahead |
 
-Extraction of the `xpress` row, 19,059,840 bytes into 85,944,317, median wall ms with its range, CPU s and peak RSS:
+Extraction of the `xpress` row, 19,052,263 bytes into 85,944,317, median wall ms with its range, CPU s and peak RSS:
 
 | Reader | Threads | Wall ms | CPU s | Peak MiB | Zipper one thread over it | Ranges |
 | --- | --- | --- | --- | --- | --- | --- |
-| `zipper` | 1 | 4547.6 (4515.2 to 4633.1) | 3.203 | 8.1 |  |  |
-| `zipper-all-threads` | all | 4544.2 (4512.6 to 4799.5) | 3.156 | 8.0 |  |  |
-| `7zip` | 1 | 6802.7 (6780.2 to 6848.8) | 6.672 | 9.6 | 0.668 (0.659 to 0.683) | Zipper ahead |
+| `zipper` | 1 | 4508.5 (4494.4 to 4598.7) | 3.094 | 8.1 |  |  |
+| `zipper-all-threads` | all | 4503.7 (4476.5 to 4602.7) | 3.156 | 8.0 |  |  |
+| `7zip` | 1 | 6772.1 (6708.7 to 6861.0) | 6.625 | 9.6 | 0.666 (0.655 to 0.685) | Zipper ahead |
 
 ## Decision
 
@@ -186,9 +187,8 @@ The verdict is that it becomes a crate.
 - The M2 Max WIM row ran on Silesia only, in its own run at `5e6dd97b` with wimlib 1.14.5. The dependencies have no WIM row on the M2 Max.
 - No run has a `.tar.lzma` extraction row. Zipper writes the `.tar.lzma` out as one file, the `.tar`, where bsdtar reads the tar inside, so the trees differ.
 - The three Linux runs each got a different AMD EPYC, so Linux numbers compare only within one run. Linux CPU times for child processes come in steps of 10 ms.
-- The Windows `dependencies.tar` differs in sha256 from the other machines, though it holds the same crates, files and file bytes. Its streams differ by a few kilobytes.
 - On Windows the decode bench reports no CPU time for the decode call, and the driver has no load average. Its 7-Zip tar rows report the CPU time and peak RSS of the process that pipes 7-Zip's output, not of 7-Zip. Its WIM row runs 7-Zip alone.
-- On Windows the dependencies take 4.2 to 7.5 s to extract with every reader, so file creation on NTFS dominates those rows, not the decoder.
+- On Windows the dependencies take 4.1 to 7.4 s to extract with every reader, so file creation on NTFS dominates those rows, not the decoder.
 - The C libraries were built by MSVC on Windows and by the system C compiler on the M2 Max and Linux, so a gap to a C library can belong to its compiler.
 - Each machine ran each corpus once, so session to session drift is not measured.
 - No profile was taken. The limiter named is decode CPU, read from CPU time matching wall time at one thread.

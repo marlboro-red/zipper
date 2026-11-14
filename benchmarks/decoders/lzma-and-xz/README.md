@@ -11,7 +11,7 @@ Does Zipper's LZMA and xz decoder lead `lzma-rs` and `lzma-rust2` in pure Rust a
 - Two corpora, each run on three machines. Every run built with rustc 1.99.1 and no extra `RUSTFLAGS`.
   - `silesia.tar` is 211,957,760 bytes with sha256 prefix `1953965768007e93`. It extracts to 211,938,580 bytes of files.
   - `dependencies.tar` is 90,931,200 bytes with sha256 prefix `b8191b36e54aadd5`. It holds the 114 crates that `Cargo.lock` pins, 5,501 files, and extracts to 85,944,317 bytes of files.
-  - Each tar's sha256 and every stream's sha256 match on the M2 Max and Linux. Silesia matches on Windows too. The Windows `dependencies.tar` has sha256 prefix `18492cd88f9b2021`, with the same 114 crates by sha256, the same 5,501 files and the same 85,944,317 bytes of files.
+  - Each tar's sha256 and every stream's sha256 match on all three machines. Only the WIMs differ, since wimlib writes each one differently.
 - The second machine is an Apple M2 Max with 12 cores and 64 GiB on macOS 27.0.
   - Silesia ran at `49f68e30`, starting at 22:58 UTC on 13 November 2026, and its LZMA decode ran alone at 23:13 UTC.
   - The dependencies ran at `4518a8af`, starting at 01:26 UTC on 14 November 2026.
@@ -24,6 +24,7 @@ Does Zipper's LZMA and xz decoder lead `lzma-rs` and `lzma-rust2` in pure Rust a
 - The Windows machine is a Windows 11 desktop, AMD Ryzen 5 5600X, 6 cores and 12 threads, which the user chose over a hosted runner. Its C libraries were built by the MSVC Build Tools.
   - The decode rows ran at `5e6dd97b`, starting at 02:57 UTC on 14 November 2026.
   - The extraction rows ran the same binaries with the driver at `3b324db6`, which pipes 7-Zip's output correctly on Windows. They started at 03:45 UTC.
+  - The dependencies rows, decode and extraction, ran again with the same binaries and the driver at `c16c47c1`, starting at 07:18 UTC on 14 November 2026. Its `corpus` sorts the tar's entries by path parts, so the Windows `dependencies.tar` now has the same sha256 as the other machines. The first Windows tar listed mixed-case names in another order.
   - bsdtar there is the `tar.exe` that Windows ships, libarchive 3.8.9, and 7-Zip is 26.05 x64.
   - Its paths are written as `<scratch>` and `<home>` in the JSON.
 - From `49f68e30` to `4518a8af` only the driver, `scripts/compare_zip_readers.py`, the bench's smoke tests, the workflow and Markdown pages changed. Every run measured the same decoders and the same bench code.
@@ -40,7 +41,7 @@ Does Zipper's LZMA and xz decoder lead `lzma-rs` and `lzma-rust2` in pure Rust a
 - Against `lzma-rs`, Zipper takes 0.345 to 0.555 times its time in every run. `lzma-rs` peaks at 706.4 MiB on Silesia xz on the M2 Max, against 308.2 MiB for Zipper.
 - Against liblzma through the `liblzma` crate 0.4.9, Zipper takes 0.826 to 0.874 times its time on the M2 Max, with ranges apart. On Linux it trails, at 1.125 and 1.089 times on xz and 1.180 and 1.199 times on LZMA, with ranges apart.
 - One-thread `.tar.xz` extraction of the dependencies leads bsdtar and 7-Zip on both machines. On Silesia it leads bsdtar on the M2 Max but trails 7-Zip there at 1.110 times, and trails both on Linux, at 1.205 times bsdtar and 1.112 times 7-Zip.
-- On the Windows desktop Zipper takes 0.740 and 0.654 times `lzma-rust2`'s time on xz and 0.862 and 0.891 times on LZMA. Against liblzma, built there by MSVC, it takes 0.832 and 0.834 times on xz and 0.854 and 0.886 times on LZMA. All eight ranges are apart.
+- On the Windows desktop Zipper takes 0.740 and 0.651 times `lzma-rust2`'s time on xz and 0.862 and 0.889 times on LZMA. Against liblzma, built there by MSVC, it takes 0.832 and 0.829 times on xz and 0.854 and 0.885 times on LZMA. All eight ranges are apart.
 - One-thread `.tar.xz` extraction on Windows leads bsdtar on both corpora and 7-Zip on the dependencies. On Silesia it trails 7-Zip at 1.132 times (1.121 to 1.142).
 
 Every decode comparison, Zipper's median time over the other decoder's with its range, in each run:
@@ -65,9 +66,9 @@ Every decode comparison, Zipper's median time over the other decoder's with its 
 | `xz` | `lzma-rs` | Dependencies on hosted Linux | 0.425 (0.420 to 0.430) | Zipper ahead |
 | `xz` | `lzma-rust2` | Dependencies on hosted Linux | 0.667 (0.656 to 0.674) | Zipper ahead |
 | `xz` | `liblzma` | Dependencies on hosted Linux | 1.089 (1.076 to 1.103) | Zipper behind |
-| `xz` | `lzma-rs` | Dependencies on the Windows desktop | 0.430 (0.424 to 0.436) | Zipper ahead |
-| `xz` | `lzma-rust2` | Dependencies on the Windows desktop | 0.654 (0.647 to 0.664) | Zipper ahead |
-| `xz` | `liblzma` | Dependencies on the Windows desktop | 0.834 (0.825 to 0.844) | Zipper ahead |
+| `xz` | `lzma-rs` | Dependencies on the Windows desktop | 0.426 (0.417 to 0.434) | Zipper ahead |
+| `xz` | `lzma-rust2` | Dependencies on the Windows desktop | 0.651 (0.643 to 0.661) | Zipper ahead |
+| `xz` | `liblzma` | Dependencies on the Windows desktop | 0.829 (0.820 to 0.841) | Zipper ahead |
 | `lzma` | `lzma-rs` | Silesia on the Apple M2 Max | 0.471 (0.446 to 0.494) | Zipper ahead |
 | `lzma` | `lzma-rust2` | Silesia on the Apple M2 Max | 0.817 (0.772 to 0.883) | Zipper ahead |
 | `lzma` | `liblzma` | Silesia on the Apple M2 Max | 0.872 (0.824 to 0.938) | Zipper ahead |
@@ -86,9 +87,9 @@ Every decode comparison, Zipper's median time over the other decoder's with its 
 | `lzma` | `lzma-rs` | Dependencies on hosted Linux | 0.386 (0.379 to 0.393) | Zipper ahead |
 | `lzma` | `lzma-rust2` | Dependencies on hosted Linux | 0.894 (0.869 to 0.908) | Zipper ahead |
 | `lzma` | `liblzma` | Dependencies on hosted Linux | 1.199 (1.176 to 1.219) | Zipper behind |
-| `lzma` | `lzma-rs` | Dependencies on the Windows desktop | 0.387 (0.379 to 0.400) | Zipper ahead |
-| `lzma` | `lzma-rust2` | Dependencies on the Windows desktop | 0.891 (0.877 to 0.917) | Zipper ahead |
-| `lzma` | `liblzma` | Dependencies on the Windows desktop | 0.886 (0.871 to 0.910) | Zipper ahead |
+| `lzma` | `lzma-rs` | Dependencies on the Windows desktop | 0.388 (0.385 to 0.395) | Zipper ahead |
+| `lzma` | `lzma-rust2` | Dependencies on the Windows desktop | 0.889 (0.881 to 0.908) | Zipper ahead |
+| `lzma` | `liblzma` | Dependencies on the Windows desktop | 0.885 (0.877 to 0.900) | Zipper ahead |
 
 ### Silesia on the Apple M2 Max
 
@@ -249,35 +250,35 @@ Extraction of the `xz` row, 8,762,484 bytes into 85,944,317, median wall ms with
 
 ### Dependencies on the Windows desktop
 
-- `m34-decode-windows-dependencies.json`, revision `5e6dd97b`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
-- `m34-extract-windows-dependencies.json`, revision `3b324db6`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
+- `m34-decode-windows-dependencies.json`, revision `c16c47c1`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
+- `m34-extract-windows-dependencies.json`, revision `c16c47c1`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
 
 Decode of `xz`, median wall ms of the decode call with its range, CPU s and peak RSS:
 
 | Decoder | Version | Wall ms | CPU s | Peak MiB | Zipper's time over it | Ranges |
 | --- | --- | --- | --- | --- | --- | --- |
-| `zipper` | `zipper` 0.1.0-alpha.3 | 291.4 (290.1 to 294.2) | not measured | 107.2 |  |  |
-| `lzma-rs` | `lzma-rs` 0.3.0 | 677.0 (674.1 to 683.7) | not measured | 273.6 | 0.430 (0.424 to 0.436) | Zipper ahead |
-| `lzma-rust2` | `lzma-rust2` 0.23.0 | 445.3 (442.9 to 448.5) | not measured | 109.4 | 0.654 (0.647 to 0.664) | Zipper ahead |
-| `liblzma` | `liblzma` 0.4.9, `liblzma-sys` 0.4.9 | 349.4 (348.5 to 351.5) | not measured | 107.1 | 0.834 (0.825 to 0.844) | Zipper ahead |
+| `zipper` | `zipper` 0.1.0-alpha.3 | 289.6 (288.4 to 293.2) | not measured | 107.2 |  |  |
+| `lzma-rs` | `lzma-rs` 0.3.0 | 679.7 (675.6 to 691.5) | not measured | 273.6 | 0.426 (0.417 to 0.434) | Zipper ahead |
+| `lzma-rust2` | `lzma-rust2` 0.23.0 | 445.0 (443.3 to 448.8) | not measured | 109.4 | 0.651 (0.643 to 0.661) | Zipper ahead |
+| `liblzma` | `liblzma` 0.4.9, `liblzma-sys` 0.4.9 | 349.2 (348.7 to 351.6) | not measured | 107.1 | 0.829 (0.820 to 0.841) | Zipper ahead |
 
 Decode of `lzma`, median wall ms of the decode call with its range, CPU s and peak RSS:
 
 | Decoder | Version | Wall ms | CPU s | Peak MiB | Zipper's time over it | Ranges |
 | --- | --- | --- | --- | --- | --- | --- |
-| `zipper` | `zipper` 0.1.0-alpha.3 | 254.8 (252.3 to 260.6) | not measured | 107.1 |  |  |
-| `lzma-rs` | `lzma-rs` 0.3.0 | 657.8 (652.1 to 665.6) | not measured | 108.1 | 0.387 (0.379 to 0.400) | Zipper ahead |
-| `lzma-rust2` | `lzma-rust2` 0.23.0 | 286.0 (284.2 to 287.7) | not measured | 107.2 | 0.891 (0.877 to 0.917) | Zipper ahead |
-| `liblzma` | `liblzma` 0.4.9, `liblzma-sys` 0.4.9 | 287.5 (286.3 to 289.5) | not measured | 107.1 | 0.886 (0.871 to 0.910) | Zipper ahead |
+| `zipper` | `zipper` 0.1.0-alpha.3 | 253.6 (252.5 to 257.3) | not measured | 107.1 |  |  |
+| `lzma-rs` | `lzma-rs` 0.3.0 | 654.0 (651.2 to 655.2) | not measured | 108.1 | 0.388 (0.385 to 0.395) | Zipper ahead |
+| `lzma-rust2` | `lzma-rust2` 0.23.0 | 285.1 (283.4 to 286.5) | not measured | 107.2 | 0.889 (0.881 to 0.908) | Zipper ahead |
+| `liblzma` | `liblzma` 0.4.9, `liblzma-sys` 0.4.9 | 286.7 (285.8 to 287.9) | not measured | 107.1 | 0.885 (0.877 to 0.900) | Zipper ahead |
 
-Extraction of the `xz` row, 8,761,284 bytes into 85,944,317, median wall ms with its range, CPU s and peak RSS:
+Extraction of the `xz` row, 8,762,484 bytes into 85,944,317, median wall ms with its range, CPU s and peak RSS:
 
 | Reader | Threads | Wall ms | CPU s | Peak MiB | Zipper one thread over it | Ranges |
 | --- | --- | --- | --- | --- | --- | --- |
-| `zipper` | 1 | 4307.3 (4291.0 to 4364.6) | 3.578 | 19.1 |  |  |
-| `zipper-all-threads` | all | 4247.6 (4152.9 to 4365.6) | 3.828 | 19.4 |  |  |
-| `bsdtar` | 1 | 4621.6 (4612.8 to 4740.7) | 3.953 | 14.1 | 0.932 (0.905 to 0.946) | Zipper ahead |
-| `7zip` | 1 | 6842.8 (6775.8 to 7074.5) | 0.016 | 7.7 | 0.629 (0.607 to 0.644) | Zipper ahead |
+| `zipper` | 1 | 4229.6 (4196.9 to 4244.9) | 3.625 | 19.3 |  |  |
+| `zipper-all-threads` | all | 4198.3 (4126.9 to 4241.6) | 3.922 | 19.5 |  |  |
+| `bsdtar` | 1 | 4605.5 (4549.1 to 4960.5) | 3.938 | 14.1 | 0.918 (0.846 to 0.933) | Zipper ahead |
+| `7zip` | 1 | 6802.2 (6755.2 to 6862.1) | 0.016 | 7.7 | 0.622 (0.612 to 0.628) | Zipper ahead |
 
 ## Decision
 
@@ -299,9 +300,8 @@ The verdict is that it is not ready yet. On 14 November 2026 the user chose this
 - No run has a `.tar.lzma` extraction row. Zipper writes the `.tar.lzma` out as one file, the `.tar`, where bsdtar reads the tar inside, so the trees differ.
 - The three Linux runs each got a different AMD EPYC, so Linux numbers compare only within one run. Linux CPU times for child processes come in steps of 10 ms.
 - Windows has no WIM extraction row, since `wimlib-imagex` is not installed there.
-- The Windows `dependencies.tar` differs in sha256 from the other machines, though it holds the same crates, files and file bytes. Its streams differ by a few kilobytes.
 - On Windows the decode bench reports no CPU time for the decode call, and the driver has no load average. Its 7-Zip rows report the CPU time and peak RSS of the process that pipes 7-Zip's output, not of 7-Zip.
-- On Windows the dependencies take 4.2 to 7.5 s to extract with every reader, so file creation on NTFS dominates those rows, not the decoder.
+- On Windows the dependencies take 4.1 to 7.4 s to extract with every reader, so file creation on NTFS dominates those rows, not the decoder.
 - The C libraries were built by MSVC on Windows and by the system C compiler on the M2 Max and Linux, so a gap to a C library can belong to its compiler.
 - Each machine ran each corpus once, so session to session drift is not measured.
 - No profile was taken. The limiter named is decode CPU, read from CPU time matching wall time at one thread.
