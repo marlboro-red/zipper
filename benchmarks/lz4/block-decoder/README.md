@@ -1,6 +1,6 @@
 # LZ4 block decoder at the reference speed
 
-**Kept six changes. One-thread extraction of a Silesia `.tar.lz4` takes 114.8 ms against 351.2 ms before them, and 1.09 times bsdtar's 105.3 ms, on the second machine. bsdtar runs `lz4 -d` as a second process beside its tar reader, so its time overlaps two processes. One xxHash32 rewrite was dropped, and LLVM's vectorizing of the checksum lanes stays the main cost left.** One Apple M2 Max, shared with other agents.
+**Kept six changes. One-thread extraction of a Silesia `.tar.lz4` takes 114.8 ms against 351.2 ms before them, and 1.09 times bsdtar's 105.3 ms, on the second machine. bsdtar runs `lz4 -d` as a second process beside its tar reader, so its time overlaps two processes. One xxHash32 rewrite was dropped, and LLVM's vectorizing of the checksum lanes stays the main cost left. A seventh change, `d1592d27`, sniffs the tar from the first 512 bytes. In a second session of 21 rounds Zipper took 110.3 ms against bsdtar's 113.1 ms, with the ranges overlapping, so the two are level.** One Apple M2 Max, shared with other agents.
 
 ## Question
 
@@ -39,11 +39,22 @@ With the hash switched off, `daa8dfa` took 321 M cycles against 491 M. The check
 | `test` | 353.1 ms, 342 to 426 | 113.2 ms, 111 to 120 | not run |
 | Peak memory in `extract` | 28.6 MiB | 22.8 MiB | 33.6 MiB |
 
+The sniff that picks the tar reader decoded the whole first block, and `read_part` sniffed again, so extraction decoded the first block three times. `d1592d27` makes the sniff stop after the 512 bytes of the first tar header, and still checks the header and block checksums. `extract` retired 1,324.9 M instructions against 1,364.2 M at `2eccda4c`, and `test` 1,198.6 to 1,203.1 M against 1,218.6 to 1,219.9 M, three runs each. Peak memory on the hostile frames moved by less than the 65 KB that separates the two builds on a 6-byte frame.
+
+| Timed run on 14 November 2026 | `2eccda4c` | `8bfb1ddd` | bsdtar |
+| --- | ---: | ---: | ---: |
+| `extract`, 21 rounds | 112.9 ms, 112.0 to 116.0 | 110.3 ms, 108.9 to 112.1 | 113.1 ms, 104.2 to 117.6 |
+| `extract` CPU, 21 rounds | 0.129 s | 0.126 s | 0.207 s |
+| `extract`, 9 rounds | 113.0 ms, 111.2 to 115.1 | 111.0 ms, 109.7 to 116.5 | 111.4 ms, 101.4 to 117.6 |
+| `test`, 9 rounds | 110.3 ms, 110.1 to 110.5 | 107.8 ms, 107.5 to 108.3 | not run |
+
+The raw samples are [`data/sniff-extract.json`](data/sniff-extract.json), [`data/sniff-extract-nine.json`](data/sniff-extract-nine.json) and [`data/sniff-test.json`](data/sniff-test.json).
+
 Peak memory on hostile frames is in [`data/memory.txt`](data/memory.txt). Two reviews each found a regression. The first build zero-filled a whole 4 MiB window before decoding, and the second copied a linked window into a fresh one while the old one lived. A linked frame of a raw block and an expanding block peaked at 19.8 MB against 15.5 MB before. The final build peaks at 15.6 MB there and at 14.5 MB against 14.5 MB on `lz4 -B7 -BD` of random bytes. The other hostile frames stay within 0.12 MB of the old code, and frames that decode to 4 MiB peak about 3 MB lower. A plant that restored the copy made `rss_check.sh` report both repros as regressed. Growing every window in place passed that check. It raised the frame that decodes to 4 MiB from 10.4 MB to 11.7 MB, so a window under half its new size still moves to fresh zeroed pages. No test can catch that, so the numbers stand in for one.
 
 ## Decision
 
-Keep all six commits. The scoreboard row moves from 3.3 times to 1.09 times bsdtar. Drop the xxHash32 rewrites, which compiled to the same code.
+Keep all six commits. The scoreboard row moves from 3.3 times to 1.09 times bsdtar. Drop the xxHash32 rewrites, which compiled to the same code. Keep `d1592d27`, whose `test` range sits apart from the old one. Its `extract` ranges touch, at 112.1 against 112.0 ms. Against bsdtar the verdict is a tie, with Zipper's median ahead in both sessions of 14 November and the ranges overlapping.
 
 ## Limits
 
@@ -51,6 +62,7 @@ Keep all six commits. The scoreboard row moves from 3.3 times to 1.09 times bsdt
 - bsdtar decodes in a second process, so its wall time hides its decode behind its tar writes. Zipper decodes and unpacks on one thread.
 - The timed build is `17b22c5`. The final head changes only how a window that is already large grows, which independent 4 MiB blocks never reach. Both builds retired 1,212 M instructions in 375 to 378 M cycles on this archive, three runs each, so the timing was not rerun.
 - Linked frames and `compress` were not timed.
+- bsdtar's median moved from 105.3 ms to 111.4 and 113.1 ms between sessions, so the two sessions of 14 November compare only within themselves. A disk image helper used 35% of a core at the start of the `test` session.
 
 ## Reproduce
 
