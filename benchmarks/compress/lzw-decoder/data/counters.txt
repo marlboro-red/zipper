@@ -1,0 +1,41 @@
+zipper --threads 1 test tar-compress.tar.Z, /usr/bin/time -l, second machine shared with other agents.
+The archive is compress -c of the ustar Silesia tar from mkcorpus.py, 88,607,181 bytes.
+Columns: build, instructions retired, cycles elapsed, maximum resident set size in bytes.
+
+25f8466b 16309448672 4651435653 4833280
+25f8466b 16286982556 4564290643 4849664
+25f8466b 16294680696 4553655965 4931584
+piece-by-index 12965080829 3893138780 5341184
+piece-by-index 12960283820 3874942553 5341184
+piece-by-index 12962134708 3884259824 5341184
+38172ad8 12877911693 2219533335 5619712
+38172ad8 12873247232 2187922450 5619712
+38172ad8 12873227140 2187529604 5619712
+0749f4a3 4331338010 925032754 5619712
+0749f4a3 4326810735 893855693 5619712
+0749f4a3 4326752009 894283059 5619712
+b26d60fa 4331729192 933564938 5619712
+b26d60fa 4327040549 896341254 5619712
+b26d60fa 4327053335 896350085 5619712
+
+piece-by-index is a build of 38172ad8 that kept the piece as a [u8; 8] and stored the new byte by index.
+
+zipper --threads 1 extract, same archive, one run each, bytes compared with the plain tar.
+25f8466b 16553879792 4901799122 12009472
+38172ad8 13022606037 2265864143 11042816
+0749f4a3 4492149594 970621617 13156352
+b26d60fa 4477789005 971209834 11075584
+
+7-Zip 26.06, 7zz x -so -bd -mmt=1 tar-compress.tar.Z > /dev/null, the decode only.
+7zz 2734789172 1334264923 3833856
+7zz 2734444171 1335438372 3866624
+
+The tar stage alone, on the plain silesia.tar.
+7zz x -ttar -mmt=1 297820557 137207938 3522560
+zipper --threads 1 test (25f8466b) 65584317 52748497 5390336
+
+Profiles, sample(1) on zipper test with the named functions marked #[inline(never)], samples outside idle waits.
+25f8466b: decode_next 763, next_code 298, reverse 39, read 12, memmove 11.
+piece-by-index: define 321, next_code 274, write 111, decode_next 44, memmove 14.
+38172ad8: next_code 221, write 72, define 34, decode_next 29, read 10.
+0749f4a3: write 80, next_code 70, define 34, decode_next 29, read 6, read_group 5.

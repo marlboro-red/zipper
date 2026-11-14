@@ -21,4 +21,6 @@ Status:
 | Codec | Zipper against its reference | Record |
 | --- | --- | --- |
 | LZ4 | 1.09× bsdtar on Silesia `.tar.lz4` at one thread, 114.8 ms against 105.3 ms. bsdtar decodes in a second `lz4` process. Exit checks 1 and 3 are met for LZ4. | [LZ4 block decoder at the reference speed](../../benchmarks/lz4/block-decoder/README.md) |
-| `compress` | Open. 2.7 times 7-Zip, as above. | none yet |
+| `compress` | 0.64× 7-Zip 26.06 on Silesia `.tar.Z` at one thread, 269.8 ms against 419.0 ms, with the ranges apart. 7-Zip decodes in one process and reads the tar in a second. Exit checks 1 and 3 are met for `compress`. | [`compress` decoder ahead of 7-Zip](../../benchmarks/compress/lzw-decoder/README.md) |
+
+`compress` now leads 7-Zip. LZ4 is at 1.09× bsdtar, which decodes in a second `lz4` process, and the LZ4 record names the xxHash32 checksum as the main cost left. Exit check 2 stays open until `cargo xtask bench` remeasures the codec rows of [Results](../results.md), which still show the times at `cb8fe53`.

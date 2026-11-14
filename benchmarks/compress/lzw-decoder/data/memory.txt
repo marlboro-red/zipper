@@ -1,0 +1,21 @@
+zipper --threads 1 test, maximum resident set size in bytes, three runs interleaved, second machine.
+old is 25f8466b and new is 0749f4a3. b26d60fa changes no allocation. Streams come from hostile.py.
+
+clears.bin.Z (400,000 pairs of a literal and a clear code at 9 bits)
+  old  5062656 5046272 5062656
+  new  5062656 5046272 5029888
+longest.bin.Z (a 16-bit chain of KwKwK codes, strings up to 65,281 bytes, 2.1 GB of output)
+  old  5357568 5357568 5357568
+  new  6127616 6127616 6144000
+random.bin.Z (16 MiB of random bytes after a 16-bit block-mode header, refused)
+  old  4849664 4849664 4849664
+  new  4849664 4898816 4898816
+truncated.tar.Z (the Silesia tar.Z cut in half, refused)
+  old  4849664 4849664 4849664
+  new  5636096 5619712 5619712
+zeros.bin.Z (compress -c of 64 MiB of zeros)
+  old  5095424 5095424 5095424
+  new  5160960 5177344 5160960
+tar-compress.tar.Z (Silesia)
+  old  4833280 4833280 4833280
+  new  5603328 5619712 5603328
