@@ -452,7 +452,7 @@ item = src/lz4.rs | fn copy_match<
 
 [compress]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 0c183adadfd58e35
+fingerprint = 16c8dedd74893366
 full-check = cargo test --release --lib lzw
 item = src/lzw.rs | impl<R: BufRead> Unlzw<R> {
 item = src/lzw.rs | impl<R: BufRead> Read for Unlzw<R> {
