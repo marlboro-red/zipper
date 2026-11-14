@@ -15,7 +15,7 @@
     "zipper": {
       "mode": "native",
       "binary": "target/release/zipper",
-      "sha256": "88b762a8c5668db240b4ddde92c1f8828841b3a0542630bd40c97ca4c1a47638",
+      "sha256": "ce8a70e64359f370e48e430ceae2fb79cf884a50247aec773cae6480bb6e8987",
       "threads": 1
     },
     "7zz": {
@@ -29,9 +29,9 @@
   "errors": 0,
   "busy_processes": [],
   "load_average_start": [
-    1.85400390625,
-    1.84716796875,
-    2.1845703125
+    1.728515625,
+    2.64892578125,
+    4.7685546875
   ],
   "order_including_warmup": [
     [
@@ -71,114 +71,114 @@
     "zipper": {
       "samples": [
         {
-          "seconds": 0.47506558400345966,
+          "seconds": 0.5008765839738771,
+          "peak_rss_bytes": 4964352,
+          "cpu_seconds": 0.48323,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.4892985839978792,
           "peak_rss_bytes": 4931584,
-          "cpu_seconds": 0.46812099999999995,
+          "cpu_seconds": 0.47745899999999997,
           "verified_bytes": 211938580
         },
         {
-          "seconds": 0.4761440830043284,
+          "seconds": 0.49185133300488815,
           "peak_rss_bytes": 4947968,
-          "cpu_seconds": 0.46918299999999996,
+          "cpu_seconds": 0.479824,
           "verified_bytes": 211938580
         },
         {
-          "seconds": 0.48691891599446535,
+          "seconds": 0.4928246659692377,
+          "peak_rss_bytes": 4931584,
+          "cpu_seconds": 0.47995,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.4992947910213843,
+          "peak_rss_bytes": 4947968,
+          "cpu_seconds": 0.482198,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.48938849999103695,
           "peak_rss_bytes": 4980736,
-          "cpu_seconds": 0.472213,
+          "cpu_seconds": 0.47766699999999995,
           "verified_bytes": 211938580
         },
         {
-          "seconds": 0.4784573749930132,
+          "seconds": 0.49139500001911074,
           "peak_rss_bytes": 4947968,
-          "cpu_seconds": 0.470336,
-          "verified_bytes": 211938580
-        },
-        {
-          "seconds": 0.47986216700519435,
-          "peak_rss_bytes": 4931584,
-          "cpu_seconds": 0.47050000000000003,
-          "verified_bytes": 211938580
-        },
-        {
-          "seconds": 0.4762961670057848,
-          "peak_rss_bytes": 4947968,
-          "cpu_seconds": 0.469045,
-          "verified_bytes": 211938580
-        },
-        {
-          "seconds": 0.47698066699376795,
-          "peak_rss_bytes": 4931584,
-          "cpu_seconds": 0.46987699999999993,
+          "cpu_seconds": 0.477981,
           "verified_bytes": 211938580
         }
       ],
-      "median_seconds": 0.47698066699376795,
-      "min_seconds": 0.47506558400345966,
-      "max_seconds": 0.48691891599446535,
-      "mib_s": 423.74962841890647,
+      "median_seconds": 0.49185133300488815,
+      "min_seconds": 0.4892985839978792,
+      "max_seconds": 0.5008765839738771,
+      "mib_s": 410.9379538869779,
       "peak_rss_bytes": 4980736
     },
     "7zz": {
       "samples": [
         {
-          "seconds": 0.6309317919949535,
-          "peak_rss_bytes": 4685824,
-          "cpu_seconds": 0.6240549999999999,
+          "seconds": 0.6630153749720193,
+          "peak_rss_bytes": 4702208,
+          "cpu_seconds": 0.653407,
           "verified_bytes": 211938580
         },
         {
-          "seconds": 0.6292288330005249,
+          "seconds": 0.674671666987706,
+          "peak_rss_bytes": 4685824,
+          "cpu_seconds": 0.653022,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.6739440420060419,
+          "peak_rss_bytes": 4685824,
+          "cpu_seconds": 0.658123,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.6774377919500694,
+          "peak_rss_bytes": 4702208,
+          "cpu_seconds": 0.6578229999999999,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.6613748749950901,
+          "peak_rss_bytes": 4685824,
+          "cpu_seconds": 0.651493,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.6708504999987781,
+          "peak_rss_bytes": 4702208,
+          "cpu_seconds": 0.6552979999999999,
+          "verified_bytes": 211938580
+        },
+        {
+          "seconds": 0.6704120829817839,
           "peak_rss_bytes": 4718592,
-          "cpu_seconds": 0.62178,
-          "verified_bytes": 211938580
-        },
-        {
-          "seconds": 0.6320481250004377,
-          "peak_rss_bytes": 4734976,
-          "cpu_seconds": 0.623738,
-          "verified_bytes": 211938580
-        },
-        {
-          "seconds": 0.6303790840029251,
-          "peak_rss_bytes": 4685824,
-          "cpu_seconds": 0.6214209999999999,
-          "verified_bytes": 211938580
-        },
-        {
-          "seconds": 0.6296398339909501,
-          "peak_rss_bytes": 4751360,
-          "cpu_seconds": 0.6223209999999999,
-          "verified_bytes": 211938580
-        },
-        {
-          "seconds": 0.6276664579927456,
-          "peak_rss_bytes": 4685824,
-          "cpu_seconds": 0.6210669999999999,
-          "verified_bytes": 211938580
-        },
-        {
-          "seconds": 0.6297181669942802,
-          "peak_rss_bytes": 4718592,
-          "cpu_seconds": 0.622266,
+          "cpu_seconds": 0.658632,
           "verified_bytes": 211938580
         }
       ],
-      "median_seconds": 0.6297181669942802,
-      "min_seconds": 0.6276664579927456,
-      "max_seconds": 0.6320481250004377,
-      "mib_s": 320.9695876591206,
-      "peak_rss_bytes": 4751360
+      "median_seconds": 0.6708504999987781,
+      "min_seconds": 0.6613748749950901,
+      "max_seconds": 0.6774377919500694,
+      "mib_s": 301.28975144533615,
+      "peak_rss_bytes": 4718592
     }
   },
   "load_average_end": [
-    1.94921875,
-    1.8681640625,
-    2.1875
+    2.1572265625,
+    2.70947265625,
+    4.7646484375
   ],
   "codec": "zip-deflate64",
   "reference": "7zz",
-  "revision": "cb8fe53e9728081bfb2a7ca92a1e409dcad7f3fa",
-  "recorded": "2026-11-11",
+  "revision": "ba8df3325c980728cb522cc57c7762202adf7920",
+  "recorded": "2026-11-14",
   "tree_clean": true
 }
