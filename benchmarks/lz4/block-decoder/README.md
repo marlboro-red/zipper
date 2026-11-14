@@ -1,6 +1,6 @@
 # LZ4 block decoder at the reference speed
 
-**Kept five changes. One-thread extraction of a Silesia `.tar.lz4` takes 114.8 ms against 351.2 ms before them, and 1.09 times bsdtar's 105.3 ms, on the second machine. bsdtar runs `lz4 -d` as a second process beside its tar reader, so its time overlaps two processes. One xxHash32 rewrite was dropped, and LLVM's vectorizing of the checksum lanes stays the main cost left.** One Apple M2 Max, shared with other agents.
+**Kept six changes. One-thread extraction of a Silesia `.tar.lz4` takes 114.8 ms against 351.2 ms before them, and 1.09 times bsdtar's 105.3 ms, on the second machine. bsdtar runs `lz4 -d` as a second process beside its tar reader, so its time overlaps two processes. One xxHash32 rewrite was dropped, and LLVM's vectorizing of the checksum lanes stays the main cost left.** One Apple M2 Max, shared with other agents.
 
 ## Question
 
@@ -27,6 +27,7 @@ The base profile put 73% of the time in `decode_block`, which pushed each match 
 | `f629909` | short sequences read from one fixed slice | 1,099 M | 458 to 498 M | 14.8 MB |
 | `dc59884` | content hash run one stripe per sequence inside the decode loop | 1,178 M | 384 to 402 M | 14.7 MB |
 | `1239695` | window grown as each block needs it | 1,212 M | 379 to 394 M | 14.7 MB |
+| `0698bd7` | a large window grown in place | 1,212 M | 375 to 376 M | not counted |
 
 `lz4 -d` alone retires 657 M instructions in 343 to 357 M cycles. bsdtar's own process retires 532 to 569 M beside it.
 
@@ -38,17 +39,17 @@ With the hash switched off, `daa8dfa` took 321 M cycles against 491 M. The check
 | `test` | 353.1 ms, 342 to 426 | 113.2 ms, 111 to 120 | not run |
 | Peak memory in `extract` | 28.6 MiB | 22.8 MiB | 33.6 MiB |
 
-Peak memory on hostile frames is in [`data/memory.txt`](data/memory.txt). Two reviews each found a regression. The first build zero-filled a whole 4 MiB window before decoding, and the second copied a linked window into a fresh one while the old one lived. A linked frame of a raw block and an expanding block peaked at 19.8 MB against 15.5 MB before. The final build peaks at 15.6 MB there and at 14.5 MB against 14.5 MB on `lz4 -B7 -BD` of random bytes. The other hostile frames stay within 0.12 MB of the old code, and frames that decode to 4 MiB peak about 3 MB lower. A plant that restored the copy made `rss_check.sh` report both repros as regressed.
+Peak memory on hostile frames is in [`data/memory.txt`](data/memory.txt). Two reviews each found a regression. The first build zero-filled a whole 4 MiB window before decoding, and the second copied a linked window into a fresh one while the old one lived. A linked frame of a raw block and an expanding block peaked at 19.8 MB against 15.5 MB before. The final build peaks at 15.6 MB there and at 14.5 MB against 14.5 MB on `lz4 -B7 -BD` of random bytes. The other hostile frames stay within 0.12 MB of the old code, and frames that decode to 4 MiB peak about 3 MB lower. A plant that restored the copy made `rss_check.sh` report both repros as regressed. Growing every window in place passed that check. It raised the frame that decodes to 4 MiB from 10.4 MB to 11.7 MB, so a window under half its new size still moves to fresh zeroed pages. No test can catch that, so the numbers stand in for one.
 
 ## Decision
 
-Keep all five commits. The scoreboard row moves from 3.3 times to 1.09 times bsdtar. Drop the xxHash32 rewrites, which compiled to the same code.
+Keep all six commits. The scoreboard row moves from 3.3 times to 1.09 times bsdtar. Drop the xxHash32 rewrites, which compiled to the same code.
 
 ## Limits
 
 - One machine, shared with other agents. One rustc ran during the timed rounds.
 - bsdtar decodes in a second process, so its wall time hides its decode behind its tar writes. Zipper decodes and unpacks on one thread.
-- The timed build is `17b22c5`. The final head changes only how a linked window grows, which independent 4 MiB blocks never reach after the first block.
+- The timed build is `17b22c5`. The final head changes only how a window that is already large grows, which independent 4 MiB blocks never reach. Both builds retired 1,212 M instructions in 375 to 378 M cycles on this archive, three runs each, so the timing was not rerun.
 - Linked frames and `compress` were not timed.
 
 ## Reproduce
