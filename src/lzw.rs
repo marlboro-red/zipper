@@ -157,14 +157,14 @@ impl<R: BufRead> Unlzw<R> {
 
     fn read_group(&mut self) -> io::Result<bool> {
         let wanted = self.bits as usize;
-        if self.partial_group_length == 0 {
-            if let Some(&whole) = self.input.fill_buf()?.first_chunk::<GROUP_LOAD>() {
-                self.input.consume(wanted);
-                self.group = u128::from_le_bytes(whole);
-                self.codes_in_group = CODES_IN_GROUP;
-                self.next_in_group = 0;
-                return Ok(true);
-            }
+        if self.partial_group_length == 0
+            && let Some(&whole) = self.input.fill_buf()?.first_chunk::<GROUP_LOAD>()
+        {
+            self.input.consume(wanted);
+            self.group = u128::from_le_bytes(whole);
+            self.codes_in_group = CODES_IN_GROUP;
+            self.next_in_group = 0;
+            return Ok(true);
         }
         while self.partial_group_length < wanted {
             let available = self.input.fill_buf()?;
