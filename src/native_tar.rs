@@ -144,7 +144,11 @@ impl Seek for PartReader {
 pub(crate) fn sniff_part(part: &Part) -> Result<Option<Compression>> {
     let compression = compression_of(&mut part.open()?)?;
     let input = BufReader::new(part.open()?.take(SNIFF_INPUT));
-    let mut stream = match decode(input, compression) {
+    let decoded = match compression {
+        Compression::Lz4 => Ok(Box::new(crate::lz4::Lz4Frames::stopping_after(input, BLOCK)) as _),
+        _ => decode(input, compression),
+    };
+    let mut stream = match decoded {
         Ok(stream) => stream,
         Err(error) if is_over_memory(&error) => return Err(error),
         Err(_) => return Ok(None),
@@ -1448,6 +1452,40 @@ mod sniff_tests {
         let path = root.path().join("a.tar.lz4");
         std::fs::write(&path, frame).unwrap();
         assert!(matches!(sniff(&path).unwrap(), Some(Compression::Lz4)));
+    }
+
+    #[test]
+    fn the_sniff_decodes_only_the_header_of_a_first_lz4_block() {
+        let mut header = [0u8; BLOCK];
+        header[..4].copy_from_slice(b"file");
+        header[257..263].copy_from_slice(b"ustar\0");
+        let mut block = vec![0xF0];
+        let mut rest = BLOCK - 15;
+        while rest >= 255 {
+            block.push(255);
+            rest -= 255;
+        }
+        block.push(rest as u8);
+        block.extend_from_slice(&header);
+        block.extend_from_slice(&[1, 0, 0x1F, b'y', 1, 0]);
+        block.extend(std::iter::repeat_n(255, 16_000));
+        block.extend_from_slice(&[0, 0x10, b'x', 0, 0]);
+        let mut frame = 0x184D_2204u32.to_le_bytes().to_vec();
+        let descriptor = [0x60, 0x70];
+        frame.extend_from_slice(&descriptor);
+        frame.push((crate::lz4::xxh32(&descriptor) >> 8) as u8);
+        frame.extend_from_slice(&(block.len() as u32).to_le_bytes());
+        frame.extend_from_slice(&block);
+        frame.extend_from_slice(&0u32.to_le_bytes());
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("a.tar.lz4");
+        std::fs::write(&path, frame).unwrap();
+        assert!(matches!(sniff(&path).unwrap(), Some(Compression::Lz4)));
+        let error = read_archive(&path, None, ReadOptions::default()).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("LZ4 block is malformed"),
+            "{error:#}"
+        );
     }
 }
 

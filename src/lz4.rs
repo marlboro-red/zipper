@@ -314,6 +314,8 @@ pub(crate) struct Lz4Frames<R> {
     position: usize,
     block: Vec<u8>,
     finished: bool,
+    still_wanted: usize,
+    stopped_inside_block: bool,
 }
 
 impl<R: BufRead> Lz4Frames<R> {
@@ -327,6 +329,15 @@ impl<R: BufRead> Lz4Frames<R> {
             position: 0,
             block: Vec::new(),
             finished: false,
+            still_wanted: usize::MAX,
+            stopped_inside_block: false,
+        }
+    }
+
+    pub(crate) fn stopping_after(input: R, wanted: usize) -> Self {
+        Lz4Frames {
+            still_wanted: wanted,
+            ..Self::new(input)
         }
     }
 
@@ -460,14 +471,17 @@ impl<R: BufRead> Lz4Frames<R> {
         let limit =
             usize::try_from(left).map_or(frame.block_limit, |left| left.min(frame.block_limit));
         let data = &self.block[..stored];
+        let stop_at = keep.saturating_add(self.still_wanted);
         let mut hashed_to = keep;
         if size & UNCOMPRESSED_BLOCK != 0 {
             if stored > limit {
                 return Err(data_error("LZ4 frame decodes past its content size"));
             }
-            grow(&mut self.window, keep, keep + stored);
-            self.window[keep..keep + stored].copy_from_slice(data);
-            self.filled = keep + stored;
+            let copied = stored.min(self.still_wanted);
+            self.stopped_inside_block = copied < stored;
+            grow(&mut self.window, keep, keep + copied);
+            self.window[keep..keep + copied].copy_from_slice(&data[..copied]);
+            self.filled = keep + copied;
         } else {
             let most = keep + decoded_bound(stored, limit) + WILD;
             let lanes = frame
@@ -475,22 +489,41 @@ impl<R: BufRead> Lz4Frames<R> {
                 .lanes_between_stripes()
                 .filter(|_| frame.content_checksum);
             let decoded = if let Some(mut lanes) = lanes {
-                let decoded =
-                    decode_growing(&mut self.window, data, keep, most, &mut |window, out| {
+                let decoded = decode_growing(
+                    &mut self.window,
+                    data,
+                    (keep, stop_at, most),
+                    &mut |window, out| {
                         if let Some(stripe) = window[hashed_to..out].first_chunk::<STRIPE>() {
                             Xxh32::stripe_into(&mut lanes, stripe);
                             hashed_to += STRIPE;
                         }
-                    });
+                    },
+                );
                 frame.hash.add_stripes(lanes, &self.window[keep..hashed_to]);
                 decoded
             } else {
-                decode_growing(&mut self.window, data, keep, most, &mut |_, _| {})
+                decode_growing(
+                    &mut self.window,
+                    data,
+                    (keep, stop_at, most),
+                    &mut |_, _| {},
+                )
             };
-            self.filled = decoded.ok_or_else(|| {
-                data_error("LZ4 block is malformed or passes its frame's content size")
-            })?;
+            self.filled = match decoded {
+                Some(Decoded::Ends(end)) => end,
+                Some(Decoded::Full(at)) => {
+                    self.stopped_inside_block = true;
+                    at.out
+                }
+                None => {
+                    return Err(data_error(
+                        "LZ4 block is malformed or passes its frame's content size",
+                    ));
+                }
+            };
         }
+        self.still_wanted = self.still_wanted.saturating_sub(self.filled - keep);
         if frame.content_checksum {
             frame.hash.update(&self.window[hashed_to..self.filled]);
         }
@@ -503,6 +536,7 @@ impl<R: BufRead> Lz4Frames<R> {
 const FIRST_ROOM: usize = 64 * 1024;
 const FIRST_ROOM_PER_INPUT_BYTE: usize = 4;
 const ROOM_GROWTH: usize = 4;
+const FAST_PATH_ROOM: usize = 4 * WILD;
 
 fn first_room(stored: usize) -> usize {
     WILD + FIRST_ROOM.max(stored.saturating_mul(FIRST_ROOM_PER_INPUT_BYTE))
@@ -511,12 +545,12 @@ fn first_room(stored: usize) -> usize {
 fn decode_growing(
     window: &mut Vec<u8>,
     block: &[u8],
-    keep: usize,
-    most: usize,
+    (keep, stop_at, most): (usize, usize, usize),
     follow: &mut impl FnMut(&[u8], usize),
-) -> Option<usize> {
+) -> Option<Decoded> {
     let first = keep + first_room(block.len());
-    let mut room = most.min(window.len().max(first));
+    let unstopped = most.min(window.len().max(first));
+    let mut room = unstopped.min(stop_at.saturating_add(FAST_PATH_ROOM));
     grow(window, keep, room);
     let mut from = Resume {
         index: 0,
@@ -524,11 +558,12 @@ fn decode_growing(
     };
     loop {
         match decode_following::<WILD>(block, &mut window[..room], from, follow)? {
-            Decoded::Ends(end) => return Some(end),
+            Decoded::Ends(end) => return Some(Decoded::Ends(end)),
+            Decoded::Full(at) if at.out >= stop_at => return Some(Decoded::Full(at)),
             Decoded::Full(_) if room == most => return None,
             Decoded::Full(at) => {
                 from = at;
-                room = most.min(room.saturating_mul(ROOM_GROWTH));
+                room = most.min(room.saturating_mul(ROOM_GROWTH).max(unstopped));
                 grow(window, at.out, room);
             }
         }
@@ -553,6 +588,9 @@ fn grow(window: &mut Vec<u8>, keep: usize, len: usize) {
 impl<R: BufRead> Read for Lz4Frames<R> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         while self.position == self.filled && !buffer.is_empty() {
+            if self.stopped_inside_block {
+                return Err(data_error("LZ4 prefix read stopped inside a block"));
+            }
             if self.finished {
                 return Ok(0);
             }
@@ -1037,6 +1075,102 @@ mod tests {
             assert!(reader.read(&mut buffer).is_err());
             for _ in 0..3 {
                 let _ = reader.read(&mut buffer);
+            }
+        }
+    }
+
+    #[test]
+    fn a_prefix_read_stops_inside_a_large_block_without_decoding_the_rest() {
+        let head: Vec<u8> = (0..520u32).map(|at| at.wrapping_mul(7) as u8).collect();
+        let mut block = vec![0xF0];
+        push_length(&mut block, head.len());
+        block.extend_from_slice(&head);
+        block.extend_from_slice(&1u16.to_le_bytes());
+        block.extend_from_slice(&[0x1F, b'y', 1, 0]);
+        push_length(&mut block, 4_000_000 - MIN_MATCH);
+        block.extend_from_slice(&[0x10, b'x', 0, 0]);
+        let frame = raw_frame(0x20, None, &[block]);
+        assert!(decode(&frame).is_err());
+        let mut reader = Lz4Frames::stopping_after(&frame[..], 512);
+        let mut first = [0u8; 512];
+        reader.read_exact(&mut first).unwrap();
+        assert_eq!(first[..], head[..512]);
+        assert!(reader.window.len() < FIRST_ROOM, "{}", reader.window.len());
+        assert!(reader.read_exact(&mut [0u8; 1024]).is_err());
+        assert!(reader.read(&mut [0u8; 1]).is_err());
+    }
+
+    #[test]
+    fn a_prefix_read_copies_only_what_it_wants_from_a_stored_block() {
+        let stored: Vec<u8> = (0..LARGEST_BLOCK as u32)
+            .map(|at| (at >> 3) as u8)
+            .collect();
+        let mut block = (stored.len() as u32 | UNCOMPRESSED_BLOCK)
+            .to_le_bytes()
+            .to_vec();
+        block.extend_from_slice(&stored);
+        let mut frame = raw_frame(0x20, None, &[]);
+        let end_mark = frame.len() - 4;
+        frame.splice(end_mark..end_mark, block);
+        assert!(decode(&frame).unwrap() == stored);
+        let mut reader = Lz4Frames::stopping_after(&frame[..], 512);
+        let mut first = [0u8; 512];
+        reader.read_exact(&mut first).unwrap();
+        assert_eq!(first[..], stored[..512]);
+        assert!(reader.window.len() < FIRST_ROOM, "{}", reader.window.len());
+        assert!(reader.read(&mut [0u8; 1]).is_err());
+    }
+
+    #[test]
+    fn a_prefix_read_matches_the_whole_decode_at_every_length() {
+        let mut random = Random(0x6A09_E667_F3BC_C908);
+        for flags in [0x20 | 0x04, 0x04, 0x10] {
+            let mut frame = FRAME_MAGIC.to_le_bytes().to_vec();
+            let descriptor = [0x40 | flags, 0x40];
+            frame.extend_from_slice(&descriptor);
+            frame.push((xxh32(&descriptor) >> 8) as u8);
+            let mut content = Vec::new();
+            for _ in 0..6 {
+                let history = if flags & 0x20 == 0 {
+                    &content[content.len().saturating_sub(WINDOW)..]
+                } else {
+                    &[][..]
+                };
+                let block = random_block(&mut random, history.len(), 3000);
+                let decoded = reference_block(&block, history, 64 * 1024)
+                    .expect("a generated block is well formed")[history.len()..]
+                    .to_vec();
+                frame.extend_from_slice(&(block.len() as u32).to_le_bytes());
+                frame.extend_from_slice(&block);
+                if flags & 0x10 != 0 {
+                    frame.extend_from_slice(&xxh32(&block).to_le_bytes());
+                }
+                content.extend_from_slice(&decoded);
+            }
+            frame.extend_from_slice(&0u32.to_le_bytes());
+            if flags & 0x04 != 0 {
+                frame.extend_from_slice(&xxh32(&content).to_le_bytes());
+            }
+            assert!(decode(&frame).unwrap() == content, "flags {flags:02x}");
+            for wanted in (0..=content.len()).step_by(37).chain([content.len()]) {
+                let mut reader = Lz4Frames::stopping_after(&frame[..], wanted);
+                let mut out = vec![0u8; wanted];
+                reader.read_exact(&mut out).unwrap();
+                assert!(
+                    out == content[..wanted],
+                    "flags {flags:02x} wanted {wanted}"
+                );
+            }
+            if flags & 0x10 != 0 {
+                let mut damaged = frame.clone();
+                let first_checksum =
+                    7 + 4 + u32::from_le_bytes(frame[7..11].try_into().unwrap()) as usize;
+                damaged[first_checksum] ^= 0x01;
+                assert!(
+                    Lz4Frames::stopping_after(&damaged[..], 1)
+                        .read_exact(&mut [0u8; 1])
+                        .is_err()
+                );
             }
         }
     }
