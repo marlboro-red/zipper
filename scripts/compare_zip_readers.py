@@ -22,6 +22,19 @@ READER_MODES = ["native", "native-content-only", "7zip", "7zip-tar", "bsdtar", "
 NAMES_SHOWN = 10
 
 
+def seven_zip_tar_pipeline(binary, threads, archive, output):
+    """7-Zip decoding into a second 7-Zip that reads the tar, through the platform's shell. On Windows it is one
+    command line, since a list would quote the pipe for `cmd`."""
+    flags = " ".join(threads)
+    if os.name == "nt":
+        seven = subprocess.list2cmdline([binary])
+        return (f'cmd /d /s /c "{seven} x -so -bd {flags} {subprocess.list2cmdline([str(archive)])}'
+                f' | {seven} x -si -ttar -y -bd -bso0 -snl {flags} -o{subprocess.list2cmdline([str(output)])}"')
+    seven = shlex.quote(binary)
+    return ["/bin/sh", "-c", f"{seven} x -so -bd {flags} {shlex.quote(str(archive))}"
+            f" | {seven} x -si -ttar -y -bd -bso0 -snl {flags} -o{shlex.quote(str(output))}"]
+
+
 def tree_difference(wanted, found):
     """The first names the output lacks, adds, or holds at another size, each with its sizes as
     wanted and found, where None is a folder."""
@@ -106,10 +119,7 @@ def main():
                     extract = [reader["binary"], "x", "-y", "-bd", "-bso0", "-snl", *threads,
                                f"-o{output}", str(archive)]
                 elif reader["mode"] == "7zip-tar":
-                    seven = shlex.quote(reader["binary"])
-                    extract = ["/bin/sh", "-c", f"{seven} x -so -bd {' '.join(threads)} {shlex.quote(str(archive))}"
-                               f" | {seven} x -si -ttar -y -bd -bso0 -snl {' '.join(threads)}"
-                               f" -o{shlex.quote(str(output))}"]
+                    extract = seven_zip_tar_pipeline(reader["binary"], threads, archive, output)
                 elif reader["mode"] == "sevenz-rust2":
                     extract = [reader["binary"], str(archive), str(output), str(reader["threads"] or "auto")]
                 elif reader["mode"] == "native-content-only":
