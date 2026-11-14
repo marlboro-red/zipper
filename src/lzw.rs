@@ -112,6 +112,11 @@ impl<R: BufRead> Unlzw<R> {
         }
         self.block_mode = header[2] & BLOCK_MODE != 0;
         self.max_bits = max_bits;
+        // EXTERNAL(ncompress, gzip unlzw): a 9-bit stream reads 10-bit codes once its table is full, so it can name code 512,
+        // which is never defined and reads as two zero bytes from the zeroed prefix and suffix tables.
+        if max_bits == SMALLEST_MAX_BITS {
+            self.table[1 << SMALLEST_MAX_BITS] = Entry::new(0, 0, 2).0;
+        }
         self.reset_table();
         self.started = true;
         Ok(())
@@ -205,8 +210,15 @@ impl<R: BufRead> Unlzw<R> {
                     "compress stream names a code it has not defined",
                 ));
             }
-            self.define(previous, self.first_byte);
-            self.first_byte = self.write(code);
+            if self.free < 1 << self.max_bits {
+                self.define(previous, self.first_byte);
+                self.first_byte = self.write(code);
+            } else {
+                let last = self.first_byte;
+                self.first_byte = self.write(previous);
+                self.pending[self.filled] = last;
+                self.filled += 1;
+            }
         } else {
             self.first_byte = self.write(code);
             if self.free < 1 << self.max_bits {
@@ -494,6 +506,66 @@ mod tests {
         fn consume(&mut self, count: usize) {
             self.data = &self.data[count..];
             self.interrupt_at = self.interrupt_at.saturating_sub(count);
+        }
+    }
+
+    fn pack_codes(flags: u8, codes: &[(u32, u32)]) -> Vec<u8> {
+        let mut out = vec![0x1F, 0x9D, flags];
+        let mut group: Vec<u32> = Vec::new();
+        let mut width = INITIAL_BITS;
+        let flush = |group: &mut Vec<u32>, width: u32, padded: bool, out: &mut Vec<u8>| {
+            let mut packed = vec![0u8; width as usize];
+            for (index, code) in group.iter().enumerate() {
+                for bit in 0..width {
+                    let at = index as u32 * width + bit;
+                    packed[(at / 8) as usize] |= ((code >> bit & 1) as u8) << (at % 8);
+                }
+            }
+            let used = if padded {
+                packed.len()
+            } else {
+                (group.len() as u32 * width).div_ceil(8) as usize
+            };
+            out.extend_from_slice(&packed[..used]);
+            group.clear();
+        };
+        for &(code, bits) in codes {
+            if bits != width && !group.is_empty() {
+                flush(&mut group, width, true, &mut out);
+            }
+            width = bits;
+            group.push(code);
+            if group.len() == 8 {
+                flush(&mut group, width, true, &mut out);
+            }
+        }
+        flush(&mut group, width, false, &mut out);
+        out
+    }
+
+    #[test]
+    fn a_full_9_bit_table_defines_nothing_for_the_next_free_code() {
+        for flags in [0x09, 0x89] {
+            let first_free = 256 + u32::from(flags & BLOCK_MODE != 0);
+            let chain: Vec<(u32, u32)> = std::iter::once((97, 9))
+                .chain((first_free..512).map(|code| (code, 9)))
+                .collect();
+            for tail in [
+                &[512, 513][..],
+                &[512, 512],
+                &[512, 98, 512],
+                &[512, 512, 512],
+                &[512, 300],
+            ] {
+                let mut codes = chain.clone();
+                codes.extend(tail.iter().map(|&code| (code, 10)));
+                let stream = pack_codes(flags, &codes);
+                assert_eq!(
+                    decode(&stream).ok(),
+                    reference(&stream),
+                    "flags {flags:02x}, tail {tail:?}"
+                );
+            }
         }
     }
 
