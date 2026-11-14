@@ -90,15 +90,17 @@ The smoke test in `benchmarks/decoders/decode-bench/tests/smoke.rs` runs every d
 
 Each decoder ran on Silesia and on the dependencies corpus, on the M2 Max and on hosted x86-64 Linux. On 14 November 2026 the user decided that the best alternative is the fastest of the pure-Rust crates and the crates that wrap a C library. A decoder becomes a crate only when it leads that one with ranges apart on both machines and both corpora.
 
-| Decoder | Verdict | Against the best pure-Rust crate | Against the best crate that wraps C |
-| --- | --- | --- | --- |
-| [Zstandard](../../benchmarks/decoders/zstandard/README.md) | Not ready yet, see [M35](m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) | 0.292 to 0.447 times `ruzstd`'s time, ranges apart in all four runs | Ahead of libzstd on the M2 Max, behind it on Linux at 1.342 and 1.343, ranges apart |
-| [Deflate and gzip](../../benchmarks/decoders/deflate-and-gzip/README.md) | Stays inside Zipper | 0.678 to 0.721 times `zlib-rs`'s time on the M2 Max, a tie on Linux | Behind libdeflate on Linux at 1.229 to 1.328, tied or behind on the M2 Max |
-| [LZMA and xz](../../benchmarks/decoders/lzma-and-xz/README.md) | Not ready yet, see [M35](m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) | xz at 0.615 to 0.749 and LZMA at 0.817 to 0.894 times `lzma-rust2`'s time, ranges apart in all four runs | Ahead of liblzma on the M2 Max, behind it on Linux at 1.089 to 1.199, ranges apart |
-| [BZip2](../../benchmarks/decoders/bzip2/README.md) | Becomes a crate | 0.609 to 0.701 times `libbz2-rs-sys`'s time, ranges apart in all four runs | 0.634 to 0.723 times libbzip2's time, ranges apart in all four runs |
-| [XPRESS](../../benchmarks/decoders/xpress/README.md) | Becomes a crate | 0.279 to 0.330 times `xpress-huffman`'s time, ranges apart in all four runs | No such crate reads XPRESS |
+| Decoder | Verdict | Against the best pure-Rust crate | Against the best crate that wraps C | Windows |
+| --- | --- | --- | --- | --- |
+| [Zstandard](../../benchmarks/decoders/zstandard/README.md) | Not ready yet, see [M35](m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) | 0.292 to 0.447 times `ruzstd`'s time, ranges apart in all four runs | Ahead of libzstd on the M2 Max, behind it on Linux at 1.342 and 1.343, ranges apart | Overlaps. Level with libzstd on both corpora, at 0.971 and 0.980 |
+| [Deflate and gzip](../../benchmarks/decoders/deflate-and-gzip/README.md) | Stays inside Zipper | 0.678 to 0.721 times `zlib-rs`'s time on the M2 Max, a tie on Linux | Behind libdeflate on Linux at 1.229 to 1.328, tied or behind on the M2 Max | Confirms. A tie with `zlib-rs`, behind libdeflate at 1.147 to 1.286 |
+| [LZMA and xz](../../benchmarks/decoders/lzma-and-xz/README.md) | Not ready yet, see [M35](m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) | xz at 0.615 to 0.749 and LZMA at 0.817 to 0.894 times `lzma-rust2`'s time, ranges apart in all four runs | Ahead of liblzma on the M2 Max, behind it on Linux at 1.089 to 1.199, ranges apart | Reverses the Linux gap. Ahead of liblzma at 0.832 to 0.886, ranges apart |
+| [BZip2](../../benchmarks/decoders/bzip2/README.md) | Becomes a crate | 0.609 to 0.701 times `libbz2-rs-sys`'s time, ranges apart in all four runs | 0.634 to 0.723 times libbzip2's time, ranges apart in all four runs | Confirms. 0.644 to 0.717 against both, ranges apart |
+| [XPRESS](../../benchmarks/decoders/xpress/README.md) | Becomes a crate | 0.279 to 0.330 times `xpress-huffman`'s time, ranges apart in all four runs | No such crate reads XPRESS | Confirms the decode lead, at 0.332 and 0.317. No WIM extraction row |
 
-Each ratio is Zipper's median decode time over the other's, at one thread, across the four runs. The records give each run's range, the extraction rows and the limits.
+Each ratio is Zipper's median decode time over the other's, at one thread, across the four runs. The Windows column comes from [M34](m34-decoder-cases-on-windows.md), on a Windows 11 desktop, AMD Ryzen 5 5600X, 6 cores and 12 threads, where both corpora ran too. The records give each run's range, the extraction rows and the limits.
+
+The user's rule still holds. Both kinds of crate count, and a lead must hold on every operating system measured. Windows changes no verdict. It shows Zipper level with libzstd and ahead of liblzma, where Linux shows both behind. The C libraries were built by MSVC on Windows and by GCC on Linux, so the Linux gap may belong to the compiler or the machine, and M35 checks how the C side was compiled.
 
 - M23 does not start yet. LZMA's verdict is not ready yet, and M31 made a crate verdict the condition for M23.
 - On 14 November 2026 the user moved Zstandard and LZMA from "stays inside Zipper" to "not ready yet". Both are the fastest pure-Rust decoders in every run and lead their C libraries on the M2 Max. [M35](m35-zstandard-and-lzma-at-c-speed-on-x86-64.md) works on the Linux gap.

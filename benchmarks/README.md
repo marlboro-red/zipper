@@ -110,7 +110,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 ## Release cases for each decoder
 
-These records answer [M31](../docs/roadmap/m31-a-release-case-for-each-decoder.md). Each compares one of Zipper's decoders with the Rust crates and C libraries a program can use, on Silesia and on the dependencies corpus, on an Apple M2 Max and on hosted x86-64 Linux.
+These records answer [M31](../docs/roadmap/m31-a-release-case-for-each-decoder.md). Each compares one of Zipper's decoders with the Rust crates and C libraries a program can use, on Silesia and on the dependencies corpus. The machines are an Apple M2 Max, hosted x86-64 Linux and a Windows 11 desktop, AMD Ryzen 5 5600X, 6 cores and 12 threads.
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |

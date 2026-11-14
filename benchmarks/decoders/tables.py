@@ -16,8 +16,16 @@ RUNS = [
         ["m31-decoders-m2-max.json", "m31-lzma-decode-m2-max.json", "m31-wim-m2-max-silesia.json"],
     ),
     ("Silesia on hosted Linux", ["m31-decoders-linux-x86_64-silesia.json"]),
+    (
+        "Silesia on the Windows desktop",
+        ["m34-decode-windows-silesia.json", "m34-extract-windows-silesia.json"],
+    ),
     ("Dependencies on the Apple M2 Max", ["m31-decoders-m2-max-dependencies.json"]),
     ("Dependencies on hosted Linux", ["m31-decoders-linux-x86_64-dependencies.json"]),
+    (
+        "Dependencies on the Windows desktop",
+        ["m34-decode-windows-dependencies.json", "m34-extract-windows-dependencies.json"],
+    ),
 ]
 FIRST_LINUX_SILESIA = ("Silesia on hosted Linux, first run", ["m31-decoders-linux-x86_64.json"])
 SUMMARY_RUNS = RUNS[:2] + [FIRST_LINUX_SILESIA] + RUNS[2:]
@@ -74,8 +82,10 @@ def peak(row):
 
 def cpu(row):
     if "median_cpu_seconds" in row:
-        return row["median_cpu_seconds"]
-    return statistics.median(sample["cpu_seconds"] for sample in row["samples"])
+        seconds = row["median_cpu_seconds"]
+    else:
+        seconds = statistics.median(sample["cpu_seconds"] for sample in row["samples"])
+    return "not measured" if seconds is None else f"{seconds:.3f}"
 
 
 def decode_table(codec, rows):
@@ -88,7 +98,7 @@ def decode_table(codec, rows):
         versions = ", ".join(f"`{crate}` {version}" for crate, version in row["crates"].items())
         compared, verdict = ("", "") if name in OWN else ratio_text(own, row)
         print(
-            f"| `{name}` | {versions} | {wall(row)} | {cpu(row):.3f} | {peak(row):.1f} "
+            f"| `{name}` | {versions} | {wall(row)} | {cpu(row)} | {peak(row):.1f} "
             f"| {compared} | {verdict} |"
         )
     print()
@@ -108,10 +118,17 @@ def extract_table(codec, run):
         threads = run["readers"][name]["threads"] or "all"
         compared, verdict = ("", "") if name in OWN else ratio_text(own, row)
         print(
-            f"| `{name}` | {threads} | {wall(row)} | {cpu(row):.3f} | {peak(row):.1f} "
+            f"| `{name}` | {threads} | {wall(row)} | {cpu(row)} | {peak(row):.1f} "
             f"| {compared} | {verdict} |"
         )
     print()
+
+
+def load_text(run):
+    load = run["load_average_start"]
+    if load is None:
+        return "no load average on this system"
+    return f"one-minute load {load[0]:.2f} at the start"
 
 
 def describe(meta, codecs):
@@ -124,7 +141,7 @@ def describe(meta, codecs):
         print(
             f"- `{name}`, revision `{run['revision']['commit'][:8]}`, {run['machine']['cpu']} with "
             f"{run['machine']['cpu_count']} cores, {rounds}, "
-            f"one-minute load {run['load_average_start'][0]:.2f} at the start, busy processes at "
+            f"{load_text(run)}, busy processes at "
             f"the start {len(run['busy_processes'])}"
         )
     print()

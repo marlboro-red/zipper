@@ -8,6 +8,7 @@ Scope:
 
 - Profile each decoder on x86-64 Linux against its C library, outside timed runs, before any change. Name the limiter for each, such as the bit reader, the literal and match loops, the Huffman or FSE tables, the match copy or the window. A hosted runner or any x86-64 Linux machine will do, with `perf` where it runs.
 - Compare code generation on x86-64 with the M2 Max, where Zipper leads, to find what differs.
+- Check how the C side was compiled on each machine. [M34](m34-decoder-cases-on-windows.md) found Zipper level with libzstd and ahead of liblzma on Windows, where MSVC built them, so the Linux gap may belong to GCC's build or to the machine.
 - Change only in safe Rust, as AGENTS.md and the pure-Rust rule require, with no assembly and no C. Keep every Kani proof, hostile test and differential test, and the M2 Max lead.
 - Measure each kept change with the M31 driver, `scripts/m31_decoders.py`, on both corpora and both machines.
 

@@ -1,6 +1,6 @@
 # Zipper's Deflate and gzip decoder against zlib-rs, miniz_oxide and libdeflate
 
-Stays inside Zipper. Zipper decodes in 0.68 to 0.72 times `zlib-rs`'s time on an Apple M2 Max, but on x86-64 Linux it ties, leads or trails `zlib-rs` by a few percent, depending on the stream and corpus. libdeflate leads it on Linux on both corpora.
+Stays inside Zipper. Zipper decodes in 0.68 to 0.72 times `zlib-rs`'s time on an Apple M2 Max, but on x86-64 Linux it ties, leads or trails `zlib-rs` by a few percent, depending on the stream and corpus. libdeflate leads it on Linux and Windows on both corpora.
 
 ## Question
 
@@ -8,10 +8,10 @@ Does Zipper's Deflate decoder lead `zlib-rs` and `miniz_oxide` in pure Rust and 
 
 ## Setup
 
-- Two corpora, each run on two machines, five runs in all. Every run built with rustc 1.99.1 and no extra `RUSTFLAGS`.
+- Two corpora, each run on three machines. Every run built with rustc 1.99.1 and no extra `RUSTFLAGS`.
   - `silesia.tar` is 211,957,760 bytes with sha256 prefix `1953965768007e93`. It extracts to 211,938,580 bytes of files.
   - `dependencies.tar` is 90,931,200 bytes with sha256 prefix `b8191b36e54aadd5`. It holds the 114 crates that `Cargo.lock` pins, 5,501 files, and extracts to 85,944,317 bytes of files.
-  - Each tar's sha256 and every stream's sha256 match on both machines.
+  - Each tar's sha256 and every stream's sha256 match on the M2 Max and Linux. Silesia matches on Windows too. The Windows `dependencies.tar` has sha256 prefix `18492cd88f9b2021`, with the same 114 crates by sha256, the same 5,501 files and the same 85,944,317 bytes of files.
 - The second machine is an Apple M2 Max with 12 cores and 64 GiB on macOS 27.0.
   - Silesia ran at `49f68e30`, starting at 22:58 UTC on 13 November 2026, and its LZMA decode ran alone at 23:13 UTC.
   - The dependencies ran at `4518a8af`, starting at 01:26 UTC on 14 November 2026.
@@ -21,10 +21,15 @@ Does Zipper's Deflate decoder lead `zlib-rs` and `miniz_oxide` in pure Rust and 
   - Silesia ran at `4518a8af` as run 43539679044 of `m31-decoders.yml`, on an AMD EPYC 9V74. The tables use this run.
   - The dependencies ran at `4518a8af` as run 43539675724, on an AMD EPYC 7763.
   - A first Silesia run at `479b42fd`, run 43533788639 on an AMD EPYC 9V45, found no `7zz`. The comparison table lists its decode rows too.
+- The Windows machine is a Windows 11 desktop, AMD Ryzen 5 5600X, 6 cores and 12 threads, which the user chose over a hosted runner. Its C libraries were built by the MSVC Build Tools.
+  - The decode rows ran at `5e6dd97b`, starting at 02:57 UTC on 14 November 2026.
+  - The extraction rows ran the same binaries with the driver at `3b324db6`, which pipes 7-Zip's output correctly on Windows. They started at 03:45 UTC.
+  - bsdtar there is the `tar.exe` that Windows ships, libarchive 3.8.9, and 7-Zip is 26.05 x64.
+  - Its paths are written as `<scratch>` and `<home>` in the JSON.
 - From `49f68e30` to `4518a8af` only the driver, `scripts/compare_zip_readers.py`, the bench's smoke tests, the workflow and Markdown pages changed. Every run measured the same decoders and the same bench code.
 - `decode` ran each decoder in its own process for each sample. The process times only the decode call, into an output buffer written beforehand, and then checks every byte against the tar. Each run took 11 rounds after one warmup, in an order seeded with 20261114. The peak RSS is the whole process's, so it includes the input and the output buffer.
 - `extract` ran `scripts/compare_zip_readers.py`, 7 runs after one warmup, with Zipper at one thread and at all threads, and bsdtar and 7-Zip 26.06 at one thread. Every run checked the extracted bytes, sizes and tree members.
-- On 14 November 2026 the user decided that the best alternative is the fastest of the pure-Rust crates and the crates that wrap a C library. A decoder becomes a crate only when it leads that one with ranges apart on both machines and both corpora.
+- On 14 November 2026 the user decided that the best alternative is the fastest of the pure-Rust crates and the crates that wrap a C library. A decoder becomes a crate only when it leads that one with ranges apart on every operating system measured and both corpora.
 - The ratio column is Zipper's median time over the other row's. Its range runs from Zipper's fastest over the other's slowest to Zipper's slowest over the other's fastest. "Ranges overlap" means no established difference. A row is compared only with rows of its own run.
 - The streams are raw Deflate and gzip, written by `flate2` with `zlib-rs` at level 6. The Silesia streams are 68,915,303 and 68,915,321 bytes, and the dependencies streams 16,319,060 and 16,319,078 bytes.
 - The gzip extraction row covers Deflate, since a raw Deflate stream has no container to extract.
@@ -36,6 +41,8 @@ Does Zipper's Deflate decoder lead `zlib-rs` and `miniz_oxide` in pure Rust and 
 - Against `miniz_oxide`, Zipper takes 0.361 to 0.446 times its time on the M2 Max and 0.629 to 0.666 times on Linux, all with ranges apart.
 - Against libdeflate through `libdeflater` 1.26.1, the ranges overlap on Silesia on the M2 Max, and Zipper trails at 1.081 and 1.085 on the dependencies there. On Linux it trails at 1.229 to 1.328 times.
 - One-thread `.tar.gz` extraction leads bsdtar and 7-Zip in all four runs, with ranges apart.
+- On the Windows desktop the `zlib-rs` ratios are 1.003 and 0.973 on Silesia raw Deflate and gzip, and 1.054 and 0.994 on the dependencies. One range has Zipper ahead, one behind and two overlap, so they tie there too. Zipper trails libdeflate at 1.147 to 1.286 times and leads `miniz_oxide` at 0.539 to 0.582.
+- One-thread `.tar.gz` extraction on Windows leads bsdtar and 7-Zip on both corpora, with ranges apart.
 
 Every decode comparison, Zipper's median time over the other decoder's with its range, in each run:
 
@@ -50,12 +57,18 @@ Every decode comparison, Zipper's median time over the other decoder's with its 
 | `deflate` | `zlib-rs` | Silesia on hosted Linux, first run | 1.015 (0.952 to 1.056) | ranges overlap |
 | `deflate` | `miniz_oxide` | Silesia on hosted Linux, first run | 0.646 (0.610 to 0.674) | Zipper ahead |
 | `deflate` | `libdeflate` | Silesia on hosted Linux, first run | 1.219 (1.119 to 1.260) | Zipper behind |
+| `deflate` | `zlib-rs` | Silesia on the Windows desktop | 1.003 (0.996 to 1.010) | ranges overlap |
+| `deflate` | `miniz_oxide` | Silesia on the Windows desktop | 0.578 (0.573 to 0.591) | Zipper ahead |
+| `deflate` | `libdeflate` | Silesia on the Windows desktop | 1.194 (1.178 to 1.202) | Zipper behind |
 | `deflate` | `zlib-rs` | Dependencies on the Apple M2 Max | 0.690 (0.676 to 0.706) | Zipper ahead |
 | `deflate` | `miniz_oxide` | Dependencies on the Apple M2 Max | 0.361 (0.351 to 0.369) | Zipper ahead |
 | `deflate` | `libdeflate` | Dependencies on the Apple M2 Max | 1.081 (1.055 to 1.106) | Zipper behind |
 | `deflate` | `zlib-rs` | Dependencies on hosted Linux | 1.031 (1.026 to 1.044) | Zipper behind |
 | `deflate` | `miniz_oxide` | Dependencies on hosted Linux | 0.629 (0.615 to 0.637) | Zipper ahead |
 | `deflate` | `libdeflate` | Dependencies on hosted Linux | 1.328 (1.312 to 1.345) | Zipper behind |
+| `deflate` | `zlib-rs` | Dependencies on the Windows desktop | 1.054 (1.043 to 1.067) | Zipper behind |
+| `deflate` | `miniz_oxide` | Dependencies on the Windows desktop | 0.539 (0.531 to 0.546) | Zipper ahead |
+| `deflate` | `libdeflate` | Dependencies on the Windows desktop | 1.286 (1.266 to 1.300) | Zipper behind |
 | `gzip` | `zlib-rs` | Silesia on the Apple M2 Max | 0.721 (0.667 to 0.738) | Zipper ahead |
 | `gzip` | `miniz_oxide` | Silesia on the Apple M2 Max | 0.446 (0.413 to 0.461) | Zipper ahead |
 | `gzip` | `libdeflate` | Silesia on the Apple M2 Max | 1.078 (0.817 to 1.123) | ranges overlap |
@@ -65,12 +78,18 @@ Every decode comparison, Zipper's median time over the other decoder's with its 
 | `gzip` | `zlib-rs` | Silesia on hosted Linux, first run | 0.950 (0.898 to 1.019) | ranges overlap |
 | `gzip` | `miniz_oxide` | Silesia on hosted Linux, first run | 0.643 (0.614 to 0.678) | Zipper ahead |
 | `gzip` | `libdeflate` | Silesia on hosted Linux, first run | 1.163 (1.113 to 1.241) | Zipper behind |
+| `gzip` | `zlib-rs` | Silesia on the Windows desktop | 0.973 (0.963 to 0.976) | Zipper ahead |
+| `gzip` | `miniz_oxide` | Silesia on the Windows desktop | 0.582 (0.568 to 0.594) | Zipper ahead |
+| `gzip` | `libdeflate` | Silesia on the Windows desktop | 1.147 (1.138 to 1.149) | Zipper behind |
 | `gzip` | `zlib-rs` | Dependencies on the Apple M2 Max | 0.678 (0.662 to 0.702) | Zipper ahead |
 | `gzip` | `miniz_oxide` | Dependencies on the Apple M2 Max | 0.366 (0.356 to 0.377) | Zipper ahead |
 | `gzip` | `libdeflate` | Dependencies on the Apple M2 Max | 1.085 (1.055 to 1.123) | Zipper behind |
 | `gzip` | `zlib-rs` | Dependencies on hosted Linux | 0.982 (0.958 to 1.003) | ranges overlap |
 | `gzip` | `miniz_oxide` | Dependencies on hosted Linux | 0.633 (0.619 to 0.646) | Zipper ahead |
 | `gzip` | `libdeflate` | Dependencies on hosted Linux | 1.282 (1.162 to 1.311) | Zipper behind |
+| `gzip` | `zlib-rs` | Dependencies on the Windows desktop | 0.994 (0.904 to 1.032) | ranges overlap |
+| `gzip` | `miniz_oxide` | Dependencies on the Windows desktop | 0.543 (0.536 to 0.564) | Zipper ahead |
+| `gzip` | `libdeflate` | Dependencies on the Windows desktop | 1.188 (1.170 to 1.236) | Zipper behind |
 
 ### Silesia on the Apple M2 Max
 
@@ -134,6 +153,38 @@ Extraction of the `gzip` row, 68,915,321 bytes into 211,938,580, median wall ms 
 | `bsdtar` | 1 | 557.2 (556.8 to 558.0) | 0.550 | 4.4 | 0.480 (0.471 to 0.487) | Zipper ahead |
 | `7zip` | 1 | 795.9 (778.3 to 813.5) | 0.870 | 6.2 | 0.336 (0.323 to 0.349) | Zipper ahead |
 
+### Silesia on the Windows desktop
+
+- `m34-decode-windows-silesia.json`, revision `5e6dd97b`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
+- `m34-extract-windows-silesia.json`, revision `3b324db6`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
+
+Decode of `deflate`, median wall ms of the decode call with its range, CPU s and peak RSS:
+
+| Decoder | Version | Wall ms | CPU s | Peak MiB | Zipper's time over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | `zipper` 0.1.0-alpha.3 | 207.3 (206.9 to 208.3) | not measured | 273.8 |  |  |
+| `zlib-rs` | `zlib-rs` 0.6.8 | 206.8 (206.3 to 207.6) | not measured | 273.9 | 1.003 (0.996 to 1.010) | ranges overlap |
+| `miniz_oxide` | `miniz_oxide` 0.9.1 | 358.9 (352.6 to 361.0) | not measured | 273.8 | 0.578 (0.573 to 0.591) | Zipper ahead |
+| `libdeflate` | `libdeflater` 1.26.1, `libdeflate-sys` 1.26.1 | 173.6 (173.3 to 175.6) | not measured | 273.8 | 1.194 (1.178 to 1.202) | Zipper behind |
+
+Decode of `gzip`, median wall ms of the decode call with its range, CPU s and peak RSS:
+
+| Decoder | Version | Wall ms | CPU s | Peak MiB | Zipper's time over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | `zipper` 0.1.0-alpha.3 | 213.6 (212.6 to 213.9) | not measured | 273.9 |  |  |
+| `zlib-rs` | `zlib-rs` 0.6.8 | 219.5 (219.1 to 220.7) | not measured | 273.9 | 0.973 (0.963 to 0.976) | Zipper ahead |
+| `miniz_oxide` | `miniz_oxide` 0.9.1, `crc32fast` 1.5.3 | 367.2 (360.0 to 374.5) | not measured | 273.8 | 0.582 (0.568 to 0.594) | Zipper ahead |
+| `libdeflate` | `libdeflater` 1.26.1, `libdeflate-sys` 1.26.1 | 186.3 (186.1 to 186.8) | not measured | 273.8 | 1.147 (1.138 to 1.149) | Zipper behind |
+
+Extraction of the `gzip` row, 68,915,321 bytes into 211,938,580, median wall ms with its range, CPU s and peak RSS:
+
+| Reader | Threads | Wall ms | CPU s | Peak MiB | Zipper one thread over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | 1 | 228.8 (227.8 to 232.7) | 0.266 | 14.7 |  |  |
+| `zipper-all-threads` | all | 228.8 (228.4 to 232.3) | 0.281 | 12.7 |  |  |
+| `bsdtar` | 1 | 336.6 (334.6 to 337.9) | 0.328 | 6.1 | 0.680 (0.674 to 0.695) | Zipper ahead |
+| `7zip` | 1 | 863.2 (857.7 to 868.1) | 0.016 | 7.7 | 0.265 (0.262 to 0.271) | Zipper ahead |
+
 ### Dependencies on the Apple M2 Max
 
 - `m31-decoders-m2-max-dependencies.json`, revision `4518a8af`, Apple M2 Max with 12 cores, 11 decode rounds, one-minute load 3.61 at the start, busy processes at the start 2
@@ -196,6 +247,38 @@ Extraction of the `gzip` row, 16,319,078 bytes into 85,944,317, median wall ms w
 | `bsdtar` | 1 | 530.2 (527.0 to 538.0) | 0.520 | 4.7 | 0.391 (0.378 to 0.434) | Zipper ahead |
 | `7zip` | 1 | 447.3 (435.5 to 454.6) | 0.630 | 6.3 | 0.463 (0.447 to 0.525) | Zipper ahead |
 
+### Dependencies on the Windows desktop
+
+- `m34-decode-windows-dependencies.json`, revision `5e6dd97b`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, 11 decode rounds, no load average on this system, busy processes at the start 0
+- `m34-extract-windows-dependencies.json`, revision `3b324db6`, AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD with 12 cores, extraction only, no load average on this system, busy processes at the start 0
+
+Decode of `deflate`, median wall ms of the decode call with its range, CPU s and peak RSS:
+
+| Decoder | Version | Wall ms | CPU s | Peak MiB | Zipper's time over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | `zipper` 0.1.0-alpha.3 | 57.2 (56.8 to 57.7) | not measured | 108.3 |  |  |
+| `zlib-rs` | `zlib-rs` 0.6.8 | 54.3 (54.0 to 54.5) | not measured | 108.3 | 1.054 (1.043 to 1.067) | Zipper behind |
+| `miniz_oxide` | `miniz_oxide` 0.9.1 | 106.2 (105.6 to 107.1) | not measured | 108.2 | 0.539 (0.531 to 0.546) | Zipper ahead |
+| `libdeflate` | `libdeflater` 1.26.1, `libdeflate-sys` 1.26.1 | 44.5 (44.4 to 44.9) | not measured | 108.2 | 1.286 (1.266 to 1.300) | Zipper behind |
+
+Decode of `gzip`, median wall ms of the decode call with its range, CPU s and peak RSS:
+
+| Decoder | Version | Wall ms | CPU s | Peak MiB | Zipper's time over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | `zipper` 0.1.0-alpha.3 | 59.6 (59.3 to 61.6) | not measured | 108.3 |  |  |
+| `zlib-rs` | `zlib-rs` 0.6.8 | 60.0 (59.7 to 65.6) | not measured | 108.3 | 0.994 (0.904 to 1.032) | ranges overlap |
+| `miniz_oxide` | `miniz_oxide` 0.9.1, `crc32fast` 1.5.3 | 109.9 (109.3 to 110.6) | not measured | 108.3 | 0.543 (0.536 to 0.564) | Zipper ahead |
+| `libdeflate` | `libdeflater` 1.26.1, `libdeflate-sys` 1.26.1 | 50.2 (49.8 to 50.7) | not measured | 108.2 | 1.188 (1.170 to 1.236) | Zipper behind |
+
+Extraction of the `gzip` row, 16,315,330 bytes into 85,944,317, median wall ms with its range, CPU s and peak RSS:
+
+| Reader | Threads | Wall ms | CPU s | Peak MiB | Zipper one thread over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | 1 | 4224.1 (4195.4 to 4251.8) | 3.344 | 12.3 |  |  |
+| `zipper-all-threads` | all | 4159.7 (4126.3 to 4236.0) | 3.375 | 11.5 |  |  |
+| `bsdtar` | 1 | 4532.3 (4492.7 to 4560.6) | 3.766 | 6.2 | 0.932 (0.920 to 0.946) | Zipper ahead |
+| `7zip` | 1 | 6764.4 (6734.1 to 6890.2) | 0.016 | 7.7 | 0.624 (0.609 to 0.631) | Zipper ahead |
+
 ## Decision
 
 The verdict is that it stays inside Zipper.
@@ -203,6 +286,7 @@ The verdict is that it stays inside Zipper.
 - libdeflate through `libdeflater` is the best alternative, and Zipper trails it on Linux on both corpora and on the M2 Max dependencies.
 - The lead over `zlib-rs`, the best pure-Rust decoder, holds on the M2 Max only. On x86-64 Linux the two tie.
 - The decoder keeps its place in Zipper, where `.tar.gz` extraction leads bsdtar and 7-Zip on both machines and both corpora.
+- Windows confirms the verdict. Zipper ties `zlib-rs` and trails libdeflate there, as on Linux.
 
 ## Limits
 
@@ -213,6 +297,11 @@ The verdict is that it stays inside Zipper.
 - The M2 Max WIM row ran on Silesia only, in its own run at `5e6dd97b` with wimlib 1.14.5. The dependencies have no WIM row on the M2 Max.
 - No run has a `.tar.lzma` extraction row. Zipper writes the `.tar.lzma` out as one file, the `.tar`, where bsdtar reads the tar inside, so the trees differ.
 - The three Linux runs each got a different AMD EPYC, so Linux numbers compare only within one run. Linux CPU times for child processes come in steps of 10 ms.
+- Windows has no WIM extraction row, since `wimlib-imagex` is not installed there.
+- The Windows `dependencies.tar` differs in sha256 from the other machines, though it holds the same crates, files and file bytes. Its streams differ by a few kilobytes.
+- On Windows the decode bench reports no CPU time for the decode call, and the driver has no load average. Its 7-Zip rows report the CPU time and peak RSS of the process that pipes 7-Zip's output, not of 7-Zip.
+- On Windows the dependencies take 4.2 to 7.5 s to extract with every reader, so file creation on NTFS dominates those rows, not the decoder.
+- The C libraries were built by MSVC on Windows and by the system C compiler on the M2 Max and Linux, so a gap to a C library can belong to its compiler.
 - Each machine ran each corpus once, so session to session drift is not measured.
 - No profile was taken. The limiter named is decode CPU, read from CPU time matching wall time at one thread.
 
