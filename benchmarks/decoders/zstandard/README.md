@@ -1,6 +1,6 @@
 # Zipper's Zstandard decoder against ruzstd and libzstd
 
-Becomes a crate. Zipper decodes in 0.29 to 0.45 times `ruzstd`'s time on both corpora on an Apple M2 Max and on x86-64 Linux, with ranges apart in every run. It trails libzstd on Linux by 1.34 times on both corpora, so no lead over libzstd is claimed.
+Stays inside Zipper. Zipper trails libzstd on x86-64 Linux by 1.34 times on both corpora, with ranges apart, though it leads libzstd on an Apple M2 Max. It decodes in 0.29 to 0.45 times `ruzstd`'s time in every run.
 
 ## Question
 
@@ -15,7 +15,8 @@ Does Zipper's Zstandard decoder lead `ruzstd` in pure Rust and libzstd through t
 - The second machine is an Apple M2 Max with 12 cores and 64 GiB on macOS 27.0.
   - Silesia ran at `49f68e30`, starting at 22:58 UTC on 13 November 2026, and its LZMA decode ran alone at 23:13 UTC.
   - The dependencies ran at `4518a8af`, starting at 01:26 UTC on 14 November 2026.
-  - Its binaries ran from `<target>`, which stands for that machine's build folder in the JSON.
+  - The Silesia WIM extraction ran alone at `5e6dd97b`, at 02:33 UTC on 14 November 2026, with no busy process.
+  - Its binaries ran from `<target>`, which stands for that machine's build folder in the JSON, and its checkout is `<checkout>`.
 - The Linux runs are hosted GitHub Actions runners with 4 cores and 16 GB on Linux 7.0 for Azure. Each run got a different processor.
   - Silesia ran at `4518a8af` as run 43539679044 of `m31-decoders.yml`, on an AMD EPYC 9V74. The tables use this run.
   - The dependencies ran at `4518a8af` as run 43539675724, on an AMD EPYC 7763.
@@ -23,6 +24,7 @@ Does Zipper's Zstandard decoder lead `ruzstd` in pure Rust and libzstd through t
 - From `49f68e30` to `4518a8af` only the driver, `scripts/compare_zip_readers.py`, the bench's smoke tests, the workflow and Markdown pages changed. Every run measured the same decoders and the same bench code.
 - `decode` ran each decoder in its own process for each sample. The process times only the decode call, into an output buffer written beforehand, and then checks every byte against the tar. Each run took 11 rounds after one warmup, in an order seeded with 20261114. The peak RSS is the whole process's, so it includes the input and the output buffer.
 - `extract` ran `scripts/compare_zip_readers.py`, 7 runs after one warmup, with Zipper at one thread and at all threads, and bsdtar and 7-Zip 26.06 at one thread. Every run checked the extracted bytes, sizes and tree members.
+- On 14 November 2026 the user decided that the best alternative is the fastest of the pure-Rust crates and the crates that wrap a C library. A decoder becomes a crate only when it leads that one with ranges apart on both machines and both corpora.
 - The ratio column is Zipper's median time over the other row's. Its range runs from Zipper's fastest over the other's slowest to Zipper's slowest over the other's fastest. "Ranges overlap" means no established difference. A row is compared only with rows of its own run.
 - The streams are one frame each with its checksum, written by libzstd at level 3. `silesia.tar.zst` is 66,497,280 bytes and `dependencies.tar.zst` 12,598,289 bytes.
 
@@ -133,11 +135,11 @@ Extraction of the `zstd` row, 12,598,289 bytes into 85,944,317, median wall ms w
 
 ## Decision
 
-The verdict is that it becomes a crate.
+The verdict is that it stays inside Zipper.
 
-- The lead over `ruzstd` holds on both machines and both corpora, with ranges apart in every run.
-- No lead over libzstd is claimed. Zipper leads it on the M2 Max and trails it on x86-64 Linux on both corpora.
-- A crate's claim is a pure-Rust Zstandard decoder that takes 0.29 to 0.45 times `ruzstd`'s time on these runs.
+- libzstd through the `zstd` crate is the best alternative, and Zipper trails it on x86-64 Linux on both corpora with ranges apart.
+- The lead over `ruzstd`, the best pure-Rust decoder, holds in every run, but the rule counts the C-wrapping crate too.
+- No profile on x86-64 Linux shows where the gap of 1.34 times comes from, so this record does not call it closable.
 
 ## Limits
 
@@ -145,7 +147,7 @@ The verdict is that it becomes a crate.
   - A `rustc` process used 98 to 100% of one core at the start of the Silesia decode and of each of its four extraction rows. The Silesia LZMA decode ran in its own run with no busy process.
   - `corespotlightd` used 153% and `fseventsd` 43% at the start of the dependencies decode, and `fseventsd` 47 to 48% at the start of three of its extraction rows.
 - Two corpora, Silesia and the dependencies. Neither holds many small compressed frames or streams.
-- The M2 Max has no WIM extraction row, because `wimlib-imagex` is not installed there to write the WIM.
+- The M2 Max WIM row ran on Silesia only, in its own run at `5e6dd97b` with wimlib 1.14.5. The dependencies have no WIM row on the M2 Max.
 - No run has a `.tar.lzma` extraction row. Zipper writes the `.tar.lzma` out as one file, the `.tar`, where bsdtar reads the tar inside, so the trees differ.
 - The three Linux runs each got a different AMD EPYC, so Linux numbers compare only within one run. Linux CPU times for child processes come in steps of 10 ms.
 - Each machine ran each corpus once, so session to session drift is not measured.
@@ -153,7 +155,7 @@ The verdict is that it becomes a crate.
 
 ## Reproduce
 
-The [M31 page](../../../docs/roadmap/m31-a-release-case-for-each-decoder.md#measure) gives the commands for both corpora on both machines. The JSON is in [`data/`](../data) beside these records, with the second machine's build folder written as `<target>` and its home folder as `<home>`. Every number on this page comes from
+The [M31 page](../../../docs/roadmap/m31-a-release-case-for-each-decoder.md#measure) gives the commands for both corpora on both machines. The JSON is in [`data/`](../data) beside these records, with the second machine's build folder written as `<target>`, its checkout as `<checkout>` and its home folder as `<home>`. Every number on this page comes from
 
 ```sh
 python3 benchmarks/decoders/tables.py zstandard

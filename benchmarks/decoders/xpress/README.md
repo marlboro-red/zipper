@@ -1,6 +1,6 @@
 # Zipper's XPRESS decoder against xpress-huffman
 
-Not ready yet, for one missing row. Zipper decodes XPRESS chunks in 0.28 to 0.33 times `xpress-huffman`'s time on both corpora on an Apple M2 Max and on x86-64 Linux, with ranges apart in every run. The M2 Max has no WIM extraction row, which M31's exit check 1 needs.
+Becomes a crate. Zipper decodes XPRESS chunks in 0.28 to 0.33 times `xpress-huffman`'s time on both corpora on an Apple M2 Max and on x86-64 Linux, with ranges apart in every run. No crate wraps a C library for XPRESS. Silesia WIM extraction still takes 1.35 times 7-Zip's time on the M2 Max and 1.30 times on Linux.
 
 ## Question
 
@@ -15,7 +15,8 @@ Does Zipper's XPRESS Huffman decoder lead `xpress-huffman`, the only Rust crate 
 - The second machine is an Apple M2 Max with 12 cores and 64 GiB on macOS 27.0.
   - Silesia ran at `49f68e30`, starting at 22:58 UTC on 13 November 2026, and its LZMA decode ran alone at 23:13 UTC.
   - The dependencies ran at `4518a8af`, starting at 01:26 UTC on 14 November 2026.
-  - Its binaries ran from `<target>`, which stands for that machine's build folder in the JSON.
+  - The Silesia WIM extraction ran alone at `5e6dd97b`, at 02:33 UTC on 14 November 2026, with no busy process.
+  - Its binaries ran from `<target>`, which stands for that machine's build folder in the JSON, and its checkout is `<checkout>`.
 - The Linux runs are hosted GitHub Actions runners with 4 cores and 16 GB on Linux 7.0 for Azure. Each run got a different processor.
   - Silesia ran at `4518a8af` as run 43539679044 of `m31-decoders.yml`, on an AMD EPYC 9V74. The tables use this run.
   - The dependencies ran at `4518a8af` as run 43539675724, on an AMD EPYC 7763.
@@ -23,16 +24,19 @@ Does Zipper's XPRESS Huffman decoder lead `xpress-huffman`, the only Rust crate 
 - From `49f68e30` to `4518a8af` only the driver, `scripts/compare_zip_readers.py`, the bench's smoke tests, the workflow and Markdown pages changed. Every run measured the same decoders and the same bench code.
 - `decode` ran each decoder in its own process for each sample. The process times only the decode call, into an output buffer written beforehand, and then checks every byte against the tar. Each run took 11 rounds after one warmup, in an order seeded with 20261114. The peak RSS is the whole process's, so it includes the input and the output buffer.
 - `extract` ran `scripts/compare_zip_readers.py`, 7 runs after one warmup, with Zipper at one thread and at all threads, and bsdtar and 7-Zip 26.06 at one thread. Every run checked the extracted bytes, sizes and tree members.
+- On 14 November 2026 the user decided that the best alternative is the fastest of the pure-Rust crates and the crates that wrap a C library. A decoder becomes a crate only when it leads that one with ranges apart on both machines and both corpora.
 - The ratio column is Zipper's median time over the other row's. Its range runs from Zipper's fastest over the other's slowest to Zipper's slowest over the other's fastest. "Ranges overlap" means no established difference. A row is compared only with rows of its own run.
 - The streams come from this bench's greedy encoder, written from MS-XCA, in 32 KiB chunks with one code each, as WIM stores them. `silesia.tar.xpress` is 76,787,818 bytes and `dependencies.tar.xpress` 19,402,251 bytes.
 - `xpress-huffman` gets two more zero bytes after each coded chunk, since it stops once its input cursor reaches the end of a chunk.
-- On Linux `wimlib-imagex` wrote each WIM with XPRESS chunks for the extraction row, 74,591,929 bytes for Silesia and 19,023,514 bytes for the dependencies. No C library for XPRESS was measured.
+- `wimlib-imagex` wrote each WIM with XPRESS chunks for the extraction rows. On Linux they are 74,591,929 bytes for Silesia and 19,023,514 bytes for the dependencies. On the M2 Max wimlib 1.14.5 wrote the Silesia WIM, 74,591,891 bytes, in `m31-wim-m2-max-silesia.json`.
+- No crate that wraps a C library reads XPRESS, so `xpress-huffman` is the best alternative.
 
 ## Results
 
 - Against `xpress-huffman`, Zipper takes 0.329 and 0.330 times its time on Silesia and the dependencies on the M2 Max, and 0.296 and 0.279 times on Linux, with ranges apart in every run.
 - `xpress-huffman` peaks at more memory than Zipper in every run, with the same input and output buffers.
-- On Linux the Silesia WIM extracts at one thread in 1.304 times 7-Zip's time (1.299 to 1.310). The dependencies WIM extracts in 0.971 times 7-Zip's time (0.941 to 0.980).
+- The Silesia WIM extracts at one thread in 1.348 times 7-Zip's time on the M2 Max (1.144 to 1.577) and 1.304 times on Linux (1.299 to 1.310). All threads change nothing, at 622.8 against 622.0 ms on the M2 Max.
+- On Linux the dependencies WIM extracts in 0.971 times 7-Zip's time (0.941 to 0.980).
 
 Every decode comparison, Zipper's median time over the other decoder's with its range, in each run:
 
@@ -47,6 +51,7 @@ Every decode comparison, Zipper's median time over the other decoder's with its 
 ### Silesia on the Apple M2 Max
 
 - `m31-decoders-m2-max.json`, revision `49f68e30`, Apple M2 Max with 12 cores, 11 decode rounds, one-minute load 4.70 at the start, busy processes at the start 1
+- `m31-wim-m2-max-silesia.json`, revision `5e6dd97b`, Apple M2 Max with 12 cores, extraction only, one-minute load 2.29 at the start, busy processes at the start 0
 
 Decode of `xpress`, median wall ms of the decode call with its range, CPU s and peak RSS:
 
@@ -55,7 +60,13 @@ Decode of `xpress`, median wall ms of the decode call with its range, CPU s and 
 | `zipper` | `zipper` 0.1.0-alpha.3 | 467.2 (449.2 to 488.8) | 0.467 | 352.9 |  |  |
 | `xpress-huffman` | `xpress-huffman` 0.1.3 | 1419.6 (1385.5 to 1464.6) | 1.420 | 480.6 | 0.329 (0.307 to 0.353) | Zipper ahead |
 
-No extraction row for `xpress` in this run.
+Extraction of the `xpress` row, 74,591,891 bytes into 211,938,580, median wall ms with its range, CPU s and peak RSS:
+
+| Reader | Threads | Wall ms | CPU s | Peak MiB | Zipper one thread over it | Ranges |
+| --- | --- | --- | --- | --- | --- | --- |
+| `zipper` | 1 | 622.0 (603.2 to 696.0) | 0.612 | 3.9 |  |  |
+| `zipper-all-threads` | all | 622.8 (614.6 to 750.4) | 0.614 | 4.2 |  |  |
+| `7zip` | 1 | 461.4 (441.3 to 527.2) | 0.453 | 3.5 | 1.348 (1.144 to 1.577) | Zipper behind |
 
 ### Silesia on hosted Linux
 
@@ -110,11 +121,11 @@ Extraction of the `xpress` row, 19,023,514 bytes into 85,944,317, median wall ms
 
 ## Decision
 
-The verdict is that it is not ready yet.
+The verdict is that it becomes a crate.
 
-- The decode lead over `xpress-huffman` holds on both machines and both corpora, with ranges apart in every run.
-- M31's exit check 1 asks for extraction on both machines, and the M2 Max has no WIM row. That row is the only thing missing.
-- On Linux, extraction of the Silesia WIM trails 7-Zip and that of the dependencies WIM leads it. These rows decode chunks that wimlib wrote, so the case does not rest on the bench's own encoder alone.
+- The decode lead over `xpress-huffman`, the best alternative, holds on both machines and both corpora, with ranges apart in every run.
+- As a finding, Silesia WIM extraction trails 7-Zip on both machines, at 1.348 and 1.304 times its time. The decode bench does not show where that time goes, so the WIM reader around the decoder needs a profile.
+- The extraction rows decode chunks that wimlib wrote, so the case does not rest on the bench's own encoder alone.
 
 ## Limits
 
@@ -122,7 +133,7 @@ The verdict is that it is not ready yet.
   - A `rustc` process used 98 to 100% of one core at the start of the Silesia decode and of each of its four extraction rows. The Silesia LZMA decode ran in its own run with no busy process.
   - `corespotlightd` used 153% and `fseventsd` 43% at the start of the dependencies decode, and `fseventsd` 47 to 48% at the start of three of its extraction rows.
 - Two corpora, Silesia and the dependencies. Neither holds many small compressed frames or streams.
-- The M2 Max has no WIM extraction row, because `wimlib-imagex` is not installed there to write the WIM.
+- The M2 Max WIM row ran on Silesia only, in its own run at `5e6dd97b` with wimlib 1.14.5. The dependencies have no WIM row on the M2 Max.
 - No run has a `.tar.lzma` extraction row. Zipper writes the `.tar.lzma` out as one file, the `.tar`, where bsdtar reads the tar inside, so the trees differ.
 - The three Linux runs each got a different AMD EPYC, so Linux numbers compare only within one run. Linux CPU times for child processes come in steps of 10 ms.
 - Each machine ran each corpus once, so session to session drift is not measured.
@@ -130,7 +141,7 @@ The verdict is that it is not ready yet.
 
 ## Reproduce
 
-The [M31 page](../../../docs/roadmap/m31-a-release-case-for-each-decoder.md#measure) gives the commands for both corpora on both machines. The JSON is in [`data/`](../data) beside these records, with the second machine's build folder written as `<target>` and its home folder as `<home>`. Every number on this page comes from
+The [M31 page](../../../docs/roadmap/m31-a-release-case-for-each-decoder.md#measure) gives the commands for both corpora on both machines. The JSON is in [`data/`](../data) beside these records, with the second machine's build folder written as `<target>`, its checkout as `<checkout>` and its home folder as `<home>`. Every number on this page comes from
 
 ```sh
 python3 benchmarks/decoders/tables.py xpress

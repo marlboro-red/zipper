@@ -43,7 +43,7 @@ Each milestone closes only when its exit checks pass. A check is a gate step, a 
 | [M28. Clean failure everywhere](roadmap/m28-clean-failure-everywhere.md) | Done | M8 |
 | [M29. Overwrite at the speed of a fresh extraction](roadmap/m29-overwrite-at-the-speed-of-a-fresh-extraction.md) | Done | M8 |
 | [M30. gzip end to end at libdeflate's speed](roadmap/m30-gzip-end-to-end-at-libdeflates-speed.md) | Done | M25 |
-| [M31. A release case for each decoder](roadmap/m31-a-release-case-for-each-decoder.md) | In progress | M25 |
+| [M31. A release case for each decoder](roadmap/m31-a-release-case-for-each-decoder.md) | Done | M25 |
 | [M32. Every reader under Zipper's licence](roadmap/m32-every-reader-under-zippers-licence.md) | Done | M25 |
 | [M33. Clean rewrites of the copied checks](roadmap/m33-clean-rewrites-of-the-copied-checks.md) | Planned | M32 |
 
@@ -58,6 +58,8 @@ M21, M14, M15, M16 and M22 closed on 8 November 2026. M21 closed by the user's d
 M30 closed on 13 November 2026. On one Apple M2 Max, `zipper extract` of a 212 MB gzip file takes 209.5 ms against 218.7 ms for `libdeflate-gunzip`, with the ranges apart, as the [gzip file record](../benchmarks/deflate/gzip-file/README.md) shows. It was measured on one machine and one corpus.
 
 M20 closed on 14 November 2026. No code path in the library or the CLI runs 7-Zip. A format with a reader goes to it, and one without fails with `zipper::Refused`. `50cde4b` removed the backend, and `tests/no_7zip.rs` checks that a 7-Zip on `PATH` never starts for any file in `tests/data`.
+
+M31 closed on 14 November 2026. Each of Zipper's decoders was measured against the best pure-Rust crate and the best crate that wraps a C library. The runs covered an Apple M2 Max and hosted x86-64 Linux, on Silesia and the locked dependency sources. BZip2 and XPRESS lead in all four runs and become crates. Zstandard and LZMA trail libzstd and liblzma on Linux, and Deflate ties `zlib-rs` there, so all three stay inside Zipper and M23 does not start. The [experiment log](../benchmarks/README.md#release-cases-for-each-decoder) lists the five records.
 
 M24 closed on 14 November 2026. Every idea of the research report on ZIP and 7z extraction has a record or a reason on its page. The kept changes include [buffered BCJ2 branch streams](../benchmarks/native-7z/bcj2-buffered-branches/README.md), [the doubling copy for short LZMA matches](../benchmarks/lzma/repeating-copy/README.md), [the 7z solid-folder writer pool](../benchmarks/native-7z/solid-writer-pool/README.md) and [parallel BZip2 blocks](../benchmarks/bzip2/block-parallel/README.md). Two ideas were declined. Detecting folder merges from `mkdir` results could save at most 1.8 traced ms of `stat` calls on the dependency sources. The LZMA literal path is left with a gap to 7-Zip that only its hand-written arm64 loop is shown to close, and Zipper stays pure Rust.
 

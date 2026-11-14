@@ -11,7 +11,10 @@ from pathlib import Path
 
 DATA = Path(__file__).resolve().parent / "data"
 RUNS = [
-    ("Silesia on the Apple M2 Max", ["m31-decoders-m2-max.json", "m31-lzma-decode-m2-max.json"]),
+    (
+        "Silesia on the Apple M2 Max",
+        ["m31-decoders-m2-max.json", "m31-lzma-decode-m2-max.json", "m31-wim-m2-max-silesia.json"],
+    ),
     ("Silesia on hosted Linux", ["m31-decoders-linux-x86_64-silesia.json"]),
     ("Dependencies on the Apple M2 Max", ["m31-decoders-m2-max-dependencies.json"]),
     ("Dependencies on hosted Linux", ["m31-decoders-linux-x86_64-dependencies.json"]),
@@ -113,12 +116,14 @@ def extract_table(codec, run):
 
 def describe(meta, codecs):
     for name, run in meta:
-        held = set(run["decode"]["results"]) | set(run.get("extract", {}).get("results", {}))
+        decoded = run.get("decode", {})
+        held = set(decoded.get("results", {})) | set(run.get("extract", {}).get("results", {}))
         if not codecs & held:
             continue
+        rounds = f"{decoded['rounds']} decode rounds" if decoded else "extraction only"
         print(
             f"- `{name}`, revision `{run['revision']['commit'][:8]}`, {run['machine']['cpu']} with "
-            f"{run['machine']['cpu_count']} cores, {run['decode']['rounds']} decode rounds, "
+            f"{run['machine']['cpu_count']} cores, {rounds}, "
             f"one-minute load {run['load_average_start'][0]:.2f} at the start, busy processes at "
             f"the start {len(run['busy_processes'])}"
         )

@@ -88,20 +88,25 @@ The smoke test in `benchmarks/decoders/decode-bench/tests/smoke.rs` runs every d
 
 ## Verdicts
 
-Each decoder ran on Silesia and on the dependencies corpus, on the M2 Max and on hosted x86-64 Linux. A lead counts only when the ranges are apart in all four runs. The best Rust alternative is the fastest pure-Rust crate, since a program that builds no C, as Zipper does, can use only those. Whether the C-linked crates should count as Rust alternatives too is a question for the user. Under that reading only BZip2 would become a crate.
+Each decoder ran on Silesia and on the dependencies corpus, on the M2 Max and on hosted x86-64 Linux. On 14 November 2026 the user decided that the best alternative is the fastest of the pure-Rust crates and the crates that wrap a C library. A decoder becomes a crate only when it leads that one with ranges apart on both machines and both corpora.
 
-| Decoder | Verdict | Against the best Rust alternative | Against the C library |
+| Decoder | Verdict | Against the best pure-Rust crate | Against the best crate that wraps C |
 | --- | --- | --- | --- |
-| [Zstandard](../../benchmarks/decoders/zstandard/README.md) | Becomes a crate | 0.292 to 0.447 times `ruzstd`'s time, ranges apart in all four runs | Ahead of libzstd on the M2 Max, behind it on Linux at 1.342 and 1.343, so no lead |
-| [Deflate and gzip](../../benchmarks/decoders/deflate-and-gzip/README.md) | Stays inside Zipper | 0.678 to 0.721 times `zlib-rs`'s time on the M2 Max, a tie on Linux | Behind libdeflate on Linux on both corpora, tied or behind on the M2 Max |
-| [LZMA and xz](../../benchmarks/decoders/lzma-and-xz/README.md) | Becomes a crate | xz at 0.615 to 0.749 and LZMA at 0.817 to 0.894 times `lzma-rust2`'s time, ranges apart in all four runs | Ahead of liblzma on the M2 Max, behind it on Linux at 1.089 to 1.199, so no lead |
+| [Zstandard](../../benchmarks/decoders/zstandard/README.md) | Stays inside Zipper | 0.292 to 0.447 times `ruzstd`'s time, ranges apart in all four runs | Ahead of libzstd on the M2 Max, behind it on Linux at 1.342 and 1.343, ranges apart |
+| [Deflate and gzip](../../benchmarks/decoders/deflate-and-gzip/README.md) | Stays inside Zipper | 0.678 to 0.721 times `zlib-rs`'s time on the M2 Max, a tie on Linux | Behind libdeflate on Linux at 1.229 to 1.328, tied or behind on the M2 Max |
+| [LZMA and xz](../../benchmarks/decoders/lzma-and-xz/README.md) | Stays inside Zipper | xz at 0.615 to 0.749 and LZMA at 0.817 to 0.894 times `lzma-rust2`'s time, ranges apart in all four runs | Ahead of liblzma on the M2 Max, behind it on Linux at 1.089 to 1.199, ranges apart |
 | [BZip2](../../benchmarks/decoders/bzip2/README.md) | Becomes a crate | 0.609 to 0.701 times `libbz2-rs-sys`'s time, ranges apart in all four runs | 0.634 to 0.723 times libbzip2's time, ranges apart in all four runs |
-| [XPRESS](../../benchmarks/decoders/xpress/README.md) | Not ready yet, for the M2 Max WIM row | 0.279 to 0.330 times `xpress-huffman`'s time, ranges apart in all four runs | None measured |
+| [XPRESS](../../benchmarks/decoders/xpress/README.md) | Becomes a crate | 0.279 to 0.330 times `xpress-huffman`'s time, ranges apart in all four runs | No such crate reads XPRESS |
 
 Each ratio is Zipper's median decode time over the other's, at one thread, across the four runs. The records give each run's range, the extraction rows and the limits.
 
-## What keeps M31 open
+- M23 does not start. LZMA's verdict is not a crate, and M31 made a crate verdict the condition for M23.
+- As a finding, Silesia WIM extraction takes 1.348 times 7-Zip's time on the M2 Max and 1.304 times on Linux, though the XPRESS decoder leads `xpress-huffman` three times over.
 
-- Exit check 1 needs extraction on both machines, and XPRESS has no WIM extraction row on the M2 Max, since `wimlib-imagex` is not installed there. That row is the only thing that blocks the close.
-- Exit checks 2 and 3 are met. Each record ends in a verdict, and every lead above holds on two machines and two corpora.
-- M23 should start. LZMA's verdict is a crate, which is M31's condition for M23, and the XPRESS row does not bear on it. M23's exit check 2 compares the crate with liblzma on Linux, where these rows show Zipper behind with ranges apart.
+## Closed on 14 November 2026
+
+- Exit check 1 passes. Each record gives decode rows on both machines and both corpora against every alternative this page names. It also gives extraction rows against bsdtar and 7-Zip, with ranges. LZMA's extraction is the `.tar.xz` row, as the Measure section says. XPRESS has a WIM row on the M2 Max for Silesia and on Linux for both corpora.
+- Exit check 2 passes. Each record ends in a verdict, and the table above lists them.
+- Exit check 3 passes. Each crate verdict rests on two machines and two corpora, and no record claims a lead that trails or overlaps in any run.
+- `86be136f` wrote the first records from Silesia. `5e6dd97b` added the dependencies corpus and the Linux run with 7-Zip, and this close adds the M2 Max WIM row and the user's rule.
+- Both M2 Max decode runs passed `--allow-busy` with a busy process at the start, as each record's limits state. Every verdict rests on rows whose ranges are apart in all four runs.
