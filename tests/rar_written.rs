@@ -287,7 +287,7 @@ fn with_versions_named_as_7zip_names_them(found: Tree) -> Tree {
     renamed
 }
 
-fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> Option<Tree> {
+fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> Result<Tree, String> {
     let mut flag = std::ffi::OsString::from("-o");
     flag.push(into);
     let run = Command::new(binary)
@@ -296,7 +296,15 @@ fn sevenzip_tree(binary: &Path, archive: &Path, into: &Path) -> Option<Tree> {
         .arg(archive)
         .output()
         .unwrap();
-    run.status.success().then(|| tree(into))
+    if run.status.success() {
+        Ok(tree(into))
+    } else {
+        Err(format!(
+            "{}{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        ))
+    }
 }
 
 fn is_rar4(name: &str) -> bool {
@@ -377,16 +385,21 @@ fn every_archive_extracts_the_tree_unrar_and_7zip_extract() {
         }
         if let (Some(binary), Some(ours)) = (&sevenzip, ours) {
             let into = work.path().join("7zip");
-            if let Some(theirs) = sevenzip_tree(binary, &corpus(&archive.name), &into)
-                && !sevenzip::spelled_through_the_windows_code_page(ours.keys())
-            {
-                let (ours, theirs) = if is_rar4(&archive.name) {
-                    (without_times(ours), without_times(theirs))
-                } else {
-                    (ours, theirs)
-                };
-                assert_eq!(ours, theirs, "{} against 7-Zip", archive.name);
-                against_7zip.push(archive.name.clone());
+            match sevenzip_tree(binary, &corpus(&archive.name), &into) {
+                Ok(theirs) => {
+                    let (ours, theirs) = if is_rar4(&archive.name) {
+                        (without_times(ours), without_times(theirs))
+                    } else {
+                        (ours, theirs)
+                    };
+                    assert_eq!(ours, theirs, "{} against 7-Zip", archive.name);
+                    against_7zip.push(archive.name.clone());
+                }
+                Err(output) => assert!(
+                    !STORED.contains(&archive.name.as_str()),
+                    "7-Zip did not extract {}: {output}",
+                    archive.name
+                ),
             }
         }
         make_deletable(work.path());
@@ -395,7 +408,7 @@ fn every_archive_extracts_the_tree_unrar_and_7zip_extract() {
         for stored in STORED {
             assert!(
                 against_7zip.iter().any(|name| name == stored),
-                "7-Zip did not extract {stored}"
+                "7-Zip was not compared on {stored}"
             );
         }
     }
