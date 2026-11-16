@@ -33,6 +33,18 @@ on:
         description: Decodes in each profiled process, 1 to 100
         default: '10'
         required: true
+      base:
+        description: A git ref to time against the dispatched ref, with the C library, in this job; empty runs no A/B
+        default: ''
+        required: false
+      rounds:
+        description: A/B rounds after one warmup, 11 to 31
+        default: '11'
+        required: true
+      profile:
+        description: Run the perf profile; only an A/B run may turn it off
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -50,9 +62,14 @@ jobs:
       CODEC: ${{ inputs.codec }}
       TARGET_CPU: ${{ inputs.target_cpu }}
       REPEATS: ${{ inputs.repeats }}
+      BASE: ${{ inputs.base }}
+      ROUNDS: ${{ inputs.rounds }}
+      PROFILE: ${{ inputs.profile }}
       OUT: target/m35/profile
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: ${{ inputs.base == '' && 1 || 0 }}
       - name: Validate inputs
         run: |
           python3 - <<'EOF'
@@ -61,11 +78,23 @@ jobs:
           assert os.environ['CODEC'] in ('all', 'zstd', 'xz', 'lzma')
           assert os.environ['TARGET_CPU'] in ('baseline', 'x86-64-v3')
           assert 1 <= int(os.environ['REPEATS']) <= 100
+          assert 11 <= int(os.environ['ROUNDS']) <= 31
+          assert os.environ['PROFILE'] in ('true', 'false')
+          assert os.environ['BASE'] or os.environ['PROFILE'] == 'true', 'profile is off only for an A/B run'
           EOF
+      - name: Resolve the base
+        if: inputs.base != ''
+        run: |
+          base=$(git rev-parse --verify --quiet "$BASE^{commit}" || git rev-parse --verify "origin/$BASE^{commit}")
+          echo "BASE_COMMIT=$base" >> "$GITHUB_ENV"
+          echo "BASE_TREE=$RUNNER_TEMP/zipper-base" >> "$GITHUB_ENV"
+          echo "BASE_TARGET=$RUNNER_TEMP/zipper-base-target" >> "$GITHUB_ENV"
+          echo "base $BASE is $base, head is $(git rev-parse HEAD)"
       - name: Choose the Rust flags
         if: inputs.target_cpu == 'x86-64-v3'
         run: echo "RUSTFLAGS=-C target-cpu=x86-64-v3" >> "$GITHUB_ENV"
       - name: Install perf and allow it for the job
+        if: inputs.base == '' || inputs.profile
         run: |
           set -o pipefail
           kernel=$(uname -r)
@@ -95,6 +124,9 @@ jobs:
             echo "target_cpu $TARGET_CPU"
             echo "RUSTFLAGS ${RUSTFLAGS:-}"
             echo "repeats $REPEATS"
+            echo "base ${BASE:-none} ${BASE_COMMIT:-}"
+            echo "rounds $ROUNDS"
+            echo "profile $PROFILE"
             uname -a
             if [ -n "${PERF:-}" ]; then "$PERF" --version; fi
             cc --version | head -n1
@@ -105,7 +137,23 @@ jobs:
           corpus: ${{ inputs.corpus }}
       - name: Record the toolchain
         run: rustc +1.99.1 -vV > "$OUT/rustc.txt"
+      - name: Build the decode bench at the base
+        if: inputs.base != ''
+        run: |
+          git worktree add --detach "$BASE_TREE" "$BASE_COMMIT"
+          (cd "$BASE_TREE" && cargo +1.99.1 build --release --locked --package zipper-decode-bench \
+            --target-dir "$BASE_TARGET")
+          test -x "$BASE_TARGET/release/zipper-decode-bench"
+      - name: Time the base, the head and the C library
+        if: inputs.base != ''
+        run: |
+          python3 scripts/m35_ab.py --harness target/release/zipper-decode-bench \
+            --base-harness "$BASE_TARGET/release/zipper-decode-bench" --base-commit "$BASE_COMMIT" \
+            --base-ref "$BASE" --corpus "target/m31/corpus-$CORPUS" --codec "$CODEC" \
+            --rounds "$ROUNDS" --out "$OUT"
+          cat "$OUT/ab.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Profile
+        if: inputs.base == '' || inputs.profile
         run: |
           python3 scripts/m35_profile.py --harness target/release/zipper-decode-bench \
             --corpus "target/m31/corpus-$CORPUS" --codec "$CODEC" --repeats "$REPEATS" \

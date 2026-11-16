@@ -46,3 +46,24 @@ The artifact `m35-profile-linux-x86_64-CORPUS-CODEC-TARGET_CPU` holds these file
 - `corpus-source.json` and the streams' `corpus.json`, with the sha256 of the tar and of each stream.
 
 A hosted runner may count no hardware events. `perf stat` then reads those rows as not counted, and `perf record` falls back to sampling the CPU clock. The profile names where the cycles go. It times nothing, and `scripts/m31_decoders.py` measures time.
+
+### Time a change against its base on one runner
+
+A hosted runner can get another CPU on each run and counts no hardware events. So a change to a decoder counts only when both builds run in one job. Set `base` to time Zipper at that ref, Zipper at the dispatched ref and the C library together.
+
+```sh
+gh workflow run m35-profile.yml --ref BRANCH -f corpus=silesia -f codec=all -f target_cpu=baseline -f base=main -f rounds=11 -f profile=false
+gh run download RUN_ID --name m35-profile-linux-x86_64-silesia-all-baseline --dir target/m35/ab-silesia
+```
+
+- `base` takes a branch, a tag or a commit. The checkout then fetches the full history, and the job builds `zipper-decode-bench` at that commit in its own worktree and target folder. It uses the same rustc 1.99.1 and the same `target_cpu` flags as the dispatched ref.
+- `profile=false` skips `perf` and the profile, so an A/B run stays short. It is refused when `base` is empty, and the default `true` runs both.
+- `rounds` sets the timed rounds after one warmup, from 11 to 31.
+- [`scripts/m35_ab.py`](../../scripts/m35_ab.py) runs the decode command of `scripts/m31_decoders.py` with both bench binaries. For each codec it times `zipper` from the dispatched ref, `zipper@base` from the base and libzstd or liblzma. Each sample is one fresh process, the order in each round comes from a fixed seed, and every decoded byte is checked against the tar.
+
+The artifact then also holds these files.
+
+- `ab.json` with every raw sample, the order of each round, both commits, the sha256 of both bench binaries and the runner's CPU.
+- `ab.md` with each row's median and range in seconds, then the head's median time over the base's and over the C library's, and whether the ranges are apart. The job summary shows the same table.
+
+Overlapping ranges mean no established difference, as the `zipper-bench` skill says. Compare rows only within one run.
