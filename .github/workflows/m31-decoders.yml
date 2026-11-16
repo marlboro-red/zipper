@@ -47,9 +47,6 @@ jobs:
           assert 7 <= int(os.environ['ROUNDS']) <= 31
           assert 7 <= int(os.environ['RUNS']) <= 31
           EOF
-      - name: Check the runner is x86-64
-        run: test "$(uname -m)" = x86_64
-      - run: rustup toolchain install 1.99.1 --profile minimal
       - name: Install the reference tools
         run: |
           sudo apt-get update
@@ -61,14 +58,9 @@ jobs:
           7zz | sed -n '1,3p'
           bsdtar --version
           wimlib-imagex --version | sed -n '1p'
-      - name: Build release binaries
-        run: cargo +1.99.1 build --release --locked --package zipper --package zipper-decode-bench
-      - name: Fetch the locked crates
-        run: cargo +1.99.1 fetch --locked
-      - name: Build the corpus
-        run: |
-          python3 scripts/m31_decoders.py corpus --harness target/release/zipper-decode-bench \
-            --source "$CORPUS" --out "target/m31/corpus-$CORPUS"
+      - uses: ./.github/actions/m31-corpus
+        with:
+          corpus: ${{ inputs.corpus }}
       - name: Measure
         run: |
           python3 scripts/m31_decoders.py all --harness target/release/zipper-decode-bench \

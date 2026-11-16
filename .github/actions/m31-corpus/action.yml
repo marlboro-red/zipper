@@ -1,0 +1,29 @@
+name: M31 corpus
+description: Build the release binaries and the decode bench with rustc 1.99.1, then the M31 corpus in target/m31/corpus-CORPUS
+
+inputs:
+  corpus:
+    description: silesia or dependencies
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check the runner is x86-64
+      shell: bash
+      run: test "$(uname -m)" = x86_64
+    - shell: bash
+      run: rustup toolchain install 1.99.1 --profile minimal
+    - name: Build release binaries
+      shell: bash
+      run: cargo +1.99.1 build --release --locked --package zipper --package zipper-decode-bench
+    - name: Fetch the locked crates
+      shell: bash
+      run: cargo +1.99.1 fetch --locked
+    - name: Build the corpus
+      shell: bash
+      env:
+        CORPUS: ${{ inputs.corpus }}
+      run: |
+        python3 scripts/m31_decoders.py corpus --harness target/release/zipper-decode-bench \
+          --source "$CORPUS" --out "target/m31/corpus-$CORPUS"

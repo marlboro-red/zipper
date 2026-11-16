@@ -1,0 +1,122 @@
+name: M35 profile
+
+on:
+  workflow_dispatch:
+    inputs:
+      corpus:
+        description: The source tree whose streams are decoded
+        type: choice
+        options:
+          - silesia
+          - dependencies
+        default: silesia
+        required: true
+      codec:
+        description: The codec to profile, or all three
+        type: choice
+        options:
+          - all
+          - zstd
+          - xz
+          - lzma
+        default: all
+        required: true
+      target_cpu:
+        description: baseline builds as M31 did; x86-64-v3 sets RUSTFLAGS="-C target-cpu=x86-64-v3" for the Rust code only
+        type: choice
+        options:
+          - baseline
+          - x86-64-v3
+        default: baseline
+        required: true
+      repeats:
+        description: Decodes in each profiled process, 1 to 100
+        default: '10'
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CORPUS: ${{ inputs.corpus }}
+      CODEC: ${{ inputs.codec }}
+      TARGET_CPU: ${{ inputs.target_cpu }}
+      REPEATS: ${{ inputs.repeats }}
+      OUT: target/m35/profile
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate inputs
+        run: |
+          python3 - <<'EOF'
+          import os
+          assert os.environ['CORPUS'] in ('silesia', 'dependencies')
+          assert os.environ['CODEC'] in ('all', 'zstd', 'xz', 'lzma')
+          assert os.environ['TARGET_CPU'] in ('baseline', 'x86-64-v3')
+          assert 1 <= int(os.environ['REPEATS']) <= 100
+          EOF
+      - name: Choose the Rust flags
+        if: inputs.target_cpu == 'x86-64-v3'
+        run: echo "RUSTFLAGS=-C target-cpu=x86-64-v3" >> "$GITHUB_ENV"
+      - name: Install perf and allow it for the job
+        run: |
+          set -o pipefail
+          kernel=$(uname -r)
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends linux-tools-common "linux-tools-$kernel" \
+            || sudo apt-get install -y --no-install-recommends linux-tools-common linux-tools-azure \
+            || sudo apt-get install -y --no-install-recommends linux-tools-common linux-tools-generic \
+            || sudo apt-get install -y --no-install-recommends linux-perf
+          found=$(ls -d /usr/lib/linux-tools/*/perf /usr/lib/linux-tools-*/perf /usr/bin/perf 2>/dev/null | sort || true)
+          perf=$(grep -F "/$kernel/" <<<"$found" | head -n1 || true)
+          [ -n "$perf" ] || perf=$(tail -n1 <<<"$found")
+          test -x "$perf"
+          echo "PERF=$perf" >> "$GITHUB_ENV"
+          sudo sysctl -w kernel.perf_event_paranoid=-1
+          sudo sysctl -w kernel.kptr_restrict=0
+          "$perf" --version
+          "$perf" stat -e task-clock -- true
+          "$perf" stat -e cycles,instructions -- true || echo "this runner counts no hardware events"
+      - name: Record the machine
+        if: always()
+        run: |
+          mkdir -p "$OUT"
+          {
+            echo "commit $(git rev-parse HEAD)"
+            echo "corpus $CORPUS"
+            echo "codec $CODEC"
+            echo "target_cpu $TARGET_CPU"
+            echo "RUSTFLAGS ${RUSTFLAGS:-}"
+            echo "repeats $REPEATS"
+            uname -a
+            if [ -n "${PERF:-}" ]; then "$PERF" --version; fi
+            cc --version | head -n1
+          } > "$OUT/machine.txt"
+          lscpu > "$OUT/lscpu.txt"
+      - uses: ./.github/actions/m31-corpus
+        with:
+          corpus: ${{ inputs.corpus }}
+      - name: Record the toolchain
+        run: rustc +1.99.1 -vV > "$OUT/rustc.txt"
+      - name: Profile
+        run: |
+          python3 scripts/m35_profile.py --harness target/release/zipper-decode-bench \
+            --corpus "target/m31/corpus-$CORPUS" --codec "$CODEC" --repeats "$REPEATS" \
+            --perf "$PERF" --out "$OUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          if-no-files-found: warn
+          name: m35-profile-linux-x86_64-${{ inputs.corpus }}-${{ inputs.codec }}-${{ inputs.target_cpu }}
+          path: |
+            target/m35/profile/
+            !target/m35/profile/*.data
+            target/m31/corpus-${{ inputs.corpus }}/corpus-source.json
+            target/m31/corpus-${{ inputs.corpus }}/streams/corpus.json

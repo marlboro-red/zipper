@@ -17,3 +17,32 @@ Exit checks:
 1. A record for each decoder shows it level with or ahead of its C library on x86-64 Linux, with ranges apart or overlapping, on both corpora, with the M2 Max lead kept.
 2. The M31 verdicts are re-judged with the new records. LZMA becoming a crate starts [M23](m23-the-lzma-decoder-as-its-own-crate.md).
 3. If a gap cannot be closed in safe Rust, a record names the limiter with a profile, and the verdict stays "not ready yet" with that reason.
+
+## Profile on x86-64
+
+[`m35-profile.yml`](../../.github/workflows/m35-profile.yml) profiles each decoder against its C library on a hosted x86-64 Linux runner. It runs only when dispatched.
+
+```sh
+gh workflow run m35-profile.yml --ref main -f corpus=silesia -f codec=all -f target_cpu=baseline -f repeats=10
+gh run list --workflow m35-profile.yml --limit 1
+gh run download RUN_ID --name m35-profile-linux-x86_64-silesia-all-baseline --dir target/m35/linux-silesia
+```
+
+- `corpus` picks `silesia` or `dependencies`, and `codec` picks `zstd`, `xz`, `lzma` or `all`. Zstandard runs against libzstd, and xz and LZMA run against liblzma.
+- `target_cpu` stays `baseline` by default, which builds with rustc 1.99.1 and no `RUSTFLAGS`, as the M31 runs did. `x86-64-v3` sets `RUSTFLAGS="-C target-cpu=x86-64-v3"`. It changes only the Rust code, since the `cc` crate builds libzstd and liblzma with its own flags.
+- The workflow builds the binaries and the corpus with the same composite action as `m31-decoders.yml`, in [`.github/actions/m31-corpus`](../../.github/actions/m31-corpus/action.yml).
+- It installs `perf` from the runner kernel's `linux-tools` package and sets `kernel.perf_event_paranoid` to -1 for the job.
+- [`scripts/m35_profile.py`](../../scripts/m35_profile.py) runs `zipper-decode-bench repeat CODEC DECODER STREAM ORIGINAL COUNT` for each decoder. One process decodes the stream `repeats` times into one buffer and checks every byte of the last pass. A count of 0 runs only the setup.
+- Each decoder runs under `perf stat` with the repeats and again with the setup alone. The script divides the difference by the repeats, so `summary.md` gives the cycles, instructions, branches, branch misses and L1 data cache load misses of one decode, with Zipper's count over the C library's.
+- Each decoder then runs under `perf record -g`.
+
+The artifact `m35-profile-linux-x86_64-CORPUS-CODEC-TARGET_CPU` holds these files, and uploads also when a step fails.
+
+- `summary.md` and `profile.json`, with the counts of one decode.
+- `stat-CODEC-DECODER-decode.csv` and `stat-CODEC-DECODER-setup.csv`, the raw `perf stat -x,` output.
+- `report-CODEC-DECODER.txt`, from `perf report --no-children --percent-limit 1 --stdio`, for both decoders.
+- `annotate-CODEC-zipper-1.txt` to `-3.txt`, from `perf annotate --stdio` on Zipper's three busiest user symbols.
+- `machine.txt` with the commit, the inputs, `uname -a`, the `perf` and C compiler versions, plus `lscpu.txt` and `rustc.txt`.
+- `corpus-source.json` and the streams' `corpus.json`, with the sha256 of the tar and of each stream.
+
+A hosted runner may count no hardware events. `perf stat` then reads those rows as not counted, and `perf record` falls back to sampling the CPU clock. The profile names where the cycles go. It times nothing, and `scripts/m31_decoders.py` measures time.
