@@ -5,6 +5,13 @@ It refuses archives that try to write outside the destination, checks every byte
 It reads every other format it supports with its own readers too, and it never runs 7-Zip.
 A format it does not read is refused, as the [refused formats page](docs/reference/refused.md) lists.
 
+## Why Zipper
+
+- **One extractor for nearly every archive.** ZIP, tar with every common compressor, 7z, RAR, disc and disk images, packages and legacy formats extract through one command or one library call. Cargo features build in only the formats an application needs.
+- **No C.** No dependency of the release build compiles or links C, so Zipper builds and cross-compiles like any other Rust crate. The gate's `pure rust` step keeps it that way.
+- **Safe on hostile archives by default.** Memory stays within fixed budgets, links stay inside the destination, and a failed extraction leaves nothing behind. Kani proofs and TLA+ models check the parsers and the worker threads.
+- **Fast on common archives.** On an Apple M2 Max, Zipper extracts a ZIP of 10,000 tiny files in 342.4 ms, against 835.2 ms for bsdtar and 718.0 ms for 7-Zip at one thread. Zipper at one thread takes 618.7 ms. [Results](docs/results.md) gives every workload, including the 7z codecs where 7-Zip is still faster.
+
 ## Build and try it
 
 ```sh
