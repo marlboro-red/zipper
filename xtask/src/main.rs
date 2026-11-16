@@ -1228,6 +1228,7 @@ fn hook_tests() -> Result<()> {
         ".claude/hooks/test_guard_destructive.py",
         "scripts/test_plant.py",
         "scripts/test_merge_coverage.py",
+        "scripts/test_m35_ab.py",
     ] {
         let status = Command::new(python()?)
             .current_dir(root())

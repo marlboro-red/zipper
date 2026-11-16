@@ -38,6 +38,7 @@ CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 TAR_STREAMS = {"gzip": "gz", "zstd": "zst", "xz": "xz", "bzip2": "bz2"}
 WIM_CHUNK = 32768
 STDERR_KEPT = 20000
+ZIPPER_DECODER = "zipper"
 
 
 def tar_name(source):
@@ -313,20 +314,40 @@ def summary(rows, size):
             "peak_rss_bytes": max(row["peak_rss_bytes"] for row in rows)}
 
 
-def decode(harness, streams, original, rounds, only):
+def base_row(label):
+    """The result key of the base harness's own Zipper decoder in a two-harness `decode`."""
+    return f"{ZIPPER_DECODER}@{label}"
+
+
+def listed_decoders(harness):
+    return json.loads(subprocess.run([str(harness), "decoders"], capture_output=True, text=True,
+                                     check=True).stdout)
+
+
+def decode(harness, streams, original, rounds, only, decoders=None, base=None):
     """Each decoder decodes its stream once per round in a fresh process, which times the decode
-    alone; the process's peak RSS comes from the operating system."""
+    alone; the process's peak RSS comes from the operating system. `decoders` keeps only the
+    decoders it names. `base`, a (label, harness) pair, adds that harness's Zipper decoder of each
+    codec as the row `base_row(label)`, shuffled into the same rounds as every other row."""
     harness = harness.resolve(strict=True)
     streams = streams.resolve(strict=True)
     original = original.resolve(strict=True)
     manifest = checked_corpus(streams, original)
     size = manifest["original"]["bytes"]
-    listed = json.loads(subprocess.run([str(harness), "decoders"], capture_output=True, text=True,
-                                       check=True).stdout)
-    listed = [row for row in listed if not only or row["codec"] in only]
+    listed = [row for row in listed_decoders(harness)
+              if (not only or row["codec"] in only) and (not decoders or row["decoder"] in decoders)]
     if not listed:
         raise SystemExit("no decoder matches --only")
-    samples = {(row["codec"], row["decoder"]): [] for row in listed}
+    runs = {(row["codec"], row["decoder"]): (harness, row["decoder"]) for row in listed}
+    if base:
+        label, base_harness = base[0], base[1].resolve(strict=True)
+        offered = {row["codec"]: row for row in listed_decoders(base_harness) if row["decoder"] == ZIPPER_DECODER}
+        for codec in sorted({row["codec"] for row in listed}):
+            if codec not in offered:
+                raise SystemExit(f"the base harness lists no {ZIPPER_DECODER} decoder for {codec}")
+            listed.append(dict(offered[codec], decoder=base_row(label), harness=label))
+            runs[(codec, base_row(label))] = (base_harness, ZIPPER_DECODER)
+    samples = {key: [] for key in runs}
     order = []
     rng = random.Random(ORDER_SEED)
     with tempfile.TemporaryDirectory(prefix="m31-decode-") as work:
@@ -340,7 +361,8 @@ def decode(harness, streams, original, rounds, only):
                 if report.exists():
                     report.unlink()
                 stream = streams / manifest["streams"][codec]["file"]
-                process = timed([str(harness), "decode", codec, decoder, str(stream), str(original), str(report)],
+                program, name = runs[(codec, decoder)]
+                process = timed([str(program), "decode", codec, name, str(stream), str(original), str(report)],
                                 work)
                 row = json.loads(report.read_text())
                 if row["verified_bytes"] != size:
@@ -355,8 +377,11 @@ def decode(harness, streams, original, rounds, only):
     results = {}
     for row in listed:
         rows = samples[(row["codec"], row["decoder"])]
-        result = {"crates": {name: versions.get(name) for name in row["crates"]}, "api": row["api"],
+        pinned = versions if "harness" not in row else {}
+        result = {"crates": {name: pinned.get(name) for name in row["crates"]}, "api": row["api"],
                   "samples": rows}
+        if "harness" in row:
+            result["harness"] = row["harness"]
         result.update(summary(rows, size))
         results.setdefault(row["codec"], {})[row["decoder"]] = result
     timing = {"rounds": rounds, "warmup_rounds": 1, "order_seed": ORDER_SEED, "order_including_warmup": order,
@@ -364,6 +389,9 @@ def decode(harness, streams, original, rounds, only):
               "verification": "every decoded byte against the original, after timing", "results": results}
     corpus_record = {"original": manifest["original"], "streams": manifest["streams"],
                      "harness": {"path": str(harness), "sha256": sha256_file(harness)}}
+    if base:
+        corpus_record["base_harness"] = {"label": label, "path": str(base_harness),
+                                         "sha256": sha256_file(base_harness)}
     return timing, corpus_record
 
 

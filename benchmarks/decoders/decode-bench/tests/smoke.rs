@@ -652,3 +652,127 @@ fn the_m35_profile_counts_one_decode_and_annotates_zippers_top_symbols() {
     }
     assert!(summary.contains("not counted"), "{summary}");
 }
+
+fn ab(corpus: &Path, base: &Path, codec: &str, rounds: &str, out: &Path) -> Output {
+    Command::new(python())
+        .arg(repository().join("scripts/m35_ab.py"))
+        .args(["--harness", BENCH, "--base-harness"])
+        .arg(base)
+        .args(["--base-commit", "feedface", "--base-ref", "main"])
+        .args(["--codec", codec, "--rounds", rounds, "--corpus"])
+        .arg(corpus)
+        .args(["--trial", "--allow-busy", "--out"])
+        .arg(out)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn the_m35_ab_times_both_zippers_and_the_c_library_in_one_order_with_every_byte_checked() {
+    let work = tempfile::tempdir().unwrap();
+    let corpus = small_corpus(work.path());
+    let source: Value =
+        serde_json::from_slice(&fs::read(corpus.join("corpus-source.json")).unwrap()).unwrap();
+    let out = work.path().join("ab");
+    let timed = ab(&corpus, Path::new(BENCH), "all", "2", &out);
+    assert!(
+        timed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&timed.stderr)
+    );
+    let json: Value = serde_json::from_slice(&fs::read(out.join("ab.json")).unwrap()).unwrap();
+    assert_eq!(json["schema"], "m31-decoders/1");
+    assert_eq!(json["ab"]["base_commit"], "feedface");
+    assert_eq!(json["ab"]["base_ref"], "main");
+    assert_eq!(json["ab"]["head_commit"], json["revision"]["commit"]);
+    assert!(json["machine"].get("cpu").is_some());
+    assert_eq!(
+        json["corpus"]["base_harness"]["sha256"],
+        json["corpus"]["harness"]["sha256"]
+    );
+    let decode = &json["decode"];
+    let order = decode["order_including_warmup"].as_array().unwrap();
+    assert_eq!(order.len(), 3);
+    assert_eq!(order[0].as_array().unwrap().len(), 9);
+    assert!(
+        order[0]
+            .as_array()
+            .unwrap()
+            .contains(&Value::from("xz zipper@base"))
+    );
+    let results = decode["results"].as_object().unwrap();
+    assert_eq!(results.len(), 3);
+    for (codec, c_library) in [("zstd", "libzstd"), ("xz", "liblzma"), ("lzma", "liblzma")] {
+        let rows = results[codec].as_object().unwrap();
+        let mut names: Vec<_> = rows.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        let mut expected = vec!["zipper", "zipper@base", c_library];
+        expected.sort_unstable();
+        assert_eq!(names, expected, "{codec}");
+        for (name, row) in rows {
+            let samples = row["samples"].as_array().unwrap();
+            assert_eq!(samples.len(), 2, "{codec} {name}");
+            for sample in samples {
+                assert_eq!(sample["verified_bytes"], source["tar_bytes"]);
+            }
+        }
+        assert_eq!(rows["zipper@base"]["harness"], "base");
+    }
+    let table = fs::read_to_string(out.join("ab.md")).unwrap();
+    for needle in [
+        "| zstd | head over base |",
+        "| zstd | head over libzstd |",
+        "| lzma | head over liblzma |",
+        "feedface",
+        "trial",
+    ] {
+        assert!(table.contains(needle), "{needle}: {table}");
+    }
+
+    let one = work.path().join("one");
+    let timed = ab(&corpus, Path::new(BENCH), "zstd", "1", &one);
+    assert!(timed.status.success());
+    let json: Value = serde_json::from_slice(&fs::read(one.join("ab.json")).unwrap()).unwrap();
+    let results = json["decode"]["results"].as_object().unwrap();
+    assert_eq!(results.keys().collect::<Vec<_>>(), ["zstd"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn the_m35_ab_fails_when_the_base_harness_checks_fewer_bytes() {
+    use std::os::unix::fs::PermissionsExt;
+    let work = tempfile::tempdir().unwrap();
+    let corpus = small_corpus(work.path());
+    let base = work.path().join("short-base");
+    fs::write(
+        &base,
+        format!(
+            "#!/usr/bin/env python3\nimport json, subprocess, sys\n\
+             done = subprocess.run([{BENCH:?}, *sys.argv[1:]])\n\
+             if sys.argv[1] == 'decode':\n\
+             \x20   row = json.load(open(sys.argv[-1]))\n\
+             \x20   row['verified_bytes'] -= 1\n\
+             \x20   json.dump(row, open(sys.argv[-1], 'w'))\n\
+             sys.exit(done.returncode)\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&base, fs::Permissions::from_mode(0o755)).unwrap();
+    let refused = ab(&corpus, &base, "zstd", "1", &work.path().join("ab"));
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "a short base decode passed");
+    assert!(stderr.contains("zstd zipper@base verified"), "{stderr}");
+
+    let few = Command::new(python())
+        .arg(repository().join("scripts/m35_ab.py"))
+        .args(["--harness", BENCH, "--base-harness", BENCH])
+        .args(["--base-commit", "feedface", "--rounds", "7", "--corpus"])
+        .arg(&corpus)
+        .arg("--out")
+        .arg(work.path().join("few"))
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&few.stderr);
+    assert!(!few.status.success(), "7 rounds passed without --trial");
+    assert!(stderr.contains("11 or more"), "{stderr}");
+}
