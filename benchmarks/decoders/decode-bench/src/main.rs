@@ -14,7 +14,8 @@ use std::{
 
 const USAGE: &str = "usage: zipper-decode-bench decoders\n\
                      \x20      zipper-decode-bench corpus ORIGINAL OUT_DIR\n\
-                     \x20      zipper-decode-bench decode CODEC DECODER STREAM ORIGINAL REPORT";
+                     \x20      zipper-decode-bench decode CODEC DECODER STREAM ORIGINAL REPORT\n\
+                     \x20      zipper-decode-bench repeat CODEC DECODER STREAM ORIGINAL COUNT";
 const COMPARE_PIECE: usize = 1 << 20;
 const PREFAULT: u8 = 0xA5;
 
@@ -28,6 +29,12 @@ fn main() -> Result<()> {
             Path::new(stream),
             Path::new(original),
             Path::new(report),
+        ),
+        ["repeat", codec, decoder, stream, original, count] => repeat(
+            decoders::find(codec, decoder)?,
+            Path::new(stream),
+            Path::new(original),
+            count.parse().context("COUNT is not a whole number")?,
         ),
         _ => bail!(USAGE),
     }
@@ -176,17 +183,48 @@ fn verify(original: &Path, output: &[u8]) -> Result<u64> {
     Ok(verified)
 }
 
+fn prepared(
+    decoder: &decoders::Decoder,
+    stream: &Path,
+    original: &Path,
+) -> Result<(decoders::Input, Vec<u8>)> {
+    let mut input = decoders::Input::new(fs::read(stream)?);
+    (decoder.prepare)(&mut input)?;
+    let size = usize::try_from(fs::metadata(original)?.len())?;
+    let mut output = vec![0u8; size];
+    output.fill(PREFAULT);
+    Ok((input, output))
+}
+
+fn repeat(decoder: &decoders::Decoder, stream: &Path, original: &Path, count: u64) -> Result<()> {
+    let (input, mut output) = prepared(decoder, stream, original)?;
+    for pass in 0..count {
+        (decoder.decode)(&input, &mut output)
+            .with_context(|| format!("{} {} failed on pass {pass}", decoder.codec, decoder.name))?;
+    }
+    let setup_only = count == 0;
+    let verified = if setup_only {
+        0
+    } else {
+        verify(original, &output)?
+    };
+    let row = json!({
+        "codec": decoder.codec,
+        "decoder": decoder.name,
+        "repeats": count,
+        "verified_bytes": verified,
+    });
+    println!("{}", serde_json::to_string(&row)?);
+    Ok(())
+}
+
 fn decode(
     decoder: &decoders::Decoder,
     stream: &Path,
     original: &Path,
     report: &Path,
 ) -> Result<()> {
-    let mut input = decoders::Input::new(fs::read(stream)?);
-    (decoder.prepare)(&mut input)?;
-    let size = usize::try_from(fs::metadata(original)?.len())?;
-    let mut output = vec![0u8; size];
-    output.fill(PREFAULT);
+    let (input, mut output) = prepared(decoder, stream, original)?;
     let cpu_before = cpu_seconds();
     let start = Instant::now();
     (decoder.decode)(&input, &mut output)

@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Output},
 };
 
 const BENCH: &str = env!("CARGO_BIN_EXE_zipper-decode-bench");
@@ -486,4 +486,169 @@ fn the_dependency_corpus_refuses_a_crate_it_cannot_reproduce_on_every_machine() 
         .unwrap();
     assert!(!mixed.status.success());
     assert!(String::from_utf8_lossy(&mixed.stderr).contains("--silesia needs --source silesia"));
+}
+
+fn repeat(codec: &str, decoder: &str, stream: &Path, original: &Path, count: &str) -> Output {
+    Command::new(BENCH)
+        .args(["repeat", codec, decoder])
+        .arg(stream)
+        .arg(original)
+        .arg(count)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn repeat_decodes_the_stream_count_times_and_checks_the_last_pass() {
+    let work = tempfile::tempdir().unwrap();
+    let original = work.path().join("sample.tar");
+    let bytes = sample();
+    fs::write(&original, &bytes).unwrap();
+    let streams = work.path().join("streams");
+    run(Command::new(BENCH)
+        .arg("corpus")
+        .arg(&original)
+        .arg(&streams));
+    for (codec, extension, c_library) in [
+        ("zstd", "zst", "libzstd"),
+        ("xz", "xz", "liblzma"),
+        ("lzma", "lzma", "liblzma"),
+    ] {
+        let stream = streams.join(format!("sample.tar.{extension}"));
+        for decoder in ["zipper", c_library] {
+            for count in [0u64, 3] {
+                let output = repeat(codec, decoder, &stream, &original, &count.to_string());
+                assert!(
+                    output.status.success(),
+                    "{codec} {decoder} {count}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let row: Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(row["codec"], codec);
+                assert_eq!(row["decoder"], decoder);
+                assert_eq!(row["repeats"], count);
+                assert_eq!(row["verified_bytes"], count.min(1) * SAMPLE_BYTES as u64);
+            }
+        }
+    }
+    let mut changed = bytes;
+    changed[SAMPLE_BYTES - 1] ^= 1;
+    let other = work.path().join("other.tar");
+    fs::write(&other, changed).unwrap();
+    let zst = streams.join("sample.tar.zst");
+    let output = repeat("zstd", "zipper", &zst, &other, "2");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "a changed original passed");
+    assert!(stderr.contains("differ from the original"), "{stderr}");
+    let output = repeat("zstd", "zipper", &zst, &original, "many");
+    assert!(
+        !output.status.success(),
+        "a count that is not a number passed"
+    );
+}
+
+#[cfg(unix)]
+const STAND_IN_PERF: &str = r##"#!/usr/bin/env python3
+import subprocess, sys
+args = sys.argv[1:]
+def command():
+    return args[args.index("--") + 1:]
+def path_after(flag):
+    return args[args.index(flag) + 1]
+if args[0] == "stat":
+    subprocess.run(command(), check=True)
+    repeats = int(command()[-1])
+    with open(path_after("-o"), "w") as out:
+        out.write("# started on a stand-in\n\n")
+        for event in path_after("-e").split(","):
+            value = "<not supported>" if event == "L1-dcache-load-misses" else str(1000 + 100 * repeats)
+            out.write(f"{value},,cpu_core/{event}/,1000,100.00,,\n")
+elif args[0] == "record":
+    subprocess.run(command(), check=True)
+    open(path_after("-o"), "w").write("samples\n")
+elif args[0] == "report" and "-q" in args:
+    print("    61.00%  [.] zipper::zstandard::Sequences::execute")
+    print("    20.00%  [k] clear_page_erms")
+    print("    12.50%  [.] __memmove_avx_unaligned_erms")
+elif args[0] == "report":
+    print("# the whole report")
+elif args[0] == "annotate":
+    print("annotated " + command()[0])
+else:
+    sys.exit("unexpected " + " ".join(args))
+"##;
+
+#[cfg(unix)]
+#[test]
+fn the_m35_profile_counts_one_decode_and_annotates_zippers_top_symbols() {
+    use std::os::unix::fs::PermissionsExt;
+    let work = tempfile::tempdir().unwrap();
+    let corpus = small_corpus(work.path());
+    let perf = work.path().join("perf");
+    fs::write(&perf, STAND_IN_PERF).unwrap();
+    fs::set_permissions(&perf, fs::Permissions::from_mode(0o755)).unwrap();
+    let out = work.path().join("profile");
+    run(Command::new(python())
+        .arg(repository().join("scripts/m35_profile.py"))
+        .args([
+            "--harness",
+            BENCH,
+            "--codec",
+            "all",
+            "--repeats",
+            "3",
+            "--corpus",
+        ])
+        .arg(&corpus)
+        .arg("--perf")
+        .arg(&perf)
+        .arg("--out")
+        .arg(&out));
+    let profile: Value =
+        serde_json::from_slice(&fs::read(out.join("profile.json")).unwrap()).unwrap();
+    assert_eq!(profile["repeats"], 3);
+    let source: Value =
+        serde_json::from_slice(&fs::read(corpus.join("corpus-source.json")).unwrap()).unwrap();
+    for (codec, c_library) in [("zstd", "libzstd"), ("xz", "liblzma"), ("lzma", "liblzma")] {
+        for decoder in ["zipper", c_library] {
+            let row = &profile["results"][codec][decoder];
+            assert_eq!(row["per_decode"]["cycles"], 100.0, "{codec} {decoder}");
+            assert!(row["per_decode"]["L1-dcache-load-misses"].is_null());
+            assert!(out.join(format!("report-{codec}-{decoder}.txt")).exists());
+            let pass: Value = serde_json::from_slice(
+                &fs::read(out.join(format!("repeat-{codec}-{decoder}-decode.json"))).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(pass["repeats"], 3);
+            assert_eq!(pass["verified_bytes"], source["tar_bytes"]);
+        }
+        let annotated = profile["results"][codec]["zipper"]["annotated"]
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            annotated.len(),
+            2,
+            "{codec}: only user symbols are annotated"
+        );
+        assert_eq!(
+            annotated[0]["symbol"],
+            "zipper::zstandard::Sequences::execute"
+        );
+        let first = fs::read_to_string(out.join(format!("annotate-{codec}-zipper-1.txt"))).unwrap();
+        assert_eq!(
+            first.trim(),
+            "annotated zipper::zstandard::Sequences::execute"
+        );
+        assert!(
+            profile["results"][codec][c_library]["annotated"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    let summary = fs::read_to_string(out.join("summary.md")).unwrap();
+    for heading in ["## zstd", "## xz", "## lzma"] {
+        assert!(summary.contains(heading), "{summary}");
+    }
+    assert!(summary.contains("not counted"), "{summary}");
 }
