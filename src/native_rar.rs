@@ -2,6 +2,10 @@
 //! not, and of RAR 4 archives that are not solid. See
 //! `docs/reference/rar-reader.md` for what it accepts and restores.
 use crate::blake2sp::Blake2sp;
+use crate::rar5_crypto::{
+    self, BLOCK, CHECK_BYTES, CbcReader, CheckValue, Derived, IV_BYTES, KeyError, Keys,
+    MOST_KDF_COUNT, SALT_BYTES,
+};
 use crate::rar5_lz::{self, Stream};
 pub use crate::tree::ReadOptions;
 use crate::tree::{self, MAX_NAME};
@@ -12,6 +16,7 @@ use std::{
     io::{self, BufReader, Read, Seek},
     ops::Range,
     path::Path,
+    rc::Rc,
     time::{Duration, SystemTime},
 };
 
@@ -68,6 +73,10 @@ const RECORD_VERSION: u64 = 4;
 const RECORD_REDIRECT: u64 = 5;
 const HASH_BLAKE2SP: u64 = 0;
 
+const AES_256: u64 = 0;
+const PASSWORD_CHECK: u64 = 0x0001;
+const TWEAKED_CHECKSUMS: u64 = 0x0002;
+
 const TIME_UNIX: u64 = 0x01;
 const TIME_MODIFIED: u64 = 0x02;
 const TIME_CREATED: u64 = 0x04;
@@ -76,6 +85,25 @@ const TIME_NANOSECONDS: u64 = 0x10;
 
 const FILETIME_TICKS_PER_SECOND: u64 = 10_000_000;
 const FILETIME_TO_UNIX_SECONDS: u64 = 11_644_473_600;
+
+/// The error when a RAR 5 archive needs a password and none was given.
+#[derive(Debug)]
+pub struct PasswordNeeded {
+    /// Whether the headers are encrypted, so that even the names need it.
+    pub header: bool,
+}
+
+impl std::fmt::Display for PasswordNeeded {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(if self.header {
+            "RAR archive has encrypted headers; give its password with --password"
+        } else {
+            "RAR archive is encrypted; give its password with --password"
+        })
+    }
+}
+
+impl std::error::Error for PasswordNeeded {}
 
 struct Fields<'a> {
     bytes: &'a [u8],
@@ -198,9 +226,51 @@ enum Redirect {
     FileCopy,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Encryption {
+    count: u8,
+    salt: [u8; SALT_BYTES],
+    iv: [u8; IV_BYTES],
+    check: Option<[u8; CHECK_BYTES]>,
+    tweaked: bool,
+}
+
+// SPEC(RAR 5 technote, file encryption record and archive encryption header): version, flags,
+// KDF count, salt, an IV in the file record only, then the check value when flag 0x0001 is set.
+fn encryption(fields: &mut Fields, with_iv: bool) -> Field<Encryption> {
+    field_check(
+        fields.vint()? == AES_256,
+        "RAR 5 encryption version is unknown",
+    )?;
+    let flags = fields.vint()?;
+    let count = fields.take(1)?[0];
+    field_check(
+        count <= MOST_KDF_COUNT,
+        "RAR 5 key derivation count is above 24, Zipper's limit",
+    )?;
+    let salt = fields.take(SALT_BYTES as u64)?.try_into().unwrap();
+    let iv = if with_iv {
+        fields.take(IV_BYTES as u64)?.try_into().unwrap()
+    } else {
+        [0; IV_BYTES]
+    };
+    let check = if flags & PASSWORD_CHECK != 0 {
+        Some(fields.take(CHECK_BYTES as u64)?.try_into().unwrap())
+    } else {
+        None
+    };
+    Ok(Encryption {
+        count,
+        salt,
+        iv,
+        check,
+        tweaked: flags & TWEAKED_CHECKSUMS != 0,
+    })
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Extras {
-    encrypted: bool,
+    encryption: Option<Encryption>,
     hash: Option<[u8; HASH_BYTES]>,
     modified: Option<Time>,
     version: Option<u64>,
@@ -280,7 +350,7 @@ fn extras(header: &[u8], area: Range<usize>) -> Field<Extras> {
         };
         let kind = fields.vint()?;
         match kind {
-            RECORD_ENCRYPTION => found.encrypted = true,
+            RECORD_ENCRYPTION => found.encryption = Some(encryption(&mut fields, true)?),
             RECORD_HASH => {
                 let hash = fields.vint()?;
                 field_check(hash == HASH_BLAKE2SP, "RAR 5 hash type is not BLAKE2sp")?;
@@ -453,10 +523,31 @@ struct Block {
     data: u64,
 }
 
+struct HeaderKey {
+    cipher: aes::Aes256,
+    password_checked: bool,
+}
+
 struct Blocks {
     reader: BufReader<ArchiveFile>,
     length: u64,
     next: u64,
+    headers: Option<HeaderKey>,
+}
+
+struct RawHeader {
+    crc: [u8; 4],
+    size: Vec<u8>,
+    body: Vec<u8>,
+}
+
+fn header_size(bytes: &[u8]) -> Result<u64> {
+    let size = Fields::new(bytes).vint()?;
+    ensure!(
+        (1..=LARGEST_HEADER).contains(&size),
+        "RAR 5 header size {size} is outside 1 to 2 MiB"
+    );
+    Ok(size)
 }
 
 impl Blocks {
@@ -473,6 +564,7 @@ impl Blocks {
             reader,
             length,
             next: RAR5_SIGNATURE.len() as u64,
+            headers: None,
         })
     }
 
@@ -486,38 +578,81 @@ impl Blocks {
 
     // SPEC(RAR 5 technote, general archive block format): a CRC-32 of the
     // header, its size in a vint of at most 3 bytes, then the header.
-    fn next(&mut self) -> Result<Block> {
-        self.seek_to(self.next)?;
+    fn plain_header(&mut self) -> Result<RawHeader> {
         let mut crc = [0u8; 4];
         self.reader
             .read_exact(&mut crc)
             .context("truncated RAR 5 archive, which has no end of archive header")?;
-        let mut size_bytes = Vec::with_capacity(LONGEST_SIZE_VINT);
+        let mut size = Vec::with_capacity(LONGEST_SIZE_VINT);
         loop {
             let mut byte = [0u8; 1];
             self.reader
                 .read_exact(&mut byte)
                 .context("truncated RAR 5 header")?;
-            size_bytes.push(byte[0]);
+            size.push(byte[0]);
             if byte[0] & 0x80 == 0 {
                 break;
             }
             ensure!(
-                size_bytes.len() < LONGEST_SIZE_VINT,
+                size.len() < LONGEST_SIZE_VINT,
                 "RAR 5 header size is longer than 3 bytes"
             );
         }
-        let size = Fields::new(&size_bytes).vint()?;
-        ensure!(
-            (1..=LARGEST_HEADER).contains(&size),
-            "RAR 5 header size {size} is outside 1 to 2 MiB"
-        );
-        let mut body = vec![0u8; size as usize];
+        let mut body = vec![0u8; header_size(&size)? as usize];
         self.reader
             .read_exact(&mut body)
             .context("truncated RAR 5 header")?;
+        Ok(RawHeader { crc, size, body })
+    }
+
+    // SPEC(RAR 5 technote, archive encryption header): each later header is a 16-byte IV, then
+    // the encrypted header, padded to a whole number of 16-byte blocks.
+    fn encrypted_header(&mut self) -> Result<RawHeader> {
+        let cipher = &self.headers.as_ref().expect("headers are encrypted").cipher;
+        let mut chain = [0u8; IV_BYTES];
+        self.reader
+            .read_exact(&mut chain)
+            .context("truncated RAR 5 archive, which has no end of archive header")?;
+        let mut whole = vec![0u8; BLOCK];
+        self.reader
+            .read_exact(&mut whole)
+            .context("truncated RAR 5 header")?;
+        rar5_crypto::decrypt_cbc(cipher, &mut chain, &mut whole);
+        let size_end = (4..4 + LONGEST_SIZE_VINT)
+            .find(|&at| whole[at] & 0x80 == 0)
+            .context("RAR 5 header size is longer than 3 bytes")?
+            + 1;
+        let end = size_end + header_size(&whole[4..size_end])? as usize;
+        whole.resize(end.next_multiple_of(BLOCK), 0);
+        self.reader
+            .read_exact(&mut whole[BLOCK..])
+            .context("truncated RAR 5 header")?;
+        rar5_crypto::decrypt_cbc(cipher, &mut chain, &mut whole[BLOCK..]);
+        Ok(RawHeader {
+            crc: whole[..4].try_into().unwrap(),
+            size: whole[4..size_end].to_vec(),
+            body: whole[size_end..end].to_vec(),
+        })
+    }
+
+    fn next(&mut self) -> Result<Block> {
+        let result = self.next_unless_the_password_is_wrong();
+        match &self.headers {
+            Some(key) if !key.password_checked => {
+                result.context("the password is wrong or the RAR 5 headers are damaged")
+            }
+            _ => result,
+        }
+    }
+
+    fn next_unless_the_password_is_wrong(&mut self) -> Result<Block> {
+        self.seek_to(self.next)?;
+        let RawHeader { crc, size, body } = match self.headers {
+            None => self.plain_header()?,
+            Some(_) => self.encrypted_header()?,
+        };
         let mut hasher = crc32fast::Hasher::new();
-        hasher.update(&size_bytes);
+        hasher.update(&size);
         hasher.update(&body);
         ensure!(
             hasher.finalize() == u32::from_le_bytes(crc),
@@ -533,9 +668,32 @@ impl Blocks {
     }
 }
 
+type Area<'a> = io::Take<&'a mut BufReader<ArchiveFile>>;
+
+enum Packed<'a> {
+    Plain(Area<'a>),
+    Encrypted(Box<CbcReader<Area<'a>>>),
+}
+
+impl Read for Packed<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Packed::Plain(area) => area.read(buffer),
+            Packed::Encrypted(area) => area.read(buffer),
+        }
+    }
+}
+
 enum Data<'a> {
-    Stored(io::Take<&'a mut BufReader<ArchiveFile>>),
-    Compressed(Box<rar5_lz::FileReader<'a, io::Take<&'a mut BufReader<ArchiveFile>>>>),
+    Stored(io::Take<Packed<'a>>),
+    Compressed(Box<rar5_lz::FileReader<'a, Packed<'a>>>),
+}
+
+struct Crypto {
+    derived: Rc<Derived>,
+    iv: [u8; IV_BYTES],
+    tweaked: bool,
+    password_checked: bool,
 }
 
 struct Checked<'a> {
@@ -543,6 +701,7 @@ struct Checked<'a> {
     crc: crc32fast::Hasher,
     blake: Option<Blake2sp>,
     read: u64,
+    tweak: Option<Rc<Derived>>,
 }
 
 impl Read for Checked<'_> {
@@ -571,14 +730,21 @@ impl Checked<'_> {
             "truncated RAR 5 entry {name:?}"
         );
         if let Some(crc) = header.crc {
-            ensure!(
-                self.crc.finalize() == crc,
-                "RAR 5 entry {name:?} fails its CRC-32 check"
-            );
+            let found = self.crc.finalize();
+            let found = match &self.tweak {
+                Some(derived) => derived.tweaked_crc(found),
+                None => found,
+            };
+            ensure!(found == crc, "RAR 5 entry {name:?} fails its CRC-32 check");
         }
         if let (Some(blake), Some(hash)) = (self.blake, header.extras.hash) {
+            let found = blake.finish();
+            let found = match &self.tweak {
+                Some(derived) => derived.tweaked_hash(&found),
+                None => found,
+            };
             ensure!(
-                blake.finish() == hash,
+                found == hash,
                 "RAR 5 entry {name:?} fails its BLAKE2sp check"
             );
         }
@@ -600,19 +766,58 @@ fn link_target(body: &[u8], range: &Range<usize>) -> Result<String> {
         .map_err(|_| anyhow::anyhow!("RAR 5 link target is not UTF-8"))
 }
 
+fn derived(keys: &mut Keys, record: &Encryption, header: bool) -> Result<Rc<Derived>> {
+    keys.derived(record.count, &record.salt)
+        .map_err(|error| match error {
+            KeyError::Needed => anyhow::Error::from(PasswordNeeded { header }),
+            KeyError::NotUtf8 => anyhow::anyhow!("the password for a RAR archive must be UTF-8"),
+            KeyError::OverBudget => anyhow::anyhow!(
+                "RAR 5 archive asks for more key derivation than Zipper allows, which is two derivations at the KDF count limit of {MOST_KDF_COUNT} or 1,024 in all"
+            ),
+        })
+}
+
+fn password_checked(derived: &Derived, record: &Encryption, what: &str) -> Result<bool> {
+    let Some(value) = &record.check else {
+        return Ok(false);
+    };
+    match derived.check(value) {
+        CheckValue::Matches => Ok(true),
+        CheckValue::WrongPassword => bail!("the password is wrong for {what}"),
+        CheckValue::Damaged => bail!("the password check value of {what} is damaged"),
+    }
+}
+
 struct Reader {
     blocks: Blocks,
     stream: Stream,
+    keys: Keys,
 }
 
 impl Reader {
-    fn open(path: &Path) -> Result<Self> {
+    fn open(path: &Path, password: Option<&[u8]>) -> Result<Self> {
+        let mut keys = Keys::new(password);
         let mut blocks = Blocks::open(path)?;
-        let first = blocks.next()?;
-        ensure!(
-            first.base.kind != ENCRYPTION_HEADER,
-            "RAR 5 archive has encrypted headers, which Zipper does not decrypt"
-        );
+        let mut first = blocks.next()?;
+        if first.base.kind == ENCRYPTION_HEADER {
+            let record = encryption(
+                &mut Fields {
+                    bytes: &first.body[..first.base.fields.end],
+                    at: first.base.fields.start,
+                },
+                false,
+            )?;
+            let derived = derived(&mut keys, &record, true)?;
+            blocks.headers = Some(HeaderKey {
+                cipher: derived.cipher(),
+                password_checked: password_checked(
+                    &derived,
+                    &record,
+                    "the encrypted RAR 5 headers",
+                )?,
+            });
+            first = blocks.next()?;
+        }
         ensure!(
             first.base.kind == MAIN_HEADER,
             "RAR 5 archive does not start with its main header"
@@ -624,7 +829,27 @@ impl Reader {
         Ok(Reader {
             blocks,
             stream: Stream::default(),
+            keys,
         })
+    }
+
+    fn crypto(&mut self, header: &FileHeader, name: &str) -> Result<Option<Crypto>> {
+        let Some(record) = &header.extras.encryption else {
+            return Ok(None);
+        };
+        let derived = derived(&mut self.keys, record, false)?;
+        let password_checked =
+            password_checked(&derived, record, &format!("encrypted RAR 5 entry {name:?}"))?;
+        ensure!(
+            password_checked || header.crc.is_some() || header.extras.hash.is_some(),
+            "RAR 5 entry {name:?} is encrypted without a password check value or a checksum, so a wrong password could not be detected"
+        );
+        Ok(Some(Crypto {
+            derived,
+            iv: record.iv,
+            tweaked: record.tweaked,
+            password_checked,
+        }))
     }
 
     fn data<'a>(
@@ -633,16 +858,34 @@ impl Reader {
         block: &Block,
         header: &FileHeader,
         name: &str,
+        crypto: Option<&Crypto>,
     ) -> Result<Checked<'a>> {
         let packed = block.base.data_size;
+        let area = reader.take(packed);
+        let (source, padding) = match crypto {
+            None => (Packed::Plain(area), 0),
+            Some(crypto) => {
+                ensure!(
+                    packed.is_multiple_of(BLOCK as u64),
+                    "RAR 5 entry {name:?} has encrypted data that is not whole AES blocks"
+                );
+                let cipher = crypto.derived.cipher();
+                let decrypted = CbcReader::new(area, cipher, crypto.iv);
+                (Packed::Encrypted(Box::new(decrypted)), BLOCK as u64 - 1)
+            }
+        };
         let data = match method(header.compression)? {
             Method::Stored => {
+                let expected = match crypto {
+                    None => Some(header.unpacked),
+                    Some(_) => header.unpacked.checked_next_multiple_of(BLOCK as u64),
+                };
                 ensure!(
-                    packed == header.unpacked,
+                    expected == Some(packed),
                     "RAR 5 stored entry {name:?} packs {packed} bytes for {}",
                     header.unpacked
                 );
-                Data::Stored(reader.take(packed))
+                Data::Stored(source.take(header.unpacked))
             }
             Method::Compressed { dictionary, solid } => {
                 ensure!(
@@ -656,7 +899,7 @@ impl Reader {
                     stream.start_file(dictionary, header.unpacked)
                 };
                 started.map_err(BadField)?;
-                Data::Compressed(Box::new(stream.reader(reader.take(packed), packed)))
+                Data::Compressed(Box::new(stream.reader(source, packed, padding)))
             }
         };
         Ok(Checked {
@@ -664,10 +907,19 @@ impl Reader {
             crc: crc32fast::Hasher::new(),
             blake: header.extras.hash.map(|_| Blake2sp::new()),
             read: 0,
+            tweak: crypto
+                .filter(|crypto| crypto.tweaked)
+                .map(|crypto| Rc::clone(&crypto.derived)),
         })
     }
 
-    fn drain(&mut self, block: &Block, header: &FileHeader, name: &str) -> Result<Vec<u8>> {
+    fn drain(
+        &mut self,
+        block: &Block,
+        header: &FileHeader,
+        name: &str,
+        crypto: Option<&Crypto>,
+    ) -> Result<Vec<u8>> {
         ensure!(
             header.unpacked <= MAX_NAME,
             "RAR 5 link {name:?} carries more than {MAX_NAME} bytes"
@@ -679,6 +931,7 @@ impl Reader {
             block,
             header,
             name,
+            crypto,
         )?;
         let mut bytes = Vec::new();
         (&mut checked)
@@ -697,31 +950,45 @@ impl Reader {
             "RAR 5 entry {name:?} spans volumes"
         );
         ensure!(
-            !header.extras.encrypted,
-            "RAR 5 entry {name:?} is encrypted, which Zipper does not decrypt"
-        );
-        ensure!(
             matches!(header.host, HOST_WINDOWS | HOST_UNIX),
             "RAR 5 entry {name:?} comes from an unknown host"
         );
-        let mode = file_mode(&header);
-        let time = modified(&header);
+        let crypto = self.crypto(&header, &name)?;
+        let result = self.contents(tree, block, &header, &name, crypto.as_ref());
+        match crypto {
+            Some(crypto) if !crypto.password_checked => result.with_context(|| {
+                format!("the password is wrong or RAR 5 entry {name:?} is damaged")
+            }),
+            _ => result,
+        }
+    }
+
+    fn contents(
+        &mut self,
+        tree: &mut tree::Tree,
+        block: &Block,
+        header: &FileHeader,
+        name: &str,
+        crypto: Option<&Crypto>,
+    ) -> Result<()> {
+        let mode = file_mode(header);
+        let time = modified(header);
         if header.directory {
             ensure!(
                 block.base.data_size == 0 && header.unpacked == 0,
                 "RAR 5 folder entry {name:?} carries data"
             );
-            return tree.directory(&name, mode, time);
+            return tree.directory(name, mode, time);
         }
         if let Some((redirect, target)) = header.extras.redirect.clone() {
             let target = link_target(&block.body, &target)?;
             if block.base.data_size > 0 {
-                self.drain(block, &header, &name)?;
+                self.drain(block, header, name, crypto)?;
             }
             return match redirect {
-                Redirect::UnixSymlink => tree.symlink(&name, target),
-                Redirect::WindowsSymlink => tree.symlink(&name, target.replace('\\', "/")),
-                Redirect::HardLink => tree.hard_link(&name, &target),
+                Redirect::UnixSymlink => tree.symlink(name, target),
+                Redirect::WindowsSymlink => tree.symlink(name, target.replace('\\', "/")),
+                Redirect::HardLink => tree.hard_link(name, &target),
                 other => bail!("RAR 5 entry {name:?} is a {other:?}, which Zipper does not create"),
             };
         }
@@ -734,11 +1001,12 @@ impl Reader {
             &mut self.blocks.reader,
             &mut self.stream,
             block,
-            &header,
-            &name,
+            header,
+            name,
+            crypto,
         )?;
-        tree.file(&name, header.unpacked, mode, time, &mut checked)?;
-        checked.finish(&name, &header)
+        tree.file(name, header.unpacked, mode, time, &mut checked)?;
+        checked.finish(name, header)
     }
 
     fn parse(&mut self, tree: &mut tree::Tree) -> Result<()> {
@@ -782,8 +1050,12 @@ pub fn sniff(path: &Path) -> Result<bool> {
 /// entries, RAR 5 solid streams and filters, and RAR 4 PPMd blocks and
 /// standard filters, and checks each header's checksum and each file's
 /// CRC-32 or BLAKE2sp. It restores folders, modification times, Unix modes
-/// and read-only attributes, symlinks and hard links. Encrypted archives,
-/// volumes, RAR 4 solid archives, junctions and file copies are refused.
+/// and read-only attributes, symlinks and hard links. RAR 5 entries and
+/// headers encrypted with AES-256 are decrypted with `options.password`.
+/// Without one they fail with [`PasswordNeeded`], and a wrong one fails before
+/// the entry it opens is written, or on the entry's checksum when the archive
+/// has no password check value. RAR 4 encryption, volumes, RAR 4 solid
+/// archives, junctions and file copies are refused.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,
@@ -793,7 +1065,7 @@ pub fn read_archive(
         let mut reader = crate::rar4::Reader::open(path)?;
         return tree::extract("RAR", path, destination, options, |tree| reader.parse(tree));
     }
-    let mut reader = Reader::open(path)?;
+    let mut reader = Reader::open(path, options.password)?;
     tree::extract("RAR", path, destination, options, |tree| reader.parse(tree))
 }
 
@@ -910,6 +1182,49 @@ mod field_tests {
     }
 
     #[test]
+    fn encryption_records_read_the_fields_the_technote_lists_and_refuse_cuts() {
+        let mut record = vec![0, (PASSWORD_CHECK | TWEAKED_CHECKSUMS) as u8, 15];
+        record.extend([1u8; SALT_BYTES]);
+        record.extend([2u8; IV_BYTES]);
+        record.extend([3u8; CHECK_BYTES]);
+        let mut fields = Fields::new(&record);
+        let found = encryption(&mut fields, true).unwrap();
+        assert_eq!(
+            found,
+            Encryption {
+                count: 15,
+                salt: [1; SALT_BYTES],
+                iv: [2; IV_BYTES],
+                check: Some([3; CHECK_BYTES]),
+                tweaked: true,
+            }
+        );
+        assert_eq!(fields.at, record.len());
+        for cut in 0..record.len() {
+            assert!(encryption(&mut Fields::new(&record[..cut]), true).is_err());
+        }
+        let mut header = record.clone();
+        header.drain(3 + SALT_BYTES..3 + SALT_BYTES + IV_BYTES);
+        let found = encryption(&mut Fields::new(&header), false).unwrap();
+        assert_eq!(
+            (found.iv, found.check),
+            ([0; IV_BYTES], Some([3; CHECK_BYTES]))
+        );
+        let mut bare = record[..3 + SALT_BYTES + IV_BYTES].to_vec();
+        bare[1] = 0;
+        let found = encryption(&mut Fields::new(&bare), true).unwrap();
+        assert_eq!((found.check, found.tweaked), (None, false));
+        let mut versioned = record.clone();
+        versioned[0] = 1;
+        assert!(encryption(&mut Fields::new(&versioned), true).is_err());
+        let mut costly = record.clone();
+        costly[2] = MOST_KDF_COUNT + 1;
+        assert!(encryption(&mut Fields::new(&costly), true).is_err());
+        costly[2] = MOST_KDF_COUNT;
+        assert!(encryption(&mut Fields::new(&costly), true).is_ok());
+    }
+
+    #[test]
     fn names_have_the_tree_writers_limit() {
         assert_eq!(LONGEST_NAME, MAX_NAME);
     }
@@ -994,6 +1309,29 @@ mod proofs {
             if let Ok(header) = file_header(body, &base) {
                 assert!(base.fields.start < header.name.start);
                 assert!(header.name.start < header.name.end && header.name.end <= base.fields.end);
+            }
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(12)]
+    fn encryption_records_never_panic_and_read_only_their_fields() {
+        let bytes: [u8; 48] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= bytes.len());
+        let with_iv: bool = kani::any();
+        let mut fields = Fields::new(&bytes[..length]);
+        if let Ok(found) = encryption(&mut fields, with_iv) {
+            assert!(found.count <= MOST_KDF_COUNT);
+            let iv = if with_iv { IV_BYTES } else { 0 };
+            let check = if found.check.is_some() {
+                CHECK_BYTES
+            } else {
+                0
+            };
+            assert!(fields.at >= 3 + SALT_BYTES + iv + check && fields.at <= length);
+            if !with_iv {
+                assert_eq!(found.iv, [0; IV_BYTES]);
             }
         }
     }

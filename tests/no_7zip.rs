@@ -199,7 +199,7 @@ fn rar_volumes_and_encrypted_headers_go_to_the_rar_reader() {
         ),
         (
             "test_read_format_rar5_encrypted_filenames.rar",
-            "RAR 5 archive has encrypted headers, which Zipper does not decrypt",
+            "RAR archive has encrypted headers; give its password with --password",
         ),
         (
             "test_read_format_rar_multivolume.part0001.rar",

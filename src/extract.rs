@@ -321,11 +321,13 @@ pub struct ExtractOptions<'a> {
     /// Names the filesystem takes as one, such as `X.txt` and `x.txt` where
     /// case is ignored, share a name. An archive with links is refused.
     pub flat: bool,
-    /// Password for ZipCrypto and WinZip AES entries in a ZIP, and for 7z
-    /// AES-256. A selected encrypted entry without it fails
-    /// with [`crate::native_zip::PasswordNeeded`] or
+    /// Password for ZipCrypto and WinZip AES entries in a ZIP, for 7z
+    /// AES-256 and for RAR 5 AES-256. A selected encrypted entry without it
+    /// fails with [`crate::native_zip::PasswordNeeded`] or
     /// [`crate::native_7z::PasswordNeeded`], as does a 7z whose header is
-    /// encrypted. The other readers refuse it.
+    /// encrypted. A RAR 5 archive with any encrypted entry or encrypted
+    /// headers fails with `native_rar::PasswordNeeded`. The other readers
+    /// refuse a password.
     pub password: Option<&'a [u8]>,
     /// Write the NTFS alternate data streams of a WIM's files as named
     /// streams `file:name`, after each file's data and before the file is
@@ -639,8 +641,9 @@ fn tree_reader(reader: &Reader) -> Option<TreeReader> {
 fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Result<()> {
     let reader = choose_reader(archive)?;
     ensure!(
-        options.password.is_none() || matches!(reader, Reader::Zip | Reader::SevenZip),
-        "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
+        options.password.is_none()
+            || matches!(reader, Reader::Zip | Reader::SevenZip | Reader::Rar),
+        "--password applies only to ZIP, 7z and RAR archives, and Zipper does not decrypt {}",
         archive.display()
     );
     ensure!(
@@ -737,6 +740,7 @@ fn read_into(archive: &Path, destination: &Path, options: ExtractOptions) -> Res
                     metadata: options.metadata,
                     control: options.control,
                     alternate_streams: options.alternate_streams,
+                    password: options.password,
                 },
             )?;
         }

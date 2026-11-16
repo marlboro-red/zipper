@@ -130,7 +130,8 @@ fn with_password<T>(
         Err(error)
             if given.is_none()
                 && (error.is::<zipper::native_zip::PasswordNeeded>()
-                    || error.is::<zipper::native_7z::PasswordNeeded>()) =>
+                    || error.is::<zipper::native_7z::PasswordNeeded>()
+                    || error.is::<zipper::native_rar::PasswordNeeded>()) =>
         {
             error
         }
@@ -995,8 +996,18 @@ fn run() -> Result<()> {
                     Reader::SevenZip => print(with_password(password, |password| {
                         zipper::native_7z::list_with_password(&archive, password)
                     })?),
+                    Reader::Rar => print(with_password(password, |password| {
+                        zipper::native_rar::read_archive(
+                            &archive,
+                            None,
+                            zipper::native_rar::ReadOptions {
+                                password,
+                                ..Default::default()
+                            },
+                        )
+                    })?),
                     _ if password.is_some() => anyhow::bail!(
-                        "list reads no encrypted data outside a 7z header, so it takes no --password"
+                        "list reads no encrypted data outside a 7z header or a RAR archive, so it takes no --password"
                     ),
                     Reader::Zip => print(zipper::native_zip::list(&archive)?),
                     Reader::Tar => print(zipper::native_tar::read_archive(
@@ -1043,11 +1054,6 @@ fn run() -> Result<()> {
                         &archive,
                         None,
                         zipper::native_arj::ReadOptions::default(),
-                    )?),
-                    Reader::Rar => print(zipper::native_rar::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_rar::ReadOptions::default(),
                     )?),
                     Reader::Iso => print(zipper::native_iso::read_archive(
                         &archive,
@@ -1114,8 +1120,9 @@ fn run() -> Result<()> {
             zipper::read_volumes(&archive, || {
                 let reader = zipper::choose_reader(&archive)?;
                 anyhow::ensure!(
-                    password.is_none() || matches!(reader, Reader::Zip | Reader::SevenZip),
-                    "--password applies only to ZIP and 7z archives, and Zipper does not decrypt {}",
+                    password.is_none()
+                        || matches!(reader, Reader::Zip | Reader::SevenZip | Reader::Rar),
+                    "--password applies only to ZIP, 7z and RAR archives, and Zipper does not decrypt {}",
                     archive.display()
                 );
                 match reader {
@@ -1187,11 +1194,16 @@ fn run() -> Result<()> {
                         None,
                         zipper::native_arj::ReadOptions::default(),
                     )?),
-                    Reader::Rar => report(zipper::native_rar::read_archive(
-                        &archive,
-                        None,
-                        zipper::native_rar::ReadOptions::default(),
-                    )?),
+                    Reader::Rar => report(with_password(password, |password| {
+                        zipper::native_rar::read_archive(
+                            &archive,
+                            None,
+                            zipper::native_rar::ReadOptions {
+                                password,
+                                ..Default::default()
+                            },
+                        )
+                    })?),
                     Reader::Iso => report(zipper::native_iso::read_archive(
                         &archive,
                         None,

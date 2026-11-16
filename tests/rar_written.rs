@@ -7,7 +7,9 @@
 //! each refused one. Where 7-Zip is installed, each archive extracts to the
 //! tree 7-Zip extracts wherever it decodes the archive, which must include
 //! the stored ones. Without them those comparisons are skipped, unless
-//! `ZIPPER_PARITY_REQUIRE_UNRAR` or `ZIPPER_PARITY_REQUIRE_7Z` is set.
+//! `ZIPPER_PARITY_REQUIRE_UNRAR` or `ZIPPER_PARITY_REQUIRE_7Z` is set. Every
+//! encrypted archive Zipper reads extracts with the password the manifest
+//! records, and a wrong or missing password is refused and leaves nothing.
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
 #[path = "common/unrar.rs"]
@@ -150,6 +152,16 @@ struct Archive {
     tree: Option<Tree>,
     refused: Option<String>,
     files: Vec<String>,
+    password: Option<String>,
+}
+
+impl Archive {
+    fn options(&self) -> ReadOptions<'_> {
+        ReadOptions {
+            password: self.password.as_deref().map(str::as_bytes),
+            ..ReadOptions::default()
+        }
+    }
 }
 
 fn manifest(ceiling: Option<u32>) -> Vec<Archive> {
@@ -171,6 +183,9 @@ fn manifest(ceiling: Option<u32>) -> Vec<Archive> {
                 .iter()
                 .map(|file| file.as_str().unwrap().to_owned())
                 .collect(),
+            password: entry
+                .get("password")
+                .map(|password| password.as_str().unwrap().to_owned()),
         })
         .collect()
 }
@@ -244,18 +259,21 @@ fn corpus(name: &str) -> PathBuf {
 
 fn zipper_tree(archive: &Archive, work: &Path) -> Tree {
     let out = work.join("zipper");
-    read_archive(&corpus(&archive.name), Some(&out), ReadOptions::default())
+    read_archive(&corpus(&archive.name), Some(&out), archive.options())
         .unwrap_or_else(|error| panic!("{}: {error:#}", archive.name));
     tree(&out)
 }
 
-fn unrar_tree(binary: &Path, archive: &Path, into: &Path) -> Tree {
+fn unrar_tree(binary: &Path, archive: &Path, password: Option<&str>, into: &Path) -> Tree {
     fs::create_dir(into).unwrap();
+    // EXTERNAL(unrar 7.23): skips relative links as unsafe when the destination path runs
+    // through a symlink, such as macOS's /var or /tmp, so it gets the resolved path.
+    let resolved = fs::canonicalize(into).unwrap();
     let run = Command::new(binary)
         .args(["x", "-idq", "-y", "-ver"])
-        .arg(format!("-p{PASSWORD}"))
+        .arg(format!("-p{}", password.unwrap_or(PASSWORD)))
         .arg(archive)
-        .arg(into)
+        .arg(&resolved)
         .output()
         .unwrap();
     assert!(
@@ -323,7 +341,7 @@ fn every_archive_rar_wrote_extracts_its_source_tree() {
         let work = tempfile::tempdir().unwrap();
         let actual = without_unrecorded_fields(zipper_tree(archive, work.path()), wanted);
         assert_eq!(&actual, wanted, "{}", archive.name);
-        read_archive(&corpus(&archive.name), None, ReadOptions::default())
+        read_archive(&corpus(&archive.name), None, archive.options())
             .unwrap_or_else(|error| panic!("{} fails its test: {error:#}", archive.name));
         make_deletable(work.path());
         extracted += 1;
@@ -358,7 +376,7 @@ fn every_archive_with_a_feature_zipper_refuses_is_refused_by_name_and_leaves_not
         );
         refused += 1;
     }
-    assert!(refused >= 8, "only {refused} archives refused");
+    assert!(refused >= 7, "only {refused} archives refused");
 }
 
 #[test]
@@ -373,7 +391,12 @@ fn every_archive_extracts_the_tree_unrar_and_7zip_extract() {
             .as_ref()
             .map(|_| zipper_tree(&archive, work.path()));
         if let Some(binary) = &unrar {
-            let theirs = unrar_tree(binary, &corpus(&archive.name), &work.path().join("theirs"));
+            let theirs = unrar_tree(
+                binary,
+                &corpus(&archive.name),
+                archive.password.as_deref(),
+                &work.path().join("theirs"),
+            );
             assert!(
                 !theirs.is_empty(),
                 "unrar extracted nothing from {}",
@@ -430,6 +453,8 @@ fn a_selected_path_late_in_a_solid_stream_extracts_only_its_entries() {
     for (name, path) in [
         ("rar5-solid-m5.rar", "src/text"),
         ("rar5-solid-small-texts.rar", "src/notes/note-119.txt"),
+        ("rar5-encrypted-headers-solid.rar", "src/notes/note-119.txt"),
+        ("rar5-encrypted-solid.rar", "src/text"),
     ] {
         let archive = manifest(ceiling)
             .into_iter()
@@ -437,6 +462,7 @@ fn a_selected_path_late_in_a_solid_stream_extracts_only_its_entries() {
             .unwrap();
         let wanted: Tree = archive
             .tree
+            .clone()
             .unwrap()
             .into_iter()
             .filter(|(entry, _)| {
@@ -454,7 +480,7 @@ fn a_selected_path_late_in_a_solid_stream_extracts_only_its_entries() {
             Some(&out),
             ReadOptions {
                 paths: &paths,
-                ..ReadOptions::default()
+                ..archive.options()
             },
         )
         .unwrap_or_else(|error| panic!("{name}: {error:#}"));
@@ -465,4 +491,49 @@ fn a_selected_path_late_in_a_solid_stream_extracts_only_its_entries() {
         );
         make_deletable(work.path());
     }
+}
+
+#[test]
+fn every_encrypted_archive_refuses_a_wrong_or_missing_password_and_leaves_nothing() {
+    let mut encrypted = 0;
+    for archive in manifest(None) {
+        let (Some(password), Some(_)) = (&archive.password, &archive.tree) else {
+            continue;
+        };
+        let wrong = format!("!{password}");
+        for given in [Some(wrong.as_bytes()), Some(&b""[..]), None] {
+            let work = tempfile::tempdir().unwrap();
+            let out = work.path().join("out");
+            for into in [Some(out.as_path()), None] {
+                let options = ReadOptions {
+                    password: given,
+                    ..ReadOptions::default()
+                };
+                let error = read_archive(&corpus(&archive.name), into, options)
+                    .err()
+                    .unwrap_or_else(|| panic!("{} was read with {given:?}", archive.name));
+                if given.is_none() {
+                    assert!(
+                        error.is::<zipper::native_rar::PasswordNeeded>(),
+                        "{}: {error:#}",
+                        archive.name
+                    );
+                } else {
+                    assert!(
+                        format!("{error:#}").contains("the password is wrong"),
+                        "{}: {error:#}",
+                        archive.name
+                    );
+                }
+            }
+            assert_eq!(
+                fs::read_dir(work.path()).unwrap().count(),
+                0,
+                "{} with {given:?}",
+                archive.name
+            );
+        }
+        encrypted += 1;
+    }
+    assert!(encrypted >= 10, "only {encrypted} encrypted archives");
 }

@@ -7,7 +7,8 @@ RARLAB's `unrar` extracts each archive, and its tree must equal the source
 tree the script wrote, or the script stops. manifest.json then records, for
 each archive, the command that wrote it, the features it covers, and either
 the tree every reader must extract or the reason Zipper must give when it
-refuses the archive. tests/rar_written.rs checks Zipper against the manifest
+refuses the archive, and the password of an encrypted one.
+tests/rar_written.rs checks Zipper against the manifest
 without any RAR tool, and against `unrar` and 7-Zip where they are installed.
 
 unrar runs with `-ver`, so it extracts old versions too. RAR 4 keeps DOS times in local time, so its trees record no times. RAR 4
@@ -39,6 +40,8 @@ import unicodedata
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "tests" / "data" / "rar-written"
 PASSWORD = "zipper"
+# RAR keeps the first 127 characters of a longer password, as rar warns.
+LONG_PASSWORD = "pässwörd " + "日本" * 70
 SEED = 20261114
 FIRST_TIME = 1_577_934_245
 LONG_NAME = "long-" + "n" * 195 + ".txt"
@@ -218,9 +221,7 @@ def comment(work):
 RAR5 = "RAR 5"
 RAR4 = "RAR 4"
 
-REFUSED_ENCRYPTED_HEADERS_5 = "RAR 5 archive has encrypted headers, which Zipper does not decrypt"
 REFUSED_ENCRYPTED_HEADERS_4 = "RAR 4 archive has encrypted headers, which Zipper does not decrypt"
-REFUSED_ENCRYPTED_ENTRY_5 = "is encrypted, which Zipper does not decrypt"
 REFUSED_ENCRYPTED_ENTRY_4 = "is encrypted, which Zipper does not decrypt"
 REFUSED_VOLUME_5 = "Zipper does not read RAR 5 volumes"
 REFUSED_VOLUME_4 = "Zipper does not read RAR 4 volumes"
@@ -260,8 +261,16 @@ def cases(work):
         ("rar5-by-rar6.rar", "rar4", mixed, ["-ma5", "-m5", "-s"], [RAR5, "solid", "RAR 6 writer"], None),
         ("rar5-versions.rar", "rar", versions, ["-m3", "-ver"], [RAR5, "file versions"], None),
         ("rar5-file-copies.rar", "rar", copies, ["-m3", "-oi1:1"], [RAR5, "file copies"], REFUSED_COPY),
-        ("rar5-encrypted-headers.rar", "rar", single, ["-m3", f"-hp{PASSWORD}"], [RAR5, "encrypted headers"], REFUSED_ENCRYPTED_HEADERS_5),
-        ("rar5-encrypted-data.rar", "rar", single, ["-m3", f"-p{PASSWORD}"], [RAR5, "encrypted data"], REFUSED_ENCRYPTED_ENTRY_5),
+        ("rar5-encrypted-headers.rar", "rar", single, ["-m3", f"-hp{PASSWORD}"], [RAR5, "encrypted headers"], None),
+        ("rar5-encrypted-data.rar", "rar", single, ["-m3", f"-p{PASSWORD}"], [RAR5, "encrypted data"], None),
+        ("rar5-encrypted-stored.rar", "rar", mixed, ["-m0", f"-p{PASSWORD}"], [RAR5, "encrypted data", "-m0"], None),
+        ("rar5-encrypted-m3.rar", "rar", mixed, ["-m3", f"-p{PASSWORD}"], [RAR5, "encrypted data", "-m3"], None),
+        ("rar5-encrypted-solid.rar", "rar", mixed, ["-m5", "-s", f"-p{PASSWORD}"], [RAR5, "encrypted data", "solid"], None),
+        ("rar5-encrypted-blake2.rar", "rar", mixed, ["-m3", "-htb", f"-p{PASSWORD}"], [RAR5, "encrypted data", "BLAKE2sp"], None),
+        ("rar5-encrypted-headers-stored.rar", "rar", mixed, ["-m0", f"-hp{PASSWORD}"], [RAR5, "encrypted headers", "-m0"], None),
+        ("rar5-encrypted-headers-solid.rar", "rar", many_small_texts, ["-m5", "-s", f"-hp{PASSWORD}"], [RAR5, "encrypted headers", "solid", "many files"], None),
+        ("rar5-encrypted-headers-blake2.rar", "rar", mixed, ["-m3", "-htb", f"-hp{PASSWORD}"], [RAR5, "encrypted headers", "BLAKE2sp"], None),
+        ("rar5-encrypted-long-password.rar", "rar", single, ["-m3", f"-p{LONG_PASSWORD}"], [RAR5, "encrypted data", "password of more than 127 characters"], None),
         ("rar5-volumes.part1.rar", "rar", single, ["-m0", "-v24k"], [RAR5, "volumes"], REFUSED_VOLUME_5),
         ("rar4-text-ppmd.rar", "rar4", mixed, ["-ma4", "-m5", "-mcT+"], [RAR4, "PPMd"], None),
         ("rar4-text-ppmd-small-files.rar", "rar4", many_small_texts, ["-ma4", "-m5", "-mcT+"], [RAR4, "PPMd", "many files"], REFUSED_PPMD_RESTARTS),
@@ -329,6 +338,15 @@ def unlock(root):
                 path.chmod(0o755)
 
 
+def password(switches):
+    """The password a case's switches set, if any."""
+    for switch in switches:
+        for prefix in ("-hp", "-p"):
+            if switch.startswith(prefix):
+                return switch[len(prefix):]
+    return None
+
+
 def version(binary):
     banner = subprocess.run([binary], capture_output=True, text=True).stdout
     return next(line.split("Copyright")[0].strip() for line in banner.splitlines() if line.strip())
@@ -376,7 +394,8 @@ def main():
                     expected[path] = node
             out = case / "unrar"
             out.mkdir()
-            subprocess.run([args.unrar, "x", "-idq", "-y", "-ver", f"-p{PASSWORD}", str(target), f"{out}/"], check=True)
+            given = password(switches)
+            subprocess.run([args.unrar, "x", "-idq", "-y", "-ver", f"-p{given or PASSWORD}", str(target), f"{out}/"], check=True)
             if rar4:
                 expected = {as_rar4_spells_it(path): node for path, node in expected.items()}
             extracted = tree(out, rar4)
@@ -393,6 +412,8 @@ def main():
                 "features": features,
                 "files": [path.name for path in volumes(target)] if ".part1." in archive else [archive],
             }
+            if given is not None:
+                entry["password"] = given
             if refusal is None:
                 entry["tree"] = expected
             else:

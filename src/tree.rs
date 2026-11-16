@@ -39,6 +39,11 @@ pub struct ReadOptions<'a> {
     /// their names and data are checked on every platform. Other readers
     /// ignore it.
     pub alternate_streams: bool,
+    /// Password for RAR 5 archives encrypted with AES-256, as UTF-8. RAR
+    /// uses only its first 127 characters, so Zipper does too. An encrypted
+    /// entry or encrypted headers without it fail with
+    /// `native_rar::PasswordNeeded`. Other readers ignore it.
+    pub password: Option<&'a [u8]>,
 }
 
 pub(crate) const MAX_ENTRIES: usize = 1_000_000;

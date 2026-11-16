@@ -112,9 +112,11 @@ mod rar4;
 #[cfg(feature = "rar")]
 mod rar4_lz;
 #[cfg(feature = "rar")]
+mod rar5_crypto;
+#[cfg(feature = "rar")]
 mod rar5_lz;
 mod refused;
-#[cfg(any(feature = "zip-deflate", feature = "7z"))]
+#[cfg(any(feature = "zip-deflate", feature = "7z", feature = "rar"))]
 mod scrub;
 #[cfg(feature = "7z")]
 mod sevenz_crypto;

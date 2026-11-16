@@ -459,11 +459,17 @@ impl Stream {
         self.block_last = false;
     }
 
-    pub(crate) fn reader<R: Read>(&mut self, packed: R, packed_size: u64) -> FileReader<'_, R> {
+    pub(crate) fn reader<R: Read>(
+        &mut self,
+        packed: R,
+        packed_size: u64,
+        padding: u64,
+    ) -> FileReader<'_, R> {
         FileReader {
             stream: self,
             packed,
             remaining: packed_size,
+            padding,
         }
     }
 
@@ -622,7 +628,12 @@ impl Stream {
         result
     }
 
-    fn next_block<R: Read>(&mut self, packed: &mut R, remaining: &mut u64) -> io::Result<()> {
+    fn next_block<R: Read>(
+        &mut self,
+        packed: &mut R,
+        remaining: &mut u64,
+        padding: u64,
+    ) -> io::Result<()> {
         if self.block_last {
             return Err(invalid("RAR 5 stream ends before its declared size"));
         }
@@ -662,8 +673,12 @@ impl Stream {
         };
         self.block_done = false;
         self.block_last = header.last;
-        if header.last && *remaining != 0 {
+        if header.last && *remaining > padding {
             return Err(invalid("RAR 5 file holds data after its last block"));
+        }
+        if header.last {
+            io::copy(&mut packed.by_ref().take(*remaining), &mut io::sink())?;
+            *remaining = 0;
         }
         if header.tables {
             let block = std::mem::take(&mut self.block);
@@ -735,6 +750,7 @@ pub(crate) struct FileReader<'a, R> {
     stream: &'a mut Stream,
     packed: R,
     remaining: u64,
+    padding: u64,
 }
 
 impl<R: Read> FileReader<'_, R> {
@@ -748,7 +764,7 @@ impl<R: Read> FileReader<'_, R> {
                 return Err(invalid("RAR 5 stream ends before its declared size"));
             }
             self.stream
-                .next_block(&mut self.packed, &mut self.remaining)?;
+                .next_block(&mut self.packed, &mut self.remaining, self.padding)?;
         }
         self.stream.decode_symbols()
     }
@@ -1062,7 +1078,7 @@ mod stream_tests {
     fn decode(packed: &[u8], size: u64) -> io::Result<Vec<u8>> {
         let mut stream = Stream::default();
         stream.start_file(128 << 10, size).map_err(invalid)?;
-        let mut reader = stream.reader(packed, packed.len() as u64);
+        let mut reader = stream.reader(packed, packed.len() as u64, 0);
         let mut out = Vec::new();
         let mut buffer = [0u8; 7];
         while (out.len() as u64) < size {
@@ -1196,6 +1212,33 @@ mod stream_tests {
             kind: 4,
         };
         assert!(decode(&block_with_fixed_width_tables(&tokens), 8).is_err());
+    }
+
+    fn decode_padded(packed: &[u8], size: u64, padding: u64) -> io::Result<Vec<u8>> {
+        let mut stream = Stream::default();
+        stream.start_file(128 << 10, size).map_err(invalid)?;
+        let mut reader = stream.reader(packed, packed.len() as u64, padding);
+        let mut out = Vec::new();
+        (&mut reader).take(size).read_to_end(&mut out)?;
+        reader.finish_at_declared_size()?;
+        Ok(out)
+    }
+
+    #[test]
+    fn bytes_after_the_last_block_pass_only_within_the_padding() {
+        let packed = block_with_fixed_width_tables(&[Token::Literal(1), Token::Literal(2)]);
+        for padding in [0u64, 1, 15] {
+            for extra in 0..=padding + 1 {
+                let mut padded = packed.clone();
+                padded.extend(std::iter::repeat_n(0xEE, extra as usize));
+                let decoded = decode_padded(&padded, 2, padding);
+                if extra <= padding {
+                    assert_eq!(decoded.unwrap(), [1, 2], "{extra} of {padding}");
+                } else {
+                    assert!(decoded.is_err(), "{extra} of {padding}");
+                }
+            }
+        }
     }
 
     #[test]

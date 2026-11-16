@@ -193,7 +193,7 @@ zipper = { git = "https://github.com/marlboro-red/zipper", default-features = fa
 | `cab` | The CAB reader | None |
 | `lzh` | The LZH reader | None |
 | `arj` | The ARJ reader | None |
-| `rar` | The RAR 5 and RAR 4 reader | `ppmd-rust` |
+| `rar` | The RAR 5 and RAR 4 reader, including RAR 5 AES-256 | `aes`, `hmac`, `ppmd-rust`, `zeroize` |
 | `iso` | The ISO 9660 and UDF reader | None |
 | `wim` | The WIM reader | `sha1` |
 | `exe` | The PE, COFF, TE, ELF and Mach-O reader | None |
@@ -252,7 +252,7 @@ These archives went to 7-Zip before and can no longer be extracted at all:
 - A tar with GNU or pax sparse files.
 - A ZIP entry with PKWARE strong encryption, or with a compression method the [ZIP reader](reference/zip-reader.md) does not decode.
 - An ISO 9660 image whose blocks are not 2048 bytes.
-- A RAR volume of a set, a RAR 4 solid archive, and a RAR with encrypted headers.
+- A RAR volume of a set, a RAR 4 solid archive, and a RAR 4 archive with encrypted headers.
 - A 7z folder whose method or layout the [7z reader](reference/7z-reader.md) does not decode.
 - An ext volume with a feature the [ext reader](reference/ext-reader.md) refuses, such as a journal that needs recovery.
 - An LP image or UEFI firmware with a name that is not a plain relative path.
@@ -307,7 +307,7 @@ To give the password without a prompt, as a script must, pass `--password`. It t
 zipper --password 'correct horse' extract secret.zip -o restored
 ```
 
-When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so `extract` and `test` fail there when a selected entry is encrypted and no `--password` was given. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper decrypts ZIP and 7z archives. It refuses `--password` for archives it does not decrypt, such as tar. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
+When standard input is not a terminal and no password was given, Zipper refuses. Windows has no prompt yet, so `extract` and `test` fail there when a selected entry is encrypted and no `--password` was given. A wrong password fails before anything is published, and the error says the password is wrong, or that it is wrong or the entry is damaged. ZipCrypto is weak, so treat its archives as unprotected. Library callers set `password` in `ExtractOptions`. Zipper decrypts ZIP, 7z and RAR 5 archives, as the [RAR reader reference](reference/rar-reader.md#encryption) describes for RAR. It refuses `--password` for archives it does not decrypt, such as tar. The [ZIP reader reference](reference/zip-reader.md#encrypted-entries) lists what each scheme checks.
 
 ## Read tar archives in process
 

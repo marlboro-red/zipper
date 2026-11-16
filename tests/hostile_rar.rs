@@ -3,9 +3,13 @@
 //! extracts only entries of the original tree. Every one-bit flip is refused
 //! or, where it lands on bytes no check covers, extracts exactly the original
 //! tree, and a stored archive is never extracted where 7-Zip refuses it.
-//! Hand-built headers cover the refusals the corpus does not reach.
+//! Hand-built headers cover the refusals the corpus does not reach, and an
+//! encrypting writer covers damaged encryption records, key derivation
+//! counts, password check values and AES blocks.
 #[path = "common/sevenzip.rs"]
 mod sevenzip;
+#[path = "common/unrar.rs"]
+mod unrar;
 
 use std::{fs, path::Path, process::Command};
 use zipper::native_rar::{ReadOptions, read_archive};
@@ -1401,4 +1405,417 @@ fn ppmd_restarts_are_charged_to_the_archive_not_to_each_file() {
     ])));
     let error = rar4_error(&files_restarting_ppmd(&[(4, &four_mib[1..]), (1, byte)])).unwrap();
     assert!(error.contains("restart more often"), "{error}");
+}
+
+const PASSWORD: &str = "zipper";
+const SALT: [u8; 16] = [0x5A; 16];
+const IV: [u8; 16] = [0xA5; 16];
+const DEFAULT_KDF_COUNT: u8 = 15;
+const HAS_CHECK: u64 = 0x01;
+const TWEAKED: u64 = 0x02;
+
+fn pbkdf2_crate_value(password: &str, count: u8, extra: u32) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    pbkdf2::pbkdf2_hmac::<sha2::Sha256>(
+        password.as_bytes(),
+        &SALT,
+        (1u32 << count) + extra,
+        &mut out,
+    );
+    out
+}
+
+fn check_value(password: &str, count: u8) -> [u8; 12] {
+    let value = pbkdf2_crate_value(password, count, 32);
+    let mut check = [0u8; 12];
+    for (at, byte) in value.iter().enumerate() {
+        check[at % 8] ^= byte;
+    }
+    use sha2::Digest;
+    let tail = sha2::Sha256::digest(&check[..8]);
+    check[8..].copy_from_slice(&tail[..4]);
+    check
+}
+
+fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
+    use hmac::{KeyInit, Mac};
+    let mut code = <hmac::Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key).unwrap();
+    code.update(data);
+    code.finalize().into_bytes().into()
+}
+
+fn tweaked_crc(password: &str, count: u8, crc: u32) -> u32 {
+    let code = hmac_sha256(&pbkdf2_crate_value(password, count, 16), &crc.to_le_bytes());
+    let mut folded = [0u8; 4];
+    for (at, byte) in code.iter().enumerate() {
+        folded[at % 4] ^= byte;
+    }
+    u32::from_le_bytes(folded)
+}
+
+fn cbc_encrypted(key: &[u8; 32], iv: [u8; 16], plain: &[u8]) -> Vec<u8> {
+    use aes::cipher::{BlockCipherEncrypt, KeyInit};
+    let cipher = aes::Aes256::new_from_slice(key).unwrap();
+    let mut chain = iv;
+    let mut out = Vec::new();
+    for piece in plain.chunks(16) {
+        let mut bytes = aes::Block::default();
+        for (at, byte) in bytes.iter_mut().enumerate() {
+            *byte = piece.get(at).copied().unwrap_or(0) ^ chain[at];
+        }
+        cipher.encrypt_block(&mut bytes);
+        chain.copy_from_slice(&bytes);
+        out.extend_from_slice(&bytes);
+    }
+    out
+}
+
+#[derive(Clone, Copy)]
+struct Encrypt {
+    count: u8,
+    flags: u64,
+    crc: bool,
+}
+
+const ENCRYPT: Encrypt = Encrypt {
+    count: DEFAULT_KDF_COUNT,
+    flags: HAS_CHECK | TWEAKED,
+    crc: true,
+};
+
+fn encryption_record(how: Encrypt, iv: bool) -> Vec<u8> {
+    let mut data = vint(0);
+    data.extend(vint(how.flags));
+    data.push(how.count);
+    data.extend(SALT);
+    if iv {
+        data.extend(IV);
+    }
+    if how.flags & HAS_CHECK != 0 {
+        data.extend(check_value(PASSWORD, how.count.min(DEFAULT_KDF_COUNT)));
+    }
+    data
+}
+
+// SPEC(RAR 5 technote, file header): flags, sizes, attributes, CRC-32, method, host and name.
+fn file_fields(name: &str, unpacked: usize, crc: Option<u32>) -> Vec<u8> {
+    let mut fields = vint(if crc.is_some() { 4 } else { 0 });
+    fields.extend(vint(unpacked as u64));
+    fields.extend(vint(0o100644));
+    if let Some(crc) = crc {
+        fields.extend(crc.to_le_bytes());
+    }
+    fields.extend(vint(0));
+    fields.extend(vint(1));
+    fields.extend(vint(name.len() as u64));
+    fields.extend_from_slice(name.as_bytes());
+    fields
+}
+
+fn encrypted_file(name: &str, plain: &[u8], how: Encrypt, record_data: &[u8]) -> Vec<u8> {
+    let crc = crc32fast::hash(plain);
+    let crc = how.crc.then(|| {
+        if how.flags & TWEAKED != 0 {
+            tweaked_crc(PASSWORD, how.count, crc)
+        } else {
+            crc
+        }
+    });
+    let data = cbc_encrypted(&pbkdf2_crate_value(PASSWORD, how.count, 0), IV, plain);
+    block(
+        2,
+        0,
+        &file_fields(name, plain.len(), crc),
+        &record(1, record_data),
+        &data,
+    )
+}
+
+fn encrypted_archive(entries: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = b"Rar!\x1A\x07\x01\x00".to_vec();
+    out.extend(block(1, 0, &vint(0), &[], &[]));
+    for entry in entries {
+        out.extend(entry);
+    }
+    out.extend(block(5, 0, &vint(0), &[], &[]));
+    out
+}
+
+fn sealed(block: &[u8], data_size: usize, key: &[u8; 32]) -> Vec<u8> {
+    let (header, data) = block.split_at(block.len() - data_size);
+    let mut out = IV.to_vec();
+    out.extend(cbc_encrypted(key, IV, header));
+    out.extend_from_slice(data);
+    out
+}
+
+fn archive_with_encrypted_headers(header: Encrypt, files: &[(&str, &[u8])]) -> Vec<u8> {
+    let key = pbkdf2_crate_value(PASSWORD, header.count, 0);
+    let mut out = b"Rar!\x1A\x07\x01\x00".to_vec();
+    out.extend(block(4, 0, &encryption_record(header, false), &[], &[]));
+    out.extend(sealed(&block(1, 0, &vint(0), &[], &[]), 0, &key));
+    for (name, plain) in files {
+        let how = Encrypt {
+            count: header.count,
+            ..ENCRYPT
+        };
+        let file = encrypted_file(name, plain, how, &encryption_record(how, true));
+        out.extend(sealed(&file, plain.len().next_multiple_of(16), &key));
+    }
+    out.extend(sealed(&block(5, 0, &vint(0), &[], &[]), 0, &key));
+    out
+}
+
+fn error_with(bytes: &[u8], password: Option<&str>) -> Option<anyhow::Error> {
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("a.rar");
+    fs::write(&archive, bytes).unwrap();
+    let out = work.path().join("out");
+    let options = ReadOptions {
+        password: password.map(str::as_bytes),
+        ..ReadOptions::default()
+    };
+    let verified = read_archive(&archive, None, options).err();
+    let result = read_archive(&archive, Some(&out), options);
+    match &result {
+        Ok(_) => assert!(verified.is_none(), "extracted what fails its test"),
+        Err(_) => assert_eq!(fs::read_dir(work.path()).unwrap().count(), 1, "left output"),
+    }
+    make_deletable(work.path());
+    result.err()
+}
+
+fn refusal(bytes: &[u8], password: Option<&str>) -> String {
+    format!(
+        "{:#}",
+        error_with(bytes, password).expect("the archive was extracted")
+    )
+}
+
+fn extracted_with_password(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("a.rar");
+    fs::write(&archive, bytes).unwrap();
+    let out = work.path().join("out");
+    let options = ReadOptions {
+        password: Some(PASSWORD.as_bytes()),
+        ..ReadOptions::default()
+    };
+    read_archive(&archive, Some(&out), options).unwrap_or_else(|error| panic!("{error:#}"));
+    let found = listing(&out);
+    make_deletable(work.path());
+    found
+}
+
+fn unrar_extracts(binary: &Path, bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let work = tempfile::tempdir().unwrap();
+    let archive = work.path().join("a.rar");
+    fs::write(&archive, bytes).unwrap();
+    let out = work.path().join("out");
+    fs::create_dir(&out).unwrap();
+    // EXTERNAL(unrar 7.23): skips relative links as unsafe when the destination path runs
+    // through a symlink, such as macOS's /var or /tmp, so it gets the resolved path.
+    let resolved = fs::canonicalize(&out).unwrap();
+    let run = Command::new(binary)
+        .args(["x", "-idq", "-y"])
+        .arg(format!("-p{PASSWORD}"))
+        .arg(&archive)
+        .arg(&resolved)
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "unrar: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    listing(&out)
+}
+
+fn plain_entries() -> Vec<(String, Vec<u8>)> {
+    vec![
+        ("a.txt".to_owned(), b"hello, encrypted".to_vec()),
+        ("b.bin".to_owned(), (0..=255u8).cycle().take(1000).collect()),
+    ]
+}
+
+#[test]
+fn the_encrypting_test_writer_makes_archives_the_reader_and_unrar_extract_alike() {
+    let entries = plain_entries();
+    let record = encryption_record(ENCRYPT, true);
+    let data = encrypted_archive(
+        &entries
+            .iter()
+            .map(|(name, plain)| encrypted_file(name, plain, ENCRYPT, &record))
+            .collect::<Vec<_>>(),
+    );
+    let pairs: Vec<(&str, &[u8])> = entries
+        .iter()
+        .map(|(name, plain)| (name.as_str(), plain.as_slice()))
+        .collect();
+    let headers = archive_with_encrypted_headers(ENCRYPT, &pairs);
+    for bytes in [&data, &headers] {
+        assert_eq!(extracted_with_password(bytes), entries);
+        if let Some(binary) = unrar::unrar() {
+            assert_eq!(unrar_extracts(&binary, bytes), entries);
+        }
+    }
+}
+
+#[test]
+fn every_cut_of_an_encryption_record_is_refused() {
+    let full = encryption_record(ENCRYPT, true);
+    for cut in 0..full.len() {
+        let bytes = encrypted_archive(&[encrypted_file("a", b"x", ENCRYPT, &full[..cut])]);
+        let error = refusal(&bytes, Some(PASSWORD));
+        assert!(error.contains("RAR 5"), "cut {cut}: {error}");
+    }
+    let header = encryption_record(ENCRYPT, false);
+    for cut in 0..header.len() {
+        let mut bytes = b"Rar!\x1A\x07\x01\x00".to_vec();
+        bytes.extend(block(4, 0, &header[..cut], &[], &[]));
+        refusal(&bytes, Some(PASSWORD));
+    }
+}
+
+#[test]
+fn a_key_derivation_count_past_the_limit_is_refused_before_any_derivation() {
+    for count in [25u8, 31, 32, 63, 64, 255] {
+        let how = Encrypt { count, ..ENCRYPT };
+        let record = encryption_record(how, true);
+        let bytes = encrypted_archive(&[encrypted_file("a", b"x", ENCRYPT, &record)]);
+        let error = refusal(&bytes, Some(PASSWORD));
+        assert!(error.contains("above 24"), "count {count}: {error}");
+        let mut headers = b"Rar!\x1A\x07\x01\x00".to_vec();
+        headers.extend(block(4, 0, &encryption_record(how, false), &[], &[]));
+        headers.extend(block(1, 0, &vint(0), &[], &[]));
+        let error = refusal(&headers, Some(PASSWORD));
+        assert!(error.contains("above 24"), "header count {count}: {error}");
+    }
+}
+
+#[test]
+fn a_bad_password_check_value_is_refused_before_any_output() {
+    let good = encryption_record(ENCRYPT, true);
+    let check_at = good.len() - 12;
+    let mut wrong = good.clone();
+    wrong[check_at] ^= 1;
+    use sha2::Digest;
+    let tail = sha2::Sha256::digest(&wrong[check_at..check_at + 8]);
+    wrong[check_at + 8..].copy_from_slice(&tail[..4]);
+    let bytes = encrypted_archive(&[encrypted_file("a", b"x", ENCRYPT, &wrong)]);
+    let error = refusal(&bytes, Some(PASSWORD));
+    assert!(error.contains("the password is wrong for"), "{error}");
+    let mut damaged = good.clone();
+    damaged[check_at + 9] ^= 1;
+    let bytes = encrypted_archive(&[encrypted_file("a", b"x", ENCRYPT, &damaged)]);
+    let error = refusal(&bytes, Some(PASSWORD));
+    assert!(
+        error.contains("password check value of") && error.ends_with("is damaged"),
+        "{error}"
+    );
+    let bytes = encrypted_archive(&[encrypted_file("a", b"x", ENCRYPT, &good)]);
+    let error = refusal(&bytes, Some("Zipper"));
+    assert!(error.contains("the password is wrong for"), "{error}");
+}
+
+#[test]
+fn a_wrong_password_without_a_check_value_fails_on_the_data_check() {
+    let how = Encrypt {
+        flags: TWEAKED,
+        ..ENCRYPT
+    };
+    let record = encryption_record(how, true);
+    let plain = b"no check value, only a tweaked CRC-32";
+    let bytes = encrypted_archive(&[encrypted_file("a", plain, how, &record)]);
+    assert_eq!(
+        extracted_with_password(&bytes),
+        vec![("a".to_owned(), plain.to_vec())]
+    );
+    let error = refusal(&bytes, Some("Zipper"));
+    assert!(error.contains("the password is wrong or"), "{error}");
+    let plain_crc = Encrypt {
+        flags: 0,
+        ..ENCRYPT
+    };
+    let record = encryption_record(plain_crc, true);
+    let bytes = encrypted_archive(&[encrypted_file("a", plain, plain_crc, &record)]);
+    assert_eq!(
+        extracted_with_password(&bytes),
+        vec![("a".to_owned(), plain.to_vec())]
+    );
+    let error = refusal(&bytes, Some("Zipper"));
+    assert!(error.contains("the password is wrong or"), "{error}");
+    let unchecked = Encrypt {
+        flags: 0,
+        crc: false,
+        ..ENCRYPT
+    };
+    let record = encryption_record(unchecked, true);
+    let bytes = encrypted_archive(&[encrypted_file("a", plain, unchecked, &record)]);
+    let error = refusal(&bytes, Some(PASSWORD));
+    assert!(error.contains("could not be detected"), "{error}");
+    let header = archive_with_encrypted_headers(
+        Encrypt {
+            flags: 0,
+            ..ENCRYPT
+        },
+        &[("a", plain)],
+    );
+    let error = refusal(&header, Some("Zipper"));
+    assert!(error.contains("the password is wrong or"), "{error}");
+}
+
+#[test]
+fn encrypted_data_that_is_not_whole_aes_blocks_is_refused() {
+    let encryption = encryption_record(ENCRYPT, true);
+    let plain = b"sixteen bytes!!!";
+    let crc = tweaked_crc(PASSWORD, ENCRYPT.count, crc32fast::hash(plain));
+    let data = cbc_encrypted(&pbkdf2_crate_value(PASSWORD, ENCRYPT.count, 0), IV, plain);
+    for length in [1, 15, 17, 31] {
+        let mut data = data.clone();
+        data.resize(length, 0);
+        let entry = block(
+            2,
+            0,
+            &file_fields("a", plain.len().min(length), Some(crc)),
+            &record(1, &encryption),
+            &data,
+        );
+        let error = refusal(&encrypted_archive(&[entry]), Some(PASSWORD));
+        assert!(error.contains("whole AES blocks"), "{length}: {error}");
+    }
+    let entries: Vec<(&str, &[u8])> = vec![("a", plain)];
+    let cheap = Encrypt {
+        count: 1,
+        ..ENCRYPT
+    };
+    let headers = archive_with_encrypted_headers(cheap, &entries);
+    for cut in 1..headers.len() {
+        if error_with(&headers[..cut], Some(PASSWORD)).is_none() {
+            panic!("a cut to {cut} bytes was extracted");
+        }
+    }
+}
+
+#[test]
+fn an_encrypted_archive_without_a_password_needs_one_and_leaves_nothing() {
+    let record = encryption_record(ENCRYPT, true);
+    let data = encrypted_archive(&[encrypted_file("a", b"x", ENCRYPT, &record)]);
+    let headers = archive_with_encrypted_headers(ENCRYPT, &[("a", b"x")]);
+    for (bytes, header) in [(data, false), (headers, true)] {
+        let error = error_with(&bytes, None).unwrap();
+        let needed = error
+            .downcast_ref::<zipper::native_rar::PasswordNeeded>()
+            .unwrap_or_else(|| panic!("{error:#}"));
+        assert_eq!(needed.header, header);
+    }
+}
+
+#[test]
+fn an_unknown_encryption_version_is_refused() {
+    let mut record = encryption_record(ENCRYPT, true);
+    record[0] = 1;
+    let bytes = encrypted_archive(&[encrypted_file("a", b"x", ENCRYPT, &record)]);
+    let error = refusal(&bytes, Some(PASSWORD));
+    assert!(error.contains("encryption version"), "{error}");
 }

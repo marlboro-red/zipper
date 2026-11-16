@@ -1,18 +1,19 @@
 # In-process RAR reader
 
-Zipper extracts RAR 5 archives and RAR 4 archives that are not solid with its own Rust reader and decoders. Zipper sends a file here when it starts with the RAR 5 signature `Rar!\x1A\x07\x01\x00` or the RAR 4 signature `Rar!\x1A\x07\x00`. Every RAR goes to the reader. A volume of a set, an archive with encrypted headers, a RAR 4 solid archive and a damaged first header are refused by the reader, with the reason in the error.
+Zipper extracts RAR 5 archives and RAR 4 archives that are not solid with its own Rust reader and decoders. Zipper sends a file here when it starts with the RAR 5 signature `Rar!\x1A\x07\x01\x00` or the RAR 4 signature `Rar!\x1A\x07\x00`. Every RAR goes to the reader. RAR 5 archives encrypted with AES-256 are decrypted with a password, as [Encryption](#encryption) describes. A volume of a set, an encrypted RAR 4 archive, a RAR 4 solid archive and a damaged first header are refused by the reader, with the reason in the error.
 
 ## Sources
 
 The user decided on 4 November 2026 that Zipper reads RAR with its own decoder and that its authors never read the `unrar` source or 7-Zip's RAR code. Both carry unrar's licence restriction. The reader was written from these sources only:
 
-- RARLAB's [RAR 5.0 archive format](https://www.rarlab.com/technote.htm) technote, for the container.
+- RARLAB's [RAR 5.0 archive format](https://www.rarlab.com/technote.htm) technote, for the container and the layout of its encryption records.
 - libarchive's BSD licensed `archive_read_support_format_rar5.c`, for the RAR 5 compression, the filters and the details the technote leaves out. `src/rar5_lz.rs` follows it, and `LICENSE-libarchive` keeps its notice.
 - libarchive's BSD licensed `archive_read_support_format_rar.c`, for the RAR 4 container, the RAR 2.9 compression, its PPMd blocks and the standard filters. `src/rar4.rs` and `src/rar4_lz.rs` follow it, and `LICENSE-libarchive` keeps its notice.
 - The `ppmd-rust` crate's PPMd variant H decoder with the range coder RAR uses, which Zipper's 7z and ZIP readers already depend on.
 - libarchive's test archives, which `tests/data/rar-corpus` holds under the same notice.
 - `7zz` and `bsdtar` run as black boxes on test archives, for choices neither source settles.
-- RARLAB's `rar` 7.23 and 6.24 and `unrar` 7.23, run as black boxes to write and extract the corpus in `tests/data/rar-written`. The user approved them as test tools on 14 November 2026. Nobody read their source.
+- RARLAB's `rar` 7.23 and 6.24 and `unrar` 7.23, run as black boxes to write and extract the corpus in `tests/data/rar-written`, and to settle the details of RAR 5 encryption the technote leaves out, as [Encryption](#encryption) lists. The user approved them as test tools on 14 November 2026. Nobody read their source.
+- The `aes`, `hmac`, `sha2` and `zeroize` crates, which the ZIP and 7z readers already use, for AES-256, HMAC-SHA256 and clearing keys.
 
 ## RAR 5 archives
 
@@ -23,12 +24,12 @@ A RAR 5 archive is the signature, a main header, a header for each file or servi
 - Solid archives, where each file continues the window, tables and distances of the file before it.
 - Folders, Unix and Windows symlinks and hard links. A Windows symlink's `\` separators become `/`, and its target passes the same checks as a Unix one. A `\??\` or UNC target then starts with `/` and is refused. On macOS and Linux a drive target such as `C:\x` becomes the relative link `C:/x`, which stays inside the destination. Windows refuses it.
 - CRC-32 and BLAKE2sp file checksums. BLAKE2sp is Zipper's own safe Rust in `src/blake2sp.rs`.
+- AES-256 encrypted entries and encrypted headers, with the key-dependent checksums RAR writes for them, as [Encryption](#encryption) describes.
 - Service headers, such as comments, quick open data and NTFS streams. The reader skips them.
 - Bytes after the end of archive header, which the reader ignores, as RAR does.
 
 The reader refuses these archives, and publishes nothing:
 
-- An archive whose headers are encrypted, and an entry with an encryption record.
 - A volume of a set, and an entry that continues into or from another volume.
 - A self-extracting archive. The executable reader sees the PE file and refuses the data after it, as it does for every archive after an executable.
 - Junctions and file copies.
@@ -53,6 +54,27 @@ The reader refuses these RAR 4 archives, and publishes nothing:
 - A filter program that is not one of the standard filters, since Zipper runs no RAR virtual machine.
 
 A RAR 4 name is UTF-8, or RAR's Unicode encoding when its flag is set and the name holds a zero byte. A name that is not UTF-8, in a code page, is refused. RAR's Unicode encoding holds 16-bit units, so RAR 6.24 keeps only the low 16 bits of a character outside the Basic Multilingual Plane. The name `emoji 🎉.txt` extracts as `emoji \u{F389}.txt` through Zipper and through `unrar`. RAR 4 writes `\` between folders on every host, so the reader reads it as a separator.
+
+## Encryption
+
+The reader decrypts RAR 5 archives encrypted with AES-256, both file data that `rar -p` writes and headers that `rar -hp` writes, in stored, compressed and solid archives. Pass `--password`, or set `password` in `ExtractOptions` or `native_rar::ReadOptions`. `list` and `test` take `--password` for RAR too. Without a password, an archive with encrypted headers or with any encrypted entry fails with `native_rar::PasswordNeeded`, since the reader decodes every entry. On Unix, when standard input is a terminal, the command line then asks for the password and tries again. RAR 4 encryption is refused by name.
+
+The technote gives the layout of the file encryption record and of the archive encryption header. Each holds a version, flags, a KDF count, a 16-byte salt and, when flag 0x0001 is set, a 12-byte password check value, and the file record also holds a 16-byte IV. The technote says the key comes from PBKDF2 with 2^count rounds, that each header after the encryption header starts with its own IV and is padded to 16 bytes, and that flag 0x0002 makes the checksums depend on the key. It leaves out how the key, the check value and the changed checksums are made, and points to the `unrar` source, which nobody read. Runs of `rar` and `unrar` 7.23 as black boxes, on archives whose password and contents were known, settled each of them:
+
+- The key is PBKDF2 with HMAC-SHA256 of the UTF-8 password and the salt, over 2^count rounds, in one 32-byte block. File data is AES-256 in CBC mode from the record's IV, padded with zeros to 16 bytes, and the packed size counts the padding.
+- The hash key is the PBKDF2 value after 2^count + 16 rounds. The check value is the value after 2^count + 32 rounds, folded to 8 bytes by XOR, then the first 4 bytes of the SHA-256 of those 8.
+- With flag 0x0002 the stored CRC-32 is the HMAC-SHA256 of the CRC-32's 4 little-endian bytes under the hash key, folded to 4 bytes by XOR. The stored BLAKE2sp hash is the HMAC-SHA256 of the 32-byte hash under the hash key.
+- `rar` and `unrar` keep only the first 127 characters of a longer password, and so does Zipper.
+
+`tests/hostile_rar.rs` builds encrypted archives with the `pbkdf2` crate rather than Zipper's own key chain, and `unrar` must extract them to the same files Zipper does. Every archive `rar` wrote with `-p` and `-hp` must extract to its recorded tree, as the [corpus written by RAR](#corpus-written-by-rar) describes.
+
+A password is checked in these ways, and a wrong one publishes nothing:
+
+- When a record has a check value, the reader checks the password against it before it reads any byte of the entry. A wrong password fails with `the password is wrong for encrypted RAR 5 entry`, or `for the encrypted RAR 5 headers`. A check value whose last 4 bytes do not match the SHA-256 of its first 8 is damaged, and the archive is refused.
+- Without a check value, a wrong password fails on the entry's CRC-32 or BLAKE2sp, or on the header CRC-32 of encrypted headers. The error then says the password is wrong or the entry or headers are damaged. An encrypted entry with no check value and no checksum is refused before it is read, since a wrong password could not be detected.
+- Encrypted data that is not a whole number of 16-byte blocks is refused. A stored encrypted entry must pack its size rounded up to 16 bytes, and a compressed one may end with up to 15 bytes of padding after its last block.
+
+A KDF count above 24 is refused before any key is derived. That is the cap the 7z reader puts on its own key derivation, and `rar` 7.23 writes 15. The reader derives a key once for each salt and count, and `rar` 7.23 wrote one salt for every file of an archive. An archive may ask for at most two derivations at the cap, 2 × (2^24 + 32) PBKDF2 rounds, which is about 1,000 derivations at a count of 15. It may also ask for at most 1,024 derivations in all, whatever their count, since each costs a fixed amount of work besides its rounds. Known keys are found in a hash map. So a hostile archive cannot hang extraction with one huge count or with many salts. The adversarial review built an 18 MB archive of 320,000 folder entries, each with its own salt at a count of 0, which cost 35 times the work of two derivations at the cap before the second limit. The password, the keys and the hash key are cleared from memory after use.
 
 ## Names
 
@@ -79,6 +101,7 @@ The reader checks every entry before it publishes anything, and it publishes not
 - A RAR 4 match reaches no further back than the start of its file or the 4 MiB window. A RAR 4 filter lies inside its file, after the filter before it unless a program reset dropped it, and inside the 256 KiB filter memory, and its length register equals its block length.
 - A RAR 4 archive may start new PPMd models only while their sizes stay inside the allowance in the limits below. The allowance is shared by every file in the archive. RAR 6.24 with `-mcT+` writes an archive this allowance refuses, as the [corpus written by RAR](#corpus-written-by-rar) shows. An adversarial review built an 8 KB archive that started a 256 MiB model 1,000 times for one byte of output, which took 3.9 s of CPU before the allowance. The review of the RAR 4 filters spread the restarts over 2,000 files of 1 byte, four to a file, in 162 KB. While each file had its own allowance, Zipper ran 137 G instructions on it and bsdtar 3.7 G.
 - Output must fit in free space, or under `--max-extracted-bytes`. Each file is charged before its data is written.
+- An encryption record or encryption header lies inside its header, names version 0 and a KDF count of at most 24, and carries a sound check value. Encrypted data is whole AES blocks, and the password is checked as [Encryption](#encryption) describes.
 
 ## Limits
 
@@ -91,15 +114,16 @@ The reader checks every entry before it publishes anything, and it publishes not
 | Dictionary | at most 2 GiB, the decoder budget the 7z reader also uses. RAR 4 uses a 4 MiB window, the RAR 3 maximum |
 | PPMd model | at most 256 MiB, the most a RAR 4 block can ask for |
 | PPMd models in one archive | 1 GiB of models, plus 64 bytes of model for each byte its compressed files decode, since each new model is filled with zeros |
+| KDF count | at most 24, at most two derivations at 24 in one archive, and at most 1,024 derivations in all |
 | Decoder memory | the window, grown as the stream writes it up to the dictionary, one block of up to 16 MiB and one filter of up to 4 MiB. A RAR 4 window and its largest PPMd model fit the same 2 GiB budget |
 
 Each RAR 5 file's dictionary is charged against a 2 GiB decoder budget, the one the 7z reader uses, before any window is allocated. A file that declares more is refused. An adversarial review built a 768 KiB archive with a 4 GiB dictionary and 1 GiB of zeros, which raised `zipper test` to 1.08 GB of resident memory before the budget. `tests/hostile_rar.rs` builds a 90 KB file that declares a 4 GiB dictionary and decodes to 328 MB. Before the budget `zipper test` extracted it at 541 MB of resident memory, and now the test requires a refusal that raises peak memory by less than 64 MiB. The window grows only as data arrives, so a small file with a large dictionary allocates no more than about twice its size. Growth uses a fallible allocation, so a window the machine cannot hold is an error, not an abort. The reader keeps only the tree that the cpio reader also uses, with each name. On a RAR 5 archive of 300,000 empty stored files whose names total 60 MB, `zipper test` peaked at 189 MB of resident memory, and `7zz t`, which read every RAR before this reader, at 133 MB. On the same files in RAR 4 they peaked at 173 MB and 133 MB. `--threads` has no effect on RAR.
 
 ## Corpus written by RAR
 
-`scripts/make_rar_corpus.py` writes 52 archives into `tests/data/rar-written` with RARLAB's `rar` 7.23. RAR 7 no longer writes RAR 4, so RAR 6.24 writes the RAR 4 archives with `-ma4`, and one solid RAR 5 archive. The script builds each source tree, runs `rar`, extracts the archive with `unrar` 7.23 and stops unless `unrar` extracts the source tree. `manifest.json` records the writer, the command, the features and either that tree or the reason Zipper gives when it refuses the archive. The archives total 1.9 MB.
+`scripts/make_rar_corpus.py` writes 60 archives into `tests/data/rar-written` with RARLAB's `rar` 7.23. RAR 7 no longer writes RAR 4, so RAR 6.24 writes the RAR 4 archives with `-ma4`, and one solid RAR 5 archive. The script builds each source tree, runs `rar`, extracts the archive with `unrar` 7.23 and stops unless `unrar` extracts the source tree. `manifest.json` records the writer, the command, the features, the password of an encrypted archive and either that tree or the reason Zipper gives when it refuses the archive. The archives total 2.5 MB.
 
-`tests/rar_written.rs` runs without any RAR tool, so it runs in CI. Every archive in the table below that Zipper reads must extract to its recorded tree. The check covers the bytes, folders, links and Unix modes, and RAR 5 times to the nanosecond. RAR 4 keeps DOS times in local time, so the manifest records no RAR 4 times. Each refused archive must fail with its recorded reason and leave nothing. Where `unrar` and 7-Zip are installed, every archive must also extract to the tree `unrar x -ver` extracts, with RAR 4 times compared too, and to the tree `7zz x -snld` extracts where 7-Zip decodes it. `unrar` must extract each refused archive with the password `zipper`, which shows the archive is sound. `tests/common/unrar.rs` finds `unrar` 7.23 or newer, and fails instead of skipping when `ZIPPER_PARITY_REQUIRE_UNRAR` is set. Every gate run outside CI sets it.
+`tests/rar_written.rs` runs without any RAR tool, so it runs in CI. Every archive in the table below that Zipper reads must extract to its recorded tree. The check covers the bytes, folders, links and Unix modes, and RAR 5 times to the nanosecond. RAR 4 keeps DOS times in local time, so the manifest records no RAR 4 times. Each encrypted archive must extract with its recorded password, and fail with a wrong password, an empty one and none, leaving nothing each time. Each refused archive must fail with its recorded reason and leave nothing. Where `unrar` and 7-Zip are installed, every archive must also extract to the tree `unrar x -ver` extracts, with RAR 4 times compared too, and to the tree `7zz x -snld` extracts where 7-Zip decodes it. `unrar` must extract each refused archive with the password `zipper`, which shows the archive is sound. `tests/common/unrar.rs` finds `unrar` 7.23 or newer, and fails instead of skipping when `ZIPPER_PARITY_REQUIRE_UNRAR` is set. Every gate run outside CI sets it.
 
 | Feature | RAR 5 archives | RAR 4 archives | Zipper |
 | --- | ---: | ---: | --- |
@@ -121,11 +145,11 @@ Each RAR 5 file's dictionary is charged against a 2 GiB decoder budget, the one 
 | Hard links, `-oh` | 1 | none | Extracts |
 | File versions, `-ver`, with each file added twice | 1 | none | Extracts the old version as `[VER]/1/name` |
 | File copies, `-oi` | 1 | none | Refuses with `is a FileCopy, which Zipper does not create` |
-| Encrypted headers, `-hp` | 1 | 1 | Refuses with `archive has encrypted headers, which Zipper does not decrypt` |
-| Encrypted data, `-p` | 1 | 1 | Refuses with `is encrypted, which Zipper does not decrypt` |
+| Encrypted headers, `-hp`, stored, compressed, solid with 120 files, and with BLAKE2sp | 4 | 1 | Extracts RAR 5. Refuses RAR 4 with `archive has encrypted headers, which Zipper does not decrypt` |
+| Encrypted data, `-p`, stored, compressed, solid, with BLAKE2sp, and with a password of 149 characters | 6 | 1 | Extracts RAR 5. Refuses RAR 4 with `is encrypted, which Zipper does not decrypt` |
 | Volumes, `-v24k`, two volumes each | 1 | 1 | Refuses with `Zipper does not read RAR 5 volumes` or `RAR 4 volumes` |
 
-The archives for methods, solid `-m3` and `-m5`, search, checksums, times, owners, quick open, comments, recovery records, RAR 4 PPMd and RAR 4 solid hold a mixed tree. It has text, random and zero-filled files, an empty file, an empty folder and a deep folder. It has names in Latin, Japanese and emoji, a 200-byte name and a 600-byte path. It has relative links to a file and to a folder, and files with modes `0o755`, `0o444` and `0o600`. Each file and folder has a fixed time with nanoseconds. The RAR 4 mixed tree spells the emoji name as RAR 4 stores it. The archives `rar5-solid-m5.rar` and `rar5-solid-small-texts.rar` also extract one selected path from late in their solid stream.
+The archives for methods, solid `-m3` and `-m5`, search, checksums, times, owners, quick open, comments, recovery records, RAR 4 PPMd and RAR 4 solid hold a mixed tree. It has text, random and zero-filled files, an empty file, an empty folder and a deep folder. It has names in Latin, Japanese and emoji, a 200-byte name and a 600-byte path. It has relative links to a file and to a folder, and files with modes `0o755`, `0o444` and `0o600`. Each file and folder has a fixed time with nanoseconds. The RAR 4 mixed tree spells the emoji name as RAR 4 stores it. The archives `rar5-solid-m5.rar`, `rar5-solid-small-texts.rar`, `rar5-encrypted-solid.rar` and `rar5-encrypted-headers-solid.rar` also extract one selected path from late in their solid stream.
 
 Plants in each filter Zipper decodes are caught by the corpus test. These are the RAR 4 RGB, audio, delta, E8 and E9 filters and the RAR 5 delta, E8 and E9 filters. Plants in the RAR 5 nanoseconds, the version names and the hard link are caught too. The corpus does not cover these cases:
 
@@ -173,4 +197,4 @@ On 14 November 2026 an adversarial review attacked the RAR 4 container and each 
 
 ## Formal checks
 
-Kani proves that the number reader never panics and ends on a byte without the high bit, within 10 bytes. It proves that the general header reader keeps its fields and extra area inside the header. The extra record reader keeps every link target inside its record, and the file header reader keeps the name inside its fields. Every dictionary the compression information gives lies from 128 KiB to 4 GiB. The block header reader reads only its own 3 to 5 bytes and gives a size below 16 MiB. The proofs are under `[rar-fields]` in `verification/coverage.txt`. Tests under `[rar5-lz]` check the decoder and BLAKE2sp. The Huffman tables decode every code as a bit-at-a-time walk does, and each filter undoes its encoding. A block writer in the tests builds literals, matches, repeats and filters, which must decode as a byte-at-a-time model does, and builds the matches, filters and sizes the decoder must refuse. BLAKE2sp matches Python's `hashlib` on every split. The two corpus tests, `tests/rar_corpus.rs` and `tests/rar_written.rs`, and the hostile tests run under the same section and under `[rar4-lz]`. Kani also proves that the RAR 4 file header reader keeps the name inside the header. The extended time reader gives at most 24 bits of 100 ns units, and a filter record's VM number reader reads no bit past its record. Tests under `[rar4-lz]` build RAR 2.9 streams with fixed-width tables, which must decode as a byte-at-a-time model does or be refused.
+Kani proves that the number reader never panics and ends on a byte without the high bit, within 10 bytes. It proves that the general header reader keeps its fields and extra area inside the header. The extra record reader keeps every link target inside its record, and the file header reader keeps the name inside its fields. Every dictionary the compression information gives lies from 128 KiB to 4 GiB. The encryption record reader reads only its own fields, keeps the KDF count at most 24 and reads an IV only from a file record. The block header reader reads only its own 3 to 5 bytes and gives a size below 16 MiB. The proofs are under `[rar-fields]` in `verification/coverage.txt`. Tests under `[rar5-lz]` check the decoder and BLAKE2sp. The Huffman tables decode every code as a bit-at-a-time walk does, and each filter undoes its encoding. A block writer in the tests builds literals, matches, repeats and filters, which must decode as a byte-at-a-time model does, and builds the matches, filters and sizes the decoder must refuse. BLAKE2sp matches Python's `hashlib` on every split. Tests under `[rar5-lz]` also check the key chain against the `pbkdf2` crate, the CBC reader against block-at-a-time encryption under every read split, the 127-character password and the derivation budget. The two corpus tests, `tests/rar_corpus.rs` and `tests/rar_written.rs`, and the hostile tests run under the same section and under `[rar4-lz]`. Kani also proves that the RAR 4 file header reader keeps the name inside the header. The extended time reader gives at most 24 bits of 100 ns units, and a filter record's VM number reader reads no bit past its record. Tests under `[rar4-lz]` build RAR 2.9 streams with fixed-width tables, which must decode as a byte-at-a-time model does or be refused.

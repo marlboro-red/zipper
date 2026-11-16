@@ -27,6 +27,7 @@ const WITH_STREAMS: ReadOptions = ReadOptions {
         cancel: None,
     },
     alternate_streams: true,
+    password: None,
 };
 
 fn with_streams(name: &str, data: &[u8], attributes: u32, streams: &[(&str, &[u8])]) -> Node {
