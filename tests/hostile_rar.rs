@@ -2186,6 +2186,18 @@ fn each_hostile_rar5_volume_set_is_refused_by_name_and_leaves_nothing() {
             set.clone(),
             "set.rar is a RAR 5 volume whose name does not end in .partN.rar",
         ),
+        (
+            "a first volume whose name ends in a wide character",
+            vec!["日本.rar".to_owned(), names[1].clone(), names[2].clone()],
+            set.clone(),
+            "日本.rar is a RAR 5 volume whose name does not end in .partN.rar",
+        ),
+        (
+            "a later volume that is not an archive",
+            names.clone(),
+            vec![set[0].clone(), b"not a RAR volume".to_vec(), set[2].clone()],
+            "in RAR volume set.part2.rar",
+        ),
     ];
     for cut in [1, 7, 20] {
         let mut truncated = set.clone();
@@ -2307,6 +2319,18 @@ fn each_hostile_rar4_volume_set_is_refused_by_name_and_leaves_nothing() {
             vec![names[1].clone(), names[0].clone()],
             vec![set[1].clone(), set[0].clone()],
             "is a later volume of a RAR set; open its first volume, set.part1.rar",
+        ),
+        (
+            "a first volume without the first-volume flag",
+            names.clone(),
+            vec![volume4(new, 0, &[File4::new("a", b"x")], 0)],
+            "set.part1.rar does not mark itself as the first volume of its set",
+        ),
+        (
+            "a later volume with encrypted headers",
+            names.clone(),
+            vec![set[0].clone(), volume4(new | 0x0080, 1, &[], 0)],
+            "in RAR volume set.part2.rar",
         ),
         (
             "a first volume in second place",

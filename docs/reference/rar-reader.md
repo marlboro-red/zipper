@@ -94,7 +94,7 @@ Zipper checks each set in these ways, and publishes nothing when a check fails:
 - Every RAR 4 volume of a set must end with its end of archive block, so a last volume cut between blocks is refused. When the block gives a volume number, it must be the volume's own.
 - An entry that continues into the next volume must be the last block before the end of its volume, apart from service headers. The next volume must start with its continuation. The continuation must have the entry's name, size, method and host, and for RAR 5 its directory flag and encryption record. A continuation that nothing before it continues into is refused.
 - Each part but the last carries the CRC-32 or BLAKE2sp of its own packed data, and the last part the checksum of the whole file. Zipper checks both kinds. A volume opened twice must not change between the two opens.
-- An error in any volume after the first names that volume.
+- An error names the volume at fault when a volume after the first is missing or cannot be opened. It also names it when the volume's signature or any header in it is damaged or refused, and when a part's own checksum fails. A failed checksum of a whole file names the file.
 
 RAR 5 gives a set no identity, and RAR 4 none Zipper reads. So a volume of another set with the right number, flags and layout is caught only by the checksums of the entries that cross into it or lie in it. A whole entry inside such a volume extracts when its own checksum matches.
 

@@ -13,6 +13,7 @@ const PART_BUFFER: usize = 1024 * 1024;
 const OLD_STYLE_LETTERS: u64 = (b'z' - b'r' + 1) as u64;
 const OLD_STYLE_NUMBERS: u64 = 100;
 const HASH_BYTES: usize = 32;
+const PART_MARK: &[u8] = b".part";
 
 pub(crate) fn file_name(path: &Path) -> String {
     path.file_name()
@@ -60,8 +61,10 @@ impl Names {
         }
         let digits = stem.len() - stem.trim_end_matches(|c: char| c.is_ascii_digit()).len();
         let (before, number) = stem.split_at(stem.len() - digits);
-        let marked = before.len() >= ".part".len()
-            && before[before.len() - ".part".len()..].eq_ignore_ascii_case(".part");
+        let marked = before
+            .len()
+            .checked_sub(PART_MARK.len())
+            .is_some_and(|start| before.as_bytes()[start..].eq_ignore_ascii_case(PART_MARK));
         let first: u64 = number.parse().ok()?;
         (marked && first > 0).then(|| Names::Parts {
             folder,
@@ -142,15 +145,27 @@ impl Names {
 }
 
 pub(crate) fn later_volume(path: &Path, names: Option<&Names>, number: Option<u64>) -> String {
+    let first = names.map(Names::first_name);
+    if first.is_some()
+        && first
+            == path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+    {
+        return format!(
+            "{} does not mark itself as the first volume of its set, so Zipper cannot tell where the set starts",
+            path.display()
+        );
+    }
     let which = match number {
         Some(number) => format!("volume {} of a RAR set", number.saturating_add(1)),
         None => "a later volume of a RAR set".to_owned(),
     };
-    match names {
-        Some(names) => format!(
-            "{} is {which}; open its first volume, {}, to read the set",
-            path.display(),
-            names.first_name()
+    match first {
+        Some(first) => format!(
+            "{} is {which}; open its first volume, {first}, to read the set",
+            path.display()
         ),
         None => format!(
             "{} is {which}; open its first volume to read the set",
@@ -457,6 +472,17 @@ mod tests {
         assert_eq!(Names::old_style(Path::new("set.r0")), None);
         let later = Names::old_style(Path::new("set.s07")).unwrap();
         assert_eq!(later.first_name(), "set.rar");
+    }
+
+    #[test]
+    fn names_that_end_in_wide_characters_are_read_without_a_panic() {
+        for plain in ["日本.rar", "ééé1.rar", "日本語のファイル.rar", "é.rar"] {
+            assert_eq!(Names::new_style(Path::new(plain)), None, "{plain}");
+            assert!(Names::old_style(Path::new(plain)).is_some(), "{plain}");
+        }
+        let names = Names::new_style(Path::new("日本.part2.rar")).unwrap();
+        assert_eq!(names.first_name(), "日本.part1.rar");
+        assert_eq!(names_of(&names, [1]), ["日本.part3.rar"]);
     }
 
     #[test]

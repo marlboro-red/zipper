@@ -586,7 +586,7 @@ impl Blocks {
             volume,
             path,
             reopen,
-            in_set: volume > 0,
+            in_set: false,
         })
     }
 
@@ -864,7 +864,9 @@ fn next_volume(set: &VolumeSet, keys: &mut Keys, current: &Blocks) -> Result<Blo
     let volume = current.volume + 1;
     let (path, file, unchanged) = rar_volumes::open(names, volume, &current.path)?;
     let label = rar_volumes::file_name(&path);
-    let (blocks, main) = open_volume(file, path, Some(unchanged), volume, keys)?;
+    let (mut blocks, main) = open_volume(file, path, Some(unchanged), volume, keys)
+        .with_context(|| format!("in RAR volume {label}"))?;
+    blocks.in_set = true;
     ensure!(
         main.flags & VOLUME != 0,
         "RAR volume {label} does not mark itself as a volume, so it does not belong to the set"

@@ -380,7 +380,7 @@ impl Volume {
             index,
             path,
             reopen,
-            in_set: index > 0,
+            in_set: false,
         };
         let mut signature = [0u8; SIGNATURE.len()];
         volume
@@ -491,7 +491,9 @@ fn next_volume(set: &Set, current: &Volume) -> Result<Volume> {
     let index = current.index + 1;
     let (path, file, unchanged) = rar_volumes::open(names, index, &current.path)?;
     let label = rar_volumes::file_name(&path);
-    let (volume, flags) = Volume::open(file, path, Some(unchanged), index)?;
+    let (mut volume, flags) = Volume::open(file, path, Some(unchanged), index)
+        .with_context(|| format!("in RAR volume {label}"))?;
+    volume.in_set = true;
     ensure!(
         flags & MAIN_VOLUME != 0,
         "RAR volume {label} does not mark itself as a volume, so it does not belong to the set"

@@ -203,11 +203,11 @@ fn rar_volumes_and_encrypted_headers_go_to_the_rar_reader() {
         ),
         (
             "test_read_format_rar_multivolume.part0001.rar",
-            "Zipper does not read RAR 4 volumes",
+            "RAR volume test_read_format_rar_multivolume.part0002.rar is missing",
         ),
         (
             "test_read_format_rar5_multiarchive.part01.rar",
-            "Zipper does not read RAR 5 volumes",
+            "RAR volume test_read_format_rar5_multiarchive.part02.rar is missing",
         ),
     ] {
         let bytes = fs::read(Path::new(DATA).join("rar-corpus").join(fixture)).unwrap();
