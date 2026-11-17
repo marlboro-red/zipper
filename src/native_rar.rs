@@ -1314,7 +1314,7 @@ mod proofs {
     }
 
     #[kani::proof]
-    #[kani::unwind(12)]
+    #[kani::unwind(17)]
     fn encryption_records_never_panic_and_read_only_their_fields() {
         let bytes: [u8; 48] = kani::any();
         let length: usize = kani::any();
