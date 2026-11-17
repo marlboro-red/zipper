@@ -2337,7 +2337,7 @@ item = src/inflate.rs | pub(crate) struct Invalid(
 
 [zstd]
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
-fingerprint = 8ab958b5cbe30437
+fingerprint = 1bdeab2b463f44fa
 full-check = cargo test --release --lib zstandard
 item = src/zstandard.rs | const MAGIC:
 item = src/zstandard.rs | const SKIPPABLE_MAGIC:
