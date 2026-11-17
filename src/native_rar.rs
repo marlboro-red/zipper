@@ -2,6 +2,7 @@
 //! not, and of RAR 4 archives that are not solid. See
 //! `docs/reference/rar-reader.md` for what it accepts and restores.
 use crate::blake2sp::Blake2sp;
+use crate::rar_volumes::{self, Names, Part, PartCheck, Parts, Span};
 use crate::rar5_crypto::{
     self, BLOCK, CHECK_BYTES, CbcReader, CheckValue, Derived, IV_BYTES, KeyError, Keys,
     MOST_KDF_COUNT, SALT_BYTES,
@@ -9,13 +10,13 @@ use crate::rar5_crypto::{
 use crate::rar5_lz::{self, Stream};
 pub use crate::tree::ReadOptions;
 use crate::tree::{self, MAX_NAME};
-use crate::volumes::ArchiveFile;
+use crate::volumes::{ArchiveFile, Unchanged};
 use crate::{BadField, Entry, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     io::{self, BufReader, Read, Seek},
     ops::Range,
-    path::Path,
+    path::{Path, PathBuf},
     rc::Rc,
     time::{Duration, SystemTime},
 };
@@ -41,6 +42,7 @@ const SPLIT_AFTER: u64 = 0x0010;
 
 const VOLUME: u64 = 0x0001;
 const VOLUME_NUMBER: u64 = 0x0002;
+const SOLID_ARCHIVE: u64 = 0x0004;
 const NOT_LAST_VOLUME: u64 = 0x0001;
 
 const DIRECTORY: u64 = 0x0001;
@@ -206,15 +208,23 @@ fn base_header(body: &[u8]) -> Field<Base> {
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Main {
+    flags: u64,
+    number: Option<u64>,
+}
+
 // SPEC(RAR 5 technote, main archive header): archive flags, then a volume
-// number when its flag is set.
-fn is_volume(fields: &[u8]) -> Field<bool> {
+// number when its flag is set, absent in the first volume.
+fn main_header(fields: &[u8]) -> Field<Main> {
     let mut fields = Fields::new(fields);
     let flags = fields.vint()?;
-    if flags & VOLUME_NUMBER != 0 {
-        fields.vint()?;
-    }
-    Ok(flags & VOLUME != 0)
+    let number = if flags & VOLUME_NUMBER != 0 {
+        Some(fields.vint()?)
+    } else {
+        None
+    };
+    Ok(Main { flags, number })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -533,6 +543,10 @@ struct Blocks {
     length: u64,
     next: u64,
     headers: Option<HeaderKey>,
+    volume: u64,
+    path: PathBuf,
+    reopen: Option<Unchanged>,
+    in_set: bool,
 }
 
 struct RawHeader {
@@ -551,8 +565,12 @@ fn header_size(bytes: &[u8]) -> Result<u64> {
 }
 
 impl Blocks {
-    fn open(path: &Path) -> Result<Self> {
-        let file = crate::volumes::open(path)?;
+    fn open(
+        file: ArchiveFile,
+        path: PathBuf,
+        reopen: Option<Unchanged>,
+        volume: u64,
+    ) -> Result<Self> {
         let length = file.len()?;
         let mut reader = BufReader::with_capacity(COPY_BUFFER, file);
         let mut signature = [0u8; 8];
@@ -565,7 +583,15 @@ impl Blocks {
             length,
             next: RAR5_SIGNATURE.len() as u64,
             headers: None,
+            volume,
+            path,
+            reopen,
+            in_set: volume > 0,
         })
+    }
+
+    fn label(&self) -> String {
+        rar_volumes::file_name(&self.path)
     }
 
     fn seek_to(&mut self, offset: u64) -> Result<()> {
@@ -637,11 +663,15 @@ impl Blocks {
 
     fn next(&mut self) -> Result<Block> {
         let result = self.next_unless_the_password_is_wrong();
-        match &self.headers {
+        let result = match &self.headers {
             Some(key) if !key.password_checked => {
                 result.context("the password is wrong or the RAR 5 headers are damaged")
             }
             _ => result,
+        };
+        match self.in_set {
+            true => result.with_context(|| format!("in RAR volume {}", self.label())),
+            false => result,
         }
     }
 
@@ -668,11 +698,9 @@ impl Blocks {
     }
 }
 
-type Area<'a> = io::Take<&'a mut BufReader<ArchiveFile>>;
-
 enum Packed<'a> {
-    Plain(Area<'a>),
-    Encrypted(Box<CbcReader<Area<'a>>>),
+    Plain(Parts<'a>),
+    Encrypted(Box<CbcReader<Parts<'a>>>),
 }
 
 impl Read for Packed<'_> {
@@ -788,48 +816,142 @@ fn password_checked(derived: &Derived, record: &Encryption, what: &str) -> Resul
     }
 }
 
+struct VolumeSet {
+    names: Option<Names>,
+    solid: bool,
+    encrypted_headers: bool,
+}
+
+fn open_volume(
+    file: ArchiveFile,
+    path: PathBuf,
+    reopen: Option<Unchanged>,
+    volume: u64,
+    keys: &mut Keys,
+) -> Result<(Blocks, Main)> {
+    let mut blocks = Blocks::open(file, path, reopen, volume)?;
+    let mut first = blocks.next()?;
+    if first.base.kind == ENCRYPTION_HEADER {
+        let record = encryption(
+            &mut Fields {
+                bytes: &first.body[..first.base.fields.end],
+                at: first.base.fields.start,
+            },
+            false,
+        )?;
+        let derived = derived(keys, &record, true)?;
+        blocks.headers = Some(HeaderKey {
+            cipher: derived.cipher(),
+            password_checked: password_checked(&derived, &record, "the encrypted RAR 5 headers")?,
+        });
+        first = blocks.next()?;
+    }
+    ensure!(
+        first.base.kind == MAIN_HEADER,
+        "RAR 5 archive does not start with its main header"
+    );
+    let main = main_header(&first.body[first.base.fields.clone()])?;
+    Ok((blocks, main))
+}
+
+fn next_volume(set: &VolumeSet, keys: &mut Keys, current: &Blocks) -> Result<Blocks> {
+    let names = set.names.as_ref().with_context(|| {
+        format!(
+            "{} is a RAR 5 volume whose name does not end in .partN.rar, so Zipper cannot name the volume after it",
+            current.label()
+        )
+    })?;
+    let volume = current.volume + 1;
+    let (path, file, unchanged) = rar_volumes::open(names, volume, &current.path)?;
+    let label = rar_volumes::file_name(&path);
+    let (blocks, main) = open_volume(file, path, Some(unchanged), volume, keys)?;
+    ensure!(
+        main.flags & VOLUME != 0,
+        "RAR volume {label} does not mark itself as a volume, so it does not belong to the set"
+    );
+    ensure!(
+        main.number == Some(volume),
+        "RAR volume {label} is {} of its set, not volume {}, so the volumes are out of order or come from different sets",
+        main.number
+            .map_or("the first volume".to_owned(), |number| format!(
+                "volume {}",
+                number.saturating_add(1)
+            )),
+        volume + 1
+    );
+    ensure!(
+        (main.flags & SOLID_ARCHIVE != 0) == set.solid,
+        "RAR volume {label} and the first volume disagree on whether the archive is solid, so they come from different sets"
+    );
+    ensure!(
+        blocks.headers.is_some() == set.encrypted_headers,
+        "RAR volume {label} and the first volume disagree on whether the headers are encrypted, so they come from different sets"
+    );
+    Ok(blocks)
+}
+
+fn same_entry(first: (&[u8], &FileHeader), part: (&[u8], &FileHeader)) -> bool {
+    let ((first_body, first), (part_body, part)) = (first, part);
+    let encryption = |header: &FileHeader| {
+        header
+            .extras
+            .encryption
+            .map(|record| (record.count, record.salt, record.iv, record.check))
+    };
+    first_body[first.name.clone()] == part_body[part.name.clone()]
+        && first.unpacked == part.unpacked
+        && first.compression == part.compression
+        && first.directory == part.directory
+        && first.host == part.host
+        && encryption(first) == encryption(part)
+}
+
+fn part_check(keys: &mut Keys, header: &FileHeader) -> Result<PartCheck> {
+    let tweak = match &header.extras.encryption {
+        Some(record) if record.tweaked => Some(derived(keys, record, false)?),
+        _ => None,
+    };
+    Ok(PartCheck {
+        crc: header.crc,
+        blake: header.extras.hash,
+        tweak,
+    })
+}
+
 struct Reader {
     blocks: Blocks,
     stream: Stream,
     keys: Keys,
+    set: Option<VolumeSet>,
 }
 
 impl Reader {
     fn open(path: &Path, password: Option<&[u8]>) -> Result<Self> {
         let mut keys = Keys::new(password);
-        let mut blocks = Blocks::open(path)?;
-        let mut first = blocks.next()?;
-        if first.base.kind == ENCRYPTION_HEADER {
-            let record = encryption(
-                &mut Fields {
-                    bytes: &first.body[..first.base.fields.end],
-                    at: first.base.fields.start,
-                },
-                false,
-            )?;
-            let derived = derived(&mut keys, &record, true)?;
-            blocks.headers = Some(HeaderKey {
-                cipher: derived.cipher(),
-                password_checked: password_checked(
-                    &derived,
-                    &record,
-                    "the encrypted RAR 5 headers",
-                )?,
-            });
-            first = blocks.next()?;
-        }
-        ensure!(
-            first.base.kind == MAIN_HEADER,
-            "RAR 5 archive does not start with its main header"
-        );
-        ensure!(
-            !is_volume(&first.body[first.base.fields.clone()])?,
-            "Zipper does not read RAR 5 volumes"
-        );
+        let file = crate::volumes::open(path)?;
+        let (mut blocks, main) = open_volume(file, path.to_owned(), None, 0, &mut keys)?;
+        let set = match (main.flags & VOLUME != 0, main.number) {
+            (false, None) => None,
+            (false, Some(_)) => {
+                bail!("RAR 5 main header gives a volume number but does not mark a volume")
+            }
+            (true, Some(number)) => bail!(rar_volumes::later_volume(
+                path,
+                Names::new_style(path).as_ref(),
+                Some(number)
+            )),
+            (true, None) => Some(VolumeSet {
+                names: Names::new_style(path),
+                solid: main.flags & SOLID_ARCHIVE != 0,
+                encrypted_headers: blocks.headers.is_some(),
+            }),
+        };
+        blocks.in_set = set.is_some();
         Ok(Reader {
             blocks,
             stream: Stream::default(),
             keys,
+            set,
         })
     }
 
@@ -852,16 +974,96 @@ impl Reader {
         }))
     }
 
+    // SPEC(RAR 5 technote, file header and hash record): a part that continues in the next
+    // volume carries the CRC-32 or hash of its own packed data, the last part the whole file's.
+    fn continuation(
+        &mut self,
+        block: &Block,
+        first: FileHeader,
+        name: &str,
+    ) -> Result<(FileHeader, Span, Blocks)> {
+        let set = self.set.as_ref().with_context(|| {
+            format!("RAR 5 entry {name:?} continues into another volume, but the archive is not a volume")
+        })?;
+        let mut span = Span::starting(Part {
+            path: Some(self.blocks.path.clone()),
+            reopen: None,
+            offset: block.data,
+            size: block.base.data_size,
+            check: Some(part_check(&mut self.keys, &first)?),
+        });
+        let mut later: Option<Blocks> = None;
+        loop {
+            let blocks = later.as_mut().unwrap_or(&mut self.blocks);
+            loop {
+                let after = blocks.next()?;
+                match after.base.kind {
+                    SERVICE_HEADER if after.base.flags & (SPLIT_BEFORE | SPLIT_AFTER) == 0 => {}
+                    END_HEADER => {
+                        let flags = Fields::new(&after.body[after.base.fields.clone()]).vint()?;
+                        ensure!(
+                            flags & NOT_LAST_VOLUME != 0,
+                            "RAR 5 entry {name:?} continues into the next volume, but {} is the last volume",
+                            blocks.label()
+                        );
+                        break;
+                    }
+                    _ => bail!(
+                        "RAR 5 entry {name:?} continues into the next volume, but another header follows it in {}",
+                        blocks.label()
+                    ),
+                }
+            }
+            let mut volume = next_volume(set, &mut self.keys, blocks)?;
+            let part = volume.next()?;
+            ensure!(
+                part.base.kind == FILE_HEADER && part.base.flags & SPLIT_BEFORE != 0,
+                "RAR volume {} does not start with the rest of RAR 5 entry {name:?}",
+                volume.label()
+            );
+            let header = file_header(&part.body, &part.base)?;
+            ensure!(
+                same_entry((&block.body, &first), (&part.body, &header)),
+                "RAR volume {} continues RAR 5 entry {name:?} with another name, size, method or encryption, so the volumes come from different sets",
+                volume.label()
+            );
+            let last = part.base.flags & SPLIT_AFTER == 0;
+            span.push(Part {
+                path: Some(volume.path.clone()),
+                reopen: volume.reopen,
+                offset: part.data,
+                size: part.base.data_size,
+                check: match last {
+                    true => None,
+                    false => Some(part_check(&mut self.keys, &header)?),
+                },
+            })?;
+            if last {
+                let whole = FileHeader {
+                    crc: header.crc,
+                    extras: Extras {
+                        hash: header.extras.hash,
+                        encryption: header.extras.encryption,
+                        ..first.extras
+                    },
+                    ..first
+                };
+                return Ok((whole, span, volume));
+            }
+            later = Some(volume);
+        }
+    }
+
     fn data<'a>(
         reader: &'a mut BufReader<ArchiveFile>,
         stream: &'a mut Stream,
-        block: &Block,
+        span: Span,
         header: &FileHeader,
         name: &str,
         crypto: Option<&Crypto>,
     ) -> Result<Checked<'a>> {
-        let packed = block.base.data_size;
-        let area = reader.take(packed);
+        let packed = span.packed;
+        let area = Parts::new(reader, span, "RAR 5", name);
         let (source, padding) = match crypto {
             None => (Packed::Plain(area), 0),
             Some(crypto) => {
@@ -916,6 +1118,7 @@ impl Reader {
     fn drain(
         &mut self,
         block: &Block,
+        span: Span,
         header: &FileHeader,
         name: &str,
         crypto: Option<&Crypto>,
@@ -928,7 +1131,7 @@ impl Reader {
         let mut checked = Self::data(
             &mut self.blocks.reader,
             &mut self.stream,
-            block,
+            span,
             header,
             name,
             crypto,
@@ -946,15 +1149,25 @@ impl Reader {
         let header = file_header(&block.body, &block.base)?;
         let name = entry_name(&block.body, &header)?;
         ensure!(
-            block.base.flags & (SPLIT_BEFORE | SPLIT_AFTER) == 0,
-            "RAR 5 entry {name:?} spans volumes"
+            block.base.flags & SPLIT_BEFORE == 0,
+            "RAR 5 entry {name:?} continues from a volume before, but no entry there continues into it"
         );
         ensure!(
             matches!(header.host, HOST_WINDOWS | HOST_UNIX),
             "RAR 5 entry {name:?} comes from an unknown host"
         );
+        let (header, span, after) = match block.base.flags & SPLIT_AFTER {
+            0 => (header, Span::one(block.base.data_size), None),
+            _ => {
+                let (header, span, after) = self.continuation(block, header, &name)?;
+                (header, span, Some(after))
+            }
+        };
         let crypto = self.crypto(&header, &name)?;
-        let result = self.contents(tree, block, &header, &name, crypto.as_ref());
+        let result = self.contents(tree, block, span, &header, &name, crypto.as_ref());
+        if let Some(after) = after {
+            self.blocks = after;
+        }
         match crypto {
             Some(crypto) if !crypto.password_checked => result.with_context(|| {
                 format!("the password is wrong or RAR 5 entry {name:?} is damaged")
@@ -967,6 +1180,7 @@ impl Reader {
         &mut self,
         tree: &mut tree::Tree,
         block: &Block,
+        span: Span,
         header: &FileHeader,
         name: &str,
         crypto: Option<&Crypto>,
@@ -975,15 +1189,15 @@ impl Reader {
         let time = modified(header);
         if header.directory {
             ensure!(
-                block.base.data_size == 0 && header.unpacked == 0,
+                span.packed == 0 && header.unpacked == 0,
                 "RAR 5 folder entry {name:?} carries data"
             );
             return tree.directory(name, mode, time);
         }
         if let Some((redirect, target)) = header.extras.redirect.clone() {
             let target = link_target(&block.body, &target)?;
-            if block.base.data_size > 0 {
-                self.drain(block, header, name, crypto)?;
+            if span.packed > 0 {
+                self.drain(block, span, header, name, crypto)?;
             }
             return match redirect {
                 Redirect::UnixSymlink => tree.symlink(name, target),
@@ -1000,7 +1214,7 @@ impl Reader {
         let mut checked = Self::data(
             &mut self.blocks.reader,
             &mut self.stream,
-            block,
+            span,
             header,
             name,
             crypto,
@@ -1018,11 +1232,13 @@ impl Reader {
                 SERVICE_HEADER => {}
                 END_HEADER => {
                     let flags = Fields::new(&block.body[block.base.fields.clone()]).vint()?;
-                    ensure!(
-                        flags & NOT_LAST_VOLUME == 0,
-                        "Zipper does not read RAR 5 volumes"
-                    );
-                    return Ok(());
+                    if flags & NOT_LAST_VOLUME == 0 {
+                        return Ok(());
+                    }
+                    let set = self.set.as_ref().context(
+                        "RAR 5 end of archive header says more volumes follow, but the main header does not mark a volume",
+                    )?;
+                    self.blocks = next_volume(set, &mut self.keys, &self.blocks)?;
                 }
                 MAIN_HEADER => bail!("RAR 5 archive has a second main header"),
                 ENCRYPTION_HEADER => bail!("RAR 5 encryption header is not the first header"),
@@ -1054,8 +1270,12 @@ pub fn sniff(path: &Path) -> Result<bool> {
 /// headers encrypted with AES-256 are decrypted with `options.password`.
 /// Without one they fail with [`PasswordNeeded`], and a wrong one fails before
 /// the entry it opens is written, or on the entry's checksum when the archive
-/// has no password check value. RAR 4 encryption, volumes, RAR 4 solid
-/// archives, junctions and file copies are refused.
+/// has no password check value. A volume set is read when `path` names its
+/// first volume, `name.part1.rar`, or for an old RAR 4 set `name.rar` before
+/// `name.r00`. Each volume after it is found by name and must mark itself a
+/// volume of the same set, with the next volume number where it records one.
+/// A volume after the first named in `path` is refused. RAR 4 encryption, RAR
+/// 4 solid archives, junctions and file copies are refused.
 pub fn read_archive(
     path: &Path,
     destination: Option<&Path>,
@@ -1333,6 +1553,17 @@ mod proofs {
             if !with_iv {
                 assert_eq!(found.iv, [0; IV_BYTES]);
             }
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(12)]
+    fn main_headers_never_panic_and_give_a_volume_number_only_with_its_flag() {
+        let bytes: [u8; 10] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= bytes.len());
+        if let Ok(main) = main_header(&bytes[..length]) {
+            assert_eq!(main.number.is_some(), main.flags & VOLUME_NUMBER != 0);
         }
     }
 

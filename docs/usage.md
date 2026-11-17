@@ -246,13 +246,13 @@ Archive-level deduplication is not implemented yet.
 
 `extract`, `list`, and `test` read every format with Zipper's own readers, in process. Zipper never runs 7-Zip, and it needs no 7-Zip installed. Each reader has a page under [the reader references](reference/zip-reader.md), such as the [7z reader](reference/7z-reader.md). Encrypted ZIP and 7z archives decrypt in process.
 A format Zipper does not read fails with `zipper::Refused` and writes nothing. That covers the formats removed for licence reasons, such as CHM, DMG, MSI, FAT, NTFS and disk images such as VHD, VMDK or QCOW. It also covers a Mach-O universal file with the `B9 FA F1 0E` signature and SquashFS other than version 4.0 in little-endian order. The [refused formats page](reference/refused.md) lists each one.
-A reader that meets a feature it does not decode, such as a RAR volume or a 7z method, refuses the archive with an error that names the feature.
+A reader that meets a feature it does not decode, such as RAR 4 encryption or a 7z method, refuses the archive with an error that names the feature.
 These archives went to 7-Zip before and can no longer be extracted at all:
 
 - A tar with GNU or pax sparse files.
 - A ZIP entry with PKWARE strong encryption, or with a compression method the [ZIP reader](reference/zip-reader.md) does not decode.
 - An ISO 9660 image whose blocks are not 2048 bytes.
-- A RAR volume of a set, a RAR 4 solid archive, and a RAR 4 archive with encrypted headers.
+- A RAR 4 solid archive, and a RAR 4 archive with encrypted headers.
 - A 7z folder whose method or layout the [7z reader](reference/7z-reader.md) does not decode.
 - An ext volume with a feature the [ext reader](reference/ext-reader.md) refuses, such as a journal that needs recovery.
 - An LP image or UEFI firmware with a name that is not a plain relative path.

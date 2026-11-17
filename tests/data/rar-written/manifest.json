@@ -1692,6 +1692,327 @@
    },
    "writer": "RAR 6.24"
   },
+  "rar4-volumes-m3.part01.rar": {
+   "command": [
+    "rar",
+    "a",
+    "-idq",
+    "-r",
+    "-ol",
+    "-ma4",
+    "-m3",
+    "-v10k",
+    "<archive>",
+    "src"
+   ],
+   "features": [
+    "RAR 4",
+    "volumes",
+    "-m3"
+   ],
+   "files": [
+    "rar4-volumes-m3.part01.rar",
+    "rar4-volumes-m3.part02.rar",
+    "rar4-volumes-m3.part03.rar",
+    "rar4-volumes-m3.part04.rar"
+   ],
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/binary": {
+     "dir": true
+    },
+    "src/binary/random-8k.bin": {
+     "mode": "0o644",
+     "sha256": "388e1ee5802146d4b894bb8a2be68929839e940af8c033227325a0266fc103bb"
+    },
+    "src/binary/zeros-64k-plus-1.bin": {
+     "mode": "0o644",
+     "sha256": "3266304f31be278d06c3bd3eb9aa3e00c59bedec0a890de466568b0b90b0e01f"
+    },
+    "src/empty-folder": {
+     "dir": true
+    },
+    "src/empty.txt": {
+     "mode": "0o644",
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/links": {
+     "dir": true
+    },
+    "src/links/to-folder": {
+     "link": "../nested"
+    },
+    "src/links/to-leaf": {
+     "link": "../nested/deep/deeper/leaf.txt"
+    },
+    "src/modes": {
+     "dir": true
+    },
+    "src/modes/private.txt": {
+     "mode": "0o600",
+     "sha256": "25bc6f78b121a07272cc30e64fcac1bafac8b7fe6c72fdf8526caf15a4c6b7b9"
+    },
+    "src/modes/readonly.txt": {
+     "mode": "0o444",
+     "sha256": "28dc50ce2c559549546af000e2a606f45a45dac10f91bcefc7b21b9555ca1334"
+    },
+    "src/modes/run.sh": {
+     "mode": "0o755",
+     "sha256": "a4e0317eafab5cf1bc4a0041c7c8aeb6ece56fe72e7b2b3017a8a6574614cd35"
+    },
+    "src/names": {
+     "dir": true
+    },
+    "src/names/café.txt": {
+     "mode": "0o644",
+     "sha256": "7b49b9e063bd91a4f9252b413261f5557b9c570aa61516989499f64a62dbcdd6"
+    },
+    "src/names/emoji .txt": {
+     "mode": "0o644",
+     "sha256": "5312b0b582d805303c95d7e2b1bc6fad70e04b3dde5413aae758b68767b06ada"
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp/end.txt": {
+     "mode": "0o644",
+     "sha256": "c93f1e4d27896b82b0037047ef729b334aebde599ff77d6eb75728505b662597"
+    },
+    "src/names/long-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.txt": {
+     "mode": "0o644",
+     "sha256": "1272a49868c41260330ce643f91dffd1114abc24bf149dfb4ebfb8833bbe5670"
+    },
+    "src/names/space and (parens).txt": {
+     "mode": "0o644",
+     "sha256": "e47fbedb2823cf1ae4d4cdb8273635be2024cb870588e259c9b23d76ae49d484"
+    },
+    "src/names/日本語.txt": {
+     "mode": "0o644",
+     "sha256": "a43d56ae90ff2daebd847bf06f9c0a7b416f48f89b6e9dbefe7886540c94b550"
+    },
+    "src/nested": {
+     "dir": true
+    },
+    "src/nested/deep": {
+     "dir": true
+    },
+    "src/nested/deep/deeper": {
+     "dir": true
+    },
+    "src/nested/deep/deeper/leaf.txt": {
+     "mode": "0o644",
+     "sha256": "26d0bac9f0c7a35b2f3322a0f4ad4517265f56b2c0f4b2ed7cb5cbd30c5868e2"
+    },
+    "src/text": {
+     "dir": true
+    },
+    "src/text/numbers.csv": {
+     "mode": "0o644",
+     "sha256": "c1a98c151465cb709e5d17a92b44b38a7fad610ef6c173b05472141053615f24"
+    },
+    "src/text/prose.txt": {
+     "mode": "0o644",
+     "sha256": "36bd64463738667634a2838a339b1a97f7027185a65df6727c1a22d00fba6003"
+    }
+   },
+   "writer": "RAR 6.24"
+  },
+  "rar4-volumes-old-names.rar": {
+   "command": [
+    "rar",
+    "a",
+    "-idq",
+    "-r",
+    "-ol",
+    "-ma4",
+    "-m3",
+    "-v10k",
+    "-vn",
+    "<archive>",
+    "src"
+   ],
+   "features": [
+    "RAR 4",
+    "volumes",
+    "old names"
+   ],
+   "files": [
+    "rar4-volumes-old-names.rar",
+    "rar4-volumes-old-names.r00",
+    "rar4-volumes-old-names.r01",
+    "rar4-volumes-old-names.r02"
+   ],
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/binary": {
+     "dir": true
+    },
+    "src/binary/random-8k.bin": {
+     "mode": "0o644",
+     "sha256": "388e1ee5802146d4b894bb8a2be68929839e940af8c033227325a0266fc103bb"
+    },
+    "src/binary/zeros-64k-plus-1.bin": {
+     "mode": "0o644",
+     "sha256": "3266304f31be278d06c3bd3eb9aa3e00c59bedec0a890de466568b0b90b0e01f"
+    },
+    "src/empty-folder": {
+     "dir": true
+    },
+    "src/empty.txt": {
+     "mode": "0o644",
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/links": {
+     "dir": true
+    },
+    "src/links/to-folder": {
+     "link": "../nested"
+    },
+    "src/links/to-leaf": {
+     "link": "../nested/deep/deeper/leaf.txt"
+    },
+    "src/modes": {
+     "dir": true
+    },
+    "src/modes/private.txt": {
+     "mode": "0o600",
+     "sha256": "25bc6f78b121a07272cc30e64fcac1bafac8b7fe6c72fdf8526caf15a4c6b7b9"
+    },
+    "src/modes/readonly.txt": {
+     "mode": "0o444",
+     "sha256": "28dc50ce2c559549546af000e2a606f45a45dac10f91bcefc7b21b9555ca1334"
+    },
+    "src/modes/run.sh": {
+     "mode": "0o755",
+     "sha256": "a4e0317eafab5cf1bc4a0041c7c8aeb6ece56fe72e7b2b3017a8a6574614cd35"
+    },
+    "src/names": {
+     "dir": true
+    },
+    "src/names/café.txt": {
+     "mode": "0o644",
+     "sha256": "7b49b9e063bd91a4f9252b413261f5557b9c570aa61516989499f64a62dbcdd6"
+    },
+    "src/names/emoji .txt": {
+     "mode": "0o644",
+     "sha256": "5312b0b582d805303c95d7e2b1bc6fad70e04b3dde5413aae758b68767b06ada"
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp/end.txt": {
+     "mode": "0o644",
+     "sha256": "c93f1e4d27896b82b0037047ef729b334aebde599ff77d6eb75728505b662597"
+    },
+    "src/names/long-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.txt": {
+     "mode": "0o644",
+     "sha256": "1272a49868c41260330ce643f91dffd1114abc24bf149dfb4ebfb8833bbe5670"
+    },
+    "src/names/space and (parens).txt": {
+     "mode": "0o644",
+     "sha256": "e47fbedb2823cf1ae4d4cdb8273635be2024cb870588e259c9b23d76ae49d484"
+    },
+    "src/names/日本語.txt": {
+     "mode": "0o644",
+     "sha256": "a43d56ae90ff2daebd847bf06f9c0a7b416f48f89b6e9dbefe7886540c94b550"
+    },
+    "src/nested": {
+     "dir": true
+    },
+    "src/nested/deep": {
+     "dir": true
+    },
+    "src/nested/deep/deeper": {
+     "dir": true
+    },
+    "src/nested/deep/deeper/leaf.txt": {
+     "mode": "0o644",
+     "sha256": "26d0bac9f0c7a35b2f3322a0f4ad4517265f56b2c0f4b2ed7cb5cbd30c5868e2"
+    },
+    "src/text": {
+     "dir": true
+    },
+    "src/text/numbers.csv": {
+     "mode": "0o644",
+     "sha256": "c1a98c151465cb709e5d17a92b44b38a7fad610ef6c173b05472141053615f24"
+    },
+    "src/text/prose.txt": {
+     "mode": "0o644",
+     "sha256": "36bd64463738667634a2838a339b1a97f7027185a65df6727c1a22d00fba6003"
+    }
+   },
+   "writer": "RAR 6.24"
+  },
   "rar4-volumes.part1.rar": {
    "command": [
     "rar",
@@ -1707,13 +2028,22 @@
    ],
    "features": [
     "RAR 4",
-    "volumes"
+    "volumes",
+    "-m0"
    ],
    "files": [
     "rar4-volumes.part1.rar",
     "rar4-volumes.part2.rar"
    ],
-   "refused": "Zipper does not read RAR 4 volumes",
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/only.bin": {
+     "mode": "0o644",
+     "sha256": "ef2b3e5a0fbe1485b72ab4f730258b60319635b60ea2be1208cc414d14e4341e"
+    }
+   },
    "writer": "RAR 6.24"
   },
   "rar4-x86-auto.rar": {
@@ -7180,6 +7510,885 @@
    },
    "writer": "RAR 7.23"
   },
+  "rar5-volumes-blake2.part01.rar": {
+   "command": [
+    "rar",
+    "a",
+    "-idq",
+    "-r",
+    "-ol",
+    "-m3",
+    "-htb",
+    "-v10k",
+    "<archive>",
+    "src"
+   ],
+   "features": [
+    "RAR 5",
+    "volumes",
+    "BLAKE2sp"
+   ],
+   "files": [
+    "rar5-volumes-blake2.part01.rar",
+    "rar5-volumes-blake2.part02.rar",
+    "rar5-volumes-blake2.part03.rar",
+    "rar5-volumes-blake2.part04.rar"
+   ],
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/binary": {
+     "dir": true
+    },
+    "src/binary/random-8k.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577950083246913578,
+     "sha256": "388e1ee5802146d4b894bb8a2be68929839e940af8c033227325a0266fc103bb"
+    },
+    "src/binary/zeros-64k-plus-1.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577958002370370367,
+     "sha256": "3266304f31be278d06c3bd3eb9aa3e00c59bedec0a890de466568b0b90b0e01f"
+    },
+    "src/empty-folder": {
+     "dir": true
+    },
+    "src/empty.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578053030851851835,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/links": {
+     "dir": true
+    },
+    "src/links/to-folder": {
+     "link": "../nested"
+    },
+    "src/links/to-leaf": {
+     "link": "../nested/deep/deeper/leaf.txt"
+    },
+    "src/modes": {
+     "dir": true
+    },
+    "src/modes/private.txt": {
+     "mode": "0o600",
+     "mtime_ns": 1577973840617283945,
+     "sha256": "25bc6f78b121a07272cc30e64fcac1bafac8b7fe6c72fdf8526caf15a4c6b7b9"
+    },
+    "src/modes/readonly.txt": {
+     "mode": "0o444",
+     "mtime_ns": 1577981759740740734,
+     "sha256": "28dc50ce2c559549546af000e2a606f45a45dac10f91bcefc7b21b9555ca1334"
+    },
+    "src/modes/run.sh": {
+     "mode": "0o755",
+     "mtime_ns": 1577989678864197523,
+     "sha256": "a4e0317eafab5cf1bc4a0041c7c8aeb6ece56fe72e7b2b3017a8a6574614cd35"
+    },
+    "src/names": {
+     "dir": true
+    },
+    "src/names/café.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577997597987654312,
+     "sha256": "7b49b9e063bd91a4f9252b413261f5557b9c570aa61516989499f64a62dbcdd6"
+    },
+    "src/names/emoji 🎉.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578005516111111101,
+     "sha256": "5312b0b582d805303c95d7e2b1bc6fad70e04b3dde5413aae758b68767b06ada"
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp/end.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577934245000000000,
+     "sha256": "c93f1e4d27896b82b0037047ef729b334aebde599ff77d6eb75728505b662597"
+    },
+    "src/names/long-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578013435234567890,
+     "sha256": "1272a49868c41260330ce643f91dffd1114abc24bf149dfb4ebfb8833bbe5670"
+    },
+    "src/names/space and (parens).txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578021354358024679,
+     "sha256": "e47fbedb2823cf1ae4d4cdb8273635be2024cb870588e259c9b23d76ae49d484"
+    },
+    "src/names/日本語.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578029273481481468,
+     "sha256": "a43d56ae90ff2daebd847bf06f9c0a7b416f48f89b6e9dbefe7886540c94b550"
+    },
+    "src/nested": {
+     "dir": true
+    },
+    "src/nested/deep": {
+     "dir": true
+    },
+    "src/nested/deep/deeper": {
+     "dir": true
+    },
+    "src/nested/deep/deeper/leaf.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577942164123456789,
+     "sha256": "26d0bac9f0c7a35b2f3322a0f4ad4517265f56b2c0f4b2ed7cb5cbd30c5868e2"
+    },
+    "src/text": {
+     "dir": true
+    },
+    "src/text/numbers.csv": {
+     "mode": "0o644",
+     "mtime_ns": 1578037192604938257,
+     "sha256": "c1a98c151465cb709e5d17a92b44b38a7fad610ef6c173b05472141053615f24"
+    },
+    "src/text/prose.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578045111728395046,
+     "sha256": "36bd64463738667634a2838a339b1a97f7027185a65df6727c1a22d00fba6003"
+    }
+   },
+   "writer": "RAR 7.23"
+  },
+  "rar5-volumes-encrypted-headers.part01.rar": {
+   "command": [
+    "rar",
+    "a",
+    "-idq",
+    "-r",
+    "-ol",
+    "-m5",
+    "-s",
+    "-hpzipper",
+    "-v10k",
+    "<archive>",
+    "src"
+   ],
+   "features": [
+    "RAR 5",
+    "volumes",
+    "encrypted headers",
+    "solid"
+   ],
+   "files": [
+    "rar5-volumes-encrypted-headers.part01.rar",
+    "rar5-volumes-encrypted-headers.part02.rar",
+    "rar5-volumes-encrypted-headers.part03.rar",
+    "rar5-volumes-encrypted-headers.part04.rar",
+    "rar5-volumes-encrypted-headers.part05.rar"
+   ],
+   "password": "zipper",
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/binary": {
+     "dir": true
+    },
+    "src/binary/random-8k.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577950083246913578,
+     "sha256": "388e1ee5802146d4b894bb8a2be68929839e940af8c033227325a0266fc103bb"
+    },
+    "src/binary/zeros-64k-plus-1.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577958002370370367,
+     "sha256": "3266304f31be278d06c3bd3eb9aa3e00c59bedec0a890de466568b0b90b0e01f"
+    },
+    "src/empty-folder": {
+     "dir": true
+    },
+    "src/empty.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578053030851851835,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/links": {
+     "dir": true
+    },
+    "src/links/to-folder": {
+     "link": "../nested"
+    },
+    "src/links/to-leaf": {
+     "link": "../nested/deep/deeper/leaf.txt"
+    },
+    "src/modes": {
+     "dir": true
+    },
+    "src/modes/private.txt": {
+     "mode": "0o600",
+     "mtime_ns": 1577973840617283945,
+     "sha256": "25bc6f78b121a07272cc30e64fcac1bafac8b7fe6c72fdf8526caf15a4c6b7b9"
+    },
+    "src/modes/readonly.txt": {
+     "mode": "0o444",
+     "mtime_ns": 1577981759740740734,
+     "sha256": "28dc50ce2c559549546af000e2a606f45a45dac10f91bcefc7b21b9555ca1334"
+    },
+    "src/modes/run.sh": {
+     "mode": "0o755",
+     "mtime_ns": 1577989678864197523,
+     "sha256": "a4e0317eafab5cf1bc4a0041c7c8aeb6ece56fe72e7b2b3017a8a6574614cd35"
+    },
+    "src/names": {
+     "dir": true
+    },
+    "src/names/café.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577997597987654312,
+     "sha256": "7b49b9e063bd91a4f9252b413261f5557b9c570aa61516989499f64a62dbcdd6"
+    },
+    "src/names/emoji 🎉.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578005516111111101,
+     "sha256": "5312b0b582d805303c95d7e2b1bc6fad70e04b3dde5413aae758b68767b06ada"
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp/end.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577934245000000000,
+     "sha256": "c93f1e4d27896b82b0037047ef729b334aebde599ff77d6eb75728505b662597"
+    },
+    "src/names/long-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578013435234567890,
+     "sha256": "1272a49868c41260330ce643f91dffd1114abc24bf149dfb4ebfb8833bbe5670"
+    },
+    "src/names/space and (parens).txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578021354358024679,
+     "sha256": "e47fbedb2823cf1ae4d4cdb8273635be2024cb870588e259c9b23d76ae49d484"
+    },
+    "src/names/日本語.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578029273481481468,
+     "sha256": "a43d56ae90ff2daebd847bf06f9c0a7b416f48f89b6e9dbefe7886540c94b550"
+    },
+    "src/nested": {
+     "dir": true
+    },
+    "src/nested/deep": {
+     "dir": true
+    },
+    "src/nested/deep/deeper": {
+     "dir": true
+    },
+    "src/nested/deep/deeper/leaf.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577942164123456789,
+     "sha256": "26d0bac9f0c7a35b2f3322a0f4ad4517265f56b2c0f4b2ed7cb5cbd30c5868e2"
+    },
+    "src/text": {
+     "dir": true
+    },
+    "src/text/numbers.csv": {
+     "mode": "0o644",
+     "mtime_ns": 1578037192604938257,
+     "sha256": "c1a98c151465cb709e5d17a92b44b38a7fad610ef6c173b05472141053615f24"
+    },
+    "src/text/prose.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578045111728395046,
+     "sha256": "36bd64463738667634a2838a339b1a97f7027185a65df6727c1a22d00fba6003"
+    }
+   },
+   "writer": "RAR 7.23"
+  },
+  "rar5-volumes-encrypted.part01.rar": {
+   "command": [
+    "rar",
+    "a",
+    "-idq",
+    "-r",
+    "-ol",
+    "-m3",
+    "-pzipper",
+    "-v10k",
+    "<archive>",
+    "src"
+   ],
+   "features": [
+    "RAR 5",
+    "volumes",
+    "encrypted data"
+   ],
+   "files": [
+    "rar5-volumes-encrypted.part01.rar",
+    "rar5-volumes-encrypted.part02.rar",
+    "rar5-volumes-encrypted.part03.rar",
+    "rar5-volumes-encrypted.part04.rar"
+   ],
+   "password": "zipper",
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/binary": {
+     "dir": true
+    },
+    "src/binary/random-8k.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577950083246913578,
+     "sha256": "388e1ee5802146d4b894bb8a2be68929839e940af8c033227325a0266fc103bb"
+    },
+    "src/binary/zeros-64k-plus-1.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577958002370370367,
+     "sha256": "3266304f31be278d06c3bd3eb9aa3e00c59bedec0a890de466568b0b90b0e01f"
+    },
+    "src/empty-folder": {
+     "dir": true
+    },
+    "src/empty.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578053030851851835,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/links": {
+     "dir": true
+    },
+    "src/links/to-folder": {
+     "link": "../nested"
+    },
+    "src/links/to-leaf": {
+     "link": "../nested/deep/deeper/leaf.txt"
+    },
+    "src/modes": {
+     "dir": true
+    },
+    "src/modes/private.txt": {
+     "mode": "0o600",
+     "mtime_ns": 1577973840617283945,
+     "sha256": "25bc6f78b121a07272cc30e64fcac1bafac8b7fe6c72fdf8526caf15a4c6b7b9"
+    },
+    "src/modes/readonly.txt": {
+     "mode": "0o444",
+     "mtime_ns": 1577981759740740734,
+     "sha256": "28dc50ce2c559549546af000e2a606f45a45dac10f91bcefc7b21b9555ca1334"
+    },
+    "src/modes/run.sh": {
+     "mode": "0o755",
+     "mtime_ns": 1577989678864197523,
+     "sha256": "a4e0317eafab5cf1bc4a0041c7c8aeb6ece56fe72e7b2b3017a8a6574614cd35"
+    },
+    "src/names": {
+     "dir": true
+    },
+    "src/names/café.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577997597987654312,
+     "sha256": "7b49b9e063bd91a4f9252b413261f5557b9c570aa61516989499f64a62dbcdd6"
+    },
+    "src/names/emoji 🎉.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578005516111111101,
+     "sha256": "5312b0b582d805303c95d7e2b1bc6fad70e04b3dde5413aae758b68767b06ada"
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp/end.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577934245000000000,
+     "sha256": "c93f1e4d27896b82b0037047ef729b334aebde599ff77d6eb75728505b662597"
+    },
+    "src/names/long-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578013435234567890,
+     "sha256": "1272a49868c41260330ce643f91dffd1114abc24bf149dfb4ebfb8833bbe5670"
+    },
+    "src/names/space and (parens).txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578021354358024679,
+     "sha256": "e47fbedb2823cf1ae4d4cdb8273635be2024cb870588e259c9b23d76ae49d484"
+    },
+    "src/names/日本語.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578029273481481468,
+     "sha256": "a43d56ae90ff2daebd847bf06f9c0a7b416f48f89b6e9dbefe7886540c94b550"
+    },
+    "src/nested": {
+     "dir": true
+    },
+    "src/nested/deep": {
+     "dir": true
+    },
+    "src/nested/deep/deeper": {
+     "dir": true
+    },
+    "src/nested/deep/deeper/leaf.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577942164123456789,
+     "sha256": "26d0bac9f0c7a35b2f3322a0f4ad4517265f56b2c0f4b2ed7cb5cbd30c5868e2"
+    },
+    "src/text": {
+     "dir": true
+    },
+    "src/text/numbers.csv": {
+     "mode": "0o644",
+     "mtime_ns": 1578037192604938257,
+     "sha256": "c1a98c151465cb709e5d17a92b44b38a7fad610ef6c173b05472141053615f24"
+    },
+    "src/text/prose.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578045111728395046,
+     "sha256": "36bd64463738667634a2838a339b1a97f7027185a65df6727c1a22d00fba6003"
+    }
+   },
+   "writer": "RAR 7.23"
+  },
+  "rar5-volumes-m3.part01.rar": {
+   "command": [
+    "rar",
+    "a",
+    "-idq",
+    "-r",
+    "-ol",
+    "-m3",
+    "-v10k",
+    "<archive>",
+    "src"
+   ],
+   "features": [
+    "RAR 5",
+    "volumes",
+    "-m3"
+   ],
+   "files": [
+    "rar5-volumes-m3.part01.rar",
+    "rar5-volumes-m3.part02.rar",
+    "rar5-volumes-m3.part03.rar",
+    "rar5-volumes-m3.part04.rar"
+   ],
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/binary": {
+     "dir": true
+    },
+    "src/binary/random-8k.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577950083246913578,
+     "sha256": "388e1ee5802146d4b894bb8a2be68929839e940af8c033227325a0266fc103bb"
+    },
+    "src/binary/zeros-64k-plus-1.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577958002370370367,
+     "sha256": "3266304f31be278d06c3bd3eb9aa3e00c59bedec0a890de466568b0b90b0e01f"
+    },
+    "src/empty-folder": {
+     "dir": true
+    },
+    "src/empty.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578053030851851835,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/links": {
+     "dir": true
+    },
+    "src/links/to-folder": {
+     "link": "../nested"
+    },
+    "src/links/to-leaf": {
+     "link": "../nested/deep/deeper/leaf.txt"
+    },
+    "src/modes": {
+     "dir": true
+    },
+    "src/modes/private.txt": {
+     "mode": "0o600",
+     "mtime_ns": 1577973840617283945,
+     "sha256": "25bc6f78b121a07272cc30e64fcac1bafac8b7fe6c72fdf8526caf15a4c6b7b9"
+    },
+    "src/modes/readonly.txt": {
+     "mode": "0o444",
+     "mtime_ns": 1577981759740740734,
+     "sha256": "28dc50ce2c559549546af000e2a606f45a45dac10f91bcefc7b21b9555ca1334"
+    },
+    "src/modes/run.sh": {
+     "mode": "0o755",
+     "mtime_ns": 1577989678864197523,
+     "sha256": "a4e0317eafab5cf1bc4a0041c7c8aeb6ece56fe72e7b2b3017a8a6574614cd35"
+    },
+    "src/names": {
+     "dir": true
+    },
+    "src/names/café.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577997597987654312,
+     "sha256": "7b49b9e063bd91a4f9252b413261f5557b9c570aa61516989499f64a62dbcdd6"
+    },
+    "src/names/emoji 🎉.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578005516111111101,
+     "sha256": "5312b0b582d805303c95d7e2b1bc6fad70e04b3dde5413aae758b68767b06ada"
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp/end.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577934245000000000,
+     "sha256": "c93f1e4d27896b82b0037047ef729b334aebde599ff77d6eb75728505b662597"
+    },
+    "src/names/long-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578013435234567890,
+     "sha256": "1272a49868c41260330ce643f91dffd1114abc24bf149dfb4ebfb8833bbe5670"
+    },
+    "src/names/space and (parens).txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578021354358024679,
+     "sha256": "e47fbedb2823cf1ae4d4cdb8273635be2024cb870588e259c9b23d76ae49d484"
+    },
+    "src/names/日本語.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578029273481481468,
+     "sha256": "a43d56ae90ff2daebd847bf06f9c0a7b416f48f89b6e9dbefe7886540c94b550"
+    },
+    "src/nested": {
+     "dir": true
+    },
+    "src/nested/deep": {
+     "dir": true
+    },
+    "src/nested/deep/deeper": {
+     "dir": true
+    },
+    "src/nested/deep/deeper/leaf.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577942164123456789,
+     "sha256": "26d0bac9f0c7a35b2f3322a0f4ad4517265f56b2c0f4b2ed7cb5cbd30c5868e2"
+    },
+    "src/text": {
+     "dir": true
+    },
+    "src/text/numbers.csv": {
+     "mode": "0o644",
+     "mtime_ns": 1578037192604938257,
+     "sha256": "c1a98c151465cb709e5d17a92b44b38a7fad610ef6c173b05472141053615f24"
+    },
+    "src/text/prose.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578045111728395046,
+     "sha256": "36bd64463738667634a2838a339b1a97f7027185a65df6727c1a22d00fba6003"
+    }
+   },
+   "writer": "RAR 7.23"
+  },
+  "rar5-volumes-solid.part01.rar": {
+   "command": [
+    "rar",
+    "a",
+    "-idq",
+    "-r",
+    "-ol",
+    "-m5",
+    "-s",
+    "-v10k",
+    "<archive>",
+    "src"
+   ],
+   "features": [
+    "RAR 5",
+    "volumes",
+    "solid"
+   ],
+   "files": [
+    "rar5-volumes-solid.part01.rar",
+    "rar5-volumes-solid.part02.rar",
+    "rar5-volumes-solid.part03.rar",
+    "rar5-volumes-solid.part04.rar"
+   ],
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/binary": {
+     "dir": true
+    },
+    "src/binary/random-8k.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577950083246913578,
+     "sha256": "388e1ee5802146d4b894bb8a2be68929839e940af8c033227325a0266fc103bb"
+    },
+    "src/binary/zeros-64k-plus-1.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577958002370370367,
+     "sha256": "3266304f31be278d06c3bd3eb9aa3e00c59bedec0a890de466568b0b90b0e01f"
+    },
+    "src/empty-folder": {
+     "dir": true
+    },
+    "src/empty.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578053030851851835,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "src/links": {
+     "dir": true
+    },
+    "src/links/to-folder": {
+     "link": "../nested"
+    },
+    "src/links/to-leaf": {
+     "link": "../nested/deep/deeper/leaf.txt"
+    },
+    "src/modes": {
+     "dir": true
+    },
+    "src/modes/private.txt": {
+     "mode": "0o600",
+     "mtime_ns": 1577973840617283945,
+     "sha256": "25bc6f78b121a07272cc30e64fcac1bafac8b7fe6c72fdf8526caf15a4c6b7b9"
+    },
+    "src/modes/readonly.txt": {
+     "mode": "0o444",
+     "mtime_ns": 1577981759740740734,
+     "sha256": "28dc50ce2c559549546af000e2a606f45a45dac10f91bcefc7b21b9555ca1334"
+    },
+    "src/modes/run.sh": {
+     "mode": "0o755",
+     "mtime_ns": 1577989678864197523,
+     "sha256": "a4e0317eafab5cf1bc4a0041c7c8aeb6ece56fe72e7b2b3017a8a6574614cd35"
+    },
+    "src/names": {
+     "dir": true
+    },
+    "src/names/café.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577997597987654312,
+     "sha256": "7b49b9e063bd91a4f9252b413261f5557b9c570aa61516989499f64a62dbcdd6"
+    },
+    "src/names/emoji 🎉.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578005516111111101,
+     "sha256": "5312b0b582d805303c95d7e2b1bc6fad70e04b3dde5413aae758b68767b06ada"
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp": {
+     "dir": true
+    },
+    "src/names/level-00-pppppppppppppppppppppppppppppppppppppppp/level-01-pppppppppppppppppppppppppppppppppppppppp/level-02-pppppppppppppppppppppppppppppppppppppppp/level-03-pppppppppppppppppppppppppppppppppppppppp/level-04-pppppppppppppppppppppppppppppppppppppppp/level-05-pppppppppppppppppppppppppppppppppppppppp/level-06-pppppppppppppppppppppppppppppppppppppppp/level-07-pppppppppppppppppppppppppppppppppppppppp/level-08-pppppppppppppppppppppppppppppppppppppppp/level-09-pppppppppppppppppppppppppppppppppppppppp/level-10-pppppppppppppppppppppppppppppppppppppppp/level-11-pppppppppppppppppppppppppppppppppppppppp/end.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577934245000000000,
+     "sha256": "c93f1e4d27896b82b0037047ef729b334aebde599ff77d6eb75728505b662597"
+    },
+    "src/names/long-nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578013435234567890,
+     "sha256": "1272a49868c41260330ce643f91dffd1114abc24bf149dfb4ebfb8833bbe5670"
+    },
+    "src/names/space and (parens).txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578021354358024679,
+     "sha256": "e47fbedb2823cf1ae4d4cdb8273635be2024cb870588e259c9b23d76ae49d484"
+    },
+    "src/names/日本語.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578029273481481468,
+     "sha256": "a43d56ae90ff2daebd847bf06f9c0a7b416f48f89b6e9dbefe7886540c94b550"
+    },
+    "src/nested": {
+     "dir": true
+    },
+    "src/nested/deep": {
+     "dir": true
+    },
+    "src/nested/deep/deeper": {
+     "dir": true
+    },
+    "src/nested/deep/deeper/leaf.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1577942164123456789,
+     "sha256": "26d0bac9f0c7a35b2f3322a0f4ad4517265f56b2c0f4b2ed7cb5cbd30c5868e2"
+    },
+    "src/text": {
+     "dir": true
+    },
+    "src/text/numbers.csv": {
+     "mode": "0o644",
+     "mtime_ns": 1578037192604938257,
+     "sha256": "c1a98c151465cb709e5d17a92b44b38a7fad610ef6c173b05472141053615f24"
+    },
+    "src/text/prose.txt": {
+     "mode": "0o644",
+     "mtime_ns": 1578045111728395046,
+     "sha256": "36bd64463738667634a2838a339b1a97f7027185a65df6727c1a22d00fba6003"
+    }
+   },
+   "writer": "RAR 7.23"
+  },
   "rar5-volumes.part1.rar": {
    "command": [
     "rar",
@@ -7194,13 +8403,23 @@
    ],
    "features": [
     "RAR 5",
-    "volumes"
+    "volumes",
+    "-m0"
    ],
    "files": [
     "rar5-volumes.part1.rar",
     "rar5-volumes.part2.rar"
    ],
-   "refused": "Zipper does not read RAR 5 volumes",
+   "tree": {
+    "src": {
+     "dir": true
+    },
+    "src/only.bin": {
+     "mode": "0o644",
+     "mtime_ns": 1577934245000000000,
+     "sha256": "ef2b3e5a0fbe1485b72ab4f730258b60319635b60ea2be1208cc414d14e4341e"
+    }
+   },
    "writer": "RAR 7.23"
   },
   "rar5-x86-auto.rar": {

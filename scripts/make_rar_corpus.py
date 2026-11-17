@@ -30,6 +30,7 @@ import math
 import os
 from pathlib import Path
 import random
+import re
 import shutil
 import stat
 import subprocess
@@ -223,8 +224,6 @@ RAR4 = "RAR 4"
 
 REFUSED_ENCRYPTED_HEADERS_4 = "RAR 4 archive has encrypted headers, which Zipper does not decrypt"
 REFUSED_ENCRYPTED_ENTRY_4 = "is encrypted, which Zipper does not decrypt"
-REFUSED_VOLUME_5 = "Zipper does not read RAR 5 volumes"
-REFUSED_VOLUME_4 = "Zipper does not read RAR 4 volumes"
 REFUSED_SOLID_4 = "Zipper does not read RAR 4 solid archives"
 REFUSED_COPY = "is a FileCopy, which Zipper does not create"
 # A gap, not a feature refusal; docs/roadmap/m18-rar.md lists it.
@@ -271,7 +270,12 @@ def cases(work):
         ("rar5-encrypted-headers-solid.rar", "rar", many_small_texts, ["-m5", "-s", f"-hp{PASSWORD}"], [RAR5, "encrypted headers", "solid", "many files"], None),
         ("rar5-encrypted-headers-blake2.rar", "rar", mixed, ["-m3", "-htb", f"-hp{PASSWORD}"], [RAR5, "encrypted headers", "BLAKE2sp"], None),
         ("rar5-encrypted-long-password.rar", "rar", single, ["-m3", f"-p{LONG_PASSWORD}"], [RAR5, "encrypted data", "password of more than 127 characters"], None),
-        ("rar5-volumes.part1.rar", "rar", single, ["-m0", "-v24k"], [RAR5, "volumes"], REFUSED_VOLUME_5),
+        ("rar5-volumes.part1.rar", "rar", single, ["-m0", "-v24k"], [RAR5, "volumes", "-m0"], None),
+        ("rar5-volumes-m3.part1.rar", "rar", mixed, ["-m3", "-v10k"], [RAR5, "volumes", "-m3"], None),
+        ("rar5-volumes-solid.part1.rar", "rar", mixed, ["-m5", "-s", "-v10k"], [RAR5, "volumes", "solid"], None),
+        ("rar5-volumes-blake2.part1.rar", "rar", mixed, ["-m3", "-htb", "-v10k"], [RAR5, "volumes", "BLAKE2sp"], None),
+        ("rar5-volumes-encrypted.part1.rar", "rar", mixed, ["-m3", f"-p{PASSWORD}", "-v10k"], [RAR5, "volumes", "encrypted data"], None),
+        ("rar5-volumes-encrypted-headers.part1.rar", "rar", mixed, ["-m5", "-s", f"-hp{PASSWORD}", "-v10k"], [RAR5, "volumes", "encrypted headers", "solid"], None),
         ("rar4-text-ppmd.rar", "rar4", mixed, ["-ma4", "-m5", "-mcT+"], [RAR4, "PPMd"], None),
         ("rar4-text-ppmd-small-files.rar", "rar4", many_small_texts, ["-ma4", "-m5", "-mcT+"], [RAR4, "PPMd", "many files"], REFUSED_PPMD_RESTARTS),
         ("rar4-x86-auto.rar", "rar4", executables, ["-ma4", "-m3"], [RAR4, "x86 filter, chosen by rar"], None),
@@ -287,7 +291,9 @@ def cases(work):
         ("rar4-solid.rar", "rar4", mixed, ["-ma4", "-m3", "-s"], [RAR4, "solid"], REFUSED_SOLID_4),
         ("rar4-encrypted-headers.rar", "rar4", single, ["-ma4", "-m3", f"-hp{PASSWORD}"], [RAR4, "encrypted headers"], REFUSED_ENCRYPTED_HEADERS_4),
         ("rar4-encrypted-data.rar", "rar4", single, ["-ma4", "-m3", f"-p{PASSWORD}"], [RAR4, "encrypted data"], REFUSED_ENCRYPTED_ENTRY_4),
-        ("rar4-volumes.part1.rar", "rar4", single, ["-ma4", "-m0", "-v24k"], [RAR4, "volumes"], REFUSED_VOLUME_4),
+        ("rar4-volumes.part1.rar", "rar4", single, ["-ma4", "-m0", "-v24k"], [RAR4, "volumes", "-m0"], None),
+        ("rar4-volumes-m3.part1.rar", "rar4", mixed, ["-ma4", "-m3", "-v10k"], [RAR4, "volumes", "-m3"], None),
+        ("rar4-volumes-old-names.rar", "rar4", mixed, ["-ma4", "-m3", "-v10k", "-vn"], [RAR4, "volumes", "old names"], None),
     ]
 
 
@@ -353,8 +359,22 @@ def version(binary):
 
 
 def volumes(archive):
+    """Every volume of the set whose first volume `rar` wrote at `archive`,
+    named name.partN.rar, or name.rar, name.r00 and on with -vn. rar pads N
+    to the digits the whole set needs, so name.part1.rar may be
+    name.part01.rar."""
+    if ".part1." not in archive.name:
+        stem = archive.name.removesuffix(".rar")
+        later = sorted(archive.parent.glob(f"{stem}.[r-z][0-9][0-9]"), key=lambda path: path.suffix)
+        return [archive, *later] if later else [archive]
     stem = archive.name.split(".part1.rar")[0]
-    return sorted(archive.parent.glob(f"{stem}.part*.rar"))
+    return sorted(archive.parent.glob(f"{stem}.part*.rar"), key=lambda path: int(path.name[len(stem) + 5:-4]))
+
+
+def is_volume_set(switches):
+    """Whether the switches split the archive into volumes, as -v24k does.
+    -vn and -ver name volumes and versions."""
+    return any(re.fullmatch(r"-v[0-9]+[bkmg]?", switch) for switch in switches)
 
 
 def main():
@@ -378,8 +398,13 @@ def main():
             rewrite = build(source / "src")
             target = args.output / archive
             written = target.with_name(archive.replace(".part1.rar", ".rar"))
+            volume_set = is_volume_set(switches)
             command = [writers[writer], "a", "-idq", "-r", "-ol", *switches, str(written), "src"]
             subprocess.run(command, cwd=source, check=True)
+            if volume_set:
+                files = volumes(target)
+                target = files[0]
+                archive = target.name
             rar4 = RAR4 in features
             expected = tree(source, rar4)
             if rewrite is not None:
@@ -410,7 +435,7 @@ def main():
                 "writer": tools[writer],
                 "command": ["rar", *command[1:-2], "<archive>", "src"],
                 "features": features,
-                "files": [path.name for path in volumes(target)] if ".part1." in archive else [archive],
+                "files": [path.name for path in files] if volume_set else [archive],
             }
             if given is not None:
                 entry["password"] = given

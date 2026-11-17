@@ -376,7 +376,7 @@ fn every_archive_with_a_feature_zipper_refuses_is_refused_by_name_and_leaves_not
         );
         refused += 1;
     }
-    assert!(refused >= 7, "only {refused} archives refused");
+    assert!(refused >= 5, "only {refused} archives refused");
 }
 
 #[test]
@@ -446,6 +446,122 @@ fn every_volume_the_manifest_names_is_in_the_corpus() {
     }
 }
 
+fn copied_set(archive: &Archive, work: &Path) -> Vec<PathBuf> {
+    archive
+        .files
+        .iter()
+        .map(|file| {
+            let copy = work.join(file);
+            fs::copy(corpus(file), &copy).unwrap();
+            copy
+        })
+        .collect()
+}
+
+fn refusal_of_copied(archive: &Archive, work: &Path, first: &Path) -> String {
+    let out = work.join("out");
+    let error = read_archive(first, Some(&out), archive.options())
+        .err()
+        .unwrap_or_else(|| panic!("{} was read", archive.name));
+    assert!(!out.exists(), "{} left output", archive.name);
+    format!("{error:#}")
+}
+
+fn name_of(path: &Path) -> String {
+    path.file_name().unwrap().to_string_lossy().into_owned()
+}
+
+#[test]
+fn every_volume_set_refuses_a_missing_cut_or_misplaced_volume_by_name() {
+    let mut sets = 0;
+    for archive in manifest(None) {
+        if archive.files.len() < 2 {
+            continue;
+        }
+        sets += 1;
+        let work = tempfile::tempdir().unwrap();
+        let volumes = copied_set(&archive, work.path());
+        let last = volumes.last().unwrap();
+        let bytes = fs::read(last).unwrap();
+
+        fs::remove_file(last).unwrap();
+        let error = refusal_of_copied(&archive, work.path(), &volumes[0]);
+        let wanted = format!("RAR volume {} is missing", name_of(last));
+        assert!(error.contains(&wanted), "{}: {error}", archive.name);
+
+        fs::write(last, &bytes[..bytes.len() - 1]).unwrap();
+        let error = refusal_of_copied(&archive, work.path(), &volumes[0]);
+        let wanted = format!("in RAR volume {}", name_of(last));
+        assert!(error.contains(&wanted), "{}: {error}", archive.name);
+        fs::write(last, &bytes).unwrap();
+
+        let error = refusal_of_copied(&archive, work.path(), &volumes[1]);
+        let wanted = format!("open its first volume, {}", name_of(&volumes[0]));
+        assert!(error.contains(&wanted), "{}: {error}", archive.name);
+
+        if volumes.len() > 2 {
+            let (second, third) = (&volumes[1], &volumes[2]);
+            let swap = work.path().join("swap");
+            fs::rename(second, &swap).unwrap();
+            fs::rename(third, second).unwrap();
+            fs::rename(&swap, third).unwrap();
+            let error = refusal_of_copied(&archive, work.path(), &volumes[0]);
+            assert!(
+                error.contains(&format!("RAR volume {}", name_of(second))),
+                "{}: {error}",
+                archive.name
+            );
+        }
+        make_deletable(work.path());
+    }
+    assert!(sets >= 9, "only {sets} volume sets");
+}
+
+#[test]
+fn a_volume_from_another_set_is_refused() {
+    let archives = manifest(None);
+    let find = |name: &str| {
+        archives
+            .iter()
+            .find(|archive| archive.name == name)
+            .unwrap()
+    };
+    for (name, stranger, reason) in [
+        (
+            "rar5-volumes-m3.part01.rar",
+            "rar5-volumes.part1.rar",
+            "continues RAR 5 entry",
+        ),
+        (
+            "rar5-volumes-solid.part01.rar",
+            "rar5-volumes-m3.part01.rar",
+            "disagree on whether the archive is solid",
+        ),
+        (
+            "rar5-volumes-encrypted-headers.part01.rar",
+            "rar5-volumes-solid.part01.rar",
+            "disagree on whether the headers are encrypted",
+        ),
+        (
+            "rar4-volumes-m3.part01.rar",
+            "rar4-volumes.part1.rar",
+            "continues RAR 4 entry",
+        ),
+    ] {
+        let (archive, stranger) = (find(name), find(stranger));
+        let work = tempfile::tempdir().unwrap();
+        let volumes = copied_set(archive, work.path());
+        fs::copy(corpus(&stranger.files[1]), &volumes[1]).unwrap();
+        let error = refusal_of_copied(archive, work.path(), &volumes[0]);
+        let place = format!("RAR volume {}", name_of(&volumes[1]));
+        assert!(
+            error.contains(&place) && error.contains(reason),
+            "{name}: {error}"
+        );
+        make_deletable(work.path());
+    }
+}
+
 #[test]
 fn a_selected_path_late_in_a_solid_stream_extracts_only_its_entries() {
     let work = tempfile::tempdir().unwrap();
@@ -455,6 +571,8 @@ fn a_selected_path_late_in_a_solid_stream_extracts_only_its_entries() {
         ("rar5-solid-small-texts.rar", "src/notes/note-119.txt"),
         ("rar5-encrypted-headers-solid.rar", "src/notes/note-119.txt"),
         ("rar5-encrypted-solid.rar", "src/text"),
+        ("rar5-volumes-solid.part01.rar", "src/text"),
+        ("rar5-volumes-encrypted-headers.part01.rar", "src/text"),
     ] {
         let archive = manifest(ceiling)
             .into_iter()

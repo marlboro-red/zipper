@@ -1,12 +1,13 @@
+use crate::rar_volumes::{self, Names, Part, PartCheck, Parts, Span};
 use crate::rar4_lz;
 use crate::tree::{self, MAX_NAME};
-use crate::volumes::ArchiveFile;
+use crate::volumes::{ArchiveFile, Unchanged};
 use crate::{BadField, Field, field_check};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     io::{self, BufReader, Read, Seek},
     ops::Range,
-    path::Path,
+    path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
 
@@ -28,7 +29,13 @@ const END_HEADER: u8 = 0x7B;
 const LONG_BLOCK: u16 = 0x8000;
 const MAIN_VOLUME: u16 = 0x0001;
 const MAIN_SOLID: u16 = 0x0008;
+const MAIN_NEW_NUMBERING: u16 = 0x0010;
 const MAIN_ENCRYPTED: u16 = 0x0080;
+const MAIN_FIRST_VOLUME: u16 = 0x0100;
+
+const END_NEXT_VOLUME: u16 = 0x0001;
+const END_DATA_CRC: u16 = 0x0002;
+const END_VOLUME_NUMBER: u16 = 0x0008;
 
 const SPLIT_BEFORE: u16 = 0x0001;
 const SPLIT_AFTER: u16 = 0x0002;
@@ -275,8 +282,8 @@ fn file_mode(header: &FileHeader, directory: bool) -> u32 {
 }
 
 enum Data<'a> {
-    Stored(io::Take<&'a mut BufReader<ArchiveFile>>),
-    Compressed(Box<rar4_lz::Decoder<io::Take<&'a mut BufReader<ArchiveFile>>>>),
+    Stored(Parts<'a>),
+    Compressed(Box<rar4_lz::Decoder<Parts<'a>>>),
 }
 
 struct Checked<'a> {
@@ -324,31 +331,65 @@ struct Block {
     data_size: u64,
 }
 
-pub(crate) struct Reader {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct End {
+    more: bool,
+    number: Option<u16>,
+}
+
+// EXTERNAL(rar 6.24): an end block of a volume gives a CRC-32 of the volume's bytes before it
+// when flag 0x0002 is set, then its volume number from 0 when flag 0x0008 is set.
+fn end_block(header: &[u8], flags: u16) -> Field<End> {
+    let at = BASE + if flags & END_DATA_CRC != 0 { 4 } else { 0 };
+    let number = if flags & END_VOLUME_NUMBER != 0 {
+        let bytes = header.get(at..at + 2).ok_or(BadField(
+            "RAR 4 end of archive block is shorter than its volume number",
+        ))?;
+        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+    } else {
+        None
+    };
+    Ok(End {
+        more: flags & END_NEXT_VOLUME != 0,
+        number,
+    })
+}
+
+struct Volume {
     reader: BufReader<ArchiveFile>,
     length: u64,
     next: u64,
-    ppmd_spent: rar4_lz::PpmdSpent,
+    index: u64,
+    path: PathBuf,
+    reopen: Option<Unchanged>,
+    in_set: bool,
 }
 
-impl Reader {
-    pub(crate) fn open(path: &Path) -> Result<Self> {
-        let file = crate::volumes::open(path)?;
+impl Volume {
+    fn open(
+        file: ArchiveFile,
+        path: PathBuf,
+        reopen: Option<Unchanged>,
+        index: u64,
+    ) -> Result<(Self, u16)> {
         let length = file.len()?;
-        let mut reader = Reader {
+        let mut volume = Volume {
             reader: BufReader::with_capacity(COPY_BUFFER, file),
             length,
             next: 0,
-            ppmd_spent: rar4_lz::PpmdSpent::default(),
+            index,
+            path,
+            reopen,
+            in_set: index > 0,
         };
         let mut signature = [0u8; SIGNATURE.len()];
-        reader
+        volume
             .reader
             .read_exact(&mut signature)
             .context("truncated RAR signature")?;
         ensure!(signature == SIGNATURE, "RAR 4 signature is missing");
-        reader.next = SIGNATURE.len() as u64;
-        let main = reader
+        volume.next = SIGNATURE.len() as u64;
+        let main = volume
             .block()?
             .context("RAR 4 archive has no main header")?;
         ensure!(
@@ -360,14 +401,14 @@ impl Reader {
             "RAR 4 archive has encrypted headers, which Zipper does not decrypt"
         );
         ensure!(
-            main.base.flags & MAIN_VOLUME == 0,
-            "Zipper does not read RAR 4 volumes"
-        );
-        ensure!(
             main.base.flags & MAIN_SOLID == 0,
             "Zipper does not read RAR 4 solid archives"
         );
-        Ok(reader)
+        Ok((volume, main.base.flags))
+    }
+
+    fn label(&self) -> String {
+        rar_volumes::file_name(&self.path)
     }
 
     fn seek_to(&mut self, offset: u64) -> Result<()> {
@@ -379,6 +420,14 @@ impl Reader {
     }
 
     fn block(&mut self) -> Result<Option<Block>> {
+        let result = self.next_block();
+        match self.in_set {
+            true => result.with_context(|| format!("in RAR volume {}", self.label())),
+            false => result,
+        }
+    }
+
+    fn next_block(&mut self) -> Result<Option<Block>> {
         self.seek_to(self.next)?;
         if self.next == self.length {
             return Ok(None);
@@ -424,13 +473,203 @@ impl Reader {
             data_size,
         }))
     }
+}
+
+struct Set {
+    names: Option<Names>,
+    new_numbering: bool,
+}
+
+fn next_volume(set: &Set, current: &Volume) -> Result<Volume> {
+    let names = set.names.as_ref().with_context(|| {
+        format!(
+            "{} is a RAR 4 volume whose name does not end in {}, so Zipper cannot name the volume after it",
+            current.label(),
+            if set.new_numbering { ".partN.rar" } else { ".rar" }
+        )
+    })?;
+    let index = current.index + 1;
+    let (path, file, unchanged) = rar_volumes::open(names, index, &current.path)?;
+    let label = rar_volumes::file_name(&path);
+    let (volume, flags) = Volume::open(file, path, Some(unchanged), index)?;
+    ensure!(
+        flags & MAIN_VOLUME != 0,
+        "RAR volume {label} does not mark itself as a volume, so it does not belong to the set"
+    );
+    ensure!(
+        flags & MAIN_FIRST_VOLUME == 0,
+        "RAR volume {label} marks itself as the first volume of a set, so the volumes are out of order or come from different sets"
+    );
+    ensure!(
+        (flags & MAIN_NEW_NUMBERING != 0) == set.new_numbering,
+        "RAR volume {label} and the first volume disagree on how the volumes are named, so they come from different sets"
+    );
+    Ok(volume)
+}
+
+fn more_volumes(set: Option<&Set>, volume: &Volume, block: &Block) -> Result<bool> {
+    let flags = block.base.flags;
+    if set.is_none() {
+        ensure!(
+            flags & END_NEXT_VOLUME == 0,
+            "RAR 4 end of archive block says more volumes follow, but the main header does not mark a volume"
+        );
+        return Ok(false);
+    }
+    let end = end_block(&block.header, flags)?;
+    if let Some(number) = end.number {
+        ensure!(
+            u64::from(number) == volume.index,
+            "RAR volume {} calls itself volume {} of its set, not volume {}, so the volumes are out of order or come from different sets",
+            volume.label(),
+            u64::from(number) + 1,
+            volume.index + 1
+        );
+    }
+    Ok(end.more)
+}
+
+fn same_entry(first: (&[u8], &FileHeader), part: (&[u8], &FileHeader)) -> bool {
+    let ((first_header, first), (part_header, part)) = (first, part);
+    let kept = !(SPLIT_BEFORE | SPLIT_AFTER | LARGE);
+    first_header[first.name.clone()] == part_header[part.name.clone()]
+        && first.flags & kept == part.flags & kept
+        && first.unpacked == part.unpacked
+        && first.host == part.host
+        && first.version == part.version
+        && first.method == part.method
+}
+
+pub(crate) struct Reader {
+    volume: Volume,
+    set: Option<Set>,
+    ppmd_spent: rar4_lz::PpmdSpent,
+}
+
+impl Reader {
+    pub(crate) fn open(path: &Path) -> Result<Self> {
+        let file = crate::volumes::open(path)?;
+        let (mut volume, flags) = Volume::open(file, path.to_owned(), None, 0)?;
+        let set = match flags & MAIN_VOLUME {
+            0 => None,
+            _ => {
+                let new_numbering = flags & MAIN_NEW_NUMBERING != 0;
+                let names = match new_numbering {
+                    true => Names::new_style(path),
+                    false => Names::old_style(path),
+                };
+                ensure!(
+                    flags & MAIN_FIRST_VOLUME != 0,
+                    rar_volumes::later_volume(path, names.as_ref(), None)
+                );
+                Some(Set {
+                    names,
+                    new_numbering,
+                })
+            }
+        };
+        volume.in_set = set.is_some();
+        Ok(Reader {
+            volume,
+            set,
+            ppmd_spent: rar4_lz::PpmdSpent::default(),
+        })
+    }
+
+    // EXTERNAL(rar 6.24): a part that continues in the next volume carries the CRC-32 of
+    // its own packed data, and the last part the CRC-32 of the whole file.
+    fn continuation(
+        &mut self,
+        block: &Block,
+        first: &FileHeader,
+        name: &str,
+    ) -> Result<(FileHeader, Span, Volume)> {
+        let set = self.set.as_ref().with_context(|| {
+            format!("RAR 4 entry {name:?} continues into another volume, but the archive is not a volume")
+        })?;
+        let mut span = Span::starting(Part {
+            path: Some(self.volume.path.clone()),
+            reopen: None,
+            offset: block.data,
+            size: block.data_size,
+            check: Some(PartCheck {
+                crc: Some(first.crc),
+                ..PartCheck::default()
+            }),
+        });
+        let mut later: Option<Volume> = None;
+        loop {
+            let volume = later.as_mut().unwrap_or(&mut self.volume);
+            loop {
+                let after = volume.block()?.with_context(|| {
+                    format!(
+                        "RAR 4 entry {name:?} continues into the next volume, but {} ends without its end of archive block",
+                        volume.label()
+                    )
+                })?;
+                match after.base.kind {
+                    SERVICE_HEADER if after.base.flags & (SPLIT_BEFORE | SPLIT_AFTER) == 0 => {}
+                    OLD_COMMENT..=OLD_SIGNATURE => {}
+                    END_HEADER => {
+                        ensure!(
+                            more_volumes(Some(set), volume, &after)?,
+                            "RAR 4 entry {name:?} continues into the next volume, but {} is the last volume",
+                            volume.label()
+                        );
+                        break;
+                    }
+                    _ => bail!(
+                        "RAR 4 entry {name:?} continues into the next volume, but another block follows it in {}",
+                        volume.label()
+                    ),
+                }
+            }
+            let mut next = next_volume(set, volume)?;
+            let part = next.block()?.with_context(|| {
+                format!(
+                    "RAR volume {} does not start with the rest of RAR 4 entry {name:?}",
+                    next.label()
+                )
+            })?;
+            ensure!(
+                part.base.kind == FILE_HEADER && part.base.flags & SPLIT_BEFORE != 0,
+                "RAR volume {} does not start with the rest of RAR 4 entry {name:?}",
+                next.label()
+            );
+            let header = file_header(&part.header, part.base.flags)?;
+            ensure!(
+                same_entry((&block.header, first), (&part.header, &header)),
+                "RAR volume {} continues RAR 4 entry {name:?} with another name, size or method, so the volumes come from different sets",
+                next.label()
+            );
+            let last = part.base.flags & SPLIT_AFTER == 0;
+            span.push(Part {
+                path: Some(next.path.clone()),
+                reopen: next.reopen,
+                offset: part.data,
+                size: part.data_size,
+                check: (!last).then(|| PartCheck {
+                    crc: Some(header.crc),
+                    ..PartCheck::default()
+                }),
+            })?;
+            if last {
+                let whole = FileHeader {
+                    crc: header.crc,
+                    ..first.clone()
+                };
+                return Ok((whole, span, next));
+            }
+            later = Some(next);
+        }
+    }
 
     fn entry(&mut self, tree: &mut tree::Tree, block: &Block) -> Result<()> {
         let header = file_header(&block.header, block.base.flags)?;
         let name = entry_name(&block.header[header.name.clone()], header.flags)?;
         ensure!(
-            header.flags & (SPLIT_BEFORE | SPLIT_AFTER) == 0,
-            "RAR 4 entry {name:?} spans volumes"
+            header.flags & SPLIT_BEFORE == 0,
+            "RAR 4 entry {name:?} continues from a volume before, but no entry there continues into it"
         );
         ensure!(
             header.flags & ENCRYPTED == 0,
@@ -440,16 +679,38 @@ impl Reader {
             header.flags & SOLID == 0,
             "RAR 4 entry {name:?} is solid, which Zipper does not read"
         );
+        let (header, span, after) = match header.flags & SPLIT_AFTER {
+            0 => (header, Span::one(block.data_size), None),
+            _ => {
+                let (whole, span, after) = self.continuation(block, &header, &name)?;
+                (whole, span, Some(after))
+            }
+        };
+        let result = self.contents(tree, block, &header, &name, span);
+        if let Some(after) = after {
+            self.volume = after;
+        }
+        result
+    }
+
+    fn contents(
+        &mut self,
+        tree: &mut tree::Tree,
+        block: &Block,
+        header: &FileHeader,
+        name: &str,
+        span: Span,
+    ) -> Result<()> {
         let directory = header.flags & DIRECTORY_BITS == DIRECTORY_BITS
             || header.host == Host::Windows && header.attributes & WINDOWS_DIRECTORY != 0;
-        let mode = file_mode(&header, directory);
-        let time = modified(&header);
+        let mode = file_mode(header, directory);
+        let time = modified(header);
         if directory {
             ensure!(
-                header.packed == 0 && header.unpacked == 0,
+                span.packed == 0 && header.unpacked == 0,
                 "RAR 4 folder entry {name:?} carries data"
             );
-            return tree.directory(&name, mode, time);
+            return tree.directory(name, mode, time);
         }
         ensure!(
             (STORED..=BEST).contains(&header.method),
@@ -468,20 +729,20 @@ impl Reader {
                 "RAR 4 symlink {name:?} has a target longer than {MAX_NAME} bytes"
             );
         }
-        self.seek_to(block.data)?;
-        let raw = (&mut self.reader).take(block.data_size);
+        let packed = span.packed;
+        self.volume.seek_to(block.data)?;
+        let raw = Parts::new(&mut self.volume.reader, span, "RAR 4", name);
         let data = if header.method == STORED {
             ensure!(
-                header.packed == header.unpacked,
-                "RAR 4 stored entry {name:?} packs {} bytes for {}",
-                header.packed,
+                packed == header.unpacked,
+                "RAR 4 stored entry {name:?} packs {packed} bytes for {}",
                 header.unpacked
             );
             Data::Stored(raw)
         } else {
             Data::Compressed(Box::new(rar4_lz::Decoder::new(
                 raw,
-                header.packed,
+                packed,
                 header.unpacked,
                 self.ppmd_spent,
             )))
@@ -497,14 +758,14 @@ impl Reader {
                 .take(header.unpacked)
                 .read_to_end(&mut target)
                 .with_context(|| format!("RAR 4 entry {name:?} is damaged"))?;
-            let spent = checked.finish(&name, &header)?;
+            let spent = checked.finish(name, header)?;
             self.charge(spent);
             let target = String::from_utf8(target)
                 .map_err(|_| anyhow::anyhow!("RAR 4 link target is not UTF-8"))?;
-            return tree.symlink(&name, target);
+            return tree.symlink(name, target);
         }
-        tree.file(&name, header.unpacked, mode, time, &mut checked)?;
-        let spent = checked.finish(&name, &header)?;
+        tree.file(name, header.unpacked, mode, time, &mut checked)?;
+        let spent = checked.finish(name, header)?;
         self.charge(spent);
         Ok(())
     }
@@ -516,19 +777,32 @@ impl Reader {
     }
 
     pub(crate) fn parse(&mut self, tree: &mut tree::Tree) -> Result<()> {
-        while let Some(block) = self.block()? {
+        loop {
+            let Some(block) = self.volume.block()? else {
+                ensure!(
+                    self.set.is_none(),
+                    "RAR volume {} ends without its end of archive block, so it is truncated",
+                    self.volume.label()
+                );
+                return Ok(());
+            };
             tree.check()?;
             match block.base.kind {
                 FILE_HEADER => self.entry(tree, &block)?,
                 SERVICE_HEADER | OLD_COMMENT..=OLD_SIGNATURE => {}
-                END_HEADER => return Ok(()),
+                END_HEADER => {
+                    if !more_volumes(self.set.as_ref(), &self.volume, &block)? {
+                        return Ok(());
+                    }
+                    let set = self.set.as_ref().expect("only a set has more volumes");
+                    self.volume = next_volume(set, &self.volume)?;
+                }
                 MARK_HEADER | MAIN_HEADER => {
                     bail!("RAR 4 archive has a second marker or main header")
                 }
                 other => bail!("RAR 4 header type {other:#x} is unknown"),
             }
         }
-        Ok(())
     }
 }
 
@@ -602,6 +876,25 @@ mod proofs {
         kani::assume(length <= bytes.len());
         if let Ok(Some((units, _))) = extended_time(&bytes[..length]) {
             assert!(units < 1 << 24);
+        }
+    }
+
+    #[kani::proof]
+    fn end_blocks_never_panic_and_read_the_volume_number_inside_the_block() {
+        let bytes: [u8; 14] = kani::any();
+        let length: usize = kani::any();
+        let flags: u16 = kani::any();
+        kani::assume(length <= bytes.len());
+        if let Ok(end) = end_block(&bytes[..length], flags) {
+            assert_eq!(end.more, flags & END_NEXT_VOLUME != 0);
+            match end.number {
+                Some(number) => {
+                    let at = BASE + if flags & END_DATA_CRC != 0 { 4 } else { 0 };
+                    assert!(at + 2 <= length);
+                    assert_eq!(number, u16::from_le_bytes([bytes[at], bytes[at + 1]]));
+                }
+                None => assert_eq!(flags & END_VOLUME_NUMBER, 0),
+            }
         }
     }
 

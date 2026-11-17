@@ -250,6 +250,7 @@ struct File<'a> {
     extra: Vec<u8>,
     flags: u64,
     unpacked: Option<u64>,
+    crc: Option<u32>,
 }
 
 impl<'a> File<'a> {
@@ -264,6 +265,7 @@ impl<'a> File<'a> {
             extra: Vec::new(),
             flags: 0,
             unpacked: None,
+            crc: None,
         }
     }
 
@@ -271,7 +273,11 @@ impl<'a> File<'a> {
         let mut fields = vint(if self.directory { 1 } else { 0 } | 4);
         fields.extend(vint(self.unpacked.unwrap_or(self.data.len() as u64)));
         fields.extend(vint(self.attributes));
-        fields.extend(crc32fast::hash(self.data).to_le_bytes());
+        fields.extend(
+            self.crc
+                .unwrap_or_else(|| crc32fast::hash(self.data))
+                .to_le_bytes(),
+        );
         fields.extend(vint(self.compression));
         fields.extend(vint(self.host));
         fields.extend(vint(self.name.len() as u64));
@@ -1818,4 +1824,648 @@ fn an_unknown_encryption_version_is_refused() {
     let bytes = encrypted_archive(&[encrypted_file("a", b"x", ENCRYPT, &record)]);
     let error = refusal(&bytes, Some(PASSWORD));
     assert!(error.contains("encryption version"), "{error}");
+}
+
+const SPLIT_BEFORE: u64 = 0x08;
+const SPLIT_AFTER: u64 = 0x10;
+const VOLUME: u64 = 0x01;
+const VOLUME_NUMBER: u64 = 0x02;
+const SOLID_ARCHIVE: u64 = 0x04;
+const NOT_LAST_VOLUME: u64 = 0x01;
+
+fn volume(number: u64, files: &[File], more: bool) -> Vec<u8> {
+    let main_flags = match number {
+        0 => VOLUME,
+        _ => VOLUME | VOLUME_NUMBER,
+    };
+    volume_with(
+        main_flags,
+        number,
+        files,
+        if more { NOT_LAST_VOLUME } else { 0 },
+    )
+}
+
+fn volume_with(main_flags: u64, number: u64, files: &[File], end_flags: u64) -> Vec<u8> {
+    let mut main = vint(main_flags);
+    if main_flags & VOLUME_NUMBER != 0 {
+        main.extend(vint(number));
+    }
+    let mut out = b"Rar!\x1A\x07\x01\x00".to_vec();
+    out.extend(block(1, 0, &main, &[], &[]));
+    for file in files {
+        out.extend(file.bytes());
+    }
+    out.extend(block(5, 0, &vint(end_flags), &[], &[]));
+    out
+}
+
+const WHOLE: &[u8] = b"one file split over three volumes";
+
+impl File<'_> {
+    fn clone_file(&self) -> Self {
+        File {
+            extra: self.extra.clone(),
+            ..*self
+        }
+    }
+}
+
+fn split_parts() -> [File<'static>; 3] {
+    let whole = WHOLE.len() as u64;
+    [
+        File {
+            flags: SPLIT_AFTER,
+            unpacked: Some(whole),
+            ..File::new("split.txt", &WHOLE[..9])
+        },
+        File {
+            flags: SPLIT_BEFORE | SPLIT_AFTER,
+            unpacked: Some(whole),
+            ..File::new("split.txt", &WHOLE[9..20])
+        },
+        File {
+            flags: SPLIT_BEFORE,
+            unpacked: Some(whole),
+            crc: Some(crc32fast::hash(WHOLE)),
+            ..File::new("split.txt", &WHOLE[20..])
+        },
+    ]
+}
+
+fn sound_set() -> Vec<Vec<u8>> {
+    let [first, middle, last] = split_parts();
+    vec![
+        volume(0, &[File::new("before.txt", b"before"), first], true),
+        volume(1, &[middle], true),
+        volume(2, &[last, File::new("after.txt", b"after")], false),
+    ]
+}
+
+fn sound_entries() -> Vec<(String, Vec<u8>)> {
+    vec![
+        ("after.txt".to_owned(), b"after".to_vec()),
+        ("before.txt".to_owned(), b"before".to_vec()),
+        ("split.txt".to_owned(), WHOLE.to_vec()),
+    ]
+}
+
+fn write_set(folder: &Path, names: &[String], volumes: &[Vec<u8>]) -> std::path::PathBuf {
+    for (name, bytes) in names.iter().zip(volumes) {
+        fs::write(folder.join(name), bytes).unwrap();
+    }
+    folder.join(&names[0])
+}
+
+fn part_names(count: usize) -> Vec<String> {
+    (1..=count)
+        .map(|number| format!("set.part{number}.rar"))
+        .collect()
+}
+
+type Listing = Vec<(String, Vec<u8>)>;
+
+fn set_result(names: &[String], volumes: &[Vec<u8>]) -> Result<Listing, String> {
+    let work = tempfile::tempdir().unwrap();
+    let sets = work.path().join("set");
+    fs::create_dir(&sets).unwrap();
+    let first = write_set(&sets, names, volumes);
+    let out = work.path().join("out");
+    let verified = read_archive(&first, None, ReadOptions::default());
+    let result = read_archive(&first, Some(&out), ReadOptions::default());
+    let found = match (&result, verified) {
+        (Ok(_), Ok(_)) => Ok(listing(&out)),
+        (Err(error), Err(_)) => {
+            assert!(!out.exists(), "left output after {error:#}");
+            Err(format!("{error:#}"))
+        }
+        (result, verified) => panic!(
+            "extraction gave {:?} and its test {:?}",
+            result.as_ref().err(),
+            verified.err()
+        ),
+    };
+    make_deletable(work.path());
+    found
+}
+
+fn set_refusal(names: &[String], volumes: &[Vec<u8>]) -> String {
+    set_result(names, volumes).expect_err("the set was extracted")
+}
+
+fn unrar_extracts_set(binary: &Path, names: &[String], volumes: &[Vec<u8>]) -> Listing {
+    let work = tempfile::tempdir().unwrap();
+    let first = write_set(work.path(), names, volumes);
+    let out = work.path().join("out");
+    fs::create_dir(&out).unwrap();
+    let run = Command::new(binary)
+        .args(["x", "-idq", "-y", "-p-"])
+        .arg(&first)
+        .arg(fs::canonicalize(&out).unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "unrar: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    listing(&out)
+}
+
+#[test]
+fn the_volume_writer_makes_sets_the_reader_and_unrar_extract_alike() {
+    let names = part_names(3);
+    let set = sound_set();
+    assert_eq!(set_result(&names, &set).unwrap(), sound_entries());
+    if let Some(binary) = unrar::unrar() {
+        assert_eq!(unrar_extracts_set(&binary, &names, &set), sound_entries());
+    }
+}
+
+type Case = (&'static str, Vec<String>, Vec<Vec<u8>>, &'static str);
+
+#[test]
+fn each_hostile_rar5_volume_set_is_refused_by_name_and_leaves_nothing() {
+    let [first, middle, last] = split_parts();
+    let names = part_names(3);
+    let set = sound_set();
+    let mut cases: Vec<Case> = vec![
+        (
+            "missing middle volume",
+            vec![names[0].clone(), "unused.rar".to_owned(), names[2].clone()],
+            set.clone(),
+            "RAR volume set.part2.rar is missing",
+        ),
+        (
+            "missing last volume",
+            names[..2].to_vec(),
+            set[..2].to_vec(),
+            "RAR volume set.part3.rar is missing",
+        ),
+        (
+            "volumes swapped",
+            vec![names[0].clone(), names[2].clone(), names[1].clone()],
+            set.clone(),
+            "set.part2.rar is volume 3 of its set, not volume 2",
+        ),
+        (
+            "a later volume named first",
+            vec![names[1].clone(), names[0].clone(), names[2].clone()],
+            vec![set[1].clone(), set[0].clone(), set[2].clone()],
+            "is volume 2 of a RAR set; open its first volume, set.part1.rar",
+        ),
+        (
+            "a later volume that does not mark a volume",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume_with(0, 0, &[middle.clone_file()], NOT_LAST_VOLUME),
+                set[2].clone(),
+            ],
+            "set.part2.rar does not mark itself as a volume",
+        ),
+        (
+            "more volumes after an archive that is not a volume",
+            names[..2].to_vec(),
+            vec![
+                volume_with(0, 0, &[File::new("a", b"x")], NOT_LAST_VOLUME),
+                set[1].clone(),
+            ],
+            "says more volumes follow, but the main header does not mark a volume",
+        ),
+        (
+            "a volume number without the volume flag",
+            names[..1].to_vec(),
+            vec![volume_with(VOLUME_NUMBER, 0, &[File::new("a", b"x")], 0)],
+            "gives a volume number but does not mark a volume",
+        ),
+        (
+            "a split entry in the last volume",
+            names[..1].to_vec(),
+            vec![volume(0, &[first.clone_file()], false)],
+            "set.part1.rar is the last volume",
+        ),
+        (
+            "a split entry in an archive that is not a volume",
+            names[..1].to_vec(),
+            vec![volume_with(0, 0, &[first.clone_file()], 0)],
+            "the archive is not a volume",
+        ),
+        (
+            "a continuation with another name",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume(
+                    1,
+                    &[File {
+                        name: "other.txt",
+                        ..middle.clone_file()
+                    }],
+                    true,
+                ),
+                set[2].clone(),
+            ],
+            "continues RAR 5 entry \"split.txt\" with another name",
+        ),
+        (
+            "a continuation with another size",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume(
+                    1,
+                    &[File {
+                        unpacked: Some(99),
+                        ..middle.clone_file()
+                    }],
+                    true,
+                ),
+                set[2].clone(),
+            ],
+            "with another name, size, method or encryption",
+        ),
+        (
+            "a volume that starts with another entry",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume(1, &[File::new("x", b"x")], true),
+                set[2].clone(),
+            ],
+            "set.part2.rar does not start with the rest of RAR 5 entry",
+        ),
+        (
+            "a continuation nothing continues into",
+            names[..2].to_vec(),
+            vec![
+                volume(0, &[File::new("a", b"x")], true),
+                volume(1, &[last.clone_file()], false),
+            ],
+            "continues from a volume before",
+        ),
+        (
+            "a header between a split part and the end of its volume",
+            names.clone(),
+            vec![
+                volume(0, &[first.clone_file(), File::new("a", b"x")], true),
+                set[1].clone(),
+                set[2].clone(),
+            ],
+            "another header follows it in set.part1.rar",
+        ),
+        (
+            "a part whose own CRC-32 is wrong",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume(
+                    1,
+                    &[File {
+                        crc: Some(0),
+                        ..middle.clone_file()
+                    }],
+                    true,
+                ),
+                set[2].clone(),
+            ],
+            "fails the CRC-32 of its part in volume set.part2.rar",
+        ),
+        (
+            "a part whose own BLAKE2sp is wrong",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume(
+                    1,
+                    &[File {
+                        extra: record(2, &[0; 33]),
+                        ..middle.clone_file()
+                    }],
+                    true,
+                ),
+                set[2].clone(),
+            ],
+            "fails the BLAKE2sp of its part in volume set.part2.rar",
+        ),
+        (
+            "a whole file whose CRC-32 is wrong",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                set[1].clone(),
+                volume(
+                    2,
+                    &[File {
+                        crc: Some(0),
+                        ..last.clone_file()
+                    }],
+                    false,
+                ),
+            ],
+            "fails its CRC-32 check",
+        ),
+        (
+            "volumes that disagree on solid",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume_with(
+                    VOLUME | VOLUME_NUMBER | SOLID_ARCHIVE,
+                    1,
+                    &[middle.clone_file()],
+                    NOT_LAST_VOLUME,
+                ),
+                set[2].clone(),
+            ],
+            "disagree on whether the archive is solid",
+        ),
+        (
+            "a first volume whose name names no later volume",
+            vec!["set.rar".to_owned(), names[1].clone(), names[2].clone()],
+            set.clone(),
+            "set.rar is a RAR 5 volume whose name does not end in .partN.rar",
+        ),
+    ];
+    for cut in [1, 7, 20] {
+        let mut truncated = set.clone();
+        let length = truncated[2].len();
+        truncated[2].truncate(length - cut);
+        cases.push((
+            "a truncated last volume",
+            names.clone(),
+            truncated,
+            "in RAR volume set.part3.rar",
+        ));
+    }
+    for (label, names, volumes, reason) in cases {
+        let error = set_refusal(&names, &volumes);
+        assert!(error.contains(reason), "{label}: {error}");
+    }
+}
+
+fn volume4(main_flags: u16, number: u16, files: &[File4], end_flags: u16) -> Vec<u8> {
+    let mut out = b"Rar!\x1A\x07\x00".to_vec();
+    out.extend(rar4_block(0x73, main_flags, &[0; 6]));
+    for file in files {
+        out.extend(file.bytes());
+    }
+    let fields = match end_flags & RAR4_VOLUME_NUMBER {
+        0 => Vec::new(),
+        _ => number.to_le_bytes().to_vec(),
+    };
+    out.extend(rar4_block(0x7B, 0x4000 | end_flags, &fields));
+    out
+}
+
+const RAR4_VOLUME: u16 = 0x0001;
+const RAR4_NEW_NUMBERING: u16 = 0x0010;
+const RAR4_FIRST_VOLUME: u16 = 0x0100;
+const RAR4_NEXT_VOLUME: u16 = 0x0001;
+const RAR4_VOLUME_NUMBER: u16 = 0x0008;
+
+impl File4<'_> {
+    fn clone_file4(&self) -> Self {
+        File4 { ..*self }
+    }
+}
+
+fn split_parts4() -> [File4<'static>; 2] {
+    let whole = WHOLE.len() as u32;
+    [
+        File4 {
+            flags: 0x8002,
+            unpacked: Some((whole, crc32fast::hash(&WHOLE[..15]))),
+            ..File4::new("split.txt", &WHOLE[..15])
+        },
+        File4 {
+            flags: 0x8001,
+            unpacked: Some((whole, crc32fast::hash(WHOLE))),
+            ..File4::new("split.txt", &WHOLE[15..])
+        },
+    ]
+}
+
+fn sound_set4(new_numbering: bool) -> Vec<Vec<u8>> {
+    let naming = if new_numbering { RAR4_NEW_NUMBERING } else { 0 };
+    let [first, last] = split_parts4();
+    vec![
+        volume4(
+            RAR4_VOLUME | RAR4_FIRST_VOLUME | naming,
+            0,
+            &[File4::new("before.txt", b"before"), first],
+            RAR4_NEXT_VOLUME | RAR4_VOLUME_NUMBER,
+        ),
+        volume4(
+            RAR4_VOLUME | naming,
+            1,
+            &[last, File4::new("after.txt", b"after")],
+            RAR4_VOLUME_NUMBER,
+        ),
+    ]
+}
+
+fn old_names() -> Vec<String> {
+    vec!["set.rar".to_owned(), "set.r00".to_owned()]
+}
+
+#[test]
+fn the_rar4_volume_writer_makes_sets_the_reader_and_unrar_extract_alike() {
+    for (names, set) in [
+        (part_names(2), sound_set4(true)),
+        (old_names(), sound_set4(false)),
+    ] {
+        assert_eq!(set_result(&names, &set).unwrap(), sound_entries());
+        if let Some(binary) = unrar::unrar() {
+            assert_eq!(unrar_extracts_set(&binary, &names, &set), sound_entries());
+        }
+    }
+}
+
+#[test]
+fn each_hostile_rar4_volume_set_is_refused_by_name_and_leaves_nothing() {
+    let [first, last] = split_parts4();
+    let names = part_names(2);
+    let set = sound_set4(true);
+    let new = RAR4_VOLUME | RAR4_NEW_NUMBERING;
+    let whole = WHOLE.len() as u32;
+    let cases: Vec<Case> = vec![
+        (
+            "missing last volume",
+            names[..1].to_vec(),
+            set[..1].to_vec(),
+            "RAR volume set.part2.rar is missing",
+        ),
+        (
+            "missing old-style volume",
+            old_names()[..1].to_vec(),
+            sound_set4(false)[..1].to_vec(),
+            "RAR volume set.r00 is missing",
+        ),
+        (
+            "a later volume named first",
+            vec![names[1].clone(), names[0].clone()],
+            vec![set[1].clone(), set[0].clone()],
+            "is a later volume of a RAR set; open its first volume, set.part1.rar",
+        ),
+        (
+            "a first volume in second place",
+            names.clone(),
+            vec![set[0].clone(), set[0].clone()],
+            "set.part2.rar marks itself as the first volume of a set",
+        ),
+        (
+            "a later volume that does not mark a volume",
+            names.clone(),
+            vec![set[0].clone(), volume4(0, 1, &[last.clone_file4()], 0)],
+            "set.part2.rar does not mark itself as a volume",
+        ),
+        (
+            "volumes that disagree on their names",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume4(RAR4_VOLUME, 1, &[last.clone_file4()], 0),
+            ],
+            "disagree on how the volumes are named",
+        ),
+        (
+            "a wrong volume number in the end block",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume4(new, 5, &[last.clone_file4()], RAR4_VOLUME_NUMBER),
+            ],
+            "calls itself volume 6 of its set, not volume 2",
+        ),
+        (
+            "more volumes after an archive that is not a volume",
+            names[..1].to_vec(),
+            vec![volume4(0, 0, &[File4::new("a", b"x")], RAR4_NEXT_VOLUME)],
+            "says more volumes follow, but the main header does not mark a volume",
+        ),
+        (
+            "a split entry in the last volume",
+            names[..1].to_vec(),
+            vec![volume4(
+                new | RAR4_FIRST_VOLUME,
+                0,
+                &[first.clone_file4()],
+                0,
+            )],
+            "set.part1.rar is the last volume",
+        ),
+        (
+            "a continuation with another name",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume4(
+                    new,
+                    1,
+                    &[File4 {
+                        name: b"other.txt",
+                        ..last.clone_file4()
+                    }],
+                    0,
+                ),
+            ],
+            "continues RAR 4 entry \"split.txt\" with another name",
+        ),
+        (
+            "a continuation with another method",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume4(
+                    new,
+                    1,
+                    &[File4 {
+                        method: 0x33,
+                        ..last.clone_file4()
+                    }],
+                    0,
+                ),
+            ],
+            "with another name, size or method",
+        ),
+        (
+            "a volume that starts with another entry",
+            names.clone(),
+            vec![set[0].clone(), volume4(new, 1, &[File4::new("x", b"x")], 0)],
+            "set.part2.rar does not start with the rest of RAR 4 entry",
+        ),
+        (
+            "a continuation nothing continues into",
+            names.clone(),
+            vec![
+                volume4(
+                    new | RAR4_FIRST_VOLUME,
+                    0,
+                    &[File4::new("a", b"x")],
+                    RAR4_NEXT_VOLUME,
+                ),
+                volume4(new, 1, &[last.clone_file4()], 0),
+            ],
+            "continues from a volume before",
+        ),
+        (
+            "a part whose own CRC-32 is wrong",
+            names.clone(),
+            vec![
+                volume4(
+                    new | RAR4_FIRST_VOLUME,
+                    0,
+                    &[File4 {
+                        unpacked: Some((whole, 0)),
+                        ..first.clone_file4()
+                    }],
+                    RAR4_NEXT_VOLUME,
+                ),
+                set[1].clone(),
+            ],
+            "fails the CRC-32 of its part in volume set.part1.rar",
+        ),
+        (
+            "a whole file whose CRC-32 is wrong",
+            names.clone(),
+            vec![
+                set[0].clone(),
+                volume4(
+                    new,
+                    1,
+                    &[File4 {
+                        unpacked: Some((whole, 0)),
+                        ..last.clone_file4()
+                    }],
+                    0,
+                ),
+            ],
+            "fails its CRC-32 check",
+        ),
+        (
+            "a last volume cut before its end block",
+            names.clone(),
+            vec![set[0].clone(), {
+                let mut cut = set[1].clone();
+                cut.truncate(cut.len() - 9);
+                cut
+            }],
+            "set.part2.rar ends without its end of archive block",
+        ),
+        (
+            "a last volume cut inside a block",
+            names.clone(),
+            vec![set[0].clone(), {
+                let mut cut = set[1].clone();
+                cut.truncate(cut.len() - 3);
+                cut
+            }],
+            "in RAR volume set.part2.rar",
+        ),
+    ];
+    for (label, names, volumes, reason) in cases {
+        let error = set_refusal(&names, &volumes);
+        assert!(error.contains(reason), "{label}: {error}");
+    }
 }
