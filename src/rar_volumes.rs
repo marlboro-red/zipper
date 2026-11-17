@@ -191,28 +191,27 @@ pub(crate) struct Part {
 }
 
 pub(crate) struct Span {
-    parts: Vec<Part>,
+    first: Part,
+    later: Vec<Part>,
     pub(crate) packed: u64,
 }
 
 impl Span {
     pub(crate) fn one(size: u64) -> Self {
-        Span {
-            parts: vec![Part {
-                path: None,
-                reopen: None,
-                offset: 0,
-                size,
-                check: None,
-            }],
-            packed: size,
-        }
+        Span::starting(Part {
+            path: None,
+            reopen: None,
+            offset: 0,
+            size,
+            check: None,
+        })
     }
 
-    pub(crate) fn starting(part: Part) -> Self {
+    pub(crate) fn starting(first: Part) -> Self {
         Span {
-            packed: part.size,
-            parts: vec![part],
+            packed: first.size,
+            first,
+            later: Vec::new(),
         }
     }
 
@@ -221,7 +220,7 @@ impl Span {
             .packed
             .checked_add(part.size)
             .context("RAR entry packs more than 16 EiB across its volumes")?;
-        self.parts.push(part);
+        self.later.push(part);
         Ok(())
     }
 }
@@ -338,15 +337,13 @@ impl<'a> Parts<'a> {
         format: &'static str,
         entry: &str,
     ) -> Self {
-        let split = span.parts.len() > 1;
-        let mut rest = span.parts.into_iter();
-        let first = rest.next().expect("a span has its first part");
+        let Span { first, later, .. } = span;
         Parts {
             source: Source::Open(open.take(first.size)),
             format,
-            split: split.then(|| {
+            split: (!later.is_empty()).then(|| {
                 Box::new(Split {
-                    rest,
+                    rest: later.into_iter(),
                     path: first.path,
                     blake: first
                         .check
