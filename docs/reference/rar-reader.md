@@ -88,7 +88,7 @@ A KDF count above 24 is refused before any key is derived. That is the cap the 7
 Zipper checks each set in these ways, and publishes nothing when a check fails:
 
 - Each volume after the first must exist and be a regular file, or the error names the missing volume.
-- A RAR 5 volume carries its volume number in its main header, absent in the first. Volume N must give N - 1. A RAR 4 main header marks the first volume with flag 0x0100, and only the first volume may set it.
+- A RAR 5 volume carries its volume number in its main header, absent in the first. Volume N must give N - 1. A RAR 4 main header marks the first volume with flag 0x0100, and only the first volume may set it. A RAR 4 volume without the flag is refused when it is named as the archive, even when it is the first of its set.
 - Every volume after the first must mark itself as a volume. It must agree with the first on whether the archive is solid, whether RAR 5 headers are encrypted, and which RAR 4 names it uses.
 - An end of archive header that says more volumes follow is refused when the main header does not mark a volume. So is a volume number on a RAR 5 archive that is not a volume.
 - Every RAR 4 volume of a set must end with its end of archive block, so a last volume cut between blocks is refused. When the block gives a volume number, it must be the volume's own.
