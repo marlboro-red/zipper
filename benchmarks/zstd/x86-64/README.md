@@ -1,6 +1,6 @@
 # Zipper's Zstandard decoder against libzstd on x86-64
 
-**Two changes are kept and the gap is narrowed, not closed. A decode takes 0.82 to 0.94 times the time it took, with ranges apart on both corpora. That is 1.09 to 1.19 times libzstd's time, where it was 1.20 to 1.38 times. On an Apple M2 Max it takes 0.95 to 0.96 times the time it took and 0.85 times libzstd's. The hosted runners build libzstd for x86-64-v3 and Zipper for baseline x86-64, so part of the first gap was the C compiler's default and not the decoder.** Hosted x86-64 Linux runners, a different processor in each run, and one Apple M2 Max.
+**Two changes are kept and the gap is narrowed, not closed. At the final code a decode takes 0.91 times the time it took on Silesia and 0.88 times on the dependencies, with ranges apart. That is 1.12 and 1.17 times libzstd's time, where it was 1.23 and 1.32 times in the same runs. On an Apple M2 Max it takes 0.95 to 0.96 times the time it took and 0.85 times libzstd's. The hosted runners build libzstd for x86-64-v3 and Zipper for baseline x86-64, so part of the first gap was the C compiler's default and not the decoder.** Hosted x86-64 Linux runners, a different processor in each run, and one Apple M2 Max.
 
 ## Question
 
@@ -56,8 +56,10 @@ Each row is one run. Times are the median in milliseconds with the lowest and hi
 | The same | Dependencies | Intel Xeon 6975P-C | 65.4, 64.0 to 65.8 | 53.6, 52.6 to 54.3 | 47.6, 47.0 to 48.3 | 0.819, apart | 1.126 |
 | The same, by the workflow's own A/B mode | Silesia | AMD EPYC 7763 | 272, 269 to 278 | 256, 247 to 263 | 215, 204 to 223 | 0.942, apart | 1.189 |
 | The same, by the workflow's own A/B mode | Dependencies | AMD EPYC 9V74 | 83, 82 to 84 | 74, 72 to 74 | 62, 62 to 64 | 0.893, apart | 1.189 |
+| The same with the review's fixes, 21 rounds | Silesia | AMD EPYC 9V45 | 147, 146 to 165 | 135, 132 to 143 | 120, 119 to 166 | 0.913, apart | 1.119, overlap |
+| The same with the review's fixes, 21 rounds | Dependencies | Intel Xeon Platinum 8573C | 83, 82 to 85 | 73, 72 to 79 | 63, 62 to 65 | 0.883, apart | 1.165 |
 
-The last two rows are runs 43994028663 and 43994034126 of `m35-profile.yml` as main has it since `8fe55227`, at the branch's head before the review's two fixes, against `8fe55227`. They print three digits, and their JSON holds every sample.
+The last four rows are runs of `m35-profile.yml` as main has it since `8fe55227`, against `8fe55227`. Runs 43994028663 and 43994034126 measured the branch's head before the review's two fixes, with 15 rounds. Runs 44006191436 and 44006195044 measured the head with them, with 21 rounds, and they are the rows the decision rests on. These runs print three digits, and their JSON holds every sample. One libzstd sample of 166 ms on Silesia makes that run's ranges against libzstd overlap.
 
 What each experiment changed.
 
@@ -99,7 +101,9 @@ The adversarial review of experiment 2 confirmed two faults, and both are fixed 
 
 ## Decision
 
-Experiments 1 and 2 are kept, and 3, 4 and 5 are reverted. The verdict for M35 stays "not ready yet" on these runs. A decode takes 1.09 to 1.19 times libzstd's time on both corpora, with ranges apart in every run.
+Experiments 1 and 2 are kept, and 3, 4 and 5 are reverted. The verdict for M35 stays "not ready yet" on these runs. At the final code a decode takes 1.12 times libzstd's time on Silesia, ranges overlapping through one libzstd sample, and 1.17 times on the dependencies, ranges apart. Over all runs of the kept code the ratio lay between 1.09 and 1.19.
+
+The caveat is peak memory. It rose by one or two pages on the two large streams, from 267,928,128 to 267,944,512 bytes and from 70,861,232 to 70,894,024 bytes. It fell from 1,786,240 to 1,769,856 bytes on the 2,000 frames that each declare a 128 MiB window.
 
 What is left, from the profiles of the last two rows.
 
@@ -109,7 +113,6 @@ What is left, from the profiles of the last two rows.
 
 ## Limits
 
-- No x86-64 run measured the code after the review's two fixes, which add a 32-byte fill to each block decoded in place. The M2 Max rows did.
 - Every x86-64 number is from a hosted runner with 4 shared cores. One run compares its own three rows. Ratios against libzstd moved from 1.02 to 1.26 between processors for the same code, so no ratio here holds for x86-64 in general.
 - The runners expose no hardware counters, except the Intel Xeon 6975P-C runs. Instruction counts a sequence come from reading the annotated assembly, not from a counter.
 - libzstd was built by GCC 15.2.0 with `-march=x86-64-v3` as its default. A C compiler that targets baseline x86-64 would build libzstd's own runtime choice of BMI2 code, which no run here measured.
