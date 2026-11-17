@@ -81,7 +81,7 @@ A KDF count above 24 is refused before any key is derived. That is the cap the 7
 
 `rar -v` splits an archive into volumes. Each volume is a whole archive with its own signature, main header and end of archive header, and a file that does not fit continues in the next volume. Zipper reads RAR 5 and RAR 4 sets, stored, compressed, solid and RAR 5 encrypted ones. A RAR 5 entry split across volumes may be compressed, encrypted or part of a solid stream. Pass the first volume. Zipper finds each volume after it by name and opens it when the volume before it ends.
 
-- RAR 5 names volumes `name.part1.rar`, `name.part2.rar` and on. RAR 4 does too when its main header sets flag 0x0010. `rar` pads the number to the digits the set needs, so `name.part01.rar` comes first in a set of 10 to 99 volumes. Zipper keeps the width and spelling of the first name. `rar 7.23 -vn` still writes RAR 5 volumes with these names.
+- RAR 5 names volumes `name.part1.rar`, `name.part2.rar` and on. RAR 4 does too when its main header sets flag 0x0010. `rar` pads the number to the digits it expects the set to need, so a set of 4 volumes in the corpus starts with `name.part01.rar`. Zipper keeps the width and spelling of the first name. `rar 7.23 -vn` still writes RAR 5 volumes with these names.
 - Older RAR 4 sets, from `rar -vn`, are named `name.rar`, `name.r00` to `name.r99`, then `name.s00` and on to `name.z99`. That is 901 volumes at most.
 - Zipper refuses a volume after the first when it is named instead of the first, and names the first volume in the error. `unrar` starts from the first volume in that case. Zipper refuses instead, as it does for the second or third volume of a raw split archive.
 
@@ -104,7 +104,7 @@ RAR 5 gives a set no identity, and RAR 4 none Zipper reads. So a volume of anoth
 - A RAR 4 end of archive block of a volume sets flag 0x0001 when more volumes follow. It gives a CRC-32 of the volume's bytes before the block when flag 0x0002 is set, then a 16-bit volume number from 0 when flag 0x0008 is set. Zipper reads the number and does not check that CRC-32, since each header and file carries its own checksum.
 - A RAR 4 part that continues carries the CRC-32 of its own packed bytes, and the last part the CRC-32 of the whole file.
 
-At most 65,536 volumes are read, the most a RAR 4 end block can number. Zipper keeps the volume it reads headers from open. While it reads an entry that crosses volumes it opens one of the volumes after it at a time, plus the volume where the entry ends, so at most three volumes are open at once. For each crossing entry it keeps one small record per volume the entry crosses, and nothing for the volumes it has passed.
+At most 65,536 volumes are read, the most a RAR 4 end block can number. Zipper keeps the volume it reads headers from open. While it reads an entry that crosses volumes it opens one of the volumes after it at a time, plus the volume where the entry ends, so at most three volumes are open at once. For each crossing entry it keeps one small record per volume the entry crosses, and nothing for the volumes it has passed. On a set of 65,536 volumes holding one stored file split a byte per volume, `zipper test` peaked at 24 MB of resident memory.
 
 ## Names
 
