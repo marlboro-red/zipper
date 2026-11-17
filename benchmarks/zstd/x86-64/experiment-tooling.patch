@@ -1,0 +1,213 @@
+diff --git a/.github/workflows/m35-profile.yml b/.github/workflows/m35-profile.yml
+index 38aa518c..f80bd855 100644
+--- a/.github/workflows/m35-profile.yml
++++ b/.github/workflows/m35-profile.yml
+@@ -33,6 +33,14 @@ on:
+         description: Decodes in each profiled process, 1 to 100
+         default: '10'
+         required: true
++      base:
++        description: m35-exp only, a commit whose Zstandard decoder is timed against this ref's
++        default: ''
++        required: false
++      tests:
++        description: m35-exp only, 'yes' runs the Zstandard library tests on this runner before anything else
++        default: ''
++        required: false
+ 
+ permissions:
+   contents: read
+@@ -51,8 +59,11 @@ jobs:
+       TARGET_CPU: ${{ inputs.target_cpu }}
+       REPEATS: ${{ inputs.repeats }}
+       OUT: target/m35/profile
++      BASE: ${{ inputs.base }}
+     steps:
+       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
++        with:
++          fetch-depth: 0
+       - name: Validate inputs
+         run: |
+           python3 - <<'EOF'
+@@ -62,6 +73,13 @@ jobs:
+           assert os.environ['TARGET_CPU'] in ('baseline', 'x86-64-v3')
+           assert 1 <= int(os.environ['REPEATS']) <= 100
+           EOF
++      - name: Run the Zstandard tests
++        if: inputs.tests == 'yes'
++        run: |
++          rustup toolchain install 1.99.1 --profile minimal
++          grep -o -m1 -w -E 'bmi2' /proc/cpuinfo || echo "no bmi2 on this runner"
++          cargo +1.99.1 test --release --locked --lib zstandard 2>&1 | tail -40
++          exit "${PIPESTATUS[0]}"
+       - name: Choose the Rust flags
+         if: inputs.target_cpu == 'x86-64-v3'
+         run: echo "RUSTFLAGS=-C target-cpu=x86-64-v3" >> "$GITHUB_ENV"
+@@ -104,7 +122,24 @@ jobs:
+         with:
+           corpus: ${{ inputs.corpus }}
+       - name: Record the toolchain
+-        run: rustc +1.99.1 -vV > "$OUT/rustc.txt"
++        run: |
++          rustc +1.99.1 -vV > "$OUT/rustc.txt"
++          {
++            cc -Q --help=target | grep -E -- '-march=|-mtune=|-mbmi2|-mavx2|-mavx ' || true
++            echo | cc -dM -E - | grep -E '__BMI2__|__AVX2__|__AVX__|__SSE4_2__' || true
++            grep -h -m3 'running' target/release/build/zstd-sys-*/stderr || true
++            env | grep -E '^(CC|CFLAGS|CXXFLAGS|RUSTFLAGS|CARGO_BUILD|CARGO_ENCODED)' || true
++          } > "$OUT/cc.txt" 2>&1
++      - name: Time the base against this ref
++        if: inputs.base != ''
++        run: |
++          git rev-parse --verify "$BASE^{commit}"
++          git worktree add --detach target/m35/base-tree "$BASE"
++          (cd target/m35/base-tree && cargo +1.99.1 build --release --locked --package zipper-decode-bench \
++            --target-dir "$GITHUB_WORKSPACE/target/m35/base-build")
++          python3 scripts/m35_ab.py --base target/m35/base-build/release/zipper-decode-bench \
++            --new target/release/zipper-decode-bench --corpus "target/m31/corpus-$CORPUS" \
++            --rounds 15 --out "$OUT/ab-zstd.json"
+       - name: Profile
+         run: |
+           python3 scripts/m35_profile.py --harness target/release/zipper-decode-bench \
+diff --git a/scripts/m35_ab.py b/scripts/m35_ab.py
+new file mode 100644
+index 00000000..637305bb
+--- /dev/null
++++ b/scripts/m35_ab.py
+@@ -0,0 +1,68 @@
++#!/usr/bin/env python3
++"""Experiment tooling for m35-exp branches only: time Zipper's Zstandard decoder at a base build
++against the build of this ref and against libzstd, interleaved in one job on one runner.
++
++Each sample is one `zipper-decode-bench decode` process, which times only the decode call and checks
++every byte. Rounds run the rows in a new seeded order after one warmup round.
++"""
++import argparse
++import json
++from pathlib import Path
++import random
++import statistics
++import subprocess
++import tempfile
++from m31_decoders import built_source, checked_corpus
++
++
++def sample(harness, decoder, stream, original):
++    with tempfile.TemporaryDirectory() as folder:
++        report = Path(folder) / "row.json"
++        subprocess.run([str(harness), "decode", "zstd", decoder, str(stream), str(original), str(report)], check=True)
++        return json.loads(report.read_text())
++
++
++def apart(stats, first, second):
++    return stats[first]["max"] < stats[second]["min"] or stats[second]["max"] < stats[first]["min"]
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--base", type=Path, required=True)
++    parser.add_argument("--new", type=Path, required=True)
++    parser.add_argument("--corpus", type=Path, required=True)
++    parser.add_argument("--rounds", type=int, default=15)
++    parser.add_argument("--out", type=Path, required=True)
++    args = parser.parse_args()
++    corpus = args.corpus.resolve(strict=True)
++    original = corpus / built_source(corpus)["tar"]
++    manifest = checked_corpus(corpus / "streams", original)
++    stream = corpus / "streams" / manifest["streams"]["zstd"]["file"]
++    new = args.new.resolve(strict=True)
++    rows = {"base": (args.base.resolve(strict=True), "zipper"), "new": (new, "zipper"), "libzstd": (new, "libzstd")}
++    order = list(rows)
++    shuffler = random.Random(35)
++    samples = {name: [] for name in rows}
++    for round_number in range(args.rounds + 1):
++        shuffler.shuffle(order)
++        for name in order:
++            harness, decoder = rows[name]
++            row = sample(harness, decoder, stream, original)
++            if round_number > 0:
++                samples[name].append(row["seconds"])
++    stats = {name: {"median": statistics.median(values), "min": min(values), "max": max(values), "samples": values}
++             for name, values in samples.items()}
++    lines = ["| Row | Median ms | Lowest | Highest |", "| --- | ---: | ---: | ---: |"]
++    for name, row in stats.items():
++        lines.append(f"| {name} | {row['median'] * 1000:.1f} | {row['min'] * 1000:.1f} | {row['max'] * 1000:.1f} |")
++    for first, second in (("new", "base"), ("new", "libzstd"), ("base", "libzstd")):
++        ratio = stats[first]["median"] / stats[second]["median"]
++        verdict = "apart" if apart(stats, first, second) else "overlap"
++        lines.append(f"\n{first} over {second}: {ratio:.3f}, ranges {verdict}")
++    args.out.write_text(json.dumps({"rounds": args.rounds, "rows": stats}, indent=2) + "\n")
++    args.out.with_suffix(".md").write_text("\n".join(lines) + "\n")
++    print("\n".join(lines))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/m35_profile.py b/scripts/m35_profile.py
+index c35bfe59..7d343739 100644
+--- a/scripts/m35_profile.py
++++ b/scripts/m35_profile.py
+@@ -64,7 +64,7 @@ def top_symbols(perf, data, limit):
+     for line in listing.splitlines():
+         found = REPORT_LINE.match(line)
+         if found:
+-            symbols.append((float(found.group(1)), found.group(2)))
++            symbols.append((float(found.group(1)), re.split(r"\s{2,}", found.group(2))[0].strip()))
+     return symbols[:limit]
+ 
+ 
+@@ -86,19 +86,44 @@ def profile(args, codec, decoder, manifest):
+              *bench(args.harness, codec, decoder, stream, original, args.repeats)], stdout=row)
+     with (out / f"report-{name}.txt").open("w") as report:
+         run([args.perf, "report", "-i", data, "--no-children", "--percent-limit", "1", "--stdio"], stdout=report)
++    with (out / f"flat-{name}.txt").open("w") as report:
++        run([args.perf, "report", "-i", data, "--no-children", "--sort", "dso,symbol", "-g", "none",
++             "--percent-limit", "0.1", "--stdio"], stdout=report)
+     annotated = []
+-    if decoder == "zipper":
++    if True:
+         for rank, (share, symbol) in enumerate(top_symbols(args.perf, data, ANNOTATED), 1):
+             path = out / f"annotate-{name}-{rank}.txt"
+             with path.open("w") as annotation:
+                 try:
+-                    run([args.perf, "annotate", "-i", data, "--stdio", "--", symbol], stdout=annotation)
++                    run([args.perf, "annotate", "-i", data, "--stdio", "-s", symbol], stdout=annotation)
+                 except subprocess.CalledProcessError as error:
+                     annotation.write(f"perf annotate failed with {error.returncode}\n")
+             annotated.append({"rank": rank, "percent": share, "symbol": symbol, "file": path.name})
+     return {"per_decode": per_decode(counted["decode"], counted["setup"], args.repeats), "annotated": annotated}
+ 
+ 
++WANTED = ("fast_sequences", "run_sequences", "compressed_block", "SequenceTable", "Huffman", "fast_loop", "Xxh64",
++          "ZSTD_decompressSequences", "ZSTD_buildFSETable", "ZSTD_decompressMultiFrame", "HUF_decompress4X")
++
++
++def disassemble(harness, out):
++    listing = subprocess.run(["nm", "-S", "--defined-only", str(harness)], check=True, capture_output=True, text=True)
++    count = 0
++    for line in listing.stdout.splitlines():
++        fields = line.split()
++        if len(fields) != 4 or not any(wanted in fields[3] for wanted in WANTED):
++            continue
++        start, size = int(fields[0], 16), int(fields[1], 16)
++        if size < 64:
++            continue
++        count += 1
++        with (out / f"objdump-{count:02d}.txt").open("w") as text:
++            text.write(f"{fields[3]} {size} bytes\n")
++            text.flush()
++            subprocess.run(["objdump", "-d", "--no-show-raw-insn", "-C", f"--start-address={start:#x}",
++                            f"--stop-address={start + size:#x}", str(harness)], check=False, stdout=text)
++
++
+ def ratio(zipper, other):
+     return None if zipper is None or not other else zipper / other
+ 
+@@ -146,6 +171,7 @@ def main():
+     args.out.mkdir(parents=True, exist_ok=True)
+     manifest = checked_corpus(args.corpus / "streams", args.corpus / built_source(args.corpus)["tar"])
+     codecs = list(CODECS) if args.codec == "all" else [args.codec]
++    disassemble(args.harness, args.out)
+     results = {}
+     for codec in codecs:
+         results[codec] = {decoder: profile(args, codec, decoder, manifest) for decoder in ("zipper", CODECS[codec])}

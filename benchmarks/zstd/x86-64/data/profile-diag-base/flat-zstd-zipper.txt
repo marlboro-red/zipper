@@ -1,0 +1,50 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 9K of event 'task-clock:ppp'
+# Event count (approx.): 2408000000
+#
+# Overhead  Shared Object         Symbol                                                                                                                IPC   [IPC Coverage]
+# ........  ....................  ....................................................................................................................  ....................
+#
+    64.15%  zipper-decode-bench   [.] zipper::zstandard::fast_sequences                                                                                 -      -            
+     9.70%  zipper-decode-bench   [.] <zipper::zstandard::Huffman>::four                                                                                -      -            
+     6.31%  zipper-decode-bench   [.] <zipper::zstandard::Xxh64>::update                                                                                -      -            
+     4.11%  zipper-decode-bench   [.] <zipper::zstandard::SequenceTable<512>>::build                                                                    -      -            
+     1.13%  [kernel.kallsyms]     [k] do_user_addr_fault                                                                                                -      -            
+     0.83%  [kernel.kallsyms]     [k] _copy_to_iter                                                                                                     -      -            
+     0.83%  libc.so.6             [.] 0x00000000001bc3a8                                                                                                -      -            
+     0.80%  zipper-decode-bench   [.] <zipper::zstandard::Huffman>::rebuild                                                                             -      -            
+     0.78%  libc.so.6             [.] 0x00000000001bc3bd                                                                                                -      -            
+     0.75%  [kernel.kallsyms]     [k] _raw_spin_unlock_irqrestore                                                                                       -      -            
+     0.74%  [kernel.kallsyms]     [k] kernel_init_pages                                                                                                 -      -            
+     0.69%  libc.so.6             [.] 0x00000000001bc38d                                                                                                -      -            
+     0.66%  libc.so.6             [.] 0x00000000001bc3af                                                                                                -      -            
+     0.62%  libc.so.6             [.] 0x00000000001bc386                                                                                                -      -            
+     0.55%  zipper-decode-bench   [.] zipper::zstandard::read_weights                                                                                   -      -            
+     0.54%  libc.so.6             [.] 0x00000000001bc394                                                                                                -      -            
+     0.54%  libc.so.6             [.] 0x00000000001bc39b                                                                                                -      -            
+     0.54%  libc.so.6             [.] 0x00000000001bc3b6                                                                                                -      -            
+     0.40%  zipper-decode-bench   [.] zipper::zstandard::read_ncount                                                                                    -      -            
+     0.25%  [kernel.kallsyms]     [k] zap_present_ptes.constprop.0                                                                                      -      -            
+     0.24%  [kernel.kallsyms]     [k] do_anonymous_page                                                                                                 -      -            
+     0.22%  libc.so.6             [.] 0x00000000001bca80                                                                                                -      -            
+     0.21%  zipper-decode-bench   [.] <zipper::zstandard::Huffman>::stream                                                                              -      -            
+     0.19%  libc.so.6             [.] 0x00000000001bc7bb                                                                                                -      -            
+     0.17%  [kernel.kallsyms]     [k] __rmqueue_pcplist                                                                                                 -      -            
+     0.17%  libc.so.6             [.] 0x00000000001bc44d                                                                                                -      -            
+     0.16%  [kernel.kallsyms]     [k] __alloc_frozen_pages_noprof                                                                                       -      -            
+     0.16%  libc.so.6             [.] 0x00000000001bca87                                                                                                -      -            
+     0.15%  [kernel.kallsyms]     [k] handle_mm_fault                                                                                                   -      -            
+     0.13%  [kernel.kallsyms]     [k] __handle_mm_fault                                                                                                 -      -            
+     0.13%  libc.so.6             [.] 0x00000000001b2d13                                                                                                -      -            
+     0.11%  libc.so.6             [.] 0x00000000001bc34e                                                                                                -      -            
+     0.10%  [kernel.kallsyms]     [k] free_pages_and_swap_cache                                                                                         -      -            
+     0.10%  libc.so.6             [.] 0x00000000001bc7c9                                                                                                -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

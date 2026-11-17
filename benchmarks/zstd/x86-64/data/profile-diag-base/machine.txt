@@ -1,0 +1,9 @@
+commit f0345218c5c02caf8367c752be11bc0abef90a3b
+corpus silesia
+codec zstd
+target_cpu baseline
+RUSTFLAGS 
+repeats 10
+Linux runnervmccnms 7.0.0-1019-azure #20-Ubuntu SMP PREEMPT Mon Oct 19 22:41:16 UTC 2026 x86_64 GNU/Linux
+perf version 7.0.14
+cc (Ubuntu 15.2.0-16ubuntu1) 15.2.0

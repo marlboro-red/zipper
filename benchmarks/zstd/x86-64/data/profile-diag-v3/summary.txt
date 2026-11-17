@@ -1,0 +1,24 @@
+# M35 profile
+
+Counts of one decode, from `perf stat` with 10 repeats less `perf stat` of the setup alone.
+A hosted runner may expose no hardware counters, which then read "not counted".
+
+## zstd
+
+| Event | zipper | libzstd | zipper over libzstd |
+| --- | --- | --- | --- |
+| `task-clock` | 164 | 131 | 1.253 |
+| `cycles` | not counted | not counted | not counted |
+| `instructions` | not counted | not counted | not counted |
+| `branches` | not counted | not counted | not counted |
+| `branch-misses` | not counted | not counted | not counted |
+| `L1-dcache-load-misses` | not counted | not counted | not counted |
+
+- `zipper`: not counted instructions per cycle, not counted % of branches missed
+
+- `libzstd`: not counted instructions per cycle, not counted % of branches missed
+
+- `annotate-zstd-zipper-1.txt` annotates zipper::zstandard::fast_sequences, 55.15 % of Zipper's samples
+- `annotate-zstd-zipper-2.txt` annotates <zipper::zstandard::Xxh64>::update, 14.83 % of Zipper's samples
+- `annotate-zstd-zipper-3.txt` annotates <zipper::zstandard::Huffman>::four, 9.80 % of Zipper's samples
+

@@ -1,0 +1,49 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 7K of event 'task-clock:ppp'
+# Event count (approx.): 1768250000
+#
+# Overhead  Shared Object        Symbol                                                                                                                IPC   [IPC Coverage]
+# ........  ...................  ....................................................................................................................  ....................
+#
+    55.15%  zipper-decode-bench  [.] zipper::zstandard::fast_sequences                                                                                 -      -            
+    14.83%  zipper-decode-bench  [.] <zipper::zstandard::Xxh64>::update                                                                                -      -            
+     9.80%  zipper-decode-bench  [.] <zipper::zstandard::Huffman>::four                                                                                -      -            
+     4.34%  zipper-decode-bench  [.] <zipper::zstandard::SequenceTable<512>>::build                                                                    -      -            
+     1.61%  libc.so.6            [.] 0x00000000001bc386                                                                                                -      -            
+     1.43%  [kernel.kallsyms]    [k] _raw_spin_unlock_irqrestore                                                                                       -      -            
+     1.13%  [kernel.kallsyms]    [k] do_user_addr_fault                                                                                                -      -            
+     0.99%  libc.so.6            [.] 0x00000000001bc3af                                                                                                -      -            
+     0.90%  [kernel.kallsyms]    [k] _copy_to_iter                                                                                                     -      -            
+     0.78%  zipper-decode-bench  [.] <zipper::zstandard::Huffman>::rebuild                                                                             -      -            
+     0.57%  libc.so.6            [.] 0x00000000001bc38d                                                                                                -      -            
+     0.54%  zipper-decode-bench  [.] zipper::zstandard::read_weights                                                                                   -      -            
+     0.51%  libc.so.6            [.] 0x00000000001bc394                                                                                                -      -            
+     0.42%  zipper-decode-bench  [.] zipper::zstandard::read_ncount                                                                                    -      -            
+     0.38%  libc.so.6            [.] 0x00000000001bc39b                                                                                                -      -            
+     0.35%  [kernel.kallsyms]    [k] do_anonymous_page                                                                                                 -      -            
+     0.35%  [kernel.kallsyms]    [k] zap_present_ptes.constprop.0                                                                                      -      -            
+     0.31%  libc.so.6            [.] 0x00000000001bca80                                                                                                -      -            
+     0.25%  [kernel.kallsyms]    [k] handle_mm_fault                                                                                                   -      -            
+     0.24%  [kernel.kallsyms]    [k] __handle_mm_fault                                                                                                 -      -            
+     0.24%  [kernel.kallsyms]    [k] __rmqueue_pcplist                                                                                                 -      -            
+     0.17%  libc.so.6            [.] 0x00000000001bc3bd                                                                                                -      -            
+     0.16%  zipper-decode-bench  [.] <zipper::zstandard::Huffman>::stream                                                                              -      -            
+     0.14%  [kernel.kallsyms]    [k] handle_pte_fault                                                                                                  -      -            
+     0.14%  libc.so.6            [.] 0x00000000001b2d13                                                                                                -      -            
+     0.13%  [kernel.kallsyms]    [k] __alloc_frozen_pages_noprof                                                                                       -      -            
+     0.13%  [kernel.kallsyms]    [k] alloc_anon_folio                                                                                                  -      -            
+     0.13%  [kernel.kallsyms]    [k] lock_vma_under_rcu                                                                                                -      -            
+     0.13%  libc.so.6            [.] 0x00000000001b2cf5                                                                                                -      -            
+     0.13%  libc.so.6            [.] 0x00000000001bc3d0                                                                                                -      -            
+     0.11%  [kernel.kallsyms]    [k] filemap_get_read_batch                                                                                            -      -            
+     0.11%  libc.so.6            [.] 0x00000000001bc432                                                                                                -      -            
+     0.11%  libc.so.6            [.] 0x00000000001bca87                                                                                                -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

@@ -14,6 +14,7 @@ All records are local measurements. Each one names its machine, revision, run co
 
 | Date | Experiment | Verdict |
 | --- | --- | --- |
+| 2026-11-17 | [Zipper's Zstandard decoder against libzstd on x86-64](zstd/x86-64/README.md) | Kept two changes of five. A decode takes 0.82 to 0.91 times the time it took on hosted x86-64 runners, and 1.09 to 1.13 times libzstd's time where it took 1.20 to 1.38 times. The runners build libzstd for x86-64-v3, and the gap that is left is the sequence loop and libzstd's Huffman assembly. |
 | 2026-11-11 | [Zipper's own Zstandard decoder against libzstd](zstd/own-decoder/README.md) | Kept. One-thread extraction of Silesia takes 0.97 to 0.98 times the cycles of libzstd 1.5.7 on an Apple M2 Max and 0.89 times on an M5, in safe Rust. The M2 Max took 12 to 14% more until the sequence loop stopped keeping its FSE states on the stack. A file of 3,983 small frames still takes 1.05 times libzstd's cycles there. |
 
 ## LZMA decoder

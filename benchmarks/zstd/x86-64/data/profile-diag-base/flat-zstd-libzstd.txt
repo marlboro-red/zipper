@@ -1,0 +1,68 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 7K of event 'task-clock:ppp'
+# Event count (approx.): 1852250000
+#
+# Overhead  Shared Object        Symbol                                            IPC   [IPC Coverage]
+# ........  ...................  ................................................  ....................
+#
+    65.97%  zipper-decode-bench  [.] ZSTD_decompressSequences_default.constprop.0  -      -            
+     8.02%  zipper-decode-bench  [.] ZSTD_decompressMultiFrame                     -      -            
+     3.13%  zipper-decode-bench  [.] ZSTD_buildFSETable_body_default.isra.0        -      -            
+     1.63%  [kernel.kallsyms]    [k] do_user_addr_fault                            -      -            
+     1.17%  [kernel.kallsyms]    [k] _copy_to_iter                                 -      -            
+     1.08%  [kernel.kallsyms]    [k] _raw_spin_unlock_irqrestore                   -      -            
+     1.05%  [kernel.kallsyms]    [k] kernel_init_pages                             -      -            
+     0.69%  zipper-decode-bench  [.] FSE_readNCount_body_default                   -      -            
+     0.59%  zipper-decode-bench  [.] 0x000000000027efa9                            -      -            
+     0.42%  zipper-decode-bench  [.] 0x000000000027eecc                            -      -            
+     0.39%  [kernel.kallsyms]    [k] do_anonymous_page                             -      -            
+     0.36%  zipper-decode-bench  [.] 0x000000000027efe0                            -      -            
+     0.35%  zipper-decode-bench  [.] 0x000000000027ef20                            -      -            
+     0.34%  zipper-decode-bench  [.] 0x000000000027f018                            -      -            
+     0.32%  zipper-decode-bench  [.] HUF_readDTableX2_wksp                         -      -            
+     0.31%  zipper-decode-bench  [.] 0x000000000027ee40                            -      -            
+     0.30%  zipper-decode-bench  [.] FSE_decompress_wksp_bmi2                      -      -            
+     0.30%  zipper-decode-bench  [.] 0x000000000027ee5c                            -      -            
+     0.28%  zipper-decode-bench  [.] HUF_readDTableX1_wksp                         -      -            
+     0.28%  zipper-decode-bench  [.] 0x000000000027ef3c                            -      -            
+     0.26%  zipper-decode-bench  [.] 0x000000000027edec                            -      -            
+     0.23%  zipper-decode-bench  [.] 0x000000000027ef8f                            -      -            
+     0.23%  zipper-decode-bench  [.] 0x000000000027f050                            -      -            
+     0.22%  [kernel.kallsyms]    [k] handle_mm_fault                               -      -            
+     0.22%  zipper-decode-bench  [.] HUF_decompress4X2_usingDTable_internal_fast   -      -            
+     0.20%  [kernel.kallsyms]    [k] zap_present_ptes.constprop.0                  -      -            
+     0.20%  zipper-decode-bench  [.] 0x000000000027ee94                            -      -            
+     0.19%  libc.so.6            [.] 0x00000000001bc7bb                            -      -            
+     0.19%  zipper-decode-bench  [.] 0x000000000027efc2                            -      -            
+     0.18%  libc.so.6            [.] 0x00000000001bca80                            -      -            
+     0.16%  zipper-decode-bench  [.] 0x000000000027ee24                            -      -            
+     0.16%  zipper-decode-bench  [.] 0x000000000027eef0                            -      -            
+     0.16%  zipper-decode-bench  [.] 0x000000000027f031                            -      -            
+     0.15%  [kernel.kallsyms]    [k] __handle_mm_fault                             -      -            
+     0.15%  zipper-decode-bench  [.] HUF_DecompressFastArgs_init                   -      -            
+     0.15%  zipper-decode-bench  [.] 0x000000000027ee08                            -      -            
+     0.15%  zipper-decode-bench  [.] 0x000000000027efcb                            -      -            
+     0.15%  zipper-decode-bench  [.] 0x000000000027eff9                            -      -            
+     0.13%  [kernel.kallsyms]    [k] lruvec_stat_mod_folio                         -      -            
+     0.13%  [kernel.kallsyms]    [k] mod_memcg_lruvec_state                        -      -            
+     0.13%  zipper-decode-bench  [.] 0x000000000027ed9e                            -      -            
+     0.13%  zipper-decode-bench  [.] 0x000000000027edd1                            -      -            
+     0.13%  zipper-decode-bench  [.] 0x000000000027f4ed                            -      -            
+     0.12%  [kernel.kallsyms]    [k] get_page_from_freelist                        -      -            
+     0.12%  zipper-decode-bench  [.] 0x000000000027f03a                            -      -            
+     0.11%  libc.so.6            [.] 0x00000000001bc7ee                            -      -            
+     0.11%  libc.so.6            [.] 0x00000000001bca87                            -      -            
+     0.11%  zipper-decode-bench  [.] 0x000000000027edb6                            -      -            
+     0.11%  zipper-decode-bench  [.] 0x000000000027ee78                            -      -            
+     0.11%  zipper-decode-bench  [.] 0x000000000027eeb0                            -      -            
+     0.11%  zipper-decode-bench  [.] 0x000000000027f50b                            -      -            
+     0.11%  zipper-decode-bench  [.] 0x000000000027f529                            -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#
