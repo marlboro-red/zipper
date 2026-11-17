@@ -2484,8 +2484,10 @@ impl<R: BufRead> ZstdReader<R> {
     fn keep_as_history(&mut self, decoded: &[u8]) {
         let kept = decoded.len().min(self.window());
         self.reserve_the_ring();
-        self.ring.clear();
-        self.ring.extend_from_slice(&decoded[decoded.len() - kept..]);
+        if self.ring.len() < kept {
+            self.ring.resize(kept, 0);
+        }
+        self.ring[..kept].copy_from_slice(&decoded[decoded.len() - kept..]);
         self.at = kept;
         self.flushed = kept;
         self.earlier = 0;
@@ -2560,7 +2562,13 @@ impl<R: BufRead> ZstdReader<R> {
         match block.kind {
             0 | 1 => {
                 if block.kind == 0 {
-                    fill(&mut self.input, &mut output[from..from + block.size])?;
+                    let stored = &mut output[from..from + block.size];
+                    if let Err(error) = fill(&mut self.input, stored) {
+                        if filled.is_some() {
+                            stored.fill(0);
+                        }
+                        return Err(error);
+                    }
                 } else {
                     let mut repeated = [0u8; 1];
                     fill(&mut self.input, &mut repeated)?;
@@ -2587,8 +2595,18 @@ impl<R: BufRead> ZstdReader<R> {
                     one_shot: false,
                     output: &mut *output,
                 };
-                decoder.compressed_block(block.size, &mut target)?;
-                end = target.at;
+                let outcome = decoder.compressed_block(block.size, &mut target);
+                let reached = target.at;
+                if filled.is_some() {
+                    let written = match &outcome {
+                        Ok(_) => reached..reached + WILDCOPY,
+                        Err(_) => from..from + left + WILDCOPY,
+                    };
+                    let scratch = written.start..written.end.min(output.len());
+                    output[scratch].fill(0);
+                }
+                outcome?;
+                end = reached;
             }
         }
         let decoded = &output[from..end];
