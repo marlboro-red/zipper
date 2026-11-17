@@ -2860,7 +2860,7 @@ item = src/rar5_crypto.rs | mod oracle_tests {
 item = src/rar5_crypto.rs | mod tests {
 
 [rar4-lz]
-fingerprint = 639f43331c6fecb1
+fingerprint = 5bf13642c37d5dcc
 skill = .claude/skills/zipper-verify-parsers/SKILL.md
 full-check = cargo test --release --lib rar4
 full-check = cargo test --release --test rar_corpus
