@@ -88,7 +88,7 @@ What is left, from the profiles of the last two rows.
 - libzstd was built by GCC 15.2.0 with `-march=x86-64-v3` as its default. A C compiler that targets baseline x86-64 would build libzstd's own runtime choice of BMI2 code, which no run here measured.
 - Experiment 1 needs BMI2, which Intel has shipped since Haswell in 2013 and AMD since Excavator in 2015. An older processor runs the loop as before.
 - Experiment 2 helps a caller whose buffer has room for at least one block of 128 KiB when a frame starts, and most when it holds the whole frame, as the bench's does. `zipper extract` reads a `.tar.zst` through smaller buffers, and no extraction was timed here.
-- With experiment 2, a read may write past the count it returns, inside the buffer it was given, as the [tar reader's page](../../../docs/reference/tar-reader.md) states.
+- With experiment 2, a read may write zeros past the count it returns, inside the buffer it was given, as the [tar reader's page](../../../docs/reference/tar-reader.md) states. A frame damaged twice in one block can also report a different error when read in place.
 - The x86-64-v3 build of Zipper has a slower checksum than the baseline build, 24 ms against 9 ms on Silesia. No experiment here changed that.
 - Experiments 3 to 5 each moved the median by 0.6% to 1.8% in the same direction on both corpora. Hosted runners cannot tell that from no change, so each stays unproven and none is claimed.
 - The sums in the first table come from sampled shares of a process that also reads its input, so each is good to a few milliseconds.
