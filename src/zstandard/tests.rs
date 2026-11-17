@@ -2005,7 +2005,10 @@ fn frames_whole_and_damaged_decode_alike_with_and_without_the_bmi2_sequence_loop
         decoded_bytes += portable.as_ref().map_or(0, Vec::len);
         assert_eq!(portable, detected);
     }
-    assert!(decoded_bytes > 3 << 20, "only {decoded_bytes} bytes decoded");
+    assert!(
+        decoded_bytes > 3 << 20,
+        "only {decoded_bytes} bytes decoded"
+    );
 }
 
 fn read_in_pieces(frames: &[u8], capacity: usize) -> (Vec<u8>, Option<String>) {
@@ -2128,7 +2131,12 @@ fn a_read_leaves_the_buffer_alone_past_a_sized_frame_and_32_bytes_past_any_other
     let mut random = Random(0x1A9E_0F7A_CE5E_ED03);
     let mix = mixed(&mut random, &text, 500_000);
     let mut frames = Vec::new();
-    for input in [&text[..9_000], &text[..BLOCK_MAX + 1], &text[..400_000], &mix[..]] {
+    for input in [
+        &text[..9_000],
+        &text[..BLOCK_MAX + 1],
+        &text[..400_000],
+        &mix[..],
+    ] {
         let [known, unknown] = one_frame_with_its_size_and_one_without(input);
         frames.push((known, input.len(), 0));
         frames.push((unknown, input.len(), WILDCOPY));
