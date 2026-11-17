@@ -1998,6 +1998,8 @@ fn frames_whole_and_damaged_decode_alike_with_and_without_the_bmi2_sequence_loop
     for frame in frames.iter().chain(&damaged) {
         let detected = ours(frame);
         WITHOUT_BMI2.set(true);
+        #[cfg(target_arch = "x86_64")]
+        assert!(!cpu_has_bmi2());
         let portable = ours(frame);
         WITHOUT_BMI2.set(false);
         decoded_bytes += portable.as_ref().map_or(0, Vec::len);
