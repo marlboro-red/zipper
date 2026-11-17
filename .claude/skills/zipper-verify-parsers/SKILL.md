@@ -425,6 +425,12 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | A literal or match copy past 32 bytes stops at 64 | the same tests fail, each time |
 | A match from the previous lap stays in the loop when it is longer than what the lap holds | the same tests fail |
 | `sequence_loop` copies a match from the previous lap that ends within 32 bytes of the buffer's end | `a_match_from_the_last_lap_that_would_copy_past_the_buffer_takes_the_careful_path` fails |
+| `fast_sequences_portable` decodes nothing, or the test switch leaves the BMI2 loop on | `frames_whole_and_damaged_decode_alike_with_and_without_the_bmi2_sequence_loop` fails, each time, on an x86-64 machine with BMI2 only |
+| `blocks_in_place` gives a frame with a content size the whole of the caller's buffer | `a_read_leaves_the_buffer_alone_past_a_sized_frame_and_32_bytes_past_any_other` fails |
+| `keep_as_history` keeps at most 1,000 bytes, or `next_block` stays in the caller's buffer when a block's room is one byte short | `reads_of_any_size_give_what_reads_too_short_to_hold_a_block_give_on_whole_and_damaged_frames` fails, each time |
+| The Zstandard reader never decodes in the caller's buffer | `a_frame_read_into_a_buffer_with_room_for_it_takes_no_window_buffer` fails |
+| `keep_as_history` clears the window buffer at each frame | `the_window_buffer_keeps_its_length_from_one_small_frame_to_the_next` fails |
+| `next_block` leaves what a block wrote past its end in the caller's buffer | `a_read_leaves_only_zeros_past_its_count_after_another_stream_or_a_damaged_frame` fails |
 | `read_ncount` drops the check that the counts fill the table | `table_descriptions_of_every_two_bytes_and_many_random_ones_fill_their_table_or_are_refused` fails |
 | `weights_from_list` accepts a remainder that is not a power of two | `weights_that_pass_form_a_complete_tree_with_its_deepest_leaves_in_pairs` fails |
 | `BitD::step_back` gives back 4 bits a byte, not 8 | `refills_keep_the_reader_inside_its_stream_and_its_count_of_bits` fails |

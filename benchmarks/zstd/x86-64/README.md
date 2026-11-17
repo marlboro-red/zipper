@@ -1,6 +1,6 @@
 # Zipper's Zstandard decoder against libzstd on x86-64
 
-**Two changes are kept and the gap is narrowed, not closed. A decode takes 0.82 to 0.91 times the time it took, with ranges apart on both corpora. That is 1.09 to 1.13 times libzstd's time, where it was 1.20 to 1.38 times. The hosted runners build libzstd for x86-64-v3 and Zipper for baseline x86-64, so part of the first gap was the C compiler's default and not the decoder.** Hosted x86-64 Linux runners, a different processor in each run, and one Apple M2 Max.
+**Two changes are kept and the gap is narrowed, not closed. A decode takes 0.82 to 0.94 times the time it took, with ranges apart on both corpora. That is 1.09 to 1.19 times libzstd's time, where it was 1.20 to 1.38 times. On an Apple M2 Max it takes 0.95 to 0.96 times the time it took and 0.85 times libzstd's. The hosted runners build libzstd for x86-64-v3 and Zipper for baseline x86-64, so part of the first gap was the C compiler's default and not the decoder.** Hosted x86-64 Linux runners, a different processor in each run, and one Apple M2 Max.
 
 ## Question
 
@@ -54,6 +54,10 @@ Each row is one run. Times are the median in milliseconds with the lowest and hi
 | 5. The same | Dependencies | AMD EPYC 9V45 | 39.5, 38.5 to 46.7 | 38.8, 38.4 to 42.5 | 37.2, 36.4 to 74.9 | 0.982, overlap | 1.042 |
 | Both kept changes against the decoder before them | Silesia | AMD EPYC 9V45 | 154.9, 152.6 to 185.9 | 140.7, 137.5 to 151.2 | 129.7, 126.4 to 135.7 | 0.908, apart | 1.085 |
 | The same | Dependencies | Intel Xeon 6975P-C | 65.4, 64.0 to 65.8 | 53.6, 52.6 to 54.3 | 47.6, 47.0 to 48.3 | 0.819, apart | 1.126 |
+| The same, by the workflow's own A/B mode | Silesia | AMD EPYC 7763 | 272, 269 to 278 | 256, 247 to 263 | 215, 204 to 223 | 0.942, apart | 1.189 |
+| The same, by the workflow's own A/B mode | Dependencies | AMD EPYC 9V74 | 83, 82 to 84 | 74, 72 to 74 | 62, 62 to 64 | 0.893, apart | 1.189 |
+
+The last two rows are runs 43994028663 and 43994034126 of `m35-profile.yml` as main has it since `8fe55227`, at the branch's head before the review's two fixes, against `8fe55227`. They print three digits, and their JSON holds every sample.
 
 What each experiment changed.
 
@@ -65,15 +69,37 @@ What each experiment changed.
 
 ### Apple M2 Max
 
-M2_MAX_RESULTS
+One session with no busy process at its start, 11 rounds after one warmup, at the branch's head with the review's fixes against `8fe55227`. Raw samples are in `data/m2-max-silesia.json` and `data/m2-max-dependencies.json`.
+
+| Corpus | Before | After | libzstd | After over before | After over libzstd |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Silesia | 143.1, 142.1 to 143.6 | 137.3, 134.0 to 137.9 | 161.6, 161.4 to 162.0 | 0.960, apart | 0.850, apart |
+| Dependencies | 40.9, 40.5 to 41.2 | 38.8, 38.5 to 39.6 | 45.5, 45.3 to 45.6 | 0.949, apart | 0.854, apart |
+
+The M2 Max runs one build of the sequence loop, so its gain is experiment 2 alone, and the lead over libzstd is kept.
 
 ### Peak memory
 
-PEAK_MEMORY_RESULTS
+The probe `decode_loop_for_counters` read each stream once through a 128 KiB buffer under `/usr/bin/time -l` on the M2 Max, three runs for each build. The figure is the largest peak memory footprint, with the file held in memory.
+
+| Stream | Before | After |
+| --- | ---: | ---: |
+| 2,000 frames of 10 bytes that each declare a 128 MiB window | 1,786,240 | 1,769,856 |
+| Silesia twice in one frame, `zstd -3 --long=27` | 267,928,128 | 267,944,512 |
+| The Silesia corpus stream | 70,861,232 | 70,894,024 |
+
+The two large streams rose by 16 KiB and 32 KiB, one or two pages, and the test binary itself grew by 56 KiB. The bench's whole process peaked at 351.7 MB on Silesia in both builds. The review extracted seven more hostile files with `zipper extract`, and no peak was higher than before by more than 49 KiB.
+
+### What the review changed
+
+The adversarial review of experiment 2 confirmed two faults, and both are fixed with a test each.
+
+- Each frame cleared the window buffer, so a tar with every byte in its own frame retired 10.8 G instructions to extract against 2.2 G before. The buffer now keeps its length from frame to frame.
+- The loop's 32-byte steps left bytes of an earlier stream past a read's count, copied from the decoder's literal buffer. The reader now writes zeros over what a block leaves past its end, and over the room of a block that fails.
 
 ## Decision
 
-Experiments 1 and 2 are kept, and 3, 4 and 5 are reverted. The verdict for M35 stays "not ready yet" on these runs. A decode takes 1.09 times libzstd's time on Silesia and 1.13 times on the dependencies, with ranges apart.
+Experiments 1 and 2 are kept, and 3, 4 and 5 are reverted. The verdict for M35 stays "not ready yet" on these runs. A decode takes 1.09 to 1.19 times libzstd's time on both corpora, with ranges apart in every run.
 
 What is left, from the profiles of the last two rows.
 
@@ -83,6 +109,7 @@ What is left, from the profiles of the last two rows.
 
 ## Limits
 
+- No x86-64 run measured the code after the review's two fixes, which add a 32-byte fill to each block decoded in place. The M2 Max rows did.
 - Every x86-64 number is from a hosted runner with 4 shared cores. One run compares its own three rows. Ratios against libzstd moved from 1.02 to 1.26 between processors for the same code, so no ratio here holds for x86-64 in general.
 - The runners expose no hardware counters, except the Intel Xeon 6975P-C runs. Instruction counts a sequence come from reading the annotated assembly, not from a counter.
 - libzstd was built by GCC 15.2.0 with `-march=x86-64-v3` as its default. A C compiler that targets baseline x86-64 would build libzstd's own runtime choice of BMI2 code, which no run here measured.
@@ -95,16 +122,15 @@ What is left, from the profiles of the last two rows.
 
 ## Reproduce
 
-Apply [`experiment-tooling.patch`](experiment-tooling.patch) to the commit to measure and push it to a branch named `m35-exp/NAME`. Then dispatch the workflow on that branch, once for each corpus, and read `ab-zstd.md` in the artifact.
+Push the commit to measure to a branch named `m35-exp/NAME` that holds `8fe55227`, and dispatch the workflow's A/B mode once for each corpus. Read `ab.md` in the artifact.
 
 ```sh
-git apply benchmarks/zstd/x86-64/experiment-tooling.patch
 gh workflow run m35-profile.yml --ref m35-exp/NAME -f corpus=silesia -f codec=zstd \
-  -f target_cpu=baseline -f repeats=5 -f base=BASE_COMMIT
+  -f target_cpu=baseline -f base=BASE_COMMIT -f rounds=15 -f profile=false
 gh run download RUN_ID --dir target/m35/NAME
 ```
 
-Passing `-f tests=yes` runs `cargo test --release --lib zstandard` on the runner first, which is where the BMI2 build of the loop is tested. Experiments 3 to 5 were commits on `m35-exp/avx2`, `m35-exp/tables` and `m35-exp/spread`, which were deleted after their runs, so their rows cannot be rebuilt from this repository.
+The experiment rows above came from [`experiment-tooling.patch`](experiment-tooling.patch), which applies to `d0e52057` and not to main since `8fe55227`. Its `tests=yes` input ran `cargo test --release --lib zstandard` on the runner, which is where the BMI2 build of the loop was tested. Experiments 3 to 5 were commits on `m35-exp/avx2`, `m35-exp/tables` and `m35-exp/spread`, which were deleted after their runs, so their rows cannot be rebuilt from this repository.
 
 On the M2 Max, build `zipper-decode-bench` at the base and at the new commit, and run the local driver once for each corpus folder that `scripts/m31_decoders.py corpus` wrote.
 
