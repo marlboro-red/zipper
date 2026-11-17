@@ -2296,6 +2296,12 @@ struct Frame {
     header: FrameHeader,
     produced: u64,
     hash: Xxh64,
+    untouched: bool,
+}
+
+struct InPlace<'a> {
+    frame: &'a mut [u8],
+    produced: usize,
 }
 
 pub(crate) struct ZstdReader<R> {
@@ -2353,6 +2359,7 @@ impl<R: BufRead> ZstdReader<R> {
                 },
                 produced: 0,
                 hash: Xxh64::new(),
+                untouched: false,
             },
             finished_a_frame: false,
             failure: None,
@@ -2432,10 +2439,6 @@ impl<R: BufRead> ZstdReader<R> {
             Some(size) if size <= lap as u64 => size as usize + RING_SLACK,
             _ => lap + 2 * RING_SLACK,
         };
-        if self.ring.capacity() < self.lap {
-            self.ring = Vec::new();
-            self.ring = Vec::with_capacity(self.lap);
-        }
         self.at = 0;
         self.flushed = 0;
         self.earlier = 0;
@@ -2444,12 +2447,35 @@ impl<R: BufRead> ZstdReader<R> {
             header,
             produced: 0,
             hash: Xxh64::new(),
+            untouched: true,
         };
         self.stage = Stage::Blocks;
         Ok(())
     }
 
+    fn reserve_the_window(&mut self) {
+        if self.ring.capacity() < self.lap {
+            self.ring = Vec::new();
+            self.ring = Vec::with_capacity(self.lap);
+        }
+    }
+
+    fn window(&self) -> usize {
+        usize::try_from(self.frame.header.window).unwrap_or(usize::MAX)
+    }
+
+    fn keep_as_history(&mut self, decoded: &[u8]) {
+        let kept = decoded.len().min(self.window());
+        self.reserve_the_window();
+        self.ring.clear();
+        self.ring.extend_from_slice(&decoded[decoded.len() - kept..]);
+        self.at = kept;
+        self.flushed = kept;
+        self.earlier = 0;
+    }
+
     fn make_room(&mut self, needed: usize) {
+        self.reserve_the_window();
         let end = self.at + needed + RING_SLACK;
         if end > self.ring.len() && self.ring.len() < self.lap {
             self.ring.resize(self.lap.min(end), 0);
@@ -2461,7 +2487,31 @@ impl<R: BufRead> ZstdReader<R> {
         }
     }
 
-    fn next_block(&mut self) -> io::Result<()> {
+    fn blocks_in_place(&mut self, room: &mut [u8]) -> (usize, io::Result<()>) {
+        self.frame.untouched = false;
+        let frame_end = match self.frame.header.content_size {
+            Some(size) => room.len().min(usize::try_from(size).unwrap_or(usize::MAX)),
+            None => room.len(),
+        };
+        let mut place = Some(InPlace {
+            frame: &mut room[..frame_end],
+            produced: 0,
+        });
+        let mut produced = 0;
+        let mut outcome = Ok(());
+        while outcome.is_ok() && place.is_some() && matches!(self.stage, Stage::Blocks) {
+            outcome = self.next_block(&mut place);
+            if let Some(held) = &place {
+                produced = held.produced;
+            }
+        }
+        if outcome.is_err() {
+            self.stage = Stage::Failed;
+        }
+        (produced, outcome)
+    }
+
+    fn next_block(&mut self, place: &mut Option<InPlace<'_>>) -> io::Result<()> {
         let mut bytes = [0u8; 3];
         fill(&mut self.input, &mut bytes)?;
         let block = block_header(bytes);
@@ -2477,18 +2527,29 @@ impl<R: BufRead> ZstdReader<R> {
         let copied = block.kind < 2;
         ensure(!copied || block.size <= block_max, DAMAGED_BLOCK)?;
         ensure(!copied || block.size <= left, PAST_SIZE)?;
-        self.make_room(if copied { block.size } else { left });
-        let from = self.at;
+        let needed = if copied { block.size } else { left };
+        if let Some(held) = place.take_if(|held| held.frame.len() - held.produced < needed) {
+            self.keep_as_history(&held.frame[..held.produced]);
+        }
+        let window = self.window();
+        let (output, from, earlier, in_place) = match place {
+            Some(InPlace { frame, produced }) => (&mut **frame, *produced, 0, Some(produced)),
+            None => {
+                self.make_room(needed);
+                (&mut self.ring[..], self.at, self.earlier, None)
+            }
+        };
+        let mut end = from;
         match block.kind {
             0 | 1 => {
                 if block.kind == 0 {
-                    fill(&mut self.input, &mut self.ring[from..from + block.size])?;
+                    fill(&mut self.input, &mut output[from..from + block.size])?;
                 } else {
                     let mut repeated = [0u8; 1];
                     fill(&mut self.input, &mut repeated)?;
-                    self.ring[from..from + block.size].fill(repeated[0]);
+                    output[from..from + block.size].fill(repeated[0]);
                 }
-                self.at = from + block.size;
+                end = from + block.size;
             }
             _ if block.size == 0 => {}
             _ => {
@@ -2502,37 +2563,42 @@ impl<R: BufRead> ZstdReader<R> {
                 )?;
                 let mut target = Target {
                     at: from,
-                    earlier: self.earlier,
+                    earlier,
                     capacity_end: from + left,
                     block_max,
-                    window: usize::try_from(self.frame.header.window).unwrap_or(usize::MAX),
+                    window,
                     one_shot: false,
-                    output: &mut self.ring,
+                    output: &mut *output,
                 };
                 decoder.compressed_block(block.size, &mut target)?;
-                self.at = target.at;
+                end = target.at;
             }
         }
-        let decoded = &self.ring[from..self.at];
+        let decoded = &output[from..end];
         self.frame.produced += decoded.len() as u64;
         if self.frame.header.checksum {
             self.frame.hash.update(decoded);
         }
-        if !block.last {
-            return Ok(());
+        if block.last {
+            if let Some(size) = self.frame.header.content_size {
+                ensure(self.frame.produced == size, SIZE_DIFFERS)?;
+            }
+            if self.frame.header.checksum {
+                let mut stored = [0u8; 4];
+                fill(&mut self.input, &mut stored)?;
+                ensure(
+                    stored == (self.frame.hash.digest() as u32).to_le_bytes(),
+                    "the frame's checksum does not match",
+                )?;
+            }
         }
-        if let Some(size) = self.frame.header.content_size {
-            ensure(self.frame.produced == size, SIZE_DIFFERS)?;
+        match in_place {
+            Some(produced) => *produced = end,
+            None => self.at = end,
         }
-        if self.frame.header.checksum {
-            let mut stored = [0u8; 4];
-            fill(&mut self.input, &mut stored)?;
-            ensure(
-                stored == (self.frame.hash.digest() as u32).to_le_bytes(),
-                "the frame's checksum does not match",
-            )?;
+        if block.last {
+            self.finish_frame();
         }
-        self.finish_frame();
         Ok(())
     }
 }
@@ -2557,7 +2623,12 @@ impl<R: BufRead> Read for ZstdReader<R> {
                 (None, Stage::Done) => break,
                 (None, Stage::Failed) => Err(io::Error::other("Zstandard decoding already failed")),
                 (None, Stage::Header) => self.start_frame(),
-                (None, Stage::Blocks) => self.next_block(),
+                (None, Stage::Blocks) if self.frame.untouched => {
+                    let (produced, outcome) = self.blocks_in_place(&mut buffer[filled..]);
+                    filled += produced;
+                    outcome
+                }
+                (None, Stage::Blocks) => self.next_block(&mut None),
             };
             if let Err(error) = step {
                 if error.kind() != io::ErrorKind::Interrupted {

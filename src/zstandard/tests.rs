@@ -2005,3 +2005,150 @@ fn frames_whole_and_damaged_decode_alike_with_and_without_the_bmi2_sequence_loop
     }
     assert!(decoded_bytes > 3 << 20, "only {decoded_bytes} bytes decoded");
 }
+
+fn read_in_pieces(frames: &[u8], capacity: usize) -> (Vec<u8>, Option<String>) {
+    let mut reader = ZstdReader::new(frames);
+    let mut buffer = vec![0u8; capacity];
+    let mut decoded = Vec::new();
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => return (decoded, None),
+            Ok(read) => decoded.extend_from_slice(&buffer[..read]),
+            Err(error) => return (decoded, Some(error.to_string())),
+        }
+    }
+}
+
+fn one_frame_with_its_size_and_one_without(input: &[u8]) -> [Vec<u8>; 2] {
+    [
+        zstd::bulk::compress(input, 3).unwrap(),
+        encode(input, 3, |encoder| {
+            encoder.include_checksum(true).unwrap();
+        }),
+    ]
+}
+
+fn frames_with_and_without_their_size() -> Vec<Vec<u8>> {
+    let text = sources();
+    let mut random = Random(0x1A9E_0F7A_CE5E_ED01);
+    let mut frames: Vec<Vec<u8>> = shapes().into_iter().map(|(_, frame, _)| frame).collect();
+    let mix = mixed(&mut random, &text, 700_000);
+    for input in [&text[..9_000], &text[..BLOCK_MAX + 1], &mix[..]] {
+        frames.extend(one_frame_with_its_size_and_one_without(input));
+    }
+    let (blocks, _) = history(&mut random, 400_000, 50_000);
+    let mut raw = windowed(17, &blocks);
+    raw.extend(block(0, true, 0, b""));
+    frames.push(raw);
+    let mut several = zstd::bulk::compress(&mix[..200_000], 1).unwrap();
+    several.extend(encode(&text[..150_000], 5, |_| {}));
+    several.extend(zstd::bulk::compress(b"", 3).unwrap());
+    several.extend(zstd::bulk::compress(&text[..300_000], 3).unwrap());
+    frames.push(several);
+    frames
+}
+
+#[test]
+fn reads_of_any_size_give_what_reads_too_short_to_hold_a_block_give_on_whole_and_damaged_frames() {
+    let mut random = Random(0x1A9E_0F7A_CE5E_ED02);
+    let whole = frames_with_and_without_their_size();
+    let mut frames = whole.clone();
+    for frame in &whole {
+        for _ in 0..12 {
+            let mut flipped = frame.clone();
+            let at = random.below(flipped.len());
+            flipped[at] ^= 1 << random.below(8);
+            frames.push(flipped);
+        }
+        for _ in 0..6 {
+            frames.push(frame[..random.below(frame.len())].to_vec());
+        }
+    }
+    let mut with_room_for_the_frame = 0;
+    for (number, frame) in frames.iter().enumerate() {
+        let through_the_window = read_in_pieces(frame, 7);
+        let size = through_the_window.0.len();
+        let capacities = [
+            size.max(1),
+            size + 1,
+            size.saturating_sub(1).max(1),
+            size + BLOCK_MAX,
+            BLOCK_MAX - 1,
+            BLOCK_MAX,
+            2 * BLOCK_MAX + 5,
+            300_000,
+            1 + random.below(3 * BLOCK_MAX),
+        ];
+        for capacity in capacities {
+            let read = read_in_pieces(frame, capacity);
+            assert!(
+                read == through_the_window,
+                "frame {number} read {capacity} bytes at a time: {:?} against {:?}",
+                (read.0.len(), read.1),
+                (size, &through_the_window.1)
+            );
+            with_room_for_the_frame += usize::from(capacity >= size + BLOCK_MAX);
+        }
+    }
+    assert!(
+        with_room_for_the_frame > 500,
+        "only {with_room_for_the_frame} reads had room for their frame"
+    );
+}
+
+#[test]
+fn a_frame_read_into_a_buffer_with_room_for_it_takes_no_window_buffer() {
+    let text = sources();
+    let [known, unknown] = one_frame_with_its_size_and_one_without(&text[..600_000]);
+    for (frame, capacity) in [(&known, 600_000), (&known, 1 << 20), (&unknown, 1 << 20)] {
+        let mut reader = ZstdReader::new(&frame[..]);
+        let mut buffer = vec![0u8; capacity];
+        assert_eq!(reader.read(&mut buffer).unwrap(), 600_000);
+        assert!(buffer[..600_000] == text[..600_000]);
+        assert_eq!(reader.read(&mut buffer).unwrap(), 0);
+        assert_eq!(
+            reader.ring.capacity(),
+            0,
+            "a frame read into {capacity} bytes"
+        );
+    }
+    let mut reader = ZstdReader::new(&unknown[..]);
+    let mut buffer = vec![0u8; 600_000];
+    assert_eq!(reader.read(&mut buffer).unwrap(), 600_000);
+    assert!(buffer == text[..600_000]);
+    assert!(reader.ring.capacity() > 0);
+}
+
+#[test]
+fn a_read_leaves_the_buffer_alone_past_a_sized_frame_and_32_bytes_past_any_other() {
+    const UNTOUCHED: u8 = 0xA5;
+    let text = sources();
+    let mut random = Random(0x1A9E_0F7A_CE5E_ED03);
+    let mix = mixed(&mut random, &text, 500_000);
+    let mut frames = Vec::new();
+    for input in [&text[..9_000], &text[..BLOCK_MAX + 1], &text[..400_000], &mix[..]] {
+        let [known, unknown] = one_frame_with_its_size_and_one_without(input);
+        frames.push((known, input.len(), 0));
+        frames.push((unknown, input.len(), WILDCOPY));
+    }
+    for (number, (frame, size, scratch)) in frames.iter().enumerate() {
+        for capacity in [size + 1, size + 31, size + 200, size + BLOCK_MAX + 77] {
+            let mut reader = ZstdReader::new(&frame[..]);
+            let mut buffer = vec![UNTOUCHED; capacity];
+            let mut filled = 0;
+            loop {
+                let read = reader.read(&mut buffer[filled..]).unwrap();
+                filled += read;
+                let clean_from = (filled + scratch).min(capacity);
+                assert!(
+                    buffer[clean_from..].iter().all(|&byte| byte == UNTOUCHED),
+                    "frame {number} in {capacity} bytes wrote more than {scratch} bytes past {filled}"
+                );
+                if read == 0 {
+                    break;
+                }
+            }
+            assert_eq!(filled, *size);
+        }
+    }
+}

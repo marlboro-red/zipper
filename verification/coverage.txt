@@ -2465,6 +2465,7 @@ item = src/zstandard.rs | fn block_header(
 item = src/zstandard.rs | pub(
 item = src/zstandard.rs | enum Stage {
 item = src/zstandard.rs | struct Frame {
+item = src/zstandard.rs | struct InPlace<'a> {
 item = src/zstandard.rs | pub(crate) struct ZstdReader<R> {
 item = src/zstandard.rs | fn cut_short(
 item = src/zstandard.rs | fn fill(
