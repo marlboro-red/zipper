@@ -2158,7 +2158,7 @@ fn a_read_leaves_the_buffer_alone_past_a_sized_frame_and_32_bytes_past_any_other
 #[test]
 fn the_window_buffer_keeps_its_length_from_one_small_frame_to_the_next() {
     let text = sources();
-    let mut frames = Vec::new();
+    let mut frames = encode(&text[40_000..440_000], 3, |_| {});
     for piece in text[..40_000].chunks(400) {
         frames.extend(encode(piece, 3, |_| {}));
     }
@@ -2179,7 +2179,7 @@ fn the_window_buffer_keeps_its_length_from_one_small_frame_to_the_next() {
         );
         longest = reader.ring.len();
     }
-    assert!(decoded == text[..40_000] && longest > 0);
+    assert!(decoded[400_000..] == text[..40_000] && longest > 2 * BLOCK_MAX);
 }
 
 #[test]
