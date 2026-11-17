@@ -430,7 +430,7 @@ Name the stale section. Kani needs `cargo install --locked kani-verifier` and `c
 | `keep_as_history` keeps at most 1,000 bytes, or `next_block` stays in the caller's buffer when a block's room is one byte short | `reads_of_any_size_give_what_reads_too_short_to_hold_a_block_give_on_whole_and_damaged_frames` fails, each time |
 | The Zstandard reader never decodes in the caller's buffer | `a_frame_read_into_a_buffer_with_room_for_it_takes_no_window_buffer` fails |
 | `keep_as_history` clears the window buffer at each frame | `the_window_buffer_keeps_its_length_from_one_small_frame_to_the_next` fails |
-| `next_block` leaves what a block wrote past its end in the caller's buffer | `a_read_leaves_only_zeros_past_its_count_after_another_stream_or_a_damaged_frame` fails |
+| `next_block` leaves what a block wrote in the caller's buffer, past its end or after a failure | `a_read_leaves_only_zeros_past_its_count_after_another_stream_or_a_damaged_frame` and `a_frame_that_fails_its_checksum_or_size_at_its_end_leaves_only_zeros_past_the_count` fail |
 | `read_ncount` drops the check that the counts fill the table | `table_descriptions_of_every_two_bytes_and_many_random_ones_fill_their_table_or_are_refused` fails |
 | `weights_from_list` accepts a remainder that is not a power of two | `weights_that_pass_form_a_complete_tree_with_its_deepest_leaves_in_pairs` fails |
 | `BitD::step_back` gives back 4 bits a byte, not 8 | `refills_keep_the_reader_inside_its_stream_and_its_count_of_bits` fails |

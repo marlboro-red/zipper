@@ -99,6 +99,8 @@ The adversarial review of experiment 2 confirmed two faults, and both are fixed 
 - Each frame cleared the window buffer, so a tar with every byte in its own frame retired 10.8 G instructions to extract against 2.2 G before. The buffer now keeps its length from frame to frame.
 - The loop's 32-byte steps left bytes of an earlier stream past a read's count, copied from the decoder's literal buffer. The reader now writes zeros over what a block leaves past its end, and over the room of a block that fails.
 
+A second review, of those fixes, confirmed one more. A last block decoded in place stayed in the caller's buffer when the frame's checksum or size check then failed. One function now decodes a block and checks the frame's end, and its caller writes zeros over the block's room on any failure. No timing ran after this last fix.
+
 ## Decision
 
 Experiments 1 and 2 are kept, and 3, 4 and 5 are reverted. The verdict for M35 stays "not ready yet" on these runs. At the final code a decode takes 1.12 times libzstd's time on Silesia, ranges overlapping through one libzstd sample, and 1.17 times on the dependencies, ranges apart. Over all runs of the kept code the ratio lay between 1.09 and 1.19.
