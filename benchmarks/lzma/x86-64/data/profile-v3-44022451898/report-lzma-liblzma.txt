@@ -1,0 +1,34 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 9K of event 'task-clock:ppp'
+# Event count (approx.): 2278000000
+#
+# Overhead  Command          Shared Object        Symbol                          
+# ........  ...............  ...................  ................................
+#
+    88.21%  zipper-decode-b  zipper-decode-bench  [.] lzma_decode
+            |
+            ---lzma_decode
+               decode_buffer
+               lzma_code
+
+     1.94%  zipper-decode-b  libc.so.6            [.] 0x00000000001bc237
+            |
+            ---0x7b7002bbc237
+               decode_buffer
+               lzma_code
+
+     1.53%  zipper-decode-b  libc.so.6            [.] 0x00000000001bc204
+            |
+            ---0x7b7002bbc204
+               decode_buffer
+               lzma_code
+
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

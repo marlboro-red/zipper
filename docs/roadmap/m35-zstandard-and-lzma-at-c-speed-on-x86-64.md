@@ -67,3 +67,12 @@ The artifact then also holds these files.
 - `ab.md` with each row's median and range in seconds, then the head's median time over the base's and over the C library's, and whether the ranges are apart. The job summary shows the same table.
 
 Overlapping ranges mean no established difference, as the `zipper-bench` skill says. Compare rows only within one run.
+
+## Status
+
+LZMA and xz stay "not ready yet" by exit check 3. The [x86-64 record](../../benchmarks/lzma/x86-64/README.md) names the limiter with a profile and keeps no change.
+
+- liblzma 5.8.4 built by GCC or Clang for x86-64 decodes its bit trees, matched literals and direct bits in inline assembly. Every other compiler and target gets its C code. Zipper leads liblzma on the M2 Max and on Windows, where that is the case.
+- On an Intel Xeon 6975P-C, one decode of the dependencies LZMA stream retires 1.49 times liblzma's instructions in 1.11 times its cycles, with the same branch misses.
+- Seven experiments in safe Rust made no decode faster with ranges apart, on either corpus. rustc 1.99.1 turned each reshaped bit step back into the same instructions, and a BMI build gained nothing.
+- The decoder on main takes 1.08 to 1.21 times liblzma's time on LZMA and 1.04 to 1.14 times on xz, a different ratio on each processor.

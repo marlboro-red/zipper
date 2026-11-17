@@ -1,0 +1,12 @@
+commit 34e1208b71993c600c60a3ae17e51aa9bed884ce
+corpus dependencies
+codec lzma
+target_cpu baseline
+RUSTFLAGS 
+repeats 10
+base none 
+rounds 11
+profile true
+Linux runnervmccnms 7.0.0-1019-azure #20-Ubuntu SMP PREEMPT Mon Oct 19 22:41:16 UTC 2026 x86_64 GNU/Linux
+perf version 7.0.14
+cc (Ubuntu 15.2.0-16ubuntu1) 15.2.0

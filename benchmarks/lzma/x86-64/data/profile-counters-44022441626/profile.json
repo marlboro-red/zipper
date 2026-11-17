@@ -1,0 +1,42 @@
+{
+  "repeats": 10,
+  "results": {
+    "lzma": {
+      "zipper": {
+        "per_decode": {
+          "task-clock": 316.95099999999996,
+          "cycles": 1218273483.9,
+          "instructions": 3036966232.6,
+          "branches": 293412369.2,
+          "branch-misses": 14452151.8,
+          "L1-dcache-load-misses": 3557266.7
+        },
+        "annotated": [
+          {
+            "rank": 1,
+            "percent": 94.56,
+            "symbol": "zipper::lzma::decode_symbols                                                                                    -      -",
+            "file": "annotate-lzma-zipper-1.txt"
+          },
+          {
+            "rank": 2,
+            "percent": 2.51,
+            "symbol": "0x00000000001bc4bf                                                                                              -      -",
+            "file": "annotate-lzma-zipper-2.txt"
+          }
+        ]
+      },
+      "liblzma": {
+        "per_decode": {
+          "task-clock": 285.41999999999996,
+          "cycles": 1097853013.7,
+          "instructions": 2037572731.9,
+          "branches": 181569699.6,
+          "branch-misses": 14411626.0,
+          "L1-dcache-load-misses": 3282198.9
+        },
+        "annotated": []
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+commit 06402764a8d54196bbe0c477fd85f24aff2579a0
+corpus dependencies
+codec lzma
+target_cpu baseline
+RUSTFLAGS 
+repeats 10
+base none 
+rounds 11
+profile true
+Linux ip-10-0-132-82 7.0.0-1016-aws #17-Ubuntu SMP PREEMPT Mon Oct 19 17:36:33 UTC 2026 x86_64 GNU/Linux
+perf version 7.0.14
+cc (Ubuntu 15.2.0-16ubuntu1) 15.2.0

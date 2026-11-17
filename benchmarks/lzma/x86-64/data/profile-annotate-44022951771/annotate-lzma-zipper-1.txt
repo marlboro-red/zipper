@@ -1,0 +1,2700 @@
+ Percent |	Source code & Disassembly of zipper-decode-bench for task-clock:ppp (10090 samples, percent: local period)
+--------------------------------------------------------------------------------------------------------------------------
+         :
+         :
+         :
+         : 3      Disassembly of section .text:
+         :
+         : 5      0000000000108d70 <zipper::lzma::decode_symbols>:
+    0.00 :   108d70: push   %rbp
+    0.00 :   108d71: push   %r15
+    0.00 :   108d73: push   %r14
+    0.00 :   108d75: push   %r13
+    0.00 :   108d77: push   %r12
+    0.00 :   108d79: push   %rbx
+    0.00 :   108d7a: sub    $0xe8,%rsp
+    0.00 :   108d81: mov    %rcx,%r10
+    0.00 :   108d84: mov    0x10(%rdx),%r14
+    0.00 :   108d88: mov    0x18(%rdx),%rax
+    0.00 :   108d8c: mov    %rax,0xa8(%rsp)
+    0.00 :   108d94: movzbl 0x5d0(%rsi),%ecx
+    0.00 :   108d9b: mov    $0xffffffffffffffff,%rbx
+    0.00 :   108da2: shl    %cl,%rbx
+    0.00 :   108da5: mov    0x28(%rdx),%r13d
+    0.00 :   108da9: mov    0x2c(%rdx),%r15d
+    0.00 :   108dad: mov    0x28(%r10),%r11
+    0.00 :   108db1: cmp    %r8,%r11
+    0.00 :   108db4: mov    %rdi,0xe0(%rsp)
+    0.00 :   108dbc: jae    10b6e7 <zipper::lzma::decode_symbols+0x2977>
+    0.00 :   108dc2: mov    %r8,%r12
+    0.00 :   108dc5: mov    %rsi,%rbp
+    0.00 :   108dc8: mov    (%rdx),%rax
+    0.00 :   108dcb: mov    %rax,0x10(%rsp)
+    0.00 :   108dd0: mov    0x8(%rdx),%rax
+    0.00 :   108dd4: mov    %rax,0x8(%rsp)
+    0.00 :   108dd9: mov    0x20(%rdx),%rax
+    0.00 :   108ddd: mov    %rax,0xd8(%rsp)
+    0.00 :   108de5: not    %rbx
+    0.00 :   108de8: lea    0x18(%rsi),%rax
+    0.00 :   108dec: mov    %rax,0xd0(%rsp)
+    0.00 :   108df4: lea    0x1f8(%rsi),%rax
+    0.00 :   108dfb: mov    %rax,0xb8(%rsp)
+    0.00 :   108e03: lea    0xcd8(%rsi),%rax
+    0.00 :   108e0a: mov    %rax,0x88(%rsp)
+    0.00 :   108e12: lea    0xbd8(%rsi),%rax
+    0.00 :   108e19: mov    %rax,0x98(%rsp)
+    0.00 :   108e21: lea    0x8d4(%rsi),%rax
+    0.00 :   108e28: mov    %rax,0x90(%rsp)
+    0.00 :   108e30: lea    0x7d4(%rsi),%rax
+    0.00 :   108e37: mov    %rax,0xa0(%rsp)
+    0.00 :   108e3f: lea    0x378(%rsi),%rax
+    0.00 :   108e46: mov    %rax,0xc0(%rsp)
+    0.00 :   108e4e: lea    0x578(%rsi),%rax
+    0.00 :   108e55: mov    %rax,0x70(%rsp)
+    0.00 :   108e5a: lea    0xddc(%rsi),%rax
+    0.00 :   108e61: mov    %rax,0xb0(%rsp)
+    0.00 :   108e69: mov    (%r9),%rcx
+    0.00 :   108e6c: mov    %r9,0x60(%rsp)
+    0.00 :   108e71: mov    %r8,0x48(%rsp)
+    0.00 :   108e76: mov    %r10,0x40(%rsp)
+    0.00 :   108e7b: mov    %rsi,0x18(%rsp)
+    0.00 :   108e80: mov    %rbx,0x20(%rsp)
+    0.00 :   108e85: jmp    108ecc <zipper::lzma::decode_symbols+0x15c>
+    0.00 :   108e87: nopw   0x0(%rax,%rax,1)
+    0.28 :   108e90: mov    0x50(%rsp),%rcx
+    0.10 :   108e95: sub    0x78(%rsp),%rcx
+    0.00 :   108e9a: mov    0x60(%rsp),%r9
+    0.00 :   108e9f: mov    %rcx,(%r9)
+    0.25 :   108ea2: mov    0x28(%rsp),%r14
+    0.00 :   108ea7: mov    0x48(%rsp),%r12
+    0.00 :   108eac: mov    0x18(%rsp),%rbp
+    0.00 :   108eb1: mov    0x20(%rsp),%rbx
+    0.20 :   108eb6: mov    0x80(%rsp),%r13d
+    0.01 :   108ebe: mov    0x68(%rsp),%r15d
+    0.11 :   108ec3: cmp    %r12,%r11
+    0.12 :   108ec6: jae    10b6e7 <zipper::lzma::decode_symbols+0x2977>
+    0.00 :   108ecc: test   %rcx,%rcx
+    0.07 :   108ecf: je     109070 <zipper::lzma::decode_symbols+0x300>
+    0.00 :   108ed5: mov    %r15d,0x68(%rsp)
+    0.01 :   108eda: mov    %r13d,0x80(%rsp)
+    0.02 :   108ee2: mov    %r14,0x28(%rsp)
+    0.02 :   108ee7: mov    0x5a0(%rbp),%rsi
+    0.40 :   108eee: lea    0x1(%rsi),%rax
+    0.09 :   108ef2: mov    %r12,%r15
+    0.04 :   108ef5: sub    %r11,%r15
+    0.00 :   108ef8: cmp    %rcx,%r15
+    0.00 :   108efb: mov    %rcx,0x50(%rsp)
+    0.00 :   108f00: cmovae %rcx,%r15
+    0.02 :   108f04: mov    0x18(%r10),%rbp
+    0.00 :   108f08: mov    0x8(%r10),%rbx
+    0.01 :   108f0c: mov    0x10(%r10),%r13
+    0.06 :   108f10: mov    0x20(%r10),%r12
+    0.10 :   108f14: mov    %rax,0x38(%rsp)
+    0.01 :   108f19: cmp    $0xf,%rax
+    0.00 :   108f1d: mov    %r15,0x78(%rsp)
+    0.03 :   108f22: jbe    109120 <zipper::lzma::decode_symbols+0x3b0>
+    0.00 :   108f28: mov    %rsi,%rax
+    0.02 :   108f2b: neg    %rax
+    0.01 :   108f2e: mov    %rax,0x30(%rsp)
+    0.09 :   108f33: mov    %rsi,%rax
+    0.12 :   108f36: not    %rax
+    0.00 :   108f39: add    %rbx,%rax
+    0.01 :   108f3c: mov    %rax,0x58(%rsp)
+    0.00 :   108f41: mov    %r15,%r8
+    0.02 :   108f44: jmp    108f5f <zipper::lzma::decode_symbols+0x1ef>
+    0.00 :   108f46: cs nopw 0x0(%rax,%rax,1)
+    0.00 :   108f50: mov    %rax,%r12
+    0.00 :   108f53: sub    %r9,%r8
+    0.00 :   108f56: mov    %rdx,%rsi
+    0.00 :   108f59: je     108e90 <zipper::lzma::decode_symbols+0x120>
+    0.01 :   108f5f: mov    %r11,%rcx
+    0.02 :   108f62: mov    %r12,%rax
+    0.00 :   108f65: mov    %rsi,%rdx
+    0.16 :   108f68: inc    %rsi
+    0.17 :   108f6b: sub    %rsi,%rax
+    0.02 :   108f6e: mov    $0x0,%r10d
+    0.00 :   108f74: cmovb  %rbp,%r10
+    0.05 :   108f78: add    %r10,%rax
+    0.06 :   108f7b: mov    %rbp,%rsi
+    0.06 :   108f7e: sub    %r12,%rsi
+    0.00 :   108f81: cmp    %r8,%rsi
+    0.05 :   108f84: cmovae %r8,%rsi
+    0.15 :   108f88: mov    %rbp,%r9
+    0.39 :   108f8b: sub    %rax,%r9
+    0.00 :   108f8e: cmp    %rsi,%r9
+    0.00 :   108f91: cmovae %rsi,%r9
+    0.02 :   108f95: test   %r9,%r9
+    0.03 :   108f98: je     109014 <zipper::lzma::decode_symbols+0x2a4>
+    0.00 :   108f9a: lea    (%rbx,%r12,1),%r14
+    0.00 :   108f9e: lea    (%r10,%r12,1),%r15
+    0.01 :   108fa2: mov    0x58(%rsp),%rax
+    0.02 :   108fa7: add    %r15,%rax
+    0.06 :   108faa: add    0x30(%rsp),%r15
+    0.17 :   108faf: xor    %r11d,%r11d
+    0.00 :   108fb2: data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   108fc0: lea    (%r15,%r11,1),%rsi
+    0.95 :   108fc4: dec    %rsi
+    0.36 :   108fc7: cmp    $0xffffffffffffffef,%rsi
+    0.01 :   108fcb: ja     10b742 <zipper::lzma::decode_symbols+0x29d2>
+    0.00 :   108fd1: lea    (%r15,%r11,1),%rsi
+    0.01 :   108fd5: add    $0xf,%rsi
+    0.55 :   108fd9: cmp    %r13,%rsi
+    0.10 :   108fdc: ja     10b742 <zipper::lzma::decode_symbols+0x29d2>
+    0.00 :   108fe2: lea    (%r12,%r11,1),%rdi
+    0.19 :   108fe6: lea    (%r12,%r11,1),%rsi
+    0.01 :   108fea: add    $0x10,%rsi
+    0.24 :   108fee: cmp    $0xffffffffffffffef,%rdi
+    0.00 :   108ff2: ja     10b767 <zipper::lzma::decode_symbols+0x29f7>
+    0.00 :   108ff8: cmp    %r13,%rsi
+    0.01 :   108ffb: ja     10b767 <zipper::lzma::decode_symbols+0x29f7>
+    0.00 :   109001: movups (%rax,%r11,1),%xmm0
+    4.27 :   109006: movups %xmm0,(%r14,%r11,1)
+    0.60 :   10900b: add    $0x10,%r11
+    0.10 :   10900f: cmp    %r9,%r11
+    0.00 :   109012: jb     108fc0 <zipper::lzma::decode_symbols+0x250>
+    0.00 :   109014: lea    (%r9,%r12,1),%rax
+    0.79 :   109018: mov    0x40(%rsp),%r10
+    0.13 :   10901d: mov    %rax,0x20(%r10)
+    0.33 :   109021: lea    (%r9,%r12,1),%rdi
+    0.00 :   109025: dec    %rdi
+    0.15 :   109028: cmp    %r13,%rdi
+    0.07 :   10902b: jae    10b83d <zipper::lzma::decode_symbols+0x2acd>
+    0.00 :   109031: mov    %rcx,%r11
+    0.00 :   109034: movzbl -0x1(%rbx,%rax,1),%esi
+    1.89 :   109039: mov    %sil,0x31(%r10)
+    0.00 :   10903d: add    %r9,%r11
+    0.00 :   109040: mov    %r11,0x28(%r10)
+    0.03 :   109044: cmp    %rbp,%rax
+    0.00 :   109047: jne    108f50 <zipper::lzma::decode_symbols+0x1e0>
+    0.00 :   10904d: movq   $0x0,0x20(%r10)
+    0.00 :   109055: movb   $0x1,0x30(%r10)
+    0.00 :   10905a: xor    %eax,%eax
+    0.00 :   10905c: jmp    108f50 <zipper::lzma::decode_symbols+0x1e0>
+    0.00 :   109061: data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   109070: lea    0x40(%r14),%rax
+    0.15 :   109074: cmp    0xd8(%rsp),%rax
+    0.07 :   10907c: ja     10b777 <zipper::lzma::decode_symbols+0x2a07>
+    0.00 :   109082: mov    0x598(%rbp),%rax
+    0.03 :   109089: cmp    $0xb,%rax
+    0.36 :   10908d: ja     10b8db <zipper::lzma::decode_symbols+0x2b6b>
+    0.00 :   109093: mov    %r11,%rdi
+    0.02 :   109096: and    %rbx,%rdi
+    0.00 :   109099: cmp    $0x10,%rdi
+    0.04 :   10909d: jae    10b8c9 <zipper::lzma::decode_symbols+0x2b59>
+    0.00 :   1090a3: shl    $0x5,%rax
+    0.17 :   1090a7: add    0xd0(%rsp),%rax
+    0.35 :   1090af: mov    %r13d,%r8d
+    0.11 :   1090b2: shr    $0xb,%r13d
+    0.03 :   1090b6: movzwl (%rax,%rdi,2),%ecx
+    0.18 :   1090ba: imul   %ecx,%r13d
+    0.64 :   1090be: mov    %r15d,%edx
+    0.03 :   1090c1: sub    %r13d,%edx
+    0.16 :   1090c4: jae    109216 <zipper::lzma::decode_symbols+0x4a6>
+    0.00 :   1090ca: lea    0x1ff81f(%rcx),%edx
+    0.72 :   1090d0: shr    $0x5,%edx
+    0.08 :   1090d3: sub    %edx,%ecx
+    0.00 :   1090d5: mov    %cx,(%rax,%rdi,2)
+    0.16 :   1090d9: cmp    $0x1000000,%r13d
+    0.00 :   1090e0: jae    1094c2 <zipper::lzma::decode_symbols+0x752>
+    0.00 :   1090e6: cmp    0x8(%rsp),%r14
+    0.33 :   1090eb: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   1090f1: mov    %r15d,%r8d
+    0.00 :   1090f4: shl    $0x8,%r13d
+    0.00 :   1090f8: shl    $0x8,%r8d
+    0.00 :   1090fc: mov    0x10(%rsp),%rax
+    0.12 :   109101: movzbl (%rax,%r14,1),%eax
+    0.01 :   109106: or     %eax,%r8d
+    0.00 :   109109: inc    %r14
+    0.00 :   10910c: jmp    1094c5 <zipper::lzma::decode_symbols+0x755>
+    0.00 :   109111: data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+    0.00 :   109120: mov    %rbp,0x30(%rsp)
+    0.00 :   109125: jmp    10913c <zipper::lzma::decode_symbols+0x3cc>
+    0.00 :   109127: nopw   0x0(%rax,%rax,1)
+    0.00 :   109130: mov    %rax,%r12
+    0.00 :   109133: sub    %r14,%r15
+    0.00 :   109136: je     108e90 <zipper::lzma::decode_symbols+0x120>
+    0.00 :   10913c: mov    %r12,%rax
+    0.01 :   10913f: mov    0x38(%rsp),%rdx
+    0.01 :   109144: sub    %rdx,%rax
+    0.00 :   109147: mov    $0x0,%ecx
+    0.00 :   10914c: cmovb  %rbp,%rcx
+    0.01 :   109150: lea    (%rcx,%rax,1),%rsi
+    0.00 :   109154: mov    %rbp,%rax
+    0.00 :   109157: sub    %r12,%rax
+    0.00 :   10915a: cmp    %r15,%rax
+    0.00 :   10915d: cmovae %r15,%rax
+    0.00 :   109161: mov    %rbp,%r14
+    0.00 :   109164: sub    %rsi,%r14
+    0.00 :   109167: cmp    %rax,%r14
+    0.00 :   10916a: cmovae %rax,%r14
+    0.00 :   10916e: cmp    %rdx,%r14
+    0.01 :   109171: ja     109201 <zipper::lzma::decode_symbols+0x491>
+    0.00 :   109177: lea    (%r14,%rsi,1),%rax
+    0.00 :   10917b: cmp    %r13,%rax
+    0.00 :   10917e: ja     10b77d <zipper::lzma::decode_symbols+0x2a0d>
+    0.00 :   109184: cmp    %rax,%rsi
+    0.00 :   109187: ja     10b792 <zipper::lzma::decode_symbols+0x2a22>
+    0.00 :   10918d: mov    %r13,%rax
+    0.01 :   109190: sub    %r14,%rax
+    0.00 :   109193: cmp    %rax,%r12
+    0.00 :   109196: ja     10b7a8 <zipper::lzma::decode_symbols+0x2a38>
+    0.00 :   10919c: mov    %r11,%rbp
+    0.00 :   10919f: add    %rbx,%rsi
+    0.00 :   1091a2: lea    (%rbx,%r12,1),%rdi
+    0.00 :   1091a6: mov    %r14,%rdx
+    0.00 :   1091a9: call   *0x1912c1(%rip)        # 29a470 <memmove@GLIBC_2.2.5>
+    0.00 :   1091af: lea    (%r14,%r12,1),%rax
+    0.00 :   1091b3: mov    0x40(%rsp),%r10
+    0.01 :   1091b8: mov    %rax,0x20(%r10)
+    0.01 :   1091bc: lea    (%r14,%r12,1),%rdi
+    0.00 :   1091c0: dec    %rdi
+    0.00 :   1091c3: cmp    %r13,%rdi
+    0.00 :   1091c6: mov    %rbp,%r11
+    0.00 :   1091c9: mov    0x30(%rsp),%rbp
+    0.00 :   1091ce: jae    10b83d <zipper::lzma::decode_symbols+0x2acd>
+    0.00 :   1091d4: movzbl -0x1(%rbx,%rax,1),%ecx
+    0.02 :   1091d9: mov    %cl,0x31(%r10)
+    0.00 :   1091dd: add    %r14,%r11
+    0.00 :   1091e0: mov    %r11,0x28(%r10)
+    0.00 :   1091e4: cmp    %rbp,%rax
+    0.00 :   1091e7: jne    109130 <zipper::lzma::decode_symbols+0x3c0>
+    0.00 :   1091ed: movq   $0x0,0x20(%r10)
+    0.00 :   1091f5: movb   $0x1,0x30(%r10)
+    0.00 :   1091fa: xor    %eax,%eax
+    0.00 :   1091fc: jmp    109130 <zipper::lzma::decode_symbols+0x3c0>
+    0.00 :   109201: mov    %r11,%rbp
+    0.00 :   109204: mov    %r10,%rdi
+    0.00 :   109207: mov    0x38(%rsp),%rdx
+    0.00 :   10920c: mov    %r14,%rcx
+    0.00 :   10920f: call   f9380 <<zipper::lzma::Window>::copy_repeating>
+    0.00 :   109214: jmp    1091af <zipper::lzma::decode_symbols+0x43f>
+    0.00 :   109216: sub    %r13d,%r8d
+    0.37 :   109219: mov    %ecx,%esi
+    0.03 :   10921b: shr    $0x5,%esi
+    0.00 :   10921e: sub    %esi,%ecx
+    0.00 :   109220: mov    %cx,(%rax,%rdi,2)
+    0.15 :   109224: cmp    $0x1000000,%r8d
+    0.43 :   10922b: mov    %r8d,%r13d
+    0.13 :   10922e: jae    109251 <zipper::lzma::decode_symbols+0x4e1>
+    0.01 :   109230: cmp    0x8(%rsp),%r14
+    0.31 :   109235: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10923b: shl    $0x8,%r13d
+    0.00 :   10923f: shl    $0x8,%edx
+    0.00 :   109242: mov    0x10(%rsp),%rax
+    0.00 :   109247: movzbl (%rax,%r14,1),%eax
+    0.08 :   10924c: or     %eax,%edx
+    0.00 :   10924e: inc    %r14
+    0.07 :   109251: mov    0x598(%rbp),%rax
+    0.17 :   109258: cmp    $0xb,%rax
+    0.01 :   10925c: ja     10b90d <zipper::lzma::decode_symbols+0x2b9d>
+    0.00 :   109262: mov    %r13d,%ecx
+    0.00 :   109265: shr    $0xb,%ecx
+    0.00 :   109268: movzwl 0x198(%rbp,%rax,2),%esi
+    0.13 :   109270: imul   %esi,%ecx
+    0.12 :   109273: mov    %edx,%r15d
+    0.13 :   109276: sub    %ecx,%r15d
+    0.18 :   109279: jae    109553 <zipper::lzma::decode_symbols+0x7e3>
+    0.00 :   10927f: lea    0x1ff81f(%rsi),%r8d
+    0.12 :   109286: shr    $0x5,%r8d
+    0.00 :   10928a: sub    %r8d,%esi
+    0.00 :   10928d: mov    %si,0x198(%rbp,%rax,2)
+    0.01 :   109295: cmp    $0x1000000,%ecx
+    0.00 :   10929b: jae    1092bd <zipper::lzma::decode_symbols+0x54d>
+    0.00 :   10929d: cmp    0x8(%rsp),%r14
+    0.09 :   1092a2: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   1092a8: shl    $0x8,%ecx
+    0.00 :   1092ab: shl    $0x8,%edx
+    0.00 :   1092ae: mov    0x10(%rsp),%rax
+    0.00 :   1092b3: movzbl (%rax,%r14,1),%eax
+    0.02 :   1092b8: or     %eax,%edx
+    0.00 :   1092ba: inc    %r14
+    0.00 :   1092bd: mov    0x5b0(%rbp),%rax
+    0.02 :   1092c4: mov    %rax,0x5b8(%rbp)
+    0.10 :   1092cb: movups 0x5a0(%rbp),%xmm0
+    0.13 :   1092d2: movups %xmm0,0x5a8(%rbp)
+    0.03 :   1092d9: mov    %ecx,%r13d
+    0.04 :   1092dc: shr    $0xb,%r13d
+    0.00 :   1092e0: movzwl 0x9d4(%rbp),%eax
+    0.00 :   1092e7: imul   %eax,%r13d
+    0.58 :   1092eb: mov    %edx,%esi
+    0.01 :   1092ed: sub    %r13d,%esi
+    0.00 :   1092f0: jae    109a55 <zipper::lzma::decode_symbols+0xce5>
+    0.04 :   1092f6: lea    0x1ff81f(%rax),%ecx
+    1.27 :   1092fc: shr    $0x5,%ecx
+    0.10 :   1092ff: sub    %ecx,%eax
+    0.00 :   109301: mov    %ax,0x9d4(%rbp)
+    0.08 :   109308: cmp    $0x1000000,%r13d
+    0.00 :   10930f: jae    109332 <zipper::lzma::decode_symbols+0x5c2>
+    0.00 :   109311: cmp    0x8(%rsp),%r14
+    0.09 :   109316: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10931c: shl    $0x8,%r13d
+    0.00 :   109320: shl    $0x8,%edx
+    0.00 :   109323: mov    0x10(%rsp),%rax
+    0.00 :   109328: movzbl (%rax,%r14,1),%eax
+    0.02 :   10932d: or     %eax,%edx
+    0.00 :   10932f: inc    %r14
+    0.03 :   109332: shl    $0x4,%rdi
+    0.10 :   109336: mov    0xa0(%rsp),%r8
+    0.30 :   10933e: movzwl 0x2(%r8,%rdi,1),%ecx
+    0.54 :   109344: movzwl 0x4(%r8,%rdi,1),%eax
+    0.01 :   10934a: mov    %r13d,%r10d
+    0.01 :   10934d: shr    $0xb,%r10d
+    0.00 :   109351: imul   %ecx,%r10d
+    0.07 :   109355: sub    %r10d,%r13d
+    0.00 :   109358: lea    0x1ff81f(%rcx),%r9d
+    0.00 :   10935f: cmp    %r10d,%edx
+    0.00 :   109362: cmovb  %r10d,%r13d
+    0.01 :   109366: mov    $0x0,%esi
+    0.05 :   10936b: cmovae %r10d,%esi
+    0.02 :   10936f: cmovae %ecx,%r9d
+    0.00 :   109373: movzwl 0x6(%r8,%rdi,1),%r11d
+    0.02 :   109379: mov    %edx,%r8d
+    0.00 :   10937c: sub    %esi,%r8d
+    0.00 :   10937f: cmp    $0xffffff,%r13d
+    0.00 :   109386: ja     1093ab <zipper::lzma::decode_symbols+0x63b>
+    0.00 :   109388: cmp    0x8(%rsp),%r14
+    0.14 :   10938d: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   109393: shl    $0x8,%r13d
+    0.00 :   109397: shl    $0x8,%r8d
+    0.01 :   10939b: mov    0x10(%rsp),%rsi
+    0.00 :   1093a0: movzbl (%rsi,%r14,1),%esi
+    0.05 :   1093a5: or     %esi,%r8d
+    0.00 :   1093a8: inc    %r14
+    0.05 :   1093ab: add    0xa0(%rsp),%rdi
+    0.04 :   1093b3: cmp    %r10d,%edx
+    0.00 :   1093b6: mov    $0x2,%esi
+    0.06 :   1093bb: sbb    $0xffffffffffffffff,%rsi
+    0.00 :   1093bf: cmp    %r10d,%edx
+    0.00 :   1093c2: cmovae %r11d,%eax
+    0.00 :   1093c6: shr    $0x5,%r9d
+    0.02 :   1093ca: sub    %r9d,%ecx
+    0.01 :   1093cd: mov    %cx,0x2(%rdi)
+    0.12 :   1093d1: lea    0x0(,%rsi,4),%r9d
+    0.00 :   1093d9: movzwl (%rdi,%r9,1),%ecx
+    0.29 :   1093de: mov    %r13d,%edx
+    0.01 :   1093e1: shr    $0xb,%edx
+    0.00 :   1093e4: movzwl %ax,%r11d
+    0.00 :   1093e8: imul   %r11d,%edx
+    0.01 :   1093ec: sub    %edx,%r13d
+    0.00 :   1093ef: lea    0x1ff81f(%r11),%r10d
+    0.00 :   1093f6: cmp    %edx,%r8d
+    0.00 :   1093f9: cmovb  %edx,%r13d
+    0.02 :   1093fd: mov    $0x0,%ebx
+    0.13 :   109402: cmovae %edx,%ebx
+    0.01 :   109405: cmovae %r11d,%r10d
+    0.00 :   109409: movzwl 0x2(%rdi,%r9,1),%r11d
+    0.00 :   10940f: mov    %r8d,%r9d
+    0.00 :   109412: sub    %ebx,%r9d
+    0.00 :   109415: cmp    $0xffffff,%r13d
+    0.00 :   10941c: ja     109441 <zipper::lzma::decode_symbols+0x6d1>
+    0.00 :   10941e: cmp    0x8(%rsp),%r14
+    0.15 :   109423: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   109429: shl    $0x8,%r13d
+    0.00 :   10942d: shl    $0x8,%r9d
+    0.01 :   109431: mov    0x10(%rsp),%rbx
+    0.00 :   109436: movzbl (%rbx,%r14,1),%ebx
+    0.04 :   10943b: or     %ebx,%r9d
+    0.00 :   10943e: inc    %r14
+    0.00 :   109441: shr    $0x5,%r10d
+    0.00 :   109445: sub    %r10d,%eax
+    0.00 :   109448: xor    %r10d,%r10d
+    0.40 :   10944b: cmp    %edx,%r8d
+    0.00 :   10944e: cmovae %r11d,%ecx
+    0.00 :   109452: setae  %bl
+    0.00 :   109455: mov    %r13d,%r8d
+    0.01 :   109458: shr    $0xb,%r8d
+    0.00 :   10945c: movzwl %cx,%edx
+    0.05 :   10945f: imul   %edx,%r8d
+    0.02 :   109463: sub    %r8d,%r13d
+    0.00 :   109466: lea    0x1ff81f(%rdx),%r11d
+    0.10 :   10946d: cmp    %r8d,%r9d
+    0.00 :   109470: cmovb  %r8d,%r13d
+    0.00 :   109474: cmovae %edx,%r11d
+    0.00 :   109478: mov    $0x0,%ebp
+    0.00 :   10947d: cmovae %r8d,%ebp
+    0.00 :   109481: mov    %ax,(%rdi,%rsi,2)
+    0.00 :   109485: mov    %r9d,%edx
+    0.07 :   109488: sub    %ebp,%edx
+    0.00 :   10948a: cmp    $0xffffff,%r13d
+    0.00 :   109491: ja     10a290 <zipper::lzma::decode_symbols+0x1520>
+    0.00 :   109497: cmp    0x8(%rsp),%r14
+    0.09 :   10949c: mov    0x18(%rsp),%r15
+    0.01 :   1094a1: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.01 :   1094a7: shl    $0x8,%r13d
+    0.00 :   1094ab: shl    $0x8,%edx
+    0.00 :   1094ae: mov    0x10(%rsp),%rax
+    0.00 :   1094b3: movzbl (%rax,%r14,1),%eax
+    0.04 :   1094b8: or     %eax,%edx
+    0.00 :   1094ba: inc    %r14
+    0.00 :   1094bd: jmp    10a295 <zipper::lzma::decode_symbols+0x1525>
+    0.00 :   1094c2: mov    %r15d,%r8d
+    0.06 :   1094c5: movzbl 0x5cc(%rbp),%ecx
+    0.25 :   1094cc: mov    $0xffffffffffffffff,%rdx
+    0.04 :   1094d3: shl    %cl,%rdx
+    0.08 :   1094d6: movzbl 0x5c8(%rbp),%ecx
+    0.21 :   1094dd: not    %rdx
+    0.00 :   1094e0: and    %r11,%rdx
+    0.03 :   1094e3: shl    %cl,%rdx
+    0.02 :   1094e6: movzbl 0x31(%r10),%r15d
+    0.05 :   1094eb: mov    $0x8,%al
+    0.01 :   1094ed: sub    %cl,%al
+    0.03 :   1094ef: mov    %eax,%ecx
+    0.13 :   1094f1: shr    %cl,%r15
+    0.08 :   1094f4: add    %rdx,%r15
+    0.04 :   1094f7: mov    0x10(%rbp),%rsi
+    0.01 :   1094fb: cmp    %rsi,%r15
+    0.07 :   1094fe: jae    10b8f0 <zipper::lzma::decode_symbols+0x2b80>
+    0.00 :   109504: shl    $0xb,%r15
+    0.02 :   109508: add    0x8(%rbp),%r15
+    0.05 :   10950c: mov    0x598(%rbp),%rax
+    0.01 :   109513: mov    %rax,0x80(%rsp)
+    0.06 :   10951b: cmp    $0x6,%rax
+    0.01 :   10951f: mov    %r15,0x38(%rsp)
+    0.04 :   109524: mov    %r11,0xc8(%rsp)
+    0.00 :   10952c: jbe    109707 <zipper::lzma::decode_symbols+0x997>
+    0.00 :   109532: mov    0x5a0(%rbp),%rcx
+    0.01 :   109539: lea    0x1(%rcx),%rax
+    0.00 :   10953d: mov    0x20(%r10),%rdx
+    0.00 :   109541: cmp    %rdx,%rax
+    0.01 :   109544: jbe    109852 <zipper::lzma::decode_symbols+0xae2>
+    0.00 :   10954a: mov    0x18(%r10),%rax
+    0.00 :   10954e: jmp    109854 <zipper::lzma::decode_symbols+0xae4>
+    0.00 :   109553: sub    %ecx,%r13d
+    0.23 :   109556: mov    %esi,%ecx
+    0.02 :   109558: shr    $0x5,%ecx
+    0.00 :   10955b: sub    %ecx,%esi
+    0.00 :   10955d: mov    %si,0x198(%rbp,%rax,2)
+    0.01 :   109565: cmp    $0x1000000,%r13d
+    0.07 :   10956c: jae    109591 <zipper::lzma::decode_symbols+0x821>
+    0.00 :   10956e: cmp    0x8(%rsp),%r14
+    0.07 :   109573: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.02 :   109579: shl    $0x8,%r13d
+    0.00 :   10957d: shl    $0x8,%r15d
+    0.00 :   109581: mov    0x10(%rsp),%rax
+    0.02 :   109586: movzbl (%rax,%r14,1),%eax
+    0.03 :   10958b: or     %eax,%r15d
+    0.00 :   10958e: inc    %r14
+    0.00 :   109591: test   %r11,%r11
+    0.09 :   109594: je     10b7d2 <zipper::lzma::decode_symbols+0x2a62>
+    0.00 :   10959a: mov    0x598(%rbp),%rax
+    0.01 :   1095a1: cmp    $0xb,%rax
+    0.01 :   1095a5: ja     10b94c <zipper::lzma::decode_symbols+0x2bdc>
+    0.00 :   1095ab: mov    %r13d,%ecx
+    0.00 :   1095ae: shr    $0xb,%ecx
+    0.00 :   1095b1: movzwl 0x1b0(%rbp,%rax,2),%esi
+    0.02 :   1095b9: imul   %esi,%ecx
+    0.01 :   1095bc: mov    %r15d,%edx
+    0.00 :   1095bf: sub    %ecx,%edx
+    0.05 :   1095c1: jae    109d18 <zipper::lzma::decode_symbols+0xfa8>
+    0.00 :   1095c7: lea    0x1ff81f(%rsi),%edx
+    0.00 :   1095cd: shr    $0x5,%edx
+    0.01 :   1095d0: sub    %edx,%esi
+    0.00 :   1095d2: mov    %si,0x1b0(%rbp,%rax,2)
+    0.02 :   1095da: cmp    $0x1000000,%ecx
+    0.00 :   1095e0: jae    109604 <zipper::lzma::decode_symbols+0x894>
+    0.00 :   1095e2: cmp    0x8(%rsp),%r14
+    0.00 :   1095e7: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   1095ed: shl    $0x8,%ecx
+    0.00 :   1095f0: shl    $0x8,%r15d
+    0.00 :   1095f4: mov    0x10(%rsp),%rax
+    0.00 :   1095f9: movzbl (%rax,%r14,1),%eax
+    0.00 :   1095fe: or     %eax,%r15d
+    0.00 :   109601: inc    %r14
+    0.00 :   109604: mov    0x598(%rbp),%rax
+    0.00 :   10960b: cmp    $0xc,%rax
+    0.00 :   10960f: jae    10b976 <zipper::lzma::decode_symbols+0x2c06>
+    0.00 :   109615: shl    $0x5,%rax
+    0.11 :   109619: add    0xb8(%rsp),%rax
+    0.00 :   109621: mov    %ecx,%r13d
+    0.00 :   109624: shr    $0xb,%r13d
+    0.00 :   109628: movzwl (%rax,%rdi,2),%esi
+    0.01 :   10962c: imul   %esi,%r13d
+    0.00 :   109630: mov    %r15d,%edx
+    0.01 :   109633: sub    %r13d,%edx
+    0.01 :   109636: jae    10a2c9 <zipper::lzma::decode_symbols+0x1559>
+    0.00 :   10963c: lea    0x1ff81f(%rsi),%ecx
+    0.01 :   109642: shr    $0x5,%ecx
+    0.00 :   109645: sub    %ecx,%esi
+    0.00 :   109647: mov    %si,(%rax,%rdi,2)
+    0.00 :   10964b: cmp    $0x1000000,%r13d
+    0.00 :   109652: jae    109677 <zipper::lzma::decode_symbols+0x907>
+    0.00 :   109654: cmp    0x8(%rsp),%r14
+    0.01 :   109659: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10965f: shl    $0x8,%r13d
+    0.00 :   109663: shl    $0x8,%r15d
+    0.00 :   109667: mov    0x10(%rsp),%rax
+    0.00 :   10966c: movzbl (%rax,%r14,1),%eax
+    0.00 :   109671: or     %eax,%r15d
+    0.00 :   109674: inc    %r14
+    0.00 :   109677: mov    0x5a0(%rbp),%rdi
+    0.00 :   10967e: xor    %eax,%eax
+    0.00 :   109680: cmpq   $0x7,0x598(%rbp)
+    0.01 :   109688: setae  %al
+    0.00 :   10968b: lea    0x9(%rax,%rax,1),%rax
+    0.00 :   109690: mov    %rax,0x598(%rbp)
+    0.00 :   109697: lea    0x1(%rdi),%rcx
+    0.00 :   10969b: mov    0x20(%r10),%rax
+    0.00 :   10969f: cmp    %rax,%rcx
+    0.00 :   1096a2: mov    0x18(%r10),%rcx
+    0.00 :   1096a6: mov    $0x0,%edx
+    0.00 :   1096ab: cmova  %rcx,%rdx
+    0.00 :   1096af: not    %rdi
+    0.02 :   1096b2: add    %rax,%rdi
+    0.00 :   1096b5: add    %rdx,%rdi
+    0.00 :   1096b8: mov    0x10(%r10),%rsi
+    0.00 :   1096bc: cmp    %rsi,%rdi
+    0.00 :   1096bf: jae    10b9ca <zipper::lzma::decode_symbols+0x2c5a>
+    0.00 :   1096c5: cmp    %rsi,%rax
+    0.00 :   1096c8: jae    10b9d7 <zipper::lzma::decode_symbols+0x2c67>
+    0.00 :   1096ce: mov    0x8(%r10),%rdx
+    0.00 :   1096d2: movzbl (%rdx,%rdi,1),%esi
+    0.01 :   1096d6: mov    %sil,(%rdx,%rax,1)
+    0.00 :   1096da: mov    %sil,0x31(%r10)
+    0.00 :   1096de: inc    %rax
+    0.00 :   1096e1: mov    %rax,0x20(%r10)
+    0.00 :   1096e5: inc    %r11
+    0.00 :   1096e8: mov    %r11,0x28(%r10)
+    0.00 :   1096ec: cmp    %rcx,%rax
+    0.00 :   1096ef: jne    109d11 <zipper::lzma::decode_symbols+0xfa1>
+    0.00 :   1096f5: movq   $0x0,0x20(%r10)
+    0.00 :   1096fd: movb   $0x1,0x30(%r10)
+    0.00 :   109702: jmp    109d11 <zipper::lzma::decode_symbols+0xfa1>
+    0.00 :   109707: movzwl 0x2(%r15),%ecx
+    0.56 :   10970c: mov    $0x1,%eax
+    0.00 :   109711: mov    %r8d,%esi
+    0.00 :   109714: jmp    10974e <zipper::lzma::decode_symbols+0x9de>
+    0.00 :   109716: cs nopw 0x0(%rax,%rax,1)
+    0.00 :   109720: lea    (%r9,%r9,1),%rdi
+    0.25 :   109724: shr    $0x5,%eax
+    0.26 :   109727: sub    %eax,%ecx
+    0.01 :   109729: xor    %eax,%eax
+    0.28 :   10972b: cmp    %edx,%r15d
+    0.05 :   10972e: mov    0x38(%rsp),%r15
+    0.14 :   109733: mov    %cx,(%r15,%r9,2)
+    0.56 :   109738: mov    %r11d,%ecx
+    0.11 :   10973b: cmovae %r10d,%ecx
+    0.20 :   10973f: setae  %al
+    0.50 :   109742: or     %rdi,%rax
+    0.00 :   109745: mov    %esi,%r8d
+    0.56 :   109748: cmp    $0x40,%r9
+    0.26 :   10974c: jae    1097ba <zipper::lzma::decode_symbols+0xa4a>
+    0.00 :   10974e: mov    %rax,%r9
+    0.49 :   109751: movzwl (%r15,%rax,4),%r11d
+    0.88 :   109756: movzwl 0x2(%r15,%rax,4),%r10d
+    0.02 :   10975c: mov    %r13d,%edx
+    0.02 :   10975f: shr    $0xb,%edx
+    0.00 :   109762: movzwl %cx,%edi
+    0.59 :   109765: imul   %edi,%edx
+    0.14 :   109768: sub    %edx,%r13d
+    0.00 :   10976b: mov    %r8d,%r15d
+    0.03 :   10976e: cmp    %edx,%r8d
+    0.09 :   109771: cmovb  %edx,%r13d
+    0.34 :   109775: lea    0x1ff81f(%rdi),%eax
+    0.03 :   10977b: mov    $0x0,%r8d
+    0.07 :   109781: cmovae %edx,%r8d
+    0.38 :   109785: cmovae %edi,%eax
+    0.15 :   109788: sub    %r8d,%esi
+    0.03 :   10978b: cmp    $0xffffff,%r13d
+    0.07 :   109792: ja     109720 <zipper::lzma::decode_symbols+0x9b0>
+    0.00 :   109794: cmp    0x8(%rsp),%r14
+    0.59 :   109799: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10979f: shl    $0x8,%r13d
+    0.02 :   1097a3: shl    $0x8,%esi
+    0.01 :   1097a6: mov    0x10(%rsp),%rdi
+    0.00 :   1097ab: movzbl (%rdi,%r14,1),%edi
+    0.12 :   1097b0: or     %edi,%esi
+    0.00 :   1097b2: inc    %r14
+    0.00 :   1097b5: jmp    109720 <zipper::lzma::decode_symbols+0x9b0>
+    0.00 :   1097ba: mov    %r13d,%edx
+    0.03 :   1097bd: shr    $0xb,%edx
+    0.00 :   1097c0: movzwl %cx,%edi
+    0.19 :   1097c3: imul   %edi,%edx
+    0.04 :   1097c6: sub    %edx,%r13d
+    0.00 :   1097c9: lea    0x1ff81f(%rdi),%r8d
+    0.04 :   1097d0: cmp    %edx,%esi
+    0.00 :   1097d2: cmovb  %edx,%r13d
+    0.01 :   1097d6: mov    $0x0,%r10d
+    0.01 :   1097dc: cmovae %edx,%r10d
+    0.01 :   1097e0: cmovae %edi,%r8d
+    0.13 :   1097e4: mov    %esi,%edi
+    0.00 :   1097e6: sub    %r10d,%edi
+    0.00 :   1097e9: mov    %edi,%r11d
+    0.00 :   1097ec: cmp    $0xffffff,%r13d
+    0.04 :   1097f3: ja     109818 <zipper::lzma::decode_symbols+0xaa8>
+    0.00 :   1097f5: cmp    0x8(%rsp),%r14
+    0.13 :   1097fa: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   109800: shl    $0x8,%r13d
+    0.01 :   109804: shl    $0x8,%r11d
+    0.00 :   109808: mov    0x10(%rsp),%rdi
+    0.00 :   10980d: movzbl (%rdi,%r14,1),%edi
+    0.04 :   109812: or     %edi,%r11d
+    0.00 :   109815: inc    %r14
+    0.00 :   109818: mov    0x40(%rsp),%r10
+    0.06 :   10981d: cmp    $0x80,%r9
+    0.03 :   109824: jae    10b922 <zipper::lzma::decode_symbols+0x2bb2>
+    0.00 :   10982a: xor    %edi,%edi
+    0.02 :   10982c: cmp    %edx,%esi
+    0.01 :   10982e: setae  %dil
+    0.07 :   109832: shr    $0x5,%r8d
+    0.05 :   109836: sub    %r8d,%ecx
+    0.02 :   109839: mov    %cx,(%r15,%rax,2)
+    0.13 :   10983e: lea    (%rdi,%rax,2),%rax
+    0.00 :   109842: mov    0x10(%r10),%rsi
+    0.00 :   109846: mov    0x20(%r10),%rdi
+    0.01 :   10984a: mov    %r11d,%r15d
+    0.00 :   10984d: jmp    109cab <zipper::lzma::decode_symbols+0xf3b>
+    0.00 :   109852: xor    %eax,%eax
+    0.00 :   109854: mov    %r14,0x28(%rsp)
+    0.04 :   109859: mov    0x10(%r10),%rsi
+    0.00 :   10985d: not    %rcx
+    0.00 :   109860: mov    %rdx,0x78(%rsp)
+    0.00 :   109865: add    %rdx,%rcx
+    0.00 :   109868: add    %rax,%rcx
+    0.00 :   10986b: mov    %rsi,0x68(%rsp)
+    0.00 :   109870: cmp    %rsi,%rcx
+    0.16 :   109873: jae    10b937 <zipper::lzma::decode_symbols+0x2bc7>
+    0.00 :   109879: mov    0x8(%r10),%rax
+    0.06 :   10987d: movzbl (%rax,%rcx,1),%ebx
+    0.02 :   109881: add    %ebx,%ebx
+    0.21 :   109883: mov    %ebx,%eax
+    0.00 :   109885: and    $0x100,%eax
+    0.00 :   10988a: movzwl 0x202(%r15,%rax,2),%ecx
+    0.24 :   109893: add    $0x101,%rax
+    0.00 :   109899: mov    $0x100,%r14d
+    0.00 :   10989f: mov    $0x1,%edx
+    0.00 :   1098a4: mov    %r8d,%r9d
+    0.00 :   1098a7: jmp    109913 <zipper::lzma::decode_symbols+0xba3>
+    0.00 :   1098a9: nopl   0x0(%rax)
+    0.00 :   1098b0: mov    %esi,%r15d
+    0.13 :   1098b3: mov    %r9d,%esi
+    0.05 :   1098b6: cmp    %r8d,%r12d
+    0.11 :   1098b9: mov    $0x0,%edi
+    0.13 :   1098be: sbb    %rdi,%rdi
+    0.04 :   1098c1: xor    %r9d,%r9d
+    0.05 :   1098c4: cmp    %r8d,%r12d
+    0.03 :   1098c7: cmovae %rbp,%r11
+    0.01 :   1098cb: mov    %ecx,%r8d
+    0.10 :   1098ce: mov    %r15d,%ecx
+    0.03 :   1098d1: cmovae %eax,%ecx
+    0.08 :   1098d4: setae  %r9b
+    0.09 :   1098d8: shr    $0x5,%edx
+    0.08 :   1098db: sub    %edx,%r8d
+    0.02 :   1098de: mov    0x38(%rsp),%r15
+    0.10 :   1098e3: mov    0x58(%rsp),%rax
+    0.01 :   1098e8: mov    %r8w,(%r15,%rax,2)
+    0.18 :   1098ed: or     %r9,%r10
+    0.13 :   1098f0: xor    %rdi,%rbx
+    0.01 :   1098f3: and    %rbx,%r14
+    0.07 :   1098f6: mov    0x50(%rsp),%rbx
+    0.06 :   1098fb: mov    %r11,%rax
+    0.00 :   1098fe: mov    %esi,%r8d
+    0.08 :   109901: cmpq   $0x40,0x30(%rsp)
+    0.00 :   109907: mov    %r10,%rdx
+    0.12 :   10990a: mov    %esi,%r9d
+    0.08 :   10990d: jae    1099dc <zipper::lzma::decode_symbols+0xc6c>
+    0.05 :   109913: mov    %rax,0x58(%rsp)
+    0.08 :   109918: lea    (%rbx,%rbx,1),%rax
+    0.06 :   10991c: mov    %rax,0x50(%rsp)
+    0.08 :   109921: and    %r14d,%eax
+    0.05 :   109924: add    %r14d,%eax
+    0.00 :   109927: mov    %rdx,0x30(%rsp)
+    0.16 :   10992c: lea    (%rdx,%rdx,1),%r10
+    0.11 :   109930: test   %rbx,%r14
+    0.03 :   109933: mov    $0x0,%edx
+    0.06 :   109938: cmove  %eax,%edx
+    0.13 :   10993b: mov    $0x0,%esi
+    0.14 :   109940: cmove  %esi,%eax
+    0.09 :   109943: lea    (%r10,%rdx,1),%r11d
+    0.07 :   109947: and    $0x3ff,%r11d
+    0.16 :   10994e: lea    (%rax,%r10,1),%ebp
+    0.11 :   109952: inc    %ebp
+    0.04 :   109954: and    $0x3ff,%ebp
+    0.01 :   10995a: mov    %r8d,%esi
+    0.06 :   10995d: mov    %r13d,%r8d
+    0.14 :   109960: shr    $0xb,%r8d
+    0.00 :   109964: movzwl %cx,%eax
+    0.05 :   109967: imul   %eax,%r8d
+    0.09 :   10996b: sub    %r8d,%r13d
+    0.01 :   10996e: lea    0x1ff81f(%rax),%edx
+    0.28 :   109974: mov    %esi,%r12d
+    0.16 :   109977: cmp    %r8d,%esi
+    0.07 :   10997a: cmovb  %r8d,%r13d
+    0.30 :   10997e: mov    $0x0,%edi
+    0.10 :   109983: cmovae %r8d,%edi
+    0.22 :   109987: cmovae %eax,%edx
+    0.39 :   10998a: movzwl (%r15,%r11,2),%esi
+    0.01 :   10998f: sub    %edi,%r9d
+    0.05 :   109992: movzwl (%r15,%rbp,2),%eax
+    0.12 :   109997: cmp    $0xffffff,%r13d
+    0.01 :   10999e: ja     1098b0 <zipper::lzma::decode_symbols+0xb40>
+    0.00 :   1099a4: mov    0x28(%rsp),%rdi
+    0.51 :   1099a9: cmp    0x8(%rsp),%rdi
+    0.00 :   1099ae: jae    10b8b7 <zipper::lzma::decode_symbols+0x2b47>
+    0.00 :   1099b4: mov    %esi,%r15d
+    0.00 :   1099b7: shl    $0x8,%r13d
+    0.00 :   1099bb: shl    $0x8,%r9d
+    0.00 :   1099bf: mov    %r9d,%esi
+    0.01 :   1099c2: mov    0x10(%rsp),%r9
+    0.00 :   1099c7: movzbl (%r9,%rdi,1),%r9d
+    0.12 :   1099cc: or     %r9d,%esi
+    0.00 :   1099cf: inc    %rdi
+    0.00 :   1099d2: mov    %rdi,0x28(%rsp)
+    0.00 :   1099d7: jmp    1098b6 <zipper::lzma::decode_symbols+0xb46>
+    0.00 :   1099dc: mov    %r13d,%eax
+    0.05 :   1099df: shr    $0xb,%eax
+    0.00 :   1099e2: movzwl %cx,%esi
+    0.03 :   1099e5: imul   %esi,%eax
+    0.01 :   1099e8: sub    %eax,%r13d
+    0.00 :   1099eb: lea    0x1ff81f(%rsi),%edx
+    0.00 :   1099f1: cmp    %eax,%r9d
+    0.01 :   1099f4: cmovb  %eax,%r13d
+    0.00 :   1099f8: mov    $0x0,%edi
+    0.01 :   1099fd: cmovae %eax,%edi
+    0.04 :   109a00: cmovae %esi,%edx
+    0.03 :   109a03: mov    %r9d,%ebp
+    0.02 :   109a06: mov    %r9d,%r15d
+    0.00 :   109a09: sub    %edi,%r15d
+    0.00 :   109a0c: cmp    $0xffffff,%r13d
+    0.00 :   109a13: mov    0x20(%rsp),%rbx
+    0.02 :   109a18: ja     109c72 <zipper::lzma::decode_symbols+0xf02>
+    0.00 :   109a1e: mov    0x28(%rsp),%r14
+    0.07 :   109a23: cmp    0x8(%rsp),%r14
+    0.00 :   109a28: mov    0x48(%rsp),%r12
+    0.00 :   109a2d: mov    0x38(%rsp),%rdi
+    0.00 :   109a32: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.01 :   109a38: shl    $0x8,%r13d
+    0.00 :   109a3c: shl    $0x8,%r15d
+    0.00 :   109a40: mov    0x10(%rsp),%rsi
+    0.00 :   109a45: movzbl (%rsi,%r14,1),%esi
+    0.00 :   109a4a: or     %esi,%r15d
+    0.00 :   109a4d: inc    %r14
+    0.00 :   109a50: jmp    109c81 <zipper::lzma::decode_symbols+0xf11>
+    0.04 :   109a55: sub    %r13d,%ecx
+    0.39 :   109a58: mov    %eax,%edx
+    0.05 :   109a5a: shr    $0x5,%edx
+    0.00 :   109a5d: sub    %edx,%eax
+    0.00 :   109a5f: mov    %ax,0x9d4(%rbp)
+    0.05 :   109a66: cmp    $0x1000000,%ecx
+    0.01 :   109a6c: jae    109a8e <zipper::lzma::decode_symbols+0xd1e>
+    0.00 :   109a6e: cmp    0x8(%rsp),%r14
+    0.16 :   109a73: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   109a79: shl    $0x8,%ecx
+    0.00 :   109a7c: shl    $0x8,%esi
+    0.01 :   109a7f: mov    0x10(%rsp),%rax
+    0.00 :   109a84: movzbl (%rax,%r14,1),%eax
+    0.03 :   109a89: or     %eax,%esi
+    0.00 :   109a8b: inc    %r14
+    0.00 :   109a8e: mov    %ecx,%r13d
+    0.22 :   109a91: shr    $0xb,%r13d
+    0.00 :   109a95: movzwl 0x9d6(%rbp),%edx
+    0.02 :   109a9c: imul   %edx,%r13d
+    0.51 :   109aa0: mov    %esi,%eax
+    0.01 :   109aa2: sub    %r13d,%eax
+    0.10 :   109aa5: jae    109dcc <zipper::lzma::decode_symbols+0x105c>
+    0.00 :   109aab: lea    0x1ff81f(%rdx),%eax
+    0.65 :   109ab1: shr    $0x5,%eax
+    0.03 :   109ab4: sub    %eax,%edx
+    0.00 :   109ab6: mov    %dx,0x9d6(%rbp)
+    0.07 :   109abd: cmp    $0x1000000,%r13d
+    0.01 :   109ac4: jae    109ae7 <zipper::lzma::decode_symbols+0xd77>
+    0.00 :   109ac6: cmp    0x8(%rsp),%r14
+    0.12 :   109acb: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   109ad1: shl    $0x8,%r13d
+    0.00 :   109ad5: shl    $0x8,%esi
+    0.00 :   109ad8: mov    0x10(%rsp),%rax
+    0.00 :   109add: movzbl (%rax,%r14,1),%eax
+    0.02 :   109ae2: or     %eax,%esi
+    0.00 :   109ae4: inc    %r14
+    0.01 :   109ae7: shl    $0x4,%rdi
+    0.03 :   109aeb: mov    0x90(%rsp),%rdx
+    0.14 :   109af3: movzwl 0x2(%rdx,%rdi,1),%ecx
+    0.34 :   109af8: movzwl 0x4(%rdx,%rdi,1),%eax
+    0.01 :   109afd: mov    %r13d,%r10d
+    0.00 :   109b00: shr    $0xb,%r10d
+    0.00 :   109b04: imul   %ecx,%r10d
+    0.05 :   109b08: sub    %r10d,%r13d
+    0.00 :   109b0b: lea    0x1ff81f(%rcx),%r9d
+    0.00 :   109b12: cmp    %r10d,%esi
+    0.00 :   109b15: cmovb  %r10d,%r13d
+    0.06 :   109b19: mov    $0x0,%r8d
+    0.03 :   109b1f: cmovae %r10d,%r8d
+    0.00 :   109b23: cmovae %ecx,%r9d
+    0.00 :   109b27: movzwl 0x6(%rdx,%rdi,1),%r11d
+    0.02 :   109b2d: mov    %esi,%edx
+    0.00 :   109b2f: sub    %r8d,%edx
+    0.00 :   109b32: cmp    $0xffffff,%r13d
+    0.00 :   109b39: ja     109b5d <zipper::lzma::decode_symbols+0xded>
+    0.00 :   109b3b: cmp    0x8(%rsp),%r14
+    0.11 :   109b40: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   109b46: shl    $0x8,%r13d
+    0.00 :   109b4a: shl    $0x8,%edx
+    0.01 :   109b4d: mov    0x10(%rsp),%r8
+    0.01 :   109b52: movzbl (%r8,%r14,1),%r8d
+    0.01 :   109b57: or     %r8d,%edx
+    0.00 :   109b5a: inc    %r14
+    0.00 :   109b5d: add    0x90(%rsp),%rdi
+    0.06 :   109b65: cmp    %r10d,%esi
+    0.00 :   109b68: mov    $0x2,%r8d
+    0.03 :   109b6e: sbb    $0xffffffffffffffff,%r8
+    0.00 :   109b72: cmp    %r10d,%esi
+    0.00 :   109b75: cmovae %r11d,%eax
+    0.02 :   109b79: shr    $0x5,%r9d
+    0.02 :   109b7d: sub    %r9d,%ecx
+    0.00 :   109b80: mov    %cx,0x2(%rdi)
+    0.04 :   109b84: lea    0x0(,%r8,4),%esi
+    0.00 :   109b8c: movzwl (%rdi,%rsi,1),%ecx
+    0.28 :   109b90: mov    %r13d,%r10d
+    0.00 :   109b93: shr    $0xb,%r10d
+    0.00 :   109b97: movzwl %ax,%r11d
+    0.00 :   109b9b: imul   %r11d,%r10d
+    0.00 :   109b9f: sub    %r10d,%r13d
+    0.00 :   109ba2: lea    0x1ff81f(%r11),%r9d
+    0.00 :   109ba9: cmp    %r10d,%edx
+    0.01 :   109bac: cmovb  %r10d,%r13d
+    0.00 :   109bb0: mov    $0x0,%ebx
+    0.17 :   109bb5: cmovae %r10d,%ebx
+    0.00 :   109bb9: cmovae %r11d,%r9d
+    0.00 :   109bbd: movzwl 0x2(%rdi,%rsi,1),%r11d
+    0.00 :   109bc3: mov    %edx,%esi
+    0.00 :   109bc5: sub    %ebx,%esi
+    0.00 :   109bc7: cmp    $0xffffff,%r13d
+    0.00 :   109bce: ja     109bf1 <zipper::lzma::decode_symbols+0xe81>
+    0.00 :   109bd0: cmp    0x8(%rsp),%r14
+    0.09 :   109bd5: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   109bdb: shl    $0x8,%r13d
+    0.00 :   109bdf: shl    $0x8,%esi
+    0.00 :   109be2: mov    0x10(%rsp),%rbx
+    0.00 :   109be7: movzbl (%rbx,%r14,1),%ebx
+    0.02 :   109bec: or     %ebx,%esi
+    0.00 :   109bee: inc    %r14
+    0.01 :   109bf1: shr    $0x5,%r9d
+    0.02 :   109bf5: sub    %r9d,%eax
+    0.00 :   109bf8: xor    %r9d,%r9d
+    0.15 :   109bfb: cmp    %r10d,%edx
+    0.00 :   109bfe: cmovae %r11d,%ecx
+    0.00 :   109c02: setae  %bl
+    0.01 :   109c05: mov    %r13d,%r10d
+    0.00 :   109c08: shr    $0xb,%r10d
+    0.00 :   109c0c: movzwl %cx,%edx
+    0.05 :   109c0f: imul   %edx,%r10d
+    0.00 :   109c13: sub    %r10d,%r13d
+    0.00 :   109c16: lea    0x1ff81f(%rdx),%r11d
+    0.04 :   109c1d: cmp    %r10d,%esi
+    0.00 :   109c20: cmovb  %r10d,%r13d
+    0.01 :   109c24: cmovae %edx,%r11d
+    0.03 :   109c28: mov    $0x0,%ebp
+    0.00 :   109c2d: cmovae %r10d,%ebp
+    0.02 :   109c31: mov    %ax,(%rdi,%r8,2)
+    0.01 :   109c36: mov    %esi,%edx
+    0.05 :   109c38: sub    %ebp,%edx
+    0.00 :   109c3a: cmp    $0xffffff,%r13d
+    0.00 :   109c41: ja     10a3c2 <zipper::lzma::decode_symbols+0x1652>
+    0.00 :   109c47: cmp    0x8(%rsp),%r14
+    0.10 :   109c4c: mov    0x18(%rsp),%r15
+    0.00 :   109c51: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.04 :   109c57: shl    $0x8,%r13d
+    0.00 :   109c5b: shl    $0x8,%edx
+    0.00 :   109c5e: mov    0x10(%rsp),%rax
+    0.00 :   109c63: movzbl (%rax,%r14,1),%eax
+    0.00 :   109c68: or     %eax,%edx
+    0.00 :   109c6a: inc    %r14
+    0.00 :   109c6d: jmp    10a3c7 <zipper::lzma::decode_symbols+0x1657>
+    0.00 :   109c72: mov    0x28(%rsp),%r14
+    0.02 :   109c77: mov    0x48(%rsp),%r12
+    0.01 :   109c7c: mov    0x38(%rsp),%rdi
+    0.00 :   109c81: xor    %esi,%esi
+    0.00 :   109c83: cmp    %eax,%ebp
+    0.01 :   109c85: setae  %sil
+    0.00 :   109c89: shr    $0x5,%edx
+    0.04 :   109c8c: sub    %edx,%ecx
+    0.00 :   109c8e: mov    %cx,(%rdi,%r11,2)
+    0.05 :   109c93: lea    (%rsi,%r10,2),%rax
+    0.01 :   109c97: mov    0x40(%rsp),%r10
+    0.00 :   109c9c: mov    0x18(%rsp),%rbp
+    0.02 :   109ca1: mov    0x78(%rsp),%rdi
+    0.00 :   109ca6: mov    0x68(%rsp),%rsi
+    0.01 :   109cab: cmp    %rsi,%rdi
+    0.02 :   109cae: mov    0xc8(%rsp),%r11
+    0.00 :   109cb6: jae    10b900 <zipper::lzma::decode_symbols+0x2b90>
+    0.07 :   109cbc: mov    0x8(%r10),%rcx
+    0.02 :   109cc0: mov    %al,(%rcx,%rdi,1)
+    0.16 :   109cc3: mov    %al,0x31(%r10)
+    0.00 :   109cc7: inc    %rdi
+    0.00 :   109cca: mov    %rdi,0x20(%r10)
+    0.00 :   109cce: inc    %r11
+    0.00 :   109cd1: mov    %r11,0x28(%r10)
+    0.00 :   109cd5: cmp    0x18(%r10),%rdi
+    0.11 :   109cd9: jne    109ce8 <zipper::lzma::decode_symbols+0xf78>
+    0.00 :   109cdb: movq   $0x0,0x20(%r10)
+    0.00 :   109ce3: movb   $0x1,0x30(%r10)
+    0.00 :   109ce8: mov    0x80(%rsp),%rax
+    0.03 :   109cf0: cmp    $0x4,%rax
+    0.10 :   109cf4: jae    109cfa <zipper::lzma::decode_symbols+0xf8a>
+    0.00 :   109cf6: xor    %eax,%eax
+    0.01 :   109cf8: jmp    109d0a <zipper::lzma::decode_symbols+0xf9a>
+    0.00 :   109cfa: cmp    $0xa,%rax
+    0.03 :   109cfe: jae    109d06 <zipper::lzma::decode_symbols+0xf96>
+    0.00 :   109d00: add    $0xfffffffffffffffd,%rax
+    0.10 :   109d04: jmp    109d0a <zipper::lzma::decode_symbols+0xf9a>
+    0.00 :   109d06: add    $0xfffffffffffffffa,%rax
+    0.03 :   109d0a: mov    %rax,0x598(%rbp)
+    0.12 :   109d11: xor    %ecx,%ecx
+    0.00 :   109d13: jmp    108ec3 <zipper::lzma::decode_symbols+0x153>
+    0.00 :   109d18: sub    %ecx,%r13d
+    0.01 :   109d1b: mov    %esi,%ecx
+    0.00 :   109d1d: shr    $0x5,%ecx
+    0.00 :   109d20: sub    %ecx,%esi
+    0.00 :   109d22: mov    %si,0x1b0(%rbp,%rax,2)
+    0.01 :   109d2a: cmp    $0x1000000,%r13d
+    0.02 :   109d31: jae    109d54 <zipper::lzma::decode_symbols+0xfe4>
+    0.00 :   109d33: cmp    0x8(%rsp),%r14
+    0.02 :   109d38: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   109d3e: shl    $0x8,%r13d
+    0.00 :   109d42: shl    $0x8,%edx
+    0.00 :   109d45: mov    0x10(%rsp),%rax
+    0.00 :   109d4a: movzbl (%rax,%r14,1),%eax
+    0.00 :   109d4f: or     %eax,%edx
+    0.00 :   109d51: inc    %r14
+    0.00 :   109d54: mov    0x598(%rbp),%rax
+    0.02 :   109d5b: cmp    $0xc,%rax
+    0.00 :   109d5f: jae    10b961 <zipper::lzma::decode_symbols+0x2bf1>
+    0.00 :   109d65: mov    %r13d,%ecx
+    0.00 :   109d68: shr    $0xb,%ecx
+    0.00 :   109d6b: movzwl 0x1c8(%rbp,%rax,2),%r8d
+    0.01 :   109d74: imul   %r8d,%ecx
+    0.01 :   109d78: mov    %edx,%esi
+    0.00 :   109d7a: sub    %ecx,%esi
+    0.00 :   109d7c: jae    10a30b <zipper::lzma::decode_symbols+0x159b>
+    0.00 :   109d82: lea    0x1ff81f(%r8),%esi
+    0.01 :   109d89: shr    $0x5,%esi
+    0.00 :   109d8c: sub    %esi,%r8d
+    0.00 :   109d8f: mov    %r8w,0x1c8(%rbp,%rax,2)
+    0.01 :   109d98: cmp    $0x1000000,%ecx
+    0.00 :   109d9e: jae    109dc0 <zipper::lzma::decode_symbols+0x1050>
+    0.00 :   109da0: cmp    0x8(%rsp),%r14
+    0.00 :   109da5: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   109dab: shl    $0x8,%ecx
+    0.00 :   109dae: shl    $0x8,%edx
+    0.00 :   109db1: mov    0x10(%rsp),%rax
+    0.00 :   109db6: movzbl (%rax,%r14,1),%eax
+    0.01 :   109dbb: or     %eax,%edx
+    0.00 :   109dbd: inc    %r14
+    0.00 :   109dc0: mov    0x5a8(%rbp),%rax
+    0.00 :   109dc7: jmp    10a9d9 <zipper::lzma::decode_symbols+0x1c69>
+    0.00 :   109dcc: sub    %r13d,%ecx
+    0.34 :   109dcf: mov    %edx,%esi
+    0.04 :   109dd1: shr    $0x5,%esi
+    0.00 :   109dd4: sub    %esi,%edx
+    0.00 :   109dd6: mov    %dx,0x9d6(%rbp)
+    0.02 :   109ddd: cmp    $0x1000000,%ecx
+    0.12 :   109de3: jae    109e05 <zipper::lzma::decode_symbols+0x1095>
+    0.00 :   109de5: cmp    0x8(%rsp),%r14
+    0.16 :   109dea: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   109df0: shl    $0x8,%ecx
+    0.00 :   109df3: shl    $0x8,%eax
+    0.00 :   109df6: mov    0x10(%rsp),%rdx
+    0.00 :   109dfb: movzbl (%rdx,%r14,1),%edx
+    0.05 :   109e00: or     %edx,%eax
+    0.00 :   109e02: inc    %r14
+    0.00 :   109e05: movzwl 0x5d6(%rbp),%edi
+    0.12 :   109e0c: movzwl 0x5d8(%rbp),%edx
+    0.00 :   109e13: mov    %ecx,%r10d
+    0.00 :   109e16: shr    $0xb,%r10d
+    0.00 :   109e1a: imul   %edi,%r10d
+    0.07 :   109e1e: sub    %r10d,%ecx
+    0.00 :   109e21: lea    0x1ff81f(%rdi),%r9d
+    0.03 :   109e28: cmp    %r10d,%eax
+    0.00 :   109e2b: cmovb  %r10d,%ecx
+    0.11 :   109e2f: mov    $0x0,%r8d
+    0.00 :   109e35: cmovae %r10d,%r8d
+    0.00 :   109e39: cmovae %edi,%r9d
+    0.00 :   109e3d: movzwl 0x5da(%rbp),%r11d
+    0.07 :   109e45: mov    %eax,%esi
+    0.00 :   109e47: sub    %r8d,%esi
+    0.00 :   109e4a: cmp    $0xffffff,%ecx
+    0.00 :   109e50: ja     109e73 <zipper::lzma::decode_symbols+0x1103>
+    0.00 :   109e52: cmp    0x8(%rsp),%r14
+    0.03 :   109e57: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   109e5d: shl    $0x8,%ecx
+    0.00 :   109e60: shl    $0x8,%esi
+    0.00 :   109e63: mov    0x10(%rsp),%r8
+    0.00 :   109e68: movzbl (%r8,%r14,1),%r8d
+    0.02 :   109e6d: or     %r8d,%esi
+    0.00 :   109e70: inc    %r14
+    0.00 :   109e73: cmp    %r10d,%eax
+    0.00 :   109e76: mov    $0x2,%r8d
+    0.03 :   109e7c: sbb    $0xffffffffffffffff,%r8
+    0.00 :   109e80: cmp    %r10d,%eax
+    0.00 :   109e83: cmovae %r11d,%edx
+    0.00 :   109e87: shr    $0x5,%r9d
+    0.05 :   109e8b: sub    %r9d,%edi
+    0.01 :   109e8e: mov    %di,0x5d6(%rbp)
+    0.06 :   109e95: lea    0x0(,%r8,4),%edi
+    0.00 :   109e9d: movzwl 0x5d4(%rbp,%rdi,1),%eax
+    0.34 :   109ea5: mov    %ecx,%r10d
+    0.00 :   109ea8: shr    $0xb,%r10d
+    0.00 :   109eac: movzwl %dx,%r11d
+    0.00 :   109eb0: imul   %r11d,%r10d
+    0.00 :   109eb4: sub    %r10d,%ecx
+    0.00 :   109eb7: lea    0x1ff81f(%r11),%r9d
+    0.00 :   109ebe: cmp    %r10d,%esi
+    0.00 :   109ec1: cmovb  %r10d,%ecx
+    0.00 :   109ec5: mov    $0x0,%ebx
+    0.07 :   109eca: cmovae %r10d,%ebx
+    0.00 :   109ece: cmovae %r11d,%r9d
+    0.00 :   109ed2: movzwl 0x5d6(%rbp,%rdi,1),%r11d
+    0.00 :   109edb: mov    %esi,%edi
+    0.00 :   109edd: sub    %ebx,%edi
+    0.00 :   109edf: cmp    $0xffffff,%ecx
+    0.00 :   109ee5: ja     109f07 <zipper::lzma::decode_symbols+0x1197>
+    0.00 :   109ee7: cmp    0x8(%rsp),%r14
+    0.12 :   109eec: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.01 :   109ef2: shl    $0x8,%ecx
+    0.00 :   109ef5: shl    $0x8,%edi
+    0.00 :   109ef8: mov    0x10(%rsp),%rbx
+    0.00 :   109efd: movzbl (%rbx,%r14,1),%ebx
+    0.01 :   109f02: or     %ebx,%edi
+    0.00 :   109f04: inc    %r14
+    0.00 :   109f07: lea    (%r8,%r8,1),%ebx
+    0.00 :   109f0b: shr    $0x5,%r9d
+    0.06 :   109f0f: sub    %r9d,%edx
+    0.00 :   109f12: xor    %r9d,%r9d
+    0.00 :   109f15: cmp    %r10d,%esi
+    0.00 :   109f18: setae  %r9b
+    0.00 :   109f1c: mov    %dx,0x5d4(%rbp,%r8,2)
+    0.06 :   109f25: cmovae %r11d,%eax
+    0.00 :   109f29: or     %rbx,%r9
+    0.00 :   109f2c: lea    (%r9,%r9,1),%edx
+    0.13 :   109f30: movzwl 0x5d4(%rbp,%rdx,2),%esi
+    0.18 :   109f38: mov    %ecx,%r10d
+    0.00 :   109f3b: shr    $0xb,%r10d
+    0.00 :   109f3f: movzwl %ax,%r8d
+    0.00 :   109f43: imul   %r8d,%r10d
+    0.00 :   109f47: sub    %r10d,%ecx
+    0.00 :   109f4a: lea    0x1ff81f(%r8),%ebx
+    0.00 :   109f51: cmp    %r10d,%edi
+    0.00 :   109f54: cmovb  %r10d,%ecx
+    0.03 :   109f58: mov    %rbp,%r11
+    0.02 :   109f5b: mov    $0x0,%ebp
+    0.00 :   109f60: cmovae %r10d,%ebp
+    0.00 :   109f64: cmovae %r8d,%ebx
+    0.01 :   109f68: movzwl 0x5d6(%r11,%rdx,2),%r11d
+    0.00 :   109f71: mov    %edi,%r8d
+    0.00 :   109f74: sub    %ebp,%r8d
+    0.00 :   109f77: cmp    $0xffffff,%ecx
+    0.00 :   109f7d: ja     109fa1 <zipper::lzma::decode_symbols+0x1231>
+    0.00 :   109f7f: cmp    0x8(%rsp),%r14
+    0.09 :   109f84: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   109f8a: shl    $0x8,%ecx
+    0.00 :   109f8d: shl    $0x8,%r8d
+    0.00 :   109f91: mov    0x10(%rsp),%r15
+    0.00 :   109f96: movzbl (%r15,%r14,1),%ebp
+    0.02 :   109f9b: or     %ebp,%r8d
+    0.00 :   109f9e: inc    %r14
+    0.00 :   109fa1: shr    $0x5,%ebx
+    0.04 :   109fa4: sub    %ebx,%eax
+    0.00 :   109fa6: xor    %ebx,%ebx
+    0.00 :   109fa8: cmp    %r10d,%edi
+    0.00 :   109fab: setae  %bl
+    0.00 :   109fae: mov    0x18(%rsp),%r15
+    0.01 :   109fb3: mov    %ax,0x5d4(%r15,%r9,2)
+    0.07 :   109fbc: cmovae %r11d,%esi
+    0.00 :   109fc0: or     %rbx,%rdx
+    0.15 :   109fc3: movzwl 0x5d4(%r15,%rdx,4),%eax
+    0.07 :   109fcc: mov    %ecx,%r10d
+    0.00 :   109fcf: shr    $0xb,%r10d
+    0.00 :   109fd3: movzwl %si,%edi
+    0.00 :   109fd6: imul   %edi,%r10d
+    0.01 :   109fda: sub    %r10d,%ecx
+    0.00 :   109fdd: lea    0x1ff81f(%rdi),%r9d
+    0.00 :   109fe4: cmp    %r10d,%r8d
+    0.00 :   109fe7: cmovb  %r10d,%ecx
+    0.06 :   109feb: mov    $0x0,%ebx
+    0.06 :   109ff0: cmovae %r10d,%ebx
+    0.00 :   109ff4: cmovae %edi,%r9d
+    0.00 :   109ff8: movzwl 0x5d6(%r15,%rdx,4),%r11d
+    0.00 :   10a001: mov    %r8d,%edi
+    0.00 :   10a004: sub    %ebx,%edi
+    0.00 :   10a006: cmp    $0xffffff,%ecx
+    0.00 :   10a00c: ja     10a02e <zipper::lzma::decode_symbols+0x12be>
+    0.00 :   10a00e: cmp    0x8(%rsp),%r14
+    0.16 :   10a013: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10a019: shl    $0x8,%ecx
+    0.00 :   10a01c: shl    $0x8,%edi
+    0.00 :   10a01f: mov    0x10(%rsp),%rbx
+    0.00 :   10a024: movzbl (%rbx,%r14,1),%ebx
+    0.04 :   10a029: or     %ebx,%edi
+    0.00 :   10a02b: inc    %r14
+    0.00 :   10a02e: lea    (%rdx,%rdx,1),%rbx
+    0.01 :   10a032: shr    $0x5,%r9d
+    0.04 :   10a036: sub    %r9d,%esi
+    0.01 :   10a039: xor    %r9d,%r9d
+    0.00 :   10a03c: cmp    %r10d,%r8d
+    0.00 :   10a03f: setae  %r9b
+    0.01 :   10a043: mov    %si,0x5d4(%r15,%rdx,2)
+    0.13 :   10a04c: cmovae %r11d,%eax
+    0.00 :   10a050: or     %rbx,%r9
+    0.00 :   10a053: movzwl 0x5d4(%r15,%r9,4),%edx
+    0.34 :   10a05c: mov    %ecx,%esi
+    0.00 :   10a05e: shr    $0xb,%esi
+    0.00 :   10a061: movzwl %ax,%r8d
+    0.00 :   10a065: imul   %r8d,%esi
+    0.00 :   10a069: sub    %esi,%ecx
+    0.00 :   10a06b: lea    0x1ff81f(%r8),%r10d
+    0.00 :   10a072: cmp    %esi,%edi
+    0.00 :   10a074: cmovb  %esi,%ecx
+    0.01 :   10a077: mov    $0x0,%ebx
+    0.09 :   10a07c: cmovae %esi,%ebx
+    0.00 :   10a07f: cmovae %r8d,%r10d
+    0.00 :   10a083: movzwl 0x5d6(%r15,%r9,4),%r11d
+    0.00 :   10a08c: mov    %edi,%r8d
+    0.00 :   10a08f: sub    %ebx,%r8d
+    0.00 :   10a092: cmp    $0xffffff,%ecx
+    0.00 :   10a098: ja     10a0bc <zipper::lzma::decode_symbols+0x134c>
+    0.00 :   10a09a: cmp    0x8(%rsp),%r14
+    0.17 :   10a09f: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10a0a5: shl    $0x8,%ecx
+    0.00 :   10a0a8: shl    $0x8,%r8d
+    0.01 :   10a0ac: mov    0x10(%rsp),%rbx
+    0.00 :   10a0b1: movzbl (%rbx,%r14,1),%ebx
+    0.02 :   10a0b6: or     %ebx,%r8d
+    0.00 :   10a0b9: inc    %r14
+    0.00 :   10a0bc: lea    (%r9,%r9,1),%rbx
+    0.03 :   10a0c0: shr    $0x5,%r10d
+    0.04 :   10a0c4: sub    %r10d,%eax
+    0.01 :   10a0c7: xor    %r10d,%r10d
+    0.00 :   10a0ca: cmp    %esi,%edi
+    0.00 :   10a0cc: setae  %r10b
+    0.00 :   10a0d0: mov    %ax,0x5d4(%r15,%r9,2)
+    0.07 :   10a0d9: cmovae %r11d,%edx
+    0.00 :   10a0dd: or     %rbx,%r10
+    0.00 :   10a0e0: movzwl 0x5d4(%r15,%r10,4),%eax
+    0.39 :   10a0e9: mov    %ecx,%edi
+    0.00 :   10a0eb: shr    $0xb,%edi
+    0.00 :   10a0ee: movzwl %dx,%r9d
+    0.00 :   10a0f2: imul   %r9d,%edi
+    0.00 :   10a0f6: sub    %edi,%ecx
+    0.00 :   10a0f8: lea    0x1ff81f(%r9),%esi
+    0.00 :   10a0ff: cmp    %edi,%r8d
+    0.00 :   10a102: cmovb  %edi,%ecx
+    0.00 :   10a105: mov    $0x0,%ebx
+    0.07 :   10a10a: cmovae %edi,%ebx
+    0.00 :   10a10d: cmovae %r9d,%esi
+    0.00 :   10a111: movzwl 0x5d6(%r15,%r10,4),%r11d
+    0.00 :   10a11a: mov    %r8d,%r9d
+    0.00 :   10a11d: sub    %ebx,%r9d
+    0.00 :   10a120: cmp    $0xffffff,%ecx
+    0.00 :   10a126: ja     10a14a <zipper::lzma::decode_symbols+0x13da>
+    0.00 :   10a128: cmp    0x8(%rsp),%r14
+    0.18 :   10a12d: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10a133: shl    $0x8,%ecx
+    0.00 :   10a136: shl    $0x8,%r9d
+    0.01 :   10a13a: mov    0x10(%rsp),%rbx
+    0.00 :   10a13f: movzbl (%rbx,%r14,1),%ebx
+    0.03 :   10a144: or     %ebx,%r9d
+    0.00 :   10a147: inc    %r14
+    0.00 :   10a14a: lea    (%r10,%r10,1),%rbx
+    0.00 :   10a14e: shr    $0x5,%esi
+    0.08 :   10a151: sub    %esi,%edx
+    0.01 :   10a153: xor    %esi,%esi
+    0.01 :   10a155: cmp    %edi,%r8d
+    0.00 :   10a158: setae  %sil
+    0.00 :   10a15c: mov    %dx,0x5d4(%r15,%r10,2)
+    0.08 :   10a165: cmovae %r11d,%eax
+    0.00 :   10a169: or     %rbx,%rsi
+    0.01 :   10a16c: movzwl 0x5d4(%r15,%rsi,4),%edi
+    0.35 :   10a175: mov    %ecx,%edx
+    0.00 :   10a177: shr    $0xb,%edx
+    0.00 :   10a17a: movzwl %ax,%r8d
+    0.00 :   10a17e: imul   %r8d,%edx
+    0.00 :   10a182: sub    %edx,%ecx
+    0.00 :   10a184: lea    0x1ff81f(%r8),%r10d
+    0.00 :   10a18b: cmp    %edx,%r9d
+    0.00 :   10a18e: cmovb  %edx,%ecx
+    0.00 :   10a191: mov    $0x0,%ebx
+    0.10 :   10a196: cmovae %edx,%ebx
+    0.00 :   10a199: cmovae %r8d,%r10d
+    0.00 :   10a19d: movzwl 0x5d6(%r15,%rsi,4),%r11d
+    0.00 :   10a1a6: mov    %r9d,%r8d
+    0.00 :   10a1a9: sub    %ebx,%r8d
+    0.00 :   10a1ac: cmp    $0xffffff,%ecx
+    0.00 :   10a1b2: ja     10a1d6 <zipper::lzma::decode_symbols+0x1466>
+    0.00 :   10a1b4: cmp    0x8(%rsp),%r14
+    0.13 :   10a1b9: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10a1bf: shl    $0x8,%ecx
+    0.00 :   10a1c2: shl    $0x8,%r8d
+    0.00 :   10a1c6: mov    0x10(%rsp),%rbx
+    0.00 :   10a1cb: movzbl (%rbx,%r14,1),%ebx
+    0.01 :   10a1d0: or     %ebx,%r8d
+    0.00 :   10a1d3: inc    %r14
+    0.00 :   10a1d6: shr    $0x5,%r10d
+    0.02 :   10a1da: sub    %r10d,%eax
+    0.01 :   10a1dd: xor    %r10d,%r10d
+    0.27 :   10a1e0: cmp    %edx,%r9d
+    0.00 :   10a1e3: cmovae %r11d,%edi
+    0.00 :   10a1e7: setae  %bl
+    0.02 :   10a1ea: mov    %ecx,%r9d
+    0.01 :   10a1ed: shr    $0xb,%r9d
+    0.00 :   10a1f1: movzwl %di,%edx
+    0.00 :   10a1f4: imul   %edx,%r9d
+    0.00 :   10a1f8: sub    %r9d,%ecx
+    0.01 :   10a1fb: lea    0x1ff81f(%rdx),%r11d
+    0.06 :   10a202: cmp    %r9d,%r8d
+    0.00 :   10a205: cmovb  %r9d,%ecx
+    0.00 :   10a209: cmovae %edx,%r11d
+    0.00 :   10a20d: mov    $0x0,%ebp
+    0.00 :   10a212: cmovae %r9d,%ebp
+    0.00 :   10a216: mov    0x18(%rsp),%rdx
+    0.01 :   10a21b: mov    %ax,0x5d4(%rdx,%rsi,2)
+    0.01 :   10a223: mov    %r8d,%edx
+    0.11 :   10a226: sub    %ebp,%edx
+    0.00 :   10a228: cmp    $0x1000000,%ecx
+    0.00 :   10a22e: jae    10a250 <zipper::lzma::decode_symbols+0x14e0>
+    0.00 :   10a230: cmp    0x8(%rsp),%r14
+    0.15 :   10a235: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10a23b: shl    $0x8,%ecx
+    0.00 :   10a23e: shl    $0x8,%edx
+    0.00 :   10a241: mov    0x10(%rsp),%rax
+    0.00 :   10a246: movzbl (%rax,%r14,1),%eax
+    0.01 :   10a24b: or     %eax,%edx
+    0.00 :   10a24d: inc    %r14
+    0.00 :   10a250: mov    0x18(%rsp),%r15
+    0.02 :   10a255: add    %rsi,%rsi
+    0.01 :   10a258: mov    %bl,%r10b
+    0.00 :   10a25b: or     %rsi,%r10
+    0.01 :   10a25e: xor    %eax,%eax
+    0.00 :   10a260: cmp    %r9d,%r8d
+    0.00 :   10a263: setae  %al
+    0.06 :   10a266: shr    $0x5,%r11d
+    0.00 :   10a26a: sub    %r11d,%edi
+    0.00 :   10a26d: mov    %di,0x5d4(%r15,%r10,2)
+    0.13 :   10a276: lea    -0x100(,%r10,2),%esi
+    0.00 :   10a27e: add    %rsi,%rax
+    0.00 :   10a281: add    $0x10,%rax
+    0.00 :   10a285: mov    %ecx,%r13d
+    0.00 :   10a288: mov    %rax,%rcx
+    0.00 :   10a28b: jmp    10a3f8 <zipper::lzma::decode_symbols+0x1688>
+    0.00 :   10a290: mov    0x18(%rsp),%r15
+    0.05 :   10a295: lea    (%rsi,%rsi,1),%eax
+    0.00 :   10a298: mov    %bl,%r10b
+    0.01 :   10a29b: or     %rax,%r10
+    0.00 :   10a29e: xor    %eax,%eax
+    0.00 :   10a2a0: cmp    %r8d,%r9d
+    0.00 :   10a2a3: setae  %al
+    0.11 :   10a2a6: shr    $0x5,%r11d
+    0.02 :   10a2aa: sub    %r11d,%ecx
+    0.00 :   10a2ad: lea    (%r10,%r10,1),%esi
+    0.01 :   10a2b1: mov    %cx,(%rdi,%rsi,1)
+    0.16 :   10a2b5: mov    $0xfffffff8,%ecx
+    0.01 :   10a2ba: lea    (%rcx,%r10,2),%ecx
+    0.01 :   10a2be: and    $0xfffffff6,%ecx
+    0.01 :   10a2c1: or     %rax,%rcx
+    0.00 :   10a2c4: jmp    10a3f8 <zipper::lzma::decode_symbols+0x1688>
+    0.00 :   10a2c9: sub    %r13d,%ecx
+    0.00 :   10a2cc: mov    %esi,%r8d
+    0.05 :   10a2cf: shr    $0x5,%r8d
+    0.00 :   10a2d3: sub    %r8d,%esi
+    0.00 :   10a2d6: mov    %si,(%rax,%rdi,2)
+    0.01 :   10a2da: cmp    $0x1000000,%ecx
+    0.01 :   10a2e0: jae    10a9ee <zipper::lzma::decode_symbols+0x1c7e>
+    0.00 :   10a2e6: cmp    0x8(%rsp),%r14
+    0.00 :   10a2eb: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10a2f1: shl    $0x8,%ecx
+    0.00 :   10a2f4: shl    $0x8,%edx
+    0.00 :   10a2f7: mov    0x10(%rsp),%rax
+    0.00 :   10a2fc: movzbl (%rax,%r14,1),%eax
+    0.00 :   10a301: or     %eax,%edx
+    0.00 :   10a303: inc    %r14
+    0.00 :   10a306: jmp    10a9ee <zipper::lzma::decode_symbols+0x1c7e>
+    0.00 :   10a30b: sub    %ecx,%r13d
+    0.00 :   10a30e: mov    %r8d,%ecx
+    0.00 :   10a311: shr    $0x5,%ecx
+    0.00 :   10a314: sub    %ecx,%r8d
+    0.00 :   10a317: mov    %r8w,0x1c8(%rbp,%rax,2)
+    0.01 :   10a320: cmp    $0x1000000,%r13d
+    0.00 :   10a327: jae    10a34a <zipper::lzma::decode_symbols+0x15da>
+    0.00 :   10a329: cmp    0x8(%rsp),%r14
+    0.00 :   10a32e: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10a334: shl    $0x8,%r13d
+    0.00 :   10a338: shl    $0x8,%esi
+    0.00 :   10a33b: mov    0x10(%rsp),%rax
+    0.00 :   10a340: movzbl (%rax,%r14,1),%eax
+    0.00 :   10a345: or     %eax,%esi
+    0.00 :   10a347: inc    %r14
+    0.00 :   10a34a: mov    0x598(%rbp),%rax
+    0.02 :   10a351: cmp    $0xc,%rax
+    0.00 :   10a355: jae    10b9b5 <zipper::lzma::decode_symbols+0x2c45>
+    0.00 :   10a35b: mov    %r13d,%ecx
+    0.00 :   10a35e: shr    $0xb,%ecx
+    0.00 :   10a361: movzwl 0x1e0(%rbp,%rax,2),%r8d
+    0.00 :   10a36a: imul   %r8d,%ecx
+    0.01 :   10a36e: mov    %esi,%edx
+    0.00 :   10a370: sub    %ecx,%edx
+    0.00 :   10a372: jae    10a970 <zipper::lzma::decode_symbols+0x1c00>
+    0.00 :   10a378: lea    0x1ff81f(%r8),%edx
+    0.01 :   10a37f: shr    $0x5,%edx
+    0.00 :   10a382: sub    %edx,%r8d
+    0.00 :   10a385: mov    %r8w,0x1e0(%rbp,%rax,2)
+    0.00 :   10a38e: cmp    $0x1000000,%ecx
+    0.00 :   10a394: jae    10a3b6 <zipper::lzma::decode_symbols+0x1646>
+    0.00 :   10a396: cmp    0x8(%rsp),%r14
+    0.00 :   10a39b: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10a3a1: shl    $0x8,%ecx
+    0.00 :   10a3a4: shl    $0x8,%esi
+    0.00 :   10a3a7: mov    0x10(%rsp),%rax
+    0.00 :   10a3ac: movzbl (%rax,%r14,1),%eax
+    0.00 :   10a3b1: or     %eax,%esi
+    0.00 :   10a3b3: inc    %r14
+    0.00 :   10a3b6: mov    0x5b0(%rbp),%rax
+    0.00 :   10a3bd: jmp    10a9c9 <zipper::lzma::decode_symbols+0x1c59>
+    0.00 :   10a3c2: mov    0x18(%rsp),%r15
+    0.02 :   10a3c7: lea    (%r8,%r8,1),%eax
+    0.01 :   10a3cb: mov    %bl,%r9b
+    0.00 :   10a3ce: or     %rax,%r9
+    0.00 :   10a3d1: xor    %eax,%eax
+    0.00 :   10a3d3: cmp    %r10d,%esi
+    0.00 :   10a3d6: setae  %al
+    0.03 :   10a3d9: shr    $0x5,%r11d
+    0.00 :   10a3dd: sub    %r11d,%ecx
+    0.00 :   10a3e0: lea    (%r9,%r9,1),%esi
+    0.01 :   10a3e4: mov    %cx,(%rdi,%rsi,1)
+    0.08 :   10a3e8: mov    $0xfffffff8,%ecx
+    0.00 :   10a3ed: lea    (%rcx,%r9,2),%ecx
+    0.00 :   10a3f1: or     %rax,%rcx
+    0.01 :   10a3f4: or     $0x8,%rcx
+    0.00 :   10a3f8: xor    %eax,%eax
+    0.00 :   10a3fa: cmpq   $0x7,0x598(%r15)
+    0.05 :   10a402: setae  %al
+    0.15 :   10a405: lea    (%rax,%rax,2),%rax
+    0.03 :   10a409: add    $0x7,%rax
+    0.03 :   10a40d: mov    %rax,0x598(%r15)
+    0.08 :   10a414: cmp    $0x3,%rcx
+    0.05 :   10a418: mov    $0x3,%eax
+    0.00 :   10a41d: mov    %rcx,0x50(%rsp)
+    0.01 :   10a422: cmovb  %rcx,%rax
+    0.29 :   10a426: shl    $0x7,%eax
+    0.35 :   10a429: mov    0xc0(%rsp),%rbx
+    0.04 :   10a431: movzwl 0x2(%rbx,%rax,1),%ecx
+    1.18 :   10a436: movzwl 0x4(%rbx,%rax,1),%esi
+    0.00 :   10a43b: mov    %r13d,%r10d
+    0.00 :   10a43e: shr    $0xb,%r10d
+    0.00 :   10a442: imul   %ecx,%r10d
+    0.31 :   10a446: sub    %r10d,%r13d
+    0.03 :   10a449: lea    0x1ff81f(%rcx),%r9d
+    0.00 :   10a450: cmp    %r10d,%edx
+    0.01 :   10a453: cmovb  %r10d,%r13d
+    0.14 :   10a457: mov    $0x0,%r8d
+    0.04 :   10a45d: cmovae %r10d,%r8d
+    0.00 :   10a461: cmovae %ecx,%r9d
+    0.00 :   10a465: movzwl 0x6(%rbx,%rax,1),%r11d
+    0.13 :   10a46b: mov    %edx,%edi
+    0.01 :   10a46d: sub    %r8d,%edi
+    0.00 :   10a470: cmp    $0x1000000,%r13d
+    0.00 :   10a477: jae    10a49b <zipper::lzma::decode_symbols+0x172b>
+    0.00 :   10a479: cmp    0x8(%rsp),%r14
+    0.49 :   10a47e: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.02 :   10a484: shl    $0x8,%r13d
+    0.00 :   10a488: shl    $0x8,%edi
+    0.01 :   10a48b: mov    0x10(%rsp),%r8
+    0.01 :   10a490: movzbl (%r8,%r14,1),%r8d
+    0.11 :   10a495: or     %r8d,%edi
+    0.01 :   10a498: inc    %r14
+    0.00 :   10a49b: add    %rbx,%rax
+    0.10 :   10a49e: cmp    %r10d,%edx
+    0.01 :   10a4a1: mov    $0x2,%r8d
+    0.08 :   10a4a7: sbb    $0xffffffffffffffff,%r8
+    0.00 :   10a4ab: cmp    %r10d,%edx
+    0.00 :   10a4ae: cmovae %r11d,%esi
+    0.11 :   10a4b2: shr    $0x5,%r9d
+    0.08 :   10a4b6: sub    %r9d,%ecx
+    0.00 :   10a4b9: mov    %cx,0x2(%rax)
+    0.11 :   10a4bd: lea    0x0(,%r8,4),%edx
+    0.02 :   10a4c5: movzwl (%rax,%rdx,1),%ecx
+    0.90 :   10a4c9: mov    %r13d,%r10d
+    0.00 :   10a4cc: shr    $0xb,%r10d
+    0.00 :   10a4d0: movzwl %si,%r11d
+    0.00 :   10a4d4: imul   %r11d,%r10d
+    0.01 :   10a4d8: sub    %r10d,%r13d
+    0.00 :   10a4db: lea    0x1ff81f(%r11),%r9d
+    0.00 :   10a4e2: cmp    %r10d,%edi
+    0.00 :   10a4e5: cmovb  %r10d,%r13d
+    0.01 :   10a4e9: mov    $0x0,%ebx
+    0.27 :   10a4ee: cmovae %r10d,%ebx
+    0.00 :   10a4f2: cmovae %r11d,%r9d
+    0.00 :   10a4f6: movzwl 0x2(%rax,%rdx,1),%r11d
+    0.02 :   10a4fc: mov    %edi,%edx
+    0.00 :   10a4fe: sub    %ebx,%edx
+    0.00 :   10a500: cmp    $0xffffff,%r13d
+    0.00 :   10a507: ja     10a52a <zipper::lzma::decode_symbols+0x17ba>
+    0.00 :   10a509: cmp    0x8(%rsp),%r14
+    0.30 :   10a50e: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10a514: shl    $0x8,%r13d
+    0.00 :   10a518: shl    $0x8,%edx
+    0.01 :   10a51b: mov    0x10(%rsp),%rbx
+    0.00 :   10a520: movzbl (%rbx,%r14,1),%ebx
+    0.07 :   10a525: or     %ebx,%edx
+    0.00 :   10a527: inc    %r14
+    0.01 :   10a52a: lea    (%r8,%r8,1),%ebx
+    0.04 :   10a52e: shr    $0x5,%r9d
+    0.15 :   10a532: sub    %r9d,%esi
+    0.02 :   10a535: xor    %r9d,%r9d
+    0.01 :   10a538: cmp    %r10d,%edi
+    0.00 :   10a53b: setae  %r9b
+    0.00 :   10a53f: mov    %si,(%rax,%r8,2)
+    0.17 :   10a544: cmovae %r11d,%ecx
+    0.00 :   10a548: or     %rbx,%r9
+    0.00 :   10a54b: lea    (%r9,%r9,1),%esi
+    0.30 :   10a54f: movzwl (%rax,%rsi,2),%edi
+    0.95 :   10a553: mov    %r13d,%r10d
+    0.00 :   10a556: shr    $0xb,%r10d
+    0.00 :   10a55a: movzwl %cx,%r8d
+    0.00 :   10a55e: imul   %r8d,%r10d
+    0.00 :   10a562: sub    %r10d,%r13d
+    0.00 :   10a565: lea    0x1ff81f(%r8),%ebx
+    0.00 :   10a56c: cmp    %r10d,%edx
+    0.00 :   10a56f: cmovb  %r10d,%r13d
+    0.03 :   10a573: mov    $0x0,%ebp
+    0.26 :   10a578: cmovae %r10d,%ebp
+    0.00 :   10a57c: cmovae %r8d,%ebx
+    0.00 :   10a580: movzwl 0x2(%rax,%rsi,2),%r11d
+    0.00 :   10a586: mov    %edx,%r8d
+    0.00 :   10a589: sub    %ebp,%r8d
+    0.00 :   10a58c: cmp    $0xffffff,%r13d
+    0.00 :   10a593: ja     10a5b8 <zipper::lzma::decode_symbols+0x1848>
+    0.00 :   10a595: cmp    0x8(%rsp),%r14
+    0.41 :   10a59a: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10a5a0: shl    $0x8,%r13d
+    0.00 :   10a5a4: shl    $0x8,%r8d
+    0.00 :   10a5a8: mov    0x10(%rsp),%r15
+    0.00 :   10a5ad: movzbl (%r15,%r14,1),%ebp
+    0.10 :   10a5b2: or     %ebp,%r8d
+    0.00 :   10a5b5: inc    %r14
+    0.02 :   10a5b8: shr    $0x5,%ebx
+    0.21 :   10a5bb: sub    %ebx,%ecx
+    0.00 :   10a5bd: xor    %ebx,%ebx
+    0.20 :   10a5bf: cmp    %r10d,%edx
+    0.00 :   10a5c2: setae  %bl
+    0.01 :   10a5c5: mov    %cx,(%rax,%r9,2)
+    0.10 :   10a5ca: cmovae %r11d,%edi
+    0.00 :   10a5ce: or     %rbx,%rsi
+    0.00 :   10a5d1: movzwl (%rax,%rsi,4),%ecx
+    1.02 :   10a5d5: mov    %r13d,%r10d
+    0.00 :   10a5d8: shr    $0xb,%r10d
+    0.00 :   10a5dc: movzwl %di,%r9d
+    0.00 :   10a5e0: imul   %r9d,%r10d
+    0.00 :   10a5e4: sub    %r10d,%r13d
+    0.00 :   10a5e7: lea    0x1ff81f(%r9),%edx
+    0.00 :   10a5ee: cmp    %r10d,%r8d
+    0.00 :   10a5f1: cmovb  %r10d,%r13d
+    0.00 :   10a5f5: mov    $0x0,%ebx
+    0.33 :   10a5fa: cmovae %r10d,%ebx
+    0.00 :   10a5fe: cmovae %r9d,%edx
+    0.00 :   10a602: movzwl 0x2(%rax,%rsi,4),%r11d
+    0.00 :   10a608: mov    %r8d,%r9d
+    0.00 :   10a60b: sub    %ebx,%r9d
+    0.00 :   10a60e: cmp    $0xffffff,%r13d
+    0.00 :   10a615: mov    0x48(%rsp),%r12
+    0.00 :   10a61a: mov    0x18(%rsp),%rbp
+    0.00 :   10a61f: ja     10a644 <zipper::lzma::decode_symbols+0x18d4>
+    0.05 :   10a621: cmp    0x8(%rsp),%r14
+    0.60 :   10a626: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10a62c: shl    $0x8,%r13d
+    0.00 :   10a630: shl    $0x8,%r9d
+    0.00 :   10a634: mov    0x10(%rsp),%rbx
+    0.00 :   10a639: movzbl (%rbx,%r14,1),%ebx
+    0.05 :   10a63e: or     %ebx,%r9d
+    0.00 :   10a641: inc    %r14
+    0.21 :   10a644: lea    (%rsi,%rsi,1),%rbx
+    0.14 :   10a648: shr    $0x5,%edx
+    0.03 :   10a64b: sub    %edx,%edi
+    0.00 :   10a64d: xor    %edx,%edx
+    0.00 :   10a64f: cmp    %r10d,%r8d
+    0.00 :   10a652: setae  %dl
+    0.03 :   10a655: mov    %di,(%rax,%rsi,2)
+    0.15 :   10a659: cmovae %r11d,%ecx
+    0.31 :   10a65d: or     %rbx,%rdx
+    0.02 :   10a660: movzwl (%rax,%rdx,4),%esi
+    0.74 :   10a664: mov    %r13d,%r10d
+    0.00 :   10a667: shr    $0xb,%r10d
+    0.00 :   10a66b: movzwl %cx,%r8d
+    0.00 :   10a66f: imul   %r8d,%r10d
+    0.00 :   10a673: sub    %r10d,%r13d
+    0.00 :   10a676: lea    0x1ff81f(%r8),%edi
+    0.00 :   10a67d: cmp    %r10d,%r9d
+    0.07 :   10a680: cmovb  %r10d,%r13d
+    0.01 :   10a684: mov    $0x0,%ebx
+    0.48 :   10a689: cmovae %r10d,%ebx
+    0.00 :   10a68d: cmovae %r8d,%edi
+    0.00 :   10a691: movzwl 0x2(%rax,%rdx,4),%r11d
+    0.00 :   10a697: mov    %r9d,%r8d
+    0.00 :   10a69a: sub    %ebx,%r8d
+    0.00 :   10a69d: cmp    $0xffffff,%r13d
+    0.00 :   10a6a4: ja     10a6c9 <zipper::lzma::decode_symbols+0x1959>
+    0.00 :   10a6a6: cmp    0x8(%rsp),%r14
+    0.44 :   10a6ab: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10a6b1: shl    $0x8,%r13d
+    0.00 :   10a6b5: shl    $0x8,%r8d
+    0.00 :   10a6b9: mov    0x10(%rsp),%rbx
+    0.00 :   10a6be: movzbl (%rbx,%r14,1),%ebx
+    0.09 :   10a6c3: or     %ebx,%r8d
+    0.00 :   10a6c6: inc    %r14
+    0.00 :   10a6c9: shr    $0x5,%edi
+    0.20 :   10a6cc: sub    %edi,%ecx
+    0.00 :   10a6ce: xor    %edi,%edi
+    0.62 :   10a6d0: cmp    %r10d,%r9d
+    0.01 :   10a6d3: cmovae %r11d,%esi
+    0.01 :   10a6d7: setae  %r11b
+    0.07 :   10a6db: mov    %r13d,%r9d
+    0.00 :   10a6de: shr    $0xb,%r9d
+    0.00 :   10a6e2: movzwl %si,%ebx
+    0.01 :   10a6e5: imul   %ebx,%r9d
+    0.31 :   10a6e9: sub    %r9d,%r13d
+    0.00 :   10a6ec: lea    0x1ff81f(%rbx),%r10d
+    0.17 :   10a6f3: cmp    %r9d,%r8d
+    0.01 :   10a6f6: cmovb  %r9d,%r13d
+    0.02 :   10a6fa: cmovae %ebx,%r10d
+    0.02 :   10a6fe: mov    $0x0,%ebx
+    0.00 :   10a703: cmovae %r9d,%ebx
+    0.03 :   10a707: mov    %cx,(%rax,%rdx,2)
+    0.06 :   10a70b: mov    %r8d,%r15d
+    0.17 :   10a70e: sub    %ebx,%r15d
+    0.00 :   10a711: cmp    $0x1000000,%r13d
+    0.00 :   10a718: jae    10a744 <zipper::lzma::decode_symbols+0x19d4>
+    0.00 :   10a71a: cmp    0x8(%rsp),%r14
+    0.35 :   10a71f: mov    0x20(%rsp),%rbx
+    0.00 :   10a724: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.03 :   10a72a: shl    $0x8,%r13d
+    0.00 :   10a72e: shl    $0x8,%r15d
+    0.01 :   10a732: mov    0x10(%rsp),%rcx
+    0.05 :   10a737: movzbl (%rcx,%r14,1),%ecx
+    0.26 :   10a73c: or     %ecx,%r15d
+    0.00 :   10a73f: inc    %r14
+    0.00 :   10a742: jmp    10a749 <zipper::lzma::decode_symbols+0x19d9>
+    0.00 :   10a744: mov    0x20(%rsp),%rbx
+    0.15 :   10a749: lea    (%rdx,%rdx,1),%rcx
+    0.00 :   10a74d: mov    %r11b,%dil
+    0.05 :   10a750: or     %rcx,%rdi
+    0.00 :   10a753: xor    %ecx,%ecx
+    0.01 :   10a755: cmp    %r9d,%r8d
+    0.17 :   10a758: setae  %cl
+    0.17 :   10a75b: shr    $0x5,%r10d
+    0.00 :   10a75f: sub    %r10d,%esi
+    0.01 :   10a762: mov    %si,(%rax,%rdi,2)
+    0.23 :   10a766: lea    (%rcx,%rdi,2),%esi
+    0.00 :   10a769: add    $0xffffffc0,%esi
+    0.09 :   10a76c: cmp    $0x11,%rdx
+    0.00 :   10a770: jae    10a786 <zipper::lzma::decode_symbols+0x1a16>
+    0.00 :   10a772: mov    0x40(%rsp),%r10
+    0.00 :   10a777: mov    0x60(%rsp),%r9
+    0.00 :   10a77c: mov    0x50(%rsp),%rcx
+    0.00 :   10a781: jmp    10b5f0 <zipper::lzma::decode_symbols+0x2880>
+    0.00 :   10a786: lea    -0x40(,%rdi,2),%r11d
+    0.00 :   10a78e: shr    $1,%r11d
+    0.10 :   10a791: mov    %esi,%eax
+    0.03 :   10a793: and    $0x1,%eax
+    0.00 :   10a796: or     $0x2,%rax
+    0.06 :   10a79a: lea    -0x1(%r11),%ecx
+    0.04 :   10a79e: shl    %cl,%rax
+    0.15 :   10a7a1: cmp    $0x27,%rdi
+    0.00 :   10a7a5: mov    %rax,0x58(%rsp)
+    0.16 :   10a7aa: jae    10a8fd <zipper::lzma::decode_symbols+0x1b8d>
+    0.00 :   10a7b0: mov    %rax,%rdi
+    0.57 :   10a7b3: sub    %rsi,%rdi
+    0.00 :   10a7b6: cmp    $0x73,%rdi
+    0.00 :   10a7ba: ja     10b84d <zipper::lzma::decode_symbols+0x2add>
+    0.00 :   10a7c0: mov    $0x73,%ecx
+    0.00 :   10a7c5: sub    %rdi,%rcx
+    0.01 :   10a7c8: mov    %rcx,0x30(%rsp)
+    0.14 :   10a7cd: cmp    $0x71,%rdi
+    0.00 :   10a7d1: ja     10b98b <zipper::lzma::decode_symbols+0x2c1b>
+    0.00 :   10a7d7: mov    %r15d,%edx
+    0.00 :   10a7da: mov    %r14,0x28(%rsp)
+    0.00 :   10a7df: mov    0xb0(%rsp),%rcx
+    0.00 :   10a7e7: lea    (%rcx,%rdi,2),%rax
+    0.00 :   10a7eb: mov    %rax,0x38(%rsp)
+    0.04 :   10a7f0: movzwl 0x2(%rax),%ebx
+    0.21 :   10a7f4: xor    %esi,%esi
+    0.00 :   10a7f6: add    $0xfffffffe,%r11d
+    0.00 :   10a7fa: je     10b51c <zipper::lzma::decode_symbols+0x27ac>
+    0.00 :   10a800: mov    $0x1,%r9d
+    0.01 :   10a806: mov    %ebx,%ebp
+    0.00 :   10a808: xor    %ecx,%ecx
+    0.00 :   10a80a: mov    %edx,%eax
+    0.00 :   10a80c: mov    0x30(%rsp),%rdi
+    0.20 :   10a811: data16 data16 data16 data16 data16 cs nopw 0x0(%rax,%rax,1)
+    0.01 :   10a820: lea    (%r9,%r9,1),%r10
+    0.16 :   10a824: cmp    %rdi,%r10
+    0.17 :   10a827: jae    10b8a1 <zipper::lzma::decode_symbols+0x2b31>
+    0.00 :   10a82d: lea    0x1(%r10),%r8
+    0.00 :   10a831: cmp    %rdi,%r8
+    0.00 :   10a834: jae    10b879 <zipper::lzma::decode_symbols+0x2b09>
+    0.00 :   10a83a: mov    0x38(%rsp),%r14
+    0.01 :   10a83f: movzwl (%r14,%r10,2),%ebx
+    0.06 :   10a844: mov    %r13d,%r15d
+    0.06 :   10a847: shr    $0xb,%r15d
+    0.00 :   10a84b: movzwl %bp,%edi
+    0.11 :   10a84e: imul   %edi,%r15d
+    0.11 :   10a852: sub    %r15d,%r13d
+    0.00 :   10a855: lea    0x1ff81f(%rdi),%r12d
+    0.00 :   10a85c: cmp    %r15d,%eax
+    0.00 :   10a85f: cmovb  %r15d,%r13d
+    0.00 :   10a863: mov    $0x0,%edx
+    0.02 :   10a868: cmovae %r15d,%edx
+    0.05 :   10a86c: cmovae %edi,%r12d
+    0.07 :   10a870: movzwl (%r14,%r8,2),%r8d
+    0.09 :   10a875: mov    %eax,%r14d
+    0.00 :   10a878: sub    %edx,%r14d
+    0.00 :   10a87b: cmp    $0xffffff,%r13d
+    0.00 :   10a882: ja     10a8b0 <zipper::lzma::decode_symbols+0x1b40>
+    0.00 :   10a884: mov    0x28(%rsp),%rdi
+    0.13 :   10a889: cmp    0x8(%rsp),%rdi
+    0.00 :   10a88e: jae    10b8b7 <zipper::lzma::decode_symbols+0x2b47>
+    0.00 :   10a894: shl    $0x8,%r13d
+    0.00 :   10a898: shl    $0x8,%r14d
+    0.00 :   10a89c: mov    0x10(%rsp),%rdx
+    0.01 :   10a8a1: movzbl (%rdx,%rdi,1),%edx
+    0.02 :   10a8a5: or     %edx,%r14d
+    0.00 :   10a8a8: inc    %rdi
+    0.00 :   10a8ab: mov    %rdi,0x28(%rsp)
+    0.01 :   10a8b0: mov    0x30(%rsp),%rdi
+    0.17 :   10a8b5: cmp    %rdi,%r9
+    0.00 :   10a8b8: jae    10b88e <zipper::lzma::decode_symbols+0x2b1e>
+    0.00 :   10a8be: shr    $0x5,%r12d
+    0.06 :   10a8c2: sub    %r12d,%ebp
+    0.00 :   10a8c5: xor    %edx,%edx
+    0.09 :   10a8c7: cmp    %r15d,%eax
+    0.00 :   10a8ca: setae  %dl
+    0.00 :   10a8cd: cmovae %r8d,%ebx
+    0.00 :   10a8d1: or     %rdx,%r10
+    0.01 :   10a8d4: shl    %cl,%edx
+    0.00 :   10a8d6: inc    %ecx
+    0.07 :   10a8d8: mov    0x38(%rsp),%rax
+    0.01 :   10a8dd: mov    %bp,(%rax,%r9,2)
+    0.19 :   10a8e2: or     %edx,%esi
+    0.00 :   10a8e4: mov    %r10,%r9
+    0.00 :   10a8e7: mov    %ebx,%ebp
+    0.00 :   10a8e9: mov    %r14d,%edx
+    0.00 :   10a8ec: mov    %r14d,%eax
+    0.00 :   10a8ef: cmp    %ecx,%r11d
+    0.13 :   10a8f2: jne    10a820 <zipper::lzma::decode_symbols+0x1ab0>
+    0.00 :   10a8f8: jmp    10b527 <zipper::lzma::decode_symbols+0x27b7>
+    0.00 :   10a8fd: add    $0xfffffffb,%r11d
+    0.11 :   10a901: je     10b2c4 <zipper::lzma::decode_symbols+0x2554>
+    0.00 :   10a907: xor    %ecx,%ecx
+    0.00 :   10a909: jmp    10a91b <zipper::lzma::decode_symbols+0x1bab>
+    0.00 :   10a90b: nopl   0x0(%rax,%rax,1)
+    0.00 :   10a910: mov    %dil,%sil
+    1.07 :   10a913: lea    (%rsi,%rcx,2),%ecx
+    0.78 :   10a916: dec    %r11d
+    0.01 :   10a919: je     10a965 <zipper::lzma::decode_symbols+0x1bf5>
+    0.01 :   10a91b: mov    %r13d,%r8d
+    0.48 :   10a91e: shr    $1,%r13d
+    0.72 :   10a921: xor    %esi,%esi
+    1.24 :   10a923: cmp    %r13d,%r15d
+    0.00 :   10a926: setae  %dil
+    0.25 :   10a92a: mov    $0x0,%r9d
+    0.50 :   10a930: cmovae %r13d,%r9d
+    0.81 :   10a934: sub    %r9d,%r15d
+    0.06 :   10a937: cmp    $0x1ffffff,%r8d
+    0.12 :   10a93e: ja     10a910 <zipper::lzma::decode_symbols+0x1ba0>
+    0.00 :   10a940: cmp    0x8(%rsp),%r14
+    1.13 :   10a945: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10a94b: shl    $0x8,%r13d
+    0.25 :   10a94f: shl    $0x8,%r15d
+    0.00 :   10a953: mov    0x10(%rsp),%rdx
+    0.01 :   10a958: movzbl (%rdx,%r14,1),%r8d
+    0.32 :   10a95d: or     %r8d,%r15d
+    0.01 :   10a960: inc    %r14
+    0.02 :   10a963: jmp    10a910 <zipper::lzma::decode_symbols+0x1ba0>
+    0.00 :   10a965: mov    %ecx,%eax
+    1.02 :   10a967: shl    $0x4,%rax
+    0.51 :   10a96b: jmp    10b2c6 <zipper::lzma::decode_symbols+0x2556>
+    0.00 :   10a970: sub    %ecx,%r13d
+    0.02 :   10a973: mov    %r8d,%ecx
+    0.00 :   10a976: shr    $0x5,%ecx
+    0.00 :   10a979: sub    %ecx,%r8d
+    0.00 :   10a97c: mov    %r8w,0x1e0(%rbp,%rax,2)
+    0.01 :   10a985: cmp    $0x1000000,%r13d
+    0.00 :   10a98c: jae    10a9af <zipper::lzma::decode_symbols+0x1c3f>
+    0.00 :   10a98e: cmp    0x8(%rsp),%r14
+    0.00 :   10a993: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10a999: shl    $0x8,%r13d
+    0.00 :   10a99d: shl    $0x8,%edx
+    0.00 :   10a9a0: mov    0x10(%rsp),%rax
+    0.00 :   10a9a5: movzbl (%rax,%r14,1),%eax
+    0.00 :   10a9aa: or     %eax,%edx
+    0.00 :   10a9ac: inc    %r14
+    0.00 :   10a9af: mov    0x5b0(%rbp),%rcx
+    0.00 :   10a9b6: mov    0x5b8(%rbp),%rax
+    0.00 :   10a9bd: mov    %rcx,0x5b8(%rbp)
+    0.00 :   10a9c4: mov    %edx,%esi
+    0.00 :   10a9c6: mov    %r13d,%ecx
+    0.00 :   10a9c9: mov    0x5a8(%rbp),%rdx
+    0.00 :   10a9d0: mov    %rdx,0x5b0(%rbp)
+    0.00 :   10a9d7: mov    %esi,%edx
+    0.01 :   10a9d9: mov    0x5a0(%rbp),%rsi
+    0.00 :   10a9e0: mov    %rsi,0x5a8(%rbp)
+    0.00 :   10a9e7: mov    %rax,0x5a0(%rbp)
+    0.00 :   10a9ee: mov    %ecx,%r13d
+    0.00 :   10a9f1: shr    $0xb,%r13d
+    0.00 :   10a9f5: movzwl 0xdd8(%rbp),%eax
+    0.00 :   10a9fc: imul   %eax,%r13d
+    0.11 :   10aa00: mov    %edx,%esi
+    0.01 :   10aa02: sub    %r13d,%esi
+    0.03 :   10aa05: jae    10abd8 <zipper::lzma::decode_symbols+0x1e68>
+    0.00 :   10aa0b: lea    0x1ff81f(%rax),%ecx
+    0.07 :   10aa11: shr    $0x5,%ecx
+    0.02 :   10aa14: sub    %ecx,%eax
+    0.00 :   10aa16: mov    %ax,0xdd8(%rbp)
+    0.00 :   10aa1d: cmp    $0x1000000,%r13d
+    0.00 :   10aa24: jae    10aa47 <zipper::lzma::decode_symbols+0x1cd7>
+    0.00 :   10aa26: cmp    0x8(%rsp),%r14
+    0.03 :   10aa2b: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10aa31: shl    $0x8,%r13d
+    0.00 :   10aa35: shl    $0x8,%edx
+    0.00 :   10aa38: mov    0x10(%rsp),%rax
+    0.00 :   10aa3d: movzbl (%rax,%r14,1),%eax
+    0.00 :   10aa42: or     %eax,%edx
+    0.00 :   10aa44: inc    %r14
+    0.00 :   10aa47: shl    $0x4,%rdi
+    0.02 :   10aa4b: mov    0x98(%rsp),%r8
+    0.01 :   10aa53: movzwl 0x2(%r8,%rdi,1),%ecx
+    0.04 :   10aa59: movzwl 0x4(%r8,%rdi,1),%eax
+    0.00 :   10aa5f: mov    %r13d,%r10d
+    0.00 :   10aa62: shr    $0xb,%r10d
+    0.00 :   10aa66: imul   %ecx,%r10d
+    0.00 :   10aa6a: sub    %r10d,%r13d
+    0.00 :   10aa6d: lea    0x1ff81f(%rcx),%r9d
+    0.00 :   10aa74: cmp    %r10d,%edx
+    0.00 :   10aa77: cmovb  %r10d,%r13d
+    0.00 :   10aa7b: mov    $0x0,%esi
+    0.00 :   10aa80: cmovae %r10d,%esi
+    0.00 :   10aa84: cmovae %ecx,%r9d
+    0.00 :   10aa88: movzwl 0x6(%r8,%rdi,1),%r11d
+    0.00 :   10aa8e: mov    %edx,%r8d
+    0.00 :   10aa91: sub    %esi,%r8d
+    0.00 :   10aa94: cmp    $0xffffff,%r13d
+    0.00 :   10aa9b: ja     10aac0 <zipper::lzma::decode_symbols+0x1d50>
+    0.00 :   10aa9d: cmp    0x8(%rsp),%r14
+    0.02 :   10aaa2: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10aaa8: shl    $0x8,%r13d
+    0.00 :   10aaac: shl    $0x8,%r8d
+    0.00 :   10aab0: mov    0x10(%rsp),%rsi
+    0.00 :   10aab5: movzbl (%rsi,%r14,1),%esi
+    0.00 :   10aaba: or     %esi,%r8d
+    0.00 :   10aabd: inc    %r14
+    0.01 :   10aac0: add    0x98(%rsp),%rdi
+    0.00 :   10aac8: cmp    %r10d,%edx
+    0.00 :   10aacb: mov    $0x2,%esi
+    0.00 :   10aad0: sbb    $0xffffffffffffffff,%rsi
+    0.00 :   10aad4: cmp    %r10d,%edx
+    0.00 :   10aad7: cmovae %r11d,%eax
+    0.00 :   10aadb: shr    $0x5,%r9d
+    0.00 :   10aadf: sub    %r9d,%ecx
+    0.00 :   10aae2: mov    %cx,0x2(%rdi)
+    0.01 :   10aae6: lea    0x0(,%rsi,4),%edx
+    0.00 :   10aaed: movzwl (%rdi,%rdx,1),%ecx
+    0.07 :   10aaf1: mov    %r13d,%r10d
+    0.00 :   10aaf4: shr    $0xb,%r10d
+    0.00 :   10aaf8: movzwl %ax,%r11d
+    0.00 :   10aafc: imul   %r11d,%r10d
+    0.00 :   10ab00: sub    %r10d,%r13d
+    0.00 :   10ab03: lea    0x1ff81f(%r11),%r9d
+    0.00 :   10ab0a: cmp    %r10d,%r8d
+    0.00 :   10ab0d: cmovb  %r10d,%r13d
+    0.00 :   10ab11: mov    $0x0,%ebx
+    0.01 :   10ab16: cmovae %r10d,%ebx
+    0.00 :   10ab1a: cmovae %r11d,%r9d
+    0.00 :   10ab1e: movzwl 0x2(%rdi,%rdx,1),%r11d
+    0.00 :   10ab24: mov    %r8d,%edx
+    0.00 :   10ab27: sub    %ebx,%edx
+    0.00 :   10ab29: cmp    $0xffffff,%r13d
+    0.00 :   10ab30: ja     10ab53 <zipper::lzma::decode_symbols+0x1de3>
+    0.00 :   10ab32: cmp    0x8(%rsp),%r14
+    0.01 :   10ab37: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10ab3d: shl    $0x8,%r13d
+    0.00 :   10ab41: shl    $0x8,%edx
+    0.00 :   10ab44: mov    0x10(%rsp),%rbx
+    0.00 :   10ab49: movzbl (%rbx,%r14,1),%ebx
+    0.01 :   10ab4e: or     %ebx,%edx
+    0.00 :   10ab50: inc    %r14
+    0.00 :   10ab53: shr    $0x5,%r9d
+    0.01 :   10ab57: sub    %r9d,%eax
+    0.00 :   10ab5a: xor    %r9d,%r9d
+    0.03 :   10ab5d: cmp    %r10d,%r8d
+    0.00 :   10ab60: cmovae %r11d,%ecx
+    0.00 :   10ab64: setae  %r11b
+    0.00 :   10ab68: mov    %r13d,%r8d
+    0.00 :   10ab6b: shr    $0xb,%r8d
+    0.00 :   10ab6f: movzwl %cx,%ebx
+    0.00 :   10ab72: imul   %ebx,%r8d
+    0.00 :   10ab76: sub    %r8d,%r13d
+    0.00 :   10ab79: lea    0x1ff81f(%rbx),%r10d
+    0.00 :   10ab80: cmp    %r8d,%edx
+    0.00 :   10ab83: cmovb  %r8d,%r13d
+    0.00 :   10ab87: cmovae %ebx,%r10d
+    0.00 :   10ab8b: mov    $0x0,%ebx
+    0.00 :   10ab90: cmovae %r8d,%ebx
+    0.00 :   10ab94: mov    %ax,(%rdi,%rsi,2)
+    0.00 :   10ab98: mov    %edx,%r15d
+    0.00 :   10ab9b: sub    %ebx,%r15d
+    0.00 :   10ab9e: cmp    $0xffffff,%r13d
+    0.00 :   10aba5: ja     10b28b <zipper::lzma::decode_symbols+0x251b>
+    0.00 :   10abab: cmp    0x8(%rsp),%r14
+    0.00 :   10abb0: mov    0x20(%rsp),%rbx
+    0.00 :   10abb5: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10abbb: shl    $0x8,%r13d
+    0.00 :   10abbf: shl    $0x8,%r15d
+    0.00 :   10abc3: mov    0x10(%rsp),%rax
+    0.00 :   10abc8: movzbl (%rax,%r14,1),%eax
+    0.00 :   10abcd: or     %eax,%r15d
+    0.00 :   10abd0: inc    %r14
+    0.00 :   10abd3: jmp    10b290 <zipper::lzma::decode_symbols+0x2520>
+    0.01 :   10abd8: sub    %r13d,%ecx
+    0.05 :   10abdb: mov    %eax,%edx
+    0.00 :   10abdd: shr    $0x5,%edx
+    0.00 :   10abe0: sub    %edx,%eax
+    0.00 :   10abe2: mov    %ax,0xdd8(%rbp)
+    0.00 :   10abe9: cmp    $0x1000000,%ecx
+    0.14 :   10abef: jae    10ac11 <zipper::lzma::decode_symbols+0x1ea1>
+    0.00 :   10abf1: cmp    0x8(%rsp),%r14
+    0.04 :   10abf6: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10abfc: shl    $0x8,%ecx
+    0.00 :   10abff: shl    $0x8,%esi
+    0.00 :   10ac02: mov    0x10(%rsp),%rax
+    0.00 :   10ac07: movzbl (%rax,%r14,1),%eax
+    0.00 :   10ac0c: or     %eax,%esi
+    0.00 :   10ac0e: inc    %r14
+    0.00 :   10ac11: mov    %ecx,%r13d
+    0.00 :   10ac14: shr    $0xb,%r13d
+    0.00 :   10ac18: movzwl 0xdda(%rbp),%edx
+    0.01 :   10ac1f: imul   %edx,%r13d
+    0.05 :   10ac23: mov    %esi,%eax
+    0.00 :   10ac25: sub    %r13d,%eax
+    0.00 :   10ac28: jae    10adfb <zipper::lzma::decode_symbols+0x208b>
+    0.00 :   10ac2e: lea    0x1ff81f(%rdx),%eax
+    0.05 :   10ac34: shr    $0x5,%eax
+    0.01 :   10ac37: sub    %eax,%edx
+    0.00 :   10ac39: mov    %dx,0xdda(%rbp)
+    0.01 :   10ac40: cmp    $0x1000000,%r13d
+    0.00 :   10ac47: jae    10ac6a <zipper::lzma::decode_symbols+0x1efa>
+    0.00 :   10ac49: cmp    0x8(%rsp),%r14
+    0.01 :   10ac4e: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10ac54: shl    $0x8,%r13d
+    0.00 :   10ac58: shl    $0x8,%esi
+    0.00 :   10ac5b: mov    0x10(%rsp),%rax
+    0.00 :   10ac60: movzbl (%rax,%r14,1),%eax
+    0.01 :   10ac65: or     %eax,%esi
+    0.00 :   10ac67: inc    %r14
+    0.00 :   10ac6a: shl    $0x4,%rdi
+    0.00 :   10ac6e: mov    0x88(%rsp),%r8
+    0.02 :   10ac76: movzwl 0x2(%r8,%rdi,1),%ecx
+    0.01 :   10ac7c: movzwl 0x4(%r8,%rdi,1),%eax
+    0.00 :   10ac82: mov    %r13d,%r10d
+    0.00 :   10ac85: shr    $0xb,%r10d
+    0.00 :   10ac89: imul   %ecx,%r10d
+    0.01 :   10ac8d: sub    %r10d,%r13d
+    0.00 :   10ac90: lea    0x1ff81f(%rcx),%r9d
+    0.00 :   10ac97: cmp    %r10d,%esi
+    0.00 :   10ac9a: cmovb  %r10d,%r13d
+    0.01 :   10ac9e: mov    $0x0,%edx
+    0.00 :   10aca3: cmovae %r10d,%edx
+    0.00 :   10aca7: cmovae %ecx,%r9d
+    0.00 :   10acab: movzwl 0x6(%r8,%rdi,1),%r11d
+    0.00 :   10acb1: mov    %esi,%r8d
+    0.00 :   10acb4: sub    %edx,%r8d
+    0.00 :   10acb7: cmp    $0xffffff,%r13d
+    0.00 :   10acbe: ja     10ace3 <zipper::lzma::decode_symbols+0x1f73>
+    0.00 :   10acc0: cmp    0x8(%rsp),%r14
+    0.02 :   10acc5: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10accb: shl    $0x8,%r13d
+    0.00 :   10accf: shl    $0x8,%r8d
+    0.00 :   10acd3: mov    0x10(%rsp),%rdx
+    0.00 :   10acd8: movzbl (%rdx,%r14,1),%edx
+    0.00 :   10acdd: or     %edx,%r8d
+    0.00 :   10ace0: inc    %r14
+    0.00 :   10ace3: add    0x88(%rsp),%rdi
+    0.01 :   10aceb: cmp    %r10d,%esi
+    0.00 :   10acee: mov    $0x2,%edx
+    0.00 :   10acf3: sbb    $0xffffffffffffffff,%rdx
+    0.00 :   10acf7: cmp    %r10d,%esi
+    0.00 :   10acfa: cmovae %r11d,%eax
+    0.00 :   10acfe: shr    $0x5,%r9d
+    0.00 :   10ad02: sub    %r9d,%ecx
+    0.00 :   10ad05: mov    %cx,0x2(%rdi)
+    0.00 :   10ad09: lea    0x0(,%rdx,4),%esi
+    0.00 :   10ad10: movzwl (%rdi,%rsi,1),%ecx
+    0.06 :   10ad14: mov    %r13d,%r10d
+    0.00 :   10ad17: shr    $0xb,%r10d
+    0.00 :   10ad1b: movzwl %ax,%r11d
+    0.00 :   10ad1f: imul   %r11d,%r10d
+    0.00 :   10ad23: sub    %r10d,%r13d
+    0.00 :   10ad26: lea    0x1ff81f(%r11),%r9d
+    0.00 :   10ad2d: cmp    %r10d,%r8d
+    0.00 :   10ad30: cmovb  %r10d,%r13d
+    0.00 :   10ad34: mov    $0x0,%ebx
+    0.00 :   10ad39: cmovae %r10d,%ebx
+    0.00 :   10ad3d: cmovae %r11d,%r9d
+    0.00 :   10ad41: movzwl 0x2(%rdi,%rsi,1),%r11d
+    0.00 :   10ad47: mov    %r8d,%esi
+    0.00 :   10ad4a: sub    %ebx,%esi
+    0.00 :   10ad4c: cmp    $0xffffff,%r13d
+    0.00 :   10ad53: ja     10ad76 <zipper::lzma::decode_symbols+0x2006>
+    0.00 :   10ad55: cmp    0x8(%rsp),%r14
+    0.02 :   10ad5a: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10ad60: shl    $0x8,%r13d
+    0.00 :   10ad64: shl    $0x8,%esi
+    0.00 :   10ad67: mov    0x10(%rsp),%rbx
+    0.00 :   10ad6c: movzbl (%rbx,%r14,1),%ebx
+    0.02 :   10ad71: or     %ebx,%esi
+    0.00 :   10ad73: inc    %r14
+    0.01 :   10ad76: shr    $0x5,%r9d
+    0.00 :   10ad7a: sub    %r9d,%eax
+    0.00 :   10ad7d: xor    %r9d,%r9d
+    0.02 :   10ad80: cmp    %r10d,%r8d
+    0.00 :   10ad83: cmovae %r11d,%ecx
+    0.00 :   10ad87: setae  %r11b
+    0.00 :   10ad8b: mov    %r13d,%r8d
+    0.00 :   10ad8e: shr    $0xb,%r8d
+    0.00 :   10ad92: movzwl %cx,%ebx
+    0.01 :   10ad95: imul   %ebx,%r8d
+    0.00 :   10ad99: sub    %r8d,%r13d
+    0.00 :   10ad9c: lea    0x1ff81f(%rbx),%r10d
+    0.00 :   10ada3: cmp    %r8d,%esi
+    0.00 :   10ada6: cmovb  %r8d,%r13d
+    0.00 :   10adaa: cmovae %ebx,%r10d
+    0.00 :   10adae: mov    $0x0,%ebx
+    0.00 :   10adb3: cmovae %r8d,%ebx
+    0.00 :   10adb7: mov    %ax,(%rdi,%rdx,2)
+    0.00 :   10adbb: mov    %esi,%r15d
+    0.01 :   10adbe: sub    %ebx,%r15d
+    0.00 :   10adc1: cmp    $0xffffff,%r13d
+    0.00 :   10adc8: ja     10b616 <zipper::lzma::decode_symbols+0x28a6>
+    0.00 :   10adce: cmp    0x8(%rsp),%r14
+    0.02 :   10add3: mov    0x20(%rsp),%rbx
+    0.00 :   10add8: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10adde: shl    $0x8,%r13d
+    0.00 :   10ade2: shl    $0x8,%r15d
+    0.00 :   10ade6: mov    0x10(%rsp),%rax
+    0.00 :   10adeb: movzbl (%rax,%r14,1),%eax
+    0.00 :   10adf0: or     %eax,%r15d
+    0.00 :   10adf3: inc    %r14
+    0.00 :   10adf6: jmp    10b61b <zipper::lzma::decode_symbols+0x28ab>
+    0.00 :   10adfb: sub    %r13d,%ecx
+    0.02 :   10adfe: mov    %edx,%esi
+    0.00 :   10ae00: shr    $0x5,%esi
+    0.00 :   10ae03: sub    %esi,%edx
+    0.00 :   10ae05: mov    %dx,0xdda(%rbp)
+    0.00 :   10ae0c: cmp    $0x1000000,%ecx
+    0.04 :   10ae12: jae    10ae34 <zipper::lzma::decode_symbols+0x20c4>
+    0.00 :   10ae14: cmp    0x8(%rsp),%r14
+    0.00 :   10ae19: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10ae1f: shl    $0x8,%ecx
+    0.00 :   10ae22: shl    $0x8,%eax
+    0.00 :   10ae25: mov    0x10(%rsp),%rdx
+    0.00 :   10ae2a: movzbl (%rdx,%r14,1),%edx
+    0.01 :   10ae2f: or     %edx,%eax
+    0.00 :   10ae31: inc    %r14
+    0.00 :   10ae34: movzwl 0x9da(%rbp),%edi
+    0.04 :   10ae3b: movzwl 0x9dc(%rbp),%edx
+    0.00 :   10ae42: mov    %ecx,%r10d
+    0.00 :   10ae45: shr    $0xb,%r10d
+    0.00 :   10ae49: imul   %edi,%r10d
+    0.05 :   10ae4d: sub    %r10d,%ecx
+    0.00 :   10ae50: lea    0x1ff81f(%rdi),%r9d
+    0.00 :   10ae57: cmp    %r10d,%eax
+    0.00 :   10ae5a: cmovb  %r10d,%ecx
+    0.02 :   10ae5e: mov    $0x0,%r8d
+    0.00 :   10ae64: cmovae %r10d,%r8d
+    0.00 :   10ae68: cmovae %edi,%r9d
+    0.01 :   10ae6c: movzwl 0x9de(%rbp),%r11d
+    0.01 :   10ae74: mov    %eax,%esi
+    0.00 :   10ae76: sub    %r8d,%esi
+    0.00 :   10ae79: cmp    $0xffffff,%ecx
+    0.00 :   10ae7f: ja     10aea2 <zipper::lzma::decode_symbols+0x2132>
+    0.00 :   10ae81: cmp    0x8(%rsp),%r14
+    0.00 :   10ae86: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10ae8c: shl    $0x8,%ecx
+    0.00 :   10ae8f: shl    $0x8,%esi
+    0.00 :   10ae92: mov    0x10(%rsp),%r8
+    0.00 :   10ae97: movzbl (%r8,%r14,1),%r8d
+    0.00 :   10ae9c: or     %r8d,%esi
+    0.00 :   10ae9f: inc    %r14
+    0.00 :   10aea2: cmp    %r10d,%eax
+    0.00 :   10aea5: mov    $0x2,%r8d
+    0.00 :   10aeab: sbb    $0xffffffffffffffff,%r8
+    0.00 :   10aeaf: cmp    %r10d,%eax
+    0.00 :   10aeb2: cmovae %r11d,%edx
+    0.00 :   10aeb6: shr    $0x5,%r9d
+    0.02 :   10aeba: sub    %r9d,%edi
+    0.02 :   10aebd: mov    %di,0x9da(%rbp)
+    0.01 :   10aec4: lea    0x0(,%r8,4),%edi
+    0.00 :   10aecc: movzwl 0x9d8(%rbp,%rdi,1),%eax
+    0.08 :   10aed4: mov    %ecx,%r10d
+    0.00 :   10aed7: shr    $0xb,%r10d
+    0.00 :   10aedb: movzwl %dx,%r11d
+    0.00 :   10aedf: imul   %r11d,%r10d
+    0.01 :   10aee3: sub    %r10d,%ecx
+    0.00 :   10aee6: lea    0x1ff81f(%r11),%r9d
+    0.00 :   10aeed: cmp    %r10d,%esi
+    0.00 :   10aef0: cmovb  %r10d,%ecx
+    0.00 :   10aef4: mov    $0x0,%ebx
+    0.03 :   10aef9: cmovae %r10d,%ebx
+    0.00 :   10aefd: cmovae %r11d,%r9d
+    0.00 :   10af01: movzwl 0x9da(%rbp,%rdi,1),%r11d
+    0.00 :   10af0a: mov    %esi,%edi
+    0.00 :   10af0c: sub    %ebx,%edi
+    0.00 :   10af0e: cmp    $0xffffff,%ecx
+    0.00 :   10af14: ja     10af36 <zipper::lzma::decode_symbols+0x21c6>
+    0.00 :   10af16: cmp    0x8(%rsp),%r14
+    0.01 :   10af1b: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10af21: shl    $0x8,%ecx
+    0.00 :   10af24: shl    $0x8,%edi
+    0.00 :   10af27: mov    0x10(%rsp),%rbx
+    0.00 :   10af2c: movzbl (%rbx,%r14,1),%ebx
+    0.00 :   10af31: or     %ebx,%edi
+    0.00 :   10af33: inc    %r14
+    0.00 :   10af36: lea    (%r8,%r8,1),%ebx
+    0.00 :   10af3a: shr    $0x5,%r9d
+    0.02 :   10af3e: sub    %r9d,%edx
+    0.01 :   10af41: xor    %r9d,%r9d
+    0.00 :   10af44: cmp    %r10d,%esi
+    0.00 :   10af47: setae  %r9b
+    0.00 :   10af4b: mov    %dx,0x9d8(%rbp,%r8,2)
+    0.04 :   10af54: cmovae %r11d,%eax
+    0.00 :   10af58: or     %rbx,%r9
+    0.00 :   10af5b: lea    (%r9,%r9,1),%edx
+    0.03 :   10af5f: movzwl 0x9d8(%rbp,%rdx,2),%esi
+    0.11 :   10af67: mov    %ecx,%r10d
+    0.00 :   10af6a: shr    $0xb,%r10d
+    0.00 :   10af6e: movzwl %ax,%r8d
+    0.00 :   10af72: imul   %r8d,%r10d
+    0.00 :   10af76: sub    %r10d,%ecx
+    0.00 :   10af79: lea    0x1ff81f(%r8),%ebx
+    0.00 :   10af80: cmp    %r10d,%edi
+    0.00 :   10af83: cmovb  %r10d,%ecx
+    0.00 :   10af87: mov    %rbp,%r11
+    0.02 :   10af8a: mov    $0x0,%ebp
+    0.00 :   10af8f: cmovae %r10d,%ebp
+    0.00 :   10af93: cmovae %r8d,%ebx
+    0.00 :   10af97: movzwl 0x9da(%r11,%rdx,2),%r11d
+    0.00 :   10afa0: mov    %edi,%r8d
+    0.00 :   10afa3: sub    %ebp,%r8d
+    0.00 :   10afa6: cmp    $0xffffff,%ecx
+    0.00 :   10afac: ja     10afd0 <zipper::lzma::decode_symbols+0x2260>
+    0.00 :   10afae: cmp    0x8(%rsp),%r14
+    0.03 :   10afb3: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.01 :   10afb9: shl    $0x8,%ecx
+    0.00 :   10afbc: shl    $0x8,%r8d
+    0.00 :   10afc0: mov    0x10(%rsp),%r15
+    0.00 :   10afc5: movzbl (%r15,%r14,1),%ebp
+    0.01 :   10afca: or     %ebp,%r8d
+    0.00 :   10afcd: inc    %r14
+    0.00 :   10afd0: shr    $0x5,%ebx
+    0.01 :   10afd3: sub    %ebx,%eax
+    0.00 :   10afd5: xor    %ebx,%ebx
+    0.00 :   10afd7: cmp    %r10d,%edi
+    0.00 :   10afda: setae  %bl
+    0.00 :   10afdd: mov    0x18(%rsp),%rbp
+    0.00 :   10afe2: mov    %ax,0x9d8(%rbp,%r9,2)
+    0.01 :   10afeb: cmovae %r11d,%esi
+    0.00 :   10afef: or     %rbx,%rdx
+    0.04 :   10aff2: movzwl 0x9d8(%rbp,%rdx,4),%eax
+    0.04 :   10affa: mov    %ecx,%r10d
+    0.00 :   10affd: shr    $0xb,%r10d
+    0.00 :   10b001: movzwl %si,%edi
+    0.00 :   10b004: imul   %edi,%r10d
+    0.00 :   10b008: sub    %r10d,%ecx
+    0.00 :   10b00b: lea    0x1ff81f(%rdi),%r9d
+    0.00 :   10b012: cmp    %r10d,%r8d
+    0.00 :   10b015: cmovb  %r10d,%ecx
+    0.00 :   10b019: mov    $0x0,%ebx
+    0.05 :   10b01e: cmovae %r10d,%ebx
+    0.00 :   10b022: cmovae %edi,%r9d
+    0.00 :   10b026: movzwl 0x9da(%rbp,%rdx,4),%r11d
+    0.00 :   10b02f: mov    %r8d,%edi
+    0.01 :   10b032: sub    %ebx,%edi
+    0.00 :   10b034: cmp    $0xffffff,%ecx
+    0.00 :   10b03a: mov    0x48(%rsp),%r12
+    0.00 :   10b03f: ja     10b061 <zipper::lzma::decode_symbols+0x22f1>
+    0.00 :   10b041: cmp    0x8(%rsp),%r14
+    0.05 :   10b046: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10b04c: shl    $0x8,%ecx
+    0.00 :   10b04f: shl    $0x8,%edi
+    0.00 :   10b052: mov    0x10(%rsp),%rbx
+    0.00 :   10b057: movzbl (%rbx,%r14,1),%ebx
+    0.01 :   10b05c: or     %ebx,%edi
+    0.00 :   10b05e: inc    %r14
+    0.00 :   10b061: lea    (%rdx,%rdx,1),%rbx
+    0.01 :   10b065: shr    $0x5,%r9d
+    0.00 :   10b069: sub    %r9d,%esi
+    0.00 :   10b06c: xor    %r9d,%r9d
+    0.00 :   10b06f: cmp    %r10d,%r8d
+    0.00 :   10b072: setae  %r9b
+    0.00 :   10b076: mov    %si,0x9d8(%rbp,%rdx,2)
+    0.00 :   10b07e: cmovae %r11d,%eax
+    0.01 :   10b082: or     %rbx,%r9
+    0.08 :   10b085: movzwl 0x9d8(%rbp,%r9,4),%esi
+    0.06 :   10b08e: mov    %ecx,%edx
+    0.00 :   10b090: shr    $0xb,%edx
+    0.00 :   10b093: movzwl %ax,%r8d
+    0.00 :   10b097: imul   %r8d,%edx
+    0.00 :   10b09b: sub    %edx,%ecx
+    0.00 :   10b09d: lea    0x1ff81f(%r8),%r10d
+    0.00 :   10b0a4: cmp    %edx,%edi
+    0.00 :   10b0a6: cmovb  %edx,%ecx
+    0.01 :   10b0a9: mov    $0x0,%ebx
+    0.01 :   10b0ae: cmovae %edx,%ebx
+    0.00 :   10b0b1: cmovae %r8d,%r10d
+    0.00 :   10b0b5: movzwl 0x9da(%rbp,%r9,4),%r11d
+    0.00 :   10b0be: mov    %edi,%r8d
+    0.00 :   10b0c1: sub    %ebx,%r8d
+    0.00 :   10b0c4: cmp    $0xffffff,%ecx
+    0.00 :   10b0ca: ja     10b0ee <zipper::lzma::decode_symbols+0x237e>
+    0.00 :   10b0cc: cmp    0x8(%rsp),%r14
+    0.02 :   10b0d1: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10b0d7: shl    $0x8,%ecx
+    0.00 :   10b0da: shl    $0x8,%r8d
+    0.00 :   10b0de: mov    0x10(%rsp),%rbx
+    0.00 :   10b0e3: movzbl (%rbx,%r14,1),%ebx
+    0.03 :   10b0e8: or     %ebx,%r8d
+    0.00 :   10b0eb: inc    %r14
+    0.00 :   10b0ee: lea    (%r9,%r9,1),%rbx
+    0.00 :   10b0f2: shr    $0x5,%r10d
+    0.03 :   10b0f6: sub    %r10d,%eax
+    0.00 :   10b0f9: xor    %r10d,%r10d
+    0.00 :   10b0fc: cmp    %edx,%edi
+    0.00 :   10b0fe: setae  %r10b
+    0.00 :   10b102: mov    %ax,0x9d8(%rbp,%r9,2)
+    0.04 :   10b10b: cmovae %r11d,%esi
+    0.00 :   10b10f: or     %rbx,%r10
+    0.00 :   10b112: movzwl 0x9d8(%rbp,%r10,4),%eax
+    0.08 :   10b11b: mov    %ecx,%r9d
+    0.00 :   10b11e: shr    $0xb,%r9d
+    0.00 :   10b122: movzwl %si,%edi
+    0.00 :   10b125: imul   %edi,%r9d
+    0.00 :   10b129: sub    %r9d,%ecx
+    0.00 :   10b12c: lea    0x1ff81f(%rdi),%edx
+    0.00 :   10b132: cmp    %r9d,%r8d
+    0.00 :   10b135: cmovb  %r9d,%ecx
+    0.00 :   10b139: mov    $0x0,%ebx
+    0.02 :   10b13e: cmovae %r9d,%ebx
+    0.00 :   10b142: cmovae %edi,%edx
+    0.00 :   10b145: movzwl 0x9da(%rbp,%r10,4),%r11d
+    0.00 :   10b14e: mov    %r8d,%edi
+    0.00 :   10b151: sub    %ebx,%edi
+    0.00 :   10b153: cmp    $0xffffff,%ecx
+    0.00 :   10b159: ja     10b17b <zipper::lzma::decode_symbols+0x240b>
+    0.00 :   10b15b: cmp    0x8(%rsp),%r14
+    0.02 :   10b160: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10b166: shl    $0x8,%ecx
+    0.00 :   10b169: shl    $0x8,%edi
+    0.00 :   10b16c: mov    0x10(%rsp),%rbx
+    0.00 :   10b171: movzbl (%rbx,%r14,1),%ebx
+    0.01 :   10b176: or     %ebx,%edi
+    0.00 :   10b178: inc    %r14
+    0.00 :   10b17b: lea    (%r10,%r10,1),%rbx
+    0.00 :   10b17f: shr    $0x5,%edx
+    0.01 :   10b182: sub    %edx,%esi
+    0.00 :   10b184: xor    %edx,%edx
+    0.00 :   10b186: cmp    %r9d,%r8d
+    0.00 :   10b189: setae  %dl
+    0.00 :   10b18c: mov    %si,0x9d8(%rbp,%r10,2)
+    0.01 :   10b195: cmovae %r11d,%eax
+    0.00 :   10b199: or     %rbx,%rdx
+    0.00 :   10b19c: movzwl 0x9d8(%rbp,%rdx,4),%esi
+    0.16 :   10b1a4: mov    %ecx,%r10d
+    0.00 :   10b1a7: shr    $0xb,%r10d
+    0.00 :   10b1ab: movzwl %ax,%r8d
+    0.00 :   10b1af: imul   %r8d,%r10d
+    0.00 :   10b1b3: sub    %r10d,%ecx
+    0.00 :   10b1b6: lea    0x1ff81f(%r8),%r9d
+    0.00 :   10b1bd: cmp    %r10d,%edi
+    0.00 :   10b1c0: cmovb  %r10d,%ecx
+    0.00 :   10b1c4: mov    $0x0,%ebx
+    0.02 :   10b1c9: cmovae %r10d,%ebx
+    0.00 :   10b1cd: cmovae %r8d,%r9d
+    0.00 :   10b1d1: movzwl 0x9da(%rbp,%rdx,4),%r11d
+    0.00 :   10b1da: mov    %edi,%r8d
+    0.00 :   10b1dd: sub    %ebx,%r8d
+    0.00 :   10b1e0: cmp    $0xffffff,%ecx
+    0.00 :   10b1e6: ja     10b20a <zipper::lzma::decode_symbols+0x249a>
+    0.00 :   10b1e8: cmp    0x8(%rsp),%r14
+    0.05 :   10b1ed: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10b1f3: shl    $0x8,%ecx
+    0.00 :   10b1f6: shl    $0x8,%r8d
+    0.00 :   10b1fa: mov    0x10(%rsp),%rbx
+    0.00 :   10b1ff: movzbl (%rbx,%r14,1),%ebx
+    0.02 :   10b204: or     %ebx,%r8d
+    0.00 :   10b207: inc    %r14
+    0.00 :   10b20a: shr    $0x5,%r9d
+    0.01 :   10b20e: sub    %r9d,%eax
+    0.01 :   10b211: xor    %r9d,%r9d
+    0.04 :   10b214: cmp    %r10d,%edi
+    0.00 :   10b217: cmovae %r11d,%esi
+    0.00 :   10b21b: setae  %r11b
+    0.00 :   10b21f: mov    %ecx,%edi
+    0.01 :   10b221: shr    $0xb,%edi
+    0.00 :   10b224: movzwl %si,%ebx
+    0.00 :   10b227: imul   %ebx,%edi
+    0.00 :   10b22a: sub    %edi,%ecx
+    0.00 :   10b22c: lea    0x1ff81f(%rbx),%r10d
+    0.01 :   10b233: cmp    %edi,%r8d
+    0.00 :   10b236: cmovb  %edi,%ecx
+    0.02 :   10b239: cmovae %ebx,%r10d
+    0.00 :   10b23d: mov    $0x0,%ebx
+    0.00 :   10b242: cmovae %edi,%ebx
+    0.00 :   10b245: mov    %ax,0x9d8(%rbp,%rdx,2)
+    0.00 :   10b24d: mov    %r8d,%r15d
+    0.03 :   10b250: sub    %ebx,%r15d
+    0.00 :   10b253: cmp    $0x1000000,%ecx
+    0.00 :   10b259: jae    10b64d <zipper::lzma::decode_symbols+0x28dd>
+    0.00 :   10b25f: cmp    0x8(%rsp),%r14
+    0.01 :   10b264: mov    0x20(%rsp),%rbx
+    0.00 :   10b269: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10b26f: shl    $0x8,%ecx
+    0.00 :   10b272: shl    $0x8,%r15d
+    0.00 :   10b276: mov    0x10(%rsp),%rax
+    0.00 :   10b27b: movzbl (%rax,%r14,1),%eax
+    0.01 :   10b280: or     %eax,%r15d
+    0.00 :   10b283: inc    %r14
+    0.00 :   10b286: jmp    10b652 <zipper::lzma::decode_symbols+0x28e2>
+    0.00 :   10b28b: mov    0x20(%rsp),%rbx
+    0.00 :   10b290: lea    (%rsi,%rsi,1),%eax
+    0.01 :   10b293: mov    %r11b,%r9b
+    0.00 :   10b296: or     %rax,%r9
+    0.00 :   10b299: xor    %eax,%eax
+    0.00 :   10b29b: cmp    %r8d,%edx
+    0.00 :   10b29e: setae  %al
+    0.00 :   10b2a1: shr    $0x5,%r10d
+    0.00 :   10b2a5: sub    %r10d,%ecx
+    0.00 :   10b2a8: lea    (%r9,%r9,1),%edx
+    0.00 :   10b2ac: mov    %cx,(%rdi,%rdx,1)
+    0.01 :   10b2b0: mov    $0xfffffff8,%ecx
+    0.00 :   10b2b5: lea    (%rcx,%r9,2),%ecx
+    0.00 :   10b2b9: and    $0xfffffff6,%ecx
+    0.00 :   10b2bc: or     %rax,%rcx
+    0.00 :   10b2bf: jmp    10b688 <zipper::lzma::decode_symbols+0x2918>
+    0.00 :   10b2c4: xor    %eax,%eax
+    0.01 :   10b2c6: movzwl 0x57a(%rbp),%esi
+    1.54 :   10b2cd: movzwl 0x57c(%rbp),%r8d
+    0.00 :   10b2d5: mov    %r13d,%edi
+    0.00 :   10b2d8: shr    $0xb,%edi
+    0.00 :   10b2db: imul   %esi,%edi
+    0.63 :   10b2de: sub    %edi,%r13d
+    0.00 :   10b2e1: lea    0x1ff81f(%rsi),%ecx
+    0.00 :   10b2e7: mov    %r15d,%r9d
+    0.02 :   10b2ea: cmp    %edi,%r15d
+    0.01 :   10b2ed: cmovb  %edi,%r13d
+    0.01 :   10b2f1: mov    $0x0,%r11d
+    0.00 :   10b2f7: cmovae %edi,%r11d
+    0.00 :   10b2fb: cmovae %esi,%ecx
+    0.44 :   10b2fe: movzwl 0x57e(%rbp),%r10d
+    0.00 :   10b306: sub    %r11d,%r9d
+    0.01 :   10b309: cmp    $0xffffff,%r13d
+    0.00 :   10b310: ja     10b335 <zipper::lzma::decode_symbols+0x25c5>
+    0.00 :   10b312: cmp    0x8(%rsp),%r14
+    0.13 :   10b317: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10b31d: shl    $0x8,%r13d
+    0.01 :   10b321: shl    $0x8,%r9d
+    0.01 :   10b325: mov    0x10(%rsp),%rdx
+    0.00 :   10b32a: movzbl (%rdx,%r14,1),%r11d
+    0.03 :   10b32f: or     %r11d,%r9d
+    0.00 :   10b332: inc    %r14
+    0.01 :   10b335: shr    $0x5,%ecx
+    0.07 :   10b338: sub    %ecx,%esi
+    0.00 :   10b33a: xor    %ecx,%ecx
+    0.00 :   10b33c: cmp    %edi,%r15d
+    0.00 :   10b33f: setae  %cl
+    0.20 :   10b342: cmovae %r10d,%r8d
+    0.00 :   10b346: mov    %si,0x57a(%rbp)
+    0.04 :   10b34d: movzwl 0x580(%rbp,%rcx,4),%esi
+    0.59 :   10b355: mov    %r13d,%r11d
+    0.00 :   10b358: shr    $0xb,%r11d
+    0.00 :   10b35c: movzwl %r8w,%r10d
+    0.00 :   10b360: imul   %r10d,%r11d
+    0.05 :   10b364: sub    %r11d,%r13d
+    0.00 :   10b367: lea    0x1ff81f(%r10),%edx
+    0.00 :   10b36e: cmp    %r11d,%r9d
+    0.00 :   10b371: cmovb  %r11d,%r13d
+    0.00 :   10b375: mov    %rbp,%rdi
+    0.25 :   10b378: mov    $0x0,%ebp
+    0.00 :   10b37d: cmovae %r11d,%ebp
+    0.00 :   10b381: cmovae %r10d,%edx
+    0.01 :   10b385: movzwl 0x582(%rdi,%rcx,4),%ebx
+    0.00 :   10b38d: mov    %r9d,%r10d
+    0.00 :   10b390: sub    %ebp,%r10d
+    0.00 :   10b393: cmp    $0xffffff,%r13d
+    0.00 :   10b39a: ja     10b3bf <zipper::lzma::decode_symbols+0x264f>
+    0.00 :   10b39c: cmp    0x8(%rsp),%r14
+    0.05 :   10b3a1: jae    10b8b4 <zipper::lzma::decode_symbols+0x2b44>
+    0.00 :   10b3a7: shl    $0x8,%r13d
+    0.05 :   10b3ab: shl    $0x8,%r10d
+    0.01 :   10b3af: mov    0x10(%rsp),%rdi
+    0.00 :   10b3b4: movzbl (%rdi,%r14,1),%ebp
+    0.04 :   10b3b9: or     %ebp,%r10d
+    0.00 :   10b3bc: inc    %r14
+    0.00 :   10b3bf: mov    %r14,%rdi
+    0.09 :   10b3c2: lea    0x2(%rcx),%r14
+    0.19 :   10b3c6: lea    (%r14,%r14,1),%r15d
+    0.01 :   10b3ca: shr    $0x5,%edx
+    0.00 :   10b3cd: sub    %edx,%r8d
+    0.00 :   10b3d0: xor    %edx,%edx
+    0.00 :   10b3d2: cmp    %r11d,%r9d
+    0.00 :   10b3d5: setae  %dl
+    0.00 :   10b3d8: mov    0x70(%rsp),%r12
+    0.04 :   10b3dd: mov    %r8w,(%r12,%r14,2)
+    0.22 :   10b3e2: cmovae %ebx,%esi
+    0.08 :   10b3e5: lea    (%rdx,%r15,1),%r9
+    0.00 :   10b3e9: movzwl (%r12,%r9,4),%r8d
+    0.94 :   10b3ee: mov    %r13d,%ebp
+    0.01 :   10b3f1: shr    $0xb,%ebp
+    0.00 :   10b3f4: movzwl %si,%r11d
+    0.00 :   10b3f8: imul   %r11d,%ebp
+    0.00 :   10b3fc: sub    %ebp,%r13d
+    0.00 :   10b3ff: lea    0x1ff81f(%r11),%ebx
+    0.01 :   10b406: cmp    %ebp,%r10d
+    0.03 :   10b409: cmovb  %ebp,%r13d
+    0.00 :   10b40d: mov    $0x0,%r15d
+    0.27 :   10b413: cmovae %ebp,%r15d
+    0.00 :   10b417: cmovae %r11d,%ebx
+    0.00 :   10b41b: movzwl 0x2(%r12,%r9,4),%r14d
+    0.00 :   10b421: mov    %r10d,%r11d
+    0.00 :   10b424: sub    %r15d,%r11d
+    0.00 :   10b427: cmp    $0xffffff,%r13d
+    0.00 :   10b42e: ja     10b459 <zipper::lzma::decode_symbols+0x26e9>
+    0.00 :   10b430: cmp    0x8(%rsp),%rdi
+    0.15 :   10b435: jae    10b8b7 <zipper::lzma::decode_symbols+0x2b47>
+    0.00 :   10b43b: mov    %rdi,%r12
+    0.00 :   10b43e: shl    $0x8,%r13d
+    0.01 :   10b442: shl    $0x8,%r11d
+    0.00 :   10b446: mov    0x10(%rsp),%rdi
+    0.02 :   10b44b: movzbl (%rdi,%r12,1),%r15d
+    0.00 :   10b450: or     %r15d,%r11d
+    0.00 :   10b453: inc    %r12
+    0.00 :   10b456: mov    %r12,%rdi
+    0.01 :   10b459: shr    $0x5,%ebx
+    0.10 :   10b45c: sub    %ebx,%esi
+    0.00 :   10b45e: xor    %ebx,%ebx
+    0.49 :   10b460: cmp    %ebp,%r10d
+    0.00 :   10b463: cmovae %r14d,%r8d
+    0.00 :   10b467: setae  %r15b
+    0.01 :   10b46b: mov    %r13d,%r10d
+    0.04 :   10b46e: shr    $0xb,%r10d
+    0.00 :   10b472: movzwl %r8w,%r12d
+    0.06 :   10b476: imul   %r12d,%r10d
+    0.14 :   10b47a: sub    %r10d,%r13d
+    0.00 :   10b47d: lea    0x1ff81f(%r12),%r14d
+    0.16 :   10b485: cmp    %r10d,%r11d
+    0.00 :   10b488: cmovb  %r10d,%r13d
+    0.01 :   10b48c: cmovae %r12d,%r14d
+    0.01 :   10b490: mov    %r10d,%r12d
+    0.00 :   10b493: mov    %r13d,%ebp
+    0.00 :   10b496: mov    $0x0,%r13d
+    0.04 :   10b49c: cmovb  %r13d,%r12d
+    0.00 :   10b4a0: mov    0x70(%rsp),%r13
+    0.17 :   10b4a5: mov    %si,0x0(%r13,%r9,2)
+    0.10 :   10b4ab: mov    %ebp,%r13d
+    0.00 :   10b4ae: mov    %r11d,%ebp
+    0.00 :   10b4b1: sub    %r12d,%ebp
+    0.00 :   10b4b4: cmp    $0x1000000,%r13d
+    0.00 :   10b4bb: jae    10b4dd <zipper::lzma::decode_symbols+0x276d>
+    0.00 :   10b4bd: cmp    0x8(%rsp),%rdi
+    0.17 :   10b4c2: jae    10b8b7 <zipper::lzma::decode_symbols+0x2b47>
+    0.00 :   10b4c8: shl    $0x8,%r13d
+    0.00 :   10b4cc: shl    $0x8,%ebp
+    0.01 :   10b4cf: mov    0x10(%rsp),%rsi
+    0.00 :   10b4d4: movzbl (%rsi,%rdi,1),%esi
+    0.03 :   10b4d8: or     %esi,%ebp
+    0.00 :   10b4da: inc    %rdi
+    0.00 :   10b4dd: add    %edx,%edx
+    0.14 :   10b4df: mov    0x70(%rsp),%rsi
+    0.02 :   10b4e4: lea    (%rsi,%r9,4),%rsi
+    0.00 :   10b4e8: mov    %r15b,%bl
+    0.16 :   10b4eb: lea    (%rdx,%rbx,4),%rdx
+    0.01 :   10b4ef: xor    %r9d,%r9d
+    0.00 :   10b4f2: cmp    %r10d,%r11d
+    0.03 :   10b4f5: setae  %r9b
+    0.00 :   10b4f9: shr    $0x5,%r14d
+    0.03 :   10b4fd: sub    %r14d,%r8d
+    0.01 :   10b500: mov    %r8w,(%rsi,%rbx,2)
+    0.24 :   10b505: add    0x58(%rsp),%rax
+    0.00 :   10b50a: add    %rcx,%rax
+    0.00 :   10b50d: add    %rdx,%rax
+    0.05 :   10b510: lea    (%rax,%r9,8),%rsi
+    0.00 :   10b514: mov    %rdi,%r14
+    0.00 :   10b517: jmp    10b5c1 <zipper::lzma::decode_symbols+0x2851>
+    0.00 :   10b51c: mov    $0x1,%r10d
+    0.02 :   10b522: mov    0x30(%rsp),%rdi
+    0.03 :   10b527: mov    %r13d,%ecx
+    0.26 :   10b52a: shr    $0xb,%ecx
+    0.00 :   10b52d: movzwl %bx,%r9d
+    0.00 :   10b531: imul   %r9d,%ecx
+    0.10 :   10b535: sub    %ecx,%r13d
+    0.00 :   10b538: mov    %edx,%ebp
+    0.00 :   10b53a: lea    0x1ff81f(%r9),%r8d
+    0.00 :   10b541: cmp    %ecx,%edx
+    0.01 :   10b543: cmovb  %ecx,%r13d
+    0.00 :   10b547: mov    $0x0,%r14d
+    0.07 :   10b54d: cmovae %ecx,%r14d
+    0.00 :   10b551: cmovae %r9d,%r8d
+    0.03 :   10b555: mov    %edx,%eax
+    0.00 :   10b557: sub    %r14d,%ebp
+    0.00 :   10b55a: cmp    $0xffffff,%r13d
+    0.00 :   10b561: ja     10b58c <zipper::lzma::decode_symbols+0x281c>
+    0.00 :   10b563: mov    0x28(%rsp),%r14
+    0.05 :   10b568: cmp    0x8(%rsp),%r14
+    0.01 :   10b56d: jae    10b864 <zipper::lzma::decode_symbols+0x2af4>
+    0.00 :   10b573: shl    $0x8,%r13d
+    0.01 :   10b577: shl    $0x8,%ebp
+    0.00 :   10b57a: mov    0x10(%rsp),%rdx
+    0.02 :   10b57f: movzbl (%rdx,%r14,1),%r9d
+    0.00 :   10b584: or     %r9d,%ebp
+    0.00 :   10b587: inc    %r14
+    0.00 :   10b58a: jmp    10b591 <zipper::lzma::decode_symbols+0x2821>
+    0.00 :   10b58c: mov    0x28(%rsp),%r14
+    0.05 :   10b591: cmp    %rdi,%r10
+    0.00 :   10b594: jae    10b9a2 <zipper::lzma::decode_symbols+0x2c32>
+    0.00 :   10b59a: xor    %edx,%edx
+    0.07 :   10b59c: cmp    %ecx,%eax
+    0.00 :   10b59e: setae  %dl
+    0.02 :   10b5a1: shr    $0x5,%r8d
+    0.00 :   10b5a5: sub    %r8d,%ebx
+    0.00 :   10b5a8: mov    %r11d,%ecx
+    0.00 :   10b5ab: shl    %cl,%edx
+    0.00 :   10b5ad: mov    0x38(%rsp),%rax
+    0.00 :   10b5b2: mov    %bx,(%rax,%r10,2)
+    0.11 :   10b5b7: or     %esi,%edx
+    0.00 :   10b5b9: mov    0x58(%rsp),%rsi
+    0.00 :   10b5be: add    %rdx,%rsi
+    0.04 :   10b5c1: mov    $0xffffffff,%eax
+    0.00 :   10b5c6: cmp    %rax,%rsi
+    0.14 :   10b5c9: mov    0x40(%rsp),%r10
+    0.01 :   10b5ce: mov    0x20(%rsp),%rbx
+    0.01 :   10b5d3: mov    0x50(%rsp),%rcx
+    0.03 :   10b5d8: je     10b7f4 <zipper::lzma::decode_symbols+0x2a84>
+    0.01 :   10b5de: mov    %ebp,%r15d
+    0.00 :   10b5e1: mov    0x60(%rsp),%r9
+    0.02 :   10b5e6: mov    0x48(%rsp),%r12
+    0.00 :   10b5eb: mov    0x18(%rsp),%rbp
+    0.22 :   10b5f0: cmp    0x5c0(%rbp),%rsi
+    0.03 :   10b5f7: jae    10b7e3 <zipper::lzma::decode_symbols+0x2a73>
+    0.00 :   10b5fd: mov    %rsi,0x5a0(%rbp)
+    0.00 :   10b604: inc    %rsi
+    0.01 :   10b607: cmp    0x20(%r10),%rsi
+    0.02 :   10b60b: ja     10b6bb <zipper::lzma::decode_symbols+0x294b>
+    0.00 :   10b611: jmp    10b6d7 <zipper::lzma::decode_symbols+0x2967>
+    0.00 :   10b616: mov    0x20(%rsp),%rbx
+    0.01 :   10b61b: lea    (%rdx,%rdx,1),%eax
+    0.00 :   10b61e: mov    %r11b,%r9b
+    0.00 :   10b621: or     %rax,%r9
+    0.00 :   10b624: xor    %eax,%eax
+    0.00 :   10b626: cmp    %r8d,%esi
+    0.00 :   10b629: setae  %al
+    0.01 :   10b62c: shr    $0x5,%r10d
+    0.00 :   10b630: sub    %r10d,%ecx
+    0.00 :   10b633: lea    (%r9,%r9,1),%edx
+    0.00 :   10b637: mov    %cx,(%rdi,%rdx,1)
+    0.00 :   10b63b: mov    $0xfffffff8,%ecx
+    0.00 :   10b640: lea    (%rcx,%r9,2),%ecx
+    0.00 :   10b644: or     %rax,%rcx
+    0.00 :   10b647: or     $0x8,%rcx
+    0.00 :   10b64b: jmp    10b688 <zipper::lzma::decode_symbols+0x2918>
+    0.00 :   10b64d: mov    0x20(%rsp),%rbx
+    0.01 :   10b652: add    %rdx,%rdx
+    0.00 :   10b655: mov    %r11b,%r9b
+    0.00 :   10b658: or     %rdx,%r9
+    0.00 :   10b65b: xor    %eax,%eax
+    0.00 :   10b65d: cmp    %edi,%r8d
+    0.00 :   10b660: setae  %al
+    0.03 :   10b663: shr    $0x5,%r10d
+    0.00 :   10b667: sub    %r10d,%esi
+    0.00 :   10b66a: mov    %si,0x9d8(%rbp,%r9,2)
+    0.03 :   10b673: lea    -0x100(,%r9,2),%edx
+    0.00 :   10b67b: add    %rdx,%rax
+    0.00 :   10b67e: add    $0x10,%rax
+    0.01 :   10b682: mov    %ecx,%r13d
+    0.00 :   10b685: mov    %rax,%rcx
+    0.00 :   10b688: xor    %eax,%eax
+    0.00 :   10b68a: cmpq   $0x7,0x598(%rbp)
+    0.00 :   10b692: mov    0x5a0(%rbp),%rsi
+    0.01 :   10b699: setae  %al
+    0.00 :   10b69c: lea    0x8(%rax,%rax,2),%rax
+    0.00 :   10b6a1: mov    %rax,0x598(%rbp)
+    0.00 :   10b6a8: mov    0x40(%rsp),%r10
+    0.01 :   10b6ad: mov    0x60(%rsp),%r9
+    0.00 :   10b6b2: inc    %rsi
+    0.00 :   10b6b5: cmp    0x20(%r10),%rsi
+    0.03 :   10b6b9: jbe    10b6d7 <zipper::lzma::decode_symbols+0x2967>
+    0.00 :   10b6bb: cmpb   $0x1,0x30(%r10)
+    0.11 :   10b6c0: jne    10b7c1 <zipper::lzma::decode_symbols+0x2a51>
+    0.00 :   10b6c6: mov    0x18(%r10),%rax
+    0.00 :   10b6ca: add    $0xfffffffffffffff0,%rax
+    0.01 :   10b6ce: cmp    %rax,%rsi
+    0.00 :   10b6d1: ja     10b7c1 <zipper::lzma::decode_symbols+0x2a51>
+    0.02 :   10b6d7: add    $0x2,%rcx
+    0.04 :   10b6db: mov    %rcx,(%r9)
+    0.03 :   10b6de: mov    0x28(%r10),%r11
+    0.11 :   10b6e2: jmp    108ec3 <zipper::lzma::decode_symbols+0x153>
+    0.00 :   10b6e7: cmp    0xa8(%rsp),%r14
+    0.00 :   10b6ef: jbe    10b70c <zipper::lzma::decode_symbols+0x299c>
+    0.00 :   10b6f1: lea    -0xe4aa7(%rip),%rsi        # 26c51 <anon.d74135bdccc798679365a46b1d65ca28.533.llvm.4795996092214488023+0x84e>
+    0.00 :   10b6f8: mov    $0x15,%edx
+    0.00 :   10b6fd: mov    $0x15,%edi
+    0.00 :   10b702: call   *0x18f148(%rip)        # 29a850 <_DYNAMIC+0x6d8>
+    0.00 :   10b708: mov    $0x1,%cl
+    0.00 :   10b70a: jmp    10b710 <zipper::lzma::decode_symbols+0x29a0>
+    0.00 :   10b70c: xor    %ecx,%ecx
+    0.01 :   10b70e: xor    %edx,%edx
+    0.00 :   10b710: mov    0xe0(%rsp),%rsi
+    0.00 :   10b718: mov    %cl,(%rsi)
+    0.00 :   10b71a: mov    %dl,0x1(%rsi)
+    0.00 :   10b71d: mov    %rax,0x8(%rsi)
+    0.00 :   10b721: mov    %r14,0x10(%rsi)
+    0.00 :   10b725: mov    %r13d,0x18(%rsi)
+    0.00 :   10b729: mov    %r15d,0x1c(%rsi)
+    0.00 :   10b72d: mov    %rsi,%rax
+    0.00 :   10b730: add    $0xe8,%rsp
+    0.00 :   10b737: pop    %rbx
+    0.00 :   10b738: pop    %r12
+    0.00 :   10b73a: pop    %r13
+    0.00 :   10b73c: pop    %r14
+    0.00 :   10b73e: pop    %r15
+    0.00 :   10b740: pop    %rbp
+    0.00 :   10b741: ret
+    0.00 :   10b742: sub    %rdx,%r10
+    0.00 :   10b745: add    %r12,%r10
+    0.00 :   10b748: lea    (%r11,%r10,1),%rdi
+    0.00 :   10b74c: dec    %rdi
+    0.00 :   10b74f: lea    (%r11,%r10,1),%rsi
+    0.00 :   10b753: add    $0xf,%rsi
+    0.00 :   10b757: lea    0x187a8a(%rip),%rcx        # 2931e8 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xff8>
+    0.00 :   10b75e: mov    %r13,%rdx
+    0.00 :   10b761: call   *0x18ec89(%rip)        # 29a3f0 <_DYNAMIC+0x278>
+    0.00 :   10b767: lea    0x187a62(%rip),%rcx        # 2931d0 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xfe0>
+    0.00 :   10b76e: mov    %r13,%rdx
+    0.00 :   10b771: call   *0x18ec79(%rip)        # 29a3f0 <_DYNAMIC+0x278>
+    0.00 :   10b777: mov    $0x2,%dl
+    0.00 :   10b779: xor    %ecx,%ecx
+    0.00 :   10b77b: jmp    10b710 <zipper::lzma::decode_symbols+0x29a0>
+    0.00 :   10b77d: lea    0x1887e4(%rip),%rcx        # 293f68 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1d78>
+    0.00 :   10b784: xor    %edi,%edi
+    0.00 :   10b786: mov    %rax,%rsi
+    0.00 :   10b789: mov    %r13,%rdx
+    0.00 :   10b78c: call   *0x18ec5e(%rip)        # 29a3f0 <_DYNAMIC+0x278>
+    0.00 :   10b792: lea    0x1887e7(%rip),%rcx        # 293f80 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1d90>
+    0.00 :   10b799: mov    %rsi,%rdi
+    0.00 :   10b79c: mov    %rax,%rsi
+    0.00 :   10b79f: mov    %r13,%rdx
+    0.00 :   10b7a2: call   *0x18ec48(%rip)        # 29a3f0 <_DYNAMIC+0x278>
+    0.00 :   10b7a8: lea    -0xe4d73(%rip),%rdi        # 26a3c <anon.d74135bdccc798679365a46b1d65ca28.533.llvm.4795996092214488023+0x639>
+    0.00 :   10b7af: lea    0x187a92(%rip),%rdx        # 293248 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1058>
+    0.00 :   10b7b6: mov    $0x2b,%esi
+    0.00 :   10b7bb: call   *0x18ec47(%rip)        # 29a408 <_DYNAMIC+0x290>
+    0.00 :   10b7c1: lea    -0xdf9e1(%rip),%rsi        # 2bde7 <anon.d74135bdccc798679365a46b1d65ca28.533.llvm.4795996092214488023+0x59e4>
+    0.00 :   10b7c8: mov    $0x31,%edx
+    0.00 :   10b7cd: jmp    10b6fd <zipper::lzma::decode_symbols+0x298d>
+    0.00 :   10b7d2: lea    -0xdfa50(%rip),%rsi        # 2bd89 <anon.d74135bdccc798679365a46b1d65ca28.533.llvm.4795996092214488023+0x5986>
+    0.00 :   10b7d9: mov    $0x2d,%edx
+    0.00 :   10b7de: jmp    10b6fd <zipper::lzma::decode_symbols+0x298d>
+    0.00 :   10b7e3: lea    -0xdf9d2(%rip),%rsi        # 2be18 <anon.d74135bdccc798679365a46b1d65ca28.533.llvm.4795996092214488023+0x5a15>
+    0.00 :   10b7ea: mov    $0x26,%edx
+    0.00 :   10b7ef: jmp    10b6fd <zipper::lzma::decode_symbols+0x298d>
+    0.00 :   10b7f4: cmp    0xa8(%rsp),%r14
+    0.00 :   10b7fc: jbe    10b80c <zipper::lzma::decode_symbols+0x2a9c>
+    0.00 :   10b7fe: lea    -0xe4bb4(%rip),%rsi        # 26c51 <anon.d74135bdccc798679365a46b1d65ca28.533.llvm.4795996092214488023+0x84e>
+    0.00 :   10b805: mov    $0x15,%edx
+    0.00 :   10b80a: jmp    10b81c <zipper::lzma::decode_symbols+0x2aac>
+    0.00 :   10b80c: test   %ebp,%ebp
+    0.00 :   10b80e: je     10b831 <zipper::lzma::decode_symbols+0x2ac1>
+    0.00 :   10b810: lea    -0xdfa61(%rip),%rsi        # 2bdb6 <anon.d74135bdccc798679365a46b1d65ca28.533.llvm.4795996092214488023+0x59b3>
+    0.00 :   10b817: mov    $0x31,%edx
+    0.00 :   10b81c: mov    $0x15,%edi
+    0.00 :   10b821: call   *0x18f029(%rip)        # 29a850 <_DYNAMIC+0x6d8>
+    0.00 :   10b827: mov    $0x1,%cl
+    0.00 :   10b829: mov    %ebp,%r15d
+    0.00 :   10b82c: jmp    10b710 <zipper::lzma::decode_symbols+0x29a0>
+    0.00 :   10b831: mov    $0x1,%dl
+    0.00 :   10b833: xor    %r15d,%r15d
+    0.00 :   10b836: xor    %ecx,%ecx
+    0.00 :   10b838: jmp    10b710 <zipper::lzma::decode_symbols+0x29a0>
+    0.00 :   10b83d: lea    0x187a1c(%rip),%rdx        # 293260 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1070>
+    0.00 :   10b844: mov    %r13,%rsi
+    0.00 :   10b847: call   *0x18eb6b(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b84d: lea    0x187a84(%rip),%rcx        # 2932d8 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x10e8>
+    0.00 :   10b854: mov    $0x73,%esi
+    0.00 :   10b859: mov    $0x73,%edx
+    0.00 :   10b85e: call   *0x18eb8c(%rip)        # 29a3f0 <_DYNAMIC+0x278>
+    0.00 :   10b864: lea    0x187665(%rip),%rdx        # 292ed0 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xce0>
+    0.00 :   10b86b: mov    %r14,%rdi
+    0.00 :   10b86e: mov    0x8(%rsp),%rsi
+    0.00 :   10b873: call   *0x18eb3f(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b879: lea    0x1876b0(%rip),%rdx        # 292f30 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xd40>
+    0.00 :   10b880: mov    %r8,%rdi
+    0.00 :   10b883: mov    0x30(%rsp),%rsi
+    0.00 :   10b888: call   *0x18eb2a(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b88e: lea    0x1876b3(%rip),%rdx        # 292f48 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xd58>
+    0.00 :   10b895: mov    %rdi,%rsi
+    0.00 :   10b898: mov    %r9,%rdi
+    0.00 :   10b89b: call   *0x18eb17(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b8a1: lea    0x187670(%rip),%rdx        # 292f18 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xd28>
+    0.00 :   10b8a8: mov    %rdi,%rsi
+    0.00 :   10b8ab: mov    %r10,%rdi
+    0.00 :   10b8ae: call   *0x18eb04(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b8b4: mov    %r14,%rdi
+    0.00 :   10b8b7: lea    0x187612(%rip),%rdx        # 292ed0 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xce0>
+    0.00 :   10b8be: mov    0x8(%rsp),%rsi
+    0.00 :   10b8c3: call   *0x18eaef(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b8c9: lea    0x188008(%rip),%rdx        # 2938d8 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x16e8>
+    0.00 :   10b8d0: mov    $0x10,%esi
+    0.00 :   10b8d5: call   *0x18eadd(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b8db: lea    0x187ff6(%rip),%rdx        # 2938d8 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x16e8>
+    0.00 :   10b8e2: mov    $0xc,%esi
+    0.00 :   10b8e7: mov    %rax,%rdi
+    0.00 :   10b8ea: call   *0x18eac8(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b8f0: lea    0x187999(%rip),%rdx        # 293290 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x10a0>
+    0.00 :   10b8f7: mov    %r15,%rdi
+    0.00 :   10b8fa: call   *0x18eab8(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b900: lea    0x1879b9(%rip),%rdx        # 2932c0 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x10d0>
+    0.00 :   10b907: call   *0x18eaab(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b90d: lea    0x187fdc(%rip),%rdx        # 2938f0 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1700>
+    0.00 :   10b914: mov    $0xc,%esi
+    0.00 :   10b919: mov    %rax,%rdi
+    0.00 :   10b91c: call   *0x18ea96(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b922: lea    0x187637(%rip),%rdx        # 292f60 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xd70>
+    0.00 :   10b929: mov    $0x100,%esi
+    0.00 :   10b92e: mov    %rax,%rdi
+    0.00 :   10b931: call   *0x18ea81(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b937: lea    0x18796a(%rip),%rdx        # 2932a8 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x10b8>
+    0.00 :   10b93e: mov    %rcx,%rdi
+    0.00 :   10b941: mov    0x68(%rsp),%rsi
+    0.00 :   10b946: call   *0x18ea6c(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b94c: lea    0x187fb5(%rip),%rdx        # 293908 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1718>
+    0.00 :   10b953: mov    $0xc,%esi
+    0.00 :   10b958: mov    %rax,%rdi
+    0.00 :   10b95b: call   *0x18ea57(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b961: lea    0x187fd0(%rip),%rdx        # 293938 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1748>
+    0.00 :   10b968: mov    $0xc,%esi
+    0.00 :   10b96d: mov    %rax,%rdi
+    0.00 :   10b970: call   *0x18ea42(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b976: lea    0x187fa3(%rip),%rdx        # 293920 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1730>
+    0.00 :   10b97d: mov    $0xc,%esi
+    0.00 :   10b982: mov    %rax,%rdi
+    0.00 :   10b985: call   *0x18ea2d(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b98b: lea    0x187556(%rip),%rdx        # 292ee8 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xcf8>
+    0.00 :   10b992: mov    $0x1,%edi
+    0.00 :   10b997: mov    0x30(%rsp),%rsi
+    0.00 :   10b99c: call   *0x18ea16(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b9a2: lea    0x187557(%rip),%rdx        # 292f00 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0xd10>
+    0.00 :   10b9a9: mov    %rdi,%rsi
+    0.00 :   10b9ac: mov    %r10,%rdi
+    0.00 :   10b9af: call   *0x18ea03(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b9b5: lea    0x187f94(%rip),%rdx        # 293950 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x1760>
+    0.00 :   10b9bc: mov    $0xc,%esi
+    0.00 :   10b9c1: mov    %rax,%rdi
+    0.00 :   10b9c4: call   *0x18e9ee(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b9ca: lea    0x1878d7(%rip),%rdx        # 2932a8 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x10b8>
+    0.00 :   10b9d1: call   *0x18e9e1(%rip)        # 29a3b8 <_DYNAMIC+0x240>
+    0.00 :   10b9d7: lea    0x1878e2(%rip),%rdx        # 2932c0 <anon.d74135bdccc798679365a46b1d65ca28.852.llvm.4795996092214488023+0x10d0>
+    0.00 :   10b9de: mov    %rax,%rdi
+    0.00 :   10b9e1: call   *0x18e9d1(%rip)        # 29a3b8 <_DYNAMIC+0x240>

@@ -1,0 +1,36 @@
+{
+  "repeats": 10,
+  "results": {
+    "lzma": {
+      "zipper": {
+        "per_decode": {
+          "task-clock": 256.102,
+          "cycles": null,
+          "instructions": null,
+          "branches": null,
+          "branch-misses": null,
+          "L1-dcache-load-misses": null
+        },
+        "annotated": [
+          {
+            "rank": 1,
+            "percent": 96.22,
+            "symbol": "zipper::lzma::decode_symbols",
+            "file": "annotate-lzma-zipper-1.txt"
+          }
+        ]
+      },
+      "liblzma": {
+        "per_decode": {
+          "task-clock": 224.01,
+          "cycles": null,
+          "instructions": null,
+          "branches": null,
+          "branch-misses": null,
+          "L1-dcache-load-misses": null
+        },
+        "annotated": []
+      }
+    }
+  }
+}

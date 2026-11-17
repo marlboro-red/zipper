@@ -1,0 +1,45 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 12K of event 'cpu/cycles/P'
+# Event count (approx.): 11223665356
+#
+# Overhead  Command          Shared Object         Symbol                                   
+# ........  ...............  ....................  .........................................
+#
+    84.86%  zipper-decode-b  zipper-decode-bench   [.] lzma_decode
+            |
+            ---lzma_decode
+               decode_buffer
+               lzma_code
+
+     2.61%  zipper-decode-b  libc.so.6             [.] 0x00000000001bc512
+            |
+            ---0x749cc53bc512
+               lzma_code
+
+     2.54%  zipper-decode-b  libc.so.6             [.] 0x00000000001bc237
+            |
+            ---0x749cc53bc237
+               decode_buffer
+               lzma_code
+
+     1.61%  zipper-decode-b  libc.so.6             [.] 0x00000000001bc204
+            |
+            ---0x749cc53bc204
+               decode_buffer
+               lzma_code
+
+     1.23%  zipper-decode-b  libc.so.6             [.] 0x00000000001bc1b9
+            |
+            ---0x749cc53bc1b9
+               decode_buffer
+               lzma_code
+
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

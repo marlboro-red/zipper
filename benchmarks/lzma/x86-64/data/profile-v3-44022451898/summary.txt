@@ -1,0 +1,22 @@
+# M35 profile
+
+Counts of one decode, from `perf stat` with 10 repeats less `perf stat` of the setup alone.
+A hosted runner may expose no hardware counters, which then read "not counted".
+
+## lzma
+
+| Event | zipper | liblzma | zipper over liblzma |
+| --- | --- | --- | --- |
+| `task-clock` | 235 | 215 | 1.091 |
+| `cycles` | not counted | not counted | not counted |
+| `instructions` | not counted | not counted | not counted |
+| `branches` | not counted | not counted | not counted |
+| `branch-misses` | not counted | not counted | not counted |
+| `L1-dcache-load-misses` | not counted | not counted | not counted |
+
+- `zipper`: not counted instructions per cycle, not counted % of branches missed
+
+- `liblzma`: not counted instructions per cycle, not counted % of branches missed
+
+- `annotate-lzma-zipper-1.txt` annotates zipper::lzma::decode_symbols               -      -, 96.22 % of Zipper's samples
+
