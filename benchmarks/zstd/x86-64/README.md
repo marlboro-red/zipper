@@ -1,6 +1,6 @@
 # Zipper's Zstandard decoder against libzstd on x86-64
 
-**Two changes are kept and the gap is narrowed, not closed. A decode takes 0.82 to 0.91 times the time it took, with ranges apart on both corpora, and 1.09 to 1.13 times libzstd's time where it took 1.20 to 1.38 times. The hosted runners build libzstd for x86-64-v3 and Zipper for baseline x86-64, so part of the first gap was the C compiler's default and not the decoder.** Hosted x86-64 Linux runners, a different processor in each run, and one Apple M2 Max.
+**Two changes are kept and the gap is narrowed, not closed. A decode takes 0.82 to 0.91 times the time it took, with ranges apart on both corpora. That is 1.09 to 1.13 times libzstd's time, where it was 1.20 to 1.38 times. The hosted runners build libzstd for x86-64-v3 and Zipper for baseline x86-64, so part of the first gap was the C compiler's default and not the decoder.** Hosted x86-64 Linux runners, a different processor in each run, and one Apple M2 Max.
 
 ## Question
 
@@ -34,7 +34,7 @@
 - With `-C target-cpu=x86-64-v3` for the Rust code as well, run 43988183680 on an AMD EPYC 9V45, the two sequence loops took 90 ms and 87 ms. The whole decode still took 164 ms against 131 ms, because the checksum rose from 9 ms to 24 ms under AVX2.
 - The copies in libc are the reader's window buffer. Zipper decoded each block into its own buffer and copied it to the caller, 212 MB for Silesia. libzstd's one call decodes where the caller wants the bytes.
 - libzstd's Huffman loop on x86-64 is the assembly in `huf_decompress_amd64.S`, which `zstd-sys` builds on Linux. `perf` shows it without a symbol name.
-- Zipper's loop ran about 155 instructions a sequence against libzstd's 118, counted from the annotated assembly. The M2 Max has 31 registers and a one-instruction bit-field extract. x86-64 has 15 registers, so the loop's 22 live values spill, and each field of a table entry costs a move, a shift and a mask.
+- Zipper's loop showed about 155 sampled instructions on its common path against libzstd's 118, counted in the annotated assembly. The M2 Max has 31 registers and a one-instruction bit-field extract. x86-64 has 15 registers, so the loop's 22 live values spill, and each field of a table entry costs a move, a shift and a mask.
 
 ### Experiments
 
