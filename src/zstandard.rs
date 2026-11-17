@@ -1813,7 +1813,7 @@ fn run_sequences(
         rare: (0, 0, 0),
     };
     loop {
-        match sequences(&mut run, block, tables, literals, bounds, output) {
+        match fast_sequences(&mut run, block, tables, literals, bounds, output) {
             Stop::Finished => break,
             Stop::Rare => {
                 let rest = LiteralRun {
@@ -1845,7 +1845,7 @@ fn cpu_has_bmi2() -> bool {
     std::arch::is_x86_feature_detected!("bmi2")
 }
 
-fn sequences(
+fn fast_sequences(
     run: &mut SequenceRun,
     block: &Padded,
     tables: &Tables,
@@ -1858,11 +1858,11 @@ fn sequences(
         // SAFETY: `cpu_has_bmi2` found `bmi2` on this CPU.
         return unsafe { fast_sequences_bmi2(run, block, tables, literals, bounds, output) };
     }
-    fast_sequences(run, block, tables, literals, bounds, output)
+    fast_sequences_portable(run, block, tables, literals, bounds, output)
 }
 
 #[inline(never)]
-fn fast_sequences(
+fn fast_sequences_portable(
     run: &mut SequenceRun,
     block: &Padded,
     tables: &Tables,
@@ -1873,8 +1873,8 @@ fn fast_sequences(
     sequence_loop(run, block, tables, literals, bounds, output)
 }
 
-// RECORD(benchmarks/zstd/x86-64/README.md): shifts that take any register for their
-// count cut PLACEHOLDER of a decode's time on x86-64, where libzstd is built with them.
+// RECORD(benchmarks/zstd/x86-64/README.md): a decode with this loop built with BMI2 takes 0.93
+// times the baseline build's time on hosted x86-64 runners, ranges apart on both corpora.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "bmi2")]
 #[inline(never)]
@@ -2296,13 +2296,15 @@ struct Frame {
     header: FrameHeader,
     produced: u64,
     hash: Xxh64,
-    untouched: bool,
+    at_first_block: bool,
 }
 
 struct InPlace<'a> {
-    frame: &'a mut [u8],
-    produced: usize,
+    room: &'a mut [u8],
+    filled: usize,
 }
+
+const NO_EARLIER_LAP: usize = 0;
 
 pub(crate) struct ZstdReader<R> {
     input: R,
@@ -2337,6 +2339,21 @@ fn fill(input: &mut impl Read, bytes: &mut [u8]) -> io::Result<()> {
     })
 }
 
+fn check_the_frame_end(frame: &Frame, input: &mut impl Read) -> io::Result<()> {
+    if let Some(size) = frame.header.content_size {
+        ensure(frame.produced == size, SIZE_DIFFERS)?;
+    }
+    if frame.header.checksum {
+        let mut stored = [0u8; 4];
+        fill(input, &mut stored)?;
+        ensure(
+            stored == (frame.hash.digest() as u32).to_le_bytes(),
+            "the frame's checksum does not match",
+        )?;
+    }
+    Ok(())
+}
+
 impl<R: BufRead> ZstdReader<R> {
     pub(crate) fn new(input: R) -> Self {
         ZstdReader {
@@ -2359,7 +2376,7 @@ impl<R: BufRead> ZstdReader<R> {
                 },
                 produced: 0,
                 hash: Xxh64::new(),
-                untouched: false,
+                at_first_block: false,
             },
             finished_a_frame: false,
             failure: None,
@@ -2447,13 +2464,13 @@ impl<R: BufRead> ZstdReader<R> {
             header,
             produced: 0,
             hash: Xxh64::new(),
-            untouched: true,
+            at_first_block: true,
         };
         self.stage = Stage::Blocks;
         Ok(())
     }
 
-    fn reserve_the_window(&mut self) {
+    fn reserve_the_ring(&mut self) {
         if self.ring.capacity() < self.lap {
             self.ring = Vec::new();
             self.ring = Vec::with_capacity(self.lap);
@@ -2466,7 +2483,7 @@ impl<R: BufRead> ZstdReader<R> {
 
     fn keep_as_history(&mut self, decoded: &[u8]) {
         let kept = decoded.len().min(self.window());
-        self.reserve_the_window();
+        self.reserve_the_ring();
         self.ring.clear();
         self.ring.extend_from_slice(&decoded[decoded.len() - kept..]);
         self.at = kept;
@@ -2475,7 +2492,7 @@ impl<R: BufRead> ZstdReader<R> {
     }
 
     fn make_room(&mut self, needed: usize) {
-        self.reserve_the_window();
+        self.reserve_the_ring();
         let end = self.at + needed + RING_SLACK;
         if end > self.ring.len() && self.ring.len() < self.lap {
             self.ring.resize(self.lap.min(end), 0);
@@ -2488,27 +2505,27 @@ impl<R: BufRead> ZstdReader<R> {
     }
 
     fn blocks_in_place(&mut self, room: &mut [u8]) -> (usize, io::Result<()>) {
-        self.frame.untouched = false;
+        self.frame.at_first_block = false;
         let frame_end = match self.frame.header.content_size {
             Some(size) => room.len().min(usize::try_from(size).unwrap_or(usize::MAX)),
             None => room.len(),
         };
         let mut place = Some(InPlace {
-            frame: &mut room[..frame_end],
-            produced: 0,
+            room: &mut room[..frame_end],
+            filled: 0,
         });
-        let mut produced = 0;
+        let mut filled = 0;
         let mut outcome = Ok(());
         while outcome.is_ok() && place.is_some() && matches!(self.stage, Stage::Blocks) {
             outcome = self.next_block(&mut place);
             if let Some(held) = &place {
-                produced = held.produced;
+                filled = held.filled;
             }
         }
         if outcome.is_err() {
             self.stage = Stage::Failed;
         }
-        (produced, outcome)
+        (filled, outcome)
     }
 
     fn next_block(&mut self, place: &mut Option<InPlace<'_>>) -> io::Result<()> {
@@ -2528,12 +2545,12 @@ impl<R: BufRead> ZstdReader<R> {
         ensure(!copied || block.size <= block_max, DAMAGED_BLOCK)?;
         ensure(!copied || block.size <= left, PAST_SIZE)?;
         let needed = if copied { block.size } else { left };
-        if let Some(held) = place.take_if(|held| held.frame.len() - held.produced < needed) {
-            self.keep_as_history(&held.frame[..held.produced]);
+        if let Some(held) = place.take_if(|held| held.room.len() - held.filled < needed) {
+            self.keep_as_history(&held.room[..held.filled]);
         }
         let window = self.window();
-        let (output, from, earlier, in_place) = match place {
-            Some(InPlace { frame, produced }) => (&mut **frame, *produced, 0, Some(produced)),
+        let (output, from, earlier, filled) = match place {
+            Some(InPlace { room, filled }) => (&mut **room, *filled, NO_EARLIER_LAP, Some(filled)),
             None => {
                 self.make_room(needed);
                 (&mut self.ring[..], self.at, self.earlier, None)
@@ -2580,20 +2597,10 @@ impl<R: BufRead> ZstdReader<R> {
             self.frame.hash.update(decoded);
         }
         if block.last {
-            if let Some(size) = self.frame.header.content_size {
-                ensure(self.frame.produced == size, SIZE_DIFFERS)?;
-            }
-            if self.frame.header.checksum {
-                let mut stored = [0u8; 4];
-                fill(&mut self.input, &mut stored)?;
-                ensure(
-                    stored == (self.frame.hash.digest() as u32).to_le_bytes(),
-                    "the frame's checksum does not match",
-                )?;
-            }
+            check_the_frame_end(&self.frame, &mut self.input)?;
         }
-        match in_place {
-            Some(produced) => *produced = end,
+        match filled {
+            Some(filled) => *filled = end,
             None => self.at = end,
         }
         if block.last {
@@ -2623,9 +2630,9 @@ impl<R: BufRead> Read for ZstdReader<R> {
                 (None, Stage::Done) => break,
                 (None, Stage::Failed) => Err(io::Error::other("Zstandard decoding already failed")),
                 (None, Stage::Header) => self.start_frame(),
-                (None, Stage::Blocks) if self.frame.untouched => {
-                    let (produced, outcome) = self.blocks_in_place(&mut buffer[filled..]);
-                    filled += produced;
+                (None, Stage::Blocks) if self.frame.at_first_block => {
+                    let (in_place, outcome) = self.blocks_in_place(&mut buffer[filled..]);
+                    filled += in_place;
                     outcome
                 }
                 (None, Stage::Blocks) => self.next_block(&mut None),

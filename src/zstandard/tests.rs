@@ -2068,8 +2068,8 @@ fn reads_of_any_size_give_what_reads_too_short_to_hold_a_block_give_on_whole_and
     }
     let mut with_room_for_the_frame = 0;
     for (number, frame) in frames.iter().enumerate() {
-        let through_the_window = read_in_pieces(frame, 7);
-        let size = through_the_window.0.len();
+        let through_the_ring = read_in_pieces(frame, 7);
+        let size = through_the_ring.0.len();
         let capacities = [
             size.max(1),
             size + 1,
@@ -2084,10 +2084,10 @@ fn reads_of_any_size_give_what_reads_too_short_to_hold_a_block_give_on_whole_and
         for capacity in capacities {
             let read = read_in_pieces(frame, capacity);
             assert!(
-                read == through_the_window,
+                read == through_the_ring,
                 "frame {number} read {capacity} bytes at a time: {:?} against {:?}",
                 (read.0.len(), read.1),
-                (size, &through_the_window.1)
+                (size, &through_the_ring.1)
             );
             with_room_for_the_frame += usize::from(capacity >= size + BLOCK_MAX);
         }
