@@ -1813,7 +1813,7 @@ fn run_sequences(
         rare: (0, 0, 0),
     };
     loop {
-        match fast_sequences(&mut run, block, tables, literals, bounds, output) {
+        match sequences(&mut run, block, tables, literals, bounds, output) {
             Stop::Finished => break,
             Stop::Rare => {
                 let rest = LiteralRun {
@@ -1836,10 +1836,63 @@ fn run_sequences(
     })
 }
 
-// RECORD(benchmarks/zstd/own-decoder/README.md): a call that returns from inside this loop moves
-// its states to the stack, which costs an M2 Max 7% of an extraction's cycles.
+#[cfg(target_arch = "x86_64")]
+fn cpu_has_bmi2() -> bool {
+    #[cfg(test)]
+    if tests::WITHOUT_BMI2.get() {
+        return false;
+    }
+    std::arch::is_x86_feature_detected!("bmi2")
+}
+
+fn sequences(
+    run: &mut SequenceRun,
+    block: &Padded,
+    tables: &Tables,
+    literals: &LiteralRun,
+    bounds: &Bounds,
+    output: &mut [u8],
+) -> Stop {
+    #[cfg(target_arch = "x86_64")]
+    if cpu_has_bmi2() {
+        // SAFETY: `cpu_has_bmi2` found `bmi2` on this CPU.
+        return unsafe { fast_sequences_bmi2(run, block, tables, literals, bounds, output) };
+    }
+    fast_sequences(run, block, tables, literals, bounds, output)
+}
+
 #[inline(never)]
 fn fast_sequences(
+    run: &mut SequenceRun,
+    block: &Padded,
+    tables: &Tables,
+    literals: &LiteralRun,
+    bounds: &Bounds,
+    output: &mut [u8],
+) -> Stop {
+    sequence_loop(run, block, tables, literals, bounds, output)
+}
+
+// RECORD(benchmarks/zstd/x86-64/README.md): shifts that take any register for their
+// count cut PLACEHOLDER of a decode's time on x86-64, where libzstd is built with them.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "bmi2")]
+#[inline(never)]
+fn fast_sequences_bmi2(
+    run: &mut SequenceRun,
+    block: &Padded,
+    tables: &Tables,
+    literals: &LiteralRun,
+    bounds: &Bounds,
+    output: &mut [u8],
+) -> Stop {
+    sequence_loop(run, block, tables, literals, bounds, output)
+}
+
+// RECORD(benchmarks/zstd/own-decoder/README.md): a call that returns from inside this loop moves
+// its states to the stack, which costs an M2 Max 7% of an extraction's cycles.
+#[inline(always)]
+fn sequence_loop(
     run: &mut SequenceRun,
     block: &Padded,
     tables: &Tables,

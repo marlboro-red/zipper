@@ -1972,3 +1972,36 @@ fn one_read_fills_the_callers_buffer_across_blocks_and_keeps_a_later_error() {
     assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
     assert!(reader.read(&mut buffer).is_err());
 }
+
+thread_local! {
+    pub(super) static WITHOUT_BMI2: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[test]
+fn frames_whole_and_damaged_decode_alike_with_and_without_the_bmi2_sequence_loop() {
+    let text = sources();
+    let mut random = Random(0xB312_0000_5E9E_0001);
+    let mut frames: Vec<Vec<u8>> = shapes().into_iter().map(|(_, frame, _)| frame).collect();
+    for level in [1, 3, 9] {
+        frames.push(encode(&mixed(&mut random, &text, 1 << 20), level, |_| {}));
+    }
+    let mut damaged = Vec::new();
+    for frame in &frames {
+        for _ in 0..40 {
+            let mut flipped = frame.clone();
+            let at = random.below(flipped.len());
+            flipped[at] ^= 1 << random.below(8);
+            damaged.push(flipped);
+        }
+    }
+    let mut decoded_bytes = 0;
+    for frame in frames.iter().chain(&damaged) {
+        let detected = ours(frame);
+        WITHOUT_BMI2.set(true);
+        let portable = ours(frame);
+        WITHOUT_BMI2.set(false);
+        decoded_bytes += portable.as_ref().map_or(0, Vec::len);
+        assert_eq!(portable, detected);
+    }
+    assert!(decoded_bytes > 3 << 20, "only {decoded_bytes} bytes decoded");
+}
