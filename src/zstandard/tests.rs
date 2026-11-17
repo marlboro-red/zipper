@@ -2232,3 +2232,74 @@ fn a_read_leaves_only_zeros_past_its_count_after_another_stream_or_a_damaged_fra
     }
     assert!(refused > 10, "only {refused} damaged frames were refused");
 }
+
+#[test]
+fn a_frame_that_fails_its_checksum_or_size_at_its_end_leaves_only_zeros_past_the_count() {
+    const UNTOUCHED: u8 = 0xA5;
+    const WINDOW_OF_1_MIB: u8 = 10 << 3;
+    let text = sources();
+    let plain = &text[..9_000];
+    let good = encode(&text[20_000..20_018], 3, |_| {});
+    let mut bad_checksum = encode(plain, 3, |encoder| {
+        encoder.include_checksum(true).unwrap();
+    });
+    *bad_checksum.last_mut().unwrap() ^= 0x40;
+    let short_of_its_size = header(
+        0x80,
+        &[
+            &[WINDOW_OF_1_MIB][..],
+            &(plain.len() as u32 + 5).to_le_bytes(),
+        ]
+        .concat(),
+        &block(0, true, plain.len(), plain),
+    );
+    let raw_with_a_bad_checksum = header(
+        0x04,
+        &[WINDOW_OF_1_MIB],
+        &[&block(0, true, plain.len(), plain)[..], &[1, 2, 3, 4]].concat(),
+    );
+    let repeated_with_a_bad_checksum = header(
+        0x04,
+        &[WINDOW_OF_1_MIB],
+        &[&block(1, true, plain.len(), b"r")[..], &[1, 2, 3, 4]].concat(),
+    );
+    let after_a_good_frame = [&good[..], &bad_checksum[..]].concat();
+    let cases = [
+        (
+            "a compressed last block with a bad checksum",
+            &bad_checksum,
+            0,
+        ),
+        ("a raw last block short of its size", &short_of_its_size, 0),
+        (
+            "a raw last block with a bad checksum",
+            &raw_with_a_bad_checksum,
+            0,
+        ),
+        (
+            "a repeated byte with a bad checksum",
+            &repeated_with_a_bad_checksum,
+            0,
+        ),
+        ("a bad frame after a good one", &after_a_good_frame, 18),
+    ];
+    for (name, frame, whole_bytes) in cases {
+        let mut reader = ZstdReader::new(&frame[..]);
+        let mut buffer = vec![UNTOUCHED; 300_000];
+        let mut filled = 0;
+        let refused = loop {
+            match reader.read(&mut buffer[filled..]) {
+                Ok(0) => break false,
+                Ok(read) => filled += read,
+                Err(_) => break true,
+            }
+        };
+        assert!(refused, "{name} was accepted");
+        assert_eq!(filled, whole_bytes, "{name}");
+        let stray = buffer[filled..]
+            .iter()
+            .filter(|&&byte| byte != UNTOUCHED && byte != 0)
+            .count();
+        assert_eq!(stray, 0, "{name} left {stray} of its bytes past the count");
+    }
+}
