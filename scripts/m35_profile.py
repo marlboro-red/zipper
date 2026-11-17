@@ -20,7 +20,7 @@ CODECS = {"zstd": "libzstd", "xz": "liblzma", "lzma": "liblzma"}
 EVENTS = ("task-clock", "cycles", "instructions", "branches", "branch-misses", "L1-dcache-load-misses")
 ANNOTATED = 3
 PMU_PREFIX = re.compile(r"^\w+/(.+)/$")
-REPORT_LINE = re.compile(r"^\s*([0-9.]+)%\s+\[\.\]\s+(.+?)\s*$")
+REPORT_LINE = re.compile(r"^\s*([0-9.]+)%\s+\[\.\]\s+(.+?)(?:\s{2,}.*)?$")
 
 
 def run(command, stdout=None):

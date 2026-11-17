@@ -567,7 +567,7 @@ elif args[0] == "record":
     subprocess.run(command(), check=True)
     open(path_after("-o"), "w").write("samples\n")
 elif args[0] == "report" and "-q" in args:
-    print("    61.00%  [.] zipper::zstandard::Sequences::execute")
+    print("    61.00%  [.] zipper::zstandard::Sequences::execute               -      -")
     print("    20.00%  [k] clear_page_erms")
     print("    12.50%  [.] __memmove_avx_unaligned_erms")
 elif args[0] == "report":
