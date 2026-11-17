@@ -2154,3 +2154,73 @@ fn a_read_leaves_the_buffer_alone_past_a_sized_frame_and_32_bytes_past_any_other
         }
     }
 }
+
+#[test]
+fn the_window_buffer_keeps_its_length_from_one_small_frame_to_the_next() {
+    let text = sources();
+    let mut frames = Vec::new();
+    for piece in text[..40_000].chunks(400) {
+        frames.extend(encode(piece, 3, |_| {}));
+    }
+    let mut reader = ZstdReader::new(&frames[..]);
+    let mut buffer = [0u8; 512];
+    let mut decoded = Vec::new();
+    let mut longest = 0;
+    loop {
+        let read = reader.read(&mut buffer).unwrap();
+        if read == 0 {
+            break;
+        }
+        decoded.extend_from_slice(&buffer[..read]);
+        assert!(
+            reader.ring.len() >= longest,
+            "the window buffer shrank from {longest} to {} bytes, so the next frame clears it again",
+            reader.ring.len()
+        );
+        longest = reader.ring.len();
+    }
+    assert!(decoded == text[..40_000] && longest > 0);
+}
+
+#[test]
+fn a_read_leaves_only_zeros_past_its_count_after_another_stream_or_a_damaged_frame() {
+    const UNTOUCHED: u8 = 0xA5;
+    let text = sources();
+    let mut random = Random(0x1A9E_0F7A_CE5E_ED04);
+    let earlier = encode(&text[300_000..500_000], 3, |_| {});
+    let whole = encode(&text[..200_000], 3, |_| {});
+    let mut frames = vec![whole.clone()];
+    for _ in 0..60 {
+        let mut flipped = whole.clone();
+        let at = 20 + random.below(flipped.len() - 20);
+        flipped[at] ^= 1 << random.below(8);
+        frames.push(flipped);
+    }
+    let mut refused = 0;
+    for (number, frame) in frames.iter().enumerate() {
+        assert!(ours(&earlier).is_ok());
+        let mut reader = ZstdReader::new(&frame[..]);
+        let mut buffer = vec![UNTOUCHED; 600_000];
+        let mut filled = 0;
+        loop {
+            let read = match reader.read(&mut buffer[filled..]) {
+                Ok(read) => read,
+                Err(_) => {
+                    refused += 1;
+                    0
+                }
+            };
+            filled += read;
+            assert!(
+                buffer[filled..]
+                    .iter()
+                    .all(|&byte| byte == UNTOUCHED || byte == 0),
+                "frame {number} left other bytes past the {filled} it returned"
+            );
+            if read == 0 {
+                break;
+            }
+        }
+    }
+    assert!(refused > 10, "only {refused} damaged frames were refused");
+}
